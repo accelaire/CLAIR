@@ -57,10 +57,15 @@ async function buildApp() {
     contentSecurityPolicy: false, // Désactivé pour permettre Swagger UI
   });
 
+  // Parse CORS origins from comma-separated string
+  const getCorsOrigins = (): string[] | boolean => {
+    if (process.env.NODE_ENV !== 'production') return true;
+    const origins = process.env.CORS_ORIGIN?.split(',').map(o => o.trim()).filter(Boolean) || [];
+    return origins.length > 0 ? origins : false;
+  };
+
   await app.register(cors, {
-    origin: process.env.NODE_ENV === 'production' 
-      ? [process.env.WEB_URL!, process.env.MOBILE_URL!].filter(Boolean)
-      : true,
+    origin: getCorsOrigins(),
     credentials: true,
   });
 
