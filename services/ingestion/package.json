@@ -1,0 +1,38 @@
+{
+  "name": "@clair/ingestion",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts src/cli.ts --format cjs,esm",
+    "start": "node dist/index.js",
+    "sync": "tsx src/cli.ts sync",
+    "backfill": "tsx src/cli.ts backfill",
+    "lint": "eslint src --ext .ts",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist node_modules .turbo"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.7.0",
+    "@types/xml2js": "^0.4.14",
+    "axios": "^1.6.2",
+    "bullmq": "^5.1.0",
+    "commander": "^11.1.0",
+    "csv-parse": "^6.1.0",
+    "dotenv": "^16.3.1",
+    "ioredis": "^5.3.2",
+    "limiter": "^2.1.0",
+    "p-limit": "3.1.0",
+    "pino": "^8.17.0",
+    "pino-pretty": "^10.3.0",
+    "xml2js": "^0.6.2"
+  },
+  "devDependencies": {
+    "@clair/config": "workspace:*",
+    "@types/node": "^20.10.0",
+    "tsup": "^8.0.1",
+    "tsx": "^4.6.2",
+    "typescript": "^5.3.0"
+  }
+}

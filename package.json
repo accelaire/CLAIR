@@ -1,0 +1,60 @@
+{
+  "name": "clair",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "dev:web": "turbo run dev --filter=@clair/web",
+    "dev:api": "turbo run dev --filter=@clair/api",
+    "dev:ingestion": "turbo run dev --filter=@clair/ingestion",
+    "build": "turbo run build",
+    "build:web": "turbo run build --filter=@clair/web",
+    "build:api": "turbo run build --filter=@clair/api",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint:fix",
+    "type-check": "turbo run type-check",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "db:generate": "pnpm --filter @clair/api db:generate",
+    "db:migrate": "pnpm --filter @clair/api db:migrate",
+    "db:push": "pnpm --filter @clair/api db:push",
+    "db:seed": "pnpm --filter @clair/api db:seed",
+    "db:studio": "pnpm --filter @clair/api db:studio",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "ingestion:sync": "pnpm --filter @clair/ingestion sync",
+    "ingestion:backfill": "pnpm --filter @clair/ingestion backfill",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "prepare": "husky install"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "eslint": "^8.55.0",
+    "husky": "^8.0.3",
+    "lint-staged": "^15.2.0",
+    "prettier": "^3.1.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.3.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ]
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0"
+}

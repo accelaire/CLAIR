@@ -1,0 +1,766 @@
+// =============================================================================
+// CLAIR - Schema Prisma
+// Base de données PostgreSQL pour la plateforme de transparence politique
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// PARLEMENTAIRES (Députés + Sénateurs) ET GROUPES POLITIQUES
+// =============================================================================
+
+model Parlementaire {
+  id              String    @id @default(uuid())
+  slug            String    @unique
+
+  // Chambre: distingue députés et sénateurs
+  chambre         String    @default("assemblee") // 'assemblee' | 'senat'
+
+  // Identité
+  nom             String
+  prenom          String
+  sexe            String?
+  dateNaissance   DateTime? @map("date_naissance")
+  lieuNaissance   String?   @map("lieu_naissance")
+  profession      String?
+  photoUrl        String?   @map("photo_url")
+  twitter         String?
+  facebook        String?
+  email           String?
+  siteWeb         String?   @map("site_web")
+  actif           Boolean   @default(true)
+
+  // Relations
+  groupeId          String?          @map("groupe_id")
+  groupe            GroupePolitique? @relation(fields: [groupeId], references: [id])
+  circonscriptionId String?          @map("circonscription_id")
+  circonscription   Circonscription? @relation(fields: [circonscriptionId], references: [id])
+
+  // Champs spécifiques Sénat (nullable pour députés)
+  serie             String?  // Série électorale sénatoriale (1, 2, 3)
+  commissionPermanente String? @map("commission_permanente")
+
+  // Relations
+  votes         Vote[]
+  interventions Intervention[]
+  amendements   Amendement[]
+  actionsLobby  ActionLobby[]
+  candidat2027  Candidat2027?
+
+  // Métadonnées source
+  sourceId   String? @map("source_id") // PA123456 (AN) ou 14133K (Sénat)
+  sourceData Json?   @map("source_data")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([slug])
+  @@index([chambre])
+  @@index([groupeId])
+  @@index([actif])
+  @@index([nom, prenom])
+  @@index([chambre, actif])
+  @@map("parlementaires")
+}
+
+model GroupePolitique {
+  id         String  @id @default(uuid())
+  slug       String
+  nom        String
+  nomComplet String? @map("nom_complet")
+  couleur    String?
+  position   String? // 'extreme_gauche', 'gauche', 'centre_gauche', 'centre', 'centre_droit', 'droite', 'extreme_droite'
+  ordre      Int     @default(0)
+  actif      Boolean @default(true)
+
+  // Chambre (les groupes AN et Sénat sont distincts)
+  chambre    String  @default("assemblee") // 'assemblee' | 'senat'
+
+  parlementaires Parlementaire[]
+
+  sourceId  String?  @map("source_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([slug, chambre])
+  @@index([chambre])
+  @@map("groupes_politiques")
+}
+
+model Circonscription {
+  id          String @id @default(uuid())
+  departement String
+  numero      Int
+  nom         String
+  population  Int?
+
+  // Type de circonscription
+  type        String @default("legislative") // 'legislative' | 'senatoriale'
+
+  parlementaires Parlementaire[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([departement, numero, type])
+  @@index([type])
+  @@map("circonscriptions")
+}
+
+// =============================================================================
+// SCRUTINS ET VOTES
+// =============================================================================
+
+model Scrutin {
+  id               String   @id @default(uuid())
+  numero           Int
+
+  // Chambre où a eu lieu le scrutin
+  chambre          String   @default("assemblee") // 'assemblee' | 'senat'
+
+  date             DateTime
+  titre            String
+  typeVote         String   @map("type_vote") // 'solennel', 'ordinaire', 'motion'
+  sort             String // 'adopte', 'rejete'
+  nombreVotants    Int      @map("nombre_votants")
+  nombrePour       Int      @map("nombre_pour")
+  nombreContre     Int      @map("nombre_contre")
+  nombreAbstention Int      @map("nombre_abstention")
+
+  // Classification automatique
+  tags       String[] @default([])
+  importance Int      @default(1) // 1-5
+
+  // Texte de loi associé (permet de croiser AN et Sénat)
+  texteId     String? @map("texte_id")
+  texteNumero String? @map("texte_numero")
+  texteTitre  String? @map("texte_titre")
+
+  votes Vote[]
+
+  // Métadonnées source
+  sourceUrl  String? @map("source_url")
+  sourceData Json?   @map("source_data")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([numero, chambre])
+  @@index([chambre])
+  @@index([date])
+  @@index([typeVote])
+  @@index([tags])
+  @@index([importance])
+  @@index([texteId])
+  @@map("scrutins")
+}
+
+model Vote {
+  id String @id @default(uuid())
+
+  parlementaireId String @map("parlementaire_id")
+  parlementaire   Parlementaire @relation(fields: [parlementaireId], references: [id], onDelete: Cascade)
+
+  scrutinId String  @map("scrutin_id")
+  scrutin   Scrutin @relation(fields: [scrutinId], references: [id], onDelete: Cascade)
+
+  position      String // 'pour', 'contre', 'abstention', 'absent'
+  miseAuPoint   String? @map("mise_au_point")
+  parDelegation Boolean @default(false) @map("par_delegation")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([parlementaireId, scrutinId])
+  @@index([scrutinId])
+  @@index([position])
+  @@map("votes")
+}
+
+// =============================================================================
+// INTERVENTIONS ET AMENDEMENTS
+// =============================================================================
+
+model Intervention {
+  id String @id @default(uuid())
+
+  parlementaireId String @map("parlementaire_id")
+  parlementaire   Parlementaire @relation(fields: [parlementaireId], references: [id], onDelete: Cascade)
+
+  // Chambre (pour cohérence, même si lié au parlementaire)
+  chambre  String   @default("assemblee") // 'assemblee' | 'senat'
+
+  seanceId String?  @map("seance_id")
+  date     DateTime
+  type     String // 'question', 'intervention', 'explication_vote'
+
+  contenu  String
+  motsCles String[] @default([]) @map("mots_cles")
+
+  sourceUrl String? @map("source_url")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([parlementaireId])
+  @@index([chambre])
+  @@index([date])
+  @@index([type])
+  @@map("interventions")
+}
+
+model Amendement {
+  id     String @id @default(uuid())
+  uid    String @unique // Identifiant unique (AN ou Sénat)
+  numero String
+  legislature Int @default(17)
+
+  // Chambre d'origine
+  chambre String @default("assemblee") // 'assemblee' | 'senat'
+
+  // Auteur - peut être lié à un parlementaire ou juste un libellé
+  parlementaireId  String? @map("parlementaire_id")
+  parlementaire    Parlementaire? @relation(fields: [parlementaireId], references: [id], onDelete: SetNull)
+  auteurRef    String? @map("auteur_ref")
+  groupeRef    String? @map("groupe_ref")
+  auteurLibelle String? @map("auteur_libelle")
+
+  // Texte législatif et article visé
+  texteRef    String? @map("texte_ref")
+  articleVise String? @map("article_vise")
+
+  // Contenu
+  dispositif     String?
+  exposeSommaire String? @map("expose_sommaire")
+
+  // Résultat
+  sort       String?
+
+  dateDepot DateTime?  @map("date_depot")
+  dateSort  DateTime? @map("date_sort")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([parlementaireId])
+  @@index([chambre])
+  @@index([sort])
+  @@index([dateDepot])
+  @@index([legislature])
+  @@index([auteurRef])
+  @@map("amendements")
+}
+
+// =============================================================================
+// LOBBYING (HATVP)
+// =============================================================================
+
+model Lobbyiste {
+  id     String  @id @default(uuid())
+  siren  String? @unique
+  nom    String
+  type   String // 'entreprise', 'association', 'cabinet', 'syndicat', 'organisation_pro'
+  secteur String?
+
+  adresse    String?
+  codePostal String? @map("code_postal")
+  ville      String?
+
+  budgetAnnuel Float? @map("budget_annuel")
+  nbLobbyistes Int?   @map("nb_lobbyistes")
+  siteWeb      String? @map("site_web")
+
+  actions ActionLobby[]
+
+  // Métadonnées source
+  sourceId   String? @map("source_id")
+  sourceData Json?   @map("source_data")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([secteur])
+  @@index([type])
+  @@index([nom])
+  @@map("lobbyistes")
+}
+
+model ActionLobby {
+  id String @id @default(uuid())
+
+  lobbyisteId String    @map("lobbyiste_id")
+  lobbyiste   Lobbyiste @relation(fields: [lobbyisteId], references: [id], onDelete: Cascade)
+
+  // Cible de l'action (peut être député OU sénateur)
+  parlementaireId String? @map("parlementaire_id")
+  parlementaire   Parlementaire? @relation(fields: [parlementaireId], references: [id])
+  cible    String? // 'parlementaire', 'ministre', 'administration', 'autre'
+  cibleNom String? @map("cible_nom")
+
+  description String
+  dateDebut   DateTime  @map("date_debut")
+  dateFin     DateTime? @map("date_fin")
+
+  budget   Float?
+  resultat String? // 'succes', 'echec', 'en_cours', 'inconnu'
+
+  // Texte de loi concerné
+  texteVise     String? @map("texte_vise")
+  texteViseNom  String? @map("texte_vise_nom")
+
+  sourceUrl String?  @map("source_url")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([lobbyisteId])
+  @@index([parlementaireId])
+  @@index([dateDebut])
+  @@map("actions_lobby")
+}
+
+// =============================================================================
+// PROMESSES ET FACT-CHECKING
+// =============================================================================
+
+model Promesse {
+  id String @id @default(uuid())
+
+  parlementaireId String? @map("parlementaire_id")
+  partiId  String? @map("parti_id")
+
+  texte       String
+  sourceUrl   String?   @map("source_url")
+  datePromesse DateTime? @map("date_promesse")
+  categorie   String?
+
+  statut String @default("non_evaluee") // 'non_evaluee', 'tenue', 'partiellement_tenue', 'non_tenue', 'en_cours'
+
+  // Scrutins liés pour évaluation
+  scrutinsLies String[] @map("scrutins_lies")
+
+  evaluation      String?
+  evaluationDate  DateTime? @map("evaluation_date")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([parlementaireId])
+  @@index([statut])
+  @@map("promesses")
+}
+
+// =============================================================================
+// UTILISATEURS ET ALERTES
+// =============================================================================
+
+model User {
+  id           String  @id @default(uuid())
+  email        String  @unique
+  passwordHash String? @map("password_hash")
+
+  nom    String?
+  prenom String?
+
+  role String @default("user") // 'user', 'premium', 'admin'
+
+  // OAuth
+  googleId String? @unique @map("google_id")
+  appleId  String? @unique @map("apple_id")
+
+  // Préférences
+  preferences Json @default("{}")
+
+  alertes Alerte[]
+  favoris Favori[]
+  sessionsSimulateur SessionSimulateur[]
+
+  // Tokens
+  refreshTokens RefreshToken[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Alerte {
+  id String @id @default(uuid())
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type      String // 'parlementaire_vote', 'lobby_action', 'sujet', 'scrutin_important'
+  cibleType String @map("cible_type")
+  cibleId   String @map("cible_id")
+
+  actif Boolean @default(true)
+
+  // Paramètres de notification
+  pushEnabled  Boolean @default(true) @map("push_enabled")
+  emailEnabled Boolean @default(false) @map("email_enabled")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([actif])
+  @@map("alertes")
+}
+
+model Favori {
+  id String @id @default(uuid())
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type    String // 'parlementaire', 'scrutin', 'lobbyiste', 'sujet'
+  cibleId String @map("cible_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, type, cibleId])
+  @@map("favoris")
+}
+
+// =============================================================================
+// CONTENU GÉNÉRÉ (VIDÉOS, INFOGRAPHIES)
+// =============================================================================
+
+model Contenu {
+  id String @id @default(uuid())
+
+  type        String // 'video_short', 'infographie', 'thread', 'resume'
+  titre       String
+  description String?
+
+  // Données structurées pour génération
+  data Json
+
+  // Fichier généré
+  fichierUrl  String? @map("fichier_url")
+  thumbnailUrl String? @map("thumbnail_url")
+
+  statut String @default("draft") // 'draft', 'generating', 'generated', 'published', 'archived'
+
+  // Métriques
+  vues     Int @default(0)
+  partages Int @default(0)
+  likes    Int @default(0)
+
+  // Références
+  parlementaireId  String? @map("parlementaire_id")
+  scrutinId String? @map("scrutin_id")
+
+  publishedAt DateTime? @map("published_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([type])
+  @@index([statut])
+  @@index([publishedAt])
+  @@map("contenus")
+}
+
+// =============================================================================
+// SIMULATEUR 2027
+// =============================================================================
+
+model Candidat2027 {
+  id              String   @id @default(uuid())
+  slug            String   @unique
+  nom             String
+  prenom          String
+  parti           String
+  photoUrl        String?  @map("photo_url")
+
+  // Lien avec parlementaire (si applicable - député ou sénateur)
+  parlementaireId String?  @unique @map("parlementaire_id")
+  parlementaire   Parlementaire?  @relation(fields: [parlementaireId], references: [id])
+
+  // Programme
+  programme       Json     @default("{}")
+  programmeUrl    String?  @map("programme_url")
+  programmeParsedAt DateTime? @map("programme_parsed_at")
+
+  // Scores sur les 8 axes (calculés à partir des votes) - de -100 à +100
+  scoreEconomie       Float @default(0) @map("score_economie")
+  scoreSocial         Float @default(0) @map("score_social")
+  scoreEcologie       Float @default(0) @map("score_ecologie")
+  scoreSecurite       Float @default(0) @map("score_securite")
+  scoreEurope         Float @default(0) @map("score_europe")
+  scoreImmigration    Float @default(0) @map("score_immigration")
+  scoreInstitutions   Float @default(0) @map("score_institutions")
+  scoreInternational  Float @default(0) @map("score_international")
+
+  // Type de score et cohérence
+  scoreType           String  @default("estimated") @map("score_type")
+  coherenceScore      Float   @default(0) @map("coherence_score")
+
+  // Statut
+  ingestionStatus     String  @default("pending") @map("ingestion_status")
+  actif               Boolean @default(true)
+  publishedAt         DateTime? @map("published_at")
+
+  positions       PositionCandidat[]
+  simulations     SimulationResultat[]
+  simulationsVie  SimulationVie[]
+  ingestionLogs   IngestionLog[]
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([parti])
+  @@index([actif])
+  @@map("candidats_2027")
+}
+
+model QuestionSimulateur {
+  id              String   @id @default(uuid())
+  ordre           Int      @unique
+  type            String
+
+  texte           String
+  contexte        String?
+
+  optionA         String?  @map("option_a")
+  optionB         String?  @map("option_b")
+
+  labelGauche     String?  @map("label_gauche")
+  labelDroite     String?  @map("label_droite")
+
+  options         String[] @default([])
+
+  citation        String?
+  citationAuteur  String?  @map("citation_auteur")
+  citationScore   Float?   @map("citation_score")
+
+  axesPoids       Json     @default("{}") @map("axes_poids")
+
+  scrutinId       String?  @map("scrutin_id")
+
+  actif           Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  reponses        ReponseSimulateur[]
+
+  @@map("questions_simulateur")
+}
+
+model PositionCandidat {
+  id              String   @id @default(uuid())
+
+  candidatId      String   @map("candidat_id")
+  candidat        Candidat2027 @relation(fields: [candidatId], references: [id], onDelete: Cascade)
+
+  axe             String
+  sujet           String
+
+  position        String
+  score           Float
+
+  sourceType      String   @map("source_type")
+  sourceUrl       String?  @map("source_url")
+  sourceDate      DateTime? @map("source_date")
+
+  coherent        Boolean  @default(true)
+  explication     String?
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([candidatId])
+  @@index([axe])
+  @@map("positions_candidats")
+}
+
+model SessionSimulateur {
+  id              String   @id @default(uuid())
+
+  userId          String?  @map("user_id")
+  user            User?    @relation(fields: [userId], references: [id])
+
+  sessionToken    String   @unique @map("session_token")
+
+  trancheAge      String?  @map("tranche_age")
+  situation       String?
+  localisation    String?
+  habitat         String?
+
+  statut          String   @default("en_cours")
+  completedAt     DateTime? @map("completed_at")
+
+  profilPolitique String?  @map("profil_politique")
+  scoresAxes      Json?    @map("scores_axes")
+
+  reponses        ReponseSimulateur[]
+  resultats       SimulationResultat[]
+  simulationsVie  SimulationVie[]
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([statut])
+  @@map("sessions_simulateur")
+}
+
+model ReponseSimulateur {
+  id              String   @id @default(uuid())
+
+  sessionId       String   @map("session_id")
+  session         SessionSimulateur @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  questionId      String   @map("question_id")
+  question        QuestionSimulateur @relation(fields: [questionId], references: [id])
+
+  reponse         Json
+  tempsReponseMs  Int?     @map("temps_reponse_ms")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([sessionId, questionId])
+  @@map("reponses_simulateur")
+}
+
+model SimulationResultat {
+  id              String   @id @default(uuid())
+
+  sessionId       String   @map("session_id")
+  session         SessionSimulateur @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  candidatId      String   @map("candidat_id")
+  candidat        Candidat2027 @relation(fields: [candidatId], references: [id])
+
+  matchScore      Float    @map("match_score")
+  scoresDetail    Json     @map("scores_detail")
+
+  pointsForts     String[] @map("points_forts")
+  divergences     String[]
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([sessionId, candidatId])
+  @@map("simulation_resultats")
+}
+
+model SimulationVie {
+  id              String   @id @default(uuid())
+
+  sessionId       String   @map("session_id")
+  session         SessionSimulateur @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  candidatId      String   @map("candidat_id")
+  candidat        Candidat2027 @relation(fields: [candidatId], references: [id])
+
+  profilUtilisateur Json   @map("profil_utilisateur")
+
+  impactPouvoirAchat  Json @map("impact_pouvoir_achat")
+  impactSante         Json @map("impact_sante")
+  impactEnvironnement Json @map("impact_environnement")
+  impactCarriere      Json @map("impact_carriere")
+  impactLogement      Json @map("impact_logement")
+
+  sources         Json
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([sessionId, candidatId])
+  @@map("simulations_vie")
+}
+
+model StatsSimulateur {
+  id              String   @id @default(uuid())
+  date            DateTime @db.Date @unique
+
+  totalSessions   Int      @map("total_sessions")
+  sessionsCompletes Int    @map("sessions_completes")
+
+  repartitionProfils Json  @map("repartition_profils")
+
+  parAge          Json     @map("par_age")
+  parRegion       Json     @map("par_region")
+  parSituation    Json     @map("par_situation")
+
+  scoresMoyens    Json     @map("scores_moyens")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("stats_simulateur")
+}
+
+// =============================================================================
+// SYNC ET LOGS
+// =============================================================================
+
+model SyncLog {
+  id     String @id @default(uuid())
+  source String // 'assemblee_nationale', 'senat', 'hatvp', 'dila', 'legifrance'
+  type   String // 'full', 'incremental'
+  statut String // 'started', 'completed', 'failed'
+
+  itemsProcessed Int @default(0) @map("items_processed")
+  itemsCreated   Int @default(0) @map("items_created")
+  itemsUpdated   Int @default(0) @map("items_updated")
+  errorCount     Int @default(0) @map("error_count")
+
+  metadata Json?
+  error    String?
+
+  startedAt   DateTime  @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  @@index([source])
+  @@index([startedAt])
+  @@map("sync_logs")
+}
+
+// =============================================================================
+// INGESTION CANDIDATS
+// =============================================================================
+
+model IngestionLog {
+  id          String    @id @default(uuid())
+  candidatId  String    @map("candidat_id")
+  candidat    Candidat2027 @relation(fields: [candidatId], references: [id], onDelete: Cascade)
+
+  type        String
+  status      String
+  details     Json?
+  error       String?
+
+  startedAt   DateTime  @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  @@index([candidatId])
+  @@index([type])
+  @@index([startedAt])
+  @@map("ingestion_logs")
+}
+
+model ValidationQueue {
+  id          String    @id @default(uuid())
+  type        String
+  targetId    String    @map("target_id")
+  priority    Int       @default(0)
+  status      String    @default("pending")
+  notes       String?
+
+  validatedBy String?   @map("validated_by")
+  validatedAt DateTime? @map("validated_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([type])
+  @@index([status])
+  @@index([priority])
+  @@map("validation_queue")
+}

@@ -1,0 +1,50 @@
+{
+  "name": "@clair/api",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "start": "node dist/index.js",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "clean": "rm -rf dist node_modules .turbo"
+  },
+  "dependencies": {
+    "@fastify/cors": "^8.5.0",
+    "@fastify/helmet": "^11.1.1",
+    "@fastify/jwt": "^8.0.0",
+    "@fastify/rate-limit": "^9.1.0",
+    "@fastify/swagger": "^8.12.0",
+    "@fastify/swagger-ui": "^2.0.1",
+    "@prisma/client": "^5.7.0",
+    "bullmq": "^5.1.0",
+    "dotenv": "^16.3.1",
+    "fastify": "^4.25.0",
+    "fastify-plugin": "^5.1.0",
+    "ioredis": "^5.3.2",
+    "meilisearch": "^0.36.0",
+    "pino": "^8.17.0",
+    "pino-pretty": "^10.3.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@clair/config": "workspace:*",
+    "@clair/shared": "workspace:*",
+    "@types/node": "^20.10.0",
+    "prisma": "^5.7.0",
+    "tsup": "^8.0.1",
+    "tsx": "^4.6.2",
+    "typescript": "^5.3.0",
+    "vitest": "^1.1.0"
+  }
+}
