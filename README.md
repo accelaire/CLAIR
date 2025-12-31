@@ -48,7 +48,7 @@ clair/
 
 ```bash
 # Cloner le repo
-git clone https://github.com/votre-org/clair.git
+git clone https://github.com/accelaire/CLAIR.git
 cd clair
 
 # Installer les dépendances
@@ -90,7 +90,10 @@ pnpm dev
 |--------|------|---------|
 | [Assemblée Nationale Open Data](https://data.assemblee-nationale.fr) | Députés | 577 députés, scrutins, votes, amendements |
 | [Sénat Open Data](https://data.senat.fr) | Sénateurs | 348 sénateurs, scrutins, votes |
-| [HATVP](https://www.hatvp.fr) | Lobbying | Registre des représentants d'intérêts |
+| [HATVP Open Data](https://www.hatvp.fr/open-data) | Lobbying | Registre des représentants d'intérêts, actions |
+| [DILA](https://echanges.dila.gouv.fr) | Interventions | Comptes rendus des débats parlementaires |
+
+> **Documentation complète** : Voir [docs/INGESTION.md](docs/INGESTION.md) pour le guide d'ingestion et la planification.
 
 ---
 
@@ -120,12 +123,19 @@ pnpm docker:down      # Arrêter les services
 pnpm docker:logs      # Voir les logs
 
 # Ingestion des données
-pnpm ingestion:sync             # Sync incrémental (tout)
+pnpm ingestion:sync             # Sync incrémental (députés + sénateurs)
 pnpm ingestion:sync -- -d       # Députés uniquement
 pnpm ingestion:sync -- -S       # Sénateurs uniquement
-pnpm ingestion:sync -- -s       # Scrutins AN uniquement
+pnpm ingestion:sync -- -s       # Scrutins AN
 pnpm ingestion:sync -- --scrutins-senat  # Scrutins Sénat
+pnpm ingestion:sync -- -L       # Lobbyistes + actions (HATVP)
+pnpm ingestion:sync -- -L --no-actions   # Lobbyistes sans actions
+pnpm ingestion:sync -- -i       # Interventions AN (DILA)
+pnpm ingestion:sync -- -a       # Amendements AN
 pnpm ingestion:backfill         # Backfill complet
+
+# Options communes
+pnpm ingestion:sync -- -s -l 50 # Limiter à 50 scrutins
 
 # Qualité
 pnpm lint             # Linter
@@ -251,4 +261,5 @@ AGPL-3.0 - voir [LICENSE](LICENSE)
 ## Contact
 
 - **Axel Robaldo** : axel.roba@gmail.com
-- Issues : [GitHub Issues](https://github.com/votre-org/clair/issues)
+- GitHub : [github.com/accelaire/CLAIR](https://github.com/accelaire/CLAIR)
+- Issues : [GitHub Issues](https://github.com/accelaire/CLAIR/issues)

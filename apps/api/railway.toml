@@ -1,0 +1,13 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @clair/api db:generate && pnpm --filter @clair/api build"
+
+[deploy]
+startCommand = "pnpm --filter @clair/api start"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+[service]
+internalPort = 3001

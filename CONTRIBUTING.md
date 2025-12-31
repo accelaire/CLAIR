@@ -10,7 +10,7 @@ Ce projet est un outil citoyen et apartisan. Les contributions doivent rester fa
 
 ### Signaler un bug
 
-1. Vérifie que le bug n'a pas déjà été signalé dans les [Issues](https://github.com/votre-org/clair/issues)
+1. Vérifie que le bug n'a pas déjà été signalé dans les [Issues](https://github.com/accelaire/CLAIR/issues)
 2. Ouvre une nouvelle issue avec :
    - Un titre clair et descriptif
    - Les étapes pour reproduire le bug
