@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Menu, X, Search } from 'lucide-react';
+import { Menu, X, Search, Heart } from 'lucide-react';
 
 const navigation = [
   { name: 'Députés', href: '/deputes' },
@@ -47,6 +47,13 @@ export function Header() {
 
           {/* Actions */}
           <div className="flex items-center space-x-4">
+            <Link
+              href="/soutenir"
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 text-sm font-medium transition-colors"
+            >
+              <Heart className="h-4 w-4" />
+              Soutenir
+            </Link>
             <Link
               href="/recherche"
               className="rounded-lg p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -100,6 +107,14 @@ export function Header() {
                   )}
                 </Link>
               ))}
+              <Link
+                href="/soutenir"
+                className="inline-flex items-center gap-2 text-base font-medium text-red-500 transition-colors hover:text-red-600"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <Heart className="h-4 w-4" />
+                Soutenir CLAIR
+              </Link>
             </div>
           </div>
         )}

@@ -142,7 +142,7 @@ export function Footer() {
 
           <div className="flex items-center space-x-4">
             <a
-              href="https://github.com/clair-politique"
+              href="https://github.com/accelaire/CLAIR"
               target="_blank"
               rel="noopener noreferrer"
               className="text-muted-foreground hover:text-foreground"
@@ -151,11 +151,11 @@ export function Footer() {
               <Github className="h-5 w-5" />
             </a>
             <a
-              href="https://twitter.com/clair_politique"
+              href="https://x.com/clair_politique"
               target="_blank"
               rel="noopener noreferrer"
               className="text-muted-foreground hover:text-foreground"
-              aria-label="Twitter"
+              aria-label="X (Twitter)"
             >
               <Twitter className="h-5 w-5" />
             </a>
