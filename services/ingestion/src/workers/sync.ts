@@ -1171,6 +1171,130 @@ export async function syncAmendements(
 }
 
 // =============================================================================
+// SYNC AMENDEMENTS SÉNAT (data.senat.fr AMELI)
+// =============================================================================
+
+export async function syncAmendementsSenat(
+  options: { maxAmendements?: number; minYear?: number } = {}
+): Promise<{ created: number; updated: number; linked: number }> {
+  const { SenatAmendementsClient } = await import('../sources/senat/amendements-client.js');
+
+  logger.info({ maxAmendements: options.maxAmendements, minYear: options.minYear }, 'Starting amendements Sénat sync...');
+
+  const amendementClient = new SenatAmendementsClient();
+  const rawAmendements = await amendementClient.getAmendements(options);
+
+  let created = 0;
+  let updated = 0;
+  let linked = 0;
+
+  // Charger les sénateurs pour le mapping matricule/nom -> parlementaireId
+  const parlementaires = await prisma.parlementaire.findMany({
+    where: { chambre: 'senat' },
+    select: { id: true, sourceId: true, nom: true, prenom: true }
+  });
+
+  const normalize = (s: string) => s.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/-/g, ' ').replace(/'/g, ' ').trim();
+
+  // Map par matricule et par nom
+  const parlementaireByMatricule = new Map<string, string>();
+  const parlementaireByName = new Map<string, string>();
+  for (const p of parlementaires) {
+    if (p.sourceId) parlementaireByMatricule.set(p.sourceId, p.id);
+    parlementaireByName.set(normalize(p.nom), p.id);
+    const parts = p.nom.trim().split(/\s+/);
+    if (parts.length > 1) {
+      const lastName = parts[parts.length - 1];
+      if (lastName && lastName.length > 3) {
+        parlementaireByName.set(normalize(lastName), p.id);
+      }
+    }
+  }
+
+  const chambre = 'senat';
+  const batchSize = 100;
+  const batches = Math.ceil(rawAmendements.length / batchSize);
+
+  for (let i = 0; i < batches; i++) {
+    const batch = rawAmendements.slice(i * batchSize, (i + 1) * batchSize);
+
+    for (const amd of batch) {
+      try {
+        // Chercher le parlementaire
+        let parlementaireId: string | null = null;
+
+        // D'abord par matricule
+        if (amd.auteurMatricule) {
+          parlementaireId = parlementaireByMatricule.get(amd.auteurMatricule) || null;
+        }
+
+        // Sinon par nom
+        if (!parlementaireId && amd.auteurNom) {
+          const nomNorm = normalize(amd.auteurNom);
+          parlementaireId = parlementaireByName.get(nomNorm) || null;
+
+          // Recherche partielle
+          if (!parlementaireId) {
+            for (const [name, id] of parlementaireByName) {
+              if (nomNorm.includes(name) || name.includes(nomNorm)) {
+                parlementaireId = id;
+                break;
+              }
+            }
+          }
+        }
+
+        const existing = await prisma.amendement.findUnique({
+          where: { uid: amd.uid },
+        });
+
+        const data = {
+          uid: amd.uid,
+          numero: amd.numero,
+          legislature: 0, // Non applicable pour le Sénat
+          chambre,
+          parlementaireId,
+          auteurRef: amd.auteurMatricule,
+          groupeRef: null,
+          auteurLibelle: amd.auteurLibelle,
+          texteRef: amd.texteRef,
+          articleVise: null,
+          dispositif: amd.dispositif,
+          exposeSommaire: amd.exposeSommaire,
+          sort: amd.sort,
+          dateDepot: amd.dateDepot,
+          dateSort: null,
+        };
+
+        if (existing) {
+          await prisma.amendement.update({
+            where: { uid: amd.uid },
+            data,
+          });
+          updated++;
+        } else {
+          await prisma.amendement.create({ data });
+          created++;
+        }
+
+        if (parlementaireId) linked++;
+      } catch (error: any) {
+        logger.warn({ uid: amd.uid, error: error.message }, 'Error syncing amendement Sénat');
+      }
+    }
+
+    if ((i + 1) % 10 === 0) {
+      logger.debug({ batch: i + 1, total: batches, created, updated, linked }, 'Batch processed');
+    }
+  }
+
+  logger.info({ created, updated, linked, total: rawAmendements.length }, 'Amendements Sénat sync completed');
+  return { created, updated, linked };
+}
+
+// =============================================================================
 // SYNC LOBBYISTES (HATVP)
 // =============================================================================
 

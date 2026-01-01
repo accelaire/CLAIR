@@ -5,7 +5,7 @@
 
 import 'dotenv/config';
 import { Command } from 'commander';
-import { fullSync, incrementalSync, syncGroupes, syncDeputes, syncSenateurs, syncScrutins, syncScrutinsSenat, syncInterventions, syncInterventionsSenat, syncAmendements, syncLobbyistes } from './workers/sync.js';
+import { fullSync, incrementalSync, syncGroupes, syncDeputes, syncSenateurs, syncScrutins, syncScrutinsSenat, syncInterventions, syncInterventionsSenat, syncAmendements, syncAmendementsSenat, syncLobbyistes } from './workers/sync.js';
 import { logger } from './utils/logger';
 
 const program = new Command();
@@ -31,6 +31,7 @@ program
   .option('-i, --interventions', 'Synchroniser uniquement les interventions AN')
   .option('--interventions-senat', 'Synchroniser uniquement les interventions Sénat (data.senat.fr)')
   .option('-a, --amendements', 'Synchroniser uniquement les amendements (AN Open Data)')
+  .option('--amendements-senat', 'Synchroniser uniquement les amendements Sénat (data.senat.fr AMELI)')
   .option('-L, --lobbying', 'Synchroniser uniquement les lobbyistes (HATVP)')
   .option('-l, --limit <number>', 'Limiter le nombre de scrutins/séances/amendements/lobbyistes', parseInt)
   .option('--no-actions', 'Ne pas synchroniser les actions de lobbying (avec -L)')
@@ -59,6 +60,8 @@ program
         await syncInterventionsSenat({ maxSeances: options.limit });
       } else if (options.amendements) {
         await syncAmendements({ limit: options.limit });
+      } else if (options.amendementsSenat) {
+        await syncAmendementsSenat({ maxAmendements: options.limit });
       } else if (options.lobbying) {
         await syncLobbyistes({ limit: options.limit, includeActions: options.actions !== false });
       } else {
