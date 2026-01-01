@@ -145,22 +145,20 @@ export default function LobbyingPage() {
         </div>
       )}
 
-      {/* Filtres - Ligne 1 : Recherche */}
-      <div className="mb-4">
-        <div className="relative">
+      {/* Filtres - Tout sur une seule ligne */}
+      <div className="mb-8 flex flex-wrap items-center gap-3">
+        {/* Recherche */}
+        <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
             placeholder="Rechercher un lobbyiste..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border bg-background px-10 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full rounded-lg border bg-background pl-10 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
-      </div>
 
-      {/* Filtres - Ligne 2 : Type, Secteur, Tri */}
-      <div className="mb-8 flex flex-wrap items-center gap-3">
         {/* Filtre par type */}
         <div className="relative">
           <select
@@ -177,7 +175,7 @@ export default function LobbyingPage() {
         </div>
 
         {/* Filtre par secteur */}
-        <div className="relative flex-1 min-w-[200px] max-w-md">
+        <div className="relative min-w-[180px]">
           <select
             value={secteur}
             onChange={(e) => setSecteur(e.target.value)}

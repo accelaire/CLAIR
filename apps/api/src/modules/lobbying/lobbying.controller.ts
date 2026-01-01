@@ -54,10 +54,18 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         ...(search && { nom: { contains: search, mode: 'insensitive' as const } }),
       };
 
-      const orderByMap: Record<string, any> = {
-        nom: { nom: order },
-        budget: { budgetAnnuel: order },
-      };
+      // Build orderBy based on sort field
+      let orderBy: any;
+      switch (sort) {
+        case 'budget':
+          orderBy = { budgetAnnuel: order };
+          break;
+        case 'actions':
+          orderBy = { actions: { _count: order } };
+          break;
+        default:
+          orderBy = { nom: order };
+      }
 
       const [lobbyistes, total] = await Promise.all([
         fastify.prisma.lobbyiste.findMany({
@@ -65,7 +73,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           include: {
             _count: { select: { actions: true } },
           },
-          orderBy: orderByMap[sort] || { nom: order },
+          orderBy,
           skip,
           take: limit,
         }),
