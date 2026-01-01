@@ -6,6 +6,16 @@ import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { ApiError } from '../../utils/errors';
 
+// Fix AN sourceUrl format: VTANR5L17V4946 -> 4946
+const fixSourceUrl = (sourceUrl: string | null, chambre: string, numero: number): string | null => {
+  if (!sourceUrl) return null;
+  // Fix AN URLs with wrong format (VTANR5L17Vxxxx instead of just xxxx)
+  if (chambre === 'assemblee' && sourceUrl.includes('/VTANR')) {
+    return `https://www.assemblee-nationale.fr/dyn/17/scrutins/${numero}`;
+  }
+  return sourceUrl;
+};
+
 // Schemas
 const scrutinsListQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -201,8 +211,9 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       const { numero } = z.object({ numero: z.coerce.number().int().positive() }).parse(request.params);
       const { chambre = 'assemblee' } = request.query as { chambre?: string };
 
-      const scrutin = await fastify.prisma.scrutin.findUnique({
-        where: { numero_chambre: { numero, chambre } },
+      // Use findFirst instead of findUnique to avoid composite key issues
+      const scrutin = await fastify.prisma.scrutin.findFirst({
+        where: { numero, chambre },
         include: {
           votes: {
             include: {
@@ -254,6 +265,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       return {
         data: {
           ...scrutin,
+          sourceUrl: fixSourceUrl(scrutin.sourceUrl, scrutin.chambre, scrutin.numero),
           votes: undefined,
           votesByPosition,
           votesByGroupe,
@@ -294,8 +306,9 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       const { page = 1, limit = 50, chambre = 'assemblee', position, groupe } = request.query as any;
       const skip = (page - 1) * limit;
 
-      const scrutin = await fastify.prisma.scrutin.findUnique({
-        where: { numero_chambre: { numero, chambre } },
+      // Use findFirst instead of findUnique to avoid composite key issues
+      const scrutin = await fastify.prisma.scrutin.findFirst({
+        where: { numero, chambre },
         select: { id: true },
       });
 

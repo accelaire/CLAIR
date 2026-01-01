@@ -63,6 +63,8 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         totalLobbyistes,
         totalActions,
         groupes,
+        totalInterventions,
+        totalAmendements,
       ] = await Promise.all([
         fastify.prisma.parlementaire.count({ where: { actif: true } }),
         fastify.prisma.scrutin.count({
@@ -78,6 +80,12 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
           where: dateFrom ? { dateDebut: { gte: dateFrom } } : undefined,
         }),
         fastify.prisma.groupePolitique.count({ where: { actif: true } }),
+        fastify.prisma.intervention.count({
+          where: dateFrom ? { date: { gte: dateFrom } } : undefined,
+        }),
+        fastify.prisma.amendement.count({
+          where: dateFrom ? { dateDepot: { gte: dateFrom } } : undefined,
+        }),
       ]);
 
       // Calcul du taux de participation moyen
@@ -103,6 +111,8 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
           totalVotes,
           totalLobbyistes,
           totalActions,
+          totalInterventions,
+          totalAmendements,
           groupesPolitiques: groupes,
           avgParticipation: Math.round(avgParticipation),
         },

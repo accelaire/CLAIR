@@ -146,9 +146,9 @@ export default function LobbyingPage() {
       )}
 
       {/* Filtres - Tout sur une seule ligne */}
-      <div className="mb-8 flex flex-wrap items-center gap-3">
+      <div className="mb-8 flex items-center gap-3">
         {/* Recherche */}
-        <div className="relative flex-1 min-w-[200px]">
+        <div className="relative w-64">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
@@ -175,7 +175,7 @@ export default function LobbyingPage() {
         </div>
 
         {/* Filtre par secteur */}
-        <div className="relative min-w-[180px]">
+        <div className="relative flex-1">
           <select
             value={secteur}
             onChange={(e) => setSecteur(e.target.value)}

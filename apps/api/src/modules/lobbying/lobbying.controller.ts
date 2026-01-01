@@ -55,10 +55,12 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
       };
 
       // Build orderBy based on sort field
+      // Note: For budget sorting, we need to handle nulls properly
+      // In PostgreSQL, nulls sort first in DESC order by default, which is not what we want
       let orderBy: any;
       switch (sort) {
         case 'budget':
-          orderBy = { budgetAnnuel: order };
+          orderBy = { budgetAnnuel: { sort: order, nulls: 'last' } };
           break;
         case 'actions':
           orderBy = { actions: { _count: order } };
