@@ -191,7 +191,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         include: {
           actions: {
             include: {
-              depute: {
+              parlementaire: {
                 select: {
                   id: true,
                   slug: true,
@@ -265,7 +265,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         fastify.prisma.actionLobby.findMany({
           where,
           include: {
-            depute: {
+            parlementaire: {
               select: {
                 id: true,
                 slug: true,
@@ -325,7 +325,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           lobbyiste: {
             select: { id: true, nom: true, type: true, secteur: true },
           },
-          depute: {
+          parlementaire: {
             select: {
               id: true,
               slug: true,

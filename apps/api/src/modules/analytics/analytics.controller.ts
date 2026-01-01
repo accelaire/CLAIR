@@ -61,7 +61,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         totalActions,
         groupes,
       ] = await Promise.all([
-        fastify.prisma.depute.count({ where: { actif: true } }),
+        fastify.prisma.parlementaire.count({ where: { actif: true } }),
         fastify.prisma.scrutin.count({
           where: dateFrom ? { date: { gte: dateFrom } } : undefined,
         }),
@@ -124,7 +124,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
           nom: true,
           couleur: true,
           position: true,
-          _count: { select: { deputes: { where: { actif: true } } } },
+          _count: { select: { parlementaires: { where: { actif: true } } } },
         },
         orderBy: { ordre: 'asc' },
       });
@@ -135,7 +135,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
           nom: g.nom,
           couleur: g.couleur,
           position: g.position,
-          nbDeputes: g._count.deputes,
+          nbDeputes: g._count.parlementaires,
         })),
       };
     },
@@ -235,13 +235,13 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
       const { limit = 15 } = request.query as { limit?: number };
       const dateFrom = getDateFromPeriode(filters.periode);
 
-      // Compter les votes par député
+      // Compter les votes par parlementaire
       const voteCounts = await fastify.prisma.vote.groupBy({
-        by: ['deputeId'],
+        by: ['parlementaireId'],
         where: {
           position: { in: ['pour', 'contre', 'abstention'] }, // Exclure les absents
           ...(dateFrom && { scrutin: { date: { gte: dateFrom } } }),
-          ...(filters.groupe && { depute: { groupe: { slug: filters.groupe } } }),
+          ...(filters.groupe && { parlementaire: { groupe: { slug: filters.groupe } } }),
           ...(filters.theme && { scrutin: { tags: { has: filters.theme } } }),
         },
         _count: { id: true },
@@ -249,10 +249,10 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         take: limit,
       });
 
-      const deputeIds = voteCounts.map((v) => v.deputeId);
+      const parlementaireIds = voteCounts.map((v) => v.parlementaireId);
 
-      const deputes = await fastify.prisma.depute.findMany({
-        where: { id: { in: deputeIds } },
+      const parlementaires = await fastify.prisma.parlementaire.findMany({
+        where: { id: { in: parlementaireIds } },
         select: {
           id: true,
           slug: true,
@@ -265,19 +265,19 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       });
 
-      const deputeMap = new Map(deputes.map((d) => [d.id, d]));
+      const parlementaireMap = new Map(parlementaires.map((p) => [p.id, p]));
 
       const result = voteCounts.map((vc) => {
-        const depute = deputeMap.get(vc.deputeId);
+        const parlementaire = parlementaireMap.get(vc.parlementaireId);
         return {
-          id: vc.deputeId,
-          slug: depute?.slug,
-          nom: depute?.nom,
-          prenom: depute?.prenom,
-          photoUrl: depute?.photoUrl,
-          groupe: depute?.groupe?.nom,
-          couleur: depute?.groupe?.couleur,
-          score: vc._count.id,
+          id: vc.parlementaireId,
+          slug: parlementaire?.slug,
+          nom: parlementaire?.nom,
+          prenom: parlementaire?.prenom,
+          photoUrl: parlementaire?.photoUrl,
+          groupe: parlementaire?.groupe?.nom,
+          couleur: parlementaire?.groupe?.couleur,
+          score: vc._count?.id || 0,
         };
       });
 
@@ -444,12 +444,12 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
       const votes = await fastify.prisma.vote.findMany({
         where: {
           position: { in: ['pour', 'contre'] },
-          depute: { groupeId: { not: null } },
+          parlementaire: { groupeId: { not: null } },
           ...(dateFrom && { scrutin: { date: { gte: dateFrom } } }),
         },
         select: {
           position: true,
-          depute: {
+          parlementaire: {
             select: {
               id: true,
               slug: true,
@@ -472,8 +472,8 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
       const groupePositions: Map<string, Map<string, { pour: number; contre: number }>> = new Map();
 
       for (const vote of votes) {
-        if (!vote.depute.groupe) continue;
-        const groupeId = vote.depute.groupe.id;
+        if (!vote.parlementaire.groupe) continue;
+        const groupeId = vote.parlementaire.groupe.id;
         const scrutinId = vote.scrutin.id;
         const key = `${groupeId}-${scrutinId}`;
 
@@ -489,12 +489,12 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         else if (vote.position === 'contre') pos.contre++;
       }
 
-      // Compter les dissidences par député
-      const dissidences: Map<string, { depute: any; count: number; total: number }> = new Map();
+      // Compter les dissidences par parlementaire
+      const dissidences: Map<string, { parlementaire: typeof votes[0]['parlementaire']; count: number; total: number }> = new Map();
 
       for (const vote of votes) {
-        if (!vote.depute.groupe) continue;
-        const groupeId = vote.depute.groupe.id;
+        if (!vote.parlementaire.groupe) continue;
+        const groupeId = vote.parlementaire.groupe.id;
         const scrutinId = vote.scrutin.id;
         const key = `${groupeId}-${scrutinId}`;
 
@@ -507,10 +507,10 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         const majoritaire = pos.pour > pos.contre ? 'pour' : 'contre';
         const isDissidence = vote.position !== majoritaire && Math.abs(pos.pour - pos.contre) > 5;
 
-        if (!dissidences.has(vote.depute.id)) {
-          dissidences.set(vote.depute.id, { depute: vote.depute, count: 0, total: 0 });
+        if (!dissidences.has(vote.parlementaire.id)) {
+          dissidences.set(vote.parlementaire.id, { parlementaire: vote.parlementaire, count: 0, total: 0 });
         }
-        const d = dissidences.get(vote.depute.id)!;
+        const d = dissidences.get(vote.parlementaire.id)!;
         d.total++;
         if (isDissidence) d.count++;
       }
@@ -519,13 +519,13 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
       const result = Array.from(dissidences.values())
         .filter((d) => d.total >= 10) // Au moins 10 votes
         .map((d) => ({
-          id: d.depute.id,
-          slug: d.depute.slug,
-          nom: d.depute.nom,
-          prenom: d.depute.prenom,
-          photoUrl: d.depute.photoUrl,
-          groupe: d.depute.groupe?.nom,
-          couleur: d.depute.groupe?.couleur,
+          id: d.parlementaire.id,
+          slug: d.parlementaire.slug,
+          nom: d.parlementaire.nom,
+          prenom: d.parlementaire.prenom,
+          photoUrl: d.parlementaire.photoUrl,
+          groupe: d.parlementaire.groupe?.nom,
+          couleur: d.parlementaire.groupe?.couleur,
           dissidences: d.count,
           totalVotes: d.total,
           tauxDissidence: Math.round((d.count / d.total) * 100),

@@ -147,11 +147,16 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, reply) => {
       const { limit = 10 } = request.query as { limit?: number };
 
+      // Only show scrutins from the last 6 months
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
       const scrutins = await fastify.prisma.scrutin.findMany({
         where: {
           importance: { gte: 3 },
+          date: { gte: sixMonthsAgo },
         },
-        orderBy: [{ importance: 'desc' }, { date: 'desc' }],
+        orderBy: [{ date: 'desc' }, { importance: 'desc' }],
         take: limit,
       });
 
