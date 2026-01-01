@@ -350,10 +350,15 @@ export class ParlementairesService {
       this.prisma.amendement.count({
         where: { parlementaireId },
       }),
+      // Match both 'Adopté' (AN format) and 'adopte' (Sénat format)
       this.prisma.amendement.count({
         where: {
           parlementaireId,
-          sort: 'adopte',
+          OR: [
+            { sort: 'Adopté' },
+            { sort: 'adopte' },
+            { sort: 'adopte_modifie' },
+          ],
         },
       }),
     ]);

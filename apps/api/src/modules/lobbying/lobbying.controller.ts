@@ -63,7 +63,8 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
       let orderBy: any;
       switch (sort) {
         case 'budget':
-          orderBy = { budgetAnnuel: { sort: order, nulls: 'last' } };
+          // nulls: 'last' for desc (big budgets first), 'first' for asc (no budget first)
+          orderBy = { budgetAnnuel: { sort: order, nulls: order === 'desc' ? 'last' : 'first' } };
           break;
         case 'actions':
           orderBy = { actions: { _count: order } };

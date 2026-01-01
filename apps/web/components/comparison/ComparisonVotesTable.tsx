@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 import { Vote, Filter, ChevronDown, Loader2, Calendar } from 'lucide-react';
 import { api } from '@/lib/api';
 
@@ -205,7 +206,12 @@ export function ComparisonVotesTable({ parlementaires, chambre }: ComparisonVote
               >
                 {/* Scrutin info */}
                 <div className="space-y-1">
-                  <div className="font-medium line-clamp-2">{vote.scrutin.titre}</div>
+                  <Link
+                    href={`/scrutins/${vote.scrutin.numero}`}
+                    className="font-medium line-clamp-2 hover:text-primary hover:underline transition-colors"
+                  >
+                    {vote.scrutin.titre}
+                  </Link>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Calendar className="h-3 w-3" />
                     {new Date(vote.scrutin.date).toLocaleDateString('fr-FR')}
