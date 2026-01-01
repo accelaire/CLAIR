@@ -25,6 +25,7 @@ import {
   ChevronUp,
   Facebook,
   Loader2,
+  GitCompareArrows,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { PeriodFilter, usePeriodFilter } from '@/components/PeriodFilter';
@@ -600,14 +601,25 @@ export default function SenateurDetailPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      {/* Breadcrumb */}
-      <Link
-        href="/senateurs"
-        className="mb-6 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Tous les sénateurs
-      </Link>
+      {/* Breadcrumb + Action */}
+      <div className="mb-6 flex items-center justify-between">
+        <Link
+          href="/senateurs"
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Tous les sénateurs
+        </Link>
+
+        {/* Bouton Comparer - bien visible */}
+        <Link
+          href={`/senateurs?compare=${senateur.slug}`}
+          className="inline-flex items-center gap-2 rounded-lg border-2 border-primary/20 bg-primary/5 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/10 hover:border-primary/40 transition-colors"
+        >
+          <GitCompareArrows className="h-4 w-4" />
+          <span>Comparer avec un autre sénateur</span>
+        </Link>
+      </div>
 
       {/* Header */}
       <div className="mb-8 flex flex-col gap-8 md:flex-row">
