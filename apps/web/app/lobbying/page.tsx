@@ -184,9 +184,9 @@ export default function LobbyingPage() {
             onChange={(e) => setSort(e.target.value as any)}
             className="appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
-            <option value="nom">Tri: Nom</option>
-            <option value="budget">Tri: Budget</option>
-            <option value="actions">Tri: Actions</option>
+            <option value="nom">Tri: Nom (A→Z)</option>
+            <option value="budget">Tri: Budget (↓)</option>
+            <option value="actions">Tri: Actions (↓)</option>
           </select>
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>

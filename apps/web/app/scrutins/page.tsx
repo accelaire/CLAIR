@@ -14,9 +14,10 @@ interface Scrutin {
   titre: string;
   sort: string;
   typeVote: string;
-  pour: number;
-  contre: number;
-  abstention: number;
+  nombrePour: number;
+  nombreContre: number;
+  nombreAbstention: number;
+  nombreVotants: number;
   importance: number;
   tags: string[];
   votesCount?: number;
@@ -249,14 +250,14 @@ export default function ScrutinsPage() {
                     <div className="flex items-center gap-3 text-sm">
                       <span className="flex items-center gap-1 text-green-600">
                         <CheckCircle className="h-4 w-4" />
-                        {scrutin.pour}
+                        {scrutin.nombrePour}
                       </span>
                       <span className="flex items-center gap-1 text-red-600">
                         <XCircle className="h-4 w-4" />
-                        {scrutin.contre}
+                        {scrutin.nombreContre}
                       </span>
                       <span className="text-muted-foreground">
-                        {scrutin.abstention} abs.
+                        {scrutin.nombreAbstention} abs.
                       </span>
                     </div>
 
