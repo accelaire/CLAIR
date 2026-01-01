@@ -145,10 +145,9 @@ export default function LobbyingPage() {
         </div>
       )}
 
-      {/* Filtres */}
-      <div className="mb-8 flex flex-col gap-4 sm:flex-row flex-wrap">
-        {/* Recherche */}
-        <div className="relative flex-1 min-w-[200px]">
+      {/* Filtres - Ligne 1 : Recherche */}
+      <div className="mb-4">
+        <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
@@ -158,7 +157,10 @@ export default function LobbyingPage() {
             className="w-full rounded-lg border bg-background px-10 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
+      </div>
 
+      {/* Filtres - Ligne 2 : Type, Secteur, Tri */}
+      <div className="mb-8 flex flex-wrap items-center gap-3">
         {/* Filtre par type */}
         <div className="relative">
           <select
@@ -175,11 +177,11 @@ export default function LobbyingPage() {
         </div>
 
         {/* Filtre par secteur */}
-        <div className="relative">
+        <div className="relative flex-1 min-w-[200px] max-w-md">
           <select
             value={secteur}
             onChange={(e) => setSecteur(e.target.value)}
-            className="appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary min-w-[150px]"
+            className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Tous les secteurs</option>
             {secteursData?.slice(0, 20).map((s: { name: string; count: number }) => (
@@ -192,11 +194,16 @@ export default function LobbyingPage() {
         </div>
 
         {/* Tri */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0">
           <div className="relative">
             <select
               value={sort}
-              onChange={(e) => setSort(e.target.value as 'nom' | 'budget' | 'actions')}
+              onChange={(e) => {
+                const newSort = e.target.value as 'nom' | 'budget' | 'actions';
+                setSort(newSort);
+                // Auto-set order: asc for nom, desc for budget/actions
+                setOrder(newSort === 'nom' ? 'asc' : 'desc');
+              }}
               className="appearance-none rounded-lg rounded-r-none border border-r-0 bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="nom">Tri: Nom</option>
