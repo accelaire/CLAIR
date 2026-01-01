@@ -144,7 +144,7 @@ function DeputesPageContent() {
         <div>
           <h1 className="text-3xl font-bold">Députés</h1>
           <p className="mt-2 text-muted-foreground">
-            577 députés à l&apos;Assemblée nationale — XVIIe législature
+            {total > 0 ? total : '—'} députés à l&apos;Assemblée nationale — XVIIe législature
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Source : <a href="https://data.assemblee-nationale.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.assemblee-nationale.fr</a>

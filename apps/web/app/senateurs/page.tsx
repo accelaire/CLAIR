@@ -144,7 +144,7 @@ function SenateursPageContent() {
         <div>
           <h1 className="text-3xl font-bold">Sénateurs</h1>
           <p className="mt-2 text-muted-foreground">
-            348 sénateurs au Sénat de la République
+            {total > 0 ? total : '—'} sénateurs au Sénat de la République
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Source : <a href="https://data.senat.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.senat.fr</a>
