@@ -188,6 +188,48 @@ async function buildApp() {
 }
 
 // =============================================================================
+// CACHE WARMING - Prevents cold start OOM on Railway
+// =============================================================================
+
+async function warmCache(fastifyApp: Awaited<ReturnType<typeof buildApp>>) {
+  logger.info('Starting cache warming...');
+
+  // Routes to warm - executed SEQUENTIALLY to avoid OOM
+  const routesToWarm = [
+    '/api/v1/scrutins/importants',
+    '/api/v1/analytics/stats',
+    '/api/v1/lobbying/stats',
+    '/api/v1/deputes?limit=20',
+    '/api/v1/senateurs?limit=20',
+    '/api/v1/scrutins?limit=20',
+    '/api/v1/deputes/groupes',
+    '/api/v1/senateurs/groupes',
+  ];
+
+  for (const route of routesToWarm) {
+    try {
+      const response = await fastifyApp.inject({
+        method: 'GET',
+        url: route,
+      });
+      logger.info({ route, status: response.statusCode }, 'Cache warmed');
+
+      // Force garbage collection between routes if available
+      if (global.gc) {
+        global.gc();
+      }
+
+      // Small delay to let memory settle
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } catch (error) {
+      logger.warn({ route, error }, 'Failed to warm cache for route');
+    }
+  }
+
+  logger.info('Cache warming complete');
+}
+
+// =============================================================================
 // START SERVER
 // =============================================================================
 
@@ -223,8 +265,14 @@ async function start() {
     // Log initial memory usage
     logMemoryUsage();
 
-    // Monitor memory every 5 minutes in production
+    // Warm cache in production to prevent cold start OOM
     if (process.env.NODE_ENV === 'production') {
+      // Run cache warming in background (don't block server startup)
+      warmCache(app).catch((err) => {
+        logger.error({ err }, 'Cache warming failed');
+      });
+
+      // Monitor memory every 5 minutes
       memoryMonitorInterval = setInterval(logMemoryUsage, 5 * 60 * 1000);
     }
   } catch (err) {

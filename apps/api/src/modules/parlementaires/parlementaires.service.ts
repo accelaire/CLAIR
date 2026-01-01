@@ -14,8 +14,8 @@ import {
 } from './parlementaires.schema';
 
 export class ParlementairesService {
-  private readonly CACHE_TTL = 300; // 5 minutes
-  private readonly CACHE_TTL_LONG = 3600; // 1 heure
+  private readonly CACHE_TTL = 3600; // 1 hour (data synced daily)
+  private readonly CACHE_TTL_LONG = 43200; // 12 hours
 
   constructor(
     private prisma: PrismaClient,
