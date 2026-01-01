@@ -3,7 +3,8 @@ builder = "NIXPACKS"
 buildCommand = "cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @clair/api db:generate && pnpm --filter @clair/api build"
 
 [deploy]
-startCommand = "node --max-old-space-size=512 dist/index.js"
+# With 8GB RAM available, use 4GB heap for Node.js
+startCommand = "node --max-old-space-size=4096 dist/index.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 60
 restartPolicyType = "ON_FAILURE"
