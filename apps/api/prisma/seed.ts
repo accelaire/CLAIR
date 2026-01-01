@@ -17,10 +17,11 @@ async function main() {
 
   const groupes = await Promise.all([
     prisma.groupePolitique.upsert({
-      where: { slug: 'rn' },
+      where: { slug_chambre: { slug: 'rn', chambre: 'assemblee' } },
       update: {},
       create: {
         slug: 'rn',
+        chambre: 'assemblee',
         nom: 'RN',
         nomComplet: 'Rassemblement National',
         couleur: '#0D47A1',
@@ -29,10 +30,11 @@ async function main() {
       },
     }),
     prisma.groupePolitique.upsert({
-      where: { slug: 'lr' },
+      where: { slug_chambre: { slug: 'lr', chambre: 'assemblee' } },
       update: {},
       create: {
         slug: 'lr',
+        chambre: 'assemblee',
         nom: 'LR',
         nomComplet: 'Les Républicains',
         couleur: '#1565C0',
@@ -41,10 +43,11 @@ async function main() {
       },
     }),
     prisma.groupePolitique.upsert({
-      where: { slug: 'ens' },
+      where: { slug_chambre: { slug: 'ens', chambre: 'assemblee' } },
       update: {},
       create: {
         slug: 'ens',
+        chambre: 'assemblee',
         nom: 'ENS',
         nomComplet: 'Ensemble pour la République',
         couleur: '#FFB300',
@@ -53,10 +56,11 @@ async function main() {
       },
     }),
     prisma.groupePolitique.upsert({
-      where: { slug: 'modem' },
+      where: { slug_chambre: { slug: 'modem', chambre: 'assemblee' } },
       update: {},
       create: {
         slug: 'modem',
+        chambre: 'assemblee',
         nom: 'MoDem',
         nomComplet: 'Mouvement Démocrate',
         couleur: '#FF9800',
@@ -65,10 +69,11 @@ async function main() {
       },
     }),
     prisma.groupePolitique.upsert({
-      where: { slug: 'hor' },
+      where: { slug_chambre: { slug: 'hor', chambre: 'assemblee' } },
       update: {},
       create: {
         slug: 'hor',
+        chambre: 'assemblee',
         nom: 'HOR',
         nomComplet: 'Horizons',
         couleur: '#42A5F5',
@@ -77,10 +82,11 @@ async function main() {
       },
     }),
     prisma.groupePolitique.upsert({
-      where: { slug: 'soc' },
+      where: { slug_chambre: { slug: 'soc', chambre: 'assemblee' } },
       update: {},
       create: {
         slug: 'soc',
+        chambre: 'assemblee',
         nom: 'SOC',
         nomComplet: 'Socialistes et apparentés',
         couleur: '#F06292',
@@ -89,10 +95,11 @@ async function main() {
       },
     }),
     prisma.groupePolitique.upsert({
-      where: { slug: 'lfi' },
+      where: { slug_chambre: { slug: 'lfi', chambre: 'assemblee' } },
       update: {},
       create: {
         slug: 'lfi',
+        chambre: 'assemblee',
         nom: 'LFI',
         nomComplet: 'La France Insoumise',
         couleur: '#E53935',
@@ -101,10 +108,11 @@ async function main() {
       },
     }),
     prisma.groupePolitique.upsert({
-      where: { slug: 'eco' },
+      where: { slug_chambre: { slug: 'eco', chambre: 'assemblee' } },
       update: {},
       create: {
         slug: 'eco',
+        chambre: 'assemblee',
         nom: 'ECO',
         nomComplet: 'Écologistes',
         couleur: '#4CAF50',
@@ -113,10 +121,11 @@ async function main() {
       },
     }),
     prisma.groupePolitique.upsert({
-      where: { slug: 'gdr' },
+      where: { slug_chambre: { slug: 'gdr', chambre: 'assemblee' } },
       update: {},
       create: {
         slug: 'gdr',
+        chambre: 'assemblee',
         nom: 'GDR',
         nomComplet: 'Gauche Démocrate et Républicaine',
         couleur: '#B71C1C',
@@ -125,10 +134,11 @@ async function main() {
       },
     }),
     prisma.groupePolitique.upsert({
-      where: { slug: 'liot' },
+      where: { slug_chambre: { slug: 'liot', chambre: 'assemblee' } },
       update: {},
       create: {
         slug: 'liot',
+        chambre: 'assemblee',
         nom: 'LIOT',
         nomComplet: 'Libertés, Indépendants, Outre-mer et Territoires',
         couleur: '#9E9E9E',
@@ -147,45 +157,46 @@ async function main() {
 
   const circos = await Promise.all([
     prisma.circonscription.upsert({
-      where: { departement_numero: { departement: '75', numero: 1 } },
+      where: { departement_numero_type: { departement: '75', numero: 1, type: 'legislative' } },
       update: {},
-      create: { departement: '75', numero: 1, nom: 'Paris (1ère)', population: 120000 },
+      create: { departement: '75', numero: 1, type: 'legislative', nom: 'Paris (1ère)', population: 120000 },
     }),
     prisma.circonscription.upsert({
-      where: { departement_numero: { departement: '75', numero: 2 } },
+      where: { departement_numero_type: { departement: '75', numero: 2, type: 'legislative' } },
       update: {},
-      create: { departement: '75', numero: 2, nom: 'Paris (2ème)', population: 115000 },
+      create: { departement: '75', numero: 2, type: 'legislative', nom: 'Paris (2ème)', population: 115000 },
     }),
     prisma.circonscription.upsert({
-      where: { departement_numero: { departement: '13', numero: 1 } },
+      where: { departement_numero_type: { departement: '13', numero: 1, type: 'legislative' } },
       update: {},
-      create: { departement: '13', numero: 1, nom: 'Bouches-du-Rhône (1ère)', population: 130000 },
+      create: { departement: '13', numero: 1, type: 'legislative', nom: 'Bouches-du-Rhône (1ère)', population: 130000 },
     }),
     prisma.circonscription.upsert({
-      where: { departement_numero: { departement: '69', numero: 1 } },
+      where: { departement_numero_type: { departement: '69', numero: 1, type: 'legislative' } },
       update: {},
-      create: { departement: '69', numero: 1, nom: 'Rhône (1ère)', population: 125000 },
+      create: { departement: '69', numero: 1, type: 'legislative', nom: 'Rhône (1ère)', population: 125000 },
     }),
     prisma.circonscription.upsert({
-      where: { departement_numero: { departement: '31', numero: 1 } },
+      where: { departement_numero_type: { departement: '31', numero: 1, type: 'legislative' } },
       update: {},
-      create: { departement: '31', numero: 1, nom: 'Haute-Garonne (1ère)', population: 140000 },
+      create: { departement: '31', numero: 1, type: 'legislative', nom: 'Haute-Garonne (1ère)', population: 140000 },
     }),
   ]);
 
   console.log(`✅ Created ${circos.length} circonscriptions`);
 
   // ===========================================================================
-  // Députés (exemples)
+  // Parlementaires (exemples)
   // ===========================================================================
-  console.log('Creating sample députés...');
+  console.log('Creating sample parlementaires...');
 
-  const deputes = await Promise.all([
-    prisma.depute.upsert({
+  const parlementaires = await Promise.all([
+    prisma.parlementaire.upsert({
       where: { slug: 'marine-le-pen' },
       update: {},
       create: {
         slug: 'marine-le-pen',
+        chambre: 'assemblee',
         nom: 'Le Pen',
         prenom: 'Marine',
         sexe: 'F',
@@ -193,14 +204,15 @@ async function main() {
         profession: 'Avocate',
         photoUrl: 'https://www.assemblee-nationale.fr/dyn/deputes/PA267013_official.jpg',
         twitter: 'MLP_officiel',
-        groupe: { connect: { slug: 'rn' } },
+        groupe: { connect: { slug_chambre: { slug: 'rn', chambre: 'assemblee' } } },
       },
     }),
-    prisma.depute.upsert({
+    prisma.parlementaire.upsert({
       where: { slug: 'gabriel-attal' },
       update: {},
       create: {
         slug: 'gabriel-attal',
+        chambre: 'assemblee',
         nom: 'Attal',
         prenom: 'Gabriel',
         sexe: 'M',
@@ -208,14 +220,15 @@ async function main() {
         profession: 'Haut fonctionnaire',
         photoUrl: 'https://www.assemblee-nationale.fr/dyn/deputes/PA721844_official.jpg',
         twitter: 'GabrielAttal',
-        groupe: { connect: { slug: 'ens' } },
+        groupe: { connect: { slug_chambre: { slug: 'ens', chambre: 'assemblee' } } },
       },
     }),
-    prisma.depute.upsert({
+    prisma.parlementaire.upsert({
       where: { slug: 'jean-luc-melenchon' },
       update: {},
       create: {
         slug: 'jean-luc-melenchon',
+        chambre: 'assemblee',
         nom: 'Mélenchon',
         prenom: 'Jean-Luc',
         sexe: 'M',
@@ -223,14 +236,15 @@ async function main() {
         profession: 'Professeur',
         photoUrl: 'https://www.assemblee-nationale.fr/dyn/deputes/PA2397_official.jpg',
         twitter: 'JLMelenchon',
-        groupe: { connect: { slug: 'lfi' } },
+        groupe: { connect: { slug_chambre: { slug: 'lfi', chambre: 'assemblee' } } },
       },
     }),
-    prisma.depute.upsert({
+    prisma.parlementaire.upsert({
       where: { slug: 'olivier-faure' },
       update: {},
       create: {
         slug: 'olivier-faure',
+        chambre: 'assemblee',
         nom: 'Faure',
         prenom: 'Olivier',
         sexe: 'M',
@@ -238,26 +252,27 @@ async function main() {
         profession: 'Cadre du secteur public',
         photoUrl: 'https://www.assemblee-nationale.fr/dyn/deputes/PA720752_official.jpg',
         twitter: 'faborel',
-        groupe: { connect: { slug: 'soc' } },
+        groupe: { connect: { slug_chambre: { slug: 'soc', chambre: 'assemblee' } } },
       },
     }),
-    prisma.depute.upsert({
+    prisma.parlementaire.upsert({
       where: { slug: 'laurent-wauquiez' },
       update: {},
       create: {
         slug: 'laurent-wauquiez',
+        chambre: 'assemblee',
         nom: 'Wauquiez',
         prenom: 'Laurent',
         sexe: 'M',
         dateNaissance: new Date('1975-04-12'),
         profession: 'Haut fonctionnaire',
         photoUrl: 'https://www.assemblee-nationale.fr/dyn/deputes/PA721950_official.jpg',
-        groupe: { connect: { slug: 'lr' } },
+        groupe: { connect: { slug_chambre: { slug: 'lr', chambre: 'assemblee' } } },
       },
     }),
   ]);
 
-  console.log(`✅ Created ${deputes.length} sample députés`);
+  console.log(`✅ Created ${parlementaires.length} sample parlementaires`);
 
   // ===========================================================================
   // Scrutins (exemples)
@@ -266,10 +281,11 @@ async function main() {
 
   const scrutins = await Promise.all([
     prisma.scrutin.upsert({
-      where: { numero: 4001 },
+      where: { numero_chambre: { numero: 4001, chambre: 'assemblee' } },
       update: {},
       create: {
         numero: 4001,
+        chambre: 'assemblee',
         date: new Date('2025-12-09'),
         titre: 'Projet de loi de financement de la sécurité sociale pour 2026',
         typeVote: 'solennel',
@@ -283,10 +299,11 @@ async function main() {
       },
     }),
     prisma.scrutin.upsert({
-      where: { numero: 4000 },
+      where: { numero_chambre: { numero: 4000, chambre: 'assemblee' } },
       update: {},
       create: {
         numero: 4000,
+        chambre: 'assemblee',
         date: new Date('2025-12-01'),
         titre: 'Motion de censure déposée par le groupe LFI',
         typeVote: 'motion',
@@ -300,10 +317,11 @@ async function main() {
       },
     }),
     prisma.scrutin.upsert({
-      where: { numero: 3999 },
+      where: { numero_chambre: { numero: 3999, chambre: 'assemblee' } },
       update: {},
       create: {
         numero: 3999,
+        chambre: 'assemblee',
         date: new Date('2025-11-28'),
         titre: 'Proposition de loi sur la transition énergétique',
         typeVote: 'ordinaire',

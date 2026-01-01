@@ -5,7 +5,7 @@
 
 import 'dotenv/config';
 import { Command } from 'commander';
-import { fullSync, incrementalSync, syncGroupes, syncDeputes, syncSenateurs, syncScrutins, syncScrutinsSenat, syncInterventions, syncAmendements, syncLobbyistes } from './workers/sync.js';
+import { fullSync, incrementalSync, syncGroupes, syncDeputes, syncSenateurs, syncScrutins, syncScrutinsSenat, syncInterventions, syncInterventionsSenat, syncAmendements, syncLobbyistes } from './workers/sync.js';
 import { logger } from './utils/logger';
 
 const program = new Command();
@@ -28,7 +28,8 @@ program
   .option('-s, --scrutins', 'Synchroniser uniquement les scrutins AN')
   .option('--scrutins-senat', 'Synchroniser uniquement les scrutins Sénat')
   .option('-c, --circonscriptions', 'Synchroniser uniquement les circonscriptions')
-  .option('-i, --interventions', 'Synchroniser uniquement les interventions')
+  .option('-i, --interventions', 'Synchroniser uniquement les interventions AN')
+  .option('--interventions-senat', 'Synchroniser uniquement les interventions Sénat (data.senat.fr)')
   .option('-a, --amendements', 'Synchroniser uniquement les amendements (AN Open Data)')
   .option('-L, --lobbying', 'Synchroniser uniquement les lobbyistes (HATVP)')
   .option('-l, --limit <number>', 'Limiter le nombre de scrutins/séances/amendements/lobbyistes', parseInt)
@@ -53,7 +54,9 @@ program
         // Les circonscriptions sont créées automatiquement avec les députés
         await syncDeputes(true);
       } else if (options.interventions) {
-        await syncInterventions({ maxSeances: options.limit || 50 });
+        await syncInterventions({ maxSeances: options.limit }); // Utilise le défaut du client (100) si pas de --limit
+      } else if (options.interventionsSenat) {
+        await syncInterventionsSenat({ maxSeances: options.limit });
       } else if (options.amendements) {
         await syncAmendements({ limit: options.limit });
       } else if (options.lobbying) {

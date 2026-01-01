@@ -10,6 +10,7 @@ import { AssembleeNationaleScrutinsClient } from '../sources/assemblee-nationale
 import { SenatSenateursClient, TransformedSenateur } from '../sources/senat/senateurs-client';
 import { SenatScrutinsClient } from '../sources/senat/scrutins-client';
 import { DILAInterventionsClient } from '../sources/dila/interventions-client';
+import { SenatInterventionsClient } from '../sources/senat/interventions-client';
 import { logger } from '../utils/logger';
 
 const prisma = new PrismaClient();
@@ -643,19 +644,42 @@ export async function syncInterventions(
     // Par sourceId (PA123456)
     if (p.sourceId) parlementaireMap.set(p.sourceId, p.id);
 
-    // Par nom complet normalisé
+    // Par nom complet normalisé (plusieurs variantes)
     parlementaireMap.set(normalize(`${p.prenom} ${p.nom}`), p.id);
     parlementaireMap.set(normalize(`${p.nom} ${p.prenom}`), p.id);
     parlementaireMap.set(normalize(p.nom), p.id);
+
+    // Ajouter chaque partie du nom composé séparément
+    const nomParts = p.nom.split(/[\s-]+/);
+    if (nomParts.length > 1) {
+      for (const part of nomParts) {
+        if (part.length > 3) {
+          parlementaireMap.set(normalize(part), p.id);
+        }
+      }
+    }
   }
 
   let created = 0;
-  let linked = 0;
+  let skippedNonParlementaire = 0;
+  let skippedNoMatch = 0;
 
   const chambre = 'assemblee';
 
+  // Liste des titres à exclure (non-parlementaires)
+  const titresExclus = ['président', 'présidente', 'ministre', 'secrétaire', 'garde des sceaux', 'premier ministre'];
+
   for (const intervention of interventionsData) {
     try {
+      // Vérifier si c'est clairement un non-parlementaire (titre)
+      const orateurLower = (intervention.orateurNom || '').toLowerCase();
+      const isNonParlementaire = titresExclus.some(titre => orateurLower.includes(titre));
+
+      if (isNonParlementaire) {
+        skippedNonParlementaire++;
+        continue;
+      }
+
       // Chercher le parlementaire
       let parlementaireId: string | null = null;
 
@@ -677,10 +701,28 @@ export async function syncInterventions(
         if (!parlementaireId) {
           parlementaireId = parlementaireMap.get(normalize(intervention.orateurNom)) || null;
         }
+
+        // Essayer en cherchant si le nom contient un des noms du map (recherche partielle)
+        if (!parlementaireId) {
+          for (const [key, id] of parlementaireMap.entries()) {
+            if (key.length > 4 && (searchName.includes(key) || key.includes(searchName.split(' ').pop() || ''))) {
+              parlementaireId = id;
+              break;
+            }
+          }
+        }
       }
 
       if (!parlementaireId) {
-        // Skip les interventions de non-parlementaires (président, ministres, etc.)
+        skippedNoMatch++;
+        // Log quelques exemples pour diagnostic
+        if (skippedNoMatch <= 10) {
+          logger.debug({
+            orateurNom: intervention.orateurNom,
+            orateurPrenom: intervention.orateurPrenom,
+            orateurRef: intervention.orateurRef,
+          }, 'No parlementaire match found');
+        }
         continue;
       }
 
@@ -713,14 +755,175 @@ export async function syncInterventions(
       });
 
       created++;
-      linked++;
 
     } catch (error: any) {
       logger.warn({ seance: intervention.seanceId, error: error.message }, 'Error syncing intervention');
     }
   }
 
-  logger.info({ created, linked, total: interventionsData.length }, 'Interventions AN sync completed');
+  logger.info({
+    created,
+    total: interventionsData.length,
+    skippedNonParlementaire,
+    skippedNoMatch,
+    matchRate: `${((created / (interventionsData.length || 1)) * 100).toFixed(1)}%`,
+  }, 'Interventions AN sync completed');
+
+  return { interventions: created };
+}
+
+// =============================================================================
+// SYNC INTERVENTIONS SÉNAT (via data.senat.fr)
+// =============================================================================
+
+export async function syncInterventionsSenat(
+  options: { maxSeances?: number; minYear?: number } = {}
+): Promise<{ interventions: number }> {
+  logger.info({ maxSeances: options.maxSeances }, 'Starting interventions Sénat sync (from data.senat.fr)...');
+
+  const senatInterClient = new SenatInterventionsClient();
+  const interventionsData = await senatInterClient.getInterventions(options);
+
+  // Charger les sénateurs pour le mapping nom -> parlementaireId
+  const parlementaires = await prisma.parlementaire.findMany({
+    where: { chambre: 'senat' },
+    select: { id: true, sourceId: true, nom: true, prenom: true },
+  });
+
+  // Créer un map avec plusieurs clés pour matcher les orateurs
+  const parlementaireMap = new Map<string, string>();
+  const normalize = (s: string) => s.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/-/g, ' ').replace(/'/g, ' ').trim();
+
+  for (const p of parlementaires) {
+    // Par sourceId (matricule)
+    if (p.sourceId) parlementaireMap.set(p.sourceId, p.id);
+
+    // Par nom complet normalisé (plusieurs variantes)
+    parlementaireMap.set(normalize(`${p.prenom} ${p.nom}`), p.id);
+    parlementaireMap.set(normalize(`${p.nom} ${p.prenom}`), p.id);
+    parlementaireMap.set(normalize(p.nom), p.id);
+
+    // Ajouter chaque partie du nom composé séparément
+    const nomParts = p.nom.split(/[\s-]+/);
+    if (nomParts.length > 1) {
+      for (const part of nomParts) {
+        if (part.length > 3) {
+          parlementaireMap.set(normalize(part), p.id);
+        }
+      }
+    }
+  }
+
+  let created = 0;
+  let skippedNonParlementaire = 0;
+  let skippedNoMatch = 0;
+
+  const chambre = 'senat';
+
+  // Liste des titres à exclure (non-sénateurs)
+  const titresExclus = ['président', 'présidente', 'ministre', 'secrétaire', 'garde des sceaux', 'premier ministre'];
+
+  for (const intervention of interventionsData) {
+    try {
+      // Vérifier si c'est clairement un non-sénateur (titre)
+      const orateurLower = (intervention.orateurNom || '').toLowerCase();
+      const isNonParlementaire = titresExclus.some(titre => orateurLower.includes(titre));
+
+      if (isNonParlementaire) {
+        skippedNonParlementaire++;
+        continue;
+      }
+
+      // Chercher le sénateur
+      let parlementaireId: string | null = null;
+
+      // D'abord par orateurRef (matricule)
+      if (intervention.orateurRef) {
+        parlementaireId = parlementaireMap.get(intervention.orateurRef) || null;
+      }
+
+      // Sinon par nom
+      if (!parlementaireId && intervention.orateurNom) {
+        const searchName = normalize(
+          intervention.orateurPrenom
+            ? `${intervention.orateurPrenom} ${intervention.orateurNom}`
+            : intervention.orateurNom
+        );
+        parlementaireId = parlementaireMap.get(searchName) || null;
+
+        // Essayer avec le nom seul
+        if (!parlementaireId) {
+          parlementaireId = parlementaireMap.get(normalize(intervention.orateurNom)) || null;
+        }
+
+        // Essayer en cherchant si le nom contient un des noms du map
+        if (!parlementaireId) {
+          for (const [key, id] of parlementaireMap.entries()) {
+            if (key.length > 4 && (searchName.includes(key) || key.includes(searchName.split(' ').pop() || ''))) {
+              parlementaireId = id;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!parlementaireId) {
+        skippedNoMatch++;
+        if (skippedNoMatch <= 10) {
+          logger.debug({
+            orateurNom: intervention.orateurNom,
+            orateurPrenom: intervention.orateurPrenom,
+            orateurRef: intervention.orateurRef,
+          }, 'No sénateur match found');
+        }
+        continue;
+      }
+
+      // Vérifier si l'intervention existe déjà
+      const contentHash = intervention.contenu.substring(0, 100);
+      const existing = await prisma.intervention.findFirst({
+        where: {
+          parlementaireId,
+          seanceId: intervention.seanceId,
+          contenu: { startsWith: contentHash },
+        },
+      });
+
+      if (existing) continue;
+
+      // Extraire les mots-clés
+      const motsCles = extractKeywords(intervention.contenu);
+
+      await prisma.intervention.create({
+        data: {
+          parlementaireId,
+          chambre,
+          seanceId: intervention.seanceId,
+          date: intervention.date,
+          type: intervention.type,
+          contenu: intervention.contenu,
+          motsCles,
+          sourceUrl: intervention.sourceUrl,
+        },
+      });
+
+      created++;
+
+    } catch (error: any) {
+      logger.warn({ seance: intervention.seanceId, error: error.message }, 'Error syncing intervention Sénat');
+    }
+  }
+
+  logger.info({
+    created,
+    total: interventionsData.length,
+    skippedNonParlementaire,
+    skippedNoMatch,
+    matchRate: `${((created / (interventionsData.length || 1)) * 100).toFixed(1)}%`,
+  }, 'Interventions Sénat sync completed');
+
   return { interventions: created };
 }
 

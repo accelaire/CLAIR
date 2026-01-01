@@ -37,6 +37,34 @@ export interface TransformedIntervention {
 }
 
 // =============================================================================
+// HELPERS
+// =============================================================================
+
+const JOURS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+const MOIS_FR = ['janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre'];
+
+function getSessionName(date: Date): string {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  // Session parlementaire: octobre année N à septembre année N+1
+  if (month >= 9) { // octobre à décembre
+    return `session-ordinaire-de-${year}-${year + 1}`;
+  } else { // janvier à septembre
+    return `session-ordinaire-de-${year - 1}-${year}`;
+  }
+}
+
+function generateSeanceUrl(date: Date): string {
+  const jour = JOURS_FR[date.getDay()];
+  const dateNum = date.getDate();
+  const mois = MOIS_FR[date.getMonth()];
+  const annee = date.getFullYear();
+  const session = getSessionName(date);
+
+  return `https://www.assemblee-nationale.fr/dyn/17/comptes-rendus/seance/${session}/seance-du-${jour}-${dateNum}-${mois}-${annee}`;
+}
+
+// =============================================================================
 // CLIENT
 // =============================================================================
 
@@ -109,8 +137,8 @@ export class DILAInterventionsClient {
   // ===========================================================================
 
   async getInterventions(options: { maxSeances?: number; year?: number } = {}): Promise<TransformedIntervention[]> {
-    const year = options.year || new Date().getFullYear();
-    const maxSeances = options.maxSeances || 10;
+    const maxSeances = options.maxSeances || 100; // Par défaut: 100 séances
+    const currentYear = new Date().getFullYear();
 
     const tempDir = path.join(os.tmpdir(), 'clair-interventions-dila');
 
@@ -118,44 +146,67 @@ export class DILAInterventionsClient {
       await fs.promises.rm(tempDir, { recursive: true, force: true });
       await fs.promises.mkdir(tempDir, { recursive: true });
 
-      // Lister les fichiers disponibles pour l'année
-      logger.info({ year }, 'Fetching séances list...');
-      const listUrl = `${this.baseUrl}/${year}/`;
+      // Collecter les séances sur plusieurs années si nécessaire
+      const allTazFiles: { year: number; file: string; numero: number }[] = [];
+      const yearsToTry = options.year ? [options.year] : [currentYear, currentYear - 1, currentYear - 2];
 
-      const listResponse = await axios.get(listUrl, {
-        timeout: 30000,
-        headers: { 'User-Agent': 'CLAIR-Bot/1.0' },
-      });
+      for (const year of yearsToTry) {
+        try {
+          logger.info({ year }, 'Fetching séances list...');
+          const listUrl = `${this.baseUrl}/${year}/`;
 
-      // Parser la liste HTML pour extraire les noms de fichiers .taz
-      const tazFiles: string[] = [];
-      const regex = /href="(AN_\d+\.taz)"/g;
-      let match;
-      while ((match = regex.exec(listResponse.data)) !== null) {
-        tazFiles.push(match[1]);
+          const listResponse = await axios.get(listUrl, {
+            timeout: 30000,
+            headers: { 'User-Agent': 'CLAIR-Bot/1.0' },
+          });
+
+          // Parser la liste HTML pour extraire les noms de fichiers .taz
+          const regex = /href="(AN_\d+\.taz)"/g;
+          let match;
+          while ((match = regex.exec(listResponse.data)) !== null) {
+            if (match[1]) {
+              const numero = parseInt(match[1].replace(/\D/g, ''), 10);
+              allTazFiles.push({ year, file: match[1], numero });
+            }
+          }
+
+          logger.info({ year, count: allTazFiles.length }, 'Found séances for year');
+
+          // Si on a assez de séances, on arrête
+          if (allTazFiles.length >= maxSeances) break;
+
+        } catch (error: any) {
+          if (error.response?.status === 404) {
+            logger.warn({ year }, 'No data for year, trying previous year...');
+          } else {
+            throw error;
+          }
+        }
       }
 
-      // Trier par numéro décroissant (plus récents d'abord)
-      tazFiles.sort((a, b) => {
-        const numA = parseInt(a.replace(/\D/g, ''), 10);
-        const numB = parseInt(b.replace(/\D/g, ''), 10);
-        return numB - numA;
-      });
+      if (allTazFiles.length === 0) {
+        logger.warn('No séances found for any year');
+        return [];
+      }
 
-      logger.info({ count: tazFiles.length, maxSeances }, 'Found séances');
+      // Trier par numéro décroissant (plus récents d'abord) - les numéros sont globaux
+      allTazFiles.sort((a, b) => b.numero - a.numero);
+
+      // Prendre seulement les N premières séances
+      const tazFilesToProcess = allTazFiles.slice(0, maxSeances);
+
+      logger.info({ total: allTazFiles.length, processing: tazFilesToProcess.length }, 'Found séances');
 
       const allInterventions: TransformedIntervention[] = [];
       let processed = 0;
 
-      for (const tazFile of tazFiles) {
-        if (processed >= maxSeances) break;
-
+      for (const { year, file: tazFile } of tazFilesToProcess) {
         try {
           const tazUrl = `${this.baseUrl}/${year}/${tazFile}`;
           const tazPath = path.join(tempDir, tazFile);
           const extractDir = path.join(tempDir, `extract_${processed}`);
 
-          logger.debug({ tazFile }, 'Downloading séance...');
+          logger.debug({ tazFile, year }, 'Downloading séance...');
           await this.downloadFile(tazUrl, tazPath);
           const xmlFiles = await this.extractTaz(tazPath, extractDir);
 
@@ -271,7 +322,9 @@ export class DILAInterventionsClient {
         texte = texte
           .replace(/<[^>]+>/g, '')
           .replace(/\s+/g, ' ')
-          .trim();
+          .trim()
+          // Supprimer le point initial (artefact du parsing XML)
+          .replace(/^\.\s*/, '');
 
         if (!texte || texte.length < 20) continue;
 
@@ -303,7 +356,7 @@ export class DILAInterventionsClient {
           orateurRef,
           contenu: texte.substring(0, 5000), // Limiter la taille
           type,
-          sourceUrl: `https://www.assemblee-nationale.fr/dyn/17/comptes-rendus/seance/${seanceId}`,
+          sourceUrl: generateSeanceUrl(dateSeance),
         });
       }
 

@@ -54,10 +54,10 @@ export default function ExplorateurPage() {
     queryFn: () => api.get('/analytics/stats').then((res) => res.data.data),
   });
 
-  // Fetch groupes for filters
+  // Fetch groupes for filters (tous les groupes: Assemblée + Sénat)
   const { data: groupes } = useQuery({
     queryKey: ['groupes'],
-    queryFn: () => api.get('/groupes').then((res) => res.data.data),
+    queryFn: () => api.get('/parlementaires/groupes').then((res) => res.data.data),
   });
 
   const handleQuestionSelect = (questionId: string, view: ViewMode) => {
