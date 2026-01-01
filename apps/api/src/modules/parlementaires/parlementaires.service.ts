@@ -283,49 +283,43 @@ export class ParlementairesService {
 
     if (!parlementaire?.groupeId) return 0;
 
-    const votes = await this.prisma.vote.findMany({
-      where: {
-        parlementaireId,
-        position: { not: 'absent' },
-        scrutin: { chambre, date: { gte: since } },
-      },
-      include: {
-        scrutin: {
-          include: {
-            votes: {
-              where: {
-                parlementaire: { groupeId: parlementaire.groupeId },
-                position: { not: 'absent' },
-              },
-            },
-          },
-        },
-      },
-    });
+    // Optimized: Use raw SQL to calculate loyalty without loading all votes in memory
+    // This prevents OOM kills on Railway when multiple users load detail pages
+    // Note: Use actual PostgreSQL table/column names (snake_case) not Prisma model names
+    const result = await this.prisma.$queryRaw<{ loyal_count: bigint; total_count: bigint }[]>`
+      WITH parlementaire_votes AS (
+        SELECT v.id, v.position, v.scrutin_id
+        FROM votes v
+        JOIN scrutins s ON v.scrutin_id = s.id
+        WHERE v.parlementaire_id = ${parlementaireId}
+          AND v.position != 'absent'
+          AND s.chambre = ${chambre}
+          AND s.date >= ${since}
+      ),
+      group_majority AS (
+        SELECT
+          v.scrutin_id,
+          v.position,
+          COUNT(*) as vote_count,
+          ROW_NUMBER() OVER (PARTITION BY v.scrutin_id ORDER BY COUNT(*) DESC) as rn
+        FROM votes v
+        JOIN parlementaires p ON v.parlementaire_id = p.id
+        WHERE p.groupe_id = ${parlementaire.groupeId}
+          AND v.position != 'absent'
+        GROUP BY v.scrutin_id, v.position
+      )
+      SELECT
+        COUNT(CASE WHEN pv.position = gm.position THEN 1 END)::bigint as loyal_count,
+        COUNT(*)::bigint as total_count
+      FROM parlementaire_votes pv
+      LEFT JOIN group_majority gm ON pv.scrutin_id = gm.scrutin_id AND gm.rn = 1
+    `;
 
-    if (votes.length === 0) return 0;
+    const { loyal_count, total_count } = result[0] || { loyal_count: 0n, total_count: 0n };
 
-    let loyalVotes = 0;
+    if (total_count === 0n) return 0;
 
-    for (const vote of votes) {
-      const groupVotes = vote.scrutin.votes;
-      const positions = { pour: 0, contre: 0, abstention: 0 };
-
-      for (const gv of groupVotes) {
-        if (gv.position in positions) {
-          positions[gv.position as keyof typeof positions]++;
-        }
-      }
-
-      const sortedPositions = Object.entries(positions).sort((a, b) => b[1] - a[1]);
-      const majorityPosition = sortedPositions[0]?.[0];
-
-      if (majorityPosition && vote.position === majorityPosition) {
-        loyalVotes++;
-      }
-    }
-
-    return Math.round((loyalVotes / votes.length) * 100);
+    return Math.round((Number(loyal_count) / Number(total_count)) * 100);
   }
 
   private async getAmendementsStats(parlementaireId: string) {

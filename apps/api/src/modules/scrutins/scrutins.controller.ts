@@ -106,23 +106,37 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       description: 'Retourne tous les tags de scrutins avec leur count',
     },
     handler: async (_request, _reply) => {
-      // Récupérer tous les tags distincts
-      const scrutins = await fastify.prisma.scrutin.findMany({
-        select: { tags: true },
-      });
+      // Cache TTL: 12 hours
+      const CACHE_TTL_12H = 43200;
+      const cacheKey = 'scrutins:tags:all';
 
-      const tagCounts: Record<string, number> = {};
-      for (const s of scrutins) {
-        for (const tag of s.tags) {
-          tagCounts[tag] = (tagCounts[tag] || 0) + 1;
-        }
+      // Check Redis cache first
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
       }
 
-      const tags = Object.entries(tagCounts)
-        .map(([name, count]) => ({ name, count }))
-        .sort((a, b) => b.count - a.count);
+      // Optimized: Use SQL UNNEST to count tags directly in database
+      // This prevents loading all scrutins into memory
+      // Note: Use actual PostgreSQL table names (snake_case) not Prisma model names
+      const tagCounts = await fastify.prisma.$queryRaw<Array<{ name: string; count: bigint }>>`
+        SELECT tag as name, COUNT(*) as count
+        FROM scrutins, LATERAL unnest(tags) AS tag
+        GROUP BY tag
+        ORDER BY count DESC
+      `;
 
-      return { data: tags };
+      const tags = tagCounts.map((t) => ({
+        name: t.name,
+        count: Number(t.count),
+      }));
+
+      const response = { data: tags };
+
+      // Cache for 12 hours
+      await fastify.redis.setex(cacheKey, CACHE_TTL_12H, JSON.stringify(response));
+
+      return response;
     },
   });
 

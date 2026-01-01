@@ -6,6 +6,9 @@
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 
+// Cache TTL: 12 hours (analytics data doesn't change frequently)
+const CACHE_TTL_12H = 43200;
+
 // Schemas
 const filtersQuerySchema = z.object({
   groupe: z.string().optional(),
@@ -162,53 +165,73 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
       const filters = filtersQuerySchema.parse(request.query);
       const dateFrom = getDateFromPeriode(filters.periode) || new Date('2022-01-01');
 
-      // Récupérer les scrutins groupés par mois
-      const scrutins = await fastify.prisma.scrutin.findMany({
-        where: {
-          date: { gte: dateFrom },
-          ...(filters.theme && { tags: { has: filters.theme } }),
-        },
-        select: {
-          date: true,
-          nombrePour: true,
-          nombreContre: true,
-          nombreAbstention: true,
-        },
-        orderBy: { date: 'asc' },
-      });
-
-      // Grouper par mois
-      const monthlyData: Record<string, { pour: number; contre: number; abstention: number; count: number }> = {};
-
-      for (const s of scrutins) {
-        const monthKey = `${s.date.getFullYear()}-${String(s.date.getMonth() + 1).padStart(2, '0')}`;
-        if (!monthlyData[monthKey]) {
-          monthlyData[monthKey] = { pour: 0, contre: 0, abstention: 0, count: 0 };
-        }
-        monthlyData[monthKey].pour += s.nombrePour;
-        monthlyData[monthKey].contre += s.nombreContre;
-        monthlyData[monthKey].abstention += s.nombreAbstention;
-        monthlyData[monthKey].count++;
+      // Check Redis cache first (12h TTL)
+      const cacheKey = `analytics:voting-trends:${filters.periode || 'all'}:${filters.theme || 'all'}`;
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
       }
 
-      // Formater pour le graphique
-      const chartData = Object.entries(monthlyData)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .slice(-12) // 12 derniers mois
-        .map(([month, data]) => {
-          const parts = month.split('-');
-          const year = parts[0] || '2024';
-          const m = parts[1] || '01';
-          const monthNames = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
-          return {
-            mois: `${monthNames[parseInt(m) - 1]} ${year.slice(2)}`,
-            pour: Math.round(data.pour / data.count),
-            contre: Math.round(data.contre / data.count),
-            abstention: Math.round(data.abstention / data.count),
-          };
-        });
+      // Optimized: Use SQL DATE_TRUNC to aggregate by month directly in database
+      // This prevents loading all scrutins into memory
+      let monthlyData: Array<{
+        month: Date;
+        pour: bigint;
+        contre: bigint;
+        abstention: bigint;
+        count: bigint;
+      }>;
 
-      return { data: chartData };
+      // Note: Use actual PostgreSQL table/column names (snake_case) not Prisma model names
+      if (filters.theme) {
+        monthlyData = await fastify.prisma.$queryRaw`
+          SELECT
+            DATE_TRUNC('month', date) as month,
+            SUM(nombre_pour) as pour,
+            SUM(nombre_contre) as contre,
+            SUM(nombre_abstention) as abstention,
+            COUNT(*) as count
+          FROM scrutins
+          WHERE date >= ${dateFrom}
+            AND ${filters.theme} = ANY(tags)
+          GROUP BY DATE_TRUNC('month', date)
+          ORDER BY month ASC
+        `;
+      } else {
+        monthlyData = await fastify.prisma.$queryRaw`
+          SELECT
+            DATE_TRUNC('month', date) as month,
+            SUM(nombre_pour) as pour,
+            SUM(nombre_contre) as contre,
+            SUM(nombre_abstention) as abstention,
+            COUNT(*) as count
+          FROM scrutins
+          WHERE date >= ${dateFrom}
+          GROUP BY DATE_TRUNC('month', date)
+          ORDER BY month ASC
+        `;
+      }
+
+      const monthNames = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+
+      // Take last 12 months and format for chart
+      const chartData = monthlyData.slice(-12).map((data) => {
+        const date = new Date(data.month);
+        const count = Number(data.count);
+        return {
+          mois: `${monthNames[date.getMonth()]} ${String(date.getFullYear()).slice(2)}`,
+          pour: count > 0 ? Math.round(Number(data.pour) / count) : 0,
+          contre: count > 0 ? Math.round(Number(data.contre) / count) : 0,
+          abstention: count > 0 ? Math.round(Number(data.abstention) / count) : 0,
+        };
+      });
+
+      const response = { data: chartData };
+
+      // Cache for 12 hours
+      await fastify.redis.setex(cacheKey, CACHE_TTL_12H, JSON.stringify(response));
+
+      return response;
     },
   });
 
@@ -437,103 +460,143 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
       const { periode, limit = 20 } = request.query as { periode?: string; limit?: number };
       const dateFrom = getDateFromPeriode(periode);
 
-      // Cette requête est complexe, on va la simplifier en récupérant les données brutes
-      // et en les traitant côté serveur
-
-      // Récupérer les votes avec info groupe
-      const votes = await fastify.prisma.vote.findMany({
-        where: {
-          position: { in: ['pour', 'contre'] },
-          parlementaire: { groupeId: { not: null } },
-          ...(dateFrom && { scrutin: { date: { gte: dateFrom } } }),
-        },
-        select: {
-          position: true,
-          parlementaire: {
-            select: {
-              id: true,
-              slug: true,
-              nom: true,
-              prenom: true,
-              photoUrl: true,
-              groupe: {
-                select: { id: true, nom: true, couleur: true },
-              },
-            },
-          },
-          scrutin: {
-            select: { id: true, sort: true },
-          },
-        },
-        take: 10000, // Limiter pour performance
-      });
-
-      // Calculer la position majoritaire du groupe par scrutin
-      const groupePositions: Map<string, Map<string, { pour: number; contre: number }>> = new Map();
-
-      for (const vote of votes) {
-        if (!vote.parlementaire.groupe) continue;
-        const groupeId = vote.parlementaire.groupe.id;
-        const scrutinId = vote.scrutin.id;
-        const key = `${groupeId}-${scrutinId}`;
-
-        if (!groupePositions.has(key)) {
-          groupePositions.set(key, new Map());
-        }
-        const positions = groupePositions.get(key)!;
-        if (!positions.has(scrutinId)) {
-          positions.set(scrutinId, { pour: 0, contre: 0 });
-        }
-        const pos = positions.get(scrutinId)!;
-        if (vote.position === 'pour') pos.pour++;
-        else if (vote.position === 'contre') pos.contre++;
+      // Check Redis cache first (12h TTL)
+      const cacheKey = `analytics:dissidents:${periode || 'all'}:${limit}`;
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
       }
 
-      // Compter les dissidences par parlementaire
-      const dissidences: Map<string, { parlementaire: typeof votes[0]['parlementaire']; count: number; total: number }> = new Map();
+      // Optimized SQL query: calculate dissidences directly in database
+      // This prevents loading 10k+ votes into memory
+      type DissidentRow = {
+        parlementaire_id: string;
+        slug: string;
+        nom: string;
+        prenom: string;
+        photo_url: string | null;
+        groupe_nom: string;
+        groupe_couleur: string | null;
+        dissidences: bigint;
+        total_votes: bigint;
+      };
 
-      for (const vote of votes) {
-        if (!vote.parlementaire.groupe) continue;
-        const groupeId = vote.parlementaire.groupe.id;
-        const scrutinId = vote.scrutin.id;
-        const key = `${groupeId}-${scrutinId}`;
+      let dissidentsData: DissidentRow[];
 
-        const positions = groupePositions.get(key);
-        if (!positions) continue;
-
-        const pos = positions.get(scrutinId);
-        if (!pos) continue;
-
-        const majoritaire = pos.pour > pos.contre ? 'pour' : 'contre';
-        const isDissidence = vote.position !== majoritaire && Math.abs(pos.pour - pos.contre) > 5;
-
-        if (!dissidences.has(vote.parlementaire.id)) {
-          dissidences.set(vote.parlementaire.id, { parlementaire: vote.parlementaire, count: 0, total: 0 });
-        }
-        const d = dissidences.get(vote.parlementaire.id)!;
-        d.total++;
-        if (isDissidence) d.count++;
+      // Note: Use actual PostgreSQL table/column names (snake_case) not Prisma model names
+      if (dateFrom) {
+        dissidentsData = await fastify.prisma.$queryRaw<DissidentRow[]>`
+          WITH group_majority AS (
+            SELECT
+              v.scrutin_id,
+              p.groupe_id,
+              CASE
+                WHEN SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) >
+                     SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)
+                THEN 'pour'
+                ELSE 'contre'
+              END as majority_position
+            FROM votes v
+            JOIN parlementaires p ON v.parlementaire_id = p.id
+            JOIN scrutins s ON v.scrutin_id = s.id
+            WHERE v.position IN ('pour', 'contre')
+              AND p.groupe_id IS NOT NULL
+              AND s.date >= ${dateFrom}
+            GROUP BY v.scrutin_id, p.groupe_id
+            HAVING ABS(SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) -
+                       SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) > 5
+          ),
+          parlementaire_dissidences AS (
+            SELECT
+              p.id as parlementaire_id,
+              p.slug,
+              p.nom,
+              p.prenom,
+              p.photo_url as photo_url,
+              g.nom as groupe_nom,
+              g.couleur as groupe_couleur,
+              COUNT(*) as total_votes,
+              SUM(CASE WHEN v.position != gm.majority_position THEN 1 ELSE 0 END) as dissidences
+            FROM votes v
+            JOIN parlementaires p ON v.parlementaire_id = p.id
+            JOIN groupes_politiques g ON p.groupe_id = g.id
+            JOIN scrutins s ON v.scrutin_id = s.id
+            JOIN group_majority gm ON v.scrutin_id = gm.scrutin_id AND p.groupe_id = gm.groupe_id
+            WHERE v.position IN ('pour', 'contre')
+              AND s.date >= ${dateFrom}
+            GROUP BY p.id, p.slug, p.nom, p.prenom, p.photo_url, g.nom, g.couleur
+            HAVING COUNT(*) >= 10
+          )
+          SELECT *
+          FROM parlementaire_dissidences
+          ORDER BY (dissidences::float / total_votes::float) DESC
+          LIMIT ${limit}
+        `;
+      } else {
+        dissidentsData = await fastify.prisma.$queryRaw<DissidentRow[]>`
+          WITH group_majority AS (
+            SELECT
+              v.scrutin_id,
+              p.groupe_id,
+              CASE
+                WHEN SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) >
+                     SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)
+                THEN 'pour'
+                ELSE 'contre'
+              END as majority_position
+            FROM votes v
+            JOIN parlementaires p ON v.parlementaire_id = p.id
+            WHERE v.position IN ('pour', 'contre')
+              AND p.groupe_id IS NOT NULL
+            GROUP BY v.scrutin_id, p.groupe_id
+            HAVING ABS(SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) -
+                       SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) > 5
+          ),
+          parlementaire_dissidences AS (
+            SELECT
+              p.id as parlementaire_id,
+              p.slug,
+              p.nom,
+              p.prenom,
+              p.photo_url as photo_url,
+              g.nom as groupe_nom,
+              g.couleur as groupe_couleur,
+              COUNT(*) as total_votes,
+              SUM(CASE WHEN v.position != gm.majority_position THEN 1 ELSE 0 END) as dissidences
+            FROM votes v
+            JOIN parlementaires p ON v.parlementaire_id = p.id
+            JOIN groupes_politiques g ON p.groupe_id = g.id
+            JOIN group_majority gm ON v.scrutin_id = gm.scrutin_id AND p.groupe_id = gm.groupe_id
+            WHERE v.position IN ('pour', 'contre')
+            GROUP BY p.id, p.slug, p.nom, p.prenom, p.photo_url, g.nom, g.couleur
+            HAVING COUNT(*) >= 10
+          )
+          SELECT *
+          FROM parlementaire_dissidences
+          ORDER BY (dissidences::float / total_votes::float) DESC
+          LIMIT ${limit}
+        `;
       }
 
-      // Trier par taux de dissidence
-      const result = Array.from(dissidences.values())
-        .filter((d) => d.total >= 10) // Au moins 10 votes
-        .map((d) => ({
-          id: d.parlementaire.id,
-          slug: d.parlementaire.slug,
-          nom: d.parlementaire.nom,
-          prenom: d.parlementaire.prenom,
-          photoUrl: d.parlementaire.photoUrl,
-          groupe: d.parlementaire.groupe?.nom,
-          couleur: d.parlementaire.groupe?.couleur,
-          dissidences: d.count,
-          totalVotes: d.total,
-          tauxDissidence: Math.round((d.count / d.total) * 100),
-        }))
-        .sort((a, b) => b.tauxDissidence - a.tauxDissidence)
-        .slice(0, limit);
+      const result = dissidentsData.map((d) => ({
+        id: d.parlementaire_id,
+        slug: d.slug,
+        nom: d.nom,
+        prenom: d.prenom,
+        photoUrl: d.photo_url,
+        groupe: d.groupe_nom,
+        couleur: d.groupe_couleur,
+        dissidences: Number(d.dissidences),
+        totalVotes: Number(d.total_votes),
+        tauxDissidence: Math.round((Number(d.dissidences) / Number(d.total_votes)) * 100),
+      }));
 
-      return { data: result };
+      const response = { data: result };
+
+      // Cache for 12 hours
+      await fastify.redis.setex(cacheKey, CACHE_TTL_12H, JSON.stringify(response));
+
+      return response;
     },
   });
 
@@ -557,24 +620,48 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
       const { periode, limit = 15 } = request.query as { periode?: string; limit?: number };
       const dateFrom = getDateFromPeriode(periode);
 
-      const scrutins = await fastify.prisma.scrutin.findMany({
-        where: dateFrom ? { date: { gte: dateFrom } } : undefined,
-        select: { tags: true },
-      });
-
-      const themeCounts: Record<string, number> = {};
-      for (const s of scrutins) {
-        for (const tag of s.tags) {
-          themeCounts[tag] = (themeCounts[tag] || 0) + 1;
-        }
+      // Check Redis cache first (12h TTL)
+      const cacheKey = `analytics:themes:${periode || 'all'}:${limit}`;
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
       }
 
-      const result = Object.entries(themeCounts)
-        .map(([theme, count]) => ({ theme, count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, limit);
+      // Optimized: Use SQL UNNEST to count tags directly in database
+      // This prevents loading all scrutins into memory
+      // Note: Use actual PostgreSQL table names (snake_case) not Prisma model names
+      let themeCounts: Array<{ theme: string; count: bigint }>;
 
-      return { data: result };
+      if (dateFrom) {
+        themeCounts = await fastify.prisma.$queryRaw<Array<{ theme: string; count: bigint }>>`
+          SELECT tag as theme, COUNT(*) as count
+          FROM scrutins, LATERAL unnest(tags) AS tag
+          WHERE date >= ${dateFrom}
+          GROUP BY tag
+          ORDER BY count DESC
+          LIMIT ${limit}
+        `;
+      } else {
+        themeCounts = await fastify.prisma.$queryRaw<Array<{ theme: string; count: bigint }>>`
+          SELECT tag as theme, COUNT(*) as count
+          FROM scrutins, LATERAL unnest(tags) AS tag
+          GROUP BY tag
+          ORDER BY count DESC
+          LIMIT ${limit}
+        `;
+      }
+
+      const result = themeCounts.map((t) => ({
+        theme: t.theme,
+        count: Number(t.count),
+      }));
+
+      const response = { data: result };
+
+      // Cache for 12 hours
+      await fastify.redis.setex(cacheKey, CACHE_TTL_12H, JSON.stringify(response));
+
+      return response;
     },
   });
 
