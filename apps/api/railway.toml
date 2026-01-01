@@ -3,11 +3,11 @@ builder = "NIXPACKS"
 buildCommand = "cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @clair/api db:generate && pnpm --filter @clair/api build"
 
 [deploy]
-startCommand = "pnpm --filter @clair/api start"
+startCommand = "node --max-old-space-size=512 dist/index.js"
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 60
 restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 3
+restartPolicyMaxRetries = 10
 
 [service]
 internalPort = 3001

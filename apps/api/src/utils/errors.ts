@@ -98,12 +98,15 @@ export function errorHandler(
 
   // Custom API errors
   if (error instanceof ApiError) {
-    return reply.status(error.statusCode).send({
+    const response: Record<string, unknown> = {
       error: error.name,
       code: error.code,
       message: error.message,
-      ...(error.details && { details: error.details }),
-    });
+    };
+    if (error.details) {
+      response.details = error.details;
+    }
+    return reply.status(error.statusCode).send(response);
   }
 
   // Fastify errors (validation, etc.)

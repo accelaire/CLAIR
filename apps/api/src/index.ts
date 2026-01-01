@@ -169,9 +169,9 @@ async function buildApp() {
   // HOOKS
   // ==========================================================================
 
-  // Log des requêtes
+  // Log des requêtes (using elapsedTime instead of deprecated getResponseTime)
   app.addHook('onResponse', (request, reply, done) => {
-    const duration = reply.getResponseTime().toFixed(2);
+    const duration = reply.elapsedTime.toFixed(2);
     request.log.info(
       {
         method: request.method,
@@ -192,6 +192,22 @@ async function buildApp() {
 // =============================================================================
 
 let app: Awaited<ReturnType<typeof buildApp>> | null = null;
+let memoryMonitorInterval: NodeJS.Timeout | null = null;
+
+// Memory monitoring - helps diagnose OOM kills
+function logMemoryUsage() {
+  const used = process.memoryUsage();
+  const formatMB = (bytes: number) => (bytes / 1024 / 1024).toFixed(1);
+  logger.info({
+    memory: {
+      heapUsed: `${formatMB(used.heapUsed)}MB`,
+      heapTotal: `${formatMB(used.heapTotal)}MB`,
+      rss: `${formatMB(used.rss)}MB`,
+      external: `${formatMB(used.external)}MB`,
+    },
+    uptime: `${process.uptime().toFixed(0)}s`,
+  }, 'Memory usage');
+}
 
 async function start() {
   app = await buildApp();
@@ -203,6 +219,14 @@ async function start() {
     await app.listen({ port, host });
     logger.info(`🚀 Server running at http://${host}:${port}`);
     logger.info(`📚 Documentation at http://${host}:${port}/docs`);
+
+    // Log initial memory usage
+    logMemoryUsage();
+
+    // Monitor memory every 5 minutes in production
+    if (process.env.NODE_ENV === 'production') {
+      memoryMonitorInterval = setInterval(logMemoryUsage, 5 * 60 * 1000);
+    }
   } catch (err) {
     logger.error(err);
     process.exit(1);
@@ -212,8 +236,16 @@ async function start() {
 // Graceful shutdown
 async function gracefulShutdown(signal: string) {
   logger.info(`Received ${signal}, shutting down gracefully...`);
+
+  // Clear memory monitor
+  if (memoryMonitorInterval) {
+    clearInterval(memoryMonitorInterval);
+  }
+
   try {
     if (app) {
+      // Log final memory usage before shutdown
+      logMemoryUsage();
       await app.close();
       logger.info('Server closed');
     }
