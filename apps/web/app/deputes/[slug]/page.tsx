@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -23,8 +24,10 @@ import {
   Minus,
   ChevronDown,
   ChevronUp,
+  Loader2,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { PeriodFilter, usePeriodFilter } from '@/components/PeriodFilter';
 
 interface DeputeDetail {
   id: string;
@@ -130,37 +133,60 @@ interface InterventionItem {
 }
 
 function InterventionsList({ slug }: { slug: string }) {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['depute-interventions', slug],
-    queryFn: () =>
-      api.get(`/deputes/${slug}/interventions`, { params: { limit: 20 } }).then((res) => res.data),
+  const [periodFilter, setPeriodFilter] = usePeriodFilter('all');
+
+  const {
+    data,
+    isLoading,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['depute-interventions', slug, periodFilter.dateFrom, periodFilter.dateTo],
+    queryFn: ({ pageParam = 1 }) =>
+      api.get(`/deputes/${slug}/interventions`, {
+        params: {
+          page: pageParam,
+          limit: 20,
+          ...(periodFilter.dateFrom && { dateFrom: periodFilter.dateFrom }),
+          ...(periodFilter.dateTo && { dateTo: periodFilter.dateTo }),
+        },
+      }).then((res) => res.data),
+    getNextPageParam: (lastPage) =>
+      lastPage.meta?.hasNext ? lastPage.meta.page + 1 : undefined,
+    initialPageParam: 1,
     enabled: !!slug,
   });
 
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        {[...Array(5)].map((_, i) => (
-          <div key={i} className="animate-pulse rounded-lg border p-4">
-            <div className="h-4 w-1/4 rounded bg-muted" />
-            <div className="mt-2 h-20 w-full rounded bg-muted" />
-          </div>
-        ))}
-      </div>
-    );
-  }
+  const { loadMoreRef } = useInfiniteScroll({
+    hasNextPage: !!hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  });
 
-  if (error || !data?.data?.length) {
-    return (
-      <p className="text-center text-muted-foreground py-8">
-        Aucune intervention trouvée.
-      </p>
-    );
-  }
+  const interventions = data?.pages.flatMap((page) => page.data) ?? [];
 
   return (
     <div className="space-y-4">
-      {data.data.map((intervention: InterventionItem) => (
+      <PeriodFilter value={periodFilter} onChange={setPeriodFilter} />
+
+      {isLoading ? (
+        <div className="space-y-4">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="animate-pulse rounded-lg border p-4">
+              <div className="h-4 w-1/4 rounded bg-muted" />
+              <div className="mt-2 h-20 w-full rounded bg-muted" />
+            </div>
+          ))}
+        </div>
+      ) : error || interventions.length === 0 ? (
+        <p className="text-center text-muted-foreground py-8">
+          Aucune intervention trouvée pour cette période.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          {interventions.map((intervention: InterventionItem) => (
         <div
           key={intervention.id}
           className="rounded-lg border bg-card p-4"
@@ -200,7 +226,18 @@ function InterventionsList({ slug }: { slug: string }) {
             </a>
           )}
         </div>
-      ))}
+          ))}
+
+          {/* Sentinel pour le scroll infini */}
+          <div ref={loadMoreRef} className="h-4" />
+
+          {isFetchingNextPage && (
+            <div className="flex justify-center py-4">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -327,75 +364,132 @@ function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }
 }
 
 function AmendementsList({ slug }: { slug: string }) {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['depute-amendements', slug],
-    queryFn: () =>
-      api.get(`/deputes/${slug}/amendements`, { params: { limit: 20 } }).then((res) => res.data),
+  const [periodFilter, setPeriodFilter] = usePeriodFilter('all');
+
+  const {
+    data,
+    isLoading,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['depute-amendements', slug, periodFilter.dateFrom, periodFilter.dateTo],
+    queryFn: ({ pageParam = 1 }) =>
+      api.get(`/deputes/${slug}/amendements`, {
+        params: {
+          page: pageParam,
+          limit: 20,
+          ...(periodFilter.dateFrom && { dateFrom: periodFilter.dateFrom }),
+          ...(periodFilter.dateTo && { dateTo: periodFilter.dateTo }),
+        },
+      }).then((res) => res.data),
+    getNextPageParam: (lastPage) =>
+      lastPage.meta?.hasNext ? lastPage.meta.page + 1 : undefined,
+    initialPageParam: 1,
     enabled: !!slug,
   });
 
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        {[...Array(5)].map((_, i) => (
-          <div key={i} className="animate-pulse rounded-lg border p-4">
-            <div className="h-4 w-1/3 rounded bg-muted" />
-            <div className="mt-2 h-16 w-full rounded bg-muted" />
-          </div>
-        ))}
-      </div>
-    );
-  }
+  const { loadMoreRef } = useInfiniteScroll({
+    hasNextPage: !!hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  });
 
-  if (error || !data?.data?.length) {
-    return (
-      <p className="text-center text-muted-foreground py-8">
-        Aucun amendement trouvé pour ce député.
-      </p>
-    );
-  }
+  const amendements = data?.pages.flatMap((page) => page.data) ?? [];
 
   return (
     <div className="space-y-4">
-      {data.data.map((amendement: AmendementItem) => (
-        <ExpandableAmendementCard key={amendement.id} amendement={amendement} />
-      ))}
+      <PeriodFilter value={periodFilter} onChange={setPeriodFilter} />
+
+      {isLoading ? (
+        <div className="space-y-4">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="animate-pulse rounded-lg border p-4">
+              <div className="h-4 w-1/3 rounded bg-muted" />
+              <div className="mt-2 h-16 w-full rounded bg-muted" />
+            </div>
+          ))}
+        </div>
+      ) : error || amendements.length === 0 ? (
+        <p className="text-center text-muted-foreground py-8">
+          Aucun amendement trouvé pour cette période.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          {amendements.map((amendement: AmendementItem) => (
+            <ExpandableAmendementCard key={amendement.id} amendement={amendement} />
+          ))}
+
+          {/* Sentinel pour le scroll infini */}
+          <div ref={loadMoreRef} className="h-4" />
+
+          {isFetchingNextPage && (
+            <div className="flex justify-center py-4">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 function VotesList({ slug }: { slug: string }) {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['depute-votes', slug],
-    queryFn: () =>
-      api.get(`/deputes/${slug}/votes`, { params: { limit: 20 } }).then((res) => res.data),
+  const [periodFilter, setPeriodFilter] = usePeriodFilter('all');
+
+  const {
+    data,
+    isLoading,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['depute-votes', slug, periodFilter.dateFrom, periodFilter.dateTo],
+    queryFn: ({ pageParam = 1 }) =>
+      api.get(`/deputes/${slug}/votes`, {
+        params: {
+          page: pageParam,
+          limit: 20,
+          ...(periodFilter.dateFrom && { dateFrom: periodFilter.dateFrom }),
+          ...(periodFilter.dateTo && { dateTo: periodFilter.dateTo }),
+        },
+      }).then((res) => res.data),
+    getNextPageParam: (lastPage) =>
+      lastPage.meta?.hasNext ? lastPage.meta.page + 1 : undefined,
+    initialPageParam: 1,
     enabled: !!slug,
   });
 
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        {[...Array(5)].map((_, i) => (
-          <div key={i} className="animate-pulse rounded-lg border p-4">
-            <div className="h-4 w-3/4 rounded bg-muted" />
-            <div className="mt-2 h-3 w-1/4 rounded bg-muted" />
-          </div>
-        ))}
-      </div>
-    );
-  }
+  const { loadMoreRef } = useInfiniteScroll({
+    hasNextPage: !!hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  });
 
-  if (error || !data?.data?.length) {
-    return (
-      <p className="text-center text-muted-foreground py-8">
-        Aucun vote récent trouvé.
-      </p>
-    );
-  }
+  const votes = data?.pages.flatMap((page) => page.data) ?? [];
 
   return (
-    <div className="space-y-3">
-      {data.data.map((vote: VoteItem) => (
+    <div className="space-y-4">
+      <PeriodFilter value={periodFilter} onChange={setPeriodFilter} />
+
+      {isLoading ? (
+        <div className="space-y-4">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="animate-pulse rounded-lg border p-4">
+              <div className="h-4 w-3/4 rounded bg-muted" />
+              <div className="mt-2 h-3 w-1/4 rounded bg-muted" />
+            </div>
+          ))}
+        </div>
+      ) : error || votes.length === 0 ? (
+        <p className="text-center text-muted-foreground py-8">
+          Aucun vote trouvé pour cette période.
+        </p>
+      ) : (
+        <div className="space-y-3">
+      {votes.map((vote: VoteItem) => (
         <Link
           key={vote.id}
           href={`/scrutins/${vote.scrutin.numero}`}
@@ -432,6 +526,17 @@ function VotesList({ slug }: { slug: string }) {
           </div>
         </Link>
       ))}
+
+          {/* Sentinel pour le scroll infini */}
+          <div ref={loadMoreRef} className="h-4" />
+
+          {isFetchingNextPage && (
+            <div className="flex justify-center py-4">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

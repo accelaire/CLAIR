@@ -360,8 +360,12 @@ export class DeputesService {
       ...(position && { position }),
       scrutin: {
         ...(tag && { tags: { has: tag } }),
-        ...(dateFrom && { date: { gte: dateFrom } }),
-        ...(dateTo && { date: { lte: dateTo } }),
+        ...((dateFrom || dateTo) && {
+          date: {
+            ...(dateFrom && { gte: dateFrom }),
+            ...(dateTo && { lte: dateTo }),
+          },
+        }),
       },
     };
 

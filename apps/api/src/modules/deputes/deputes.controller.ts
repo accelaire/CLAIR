@@ -248,12 +248,14 @@ export const deputesRoutes: FastifyPluginAsync = async (fastify) => {
           page: { type: 'integer', minimum: 1, default: 1 },
           limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
           sort: { type: 'string', enum: ['Adopté', 'Rejeté', 'Retiré', 'Non soutenu', 'Tombé'] },
+          dateFrom: { type: 'string', format: 'date' },
+          dateTo: { type: 'string', format: 'date' },
         },
       },
     },
     handler: async (request, _reply) => {
       const { slug } = deputeParamsSchema.parse(request.params);
-      const { page = 1, limit = 20, sort } = request.query as any;
+      const { page = 1, limit = 20, sort, dateFrom, dateTo } = request.query as any;
 
       const parlementaire = await fastify.prisma.parlementaire.findUnique({
         where: { slug },
@@ -266,6 +268,14 @@ export const deputesRoutes: FastifyPluginAsync = async (fastify) => {
 
       const skip = (page - 1) * limit;
 
+      // Build date filter
+      const dateFilter = (dateFrom || dateTo) ? {
+        dateDepot: {
+          ...(dateFrom && { gte: new Date(dateFrom) }),
+          ...(dateTo && { lte: new Date(dateTo) }),
+        },
+      } : {};
+
       // Query by parlementaireId OR by auteurLibelle containing the député's name
       const [amendements, total] = await Promise.all([
         fastify.prisma.amendement.findMany({
@@ -275,6 +285,7 @@ export const deputesRoutes: FastifyPluginAsync = async (fastify) => {
               // Fallback: search by auteurLibelle if no direct link
             ],
             ...(sort && { sort }),
+            ...dateFilter,
           },
           orderBy: { dateDepot: 'desc' },
           skip,
@@ -300,6 +311,7 @@ export const deputesRoutes: FastifyPluginAsync = async (fastify) => {
               { parlementaireId: parlementaire.id },
             ],
             ...(sort && { sort }),
+            ...dateFilter,
           },
         }),
       ]);
@@ -341,12 +353,14 @@ export const deputesRoutes: FastifyPluginAsync = async (fastify) => {
           page: { type: 'integer', minimum: 1, default: 1 },
           limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
           type: { type: 'string', enum: ['question', 'intervention', 'explication_vote'] },
+          dateFrom: { type: 'string', format: 'date' },
+          dateTo: { type: 'string', format: 'date' },
         },
       },
     },
     handler: async (request, _reply) => {
       const { slug } = deputeParamsSchema.parse(request.params);
-      const { page = 1, limit = 20, type } = request.query as any;
+      const { page = 1, limit = 20, type, dateFrom, dateTo } = request.query as any;
 
       const parlementaire = await fastify.prisma.parlementaire.findUnique({
         where: { slug },
@@ -359,11 +373,20 @@ export const deputesRoutes: FastifyPluginAsync = async (fastify) => {
 
       const skip = (page - 1) * limit;
 
+      // Build date filter
+      const dateFilter = (dateFrom || dateTo) ? {
+        date: {
+          ...(dateFrom && { gte: new Date(dateFrom) }),
+          ...(dateTo && { lte: new Date(dateTo) }),
+        },
+      } : {};
+
       const [interventions, total] = await Promise.all([
         fastify.prisma.intervention.findMany({
           where: {
             parlementaireId: parlementaire.id,
             ...(type && { type }),
+            ...dateFilter,
           },
           orderBy: { date: 'desc' },
           skip,
@@ -373,6 +396,7 @@ export const deputesRoutes: FastifyPluginAsync = async (fastify) => {
           where: {
             parlementaireId: parlementaire.id,
             ...(type && { type }),
+            ...dateFilter,
           },
         }),
       ]);
