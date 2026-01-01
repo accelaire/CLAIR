@@ -146,7 +146,16 @@ export function calculateUserScores(
     international: 0,
   };
 
-  const counts: Record<string, number> = {};
+  const counts: Record<keyof ScoresAxes, number> = {
+    economie: 0,
+    social: 0,
+    ecologie: 0,
+    securite: 0,
+    europe: 0,
+    immigration: 0,
+    institutions: 0,
+    international: 0,
+  };
   const priorities: Record<string, number> = {
     economie: 3,
     social: 3,
@@ -157,10 +166,6 @@ export function calculateUserScores(
     institutions: 3,
     international: 3,
   };
-
-  for (const axe of Object.keys(scores)) {
-    counts[axe] = 0;
-  }
 
   for (const reponse of reponses) {
     const question = reponse.question;
@@ -202,9 +207,10 @@ export function calculateUserScores(
 
     // Appliquer l'impact aux axes concernés
     for (const [axe, poids] of Object.entries(axesPoids)) {
-      if (axe in scores) {
-        scores[axe as keyof ScoresAxes] += impact * (poids as number);
-        counts[axe]++;
+      const axeKey = axe as keyof ScoresAxes;
+      if (axeKey in scores) {
+        scores[axeKey] += impact * (poids as number);
+        counts[axeKey]++;
       }
     }
   }

@@ -317,9 +317,10 @@ export class ParlementairesService {
         }
       }
 
-      const majorityPosition = Object.entries(positions).sort((a, b) => b[1] - a[1])[0][0];
+      const sortedPositions = Object.entries(positions).sort((a, b) => b[1] - a[1]);
+      const majorityPosition = sortedPositions[0]?.[0];
 
-      if (vote.position === majorityPosition) {
+      if (majorityPosition && vote.position === majorityPosition) {
         loyalVotes++;
       }
     }

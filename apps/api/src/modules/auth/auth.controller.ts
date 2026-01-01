@@ -35,7 +35,12 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  const [salt, key] = hash.split(':');
+  const parts = hash.split(':');
+  const salt = parts[0];
+  const key = parts[1];
+  if (!salt || !key) {
+    return false;
+  }
   const derivedKey = (await scryptAsync(password, salt, 64)) as Buffer;
   const keyBuffer = Buffer.from(key, 'hex');
   return timingSafeEqual(derivedKey, keyBuffer);
@@ -65,7 +70,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const data = registerSchema.parse(request.body);
 
       // Vérifier si l'email existe déjà
@@ -142,7 +147,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { email, password } = loginSchema.parse(request.body);
 
       const user = await fastify.prisma.user.findUnique({
@@ -207,7 +212,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { refreshToken } = refreshSchema.parse(request.body);
 
       const storedToken = await fastify.prisma.refreshToken.findUnique({
@@ -268,7 +273,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { refreshToken } = request.body as { refreshToken?: string };
 
       if (refreshToken) {
@@ -292,7 +297,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       description: 'Retourne les informations de l\'utilisateur connecté',
       security: [{ bearerAuth: [] }],
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { userId } = request.user;
 
       const user = await fastify.prisma.user.findUnique({
@@ -348,7 +353,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { userId } = request.user;
       const { nom, prenom, preferences } = request.body as any;
 

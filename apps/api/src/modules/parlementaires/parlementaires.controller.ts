@@ -48,7 +48,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           },
         },
       },
-      handler: async (request, reply) => {
+      handler: async (request, _reply) => {
         const query = parlementairesListQuerySchema.parse(request.query);
         const result = await service.getParlementaires(query, forcedChambre);
         return result;
@@ -64,7 +64,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
         summary: 'Liste des groupes politiques',
         description: `Retourne tous les groupes politiques actifs${forcedChambre ? ` de ${chambreLabel.toLowerCase()}` : ''} avec le nombre de membres`,
       },
-      handler: async (request, reply) => {
+      handler: async (_request, _reply) => {
         const groupes = await service.getGroupes(forcedChambre);
         return { data: groupes };
       },
@@ -89,7 +89,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           },
         },
       },
-      handler: async (request, reply) => {
+      handler: async (request, _reply) => {
         const { slugs } = request.query as { slugs: string };
         const slugList = slugs.split(',').map((s) => s.trim()).filter(Boolean);
 
@@ -127,7 +127,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           },
         },
       },
-      handler: async (request, reply) => {
+      handler: async (request, _reply) => {
         const { slug } = parlementaireParamsSchema.parse(request.params);
         const { include } = parlementaireQuerySchema.parse(request.query);
 
@@ -162,7 +162,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           },
         },
       },
-      handler: async (request, reply) => {
+      handler: async (request, _reply) => {
         const { slug } = parlementaireParamsSchema.parse(request.params);
 
         const parlementaire = await fastify.prisma.parlementaire.findUnique({
@@ -210,7 +210,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           },
         },
       },
-      handler: async (request, reply) => {
+      handler: async (request, _reply) => {
         const { slug } = parlementaireParamsSchema.parse(request.params);
         const query = parlementaireVotesQuerySchema.parse(request.query);
 
@@ -256,7 +256,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           },
         },
       },
-      handler: async (request, reply) => {
+      handler: async (request, _reply) => {
         const { slug } = parlementaireParamsSchema.parse(request.params);
         const { page = 1, limit = 20, sort } = request.query as any;
 
@@ -348,7 +348,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           },
         },
       },
-      handler: async (request, reply) => {
+      handler: async (request, _reply) => {
         const { slug } = parlementaireParamsSchema.parse(request.params);
         const { page = 1, limit = 20, type } = request.query as any;
 

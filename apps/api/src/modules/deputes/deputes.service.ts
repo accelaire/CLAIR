@@ -36,8 +36,9 @@ export class DeputesService {
     const { page, limit, groupe, departement, search, actif, sort, order } = query;
     const skip = (page - 1) * limit;
 
-    // Construction du where clause
-    const where: Prisma.DeputeWhereInput = {
+    // Construction du where clause - Filter for deputies only (chambre: 'AN')
+    const where: Prisma.ParlementaireWhereInput = {
+      chambre: 'AN', // Only deputies (Assemblée Nationale)
       actif,
       ...(groupe && { groupe: { slug: groupe } }),
       ...(departement && { circonscription: { departement } }),
@@ -51,7 +52,7 @@ export class DeputesService {
     };
 
     // Mapping des champs de tri
-    const orderByMap: Record<string, Prisma.DeputeOrderByWithRelationInput> = {
+    const orderByMap: Record<string, Prisma.ParlementaireOrderByWithRelationInput> = {
       nom: { nom: order },
       prenom: { prenom: order },
       // Pour presence et loyaute, on trie côté application après récupération
@@ -60,7 +61,7 @@ export class DeputesService {
     const orderBy = orderByMap[sort] || { nom: order };
 
     const [deputes, total] = await Promise.all([
-      this.prisma.depute.findMany({
+      this.prisma.parlementaire.findMany({
         where,
         include: {
           groupe: {
@@ -93,7 +94,7 @@ export class DeputesService {
         skip,
         take: limit,
       }),
-      this.prisma.depute.count({ where }),
+      this.prisma.parlementaire.count({ where }),
     ]);
 
     const totalPages = Math.ceil(total / limit);
@@ -135,7 +136,7 @@ export class DeputesService {
       return JSON.parse(cached);
     }
 
-    const depute = await this.prisma.depute.findUnique({
+    const depute = await this.prisma.parlementaire.findUnique({
       where: { slug },
       include: {
         groupe: true,
@@ -191,7 +192,7 @@ export class DeputesService {
   }
 
   async getDeputeById(id: string) {
-    return this.prisma.depute.findUnique({
+    return this.prisma.parlementaire.findUnique({
       where: { id },
       include: {
         groupe: true,
@@ -225,19 +226,19 @@ export class DeputesService {
         this.calculateLoyaute(deputeId, since),
         this.prisma.vote.count({
           where: {
-            deputeId,
+            parlementaireId: deputeId,
             position: { not: 'absent' },
           },
         }),
         this.prisma.intervention.count({
           where: {
-            deputeId,
+            parlementaireId: deputeId,
           },
         }),
         this.getAmendementsStats(deputeId),
         this.prisma.intervention.count({
           where: {
-            deputeId,
+            parlementaireId: deputeId,
             type: 'question',
           },
         }),
@@ -257,14 +258,14 @@ export class DeputesService {
     return stats;
   }
 
-  private async calculatePresence(deputeId: string, since: Date): Promise<number> {
+  private async calculatePresence(parlementaireId: string, since: Date): Promise<number> {
     const [totalScrutins, participations] = await Promise.all([
       this.prisma.scrutin.count({
         where: { date: { gte: since } },
       }),
       this.prisma.vote.count({
         where: {
-          deputeId,
+          parlementaireId,
           position: { not: 'absent' },
           scrutin: { date: { gte: since } },
         },
@@ -274,19 +275,19 @@ export class DeputesService {
     return totalScrutins > 0 ? Math.round((participations / totalScrutins) * 100) : 0;
   }
 
-  private async calculateLoyaute(deputeId: string, since: Date): Promise<number> {
-    // Récupérer le groupe du député
-    const depute = await this.prisma.depute.findUnique({
-      where: { id: deputeId },
+  private async calculateLoyaute(parlementaireId: string, since: Date): Promise<number> {
+    // Récupérer le groupe du parlementaire
+    const parlementaire = await this.prisma.parlementaire.findUnique({
+      where: { id: parlementaireId },
       select: { groupeId: true },
     });
 
-    if (!depute?.groupeId) return 0;
+    if (!parlementaire?.groupeId) return 0;
 
-    // Récupérer tous les votes du député et de son groupe
+    // Récupérer tous les votes du parlementaire et de son groupe
     const votes = await this.prisma.vote.findMany({
       where: {
-        deputeId,
+        parlementaireId,
         position: { not: 'absent' },
         scrutin: { date: { gte: since } },
       },
@@ -295,7 +296,7 @@ export class DeputesService {
           include: {
             votes: {
               where: {
-                depute: { groupeId: depute.groupeId },
+                parlementaire: { groupeId: parlementaire.groupeId },
                 position: { not: 'absent' },
               },
             },
@@ -319,9 +320,10 @@ export class DeputesService {
         }
       }
 
-      const majorityPosition = Object.entries(positions).sort((a, b) => b[1] - a[1])[0][0];
+      const sortedPositions = Object.entries(positions).sort((a, b) => b[1] - a[1]);
+      const majorityPosition = sortedPositions[0]?.[0];
 
-      if (vote.position === majorityPosition) {
+      if (majorityPosition && vote.position === majorityPosition) {
         loyalVotes++;
       }
     }
@@ -329,14 +331,14 @@ export class DeputesService {
     return Math.round((loyalVotes / votes.length) * 100);
   }
 
-  private async getAmendementsStats(deputeId: string) {
+  private async getAmendementsStats(parlementaireId: string) {
     const [proposes, adoptes] = await Promise.all([
       this.prisma.amendement.count({
-        where: { deputeId },
+        where: { parlementaireId },
       }),
       this.prisma.amendement.count({
         where: {
-          deputeId,
+          parlementaireId,
           sort: 'adopte',
         },
       }),
@@ -349,12 +351,12 @@ export class DeputesService {
   // VOTES D'UN DÉPUTÉ
   // ===========================================================================
 
-  async getDeputeVotes(deputeId: string, query: DeputeVotesQuery) {
+  async getDeputeVotes(parlementaireId: string, query: DeputeVotesQuery) {
     const { page, limit, position, tag, dateFrom, dateTo } = query;
     const skip = (page - 1) * limit;
 
     const where: Prisma.VoteWhereInput = {
-      deputeId,
+      parlementaireId,
       ...(position && { position }),
       scrutin: {
         ...(tag && { tags: { has: tag } }),
@@ -432,14 +434,14 @@ export class DeputesService {
     const groupes = await this.prisma.groupePolitique.findMany({
       where: { actif: true },
       include: {
-        _count: { select: { deputes: { where: { actif: true } } } },
+        _count: { select: { parlementaires: { where: { actif: true, chambre: 'AN' } } } },
       },
       orderBy: { ordre: 'asc' },
     });
 
     const result = groupes.map((g) => ({
       ...g,
-      membresCount: g._count.deputes,
+      membresCount: g._count.parlementaires,
       _count: undefined,
     }));
 
@@ -452,15 +454,15 @@ export class DeputesService {
   // INVALIDATION DU CACHE
   // ===========================================================================
 
-  async invalidateCache(deputeId?: string) {
-    if (deputeId) {
-      const depute = await this.prisma.depute.findUnique({
-        where: { id: deputeId },
+  async invalidateCache(parlementaireId?: string) {
+    if (parlementaireId) {
+      const parlementaire = await this.prisma.parlementaire.findUnique({
+        where: { id: parlementaireId },
         select: { slug: true },
       });
-      if (depute) {
-        await this.redis.del(`depute:${depute.slug}:*`);
-        await this.redis.del(`depute:stats:${deputeId}`);
+      if (parlementaire) {
+        await this.redis.del(`depute:${parlementaire.slug}:*`);
+        await this.redis.del(`depute:stats:${parlementaireId}`);
       }
     }
     // Invalider les listes

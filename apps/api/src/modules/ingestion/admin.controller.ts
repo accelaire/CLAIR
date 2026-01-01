@@ -55,7 +55,7 @@ export const candidatsAdminRoutes: FastifyPluginAsync = async (fastify) => {
   }, async () => {
     const candidats = await fastify.prisma.candidat2027.findMany({
       include: {
-        depute: {
+        parlementaire: {
           select: { id: true, slug: true, nom: true, prenom: true },
         },
         _count: {
@@ -73,8 +73,8 @@ export const candidatsAdminRoutes: FastifyPluginAsync = async (fastify) => {
         prenom: c.prenom,
         parti: c.parti,
         photoUrl: c.photoUrl,
-        hasDeputeLink: !!c.deputeId,
-        depute: c.depute,
+        hasParlementaireLink: !!c.parlementaireId,
+        parlementaire: c.parlementaire,
         scores: {
           economie: c.scoreEconomie,
           social: c.scoreSocial,
@@ -122,16 +122,16 @@ export const candidatsAdminRoutes: FastifyPluginAsync = async (fastify) => {
       throw new ApiError(400, 'Un candidat avec ce nom existe déjà');
     }
 
-    // Chercher le député si fourni
-    let deputeId: string | null = null;
+    // Chercher le parlementaire si fourni
+    let parlementaireId: string | null = null;
     if (body.deputeSlug) {
-      const depute = await fastify.prisma.depute.findUnique({
+      const parlementaire = await fastify.prisma.parlementaire.findUnique({
         where: { slug: body.deputeSlug },
       });
-      if (!depute) {
-        throw new ApiError(404, 'Député non trouvé');
+      if (!parlementaire) {
+        throw new ApiError(404, 'Parlementaire non trouvé');
       }
-      deputeId = depute.id;
+      parlementaireId = parlementaire.id;
     }
 
     const candidat = await fastify.prisma.candidat2027.create({
@@ -141,19 +141,19 @@ export const candidatsAdminRoutes: FastifyPluginAsync = async (fastify) => {
         prenom: body.prenom,
         parti: body.parti,
         photoUrl: body.photoUrl,
-        deputeId,
+        parlementaireId,
         programmeUrl: body.programmeUrl,
         programme: {},
       },
       include: {
-        depute: {
+        parlementaire: {
           select: { id: true, slug: true, nom: true, prenom: true },
         },
       },
     });
 
-    // Si lié à un député, lancer le calcul des scores automatiquement
-    if (deputeId) {
+    // Si lié à un parlementaire, lancer le calcul des scores automatiquement
+    if (parlementaireId) {
       // Lancer en background (non-bloquant)
       updateCandidatScores(fastify.prisma, candidat.id).catch((err) => {
         fastify.log.error({ err, candidatId: candidat.id }, 'Erreur calcul scores initial');
@@ -177,7 +177,7 @@ export const candidatsAdminRoutes: FastifyPluginAsync = async (fastify) => {
     const candidat = await fastify.prisma.candidat2027.findUnique({
       where: { id },
       include: {
-        depute: {
+        parlementaire: {
           select: { id: true, slug: true, nom: true, prenom: true },
         },
         positions: {
@@ -404,13 +404,13 @@ export const candidatsAdminRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ===========================================================================
-  // GET /api/v1/admin/deputes/search - Rechercher un député pour liaison
+  // GET /api/v1/admin/parlementaires/search - Rechercher un parlementaire pour liaison
   // ===========================================================================
-  fastify.get('/deputes/search', {
+  fastify.get('/parlementaires/search', {
     schema: {
       tags: ['Admin'],
-      summary: 'Rechercher un député',
-      description: 'Recherche un député pour le lier à un candidat',
+      summary: 'Rechercher un parlementaire',
+      description: 'Recherche un parlementaire pour le lier à un candidat',
       querystring: {
         type: 'object',
         required: ['q'],
@@ -422,7 +422,7 @@ export const candidatsAdminRoutes: FastifyPluginAsync = async (fastify) => {
   }, async (request) => {
     const { q } = request.query as { q: string };
 
-    const deputes = await fastify.prisma.depute.findMany({
+    const parlementaires = await fastify.prisma.parlementaire.findMany({
       where: {
         OR: [
           { nom: { contains: q, mode: 'insensitive' } },
@@ -442,42 +442,42 @@ export const candidatsAdminRoutes: FastifyPluginAsync = async (fastify) => {
     });
 
     return {
-      data: deputes.map((d) => ({
-        ...d,
-        alreadyLinked: !!d.candidat2027,
+      data: parlementaires.map((p) => ({
+        ...p,
+        alreadyLinked: !!p.candidat2027,
       })),
     };
   });
 
   // ===========================================================================
-  // POST /api/v1/admin/candidats/:id/link-depute - Lier un député
+  // POST /api/v1/admin/candidats/:id/link-parlementaire - Lier un parlementaire
   // ===========================================================================
-  fastify.post('/candidats/:id/link-depute', {
+  fastify.post('/candidats/:id/link-parlementaire', {
     schema: {
       tags: ['Admin'],
-      summary: 'Lier un député à un candidat',
+      summary: 'Lier un parlementaire à un candidat',
     },
   }, async (request) => {
     const { id } = request.params as { id: string };
-    const { deputeId } = request.body as { deputeId: string };
+    const { parlementaireId } = request.body as { parlementaireId: string };
 
-    // Vérifier que le député n'est pas déjà lié
+    // Vérifier que le parlementaire n'est pas déjà lié
     const existing = await fastify.prisma.candidat2027.findFirst({
       where: {
-        deputeId,
+        parlementaireId,
         id: { not: id },
       },
     });
 
     if (existing) {
-      throw new ApiError(400, 'Ce député est déjà lié à un autre candidat');
+      throw new ApiError(400, 'Ce parlementaire est déjà lié à un autre candidat');
     }
 
     const candidat = await fastify.prisma.candidat2027.update({
       where: { id },
-      data: { deputeId },
+      data: { parlementaireId },
       include: {
-        depute: {
+        parlementaire: {
           select: { id: true, slug: true, nom: true, prenom: true },
         },
       },

@@ -97,16 +97,16 @@ const SCRUTINS_KEYWORDS_MAPPING: Record<string, Partial<ScoresAxes>> = {
 };
 
 /**
- * Calcule les scores d'un candidat à partir des votes de son député associé
+ * Calcule les scores d'un candidat à partir des votes de son parlementaire associé
  */
 export async function calculateScoresFromVotes(
   prisma: PrismaClient,
-  deputeId: string
+  parlementaireId: string
 ): Promise<{ scores: ScoresAxes; votesAnalyzed: number }> {
-  // Récupérer tous les votes du député avec les détails du scrutin
+  // Récupérer tous les votes du parlementaire avec les détails du scrutin
   const votes = await prisma.vote.findMany({
     where: {
-      deputeId,
+      parlementaireId,
       position: { in: ['pour', 'contre'] }, // Ignorer abstentions et non-votants
     },
     include: {
@@ -185,7 +185,7 @@ export async function calculateCoherence(
     where: { id: candidatId },
     include: {
       positions: true,
-      depute: {
+      parlementaire: {
         include: {
           votes: {
             include: {
@@ -199,7 +199,7 @@ export async function calculateCoherence(
     },
   });
 
-  if (!candidat?.depute) {
+  if (!candidat?.parlementaire) {
     return { score: 100, details: { coherent: 0, incoherent: 0, total: 0 } };
   }
 
@@ -213,8 +213,8 @@ export async function calculateCoherence(
     }
 
     // Chercher des votes liés au même sujet
-    type VoteWithScrutin = typeof candidat.depute.votes[number];
-    const relatedVotes = candidat.depute.votes.filter((vote: VoteWithScrutin) => {
+    type VoteWithScrutin = typeof candidat.parlementaire.votes[number];
+    const relatedVotes = candidat.parlementaire.votes.filter((vote: VoteWithScrutin) => {
       const titre = vote.scrutin.titre.toLowerCase();
       const sujet = position.sujet.toLowerCase();
       return titre.includes(sujet) || sujet.split(' ').some((mot: string) => mot.length > 4 && titre.includes(mot));
@@ -267,7 +267,7 @@ export async function updateCandidatScores(
 }> {
   const candidat = await prisma.candidat2027.findUnique({
     where: { id: candidatId },
-    include: { depute: true },
+    include: { parlementaire: true },
   });
 
   if (!candidat) {
@@ -289,9 +289,9 @@ export async function updateCandidatScores(
     let scoreType: 'verified' | 'estimated' = 'estimated';
     let votesAnalyzed = 0;
 
-    // Si le candidat est lié à un député, calculer depuis les votes
-    if (candidat.deputeId) {
-      const result = await calculateScoresFromVotes(prisma, candidat.deputeId);
+    // Si le candidat est lié à un parlementaire, calculer depuis les votes
+    if (candidat.parlementaireId) {
+      const result = await calculateScoresFromVotes(prisma, candidat.parlementaireId);
       scores = result.scores;
       votesAnalyzed = result.votesAnalyzed;
 

@@ -49,7 +49,7 @@ const authPlugin: FastifyPluginAsync = async (fastify) => {
   });
 
   // Décorateur pour routes avec auth optionnelle
-  fastify.decorate('authenticateOptional', async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.decorate('authenticateOptional', async (request: FastifyRequest, _reply: FastifyReply) => {
     try {
       await request.jwtVerify();
     } catch {

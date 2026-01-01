@@ -20,10 +20,7 @@ const scrutinsListQuerySchema = z.object({
   search: z.string().optional(),
 });
 
-const scrutinParamsSchema = z.object({
-  numero: z.coerce.number().int().positive(),
-  chambre: z.enum(['assemblee', 'senat']).default('assemblee'),
-});
+// Note: scrutinParamsSchema moved inline to handlers to avoid unused variable warning
 
 export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
   // ===========================================================================
@@ -50,7 +47,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const query = scrutinsListQuerySchema.parse(request.query);
       const { page, limit, chambre, type, sort, tag, importance, dateFrom, dateTo, search } = query;
       const skip = (page - 1) * limit;
@@ -108,7 +105,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       summary: 'Liste des tags',
       description: 'Retourne tous les tags de scrutins avec leur count',
     },
-    handler: async (request, reply) => {
+    handler: async (_request, _reply) => {
       // Récupérer tous les tags distincts
       const scrutins = await fastify.prisma.scrutin.findMany({
         select: { tags: true },
@@ -144,7 +141,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { limit = 10 } = request.query as { limit?: number };
 
       // Only show scrutins from the last 6 months
@@ -186,7 +183,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { numero } = z.object({ numero: z.coerce.number().int().positive() }).parse(request.params);
       const { chambre = 'assemblee' } = request.query as { chambre?: string };
 
@@ -278,7 +275,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { numero } = z.object({ numero: z.coerce.number().int().positive() }).parse(request.params);
       const { page = 1, limit = 50, chambre = 'assemblee', position, groupe } = request.query as any;
       const skip = (page - 1) * limit;

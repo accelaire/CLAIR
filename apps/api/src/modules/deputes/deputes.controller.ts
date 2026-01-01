@@ -56,7 +56,7 @@ export const deputesRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const query = deputesListQuerySchema.parse(request.query);
       const result = await service.getDeputes(query);
       return result;
@@ -72,7 +72,7 @@ export const deputesRoutes: FastifyPluginAsync = async (fastify) => {
       summary: 'Liste des groupes politiques',
       description: 'Retourne tous les groupes politiques actifs avec le nombre de membres',
     },
-    handler: async (request, reply) => {
+    handler: async (_request, _reply) => {
       const groupes = await service.getGroupes();
       return { data: groupes };
     },
@@ -97,7 +97,7 @@ export const deputesRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { slugs } = request.query as { slugs: string };
       const slugList = slugs.split(',').map((s) => s.trim()).filter(Boolean);
 
@@ -128,14 +128,14 @@ export const deputesRoutes: FastifyPluginAsync = async (fastify) => {
       querystring: {
         type: 'object',
         properties: {
-          include: { 
-            type: 'string', 
-            description: 'Relations à inclure (votes,interventions,amendements,stats)' 
+          include: {
+            type: 'string',
+            description: 'Relations à inclure (votes,interventions,amendements,stats)'
           },
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { slug } = deputeParamsSchema.parse(request.params);
       const { include } = deputeQuerySchema.parse(request.query);
 
@@ -165,19 +165,19 @@ export const deputesRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { slug } = deputeParamsSchema.parse(request.params);
 
-      const depute = await fastify.prisma.depute.findUnique({
+      const parlementaire = await fastify.prisma.parlementaire.findUnique({
         where: { slug },
         select: { id: true },
       });
 
-      if (!depute) {
+      if (!parlementaire) {
         throw new ApiError(404, 'Député non trouvé');
       }
 
-      const stats = await service.getDeputeStats(depute.id);
+      const stats = await service.getDeputeStats(parlementaire.id);
       return { data: stats };
     },
   });
@@ -209,20 +209,20 @@ export const deputesRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { slug } = deputeParamsSchema.parse(request.params);
       const query = deputeVotesQuerySchema.parse(request.query);
 
-      const depute = await fastify.prisma.depute.findUnique({
+      const parlementaire = await fastify.prisma.parlementaire.findUnique({
         where: { slug },
         select: { id: true },
       });
 
-      if (!depute) {
+      if (!parlementaire) {
         throw new ApiError(404, 'Député non trouvé');
       }
 
-      const result = await service.getDeputeVotes(depute.id, query);
+      const result = await service.getDeputeVotes(parlementaire.id, query);
       return result;
     },
   });
@@ -251,27 +251,27 @@ export const deputesRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { slug } = deputeParamsSchema.parse(request.params);
       const { page = 1, limit = 20, sort } = request.query as any;
 
-      const depute = await fastify.prisma.depute.findUnique({
+      const parlementaire = await fastify.prisma.parlementaire.findUnique({
         where: { slug },
         select: { id: true },
       });
 
-      if (!depute) {
+      if (!parlementaire) {
         throw new ApiError(404, 'Député non trouvé');
       }
 
       const skip = (page - 1) * limit;
 
-      // Query by deputeId OR by auteurLibelle containing the député's name
+      // Query by parlementaireId OR by auteurLibelle containing the député's name
       const [amendements, total] = await Promise.all([
         fastify.prisma.amendement.findMany({
           where: {
             OR: [
-              { deputeId: depute.id },
+              { parlementaireId: parlementaire.id },
               // Fallback: search by auteurLibelle if no direct link
             ],
             ...(sort && { sort }),
@@ -297,7 +297,7 @@ export const deputesRoutes: FastifyPluginAsync = async (fastify) => {
         fastify.prisma.amendement.count({
           where: {
             OR: [
-              { deputeId: depute.id },
+              { parlementaireId: parlementaire.id },
             ],
             ...(sort && { sort }),
           },
@@ -344,16 +344,16 @@ export const deputesRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { slug } = deputeParamsSchema.parse(request.params);
       const { page = 1, limit = 20, type } = request.query as any;
 
-      const depute = await fastify.prisma.depute.findUnique({
+      const parlementaire = await fastify.prisma.parlementaire.findUnique({
         where: { slug },
         select: { id: true },
       });
 
-      if (!depute) {
+      if (!parlementaire) {
         throw new ApiError(404, 'Député non trouvé');
       }
 
@@ -362,7 +362,7 @@ export const deputesRoutes: FastifyPluginAsync = async (fastify) => {
       const [interventions, total] = await Promise.all([
         fastify.prisma.intervention.findMany({
           where: {
-            deputeId: depute.id,
+            parlementaireId: parlementaire.id,
             ...(type && { type }),
           },
           orderBy: { date: 'desc' },
@@ -371,7 +371,7 @@ export const deputesRoutes: FastifyPluginAsync = async (fastify) => {
         }),
         fastify.prisma.intervention.count({
           where: {
-            deputeId: depute.id,
+            parlementaireId: parlementaire.id,
             ...(type && { type }),
           },
         }),

@@ -49,7 +49,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const filters = filtersQuerySchema.parse(request.query);
       const dateFrom = getDateFromPeriode(filters.periode);
 
@@ -116,7 +116,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
       summary: 'Répartition par groupe',
       description: 'Retourne la distribution des députés par groupe politique',
     },
-    handler: async (request, reply) => {
+    handler: async (_request, _reply) => {
       const groupes = await fastify.prisma.groupePolitique.findMany({
         where: { actif: true },
         select: {
@@ -158,7 +158,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const filters = filtersQuerySchema.parse(request.query);
       const dateFrom = getDateFromPeriode(filters.periode) || new Date('2022-01-01');
 
@@ -230,7 +230,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const filters = filtersQuerySchema.parse(request.query);
       const { limit = 15 } = request.query as { limit?: number };
       const dateFrom = getDateFromPeriode(filters.periode);
@@ -300,7 +300,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { limit = 10 } = request.query as { limit?: number };
 
       // Grouper par secteur
@@ -346,7 +346,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const filters = filtersQuerySchema.parse(request.query);
       const { limit = 10 } = request.query as { limit?: number };
       const dateFrom = getDateFromPeriode(filters.periode);
@@ -433,7 +433,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { periode, limit = 20 } = request.query as { periode?: string; limit?: number };
       const dateFrom = getDateFromPeriode(periode);
 
@@ -553,7 +553,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { periode, limit = 15 } = request.query as { periode?: string; limit?: number };
       const dateFrom = getDateFromPeriode(periode);
 
@@ -594,7 +594,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { periode, limit = 10 } = request.query as { periode?: string; limit?: number };
       const dateFrom = getDateFromPeriode(periode);
 
@@ -653,7 +653,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { limit = 15 } = request.query as { limit?: number };
 
       const lobbyistes = await fastify.prisma.lobbyiste.findMany({

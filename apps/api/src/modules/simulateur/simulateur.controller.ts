@@ -3,6 +3,7 @@
 // =============================================================================
 
 import { FastifyPluginAsync } from 'fastify';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { ApiError } from '../../utils/errors';
 import {
@@ -46,7 +47,7 @@ export const simulateurRoutes: FastifyPluginAsync = async (fastify) => {
       summary: 'Démarrer une session de simulation',
       description: 'Crée une nouvelle session et retourne les questions du quiz',
     },
-  }, async (request, reply) => {
+  }, async (request, _reply) => {
     const body = startSessionSchema.parse(request.body || {});
     const profil = body.profil || {};
 
@@ -96,7 +97,7 @@ export const simulateurRoutes: FastifyPluginAsync = async (fastify) => {
       summary: 'Enregistrer une réponse',
       description: 'Sauvegarde la réponse à une question du quiz',
     },
-  }, async (request, reply) => {
+  }, async (request, _reply) => {
     const { sessionToken, questionId, reponse, tempsReponseMs } = reponseSchema.parse(request.body);
 
     const session = await fastify.prisma.sessionSimulateur.findUnique({
@@ -142,7 +143,7 @@ export const simulateurRoutes: FastifyPluginAsync = async (fastify) => {
       summary: 'Terminer la simulation',
       description: 'Calcule les résultats et retourne les matchs avec les candidats',
     },
-  }, async (request, reply) => {
+  }, async (request, _reply) => {
     const { sessionToken } = completeSchema.parse(request.body);
 
     const session = await fastify.prisma.sessionSimulateur.findUnique({
@@ -207,7 +208,7 @@ export const simulateurRoutes: FastifyPluginAsync = async (fastify) => {
         statut: 'complete',
         completedAt: new Date(),
         profilPolitique,
-        scoresAxes: scores,
+        scoresAxes: scores as unknown as Prisma.InputJsonValue,
       },
     });
 
@@ -280,7 +281,7 @@ export const simulateurRoutes: FastifyPluginAsync = async (fastify) => {
           take: 10,
           orderBy: { createdAt: 'desc' },
         },
-        depute: {
+        parlementaire: {
           select: { slug: true, nom: true, prenom: true },
         },
       },
@@ -305,7 +306,7 @@ export const simulateurRoutes: FastifyPluginAsync = async (fastify) => {
     const candidat = await fastify.prisma.candidat2027.findUnique({
       where: { slug },
       include: {
-        depute: {
+        parlementaire: {
           select: {
             id: true,
             slug: true,
@@ -640,7 +641,6 @@ interface Candidat {
 
 function calculateLifeImpacts(profil: ProfilUtilisateur, candidat: Candidat) {
   // Base values (2024 reference)
-  const smic2024 = 1398.69;
   const loyerMoyenParis = 1200;
   const loyerMoyenProvince = 650;
   const prixEssence = 1.85;

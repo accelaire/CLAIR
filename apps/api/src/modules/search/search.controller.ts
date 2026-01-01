@@ -103,7 +103,7 @@ export const searchRoutes: FastifyPluginAsync = async (fastify) => {
       summary: 'Réindexer Meilisearch',
       description: 'Réindexe toutes les données dans Meilisearch (admin uniquement)',
     },
-    handler: async (request) => {
+    handler: async (_request) => {
       // TODO: Add auth check for admin
       const results = await indexAll(fastify);
       return {

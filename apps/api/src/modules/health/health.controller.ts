@@ -22,7 +22,7 @@ export const healthRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (_request, _reply) => {
       return {
         status: 'ok',
         timestamp: new Date().toISOString(),
@@ -61,7 +61,7 @@ export const healthRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (_request, reply) => {
       const services: Record<string, string> = {
         database: 'unknown',
         redis: 'unknown',

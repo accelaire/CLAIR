@@ -43,7 +43,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const query = lobbyistesListQuerySchema.parse(request.query);
       const { page, limit, type, secteur, search, sort, order } = query;
       const skip = (page - 1) * limit;
@@ -101,7 +101,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
       summary: 'Liste des secteurs',
       description: 'Retourne tous les secteurs d\'activité avec leur count',
     },
-    handler: async (request, reply) => {
+    handler: async (_request, _reply) => {
       const lobbyistes = await fastify.prisma.lobbyiste.groupBy({
         by: ['secteur'],
         _count: { secteur: true },
@@ -129,7 +129,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
       summary: 'Statistiques du lobbying',
       description: 'Retourne des statistiques globales sur le lobbying en France',
     },
-    handler: async (request, reply) => {
+    handler: async (_request, _reply) => {
       const [
         totalLobbyistes,
         totalActions,
@@ -183,7 +183,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { id } = lobbyisteParamsSchema.parse(request.params);
 
       const lobbyiste = await fastify.prisma.lobbyiste.findUnique({
@@ -242,7 +242,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { id } = lobbyisteParamsSchema.parse(request.params);
       const { page = 1, limit = 20, cible } = request.query as any;
       const skip = (page - 1) * limit;
@@ -314,7 +314,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request, _reply) => {
       const { limit = 20, secteur } = request.query as { limit?: number; secteur?: string };
 
       const actions = await fastify.prisma.actionLobby.findMany({
