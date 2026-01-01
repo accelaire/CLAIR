@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Search, ChevronDown, Building2, Briefcase, TrendingUp, Users } from 'lucide-react';
+import { Search, ChevronDown, Building2, Briefcase, TrendingUp, Users, ArrowUp, ArrowDown } from 'lucide-react';
 import { api } from '@/lib/api';
 
 interface Lobbyiste {
@@ -48,10 +48,11 @@ export default function LobbyingPage() {
   const [secteur, setSecteur] = useState('');
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<'nom' | 'budget' | 'actions'>('nom');
+  const [order, setOrder] = useState<'asc' | 'desc'>('asc');
 
   // Fetch lobbyistes
   const { data, isLoading, error } = useQuery<LobbyistesResponse>({
-    queryKey: ['lobbyistes', { search, type, secteur, page, sort }],
+    queryKey: ['lobbyistes', { search, type, secteur, page, sort, order }],
     queryFn: () =>
       api.get('/lobbying', {
         params: {
@@ -61,7 +62,7 @@ export default function LobbyingPage() {
           page,
           limit: 20,
           sort,
-          order: sort === 'nom' ? 'asc' : 'desc',
+          order,
         },
       }).then((res) => res.data),
   });
@@ -178,17 +179,30 @@ export default function LobbyingPage() {
         </div>
 
         {/* Tri */}
-        <div className="relative">
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as any)}
-            className="appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+        <div className="flex items-center gap-1">
+          <div className="relative">
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as 'nom' | 'budget' | 'actions')}
+              className="appearance-none rounded-lg rounded-r-none border border-r-0 bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="nom">Tri: Nom</option>
+              <option value="budget">Tri: Budget</option>
+              <option value="actions">Tri: Actions</option>
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          </div>
+          <button
+            onClick={() => setOrder(order === 'asc' ? 'desc' : 'asc')}
+            className="flex items-center justify-center rounded-lg rounded-l-none border bg-background px-3 py-2 hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+            title={order === 'asc' ? 'Croissant' : 'Décroissant'}
           >
-            <option value="nom">Tri: Nom (A→Z)</option>
-            <option value="budget">Tri: Budget (↓)</option>
-            <option value="actions">Tri: Actions (↓)</option>
-          </select>
-          <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            {order === 'asc' ? (
+              <ArrowUp className="h-4 w-4" />
+            ) : (
+              <ArrowDown className="h-4 w-4" />
+            )}
+          </button>
         </div>
       </div>
 
