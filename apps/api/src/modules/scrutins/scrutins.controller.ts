@@ -167,6 +167,13 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, _reply) => {
       const { limit = 10 } = request.query as { limit?: number };
+      const cacheKey = `scrutins:importants:${limit}`;
+
+      // Check cache first
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
 
       // Only show scrutins from the last 6 months
       const sixMonthsAgo = new Date();
@@ -181,7 +188,12 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         take: limit,
       });
 
-      return { data: scrutins };
+      const response = { data: scrutins };
+
+      // Cache for 12 hours
+      await fastify.redis.setex(cacheKey, 43200, JSON.stringify(response));
+
+      return response;
     },
   });
 

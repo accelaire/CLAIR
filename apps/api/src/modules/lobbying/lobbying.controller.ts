@@ -6,6 +6,9 @@ import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { ApiError } from '../../utils/errors';
 
+// Cache TTL: 12 hours
+const CACHE_TTL_12H = 43200;
+
 // Schemas
 const lobbyistesListQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -140,6 +143,14 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
       description: 'Retourne des statistiques globales sur le lobbying en France',
     },
     handler: async (_request, _reply) => {
+      const cacheKey = 'lobbying:stats';
+
+      // Check cache first
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+
       const [
         totalLobbyistes,
         totalActions,
@@ -165,7 +176,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         }),
       ]);
 
-      return {
+      const response = {
         data: {
           totalLobbyistes,
           totalActions,
@@ -174,6 +185,11 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           topSecteurs: topSecteurs.map((s) => ({ secteur: s.secteur, count: s._count.secteur })),
         },
       };
+
+      // Cache for 12 hours
+      await fastify.redis.setex(cacheKey, CACHE_TTL_12H, JSON.stringify(response));
+
+      return response;
     },
   });
 

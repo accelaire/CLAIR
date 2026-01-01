@@ -54,6 +54,14 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, _reply) => {
       const filters = filtersQuerySchema.parse(request.query);
+      const cacheKey = `analytics:stats:${filters.periode || 'all'}:${filters.groupe || 'all'}`;
+
+      // Check cache first
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+
       const dateFrom = getDateFromPeriode(filters.periode);
 
       const [
@@ -104,7 +112,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
             scrutins.length
           : 0;
 
-      return {
+      const response = {
         data: {
           totalDeputes,
           totalScrutins,
@@ -117,6 +125,11 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
           avgParticipation: Math.round(avgParticipation),
         },
       };
+
+      // Cache for 12 hours
+      await fastify.redis.setex(cacheKey, CACHE_TTL_12H, JSON.stringify(response));
+
+      return response;
     },
   });
 
