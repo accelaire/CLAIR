@@ -24,19 +24,36 @@ const redisPlugin: FastifyPluginAsync = async (fastify) => {
   const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
     maxRetriesPerRequest: 3,
     retryStrategy: (times) => {
-      if (times > 3) {
-        return null; // Stop retrying
+      if (times > 10) {
+        fastify.log.error('Redis: Max retries reached, giving up');
+        return null; // Stop retrying after 10 attempts
       }
-      return Math.min(times * 100, 3000);
+      const delay = Math.min(times * 200, 5000);
+      fastify.log.warn(`Redis: Retry attempt ${times}, waiting ${delay}ms`);
+      return delay;
     },
+    reconnectOnError: (err) => {
+      const targetErrors = ['READONLY', 'ECONNRESET', 'ETIMEDOUT'];
+      if (targetErrors.some((e) => err.message.includes(e))) {
+        return true; // Reconnect on these errors
+      }
+      return false;
+    },
+    enableReadyCheck: true,
+    lazyConnect: false,
   });
 
   redis.on('error', (err) => {
-    fastify.log.error({ err }, 'Redis connection error');
+    // Don't crash on Redis errors, just log them
+    fastify.log.error({ err: err.message }, 'Redis connection error');
   });
 
   redis.on('connect', () => {
     fastify.log.info('Redis connected');
+  });
+
+  redis.on('reconnecting', () => {
+    fastify.log.warn('Redis reconnecting...');
   });
 
   // Service de cache avec helpers

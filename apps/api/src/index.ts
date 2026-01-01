@@ -191,8 +191,10 @@ async function buildApp() {
 // START SERVER
 // =============================================================================
 
+let app: Awaited<ReturnType<typeof buildApp>> | null = null;
+
 async function start() {
-  const app = await buildApp();
+  app = await buildApp();
 
   const port = parseInt(process.env.PORT || '3001', 10);
   const host = process.env.HOST || '0.0.0.0';
@@ -208,14 +210,32 @@ async function start() {
 }
 
 // Graceful shutdown
-process.on('SIGINT', async () => {
-  logger.info('Received SIGINT, shutting down gracefully...');
-  process.exit(0);
+async function gracefulShutdown(signal: string) {
+  logger.info(`Received ${signal}, shutting down gracefully...`);
+  try {
+    if (app) {
+      await app.close();
+      logger.info('Server closed');
+    }
+    process.exit(0);
+  } catch (err) {
+    logger.error({ err }, 'Error during shutdown');
+    process.exit(1);
+  }
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
+// Handle uncaught errors to prevent silent crashes
+process.on('uncaughtException', (err) => {
+  logger.error({ err }, 'Uncaught exception - process will exit');
+  gracefulShutdown('uncaughtException');
 });
 
-process.on('SIGTERM', async () => {
-  logger.info('Received SIGTERM, shutting down gracefully...');
-  process.exit(0);
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error({ reason, promise }, 'Unhandled rejection');
+  // Don't exit on unhandled rejection, just log it
 });
 
 start();

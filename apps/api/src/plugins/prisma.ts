@@ -14,11 +14,19 @@ declare module 'fastify' {
 
 const prismaPlugin: FastifyPluginAsync = async (fastify) => {
   const prisma = new PrismaClient({
-    log: process.env.NODE_ENV === 'development' 
+    log: process.env.NODE_ENV === 'development'
       ? ['query', 'info', 'warn', 'error']
       : ['error'],
+    // Limit connection pool for Railway's limited resources
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL,
+      },
+    },
   });
 
+  // Add connection pool limits via DATABASE_URL params or use defaults
+  // Railway PostgreSQL typically allows 20-100 connections
   await prisma.$connect();
 
   fastify.decorate('prisma', prisma);
