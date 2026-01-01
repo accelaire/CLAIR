@@ -1,5 +1,9 @@
 # Build stage
 FROM node:20-alpine AS builder
+
+# Install OpenSSL for Prisma client generation
+RUN apk add --no-cache openssl
+
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 WORKDIR /app
@@ -43,4 +47,5 @@ WORKDIR /app/apps/api
 
 EXPOSE 3001
 
-CMD ["node", "dist/index.js"]
+# Match the memory configuration from railway.toml
+CMD ["node", "--max-old-space-size=4096", "dist/index.js"]
