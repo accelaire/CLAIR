@@ -8,15 +8,25 @@ import { Footer } from '@/components/layout/footer';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'CLAIR - Transparence Politique',
-  description: 'Plateforme citoyenne de transparence politique. Analysez les votes des députés, le lobbying et les promesses électorales.',
-  keywords: ['politique', 'france', 'députés', 'votes', 'assemblée nationale', 'lobbying', 'transparence'],
+  title: {
+    default: 'CLAIR - Transparence Politique',
+    template: '%s | CLAIR',
+  },
+  description: 'Plateforme citoyenne de transparence politique. Analysez les votes des parlementaires, le lobbying et les promesses électorales.',
+  keywords: ['politique', 'france', 'parlementaires', 'députés', 'sénateurs', 'votes', 'assemblée nationale', 'sénat', 'lobbying', 'transparence'],
   authors: [{ name: 'CLAIR' }],
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://clair.fr'),
   openGraph: {
     title: 'CLAIR - Transparence Politique',
-    description: 'Analysez les votes des députés et le lobbying en France',
+    description: 'Analysez les votes des parlementaires et le lobbying en France',
     type: 'website',
     locale: 'fr_FR',
+    siteName: 'CLAIR',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'CLAIR - Transparence Politique',
+    description: 'Analysez les votes des parlementaires et le lobbying en France',
   },
 };
 

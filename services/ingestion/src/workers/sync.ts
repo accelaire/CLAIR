@@ -12,6 +12,12 @@ import { SenatScrutinsClient } from '../sources/senat/scrutins-client';
 import { DILAInterventionsClient } from '../sources/dila/interventions-client';
 import { SenatInterventionsClient } from '../sources/senat/interventions-client';
 import { logger } from '../utils/logger';
+import {
+  checkSourceFreshness,
+  updateSourceState,
+  updateSourceCheckTime,
+  SOURCES,
+} from '../utils/source-freshness';
 
 const prisma = new PrismaClient();
 const anClient = new AssembleeNationaleDeputesClient(17);
@@ -997,6 +1003,7 @@ export async function fullSync(): Promise<void> {
     const anSyncLog = await prisma.syncLog.create({
       data: {
         source: 'assemblee_nationale',
+        dataType: 'deputes',
         type: 'full',
         statut: 'started',
         startedAt: new Date(),
@@ -1004,6 +1011,15 @@ export async function fullSync(): Promise<void> {
     });
 
     const deputes = await syncDeputes(true);
+
+    // Mettre à jour l'état de la source
+    const anFreshness = await checkSourceFreshness('assemblee_nationale:deputes');
+    await updateSourceState(
+      'assemblee_nationale:deputes',
+      anFreshness.currentEtag,
+      anFreshness.currentLastModified,
+      { itemsCreated: deputes.created, itemsUpdated: deputes.updated }
+    );
 
     await prisma.syncLog.update({
       where: { id: anSyncLog.id },
@@ -1020,6 +1036,7 @@ export async function fullSync(): Promise<void> {
     const senatSyncLog = await prisma.syncLog.create({
       data: {
         source: 'senat',
+        dataType: 'senateurs',
         type: 'full',
         statut: 'started',
         startedAt: new Date(),
@@ -1027,6 +1044,15 @@ export async function fullSync(): Promise<void> {
     });
 
     const senateurs = await syncSenateurs(true);
+
+    // Mettre à jour l'état de la source Sénat
+    const senatFreshness = await checkSourceFreshness('senat:senateurs');
+    await updateSourceState(
+      'senat:senateurs',
+      senatFreshness.currentEtag,
+      senatFreshness.currentLastModified,
+      { itemsCreated: senateurs.created, itemsUpdated: senateurs.updated }
+    );
 
     await prisma.syncLog.update({
       where: { id: senatSyncLog.id },
@@ -1056,6 +1082,271 @@ export async function incrementalSync(): Promise<void> {
   await syncDeputes(false);
   await syncSenateurs(false);
   logger.info('Incremental sync completed');
+}
+
+// =============================================================================
+// SMART SYNC - Sync intelligent basé sur la fraîcheur des sources
+// =============================================================================
+
+export interface SmartSyncOptions {
+  force?: boolean; // Forcer le sync même si pas de changement
+  sources?: string[]; // Sources spécifiques à synchroniser
+  all?: boolean; // Tout synchroniser dans le bon ordre
+  includeScrutins?: boolean;
+  includeAmendements?: boolean;
+  includeInterventions?: boolean;
+  includeLobbying?: boolean;
+  scrutinsLimit?: number;
+  amendementsLimit?: number;
+  interventionsLimit?: number;
+  lobbyingLimit?: number;
+}
+
+export interface SmartSyncResult {
+  sourcesChecked: string[];
+  sourcesChanged: string[];
+  sourcesSkipped: string[];
+  results: Record<string, { created: number; updated: number; skipped?: boolean }>;
+  duration: string;
+}
+
+/**
+ * Smart sync - Vérifie la fraîcheur des sources avant de synchroniser
+ * Ne télécharge que les sources qui ont changé depuis le dernier sync
+ */
+export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSyncResult> {
+  const startTime = Date.now();
+  const results: SmartSyncResult = {
+    sourcesChecked: [],
+    sourcesChanged: [],
+    sourcesSkipped: [],
+    results: {},
+    duration: '0s',
+  };
+
+  logger.info({ options }, 'Starting smart sync...');
+
+  // Déterminer quelles sources vérifier (ordre important pour les relations)
+  let sourcesToCheck: string[];
+
+  if (options.all) {
+    // Tout synchroniser dans le bon ordre (relations d'abord)
+    sourcesToCheck = [
+      // 1. Parlementaires (nécessaires pour les autres sources)
+      'assemblee_nationale:deputes',
+      'senat:senateurs',
+      // 2. Scrutins et votes
+      'assemblee_nationale:scrutins',
+      'senat:scrutins',
+      // 3. Amendements
+      'assemblee_nationale:amendements',
+      'senat:amendements',
+      // 4. Interventions
+      'dila:interventions',
+      'senat:interventions',
+      // 5. Lobbying
+      'hatvp:lobbyistes',
+    ];
+  } else {
+    sourcesToCheck = options.sources || [
+      'assemblee_nationale:deputes',
+      'senat:senateurs',
+      ...(options.includeScrutins ? ['assemblee_nationale:scrutins', 'senat:scrutins'] : []),
+      ...(options.includeAmendements ? ['assemblee_nationale:amendements', 'senat:amendements'] : []),
+      ...(options.includeInterventions ? ['dila:interventions', 'senat:interventions'] : []),
+      ...(options.includeLobbying ? ['hatvp:lobbyistes'] : []),
+    ];
+  }
+
+  for (const sourceKey of sourcesToCheck) {
+    results.sourcesChecked.push(sourceKey);
+
+    try {
+      // Vérifier si la source a changé
+      const freshness = await checkSourceFreshness(sourceKey);
+
+      if (!freshness.hasChanged && !options.force) {
+        logger.info({ sourceKey, lastSyncAt: freshness.lastSyncAt }, 'Source unchanged, skipping');
+        results.sourcesSkipped.push(sourceKey);
+        results.results[sourceKey] = { created: 0, updated: 0, skipped: true };
+
+        // Mettre à jour la date de dernière vérification
+        await updateSourceCheckTime(sourceKey);
+
+        // Logger le skip
+        const skipParts = sourceKey.split(':');
+        const skipSource = skipParts[0] || 'unknown';
+        const skipDataType = skipParts[1] || 'all';
+        await prisma.syncLog.create({
+          data: {
+            source: skipSource,
+            dataType: skipDataType,
+            type: 'incremental',
+            statut: 'skipped',
+            startedAt: new Date(),
+            completedAt: new Date(),
+            metadata: {
+              reason: 'source_unchanged',
+              lastModified: freshness.currentLastModified,
+              etag: freshness.currentEtag,
+            },
+          },
+        });
+
+        continue;
+      }
+
+      results.sourcesChanged.push(sourceKey);
+
+      // Créer le log de sync
+      const logParts = sourceKey.split(':');
+      const logSource = logParts[0] || 'unknown';
+      const logDataType = logParts[1] || 'all';
+      const syncLog = await prisma.syncLog.create({
+        data: {
+          source: logSource,
+          dataType: logDataType,
+          type: 'incremental',
+          statut: 'started',
+          startedAt: new Date(),
+        },
+      });
+
+      try {
+        // Exécuter le sync approprié
+        let syncResult = { created: 0, updated: 0 };
+
+        switch (sourceKey) {
+          case 'assemblee_nationale:deputes':
+            syncResult = await syncDeputes(false);
+            break;
+
+          case 'senat:senateurs':
+            syncResult = await syncSenateurs(false);
+            break;
+
+          case 'assemblee_nationale:scrutins': {
+            const scrutinsResult = await syncScrutins({ limit: options.scrutinsLimit || 50 });
+            syncResult = { created: scrutinsResult.scrutins, updated: 0 };
+            break;
+          }
+
+          case 'senat:scrutins': {
+            const senatScrutinsResult = await syncScrutinsSenat({ limit: options.scrutinsLimit || 50 });
+            syncResult = { created: senatScrutinsResult.scrutins, updated: 0 };
+            break;
+          }
+
+          case 'assemblee_nationale:amendements': {
+            const amendementsResult = await syncAmendements({ limit: options.amendementsLimit || 200 });
+            syncResult = { created: amendementsResult.created, updated: amendementsResult.updated };
+            break;
+          }
+
+          case 'senat:amendements': {
+            const senatAmendementsResult = await syncAmendementsSenat({ maxAmendements: options.amendementsLimit || 200 });
+            syncResult = { created: senatAmendementsResult.created, updated: senatAmendementsResult.updated };
+            break;
+          }
+
+          case 'dila:interventions': {
+            const dilaInterventionsResult = await syncInterventions({ maxSeances: options.interventionsLimit || 50 });
+            syncResult = { created: dilaInterventionsResult.interventions, updated: 0 };
+            break;
+          }
+
+          case 'senat:interventions': {
+            const senatInterventionsResult = await syncInterventionsSenat({ maxSeances: options.interventionsLimit || 50 });
+            syncResult = { created: senatInterventionsResult.interventions, updated: 0 };
+            break;
+          }
+
+          case 'hatvp:lobbyistes': {
+            const lobbyingResult = await syncLobbyistes({
+              limit: options.lobbyingLimit || 500,
+              includeActions: true,
+            });
+            syncResult = lobbyingResult.lobbyistes;
+            break;
+          }
+
+          default:
+            logger.warn({ sourceKey }, 'Unknown source key');
+        }
+
+        results.results[sourceKey] = syncResult;
+
+        // Mettre à jour l'état de la source
+        await updateSourceState(
+          sourceKey,
+          freshness.currentEtag,
+          freshness.currentLastModified,
+          syncResult
+        );
+
+        // Mettre à jour le log
+        await prisma.syncLog.update({
+          where: { id: syncLog.id },
+          data: {
+            statut: 'completed',
+            completedAt: new Date(),
+            itemsCreated: syncResult.created,
+            itemsUpdated: syncResult.updated,
+          },
+        });
+
+        logger.info({ sourceKey, ...syncResult }, 'Source sync completed');
+
+      } catch (error: any) {
+        await prisma.syncLog.update({
+          where: { id: syncLog.id },
+          data: {
+            statut: 'failed',
+            completedAt: new Date(),
+            error: error.message,
+          },
+        });
+        throw error;
+      }
+
+    } catch (error: any) {
+      logger.error({ sourceKey, error: error.message }, 'Error syncing source');
+      results.results[sourceKey] = { created: 0, updated: 0 };
+    }
+  }
+
+  results.duration = `${((Date.now() - startTime) / 1000).toFixed(2)}s`;
+
+  logger.info({
+    duration: results.duration,
+    checked: results.sourcesChecked.length,
+    changed: results.sourcesChanged.length,
+    skipped: results.sourcesSkipped.length,
+  }, 'Smart sync completed');
+
+  return results;
+}
+
+/**
+ * Affiche le statut de fraîcheur de toutes les sources
+ */
+export async function checkSourcesStatus(): Promise<void> {
+  logger.info('Checking sources status...');
+
+  for (const sourceKey of Object.keys(SOURCES)) {
+    try {
+      const freshness = await checkSourceFreshness(sourceKey);
+      logger.info({
+        source: sourceKey,
+        hasChanged: freshness.hasChanged,
+        currentLastModified: freshness.currentLastModified,
+        previousLastModified: freshness.previousLastModified,
+        lastSyncAt: freshness.lastSyncAt,
+      }, freshness.hasChanged ? 'Source HAS CHANGED' : 'Source unchanged');
+    } catch (error: any) {
+      logger.error({ source: sourceKey, error: error.message }, 'Error checking source');
+    }
+  }
 }
 
 // =============================================================================

@@ -5,7 +5,22 @@
 
 import 'dotenv/config';
 import { Command } from 'commander';
-import { fullSync, incrementalSync, syncGroupes, syncDeputes, syncSenateurs, syncScrutins, syncScrutinsSenat, syncInterventions, syncInterventionsSenat, syncAmendements, syncAmendementsSenat, syncLobbyistes } from './workers/sync.js';
+import {
+  fullSync,
+  incrementalSync,
+  smartSync,
+  checkSourcesStatus,
+  syncGroupes,
+  syncDeputes,
+  syncSenateurs,
+  syncScrutins,
+  syncScrutinsSenat,
+  syncInterventions,
+  syncInterventionsSenat,
+  syncAmendements,
+  syncAmendementsSenat,
+  syncLobbyistes,
+} from './workers/sync.js';
 import { logger } from './utils/logger';
 
 const program = new Command();
@@ -134,6 +149,125 @@ program
       }
     } catch (error: any) {
       logger.error({ error: error.message }, 'Test failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: smart-sync
+// =============================================================================
+program
+  .command('smart-sync')
+  .description('Synchronisation intelligente - ne sync que les sources modifiées')
+  .option('-a, --all', 'Synchroniser TOUT dans le bon ordre (parlementaires, scrutins, amendements, interventions, lobbying)')
+  .option('-f, --force', 'Forcer le sync même si pas de changement')
+  .option('-s, --scrutins', 'Inclure les scrutins (AN + Sénat)')
+  .option('-A, --amendements', 'Inclure les amendements (AN + Sénat)')
+  .option('-I, --interventions', 'Inclure les interventions (DILA + Sénat)')
+  .option('-L, --lobbying', 'Inclure les lobbyistes')
+  .option('--scrutins-limit <number>', 'Limite pour les scrutins (défaut: 50)', parseInt)
+  .option('--amendements-limit <number>', 'Limite pour les amendements (défaut: 200)', parseInt)
+  .option('--interventions-limit <number>', 'Limite pour les séances d\'interventions (défaut: 50)', parseInt)
+  .option('--lobbying-limit <number>', 'Limite pour les lobbyistes (défaut: 500)', parseInt)
+  .option('--sources <sources>', 'Sources spécifiques à sync (séparées par des virgules)')
+  .action(async (options) => {
+    try {
+      logger.info({ options }, 'Starting smart sync command');
+
+      const result = await smartSync({
+        all: options.all,
+        force: options.force,
+        includeScrutins: options.scrutins,
+        includeAmendements: options.amendements,
+        includeInterventions: options.interventions,
+        includeLobbying: options.lobbying,
+        scrutinsLimit: options.scrutinsLimit,
+        amendementsLimit: options.amendementsLimit,
+        interventionsLimit: options.interventionsLimit,
+        lobbyingLimit: options.lobbyingLimit,
+        sources: options.sources?.split(',').map((s: string) => s.trim()),
+      });
+
+      logger.info({
+        duration: result.duration,
+        sourcesChecked: result.sourcesChecked.length,
+        sourcesChanged: result.sourcesChanged.length,
+        sourcesSkipped: result.sourcesSkipped.length,
+      }, 'Smart sync completed');
+
+      // Afficher le résumé
+      if (result.sourcesChanged.length > 0) {
+        console.log('\n📊 Sources synchronisées:');
+        for (const source of result.sourcesChanged) {
+          const r = result.results[source];
+          if (r) {
+            console.log(`  ✅ ${source}: ${r.created} créés, ${r.updated} mis à jour`);
+          }
+        }
+      }
+
+      if (result.sourcesSkipped.length > 0) {
+        console.log('\n⏭️  Sources inchangées (skipped):');
+        for (const source of result.sourcesSkipped) {
+          console.log(`  ⚪ ${source}`);
+        }
+      }
+
+      console.log(`\n⏱️  Durée: ${result.duration}`);
+
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Smart sync failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: status
+// =============================================================================
+program
+  .command('status')
+  .description('Afficher le statut de fraîcheur des sources')
+  .action(async () => {
+    try {
+      console.log('\n📡 Vérification des sources...\n');
+      await checkSourcesStatus();
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Status check failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: schedule
+// =============================================================================
+program
+  .command('schedule')
+  .description('Démarrer le scheduler de synchronisation automatique')
+  .option('-d, --dry-run', 'Mode test - affiche les horaires sans exécuter')
+  .action(async (options) => {
+    try {
+      const { startScheduler } = await import('./scheduler.js');
+
+      if (options.dryRun) {
+        console.log('\n📅 Horaires de synchronisation prévus:\n');
+        console.log('  🌙 05:00 - Sync complet quotidien (AN + Sénat + Scrutins)');
+        console.log('  📊 12:00 - Sync scrutins récents');
+        console.log('  📊 18:00 - Sync scrutins récents');
+        console.log('  📋 Dimanche 04:00 - Sync lobbying hebdomadaire');
+        console.log('\n⚠️  Mode dry-run: scheduler non démarré');
+        process.exit(0);
+      }
+
+      logger.info('Starting scheduler...');
+      await startScheduler();
+
+      // Keep the process running
+      console.log('\n✅ Scheduler démarré. Ctrl+C pour arrêter.\n');
+
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Scheduler failed');
       process.exit(1);
     }
   });

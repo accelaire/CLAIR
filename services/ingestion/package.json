@@ -8,6 +8,9 @@
     "build": "tsup src/index.ts src/cli.ts --format cjs,esm",
     "start": "node dist/index.js",
     "sync": "tsx src/cli.ts sync",
+    "smart-sync": "tsx src/cli.ts smart-sync",
+    "status": "tsx src/cli.ts status",
+    "schedule": "tsx src/cli.ts schedule",
     "backfill": "tsx src/cli.ts backfill",
     "lint": "eslint src --ext .ts",
     "type-check": "tsc --noEmit",
@@ -23,6 +26,7 @@
     "dotenv": "^16.3.1",
     "ioredis": "^5.3.2",
     "limiter": "^2.1.0",
+    "node-cron": "^4.2.1",
     "p-limit": "3.1.0",
     "pino": "^8.17.0",
     "pino-pretty": "^10.3.0",
@@ -31,6 +35,7 @@
   "devDependencies": {
     "@clair/config": "workspace:*",
     "@types/node": "^20.10.0",
+    "@types/node-cron": "^3.0.11",
     "tsup": "^8.0.1",
     "tsx": "^4.6.2",
     "typescript": "^5.3.0"

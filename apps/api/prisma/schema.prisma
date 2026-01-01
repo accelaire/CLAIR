@@ -704,10 +704,11 @@ model StatsSimulateur {
 // =============================================================================
 
 model SyncLog {
-  id     String @id @default(uuid())
-  source String // 'assemblee_nationale', 'senat', 'hatvp', 'dila', 'legifrance'
-  type   String // 'full', 'incremental'
-  statut String // 'started', 'completed', 'failed'
+  id       String @id @default(uuid())
+  source   String // 'assemblee_nationale', 'senat', 'hatvp', 'dila', 'legifrance'
+  dataType String @default("all") @map("data_type") // 'deputes', 'scrutins', 'interventions', 'amendements', 'lobbyistes', 'all'
+  type     String // 'full', 'incremental'
+  statut   String // 'started', 'completed', 'failed', 'skipped'
 
   itemsProcessed Int @default(0) @map("items_processed")
   itemsCreated   Int @default(0) @map("items_created")
@@ -721,8 +722,28 @@ model SyncLog {
   completedAt DateTime? @map("completed_at")
 
   @@index([source])
+  @@index([source, dataType])
   @@index([startedAt])
   @@map("sync_logs")
+}
+
+// État des sources pour sync incrémental (ETag, Last-Modified)
+model SourceState {
+  id           String   @id @default(uuid())
+  source       String   // 'assemblee_nationale', 'senat', 'hatvp', 'dila'
+  dataType     String   @map("data_type") // 'deputes', 'scrutins', 'interventions', etc.
+  resourceUrl  String   @map("resource_url") // URL de la ressource
+
+  lastEtag     String?  @map("last_etag")
+  lastModified DateTime? @map("last_modified") // Date de dernière modification de la source
+  lastSyncAt   DateTime  @map("last_sync_at") // Date de dernière sync réussie
+  lastCheckAt  DateTime  @map("last_check_at") // Date de dernière vérification (même si pas de changement)
+
+  metadata     Json?    // Infos supplémentaires (nombre d'items, etc.)
+
+  @@unique([source, dataType])
+  @@index([source])
+  @@map("source_states")
 }
 
 // =============================================================================
