@@ -97,8 +97,13 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           throw new ApiError(400, `Veuillez fournir entre 2 et 4 slugs de ${chambreLabel.toLowerCase()}`);
         }
 
-        const parlementaires = await service.compareParlementaires(slugList);
-        return { data: parlementaires };
+        try {
+          const parlementaires = await service.compareParlementaires(slugList);
+          return { data: parlementaires };
+        } catch (error) {
+          fastify.log.error({ error, slugList }, 'Error in compareParlementaires');
+          throw error;
+        }
       },
     });
 

@@ -36,9 +36,9 @@ export class DeputesService {
     const { page, limit, groupe, departement, search, actif, sort, order } = query;
     const skip = (page - 1) * limit;
 
-    // Construction du where clause - Filter for deputies only (chambre: 'AN')
+    // Construction du where clause - Filter for deputies only
     const where: Prisma.ParlementaireWhereInput = {
-      chambre: 'AN', // Only deputies (Assemblée Nationale)
+      chambre: 'assemblee', // Only deputies (Assemblée Nationale)
       actif,
       ...(groupe && { groupe: { slug: groupe } }),
       ...(departement && { circonscription: { departement } }),
@@ -213,12 +213,8 @@ export class DeputesService {
       return JSON.parse(cached);
     }
 
-    // Utiliser la date du premier scrutin comme limite (pour les données historiques)
-    const oldestScrutin = await this.prisma.scrutin.findFirst({
-      orderBy: { date: 'asc' },
-      select: { date: true },
-    });
-    const since = oldestScrutin?.date || new Date();
+    // Utiliser la date du premier scrutin comme limite (cache cette valeur)
+    const since = await this.getOldestScrutinDate();
 
     const [presence, loyaute, votesCount, interventionsCount, amendementsStats, questionsCount] =
       await Promise.all([
@@ -258,6 +254,28 @@ export class DeputesService {
     return stats;
   }
 
+  private async getOldestScrutinDate(): Promise<Date> {
+    const cacheKey = 'scrutin:oldest:date:assemblee';
+
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      return new Date(cached);
+    }
+
+    const oldestScrutin = await this.prisma.scrutin.findFirst({
+      where: { chambre: 'assemblee' },
+      orderBy: { date: 'asc' },
+      select: { date: true },
+    });
+
+    const since = oldestScrutin?.date || new Date();
+
+    // Cache pour 24h - cette date ne change quasi jamais
+    await this.redis.setex(cacheKey, 86400, since.toISOString());
+
+    return since;
+  }
+
   private async calculatePresence(parlementaireId: string, since: Date): Promise<number> {
     const [totalScrutins, participations] = await Promise.all([
       this.prisma.scrutin.count({
@@ -284,51 +302,42 @@ export class DeputesService {
 
     if (!parlementaire?.groupeId) return 0;
 
-    // Récupérer tous les votes du parlementaire et de son groupe
-    const votes = await this.prisma.vote.findMany({
-      where: {
-        parlementaireId,
-        position: { not: 'absent' },
-        scrutin: { date: { gte: since } },
-      },
-      include: {
-        scrutin: {
-          include: {
-            votes: {
-              where: {
-                parlementaire: { groupeId: parlementaire.groupeId },
-                position: { not: 'absent' },
-              },
-            },
-          },
-        },
-      },
-    });
+    // Optimized: Use raw SQL to calculate loyalty without loading all votes in memory
+    // This prevents OOM kills when comparing multiple deputies
+    const result = await this.prisma.$queryRaw<{ loyal_count: bigint; total_count: bigint }[]>`
+      WITH parlementaire_votes AS (
+        SELECT v.id, v.position, v.scrutin_id
+        FROM votes v
+        JOIN scrutins s ON v.scrutin_id = s.id
+        WHERE v.parlementaire_id = ${parlementaireId}
+          AND v.position != 'absent'
+          AND s.chambre = 'assemblee'
+          AND s.date >= ${since}
+      ),
+      group_majority AS (
+        SELECT
+          v.scrutin_id,
+          v.position,
+          COUNT(*) as vote_count,
+          ROW_NUMBER() OVER (PARTITION BY v.scrutin_id ORDER BY COUNT(*) DESC) as rn
+        FROM votes v
+        JOIN parlementaires p ON v.parlementaire_id = p.id
+        WHERE p.groupe_id = ${parlementaire.groupeId}
+          AND v.position != 'absent'
+        GROUP BY v.scrutin_id, v.position
+      )
+      SELECT
+        COUNT(CASE WHEN pv.position = gm.position THEN 1 END)::bigint as loyal_count,
+        COUNT(*)::bigint as total_count
+      FROM parlementaire_votes pv
+      LEFT JOIN group_majority gm ON pv.scrutin_id = gm.scrutin_id AND gm.rn = 1
+    `;
 
-    if (votes.length === 0) return 0;
+    const { loyal_count, total_count } = result[0] || { loyal_count: 0n, total_count: 0n };
 
-    let loyalVotes = 0;
+    if (total_count === 0n) return 0;
 
-    for (const vote of votes) {
-      // Calculer la position majoritaire du groupe
-      const groupVotes = vote.scrutin.votes;
-      const positions = { pour: 0, contre: 0, abstention: 0 };
-
-      for (const gv of groupVotes) {
-        if (gv.position in positions) {
-          positions[gv.position as keyof typeof positions]++;
-        }
-      }
-
-      const sortedPositions = Object.entries(positions).sort((a, b) => b[1] - a[1]);
-      const majorityPosition = sortedPositions[0]?.[0];
-
-      if (majorityPosition && vote.position === majorityPosition) {
-        loyalVotes++;
-      }
-    }
-
-    return Math.round((loyalVotes / votes.length) * 100);
+    return Math.round((Number(loyal_count) / Number(total_count)) * 100);
   }
 
   private async getAmendementsStats(parlementaireId: string) {
@@ -416,11 +425,25 @@ export class DeputesService {
   // ===========================================================================
 
   async compareDeputes(slugs: string[]) {
+    // Cache par combinaison de slugs (triés pour cohérence)
+    const sortedSlugs = [...slugs].sort();
+    const cacheKey = `deputes:compare:${sortedSlugs.join(',')}`;
+
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
     const deputes = await Promise.all(
       slugs.map((slug) => this.getDeputeBySlug(slug, ['stats']))
     );
 
-    return deputes.filter(Boolean);
+    const result = deputes.filter(Boolean);
+
+    // Cache pour 12h (données rafraîchies en daily)
+    await this.redis.setex(cacheKey, 43200, JSON.stringify(result));
+
+    return result;
   }
 
   // ===========================================================================
@@ -438,7 +461,7 @@ export class DeputesService {
     const groupes = await this.prisma.groupePolitique.findMany({
       where: { actif: true },
       include: {
-        _count: { select: { parlementaires: { where: { actif: true, chambre: 'AN' } } } },
+        _count: { select: { parlementaires: { where: { actif: true, chambre: 'assemblee' } } } },
       },
       orderBy: { ordre: 'asc' },
     });
