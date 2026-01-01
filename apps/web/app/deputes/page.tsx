@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Search, Filter, ChevronDown, Users } from 'lucide-react';
+import { Search, ChevronDown, Users, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 
 interface Depute {
   id: string;
@@ -33,21 +34,31 @@ interface DeputesResponse {
     page: number;
     limit: number;
     totalPages: number;
+    hasNext: boolean;
   };
 }
 
 export default function DeputesPage() {
   const [search, setSearch] = useState('');
   const [groupe, setGroupe] = useState('');
-  const [page, setPage] = useState(1);
 
-  // Fetch députés
-  const { data, isLoading, error } = useQuery<DeputesResponse>({
-    queryKey: ['deputes', { search, groupe, page }],
-    queryFn: () =>
+  // Fetch députés avec infinite scroll
+  const {
+    data,
+    isLoading,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery<DeputesResponse>({
+    queryKey: ['deputes', { search, groupe }],
+    queryFn: ({ pageParam = 1 }) =>
       api.get('/deputes', {
-        params: { search, groupe: groupe || undefined, page, limit: 24 },
+        params: { search, groupe: groupe || undefined, page: pageParam, limit: 24 },
       }).then((res) => res.data),
+    getNextPageParam: (lastPage) =>
+      lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
+    initialPageParam: 1,
   });
 
   // Fetch groupes pour le filtre
@@ -55,6 +66,17 @@ export default function DeputesPage() {
     queryKey: ['groupes'],
     queryFn: () => api.get('/deputes/groupes').then((res) => res.data.data),
   });
+
+  // Hook pour le scroll infini
+  const { loadMoreRef } = useInfiniteScroll({
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  });
+
+  // Flatten all pages data
+  const deputes = data?.pages.flatMap((page) => page.data) ?? [];
+  const total = data?.pages[0]?.meta.total ?? 0;
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -78,10 +100,7 @@ export default function DeputesPage() {
             type="text"
             placeholder="Rechercher un député..."
             value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
+            onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-lg border bg-background px-10 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
@@ -90,10 +109,7 @@ export default function DeputesPage() {
         <div className="relative">
           <select
             value={groupe}
-            onChange={(e) => {
-              setGroupe(e.target.value);
-              setPage(1);
-            }}
+            onChange={(e) => setGroupe(e.target.value)}
             className="appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Tous les groupes</option>
@@ -107,7 +123,7 @@ export default function DeputesPage() {
         </div>
       </div>
 
-      {/* Loading */}
+      {/* Loading initial */}
       {isLoading && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {Array.from({ length: 12 }).map((_, i) => (
@@ -132,14 +148,14 @@ export default function DeputesPage() {
       )}
 
       {/* Liste des députés */}
-      {data && (
+      {deputes.length > 0 && (
         <>
           <div className="mb-4 text-sm text-muted-foreground">
-            {data.meta.total} résultat{data.meta.total > 1 ? 's' : ''}
+            {total} résultat{total > 1 ? 's' : ''}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {data.data.map((depute) => (
+            {deputes.map((depute) => (
               <Link
                 key={depute.id}
                 href={`/deputes/${depute.slug}`}
@@ -165,7 +181,7 @@ export default function DeputesPage() {
                     <h3 className="truncate font-semibold group-hover:text-primary">
                       {depute.prenom} {depute.nom}
                     </h3>
-                    
+
                     {/* Groupe */}
                     {depute.groupe && (
                       <div className="flex items-center gap-2 mt-1">
@@ -191,28 +207,20 @@ export default function DeputesPage() {
             ))}
           </div>
 
-          {/* Pagination */}
-          {data.meta.totalPages > 1 && (
-            <div className="mt-8 flex items-center justify-center gap-2">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-50"
-              >
-                Précédent
-              </button>
-              <span className="px-4 py-2 text-sm text-muted-foreground">
-                Page {page} sur {data.meta.totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(data.meta.totalPages, p + 1))}
-                disabled={page === data.meta.totalPages}
-                className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-50"
-              >
-                Suivant
-              </button>
-            </div>
-          )}
+          {/* Infinite scroll trigger */}
+          <div ref={loadMoreRef} className="mt-8 flex justify-center py-4">
+            {isFetchingNextPage && (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span>Chargement...</span>
+              </div>
+            )}
+            {!hasNextPage && deputes.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                Tous les députés ont été chargés
+              </p>
+            )}
+          </div>
         </>
       )}
     </div>

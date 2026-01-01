@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Search, ChevronDown, Building2, Briefcase, TrendingUp, Users, ArrowUp, ArrowDown } from 'lucide-react';
+import { Search, ChevronDown, Building2, Briefcase, TrendingUp, Users, ArrowUp, ArrowDown, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 
 interface Lobbyiste {
   id: string;
@@ -24,6 +25,7 @@ interface LobbyistesResponse {
     page: number;
     limit: number;
     totalPages: number;
+    hasNext: boolean;
   };
 }
 
@@ -46,25 +48,34 @@ export default function LobbyingPage() {
   const [search, setSearch] = useState('');
   const [type, setType] = useState('');
   const [secteur, setSecteur] = useState('');
-  const [page, setPage] = useState(1);
   const [sort, setSort] = useState<'nom' | 'budget' | 'actions'>('nom');
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
 
-  // Fetch lobbyistes
-  const { data, isLoading, error } = useQuery<LobbyistesResponse>({
-    queryKey: ['lobbyistes', { search, type, secteur, page, sort, order }],
-    queryFn: () =>
+  // Fetch lobbyistes avec infinite scroll
+  const {
+    data,
+    isLoading,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery<LobbyistesResponse>({
+    queryKey: ['lobbyistes', { search, type, secteur, sort, order }],
+    queryFn: ({ pageParam = 1 }) =>
       api.get('/lobbying', {
         params: {
           search: search || undefined,
           type: type || undefined,
           secteur: secteur || undefined,
-          page,
+          page: pageParam,
           limit: 20,
           sort,
           order,
         },
       }).then((res) => res.data),
+    getNextPageParam: (lastPage) =>
+      lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
+    initialPageParam: 1,
   });
 
   // Fetch secteurs
@@ -78,6 +89,17 @@ export default function LobbyingPage() {
     queryKey: ['lobbying-stats'],
     queryFn: () => api.get('/lobbying/stats').then((res) => res.data.data),
   });
+
+  // Hook pour le scroll infini
+  const { loadMoreRef } = useInfiniteScroll({
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  });
+
+  // Flatten all pages data
+  const lobbyistes = data?.pages.flatMap((page) => page.data) ?? [];
+  const total = data?.pages[0]?.meta.total ?? 0;
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -132,10 +154,7 @@ export default function LobbyingPage() {
             type="text"
             placeholder="Rechercher un lobbyiste..."
             value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
+            onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-lg border bg-background px-10 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
@@ -144,10 +163,7 @@ export default function LobbyingPage() {
         <div className="relative">
           <select
             value={type}
-            onChange={(e) => {
-              setType(e.target.value);
-              setPage(1);
-            }}
+            onChange={(e) => setType(e.target.value)}
             className="appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Tous les types</option>
@@ -162,10 +178,7 @@ export default function LobbyingPage() {
         <div className="relative">
           <select
             value={secteur}
-            onChange={(e) => {
-              setSecteur(e.target.value);
-              setPage(1);
-            }}
+            onChange={(e) => setSecteur(e.target.value)}
             className="appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary min-w-[150px]"
           >
             <option value="">Tous les secteurs</option>
@@ -206,7 +219,7 @@ export default function LobbyingPage() {
         </div>
       </div>
 
-      {/* Loading */}
+      {/* Loading initial */}
       {isLoading && (
         <div className="space-y-4">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -226,14 +239,14 @@ export default function LobbyingPage() {
       )}
 
       {/* Liste */}
-      {data && (
+      {lobbyistes.length > 0 && (
         <>
           <div className="mb-4 text-sm text-muted-foreground">
-            {data.meta.total} représentant{data.meta.total > 1 ? 's' : ''} d&apos;intérêts
+            {total} représentant{total > 1 ? 's' : ''} d&apos;intérêts
           </div>
 
           <div className="space-y-3">
-            {data.data.map((lobbyiste) => {
+            {lobbyistes.map((lobbyiste) => {
               const typeConfig = typeLabels[lobbyiste.type || ''];
               const Icon = typeConfig?.icon || Building2;
 
@@ -289,28 +302,20 @@ export default function LobbyingPage() {
             })}
           </div>
 
-          {/* Pagination */}
-          {data.meta.totalPages > 1 && (
-            <div className="mt-8 flex items-center justify-center gap-2">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-50"
-              >
-                Précédent
-              </button>
-              <span className="px-4 py-2 text-sm text-muted-foreground">
-                Page {page} sur {data.meta.totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(data.meta.totalPages, p + 1))}
-                disabled={page === data.meta.totalPages}
-                className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-50"
-              >
-                Suivant
-              </button>
-            </div>
-          )}
+          {/* Infinite scroll trigger */}
+          <div ref={loadMoreRef} className="mt-8 flex justify-center py-4">
+            {isFetchingNextPage && (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span>Chargement...</span>
+              </div>
+            )}
+            {!hasNextPage && lobbyistes.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                Tous les lobbyistes ont été chargés
+              </p>
+            )}
+          </div>
         </>
       )}
     </div>

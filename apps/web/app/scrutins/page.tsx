@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Search, ChevronDown, Vote, CheckCircle, XCircle, Calendar, Tag, Building2 } from 'lucide-react';
+import { Search, ChevronDown, CheckCircle, XCircle, Calendar, Tag, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 
 interface Scrutin {
   id: string;
@@ -30,6 +31,7 @@ interface ScrutinsResponse {
     page: number;
     limit: number;
     totalPages: number;
+    hasNext: boolean;
   };
 }
 
@@ -54,22 +56,31 @@ export default function ScrutinsPage() {
   const [chambre, setChambre] = useState('');
   const [type, setType] = useState('');
   const [tag, setTag] = useState('');
-  const [page, setPage] = useState(1);
 
-  // Fetch scrutins
-  const { data, isLoading, error } = useQuery<ScrutinsResponse>({
-    queryKey: ['scrutins', { search, chambre, type, tag, page }],
-    queryFn: () =>
+  // Fetch scrutins avec infinite scroll
+  const {
+    data,
+    isLoading,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery<ScrutinsResponse>({
+    queryKey: ['scrutins', { search, chambre, type, tag }],
+    queryFn: ({ pageParam = 1 }) =>
       api.get('/scrutins', {
         params: {
           search: search || undefined,
           chambre: chambre || undefined,
           type: type || undefined,
           tag: tag || undefined,
-          page,
+          page: pageParam,
           limit: 20
         },
       }).then((res) => res.data),
+    getNextPageParam: (lastPage) =>
+      lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
+    initialPageParam: 1,
   });
 
   // Fetch tags
@@ -77,6 +88,17 @@ export default function ScrutinsPage() {
     queryKey: ['scrutins-tags'],
     queryFn: () => api.get('/scrutins/tags').then((res) => res.data.data),
   });
+
+  // Hook pour le scroll infini
+  const { loadMoreRef } = useInfiniteScroll({
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  });
+
+  // Flatten all pages data
+  const scrutins = data?.pages.flatMap((page) => page.data) ?? [];
+  const total = data?.pages[0]?.meta.total ?? 0;
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('fr-FR', {
@@ -108,10 +130,7 @@ export default function ScrutinsPage() {
             type="text"
             placeholder="Rechercher un scrutin..."
             value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
+            onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-lg border bg-background px-10 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
@@ -120,10 +139,7 @@ export default function ScrutinsPage() {
         <div className="relative">
           <select
             value={chambre}
-            onChange={(e) => {
-              setChambre(e.target.value);
-              setPage(1);
-            }}
+            onChange={(e) => setChambre(e.target.value)}
             className="appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Toutes les chambres</option>
@@ -137,10 +153,7 @@ export default function ScrutinsPage() {
         <div className="relative">
           <select
             value={type}
-            onChange={(e) => {
-              setType(e.target.value);
-              setPage(1);
-            }}
+            onChange={(e) => setType(e.target.value)}
             className="appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Tous les types</option>
@@ -155,10 +168,7 @@ export default function ScrutinsPage() {
         <div className="relative">
           <select
             value={tag}
-            onChange={(e) => {
-              setTag(e.target.value);
-              setPage(1);
-            }}
+            onChange={(e) => setTag(e.target.value)}
             className="appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Toutes les thématiques</option>
@@ -172,7 +182,7 @@ export default function ScrutinsPage() {
         </div>
       </div>
 
-      {/* Loading */}
+      {/* Loading initial */}
       {isLoading && (
         <div className="space-y-4">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -192,14 +202,14 @@ export default function ScrutinsPage() {
       )}
 
       {/* Liste des scrutins */}
-      {data && (
+      {scrutins.length > 0 && (
         <>
           <div className="mb-4 text-sm text-muted-foreground">
-            {data.meta.total} scrutin{data.meta.total > 1 ? 's' : ''}
+            {total} scrutin{total > 1 ? 's' : ''}
           </div>
 
           <div className="space-y-4">
-            {data.data.map((scrutin) => (
+            {scrutins.map((scrutin) => (
               <Link
                 key={scrutin.id}
                 href={`/scrutins/${scrutin.numero}?chambre=${scrutin.chambre || 'assemblee'}`}
@@ -271,28 +281,20 @@ export default function ScrutinsPage() {
             ))}
           </div>
 
-          {/* Pagination */}
-          {data.meta.totalPages > 1 && (
-            <div className="mt-8 flex items-center justify-center gap-2">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-50"
-              >
-                Précédent
-              </button>
-              <span className="px-4 py-2 text-sm text-muted-foreground">
-                Page {page} sur {data.meta.totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(data.meta.totalPages, p + 1))}
-                disabled={page === data.meta.totalPages}
-                className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-50"
-              >
-                Suivant
-              </button>
-            </div>
-          )}
+          {/* Infinite scroll trigger */}
+          <div ref={loadMoreRef} className="mt-8 flex justify-center py-4">
+            {isFetchingNextPage && (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span>Chargement...</span>
+              </div>
+            )}
+            {!hasNextPage && scrutins.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                Tous les scrutins ont été chargés
+              </p>
+            )}
+          </div>
         </>
       )}
     </div>
