@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Search, Users, Vote, Building2, ArrowRight, CheckCircle, XCircle, Calendar, BarChart3, Sparkles } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useCountUp } from '@/hooks/useCountUp';
 
 interface Stats {
   deputes: number;
@@ -49,14 +50,23 @@ export default function HomePage() {
         actionsLobby: lobbyingRes.data.data.totalActions,
       };
     },
-    staleTime: 60000,
+    staleTime: 30000, // Refresh stats every 30 seconds
+    refetchOnWindowFocus: true,
   });
+
+  // Animated counters
+  const deputesCount = useCountUp(stats?.deputes);
+  const senateursCount = useCountUp(stats?.senateurs);
+  const scrutinsCount = useCountUp(stats?.scrutins);
+  const lobbyistesCount = useCountUp(stats?.lobbyistes);
+  const actionsCount = useCountUp(stats?.actionsLobby);
 
   // Fetch recent important scrutins
   const { data: recentScrutins } = useQuery<{ data: RecentScrutin[] }>({
     queryKey: ['home-recent-scrutins'],
     queryFn: () => api.get('/scrutins/importants', { params: { limit: 5 } }).then(res => res.data),
-    staleTime: 60000,
+    staleTime: 30000,
+    refetchOnWindowFocus: true,
   });
 
   const handleSearch = (e: React.FormEvent) => {
@@ -108,38 +118,53 @@ export default function HomePage() {
               </div>
             </form>
 
-            {/* Quick Stats */}
+            {/* Quick Stats - Clickable with animation */}
             <div className="mt-12 grid grid-cols-2 gap-4 sm:grid-cols-5">
-              <div className="rounded-lg border bg-card p-4">
-                <div className="text-2xl font-bold text-primary">
-                  {stats?.deputes || '577'}
+              <Link
+                href="/deputes"
+                className="rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+              >
+                <div className="text-2xl font-bold text-primary tabular-nums">
+                  {stats?.deputes ? deputesCount.toLocaleString('fr-FR') : '—'}
                 </div>
                 <div className="text-sm text-muted-foreground">Députés</div>
-              </div>
-              <div className="rounded-lg border bg-card p-4">
-                <div className="text-2xl font-bold text-primary">
-                  {stats?.senateurs || '348'}
+              </Link>
+              <Link
+                href="/senateurs"
+                className="rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+              >
+                <div className="text-2xl font-bold text-primary tabular-nums">
+                  {stats?.senateurs ? senateursCount.toLocaleString('fr-FR') : '—'}
                 </div>
                 <div className="text-sm text-muted-foreground">Sénateurs</div>
-              </div>
-              <div className="rounded-lg border bg-card p-4">
-                <div className="text-2xl font-bold text-primary">
-                  {stats?.scrutins?.toLocaleString('fr-FR') || '—'}
+              </Link>
+              <Link
+                href="/scrutins"
+                className="rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+              >
+                <div className="text-2xl font-bold text-primary tabular-nums">
+                  {stats?.scrutins ? scrutinsCount.toLocaleString('fr-FR') : '—'}
                 </div>
                 <div className="text-sm text-muted-foreground">Scrutins</div>
-              </div>
-              <div className="rounded-lg border bg-card p-4">
-                <div className="text-2xl font-bold text-primary">
-                  {stats?.lobbyistes?.toLocaleString('fr-FR') || '—'}
+              </Link>
+              <Link
+                href="/lobbying"
+                className="rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+              >
+                <div className="text-2xl font-bold text-primary tabular-nums">
+                  {stats?.lobbyistes ? lobbyistesCount.toLocaleString('fr-FR') : '—'}
                 </div>
                 <div className="text-sm text-muted-foreground">Lobbyistes</div>
-              </div>
-              <div className="rounded-lg border bg-card p-4">
-                <div className="text-2xl font-bold text-primary">
-                  {stats?.actionsLobby?.toLocaleString('fr-FR') || '—'}
+              </Link>
+              <Link
+                href="/lobbying"
+                className="rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+              >
+                <div className="text-2xl font-bold text-primary tabular-nums">
+                  {stats?.actionsLobby ? actionsCount.toLocaleString('fr-FR') : '—'}
                 </div>
                 <div className="text-sm text-muted-foreground">Actions lobby</div>
-              </div>
+              </Link>
             </div>
           </div>
         </div>
