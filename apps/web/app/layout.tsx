@@ -9,24 +9,33 @@ const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: {
-    default: 'CLAIR - Transparence Politique',
+    default: 'CLAIR - Transparence Politique en France',
     template: '%s | CLAIR',
   },
-  description: 'Plateforme citoyenne de transparence politique. Analysez les votes des parlementaires, le lobbying et les promesses électorales.',
+  description: 'Plateforme citoyenne de transparence politique. Analysez les votes des parlementaires, le lobbying et les promesses électorales en France.',
   keywords: ['politique', 'france', 'parlementaires', 'députés', 'sénateurs', 'votes', 'assemblée nationale', 'sénat', 'lobbying', 'transparence'],
   authors: [{ name: 'CLAIR' }],
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://clair.fr'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote'),
   openGraph: {
-    title: 'CLAIR - Transparence Politique',
-    description: 'Analysez les votes des parlementaires et le lobbying en France',
+    title: 'CLAIR - Transparence Politique en France',
+    description: 'Plateforme citoyenne pour analyser les votes des députés et sénateurs, suivre le lobbying et les promesses électorales.',
     type: 'website',
     locale: 'fr_FR',
     siteName: 'CLAIR',
+    images: [
+      {
+        url: '/opengraph-image.png',
+        width: 1200,
+        height: 630,
+        alt: 'CLAIR - Transparence Politique',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'CLAIR - Transparence Politique',
-    description: 'Analysez les votes des parlementaires et le lobbying en France',
+    title: 'CLAIR - Transparence Politique en France',
+    description: 'Plateforme citoyenne pour analyser les votes des députés et sénateurs, suivre le lobbying et les promesses électorales.',
+    images: ['/opengraph-image.png'],
   },
 };
 
