@@ -37,13 +37,14 @@ export const SCHEDULES: Record<string, ScheduleConfig> = {
   // Sync quotidien complet - 05:00 (après MAJ des sources vers 3-4h)
   dailySync: {
     cron: '0 5 * * *',
-    description: 'Sync quotidien complet (AN + Sénat + Scrutins)',
+    description: 'Sync quotidien complet (toutes les sources)',
     enabled: true,
     handler: async () => {
-      logger.info('Running daily sync...');
+      logger.info('Running daily sync (all sources)...');
       const result = await smartSync({
-        includeScrutins: true,
+        all: true,
         scrutinsLimit: 50,
+        amendementsLimit: 100,
       });
       logger.info({ result }, 'Daily sync completed');
     },

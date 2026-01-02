@@ -60,4 +60,4 @@ COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
 COPY --from=builder /app/node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/@prisma/client ./node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/@prisma/client
 COPY --from=builder /app/node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/.prisma ./node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/.prisma
 
-CMD ["node", "--max-old-space-size=2048", "services/ingestion/dist/cli.js", "schedule"]
+CMD ["node", "--max-old-space-size=2048", "services/ingestion/dist/cli.js", "smart-sync", "--all"]
