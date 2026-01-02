@@ -3,5 +3,6 @@ builder = "DOCKERFILE"
 dockerfilePath = "services/ingestion/Dockerfile"
 
 [deploy]
+startCommand = "node --max-old-space-size=2048 services/ingestion/dist/cli.js schedule"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5

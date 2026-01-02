@@ -1,6 +1,6 @@
 [build]
-builder = "NIXPACKS"
-buildCommand = "cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @clair/api db:generate && pnpm --filter @clair/api build"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 # With 8GB RAM available, use 4GB heap for Node.js
