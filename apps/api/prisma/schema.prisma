@@ -259,7 +259,7 @@ model Amendement {
 
 model Lobbyiste {
   id     String  @id @default(uuid())
-  siren  String? @unique
+  siren  String? // Not unique: multiple entities can share same SIREN (regional branches, etc.)
   nom    String
   type   String // 'entreprise', 'association', 'cabinet', 'syndicat', 'organisation_pro'
   secteur String?
