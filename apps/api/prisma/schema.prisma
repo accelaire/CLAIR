@@ -48,6 +48,16 @@ model Parlementaire {
   serie             String?  // Série électorale sénatoriale (1, 2, 3)
   commissionPermanente String? @map("commission_permanente")
 
+  // Stats pré-calculées (recalculées lors de l'ingestion quotidienne)
+  statsPresence       Int?      @map("stats_presence")      // % de présence aux scrutins
+  statsLoyaute        Int?      @map("stats_loyaute")       // % de vote avec le groupe
+  statsParticipation  Int?      @map("stats_participation") // Nombre de votes (hors absences)
+  statsInterventions  Int?      @map("stats_interventions") // Nombre total d'interventions
+  statsAmendements    Int?      @map("stats_amendements")   // Nombre d'amendements proposés
+  statsAmendementsAdoptes Int?  @map("stats_amendements_adoptes") // Nombre d'amendements adoptés
+  statsQuestions      Int?      @map("stats_questions")     // Nombre de questions posées
+  statsCalculatedAt   DateTime? @map("stats_calculated_at") // Date du dernier calcul
+
   // Relations
   votes         Vote[]
   interventions Intervention[]

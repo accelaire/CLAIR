@@ -21,6 +21,7 @@ import {
   syncAmendementsSenat,
   syncLobbyistes,
 } from './workers/sync.js';
+import { calculateAllStats } from './workers/stats-calculator.js';
 import { logger } from './utils/logger';
 
 const program = new Command();
@@ -235,6 +236,33 @@ program
       process.exit(0);
     } catch (error: any) {
       logger.error({ error: error.message }, 'Status check failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: calculate-stats
+// =============================================================================
+program
+  .command('calculate-stats')
+  .description('Calculer/recalculer les statistiques pré-calculées des parlementaires')
+  .option('-c, --chambre <chambre>', 'Chambre spécifique (assemblee ou senat)')
+  .action(async (options) => {
+    try {
+      logger.info({ chambre: options.chambre || 'all' }, 'Starting stats calculation');
+      console.log('\n📊 Calcul des statistiques parlementaires...\n');
+
+      const result = await calculateAllStats(options.chambre);
+
+      console.log(`\n✅ Stats calculées pour ${result.updated}/${result.total} parlementaires`);
+      if (result.errors > 0) {
+        console.log(`⚠️  ${result.errors} erreurs`);
+      }
+      console.log(`⏱️  Durée: ${result.duration}\n`);
+
+      process.exit(result.errors > 0 ? 1 : 0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Stats calculation failed');
       process.exit(1);
     }
   });

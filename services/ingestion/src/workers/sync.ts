@@ -1100,6 +1100,7 @@ export interface SmartSyncOptions {
   amendementsLimit?: number;
   interventionsLimit?: number;
   lobbyingLimit?: number;
+  skipStatsCalculation?: boolean; // Ne pas recalculer les stats après le sync
 }
 
 export interface SmartSyncResult {
@@ -1312,6 +1313,24 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     } catch (error: any) {
       logger.error({ sourceKey, error: error.message }, 'Error syncing source');
       results.results[sourceKey] = { created: 0, updated: 0 };
+    }
+  }
+
+  // Recalculer les stats si des sources ont changé (sauf si skip demandé)
+  if (results.sourcesChanged.length > 0 && !options.skipStatsCalculation) {
+    logger.info('Recalculating parlementaire stats after sync...');
+    try {
+      const { calculateAllStats } = await import('./stats-calculator.js');
+      const statsResult = await calculateAllStats();
+      logger.info({
+        total: statsResult.total,
+        updated: statsResult.updated,
+        errors: statsResult.errors,
+        duration: statsResult.duration,
+      }, 'Stats calculation completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Stats calculation failed (non-blocking)');
+      // Ne pas faire échouer le sync complet si le calcul des stats échoue
     }
   }
 

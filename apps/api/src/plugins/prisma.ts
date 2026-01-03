@@ -23,10 +23,10 @@ function getDatabaseUrl(): string {
   const urlObj = new URL(url);
 
   // Limit pool for Railway's limited memory (512MB container)
-  // connection_limit: max connections in pool
+  // connection_limit: max connections in pool (increased from 5 to 15 for better concurrency)
   // pool_timeout: how long to wait for a connection
   if (!urlObj.searchParams.has('connection_limit')) {
-    urlObj.searchParams.set('connection_limit', '5');
+    urlObj.searchParams.set('connection_limit', '15');
   }
   if (!urlObj.searchParams.has('pool_timeout')) {
     urlObj.searchParams.set('pool_timeout', '10');

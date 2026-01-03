@@ -202,7 +202,7 @@ export class DeputesService {
   }
 
   // ===========================================================================
-  // STATISTIQUES
+  // STATISTIQUES (utilise les stats pré-calculées lors de l'ingestion)
   // ===========================================================================
 
   async getDeputeStats(deputeId: string): Promise<DeputeStats> {
@@ -213,7 +213,53 @@ export class DeputesService {
       return JSON.parse(cached);
     }
 
-    // Utiliser la date du premier scrutin comme limite (cache cette valeur)
+    // Récupérer les stats pré-calculées depuis la table parlementaire
+    const parlementaire = await this.prisma.parlementaire.findUnique({
+      where: { id: deputeId },
+      select: {
+        statsPresence: true,
+        statsLoyaute: true,
+        statsParticipation: true,
+        statsInterventions: true,
+        statsAmendements: true,
+        statsAmendementsAdoptes: true,
+        statsQuestions: true,
+        statsCalculatedAt: true,
+      },
+    });
+
+    // Si les stats sont pré-calculées, les utiliser directement
+    if (parlementaire?.statsCalculatedAt) {
+      const stats: DeputeStats = {
+        presence: parlementaire.statsPresence ?? 0,
+        loyaute: parlementaire.statsLoyaute ?? 0,
+        participation: parlementaire.statsParticipation ?? 0,
+        interventions: parlementaire.statsInterventions ?? 0,
+        amendements: {
+          proposes: parlementaire.statsAmendements ?? 0,
+          adoptes: parlementaire.statsAmendementsAdoptes ?? 0,
+        },
+        questions: parlementaire.statsQuestions ?? 0,
+      };
+
+      // Cache court (les stats sont déjà pré-calculées, cache juste pour éviter les requêtes répétées)
+      await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(stats));
+
+      return stats;
+    }
+
+    // Fallback: calcul à la volée si les stats n'ont pas encore été calculées
+    // (ne devrait se produire que rarement, ex: nouveau parlementaire)
+    return this.calculateStatsOnTheFly(deputeId);
+  }
+
+  /**
+   * Calcul à la volée des stats (fallback si pas de stats pré-calculées)
+   * Cette méthode est coûteuse et ne devrait être utilisée que rarement
+   */
+  private async calculateStatsOnTheFly(deputeId: string): Promise<DeputeStats> {
+    const cacheKey = `depute:stats:${deputeId}`;
+
     const since = await this.getOldestScrutinDate();
 
     const [presence, loyaute, votesCount, interventionsCount, amendementsStats, questionsCount] =
@@ -426,7 +472,7 @@ export class DeputesService {
   }
 
   // ===========================================================================
-  // COMPARAISON DE DÉPUTÉS
+  // COMPARAISON DE DÉPUTÉS (optimisé avec stats pré-calculées)
   // ===========================================================================
 
   async compareDeputes(slugs: string[]) {
@@ -439,11 +485,43 @@ export class DeputesService {
       return JSON.parse(cached);
     }
 
-    const deputes = await Promise.all(
-      slugs.map((slug) => this.getDeputeBySlug(slug, ['stats']))
-    );
+    // Charger tous les députés en UNE SEULE requête avec leurs stats pré-calculées
+    const deputes = await this.prisma.parlementaire.findMany({
+      where: {
+        slug: { in: slugs },
+      },
+      include: {
+        groupe: true,
+        circonscription: true,
+      },
+    });
 
-    const result = deputes.filter(Boolean);
+    // Transformer les résultats avec les stats pré-calculées
+    const result = deputes.map((d) => ({
+      ...d,
+      stats: d.statsCalculatedAt
+        ? {
+            presence: d.statsPresence ?? 0,
+            loyaute: d.statsLoyaute ?? 0,
+            participation: d.statsParticipation ?? 0,
+            interventions: d.statsInterventions ?? 0,
+            amendements: {
+              proposes: d.statsAmendements ?? 0,
+              adoptes: d.statsAmendementsAdoptes ?? 0,
+            },
+            questions: d.statsQuestions ?? 0,
+          }
+        : null,
+      // Retirer les champs stats bruts de la réponse
+      statsPresence: undefined,
+      statsLoyaute: undefined,
+      statsParticipation: undefined,
+      statsInterventions: undefined,
+      statsAmendements: undefined,
+      statsAmendementsAdoptes: undefined,
+      statsQuestions: undefined,
+      statsCalculatedAt: undefined,
+    }));
 
     // Cache pour 12h (données rafraîchies en daily)
     await this.redis.setex(cacheKey, 43200, JSON.stringify(result));
