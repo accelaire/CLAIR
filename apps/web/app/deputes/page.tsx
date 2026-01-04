@@ -196,11 +196,11 @@ function DeputesPageContent() {
         </div>
 
         {/* Filtre par groupe */}
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <select
             value={groupe}
             onChange={(e) => setGroupe(e.target.value)}
-            className="appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Tous les groupes</option>
             {groupesData?.map((g: any) => (

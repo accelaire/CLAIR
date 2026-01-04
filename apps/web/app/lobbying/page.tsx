@@ -145,10 +145,10 @@ export default function LobbyingPage() {
         </div>
       )}
 
-      {/* Filtres - Tout sur une seule ligne */}
-      <div className="mb-8 flex items-center gap-3">
+      {/* Filtres - Responsive */}
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center">
         {/* Recherche */}
-        <div className="relative w-64">
+        <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
@@ -160,11 +160,11 @@ export default function LobbyingPage() {
         </div>
 
         {/* Filtre par type */}
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <select
             value={type}
             onChange={(e) => setType(e.target.value)}
-            className="appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Tous les types</option>
             {Object.entries(typeLabels).map(([key, { label }]) => (
@@ -175,7 +175,7 @@ export default function LobbyingPage() {
         </div>
 
         {/* Filtre par secteur */}
-        <div className="relative flex-1">
+        <div className="relative w-full sm:w-auto sm:min-w-[200px] sm:flex-1 sm:max-w-[300px]">
           <select
             value={secteur}
             onChange={(e) => setSecteur(e.target.value)}
@@ -192,8 +192,8 @@ export default function LobbyingPage() {
         </div>
 
         {/* Tri */}
-        <div className="flex items-center gap-0">
-          <div className="relative">
+        <div className="flex items-center gap-0 w-full sm:w-auto">
+          <div className="relative flex-1 sm:flex-none">
             <select
               value={sort}
               onChange={(e) => {
@@ -202,7 +202,7 @@ export default function LobbyingPage() {
                 // Auto-set order: asc for nom, desc for budget/actions
                 setOrder(newSort === 'nom' ? 'asc' : 'desc');
               }}
-              className="appearance-none rounded-lg rounded-r-none border border-r-0 bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full appearance-none rounded-lg rounded-r-none border border-r-0 bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="nom">Tri: Nom</option>
               <option value="budget">Tri: Budget</option>

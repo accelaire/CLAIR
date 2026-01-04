@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
@@ -28,7 +28,7 @@ import {
   GitCompareArrows,
 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { PeriodFilter, usePeriodFilter } from '@/components/PeriodFilter';
+import { DateRangePicker, useDateRange, dateRangeToParams } from '@/components/DateRangePicker';
 
 interface SenateurDetail {
   id: string;
@@ -146,7 +146,8 @@ interface InterventionItem {
 }
 
 function InterventionsList({ slug }: { slug: string }) {
-  const [periodFilter, setPeriodFilter] = usePeriodFilter('all');
+  const [dateRange, setDateRange] = useDateRange();
+  const dateParams = dateRangeToParams(dateRange);
 
   const {
     data,
@@ -156,14 +157,13 @@ function InterventionsList({ slug }: { slug: string }) {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['senateur-interventions', slug, periodFilter.dateFrom, periodFilter.dateTo],
+    queryKey: ['senateur-interventions', slug, dateParams],
     queryFn: ({ pageParam = 1 }) =>
       api.get(`/senateurs/${slug}/interventions`, {
         params: {
           page: pageParam,
           limit: 20,
-          ...(periodFilter.dateFrom && { dateFrom: periodFilter.dateFrom }),
-          ...(periodFilter.dateTo && { dateTo: periodFilter.dateTo }),
+          ...dateParams,
         },
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
@@ -182,7 +182,7 @@ function InterventionsList({ slug }: { slug: string }) {
 
   return (
     <div className="space-y-4">
-      <PeriodFilter value={periodFilter} onChange={setPeriodFilter} />
+      <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Filtrer par période" />
 
       {isLoading ? (
         <div className="space-y-4">
@@ -406,7 +406,8 @@ function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }
 }
 
 function AmendementsList({ slug }: { slug: string }) {
-  const [periodFilter, setPeriodFilter] = usePeriodFilter('all');
+  const [dateRange, setDateRange] = useDateRange();
+  const dateParams = dateRangeToParams(dateRange);
 
   const {
     data,
@@ -416,14 +417,13 @@ function AmendementsList({ slug }: { slug: string }) {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['senateur-amendements', slug, periodFilter.dateFrom, periodFilter.dateTo],
+    queryKey: ['senateur-amendements', slug, dateParams],
     queryFn: ({ pageParam = 1 }) =>
       api.get(`/senateurs/${slug}/amendements`, {
         params: {
           page: pageParam,
           limit: 20,
-          ...(periodFilter.dateFrom && { dateFrom: periodFilter.dateFrom }),
-          ...(periodFilter.dateTo && { dateTo: periodFilter.dateTo }),
+          ...dateParams,
         },
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
@@ -442,7 +442,7 @@ function AmendementsList({ slug }: { slug: string }) {
 
   return (
     <div className="space-y-4">
-      <PeriodFilter value={periodFilter} onChange={setPeriodFilter} />
+      <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Filtrer par période" />
 
       {isLoading ? (
         <div className="space-y-4">
@@ -478,7 +478,8 @@ function AmendementsList({ slug }: { slug: string }) {
 }
 
 function VotesList({ slug }: { slug: string }) {
-  const [periodFilter, setPeriodFilter] = usePeriodFilter('all');
+  const [dateRange, setDateRange] = useDateRange();
+  const dateParams = dateRangeToParams(dateRange);
 
   const {
     data,
@@ -488,14 +489,13 @@ function VotesList({ slug }: { slug: string }) {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['senateur-votes', slug, periodFilter.dateFrom, periodFilter.dateTo],
+    queryKey: ['senateur-votes', slug, dateParams],
     queryFn: ({ pageParam = 1 }) =>
       api.get(`/senateurs/${slug}/votes`, {
         params: {
           page: pageParam,
           limit: 20,
-          ...(periodFilter.dateFrom && { dateFrom: periodFilter.dateFrom }),
-          ...(periodFilter.dateTo && { dateTo: periodFilter.dateTo }),
+          ...dateParams,
         },
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
@@ -514,7 +514,7 @@ function VotesList({ slug }: { slug: string }) {
 
   return (
     <div className="space-y-4">
-      <PeriodFilter value={periodFilter} onChange={setPeriodFilter} />
+      <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Filtrer par période" />
 
       {isLoading ? (
         <div className="space-y-4">
@@ -582,6 +582,7 @@ function VotesList({ slug }: { slug: string }) {
 
 export default function SenateurDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const slug = params.slug as string;
   const [activeTab, setActiveTab] = useState<'votes' | 'interventions' | 'amendements'>('votes');
 
@@ -640,13 +641,13 @@ export default function SenateurDetailPage() {
     <div className="container mx-auto px-4 py-8">
       {/* Breadcrumb + Action */}
       <div className="mb-6 flex items-center justify-between">
-        <Link
-          href="/senateurs"
+        <button
+          onClick={() => router.back()}
           className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
-          Tous les sénateurs
-        </Link>
+          Retour
+        </button>
 
         {/* Bouton Comparer - bien visible */}
         <Link

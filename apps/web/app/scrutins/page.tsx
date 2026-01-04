@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Search, ChevronDown, CheckCircle, XCircle, Calendar, Tag, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
+import { DateRangePicker, useDateRange, dateRangeToParams } from '@/components/DateRangePicker';
 
 interface Scrutin {
   id: string;
@@ -56,6 +57,9 @@ export default function ScrutinsPage() {
   const [chambre, setChambre] = useState('');
   const [type, setType] = useState('');
   const [tag, setTag] = useState('');
+  const [dateRange, setDateRange] = useDateRange();
+
+  const dateParams = dateRangeToParams(dateRange);
 
   // Fetch scrutins avec infinite scroll
   const {
@@ -66,7 +70,7 @@ export default function ScrutinsPage() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery<ScrutinsResponse>({
-    queryKey: ['scrutins', { search, chambre, type, tag }],
+    queryKey: ['scrutins', { search, chambre, type, tag, ...dateParams }],
     queryFn: ({ pageParam = 1 }) =>
       api.get('/scrutins', {
         params: {
@@ -75,7 +79,8 @@ export default function ScrutinsPage() {
           type: type || undefined,
           tag: tag || undefined,
           page: pageParam,
-          limit: 20
+          limit: 20,
+          ...dateParams,
         },
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
@@ -122,7 +127,7 @@ export default function ScrutinsPage() {
       </div>
 
       {/* Filtres */}
-      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:flex-wrap">
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start">
         {/* Recherche */}
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -136,11 +141,11 @@ export default function ScrutinsPage() {
         </div>
 
         {/* Filtre par chambre */}
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <select
             value={chambre}
             onChange={(e) => setChambre(e.target.value)}
-            className="appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Toutes les chambres</option>
             <option value="assemblee">Assemblée nationale</option>
@@ -150,11 +155,11 @@ export default function ScrutinsPage() {
         </div>
 
         {/* Filtre par type */}
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <select
             value={type}
             onChange={(e) => setType(e.target.value)}
-            className="appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Tous les types</option>
             <option value="solennel">Solennel</option>
@@ -165,11 +170,11 @@ export default function ScrutinsPage() {
         </div>
 
         {/* Filtre par tag */}
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <select
             value={tag}
             onChange={(e) => setTag(e.target.value)}
-            className="appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Toutes les thématiques</option>
             {tagsData?.map((t: { name: string; count: number }) => (
@@ -179,6 +184,15 @@ export default function ScrutinsPage() {
             ))}
           </select>
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+        </div>
+
+        {/* Filtre par période */}
+        <div className="w-full sm:w-auto">
+          <DateRangePicker
+            value={dateRange}
+            onChange={setDateRange}
+            placeholder="Période"
+          />
         </div>
       </div>
 

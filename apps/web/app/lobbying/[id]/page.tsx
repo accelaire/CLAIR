@@ -1,11 +1,13 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Building2, Calendar, Users, Briefcase, Globe, TrendingUp, ExternalLink } from 'lucide-react';
 import { api } from '@/lib/api';
+import { DateRangePicker, useDateRange } from '@/components/DateRangePicker';
 
 interface Action {
   id: string;
@@ -69,12 +71,31 @@ const formatDate = (dateStr: string | null) => {
 
 export default function LobbyisteDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
+  const [dateRange, setDateRange] = useDateRange();
 
   const { data, isLoading, error } = useQuery<{ data: LobbyisteDetail }>({
     queryKey: ['lobbyiste', id],
     queryFn: () => api.get(`/lobbying/${id}`).then((res) => res.data),
   });
+
+  // Filtrer les actions par période
+  const filteredActions = useMemo(() => {
+    if (!data?.data.actions) return [];
+
+    return data.data.actions.filter((action) => {
+      if (!dateRange.from && !dateRange.to) return true;
+
+      const actionDate = action.dateDebut ? new Date(action.dateDebut) : null;
+      if (!actionDate) return true; // Inclure les actions sans date
+
+      if (dateRange.from && actionDate < dateRange.from) return false;
+      if (dateRange.to && actionDate > dateRange.to) return false;
+
+      return true;
+    });
+  }, [data?.data.actions, dateRange.from, dateRange.to]);
 
   if (isLoading) {
     return (
@@ -106,11 +127,14 @@ export default function LobbyisteDetailPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      {/* Back link */}
-      <Link href="/lobbying" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6">
+      {/* Back button */}
+      <button
+        onClick={() => router.back()}
+        className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6"
+      >
         <ArrowLeft className="h-4 w-4" />
-        Retour aux lobbyistes
-      </Link>
+        Retour
+      </button>
 
       {/* Header */}
       <div className="mb-8">
@@ -201,17 +225,30 @@ export default function LobbyisteDetailPage() {
 
       {/* Actions */}
       <div>
-        <h2 className="text-xl font-semibold mb-4">
-          Actions de lobbying ({lobbyiste.actions.length})
-        </h2>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-4">
+          <h2 className="text-xl font-semibold">
+            Actions de lobbying ({filteredActions.length}{filteredActions.length !== lobbyiste.actions.length ? ` / ${lobbyiste.actions.length}` : ''})
+          </h2>
+        </div>
 
-        {lobbyiste.actions.length === 0 ? (
+        {/* Filtre par période */}
+        <div className="mb-6">
+          <DateRangePicker
+            value={dateRange}
+            onChange={setDateRange}
+            placeholder="Filtrer par période"
+          />
+        </div>
+
+        {filteredActions.length === 0 ? (
           <div className="rounded-lg border bg-muted/30 p-8 text-center text-muted-foreground">
-            Aucune action de lobbying déclarée.
+            {lobbyiste.actions.length === 0
+              ? 'Aucune action de lobbying déclarée.'
+              : 'Aucune action trouvée pour cette période.'}
           </div>
         ) : (
           <div className="space-y-3">
-            {lobbyiste.actions.map((action) => (
+            {filteredActions.map((action) => (
               <div key={action.id} className="rounded-lg border bg-card p-4">
                 <div className="flex flex-col gap-3">
                   {/* Description */}
