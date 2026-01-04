@@ -54,7 +54,8 @@ async function buildApp() {
 
   // Sécurité
   await app.register(helmet, {
-    contentSecurityPolicy: false, // Désactivé pour permettre Swagger UI
+    // CSP désactivé en dev pour Swagger UI, activé en production
+    contentSecurityPolicy: process.env.NODE_ENV === 'production',
   });
 
   // Parse CORS origins from comma-separated string
@@ -79,52 +80,54 @@ async function buildApp() {
     },
   });
 
-  // Documentation API
-  await app.register(swagger, {
-    openapi: {
-      info: {
-        title: 'CLAIR API',
-        description: 'API de la plateforme de transparence politique CLAIR',
-        version: '0.1.0',
-      },
-      servers: [
-        {
-          url: process.env.API_URL || 'http://localhost:3001',
-          description: process.env.NODE_ENV === 'production' ? 'Production' : 'Development',
+  // Documentation API - Désactivée en production pour des raisons de sécurité
+  if (process.env.NODE_ENV !== 'production') {
+    await app.register(swagger, {
+      openapi: {
+        info: {
+          title: 'CLAIR API',
+          description: 'API de la plateforme de transparence politique CLAIR',
+          version: '0.1.0',
         },
-      ],
-      tags: [
-        { name: 'Health', description: 'Endpoints de santé' },
-        { name: 'Auth', description: 'Authentification' },
-        { name: 'Parlementaires', description: 'Données sur tous les parlementaires (députés + sénateurs)' },
-        { name: 'Députés', description: 'Données sur les députés de l\'Assemblée nationale' },
-        { name: 'Sénateurs', description: 'Données sur les sénateurs' },
-        { name: 'Scrutins', description: 'Votes à l\'Assemblée nationale et au Sénat' },
-        { name: 'Lobbying', description: 'Données HATVP sur le lobbying' },
-        { name: 'Search', description: 'Recherche globale' },
-        { name: 'Simulateur', description: 'Simulateur électoral 2027' },
-        { name: 'Admin', description: 'Administration des candidats et ingestion' },
-        { name: 'Analytics', description: 'Statistiques et analyses pour l\'explorateur' },
-      ],
-      components: {
-        securitySchemes: {
-          bearerAuth: {
-            type: 'http',
-            scheme: 'bearer',
-            bearerFormat: 'JWT',
+        servers: [
+          {
+            url: process.env.API_URL || 'http://localhost:3001',
+            description: 'Development',
+          },
+        ],
+        tags: [
+          { name: 'Health', description: 'Endpoints de santé' },
+          { name: 'Auth', description: 'Authentification' },
+          { name: 'Parlementaires', description: 'Données sur tous les parlementaires (députés + sénateurs)' },
+          { name: 'Députés', description: 'Données sur les députés de l\'Assemblée nationale' },
+          { name: 'Sénateurs', description: 'Données sur les sénateurs' },
+          { name: 'Scrutins', description: 'Votes à l\'Assemblée nationale et au Sénat' },
+          { name: 'Lobbying', description: 'Données HATVP sur le lobbying' },
+          { name: 'Search', description: 'Recherche globale' },
+          { name: 'Simulateur', description: 'Simulateur électoral 2027' },
+          { name: 'Admin', description: 'Administration des candidats et ingestion' },
+          { name: 'Analytics', description: 'Statistiques et analyses pour l\'explorateur' },
+        ],
+        components: {
+          securitySchemes: {
+            bearerAuth: {
+              type: 'http',
+              scheme: 'bearer',
+              bearerFormat: 'JWT',
+            },
           },
         },
       },
-    },
-  });
+    });
 
-  await app.register(swaggerUi, {
-    routePrefix: '/docs',
-    uiConfig: {
-      docExpansion: 'list',
-      deepLinking: true,
-    },
-  });
+    await app.register(swaggerUi, {
+      routePrefix: '/docs',
+      uiConfig: {
+        docExpansion: 'list',
+        deepLinking: true,
+      },
+    });
+  }
 
   // ==========================================================================
   // PLUGINS PERSONNALISÉS
@@ -260,7 +263,9 @@ async function start() {
   try {
     await app.listen({ port, host });
     logger.info(`🚀 Server running at http://${host}:${port}`);
-    logger.info(`📚 Documentation at http://${host}:${port}/docs`);
+    if (process.env.NODE_ENV !== 'production') {
+      logger.info(`📚 Documentation at http://${host}:${port}/docs`);
+    }
 
     // Log initial memory usage
     logMemoryUsage();

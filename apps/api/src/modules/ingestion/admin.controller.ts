@@ -44,6 +44,27 @@ function slugify(text: string): string {
 
 export const candidatsAdminRoutes: FastifyPluginAsync = async (fastify) => {
   // ===========================================================================
+  // SÉCURITÉ : Toutes les routes admin nécessitent une authentification ADMIN
+  // ===========================================================================
+  fastify.addHook('onRequest', async (request, reply) => {
+    try {
+      await request.jwtVerify();
+      // Vérifier le rôle admin
+      if (request.user.role !== 'ADMIN') {
+        reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Accès réservé aux administrateurs',
+        });
+      }
+    } catch {
+      reply.status(401).send({
+        error: 'Unauthorized',
+        message: 'Authentification requise',
+      });
+    }
+  });
+
+  // ===========================================================================
   // GET /api/v1/admin/candidats - Liste des candidats avec statut
   // ===========================================================================
   fastify.get('/candidats', {

@@ -37,6 +37,20 @@ const completeSchema = z.object({
 });
 
 export const simulateurRoutes: FastifyPluginAsync = async (fastify) => {
+  // ===========================================================================
+  // SÉCURITÉ : Le simulateur 2027 est désactivé en production (feature non publiée)
+  // Activer avec ENABLE_SIMULATEUR=true dans les variables d'environnement
+  // ===========================================================================
+  const isSimulateurEnabled = process.env.ENABLE_SIMULATEUR === 'true';
+
+  if (!isSimulateurEnabled) {
+    fastify.addHook('onRequest', async (_request, reply) => {
+      reply.status(503).send({
+        error: 'Service Unavailable',
+        message: 'Le simulateur électoral 2027 sera bientôt disponible',
+      });
+    });
+  }
 
   // ===========================================================================
   // POST /api/v1/simulateur/start - Démarrer une session
