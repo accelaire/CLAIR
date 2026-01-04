@@ -28,7 +28,8 @@ import {
   GitCompareArrows,
 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { DateRangePicker, useDateRange, dateRangeToParams } from '@/components/DateRangePicker';
+import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
+import { useUrlDateRange } from '@/hooks/useUrlFilters';
 
 interface SenateurDetail {
   id: string;
@@ -146,7 +147,7 @@ interface InterventionItem {
 }
 
 function InterventionsList({ slug }: { slug: string }) {
-  const [dateRange, setDateRange] = useDateRange();
+  const [dateRange, setDateRange] = useUrlDateRange();
   const dateParams = dateRangeToParams(dateRange);
 
   const {
@@ -406,7 +407,7 @@ function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }
 }
 
 function AmendementsList({ slug }: { slug: string }) {
-  const [dateRange, setDateRange] = useDateRange();
+  const [dateRange, setDateRange] = useUrlDateRange();
   const dateParams = dateRangeToParams(dateRange);
 
   const {
@@ -478,7 +479,7 @@ function AmendementsList({ slug }: { slug: string }) {
 }
 
 function VotesList({ slug }: { slug: string }) {
-  const [dateRange, setDateRange] = useDateRange();
+  const [dateRange, setDateRange] = useUrlDateRange();
   const dateParams = dateRangeToParams(dateRange);
 
   const {

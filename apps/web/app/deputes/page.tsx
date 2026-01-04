@@ -8,6 +8,7 @@ import Image from 'next/image';
 import { Search, ChevronDown, Users, Loader2, Check, GitCompareArrows, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
+import { useUrlFilters } from '@/hooks/useUrlFilters';
 import {
   useComparisonSelection,
   ComparisonSelectionBar,
@@ -47,8 +48,13 @@ interface DeputesResponse {
 function DeputesPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [search, setSearch] = useState('');
-  const [groupe, setGroupe] = useState('');
+
+  // Sync filters with URL for back button preservation
+  const [filters, setFilter] = useUrlFilters<{
+    search: string;
+    groupe: string;
+  }>(['search', 'groupe']);
+
   const [compareMode, setCompareMode] = useState(false);
   const [preselectionHandled, setPreselectionHandled] = useState(false);
 
@@ -97,10 +103,10 @@ function DeputesPageContent() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery<DeputesResponse>({
-    queryKey: ['deputes', { search, groupe }],
+    queryKey: ['deputes', { ...filters }],
     queryFn: ({ pageParam = 1 }) =>
       api.get('/deputes', {
-        params: { search, groupe: groupe || undefined, page: pageParam, limit: 24 },
+        params: { search: filters.search || undefined, groupe: filters.groupe || undefined, page: pageParam, limit: 24 },
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
@@ -189,8 +195,8 @@ function DeputesPageContent() {
           <input
             type="text"
             placeholder="Rechercher un député..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={filters.search}
+            onChange={(e) => setFilter('search', e.target.value)}
             className="w-full rounded-lg border bg-background px-10 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
@@ -198,8 +204,8 @@ function DeputesPageContent() {
         {/* Filtre par groupe */}
         <div className="relative w-full sm:w-auto">
           <select
-            value={groupe}
-            onChange={(e) => setGroupe(e.target.value)}
+            value={filters.groupe}
+            onChange={(e) => setFilter('groupe', e.target.value)}
             className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Tous les groupes</option>

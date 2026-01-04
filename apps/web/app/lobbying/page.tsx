@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Search, ChevronDown, Building2, Briefcase, TrendingUp, Users, ArrowUp, ArrowDown, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
+import { useUrlFilters } from '@/hooks/useUrlFilters';
 
 interface Lobbyiste {
   id: string;
@@ -44,12 +45,20 @@ const formatBudget = (budget: number | null): string => {
   return `${budget}€`;
 };
 
-export default function LobbyingPage() {
-  const [search, setSearch] = useState('');
-  const [type, setType] = useState('');
-  const [secteur, setSecteur] = useState('');
-  const [sort, setSort] = useState<'nom' | 'budget' | 'actions'>('nom');
-  const [order, setOrder] = useState<'asc' | 'desc'>('asc');
+function LobbyingPageContent() {
+  // Sync filters with URL for back button preservation
+  const [filters, setFilter] = useUrlFilters<{
+    search: string;
+    type: string;
+    secteur: string;
+    sort: string;
+    order: string;
+  }>(['search', 'type', 'secteur', 'sort', 'order'], {
+    defaults: { sort: 'nom', order: 'asc' },
+  });
+
+  const sort = (filters.sort || 'nom') as 'nom' | 'budget' | 'actions';
+  const order = (filters.order || 'asc') as 'asc' | 'desc';
 
   // Fetch lobbyistes avec infinite scroll
   const {
@@ -60,13 +69,13 @@ export default function LobbyingPage() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery<LobbyistesResponse>({
-    queryKey: ['lobbyistes', { search, type, secteur, sort, order }],
+    queryKey: ['lobbyistes', { ...filters }],
     queryFn: ({ pageParam = 1 }) =>
       api.get('/lobbying', {
         params: {
-          search: search || undefined,
-          type: type || undefined,
-          secteur: secteur || undefined,
+          search: filters.search || undefined,
+          type: filters.type || undefined,
+          secteur: filters.secteur || undefined,
           page: pageParam,
           limit: 20,
           sort,
@@ -153,8 +162,8 @@ export default function LobbyingPage() {
           <input
             type="text"
             placeholder="Rechercher un lobbyiste..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={filters.search}
+            onChange={(e) => setFilter('search', e.target.value)}
             className="w-full rounded-lg border bg-background pl-10 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
@@ -162,8 +171,8 @@ export default function LobbyingPage() {
         {/* Filtre par type */}
         <div className="relative w-full sm:w-auto">
           <select
-            value={type}
-            onChange={(e) => setType(e.target.value)}
+            value={filters.type}
+            onChange={(e) => setFilter('type', e.target.value)}
             className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Tous les types</option>
@@ -177,8 +186,8 @@ export default function LobbyingPage() {
         {/* Filtre par secteur */}
         <div className="relative w-full sm:w-auto sm:min-w-[200px] sm:flex-1 sm:max-w-[300px]">
           <select
-            value={secteur}
-            onChange={(e) => setSecteur(e.target.value)}
+            value={filters.secteur}
+            onChange={(e) => setFilter('secteur', e.target.value)}
             className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Tous les secteurs</option>
@@ -198,9 +207,9 @@ export default function LobbyingPage() {
               value={sort}
               onChange={(e) => {
                 const newSort = e.target.value as 'nom' | 'budget' | 'actions';
-                setSort(newSort);
+                setFilter('sort', newSort);
                 // Auto-set order: asc for nom, desc for budget/actions
-                setOrder(newSort === 'nom' ? 'asc' : 'desc');
+                setFilter('order', newSort === 'nom' ? 'asc' : 'desc');
               }}
               className="w-full appearance-none rounded-lg rounded-r-none border border-r-0 bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
             >
@@ -211,7 +220,7 @@ export default function LobbyingPage() {
             <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           </div>
           <button
-            onClick={() => setOrder(order === 'asc' ? 'desc' : 'asc')}
+            onClick={() => setFilter('order', order === 'asc' ? 'desc' : 'asc')}
             className="flex items-center justify-center rounded-lg rounded-l-none border bg-background px-3 py-2 hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
             title={order === 'asc' ? 'Croissant' : 'Décroissant'}
           >
@@ -324,5 +333,24 @@ export default function LobbyingPage() {
         </>
       )}
     </div>
+  );
+}
+
+export default function LobbyingPage() {
+  return (
+    <Suspense fallback={
+      <div className="container mx-auto px-4 py-8">
+        <div className="space-y-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="animate-pulse rounded-lg border bg-card p-4">
+              <div className="h-5 w-1/2 rounded bg-muted mb-2" />
+              <div className="h-4 w-1/3 rounded bg-muted" />
+            </div>
+          ))}
+        </div>
+      </div>
+    }>
+      <LobbyingPageContent />
+    </Suspense>
   );
 }

@@ -7,7 +7,8 @@ import Image from 'next/image';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Building2, Calendar, Users, Briefcase, Globe, TrendingUp, ExternalLink } from 'lucide-react';
 import { api } from '@/lib/api';
-import { DateRangePicker, useDateRange } from '@/components/DateRangePicker';
+import { DateRangePicker } from '@/components/DateRangePicker';
+import { useUrlDateRange } from '@/hooks/useUrlFilters';
 
 interface Action {
   id: string;
@@ -73,7 +74,7 @@ export default function LobbyisteDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
-  const [dateRange, setDateRange] = useDateRange();
+  const [dateRange, setDateRange] = useUrlDateRange();
 
   const { data, isLoading, error } = useQuery<{ data: LobbyisteDetail }>({
     queryKey: ['lobbyiste', id],

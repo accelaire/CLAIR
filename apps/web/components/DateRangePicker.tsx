@@ -382,12 +382,6 @@ export function DateRangePicker({
   );
 }
 
-// Hook for easy state management
-export function useDateRange(initialValue?: DateRange): [DateRange, (v: DateRange) => void] {
-  const [value, setValue] = useState<DateRange>(initialValue || { from: null, to: null });
-  return [value, setValue];
-}
-
 // Helper to convert DateRange to API params
 export function dateRangeToParams(range: DateRange): { dateFrom?: string; dateTo?: string } {
   return {

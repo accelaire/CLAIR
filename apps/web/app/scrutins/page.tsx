@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Search, ChevronDown, CheckCircle, XCircle, Calendar, Tag, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
-import { DateRangePicker, useDateRange, dateRangeToParams } from '@/components/DateRangePicker';
+import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
+import { useUrlFilters, useUrlDateRange } from '@/hooks/useUrlFilters';
 
 interface Scrutin {
   id: string;
@@ -52,13 +53,16 @@ const chambreLabels: Record<string, string> = {
   senat: 'Sénat',
 };
 
-export default function ScrutinsPage() {
-  const [search, setSearch] = useState('');
-  const [chambre, setChambre] = useState('');
-  const [type, setType] = useState('');
-  const [tag, setTag] = useState('');
-  const [dateRange, setDateRange] = useDateRange();
+function ScrutinsPageContent() {
+  // Sync filters with URL for back button preservation
+  const [filters, setFilter] = useUrlFilters<{
+    search: string;
+    chambre: string;
+    type: string;
+    tag: string;
+  }>(['search', 'chambre', 'type', 'tag']);
 
+  const [dateRange, setDateRange] = useUrlDateRange();
   const dateParams = dateRangeToParams(dateRange);
 
   // Fetch scrutins avec infinite scroll
@@ -70,14 +74,14 @@ export default function ScrutinsPage() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery<ScrutinsResponse>({
-    queryKey: ['scrutins', { search, chambre, type, tag, ...dateParams }],
+    queryKey: ['scrutins', { ...filters, ...dateParams }],
     queryFn: ({ pageParam = 1 }) =>
       api.get('/scrutins', {
         params: {
-          search: search || undefined,
-          chambre: chambre || undefined,
-          type: type || undefined,
-          tag: tag || undefined,
+          search: filters.search || undefined,
+          chambre: filters.chambre || undefined,
+          type: filters.type || undefined,
+          tag: filters.tag || undefined,
           page: pageParam,
           limit: 20,
           ...dateParams,
@@ -134,8 +138,8 @@ export default function ScrutinsPage() {
           <input
             type="text"
             placeholder="Rechercher un scrutin..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={filters.search}
+            onChange={(e) => setFilter('search', e.target.value)}
             className="w-full rounded-lg border bg-background px-10 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
@@ -143,8 +147,8 @@ export default function ScrutinsPage() {
         {/* Filtre par chambre */}
         <div className="relative w-full sm:w-auto">
           <select
-            value={chambre}
-            onChange={(e) => setChambre(e.target.value)}
+            value={filters.chambre}
+            onChange={(e) => setFilter('chambre', e.target.value)}
             className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Toutes les chambres</option>
@@ -157,8 +161,8 @@ export default function ScrutinsPage() {
         {/* Filtre par type */}
         <div className="relative w-full sm:w-auto">
           <select
-            value={type}
-            onChange={(e) => setType(e.target.value)}
+            value={filters.type}
+            onChange={(e) => setFilter('type', e.target.value)}
             className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Tous les types</option>
@@ -172,8 +176,8 @@ export default function ScrutinsPage() {
         {/* Filtre par tag */}
         <div className="relative w-full sm:w-auto">
           <select
-            value={tag}
-            onChange={(e) => setTag(e.target.value)}
+            value={filters.tag}
+            onChange={(e) => setFilter('tag', e.target.value)}
             className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Toutes les thématiques</option>
@@ -312,5 +316,24 @@ export default function ScrutinsPage() {
         </>
       )}
     </div>
+  );
+}
+
+export default function ScrutinsPage() {
+  return (
+    <Suspense fallback={
+      <div className="container mx-auto px-4 py-8">
+        <div className="space-y-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="animate-pulse rounded-lg border bg-card p-4">
+              <div className="h-5 w-3/4 rounded bg-muted mb-2" />
+              <div className="h-4 w-1/2 rounded bg-muted" />
+            </div>
+          ))}
+        </div>
+      </div>
+    }>
+      <ScrutinsPageContent />
+    </Suspense>
   );
 }
