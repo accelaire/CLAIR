@@ -40,6 +40,7 @@ function decodeHtmlEntities(text: string): string {
 export interface TransformedInterventionSenat {
   seanceId: string;
   date: Date;
+  ordre: number; // Ordre chronologique dans la séance (1, 2, 3...)
   orateurNom: string;
   orateurPrenom?: string;
   orateurRef?: string; // Matricule sénateur si disponible
@@ -221,6 +222,7 @@ export class SenatInterventionsClient {
       const paragraphRegex = /<p\s+id="par_\d+"[^>]*>([\s\S]*?)<\/p>/g;
 
       let match;
+      let ordre = 0; // Compteur d'ordre pour cette séance
       while ((match = paragraphRegex.exec(content)) !== null) {
         const paragraphContent = match[1];
 
@@ -303,9 +305,12 @@ export class SenatInterventionsClient {
           type = 'explication_vote';
         }
 
+        ordre++; // Incrémenter l'ordre chronologique
+
         interventions.push({
           seanceId,
           date: seanceDate,
+          ordre,
           orateurNom: nom,
           orateurPrenom: prenom || undefined,
           orateurRef: orateurRef || undefined,

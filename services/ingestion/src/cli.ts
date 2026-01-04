@@ -19,6 +19,9 @@ import {
   syncInterventionsSenat,
   syncAmendements,
   syncAmendementsSenat,
+  syncDossiers,
+  linkInterventionsToScrutins,
+  linkScrutinsToAmendements,
   syncLobbyistes,
 } from './workers/sync.js';
 import { calculateAllStats } from './workers/stats-calculator.js';
@@ -48,9 +51,13 @@ program
   .option('--interventions-senat', 'Synchroniser uniquement les interventions Sénat (data.senat.fr)')
   .option('-a, --amendements', 'Synchroniser uniquement les amendements (AN Open Data)')
   .option('--amendements-senat', 'Synchroniser uniquement les amendements Sénat (data.senat.fr AMELI)')
+  .option('-D, --dossiers', 'Synchroniser uniquement les dossiers législatifs (AN Open Data)')
+  .option('--link-interventions', 'Lier les interventions aux scrutins (par seanceRef ou date)')
+  .option('--link-amendements', 'Lier les scrutins aux amendements (par parsing du titre)')
   .option('-L, --lobbying', 'Synchroniser uniquement les lobbyistes (HATVP)')
   .option('-l, --limit <number>', 'Limiter le nombre de scrutins/séances/amendements/lobbyistes', parseInt)
   .option('--no-actions', 'Ne pas synchroniser les actions de lobbying (avec -L)')
+  .option('--dry-run', 'Mode simulation (affiche ce qui serait fait sans modifier)')
   .action(async (options) => {
     try {
       logger.info({ options }, 'Starting sync command');
@@ -78,6 +85,17 @@ program
         await syncAmendements({ limit: options.limit });
       } else if (options.amendementsSenat) {
         await syncAmendementsSenat({ maxAmendements: options.limit });
+      } else if (options.dossiers) {
+        await syncDossiers({ limit: options.limit });
+      } else if (options.linkInterventions) {
+        const result = await linkInterventionsToScrutins({ dryRun: options.dryRun });
+        console.log(`\n📊 Interventions liées: ${result.linked}`);
+        console.log(`   - Par seanceRef: ${result.bySeanceRef}`);
+        console.log(`   - Par date: ${result.byDate}`);
+      } else if (options.linkAmendements) {
+        const result = await linkScrutinsToAmendements({ dryRun: options.dryRun });
+        console.log(`\n📊 Scrutins liés à des amendements: ${result.linked}`);
+        console.log(`   - Non trouvés en base: ${result.notFound}`);
       } else if (options.lobbying) {
         await syncLobbyistes({ limit: options.limit, includeActions: options.actions !== false });
       } else {
@@ -160,14 +178,16 @@ program
 program
   .command('smart-sync')
   .description('Synchronisation intelligente - ne sync que les sources modifiées')
-  .option('-a, --all', 'Synchroniser TOUT dans le bon ordre (parlementaires, scrutins, amendements, interventions, lobbying)')
+  .option('-a, --all', 'Synchroniser TOUT dans le bon ordre (parlementaires, scrutins, amendements, dossiers, interventions, lobbying)')
   .option('-f, --force', 'Forcer le sync même si pas de changement')
   .option('-s, --scrutins', 'Inclure les scrutins (AN + Sénat)')
   .option('-A, --amendements', 'Inclure les amendements (AN + Sénat)')
+  .option('-D, --dossiers', 'Inclure les dossiers législatifs (AN)')
   .option('-I, --interventions', 'Inclure les interventions (DILA + Sénat)')
   .option('-L, --lobbying', 'Inclure les lobbyistes')
   .option('--scrutins-limit <number>', 'Limite pour les scrutins (défaut: 50)', parseInt)
   .option('--amendements-limit <number>', 'Limite pour les amendements (défaut: 200)', parseInt)
+  .option('--dossiers-limit <number>', 'Limite pour les dossiers législatifs (défaut: 100)', parseInt)
   .option('--interventions-limit <number>', 'Limite pour les séances d\'interventions (défaut: 50)', parseInt)
   .option('--lobbying-limit <number>', 'Limite pour les lobbyistes (défaut: 500)', parseInt)
   .option('--sources <sources>', 'Sources spécifiques à sync (séparées par des virgules)')
@@ -180,10 +200,12 @@ program
         force: options.force,
         includeScrutins: options.scrutins,
         includeAmendements: options.amendements,
+        includeDossiers: options.dossiers,
         includeInterventions: options.interventions,
         includeLobbying: options.lobbying,
         scrutinsLimit: options.scrutinsLimit,
         amendementsLimit: options.amendementsLimit,
+        dossiersLimit: options.dossiersLimit,
         interventionsLimit: options.interventionsLimit,
         lobbyingLimit: options.lobbyingLimit,
         sources: options.sources?.split(',').map((s: string) => s.trim()),

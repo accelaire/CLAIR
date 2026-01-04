@@ -227,6 +227,63 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       const scrutin = await fastify.prisma.scrutin.findFirst({
         where: { numero, chambre },
         include: {
+          // Inclure le dossier législatif lié
+          dossier: {
+            select: {
+              id: true,
+              uid: true,
+              titre: true,
+              titreCourt: true,
+              procedureLibelle: true,
+              urlAN: true,
+              urlSenat: true,
+              etat: true,
+              dateDepot: true,
+              loiNumero: true,
+              loiTitre: true,
+            },
+          },
+          // Inclure l'amendement voté (si applicable)
+          amendement: {
+            select: {
+              id: true,
+              uid: true,
+              numero: true,
+              articleVise: true,
+              dispositif: true,
+              exposeSommaire: true,
+              auteurLibelle: true,
+              sort: true,
+              dateDepot: true,
+            },
+          },
+          // Inclure les interventions liées (explications de vote, débats)
+          interventions: {
+            take: 20, // Limiter à 20 interventions max
+            orderBy: [{ date: 'asc' }, { ordre: 'asc' }],
+            select: {
+              id: true,
+              type: true,
+              contenu: true,
+              date: true,
+              ordre: true,
+              parlementaire: {
+                select: {
+                  id: true,
+                  slug: true,
+                  nom: true,
+                  prenom: true,
+                  photoUrl: true,
+                  groupe: {
+                    select: {
+                      nom: true,
+                      couleur: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
           votes: {
             include: {
               parlementaire: {

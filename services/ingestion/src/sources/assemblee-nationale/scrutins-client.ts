@@ -116,6 +116,10 @@ export interface TransformedScrutin {
   nombrePour: number;
   nombreContre: number;
   nombreAbstention: number;
+  // Enrichissement contexte
+  objetLibelle: string | null;    // Description de l'objet voté
+  demandeurTexte: string | null;  // Qui a demandé le vote
+  seanceRef: string | null;       // Référence de la séance (pour lier aux débats)
   sourceUrl: string;
   sourceData: ANScrutin;
 }
@@ -291,6 +295,11 @@ export class AssembleeNationaleScrutinsClient {
       const nombreContre = parseInt(decompte?.contre || '0', 10);
       const nombreAbstention = parseInt(decompte?.abstentions || '0', 10);
 
+      // Extraire les champs d'enrichissement
+      const objetLibelle = scrutin.objet?.libelle || null;
+      const demandeurTexte = scrutin.demandeur?.texte || null;
+      const seanceRef = scrutin.seanceRef || null;
+
       // Extraire les votes individuels
       const votes = this.extractVotes(scrutin);
 
@@ -305,6 +314,9 @@ export class AssembleeNationaleScrutinsClient {
           nombrePour,
           nombreContre,
           nombreAbstention,
+          objetLibelle,
+          demandeurTexte,
+          seanceRef,
           sourceUrl: `https://www.assemblee-nationale.fr/dyn/${this.legislature}/scrutins/${scrutin.uid}`,
           sourceData: scrutin,
         },

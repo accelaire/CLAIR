@@ -314,6 +314,17 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
               sort: true,
               dateDepot: true,
               dateSort: true,
+              // Inclure les scrutins où cet amendement a été voté
+              scrutins: {
+                select: {
+                  id: true,
+                  numero: true,
+                  titre: true,
+                  date: true,
+                  sort: true,
+                },
+                take: 1, // Généralement un seul scrutin par amendement
+              },
             },
           }),
           fastify.prisma.amendement.count({
@@ -404,6 +415,25 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
             orderBy: { date: 'desc' },
             skip,
             take: limit,
+            select: {
+              id: true,
+              date: true,
+              type: true,
+              contenu: true,
+              motsCles: true,
+              sourceUrl: true,
+              ordre: true,
+              // Inclure le scrutin lié s'il existe
+              scrutin: {
+                select: {
+                  id: true,
+                  numero: true,
+                  titre: true,
+                  date: true,
+                  sort: true,
+                },
+              },
+            },
           }),
           fastify.prisma.intervention.count({
             where: {

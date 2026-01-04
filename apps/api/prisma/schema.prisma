@@ -125,6 +125,51 @@ model Circonscription {
 }
 
 // =============================================================================
+// DOSSIERS LÉGISLATIFS
+// =============================================================================
+
+model DossierLegislatif {
+  id           String   @id @default(uuid())
+  uid          String   @unique  // Ex: DLR5L17N50168
+
+  legislature  Int
+  titre        String
+  titreCourt   String?  @map("titre_court")
+
+  // Type de procédure
+  procedureCode    String?  @map("procedure_code")     // Ex: "1", "2", "5"
+  procedureLibelle String?  @map("procedure_libelle")  // Ex: "Proposition de loi ordinaire"
+
+  // URLs
+  urlAN        String?  @map("url_an")      // URL sur assemblee-nationale.fr
+  urlSenat     String?  @map("url_senat")   // URL sur senat.fr
+
+  // État du dossier
+  etat         String?  // 'en_cours', 'adopte', 'rejete', 'promulgue'
+  dateDepot    DateTime? @map("date_depot")
+  dateAdoption DateTime? @map("date_adoption")
+
+  // Loi promulguée (si applicable)
+  loiNumero    String?  @map("loi_numero")     // Ex: "2024-1177"
+  loiTitre     String?  @map("loi_titre")
+  loiDateJO    DateTime? @map("loi_date_jo")   // Date publication JO
+
+  // Relations
+  scrutins     Scrutin[]
+  amendements  Amendement[]
+
+  // Métadonnées source
+  sourceData   Json?    @map("source_data")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([legislature])
+  @@index([etat])
+  @@index([dateDepot])
+  @@map("dossiers_legislatifs")
+}
+
+// =============================================================================
 // SCRUTINS ET VOTES
 // =============================================================================
 
@@ -153,7 +198,21 @@ model Scrutin {
   texteNumero String? @map("texte_numero")
   texteTitre  String? @map("texte_titre")
 
-  votes Vote[]
+  // Enrichissement contexte (extrait des données brutes AN/Sénat)
+  objetLibelle    String? @map("objet_libelle")    // Description détaillée de l'objet voté
+  demandeurTexte  String? @map("demandeur_texte")  // Qui a demandé le vote (groupe, président, etc.)
+  seanceRef       String? @map("seance_ref")       // Référence de la séance (pour lier aux débats)
+
+  // Relation vers le dossier législatif
+  dossierId       String? @map("dossier_id")
+  dossier         DossierLegislatif? @relation(fields: [dossierId], references: [id])
+
+  // Relation vers l'amendement voté (si le scrutin porte sur un amendement)
+  amendementId    String? @map("amendement_id")
+  amendement      Amendement? @relation(fields: [amendementId], references: [id])
+
+  votes         Vote[]
+  interventions Intervention[]  // Interventions liées (explications de vote, débats)
 
   // Métadonnées source
   sourceUrl  String? @map("source_url")
@@ -168,6 +227,8 @@ model Scrutin {
   @@index([tags])
   @@index([importance])
   @@index([texteId])
+  @@index([dossierId])
+  @@index([amendementId])
   @@map("scrutins")
 }
 
@@ -207,10 +268,15 @@ model Intervention {
 
   seanceId String?  @map("seance_id")
   date     DateTime
+  ordre    Int?     // Ordre chronologique dans la séance (1, 2, 3...)
   type     String // 'question', 'intervention', 'explication_vote'
 
   contenu  String
   motsCles String[] @default([]) @map("mots_cles")
+
+  // Relation optionnelle vers un scrutin (pour les explications de vote notamment)
+  scrutinId String?  @map("scrutin_id")
+  scrutin   Scrutin? @relation(fields: [scrutinId], references: [id], onDelete: SetNull)
 
   sourceUrl String? @map("source_url")
   createdAt DateTime @default(now()) @map("created_at")
@@ -219,6 +285,8 @@ model Intervention {
   @@index([chambre])
   @@index([date])
   @@index([type])
+  @@index([scrutinId])
+  @@index([seanceId])
   @@map("interventions")
 }
 
@@ -242,6 +310,10 @@ model Amendement {
   texteRef    String? @map("texte_ref")
   articleVise String? @map("article_vise")
 
+  // Relation vers le dossier législatif
+  dossierId   String? @map("dossier_id")
+  dossier     DossierLegislatif? @relation(fields: [dossierId], references: [id])
+
   // Contenu
   dispositif     String?
   exposeSommaire String? @map("expose_sommaire")
@@ -252,6 +324,9 @@ model Amendement {
   dateDepot DateTime?  @map("date_depot")
   dateSort  DateTime? @map("date_sort")
 
+  // Scrutins portant sur cet amendement
+  scrutins  Scrutin[]
+
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([parlementaireId])
@@ -260,6 +335,8 @@ model Amendement {
   @@index([dateDepot])
   @@index([legislature])
   @@index([auteurRef])
+  @@index([dossierId])
+  @@index([numero, chambre, texteRef])
   @@map("amendements")
 }
 

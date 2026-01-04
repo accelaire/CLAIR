@@ -135,6 +135,14 @@ interface InterventionItem {
   contenu: string;
   motsCles: string[];
   sourceUrl: string | null;
+  ordre: number | null;
+  scrutin: {
+    id: string;
+    numero: number;
+    titre: string;
+    date: string;
+    sort: string;
+  } | null;
 }
 
 function InterventionsList({ slug }: { slug: string }) {
@@ -220,16 +228,27 @@ function InterventionsList({ slug }: { slug: string }) {
                   ))}
                 </div>
               )}
-              {intervention.sourceUrl && (
-                <a
-                  href={intervention.sourceUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 inline-block text-xs text-primary hover:underline"
-                >
-                  Voir la source →
-                </a>
-              )}
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                {intervention.scrutin && (
+                  <Link
+                    href={`/scrutins/${intervention.scrutin.numero}?chambre=senat`}
+                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                  >
+                    <Vote className="h-3 w-3" />
+                    Voir le scrutin n°{intervention.scrutin.numero} →
+                  </Link>
+                )}
+                {intervention.sourceUrl && (
+                  <a
+                    href={intervention.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+                  >
+                    Source externe →
+                  </a>
+                )}
+              </div>
             </div>
           ))}
 
@@ -260,6 +279,13 @@ interface AmendementItem {
   sort: string | null;
   dateDepot: string | null;
   dateSort: string | null;
+  scrutins: Array<{
+    id: string;
+    numero: number;
+    titre: string;
+    date: string;
+    sort: string;
+  }>;
 }
 
 function AmendementSortBadge({ sort }: { sort: string | null }) {
@@ -345,25 +371,36 @@ function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }
         <AmendementSortBadge sort={amendement.sort} />
       </div>
 
-      {/* Bouton expand/collapse */}
-      {hasLongContent && (
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="mt-3 flex items-center gap-1 text-xs text-primary hover:underline"
-        >
-          {isExpanded ? (
-            <>
-              <ChevronUp className="h-3 w-3" />
-              Réduire
-            </>
-          ) : (
-            <>
-              <ChevronDown className="h-3 w-3" />
-              Voir plus
-            </>
-          )}
-        </button>
-      )}
+      {/* Lien vers le scrutin et bouton expand/collapse */}
+      <div className="mt-3 flex items-center gap-4">
+        {amendement.scrutins && amendement.scrutins.length > 0 && (
+          <Link
+            href={`/scrutins/${amendement.scrutins[0].numero}?chambre=senat`}
+            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          >
+            <Vote className="h-3 w-3" />
+            Voir le scrutin n°{amendement.scrutins[0].numero} →
+          </Link>
+        )}
+        {hasLongContent && (
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            {isExpanded ? (
+              <>
+                <ChevronUp className="h-3 w-3" />
+                Réduire
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-3 w-3" />
+                Voir plus
+              </>
+            )}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

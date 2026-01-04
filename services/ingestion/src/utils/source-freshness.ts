@@ -52,6 +52,11 @@ export const SOURCES: Record<string, SourceConfig> = {
     dataType: 'amendements',
     url: `https://data.assemblee-nationale.fr/static/openData/repository/${LEGISLATURE}/loi/amendements_div_legis/Amendements.json.zip`,
   },
+  'assemblee_nationale:dossiers': {
+    source: 'assemblee_nationale',
+    dataType: 'dossiers',
+    url: `https://data.assemblee-nationale.fr/static/openData/repository/${LEGISLATURE}/loi/dossiers_legislatifs/Dossiers_Legislatifs.json.zip`,
+  },
 
   // ==========================================================================
   // SÉNAT (data.senat.fr + API)

@@ -4,10 +4,11 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft, Calendar, CheckCircle, XCircle, MinusCircle, Users,
-  Tag, ExternalLink, FileText, Info, ChevronDown, ChevronUp
+  Tag, ExternalLink, FileText, Info, ChevronDown, ChevronUp, MessageSquare,
+  ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { api } from '@/lib/api';
 
@@ -23,6 +24,51 @@ interface Vote {
     photoUrl: string | null;
     groupe: {
       slug: string;
+      nom: string;
+      couleur: string | null;
+    } | null;
+  };
+}
+
+interface DossierLegislatif {
+  id: string;
+  uid: string;
+  titre: string;
+  titreCourt: string | null;
+  procedureLibelle: string | null;
+  urlAN: string | null;
+  urlSenat: string | null;
+  etat: string | null;
+  dateDepot: string | null;
+  loiNumero: string | null;
+  loiTitre: string | null;
+}
+
+interface AmendementDetail {
+  id: string;
+  uid: string;
+  numero: string;
+  articleVise: string | null;
+  dispositif: string | null;
+  exposeSommaire: string | null;
+  auteurLibelle: string | null;
+  sort: string | null;
+  dateDepot: string | null;
+}
+
+interface InterventionScrutin {
+  id: string;
+  type: string;
+  contenu: string;
+  date: string;
+  ordre: number | null;
+  parlementaire: {
+    id: string;
+    slug: string;
+    nom: string;
+    prenom: string;
+    photoUrl: string | null;
+    groupe: {
       nom: string;
       couleur: string | null;
     } | null;
@@ -45,6 +91,16 @@ interface ScrutinDetail {
   tags: string[];
   texteNumero: string | null;
   texteTitre: string | null;
+  // Enrichissement contexte
+  objetLibelle: string | null;
+  demandeurTexte: string | null;
+  seanceRef: string | null;
+  // Dossier législatif lié
+  dossier: DossierLegislatif | null;
+  // Amendement voté (si le scrutin porte sur un amendement)
+  amendement: AmendementDetail | null;
+  // Interventions liées (débats, explications de vote)
+  interventions: InterventionScrutin[];
   sourceUrl: string | null;
   votesByPosition: {
     pour: Vote[];
@@ -70,11 +126,13 @@ const typeVoteLabels: Record<string, string> = {
 export default function ScrutinDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const numero = params.numero as string;
   const chambre = searchParams.get('chambre') || 'assemblee';
 
   const [expandedPosition, setExpandedPosition] = useState<string | null>('pour');
   const [groupeFilter, setGroupeFilter] = useState<string | null>(null);
+  const [interventionsSortAsc, setInterventionsSortAsc] = useState(true); // true = chronologique, false = inverse
 
   const { data, isLoading, error } = useQuery<{ data: ScrutinDetail }>({
     queryKey: ['scrutin', numero, chambre],
@@ -136,11 +194,14 @@ export default function ScrutinDetailPage() {
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-6xl">
-      {/* Back link */}
-      <Link href="/scrutins" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4">
+      {/* Back button */}
+      <button
+        onClick={() => router.back()}
+        className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4"
+      >
         <ArrowLeft className="h-4 w-4" />
         Tous les scrutins
-      </Link>
+      </button>
 
       {/* Compact Header Card */}
       <div className="rounded-xl border bg-card p-6 mb-6">
@@ -197,16 +258,249 @@ export default function ScrutinDetailPage() {
           )}
         </div>
 
-        {/* Texte de loi context if available */}
-        {scrutin.texteTitre && (
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/50 mb-4 text-sm">
-            <FileText className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
-            <div>
-              <span className="text-muted-foreground">Texte concerné : </span>
-              <span className="font-medium">{scrutin.texteTitre}</span>
-              {scrutin.texteNumero && (
-                <span className="text-muted-foreground"> (n°{scrutin.texteNumero})</span>
-              )}
+        {/* Contexte du vote - affiche les infos enrichies si disponibles */}
+        {(scrutin.objetLibelle || scrutin.demandeurTexte || scrutin.texteTitre) && (
+          <div className="space-y-2 mb-4">
+            {/* Objet du vote (si différent du titre) */}
+            {scrutin.objetLibelle && scrutin.objetLibelle !== scrutin.titre && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 text-sm">
+                <Info className="h-4 w-4 mt-0.5 text-blue-600 flex-shrink-0" />
+                <div>
+                  <span className="text-blue-700 font-medium">Objet du vote : </span>
+                  <span className="text-blue-900">{scrutin.objetLibelle}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Demandeur du vote */}
+            {scrutin.demandeurTexte && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-purple-50 text-sm">
+                <Users className="h-4 w-4 mt-0.5 text-purple-600 flex-shrink-0" />
+                <div>
+                  <span className="text-purple-700 font-medium">Vote demandé par : </span>
+                  <span className="text-purple-900">{scrutin.demandeurTexte}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Texte de loi context if available */}
+            {scrutin.texteTitre && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/50 text-sm">
+                <FileText className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
+                <div>
+                  <span className="text-muted-foreground">Texte concerné : </span>
+                  <span className="font-medium">{scrutin.texteTitre}</span>
+                  {scrutin.texteNumero && (
+                    <span className="text-muted-foreground"> (n°{scrutin.texteNumero})</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Dossier législatif lié */}
+            {scrutin.dossier && (
+              <div className="p-4 rounded-lg border border-indigo-200 bg-indigo-50/50">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-lg bg-indigo-100">
+                    <FileText className="h-5 w-5 text-indigo-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-medium text-indigo-600 uppercase tracking-wide">
+                        Dossier législatif
+                      </span>
+                      {scrutin.dossier.etat && (
+                        <span className={`px-2 py-0.5 text-xs rounded-full ${
+                          scrutin.dossier.etat === 'promulgue' ? 'bg-green-100 text-green-700' :
+                          scrutin.dossier.etat === 'adopte' ? 'bg-blue-100 text-blue-700' :
+                          scrutin.dossier.etat === 'rejete' ? 'bg-red-100 text-red-700' :
+                          'bg-amber-100 text-amber-700'
+                        }`}>
+                          {scrutin.dossier.etat === 'promulgue' ? 'Promulgué' :
+                           scrutin.dossier.etat === 'adopte' ? 'Adopté' :
+                           scrutin.dossier.etat === 'rejete' ? 'Rejeté' : 'En cours'}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="font-semibold text-gray-900 mb-1">{scrutin.dossier.titre}</h3>
+                    {scrutin.dossier.procedureLibelle && (
+                      <p className="text-sm text-gray-600 mb-2">{scrutin.dossier.procedureLibelle}</p>
+                    )}
+                    {scrutin.dossier.loiNumero && (
+                      <p className="text-sm text-green-700 font-medium mb-2">
+                        Loi n°{scrutin.dossier.loiNumero}
+                        {scrutin.dossier.loiTitre && ` - ${scrutin.dossier.loiTitre}`}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {scrutin.dossier.urlAN && (
+                        <a
+                          href={scrutin.dossier.urlAN}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 hover:underline"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Voir sur AN
+                        </a>
+                      )}
+                      {scrutin.dossier.urlSenat && (
+                        <a
+                          href={scrutin.dossier.urlSenat}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 hover:underline"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Voir sur Sénat
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Amendement voté - affiche le contenu de l'amendement si disponible */}
+        {scrutin.amendement && (
+          <div className="p-4 rounded-lg border border-amber-200 bg-amber-50/50 mb-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-lg bg-amber-100">
+                <FileText className="h-5 w-5 text-amber-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-medium text-amber-700 uppercase tracking-wide">
+                    Amendement n°{scrutin.amendement.numero}
+                  </span>
+                  {scrutin.amendement.articleVise && (
+                    <span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded">
+                      {scrutin.amendement.articleVise}
+                    </span>
+                  )}
+                  {scrutin.amendement.auteurLibelle && (
+                    <span className="text-xs text-amber-600">
+                      par {scrutin.amendement.auteurLibelle}
+                    </span>
+                  )}
+                </div>
+
+                {/* Dispositif (texte de l'amendement) */}
+                {scrutin.amendement.dispositif && (
+                  <div className="mb-3">
+                    <h4 className="text-xs font-semibold text-amber-800 mb-1">Texte de l&apos;amendement :</h4>
+                    <div className="text-sm text-gray-800 bg-white/60 rounded p-3 border border-amber-200">
+                      <div dangerouslySetInnerHTML={{ __html: scrutin.amendement.dispositif.replace(/\n/g, '<br/>') }} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Exposé sommaire */}
+                {scrutin.amendement.exposeSommaire && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-amber-800 mb-1">Exposé des motifs :</h4>
+                    <div className="text-sm text-gray-700 bg-white/40 rounded p-3 border border-amber-100">
+                      <div dangerouslySetInnerHTML={{ __html: scrutin.amendement.exposeSommaire.replace(/\n/g, '<br/>') }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Interventions / Débats liés */}
+        {scrutin.interventions && scrutin.interventions.length > 0 && (
+          <div className="mb-4">
+            <div className="flex items-center gap-2 mb-3">
+              <MessageSquare className="h-5 w-5 text-amber-600" />
+              <h3 className="font-semibold text-gray-900">Débats et explications de vote</h3>
+              <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                {scrutin.interventions.length}
+              </span>
+              {/* Bouton de tri */}
+              <button
+                onClick={() => setInterventionsSortAsc(!interventionsSortAsc)}
+                className="ml-auto flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 rounded-md transition-colors"
+                title={interventionsSortAsc ? 'Ordre chronologique' : 'Plus récent d\'abord'}
+              >
+                {interventionsSortAsc ? (
+                  <>
+                    <ArrowUp className="h-3.5 w-3.5" />
+                    Chronologique
+                  </>
+                ) : (
+                  <>
+                    <ArrowDown className="h-3.5 w-3.5" />
+                    Plus récent
+                  </>
+                )}
+              </button>
+            </div>
+            <div className="space-y-3 max-h-[400px] overflow-y-auto">
+              {[...scrutin.interventions]
+                .sort((a, b) => {
+                  const ordreA = a.ordre ?? 0;
+                  const ordreB = b.ordre ?? 0;
+                  return interventionsSortAsc ? ordreA - ordreB : ordreB - ordreA;
+                })
+                .map((intervention) => (
+                <div
+                  key={intervention.id}
+                  className="p-4 rounded-lg border bg-amber-50/50 border-amber-200"
+                >
+                  <div className="flex items-start gap-3">
+                    {/* Numéro d'ordre */}
+                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-amber-200 text-amber-800 flex items-center justify-center text-xs font-bold">
+                      {intervention.ordre}
+                    </div>
+                    <div className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-muted">
+                      {intervention.parlementaire.photoUrl ? (
+                        <Image
+                          src={intervention.parlementaire.photoUrl}
+                          alt=""
+                          fill
+                          className="object-cover"
+                        />
+                      ) : (
+                        <Users className="absolute inset-0 m-auto h-5 w-5 text-muted-foreground" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <Link
+                          href={`/deputes/${intervention.parlementaire.slug}`}
+                          className="font-medium text-gray-900 hover:text-primary hover:underline"
+                        >
+                          {intervention.parlementaire.prenom} {intervention.parlementaire.nom}
+                        </Link>
+                        {intervention.parlementaire.groupe && (
+                          <span
+                            className="px-2 py-0.5 text-xs rounded-full text-white"
+                            style={{ backgroundColor: intervention.parlementaire.groupe.couleur || '#888' }}
+                          >
+                            {intervention.parlementaire.groupe.nom}
+                          </span>
+                        )}
+                        <span className={`px-2 py-0.5 text-xs rounded ${
+                          intervention.type === 'explication_vote'
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {intervention.type === 'explication_vote' ? 'Explication de vote' : 'Intervention'}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-700 line-clamp-4">
+                        {intervention.contenu.length > 500
+                          ? `${intervention.contenu.slice(0, 500)}...`
+                          : intervention.contenu}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}

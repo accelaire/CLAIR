@@ -28,6 +28,7 @@ export interface DILAIntervention {
 export interface TransformedIntervention {
   seanceId: string;
   date: Date;
+  ordre: number; // Ordre chronologique dans la séance (1, 2, 3...)
   orateurNom: string;
   orateurPrenom?: string;
   orateurRef?: string; // PA123456 si disponible
@@ -289,6 +290,7 @@ export class DILAInterventionsClient {
       };
 
       const paragraphs = extractParagraphs(contenu);
+      let ordre = 0; // Compteur d'ordre pour cette séance
 
       for (const para of paragraphs) {
         const orateur = para.Orateur;
@@ -348,9 +350,12 @@ export class DILAInterventionsClient {
         const cleanName = nom.replace(/^(M\.|Mme|Mme\.)\s*/, '').replace(/,$/, '').trim();
         const [prenom, ...nomParts] = cleanName.split(' ');
 
+        ordre++; // Incrémenter l'ordre chronologique
+
         interventions.push({
           seanceId,
           date: dateSeance,
+          ordre,
           orateurNom: nomParts.join(' ') || cleanName,
           orateurPrenom: nomParts.length > 0 ? prenom : undefined,
           orateurRef,

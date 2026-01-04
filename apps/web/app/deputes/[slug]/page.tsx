@@ -131,6 +131,14 @@ interface InterventionItem {
   contenu: string;
   motsCles: string[];
   sourceUrl: string | null;
+  ordre: number | null;
+  scrutin: {
+    id: string;
+    numero: number;
+    titre: string;
+    date: string;
+    sort: string;
+  } | null;
 }
 
 function InterventionsList({ slug }: { slug: string }) {
@@ -216,16 +224,33 @@ function InterventionsList({ slug }: { slug: string }) {
               ))}
             </div>
           )}
-          {intervention.sourceUrl && (
-            <a
-              href={intervention.sourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-2 inline-block text-xs text-primary hover:underline"
-            >
-              Voir la source →
-            </a>
-          )}
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            {/* Lien vers le scrutin associé */}
+            {intervention.scrutin && (
+              <Link
+                href={`/scrutins/${intervention.scrutin.numero}`}
+                className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 hover:underline bg-indigo-50 px-2 py-1 rounded"
+              >
+                <Vote className="h-3 w-3" />
+                Scrutin n°{intervention.scrutin.numero}
+                <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                  intervention.scrutin.sort === 'adopte' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                }`}>
+                  {intervention.scrutin.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
+                </span>
+              </Link>
+            )}
+            {intervention.sourceUrl && (
+              <a
+                href={intervention.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-primary hover:underline"
+              >
+                Voir la source →
+              </a>
+            )}
+          </div>
         </div>
           ))}
 
@@ -256,6 +281,13 @@ interface AmendementItem {
   sort: string | null;
   dateDepot: string | null;
   dateSort: string | null;
+  scrutins: Array<{
+    id: string;
+    numero: number;
+    titre: string;
+    date: string;
+    sort: string;
+  }>;
 }
 
 function AmendementSortBadge({ sort }: { sort: string | null }) {
@@ -337,6 +369,24 @@ function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }
               </>
             )}
           </div>
+
+          {/* Lien vers le scrutin si l'amendement a été voté */}
+          {amendement.scrutins && amendement.scrutins.length > 0 && (
+            <div className="mt-3 pt-3 border-t">
+              <Link
+                href={`/scrutins/${amendement.scrutins[0].numero}`}
+                className="inline-flex items-center gap-2 text-xs text-indigo-600 hover:text-indigo-800 hover:underline bg-indigo-50 px-3 py-1.5 rounded-md transition-colors"
+              >
+                <Vote className="h-3.5 w-3.5" />
+                <span>Voir le vote sur cet amendement</span>
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                  amendement.scrutins[0].sort === 'adopte' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                }`}>
+                  {amendement.scrutins[0].sort === 'adopte' ? 'Adopté' : 'Rejeté'}
+                </span>
+              </Link>
+            </div>
+          )}
         </div>
         <AmendementSortBadge sort={amendement.sort} />
       </div>

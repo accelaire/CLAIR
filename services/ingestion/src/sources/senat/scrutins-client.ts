@@ -35,6 +35,10 @@ export interface TransformedScrutinSenat {
   nombrePour: number;
   nombreContre: number;
   nombreAbstention: number;
+  // Enrichissement contexte
+  objetLibelle: string | null;    // Description de l'objet voté (même que titre pour le Sénat)
+  demandeurTexte: string | null;  // Non disponible au Sénat
+  seanceRef: string | null;       // Non disponible au Sénat
   sourceUrl: string;
   sourceData: object;
 }
@@ -208,6 +212,10 @@ export class SenatScrutinsClient {
           nombrePour,
           nombreContre,
           nombreAbstention,
+          // Enrichissement contexte (limité pour le Sénat)
+          objetLibelle: metadata.titre, // Même que le titre, extrait du HTML
+          demandeurTexte: null,         // Non disponible au Sénat
+          seanceRef: null,              // Non disponible au Sénat
           sourceUrl: htmlUrl,
           sourceData: { votesData, metadata },
         },
@@ -276,7 +284,7 @@ export class SenatScrutinsClient {
     // Extraire la date depuis le titre de la page ou d'autres sources
     let date = new Date();
     const dateMatch = html.match(/(\d{1,2})\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})/i);
-    if (dateMatch) {
+    if (dateMatch && dateMatch[1] && dateMatch[2] && dateMatch[3]) {
       const months: Record<string, number> = {
         janvier: 0, février: 1, mars: 2, avril: 3, mai: 4, juin: 5,
         juillet: 6, août: 7, septembre: 8, octobre: 9, novembre: 10, décembre: 11
