@@ -24,7 +24,12 @@ import {
   linkScrutinsToAmendements,
   syncLobbyistes,
 } from './workers/sync.js';
-import { calculateAllStats } from './workers/stats-calculator.js';
+import {
+  calculateAllStats,
+  calculateAllGroupeStats,
+  calculateAllGroupeAlliances,
+  calculateAllGroupeThematiques,
+} from './workers/stats-calculator.js';
 import { logger } from './utils/logger';
 
 const program = new Command();
@@ -267,22 +272,53 @@ program
 // =============================================================================
 program
   .command('calculate-stats')
-  .description('Calculer/recalculer les statistiques pré-calculées des parlementaires')
+  .description('Calculer/recalculer les statistiques pré-calculées des parlementaires et groupes')
   .option('-c, --chambre <chambre>', 'Chambre spécifique (assemblee ou senat)')
+  .option('--parlementaires-only', 'Calculer uniquement les stats des parlementaires')
+  .option('--groupes-only', 'Calculer uniquement les stats des groupes')
   .action(async (options) => {
     try {
       logger.info({ chambre: options.chambre || 'all' }, 'Starting stats calculation');
-      console.log('\n📊 Calcul des statistiques parlementaires...\n');
+      let totalErrors = 0;
 
-      const result = await calculateAllStats(options.chambre);
-
-      console.log(`\n✅ Stats calculées pour ${result.updated}/${result.total} parlementaires`);
-      if (result.errors > 0) {
-        console.log(`⚠️  ${result.errors} erreurs`);
+      // Stats parlementaires (sauf si --groupes-only)
+      if (!options.groupesOnly) {
+        console.log('\n📊 Calcul des statistiques parlementaires...\n');
+        const parlResult = await calculateAllStats(options.chambre);
+        console.log(`✅ Stats calculées pour ${parlResult.updated}/${parlResult.total} parlementaires`);
+        if (parlResult.errors > 0) {
+          console.log(`⚠️  ${parlResult.errors} erreurs`);
+        }
+        console.log(`⏱️  Durée: ${parlResult.duration}`);
+        totalErrors += parlResult.errors;
       }
-      console.log(`⏱️  Durée: ${result.duration}\n`);
 
-      process.exit(result.errors > 0 ? 1 : 0);
+      // Stats groupes (sauf si --parlementaires-only)
+      if (!options.parlementairesOnly) {
+        console.log('\n📊 Calcul des statistiques des groupes politiques...\n');
+        const groupeResult = await calculateAllGroupeStats(options.chambre);
+        console.log(`✅ Stats calculées pour ${groupeResult.updated}/${groupeResult.total} groupes`);
+        if (groupeResult.errors > 0) {
+          console.log(`⚠️  ${groupeResult.errors} erreurs`);
+        }
+        console.log(`⏱️  Durée: ${groupeResult.duration}`);
+        totalErrors += groupeResult.errors;
+
+        // Alliances entre groupes
+        console.log('\n🤝 Calcul des alliances entre groupes...\n');
+        const alliancesResult = await calculateAllGroupeAlliances(options.chambre);
+        console.log(`✅ ${alliancesResult.total} paires d'alliances calculées`);
+        console.log(`⏱️  Durée: ${alliancesResult.duration}`);
+
+        // Stats thématiques pour radar chart
+        console.log('\n🎯 Calcul des positions thématiques...\n');
+        const thematiquesResult = await calculateAllGroupeThematiques(options.chambre);
+        console.log(`✅ ${thematiquesResult.total} stats thématiques calculées`);
+        console.log(`⏱️  Durée: ${thematiquesResult.duration}`);
+      }
+
+      console.log('\n');
+      process.exit(totalErrors > 0 ? 1 : 0);
     } catch (error: any) {
       logger.error({ error: error.message }, 'Stats calculation failed');
       process.exit(1);

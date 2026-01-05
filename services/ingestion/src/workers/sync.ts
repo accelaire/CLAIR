@@ -1374,14 +1374,44 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
   if (results.sourcesChanged.length > 0 && !options.skipStatsCalculation) {
     logger.info('Recalculating parlementaire stats after sync...');
     try {
-      const { calculateAllStats } = await import('./stats-calculator.js');
+      const {
+        calculateAllStats,
+        calculateAllGroupeStats,
+        calculateAllGroupeAlliances,
+        calculateAllGroupeThematiques,
+      } = await import('./stats-calculator.js');
+
+      // Stats des parlementaires
       const statsResult = await calculateAllStats();
       logger.info({
         total: statsResult.total,
         updated: statsResult.updated,
         errors: statsResult.errors,
         duration: statsResult.duration,
-      }, 'Stats calculation completed');
+      }, 'Parlementaire stats calculation completed');
+
+      // Stats des groupes (doit être après les stats parlementaires)
+      const groupeStatsResult = await calculateAllGroupeStats();
+      logger.info({
+        total: groupeStatsResult.total,
+        updated: groupeStatsResult.updated,
+        errors: groupeStatsResult.errors,
+        duration: groupeStatsResult.duration,
+      }, 'Groupe stats calculation completed');
+
+      // Alliances entre groupes (paires de groupes)
+      const alliancesResult = await calculateAllGroupeAlliances();
+      logger.info({
+        total: alliancesResult.total,
+        duration: alliancesResult.duration,
+      }, 'Groupe alliances calculation completed');
+
+      // Stats thématiques pour radar chart
+      const thematiquesResult = await calculateAllGroupeThematiques();
+      logger.info({
+        total: thematiquesResult.total,
+        duration: thematiquesResult.duration,
+      }, 'Groupe thematiques calculation completed');
     } catch (error: any) {
       logger.error({ error: error.message }, 'Stats calculation failed (non-blocking)');
       // Ne pas faire échouer le sync complet si le calcul des stats échoue

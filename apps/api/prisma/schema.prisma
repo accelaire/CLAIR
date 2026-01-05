@@ -87,6 +87,7 @@ model GroupePolitique {
   nom        String
   nomComplet String? @map("nom_complet")
   couleur    String?
+  logoUrl    String? @map("logo_url")
   position   String? // 'extreme_gauche', 'gauche', 'centre_gauche', 'centre', 'centre_droit', 'droite', 'extreme_droite'
   ordre      Int     @default(0)
   actif      Boolean @default(true)
@@ -94,7 +95,24 @@ model GroupePolitique {
   // Chambre (les groupes AN et Sénat sont distincts)
   chambre    String  @default("assemblee") // 'assemblee' | 'senat'
 
+  // Stats pré-calculées (recalculées lors de l'ingestion quotidienne)
+  statsMembresActifs    Int?      @map("stats_membres_actifs")   // Nombre de membres actifs
+  statsPresenceMoyenne  Int?      @map("stats_presence_moyenne") // % moyen de présence aux scrutins
+  statsLoyauteMoyenne   Int?      @map("stats_loyaute_moyenne")  // % moyen de loyauté (cohésion)
+  statsCohesion         Int?      @map("stats_cohesion")         // % de cohésion sur TOUS les scrutins
+  statsParticipation    Int?      @map("stats_participation")    // Nombre total de votes exprimés
+  statsCalculatedAt     DateTime? @map("stats_calculated_at")    // Date du dernier calcul
+
+  // Agrégation des votes (pré-calculées pour le camembert)
+  statsVotesPour        Int?      @map("stats_votes_pour")       // Total des votes Pour
+  statsVotesContre      Int?      @map("stats_votes_contre")     // Total des votes Contre
+  statsVotesAbstention  Int?      @map("stats_votes_abstention") // Total des votes Abstention
+  statsVotesAbsent      Int?      @map("stats_votes_absent")     // Total des absences
+
   parlementaires Parlementaire[]
+  alliancesFrom  GroupeAlliance[] @relation("GroupeFrom")
+  alliancesTo    GroupeAlliance[] @relation("GroupeTo")
+  statsThematiques GroupeThematique[]
 
   sourceId  String?  @map("source_id")
   createdAt DateTime @default(now()) @map("created_at")
@@ -103,6 +121,63 @@ model GroupePolitique {
   @@unique([slug, chambre])
   @@index([chambre])
   @@map("groupes_politiques")
+}
+
+// =============================================================================
+// ALLIANCES ENTRE GROUPES (pré-calculées)
+// Stocke le % d'accord entre chaque paire de groupes
+// =============================================================================
+
+model GroupeAlliance {
+  id String @id @default(uuid())
+
+  groupeFromId String          @map("groupe_from_id")
+  groupeFrom   GroupePolitique @relation("GroupeFrom", fields: [groupeFromId], references: [id], onDelete: Cascade)
+
+  groupeToId String          @map("groupe_to_id")
+  groupeTo   GroupePolitique @relation("GroupeTo", fields: [groupeToId], references: [id], onDelete: Cascade)
+
+  // Stats d'accord
+  votesCommuns    Int   @map("votes_communs")    // Nombre de scrutins où les deux groupes ont la même position majoritaire
+  votesTotaux     Int   @map("votes_totaux")     // Nombre total de scrutins communs
+  tauxAccord      Int   @map("taux_accord")      // % d'accord (votesCommuns / votesTotaux * 100)
+
+  calculatedAt DateTime @map("calculated_at")
+
+  @@unique([groupeFromId, groupeToId])
+  @@index([groupeFromId])
+  @@index([groupeToId])
+  @@index([tauxAccord])
+  @@map("groupes_alliances")
+}
+
+// =============================================================================
+// STATS PAR THÉMATIQUE (pour radar chart)
+// Position moyenne d'un groupe sur chaque thème basé sur les tags des scrutins
+// =============================================================================
+
+model GroupeThematique {
+  id String @id @default(uuid())
+
+  groupeId String          @map("groupe_id")
+  groupe   GroupePolitique @relation(fields: [groupeId], references: [id], onDelete: Cascade)
+
+  thematique String // Tag/thème: 'économie', 'social', 'sécurité', 'europe', 'environnement', etc.
+
+  // Stats de vote sur cette thématique
+  votesTotaux       Int   @map("votes_totaux")        // Nombre de scrutins sur ce thème
+  votesPour         Int   @map("votes_pour")          // Nombre de fois position majoritaire = Pour
+  votesContre       Int   @map("votes_contre")        // Nombre de fois position majoritaire = Contre
+  votesAbstention   Int   @map("votes_abstention")    // Nombre de fois position majoritaire = Abstention
+  positionMoyenne   Float @map("position_moyenne")    // Score de -100 (Contre) à +100 (Pour)
+  cohesionMoyenne   Int   @map("cohesion_moyenne")    // % de cohésion sur ce thème
+
+  calculatedAt DateTime @map("calculated_at")
+
+  @@unique([groupeId, thematique])
+  @@index([groupeId])
+  @@index([thematique])
+  @@map("groupes_thematiques")
 }
 
 model Circonscription {

@@ -24,6 +24,7 @@ import { healthRoutes } from './modules/health/health.controller';
 import { simulateurRoutes } from './modules/simulateur/simulateur.controller';
 import { candidatsAdminRoutes } from './modules/ingestion/admin.controller';
 import { analyticsRoutes } from './modules/analytics/analytics.controller';
+import { groupesRoutes } from './modules/groupes/groupes.controller';
 
 import { errorHandler } from './utils/errors';
 import { logger } from './utils/logger';
@@ -101,6 +102,7 @@ async function buildApp() {
           { name: 'Parlementaires', description: 'Données sur tous les parlementaires (députés + sénateurs)' },
           { name: 'Députés', description: 'Données sur les députés de l\'Assemblée nationale' },
           { name: 'Sénateurs', description: 'Données sur les sénateurs' },
+          { name: 'Groupes politiques', description: 'Groupes parlementaires de l\'AN et du Sénat' },
           { name: 'Scrutins', description: 'Votes à l\'Assemblée nationale et au Sénat' },
           { name: 'Lobbying', description: 'Données HATVP sur le lobbying' },
           { name: 'Search', description: 'Recherche globale' },
@@ -152,6 +154,7 @@ async function buildApp() {
       await api.register(parlementairesRoutes, { prefix: '/parlementaires' });
       await api.register(deputesRoutes, { prefix: '/deputes' });
       await api.register(senateursRoutes, { prefix: '/senateurs' });
+      await api.register(groupesRoutes, { prefix: '/groupes' });
       await api.register(scrutinsRoutes, { prefix: '/scrutins' });
       await api.register(lobbyingRoutes, { prefix: '/lobbying' });
       await api.register(searchRoutes, { prefix: '/search' });

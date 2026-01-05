@@ -12,6 +12,7 @@
     "status": "tsx src/cli.ts status",
     "schedule": "tsx src/cli.ts schedule",
     "backfill": "tsx src/cli.ts backfill",
+    "calculate-stats": "tsx src/cli.ts calculate-stats",
     "lint": "eslint src --ext .ts",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf dist node_modules .turbo"

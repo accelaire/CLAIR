@@ -34,6 +34,7 @@
     "ingestion:status": "pnpm --filter @clair/ingestion status",
     "ingestion:schedule": "pnpm --filter @clair/ingestion schedule",
     "ingestion:backfill": "pnpm --filter @clair/ingestion backfill",
+    "ingestion:calculate-stats": "pnpm --filter @clair/ingestion calculate-stats",
     "clean": "turbo run clean && rm -rf node_modules",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "prepare": "husky install"

@@ -7,6 +7,7 @@ import { Menu, X, Search, Heart } from 'lucide-react';
 const navigation = [
   { name: 'Députés', href: '/deputes' },
   { name: 'Sénateurs', href: '/senateurs' },
+  { name: 'Groupes', href: '/groupes' },
   { name: 'Scrutins', href: '/scrutins' },
   { name: 'Lobbying', href: '/lobbying' },
   { name: 'Explorateur', href: '/explorateur', badge: 'Beta' },
