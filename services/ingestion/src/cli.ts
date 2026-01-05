@@ -190,11 +190,11 @@ program
   .option('-D, --dossiers', 'Inclure les dossiers législatifs (AN)')
   .option('-I, --interventions', 'Inclure les interventions (DILA + Sénat)')
   .option('-L, --lobbying', 'Inclure les lobbyistes')
-  .option('--scrutins-limit <number>', 'Limite pour les scrutins (défaut: 50)', parseInt)
-  .option('--amendements-limit <number>', 'Limite pour les amendements (défaut: 200)', parseInt)
-  .option('--dossiers-limit <number>', 'Limite pour les dossiers législatifs (défaut: 100)', parseInt)
-  .option('--interventions-limit <number>', 'Limite pour les séances d\'interventions (défaut: 50)', parseInt)
-  .option('--lobbying-limit <number>', 'Limite pour les lobbyistes (défaut: 500)', parseInt)
+  .option('--scrutins-limit <number>', 'Limite pour les scrutins (défaut: TOUT)', parseInt)
+  .option('--amendements-limit <number>', 'Limite pour les amendements (défaut: TOUT)', parseInt)
+  .option('--dossiers-limit <number>', 'Limite pour les dossiers législatifs (défaut: TOUT)', parseInt)
+  .option('--interventions-limit <number>', 'Limite pour les interventions (défaut: TOUT)', parseInt)
+  .option('--lobbying-limit <number>', 'Limite pour les lobbyistes (défaut: TOUT)', parseInt)
   .option('--sources <sources>', 'Sources spécifiques à sync (séparées par des virgules)')
   .action(async (options) => {
     try {

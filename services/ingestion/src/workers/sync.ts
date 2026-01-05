@@ -1243,50 +1243,51 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
             break;
 
           case 'assemblee_nationale:scrutins': {
-            const scrutinsResult = await syncScrutins({ limit: options.scrutinsLimit || 50 });
+            // Si --all et pas de limite explicite, on sync TOUT (undefined = pas de limite)
+            const scrutinsResult = await syncScrutins({ limit: options.scrutinsLimit });
             syncResult = { created: scrutinsResult.scrutins, updated: 0 };
             break;
           }
 
           case 'senat:scrutins': {
-            const senatScrutinsResult = await syncScrutinsSenat({ limit: options.scrutinsLimit || 50 });
+            const senatScrutinsResult = await syncScrutinsSenat({ limit: options.scrutinsLimit });
             syncResult = { created: senatScrutinsResult.scrutins, updated: 0 };
             break;
           }
 
           case 'assemblee_nationale:amendements': {
-            const amendementsResult = await syncAmendements({ limit: options.amendementsLimit || 200 });
+            const amendementsResult = await syncAmendements({ limit: options.amendementsLimit });
             syncResult = { created: amendementsResult.created, updated: amendementsResult.updated };
             break;
           }
 
           case 'senat:amendements': {
-            const senatAmendementsResult = await syncAmendementsSenat({ maxAmendements: options.amendementsLimit || 200 });
+            const senatAmendementsResult = await syncAmendementsSenat({ maxAmendements: options.amendementsLimit });
             syncResult = { created: senatAmendementsResult.created, updated: senatAmendementsResult.updated };
             break;
           }
 
           case 'dila:interventions': {
-            const dilaInterventionsResult = await syncInterventions({ maxSeances: options.interventionsLimit || 50 });
+            const dilaInterventionsResult = await syncInterventions({ maxSeances: options.interventionsLimit });
             syncResult = { created: dilaInterventionsResult.interventions, updated: 0 };
             break;
           }
 
           case 'senat:interventions': {
-            const senatInterventionsResult = await syncInterventionsSenat({ maxSeances: options.interventionsLimit || 50 });
+            const senatInterventionsResult = await syncInterventionsSenat({ maxSeances: options.interventionsLimit });
             syncResult = { created: senatInterventionsResult.interventions, updated: 0 };
             break;
           }
 
           case 'assemblee_nationale:dossiers': {
-            const dossiersResult = await syncDossiers({ limit: options.dossiersLimit || 100 });
+            const dossiersResult = await syncDossiers({ limit: options.dossiersLimit });
             syncResult = { created: dossiersResult.created, updated: dossiersResult.updated };
             break;
           }
 
           case 'hatvp:lobbyistes': {
             const lobbyingResult = await syncLobbyistes({
-              limit: options.lobbyingLimit || 500,
+              limit: options.lobbyingLimit,
               includeActions: true,
             });
             syncResult = lobbyingResult.lobbyistes;

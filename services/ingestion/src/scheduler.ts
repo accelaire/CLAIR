@@ -35,16 +35,16 @@ export interface ScheduleConfig {
 
 export const SCHEDULES: Record<string, ScheduleConfig> = {
   // Sync quotidien complet - 05:00 (après MAJ des sources vers 3-4h)
+  // AUCUNE LIMITE - sync complet de toutes les données
   dailySync: {
     cron: '0 5 * * *',
-    description: 'Sync quotidien complet (toutes les sources)',
+    description: 'Sync quotidien complet SANS LIMITE (toutes les sources)',
     enabled: true,
     handler: async () => {
-      logger.info('Running daily sync (all sources)...');
+      logger.info('Running daily sync (all sources, NO LIMITS)...');
       const result = await smartSync({
         all: true,
-        scrutinsLimit: 50,
-        amendementsLimit: 100,
+        // Pas de limites - on sync TOUT
       });
       logger.info({ result }, 'Daily sync completed');
     },
