@@ -47,7 +47,7 @@ const formatBudget = (budget: number | null): string => {
 
 function LobbyingPageContent() {
   // Sync filters with URL for back button preservation
-  const [filters, setFilter] = useUrlFilters<{
+  const [filters, setFilter, setFilters] = useUrlFilters<{
     search: string;
     type: string;
     secteur: string;
@@ -207,9 +207,11 @@ function LobbyingPageContent() {
               value={sort}
               onChange={(e) => {
                 const newSort = e.target.value as 'nom' | 'budget' | 'actions';
-                setFilter('sort', newSort);
-                // Auto-set order: asc for nom, desc for budget/actions
-                setFilter('order', newSort === 'nom' ? 'asc' : 'desc');
+                // Use batch update to set both sort and order at once
+                setFilters({
+                  sort: newSort,
+                  order: newSort === 'nom' ? 'asc' : 'desc',
+                });
               }}
               className="w-full appearance-none rounded-lg rounded-r-none border border-r-0 bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
             >

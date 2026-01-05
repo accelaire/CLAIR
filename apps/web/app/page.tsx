@@ -382,8 +382,7 @@ export default function HomePage() {
         <div className="container mx-auto px-4 text-center">
           <h2 className="text-3xl font-bold">Prêt à y voir plus clair ?</h2>
           <p className="mx-auto mt-4 max-w-xl text-muted-foreground">
-            Créez un compte gratuit pour recevoir des alertes sur les votes de vos parlementaires
-            et sauvegarder vos recherches.
+            Commencez maintenant et découvrez comment CLAIR peut transformer votre compréhension de la politique française.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link
