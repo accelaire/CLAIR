@@ -75,6 +75,46 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
 
       const skip = (page - 1) * limit;
 
+      // Build search condition: search in title OR by numero if numeric
+      let searchCondition = {};
+      if (search) {
+        const searchTrimmed = search.trim();
+        const searchAsNumber = parseInt(searchTrimmed, 10);
+
+        if (!isNaN(searchAsNumber) && searchTrimmed === String(searchAsNumber)) {
+          // If search is a valid number, search by numero "starts with" OR title contains
+          // For "493", we want: 493, 4930-4939, 49300-49399, etc.
+          // This is done by range queries: numero >= N*10^k AND numero < (N+1)*10^k
+          const numericConditions = [];
+          let multiplier = 1;
+
+          // Generate range conditions for different digit lengths (up to 6 digits total)
+          for (let i = 0; i < 4; i++) {
+            const lower = searchAsNumber * multiplier;
+            const upper = (searchAsNumber + 1) * multiplier;
+            if (lower <= 999999) { // Max reasonable scrutin number
+              numericConditions.push({
+                AND: [
+                  { numero: { gte: lower } },
+                  { numero: { lt: upper } },
+                ],
+              });
+            }
+            multiplier *= 10;
+          }
+
+          searchCondition = {
+            OR: [
+              ...numericConditions,
+              { titre: { contains: searchTrimmed, mode: 'insensitive' as const } },
+            ],
+          };
+        } else {
+          // Otherwise, just search in title
+          searchCondition = { titre: { contains: searchTrimmed, mode: 'insensitive' as const } };
+        }
+      }
+
       const where = {
         ...(chambre && { chambre }),
         ...(type && { typeVote: type }),
@@ -83,13 +123,13 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         ...(importance && { importance }),
         ...(dateFrom && { date: { gte: dateFrom } }),
         ...(dateTo && { date: { lte: dateTo } }),
-        ...(search && { titre: { contains: search, mode: 'insensitive' as const } }),
+        ...searchCondition,
       };
 
       const [scrutins, total] = await Promise.all([
         fastify.prisma.scrutin.findMany({
           where,
-          orderBy: { date: 'desc' },
+          orderBy: [{ date: 'desc' }, { numero: 'desc' }],
           skip,
           take: limit,
           include: {
