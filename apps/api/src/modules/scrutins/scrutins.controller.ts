@@ -6,6 +6,9 @@ import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { ApiError } from '../../utils/errors';
 
+// Cache TTL
+const CACHE_TTL_1H = 3600;
+
 // Fix AN sourceUrl format: VTANR5L17V4946 -> 4946
 const fixSourceUrl = (sourceUrl: string | null, chambre: string, numero: number): string | null => {
   if (!sourceUrl) return null;
@@ -60,6 +63,16 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, _reply) => {
       const query = scrutinsListQuerySchema.parse(request.query);
       const { page, limit, chambre, type, sort, tag, importance, dateFrom, dateTo, search } = query;
+
+      // Cache key based on query params
+      const cacheKey = `scrutins:list:${JSON.stringify(query)}`;
+
+      // Check cache first
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+
       const skip = (page - 1) * limit;
 
       const where = {
@@ -88,7 +101,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
 
       const totalPages = Math.ceil(total / limit);
 
-      return {
+      const result = {
         data: scrutins.map((s) => ({
           ...s,
           votesCount: s._count.votes,
@@ -103,6 +116,11 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           hasPrev: page > 1,
         },
       };
+
+      // Cache for 1 hour
+      await fastify.redis.setex(cacheKey, CACHE_TTL_1H, JSON.stringify(result));
+
+      return result;
     },
   });
 

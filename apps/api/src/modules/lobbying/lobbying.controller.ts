@@ -49,6 +49,16 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, _reply) => {
       const query = lobbyistesListQuerySchema.parse(request.query);
       const { page, limit, type, secteur, search, sort, order } = query;
+
+      // Cache key based on query params
+      const cacheKey = `lobbying:list:${JSON.stringify(query)}`;
+
+      // Check cache first
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+
       const skip = (page - 1) * limit;
 
       const where = {
@@ -88,7 +98,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
 
       const totalPages = Math.ceil(total / limit);
 
-      return {
+      const result = {
         data: lobbyistes.map((l) => ({
           ...l,
           actionsCount: l._count.actions,
@@ -103,6 +113,11 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           hasPrev: page > 1,
         },
       };
+
+      // Cache for 1 hour
+      await fastify.redis.setex(cacheKey, CACHE_TTL_12H, JSON.stringify(result));
+
+      return result;
     },
   });
 
@@ -116,6 +131,14 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
       description: 'Retourne tous les secteurs d\'activité avec leur count',
     },
     handler: async (_request, _reply) => {
+      const cacheKey = 'lobbying:secteurs';
+
+      // Check cache first
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+
       const lobbyistes = await fastify.prisma.lobbyiste.groupBy({
         by: ['secteur'],
         _count: { secteur: true },
@@ -130,7 +153,12 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           count: l._count.secteur,
         }));
 
-      return { data: secteurs };
+      const result = { data: secteurs };
+
+      // Cache for 12 hours
+      await fastify.redis.setex(cacheKey, CACHE_TTL_12H, JSON.stringify(result));
+
+      return result;
     },
   });
 
