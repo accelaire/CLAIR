@@ -380,7 +380,7 @@ async function searchWithDatabase(
             nombrePour: true,
             nombreContre: true,
           },
-          orderBy: { date: 'desc' },
+          orderBy: [{ date: 'desc' }, { numero: 'desc' }],
           take: limit,
         })
         .then((scrutins: any[]) => {
@@ -486,7 +486,7 @@ async function suggestFromDatabase(fastify: any, q: string, limit: number) {
         chambre: true,
         titre: true,
       },
-      orderBy: { date: 'desc' },
+      orderBy: [{ date: 'desc' }, { numero: 'desc' }],
       take: Math.max(2, limit - 3),
     }),
   ]);

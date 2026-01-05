@@ -115,14 +115,21 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         }
       }
 
+      // Combine date conditions properly (don't overwrite gte with lte)
+      const dateCondition = (dateFrom || dateTo) ? {
+        date: {
+          ...(dateFrom && { gte: dateFrom }),
+          ...(dateTo && { lte: dateTo }),
+        },
+      } : {};
+
       const where = {
         ...(chambre && { chambre }),
         ...(type && { typeVote: type }),
         ...(sort && { sort }),
         ...(tag && { tags: { has: tag } }),
         ...(importance && { importance }),
-        ...(dateFrom && { date: { gte: dateFrom } }),
-        ...(dateTo && { date: { lte: dateTo } }),
+        ...dateCondition,
         ...searchCondition,
       };
 
