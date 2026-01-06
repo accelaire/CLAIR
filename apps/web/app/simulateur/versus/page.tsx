@@ -106,6 +106,7 @@ export default function VersusPage() {
                       alt={candidat.nom}
                       fill
                       className="object-cover"
+                      unoptimized
                     />
                   ) : (
                     <Users className="absolute inset-0 m-auto h-5 w-5 text-muted-foreground" />
@@ -155,6 +156,7 @@ export default function VersusPage() {
                       alt={candidat.nom}
                       fill
                       className="object-cover"
+                      unoptimized
                     />
                   ) : (
                     <Users className="absolute inset-0 m-auto h-6 w-6 text-muted-foreground" />
@@ -190,7 +192,7 @@ export default function VersusPage() {
               <div key={c.slug} className="text-center">
                 <div className="relative h-16 w-16 rounded-full overflow-hidden bg-muted mx-auto mb-2">
                   {c.photoUrl ? (
-                    <Image src={c.photoUrl} alt={c.nom} fill className="object-cover" />
+                    <Image src={c.photoUrl} alt={c.nom} fill className="object-cover" unoptimized />
                   ) : (
                     <Users className="absolute inset-0 m-auto h-8 w-8 text-muted-foreground" />
                   )}

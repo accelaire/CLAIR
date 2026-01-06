@@ -422,6 +422,7 @@ export default function LifeSimulatorPage() {
                         alt={candidat.nom}
                         fill
                         className="object-cover"
+                        unoptimized
                       />
                     ) : (
                       <Users className="absolute inset-0 m-auto h-8 w-8 text-muted-foreground" />
@@ -462,6 +463,7 @@ export default function LifeSimulatorPage() {
                   alt={impactData.candidat.nom}
                   fill
                   className="object-cover"
+                  unoptimized
                 />
               ) : (
                 <Users className="absolute inset-0 m-auto h-8 w-8 text-muted-foreground" />

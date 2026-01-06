@@ -59,6 +59,7 @@ export function ComparisonSelectionBar({
                           alt={`${p.prenom} ${p.nom}`}
                           fill
                           className="object-cover"
+                          unoptimized
                         />
                       ) : (
                         <Users className="absolute inset-0 m-auto h-4 w-4 text-muted-foreground" />

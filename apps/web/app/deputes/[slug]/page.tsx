@@ -683,6 +683,7 @@ export default function DeputeDetailPage() {
               fill
               className="object-cover"
               priority
+              unoptimized
             />
           ) : (
             <Users className="absolute inset-0 m-auto h-16 w-16 text-muted-foreground" />

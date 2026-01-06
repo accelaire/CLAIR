@@ -125,6 +125,7 @@ export default function CandidatDetailPage() {
               alt={`${candidat.prenom} ${candidat.nom}`}
               fill
               className="object-cover"
+              unoptimized
             />
           ) : (
             <Users className="absolute inset-0 m-auto h-16 w-16 text-muted-foreground" />

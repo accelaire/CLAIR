@@ -284,6 +284,7 @@ function MembreCard({ membre, chambre }: { membre: Membre; chambre: string }) {
             alt={`${membre.prenom} ${membre.nom}`}
             fill
             className="object-cover"
+            unoptimized
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-lg font-semibold text-muted-foreground">

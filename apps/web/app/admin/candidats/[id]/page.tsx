@@ -401,6 +401,7 @@ export default function EditCandidatPage() {
                   alt={candidat.nom}
                   fill
                   className="object-cover"
+                  unoptimized
                 />
               ) : (
                 <Users className="absolute inset-0 m-auto h-12 w-12 text-muted-foreground" />

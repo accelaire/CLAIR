@@ -278,6 +278,7 @@ function SenateursPageContent() {
                           alt={`${senateur.prenom} ${senateur.nom}`}
                           fill
                           className="object-cover"
+                          unoptimized
                         />
                       ) : (
                         <Users className="absolute inset-0 m-auto h-8 w-8 text-muted-foreground" />

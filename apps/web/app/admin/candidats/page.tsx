@@ -192,6 +192,7 @@ export default function AdminCandidatsPage() {
                               alt={candidat.nom}
                               fill
                               className="object-cover"
+                              unoptimized
                             />
                           ) : (
                             <Users className="absolute inset-0 m-auto h-5 w-5 text-muted-foreground" />

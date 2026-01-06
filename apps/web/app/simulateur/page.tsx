@@ -499,6 +499,7 @@ export default function SimulateurPage() {
                           alt={`${result.candidat.prenom} ${result.candidat.nom}`}
                           fill
                           className="object-cover"
+                          unoptimized
                         />
                       ) : (
                         <Users className="absolute inset-0 m-auto h-8 w-8 text-muted-foreground" />

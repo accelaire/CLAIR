@@ -153,6 +153,7 @@ function ComparerPageContent() {
                           alt={`${p.prenom} ${p.nom}`}
                           fill
                           className="object-cover"
+                          unoptimized
                         />
                       ) : (
                         <Users className="absolute inset-0 m-auto h-10 w-10 text-muted-foreground" />

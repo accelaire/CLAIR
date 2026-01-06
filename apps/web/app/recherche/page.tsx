@@ -138,6 +138,7 @@ export default function RecherchePage() {
                 alt={result.nomComplet || `${result.prenom} ${result.nom}`}
                 fill
                 className="object-cover"
+                unoptimized
               />
             </div>
           ) : (

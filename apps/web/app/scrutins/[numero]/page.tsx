@@ -477,6 +477,7 @@ export default function ScrutinDetailPage() {
                           alt=""
                           fill
                           className="object-cover"
+                          unoptimized
                         />
                       ) : (
                         <Users className="absolute inset-0 m-auto h-5 w-5 text-muted-foreground" />
@@ -756,6 +757,7 @@ export default function ScrutinDetailPage() {
                                   alt=""
                                   fill
                                   className="object-cover"
+                                  unoptimized
                                 />
                               ) : (
                                 <Users className="absolute inset-0 m-auto h-4 w-4 text-muted-foreground" />
