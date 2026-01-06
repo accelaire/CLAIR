@@ -389,7 +389,7 @@ export class GroupesService {
           AND p.actif = true
           AND s.chambre = ${chambre}
         ORDER BY s.date DESC
-        LIMIT 10
+        LIMIT 20
       ),
       groupe_votes AS (
         SELECT

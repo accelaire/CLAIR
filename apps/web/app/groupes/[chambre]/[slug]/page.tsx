@@ -585,9 +585,11 @@ export default function GroupeDetailPage() {
 
               {/* Derniers scrutins */}
               <div className="rounded-xl border bg-card p-3 sm:p-4">
-                <h4 className="font-medium mb-2 sm:mb-3 text-sm sm:text-base">Derniers scrutins</h4>
-                <div className="space-y-1.5 sm:space-y-2 max-h-52 sm:max-h-64 overflow-y-auto">
-                  {votingStats.scrutinsRecents.slice(0, 5).map((scrutin) => (
+                <h4 className="font-medium mb-2 sm:mb-3 text-sm sm:text-base">
+                  Derniers scrutins ({votingStats.scrutinsRecents.length})
+                </h4>
+                <div className="space-y-1.5 sm:space-y-2 max-h-64 sm:max-h-80 overflow-y-auto">
+                  {votingStats.scrutinsRecents.map((scrutin) => (
                     <Link
                       key={scrutin.id}
                       href={`/scrutins/${scrutin.numero}`}
