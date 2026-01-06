@@ -424,6 +424,8 @@ export async function syncScrutins(
   let votesCreated = 0;
 
   const chambre = 'assemblee';
+  // Pour l'AN, la session est la législature (17e par défaut)
+  const session = process.env.ASSEMBLEE_NATIONALE_LEGISLATURE || '17';
 
   for (const data of scrutinsData) {
     try {
@@ -442,6 +444,7 @@ export async function syncScrutins(
       const scrutinData = {
         numero: scrutin.numero,
         chambre,
+        session,
         date: scrutin.date,
         titre: scrutin.titre,
         typeVote: scrutin.typeVote,
@@ -461,14 +464,14 @@ export async function syncScrutins(
       };
 
       const existing = await prisma.scrutin.findUnique({
-        where: { numero_chambre: { numero: scrutin.numero, chambre } },
+        where: { numero_chambre_session: { numero: scrutin.numero, chambre, session } },
       });
 
       let scrutinId: string;
 
       if (existing) {
         await prisma.scrutin.update({
-          where: { numero_chambre: { numero: scrutin.numero, chambre } },
+          where: { numero_chambre_session: { numero: scrutin.numero, chambre, session } },
           data: scrutinData,
         });
         scrutinId = existing.id;
@@ -521,12 +524,37 @@ export async function syncScrutins(
 // =============================================================================
 
 export async function syncScrutinsSenat(
-  options: { limit?: number; session?: string } = {}
+  options: { limit?: number; session?: string; sessions?: string[] } = {}
 ): Promise<{ scrutins: number; votes: number }> {
-  logger.info({ limit: options.limit, session: options.session }, 'Starting scrutins Sénat sync...');
+  // Par défaut, synchroniser les 3 dernières sessions parlementaires
+  const currentYear = new Date().getFullYear();
+  const defaultSessions = [
+    String(currentYear - 2), // 2024
+    String(currentYear - 1), // 2025
+    String(currentYear),     // 2026
+  ];
+
+  const sessionsToSync = options.sessions || (options.session ? [options.session] : defaultSessions);
+
+  logger.info({ limit: options.limit, sessions: sessionsToSync }, 'Starting scrutins Sénat sync...');
 
   const scrutinsClient = new SenatScrutinsClient();
-  const scrutinsData = await scrutinsClient.getScrutins(options);
+
+  // Collecter les scrutins de toutes les sessions
+  let allScrutinsData: Awaited<ReturnType<typeof scrutinsClient.getScrutins>> = [];
+
+  for (const session of sessionsToSync) {
+    try {
+      logger.info({ session }, 'Fetching scrutins for session...');
+      const sessionData = await scrutinsClient.getScrutins({ ...options, session });
+      logger.info({ session, count: sessionData.length }, 'Fetched scrutins for session');
+      allScrutinsData = allScrutinsData.concat(sessionData);
+    } catch (error: any) {
+      logger.warn({ session, error: error.message }, 'Failed to fetch scrutins for session, continuing...');
+    }
+  }
+
+  const scrutinsData = allScrutinsData;
 
   // Charger les sénateurs pour le mapping matricule -> parlementaireId
   const parlementaires = await prisma.parlementaire.findMany({
@@ -548,6 +576,10 @@ export async function syncScrutinsSenat(
     try {
       const { scrutin, votes } = data;
 
+      // Extraire la session depuis sourceUrl (ex: /2024/ -> "2024")
+      const sessionMatch = scrutin.sourceUrl?.match(/\/(\d{4})\//);
+      const session = sessionMatch ? sessionMatch[1] : '2024';
+
       // Tags automatiques basés sur le titre
       const tags = extractTags(scrutin.titre);
 
@@ -559,6 +591,7 @@ export async function syncScrutinsSenat(
       const scrutinData = {
         numero: scrutin.numero,
         chambre,
+        session,
         date: scrutin.date,
         titre: scrutin.titre,
         typeVote: scrutin.typeVote,
@@ -578,14 +611,14 @@ export async function syncScrutinsSenat(
       };
 
       const existing = await prisma.scrutin.findUnique({
-        where: { numero_chambre: { numero: scrutin.numero, chambre } },
+        where: { numero_chambre_session: { numero: scrutin.numero, chambre, session } },
       });
 
       let scrutinId: string;
 
       if (existing) {
         await prisma.scrutin.update({
-          where: { numero_chambre: { numero: scrutin.numero, chambre } },
+          where: { numero_chambre_session: { numero: scrutin.numero, chambre, session } },
           data: scrutinData,
         });
         scrutinId = existing.id;

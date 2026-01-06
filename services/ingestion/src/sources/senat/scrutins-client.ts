@@ -281,23 +281,42 @@ export class SenatScrutinsClient {
       titre = this.decodeHtmlEntities(leadMatch[1]);
     }
 
-    // Extraire la date depuis le titre de la page ou d'autres sources
-    let date = new Date();
-    const dateMatch = html.match(/(\d{1,2})\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})/i);
+    // D'abord décoder les entités HTML pour pouvoir matcher les mois français
+    // (le HTML contient "d&eacute;cembre" au lieu de "décembre")
+    const decodedHtml = this.decodeHtmlEntities(html);
+
+    // Extraire la date - plusieurs stratégies
+    let date: Date | null = null;
+
+    // Stratégie 1: Chercher dans le <title> (format: "séance du X mois YYYY")
+    const titleMatch = decodedHtml.match(/<title>[^<]*séance du (\d{1,2})\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})/i);
+
+    // Stratégie 2: Chercher n'importe où dans le HTML décodé
+    const dateMatch = titleMatch || decodedHtml.match(/(\d{1,2})\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})/i);
+
     if (dateMatch && dateMatch[1] && dateMatch[2] && dateMatch[3]) {
       const months: Record<string, number> = {
         janvier: 0, février: 1, mars: 2, avril: 3, mai: 4, juin: 5,
         juillet: 6, août: 7, septembre: 8, octobre: 9, novembre: 10, décembre: 11
       };
       const day = parseInt(dateMatch[1], 10);
-      const month = months[dateMatch[2].toLowerCase()] ?? 0;
+      const month = months[dateMatch[2].toLowerCase()];
       const year = parseInt(dateMatch[3], 10);
-      date = new Date(year, month, day);
+
+      if (month !== undefined && !isNaN(day) && !isNaN(year)) {
+        date = new Date(year, month, day);
+      }
     }
 
-    // Déterminer si adopté ou rejeté
+    // JAMAIS de fallback à new Date() - c'est ce qui causait le bug !
+    if (!date) {
+      logger.error({ numero }, 'CRITICAL: Could not parse date for scrutin - skipping to avoid bad data');
+      throw new Error(`Failed to parse date for scrutin n°${numero}`);
+    }
+
+    // Déterminer si adopté ou rejeté (utiliser le HTML décodé)
     let sort = 'rejete';
-    if (html.toLowerCase().includes('adopté') || html.toLowerCase().includes('adopt&eacute;')) {
+    if (decodedHtml.toLowerCase().includes('adopté')) {
       sort = 'adopte';
     }
 

@@ -13,6 +13,7 @@ interface Scrutin {
   id: string;
   numero: number;
   chambre: string;
+  session: string;
   date: string;
   titre: string;
   sort: string;
@@ -51,6 +52,20 @@ const typeLabels: Record<string, string> = {
 const chambreLabels: Record<string, string> = {
   assemblee: 'Assemblée nationale',
   senat: 'Sénat',
+};
+
+// Formater la session pour l'affichage
+const formatSession = (chambre: string, session: string): string | null => {
+  if (chambre === 'senat') {
+    // Pour le Sénat: "2024" -> "Session 2024-2025"
+    const year = parseInt(session, 10);
+    if (!isNaN(year)) {
+      return `${year}-${year + 1}`;
+    }
+    return session;
+  }
+  // Pour l'AN, on n'affiche pas la législature (c'est toujours la même)
+  return null;
 };
 
 function ScrutinsPageContent() {
@@ -230,19 +245,24 @@ function ScrutinsPageContent() {
             {scrutins.map((scrutin) => (
               <Link
                 key={scrutin.id}
-                href={`/scrutins/${scrutin.numero}?chambre=${scrutin.chambre || 'assemblee'}`}
+                href={`/scrutins/${scrutin.numero}?chambre=${scrutin.chambre || 'assemblee'}${scrutin.chambre === 'senat' && scrutin.session ? `&session=${scrutin.session}` : ''}`}
                 className="block rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
               >
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   {/* Infos principales */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="text-sm font-medium text-muted-foreground">
                         Scrutin n°{scrutin.numero}
                       </span>
                       <span className={`px-2 py-0.5 text-xs font-medium rounded ${scrutin.chambre === 'senat' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
                         {chambreLabels[scrutin.chambre] || 'Assemblée nationale'}
                       </span>
+                      {scrutin.chambre === 'senat' && scrutin.session && (
+                        <span className="px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-600 rounded">
+                          {formatSession(scrutin.chambre, scrutin.session)}
+                        </span>
+                      )}
                       {scrutin.importance >= 4 && (
                         <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded">
                           Important

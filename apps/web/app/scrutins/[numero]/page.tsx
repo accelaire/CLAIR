@@ -79,6 +79,7 @@ interface ScrutinDetail {
   id: string;
   numero: number;
   chambre: string;
+  session: string;
   date: string;
   titre: string;
   sort: string;
@@ -123,20 +124,33 @@ const typeVoteLabels: Record<string, string> = {
   motion: 'Motion',
 };
 
+// Formater la session pour l'affichage
+const formatSession = (chambre: string, session: string): string | null => {
+  if (chambre === 'senat') {
+    const year = parseInt(session, 10);
+    if (!isNaN(year)) {
+      return `Session ${year}-${year + 1}`;
+    }
+    return session;
+  }
+  return null;
+};
+
 export default function ScrutinDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
   const numero = params.numero as string;
   const chambre = searchParams.get('chambre') || 'assemblee';
+  const session = searchParams.get('session') || undefined;
 
   const [expandedPosition, setExpandedPosition] = useState<string | null>('pour');
   const [groupeFilter, setGroupeFilter] = useState<string | null>(null);
   const [interventionsSortAsc, setInterventionsSortAsc] = useState(true); // true = chronologique, false = inverse
 
   const { data, isLoading, error } = useQuery<{ data: ScrutinDetail }>({
-    queryKey: ['scrutin', numero, chambre],
-    queryFn: () => api.get(`/scrutins/${numero}`, { params: { chambre } }).then((res) => res.data),
+    queryKey: ['scrutin', numero, chambre, session],
+    queryFn: () => api.get(`/scrutins/${numero}`, { params: { chambre, session } }).then((res) => res.data),
   });
 
   const getParlementaireRoute = (parlementaire: Vote['parlementaire']) => {

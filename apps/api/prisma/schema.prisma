@@ -255,6 +255,9 @@ model Scrutin {
   // Chambre où a eu lieu le scrutin
   chambre          String   @default("assemblee") // 'assemblee' | 'senat'
 
+  // Session parlementaire (ex: "2024" pour 2024-2025, "17" pour 17e législature AN)
+  session          String   @default("17")
+
   date             DateTime
   titre            String
   typeVote         String   @map("type_vote") // 'solennel', 'ordinaire', 'motion'
@@ -295,8 +298,9 @@ model Scrutin {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  @@unique([numero, chambre])
+  @@unique([numero, chambre, session])
   @@index([chambre])
+  @@index([session])
   @@index([date])
   @@index([typeVote])
   @@index([tags])

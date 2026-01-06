@@ -281,16 +281,23 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         type: 'object',
         properties: {
           chambre: { type: 'string', enum: ['assemblee', 'senat'], default: 'assemblee' },
+          session: { type: 'string', description: 'Session parlementaire (ex: 2024 pour Sénat, 17 pour AN)' },
         },
       },
     },
     handler: async (request, _reply) => {
       const { numero } = z.object({ numero: z.coerce.number().int().positive() }).parse(request.params);
-      const { chambre = 'assemblee' } = request.query as { chambre?: string };
+      const { chambre = 'assemblee', session } = request.query as { chambre?: string; session?: string };
+
+      // Build where clause - session is required for unique lookup in multi-session scenario
+      const whereClause: { numero: number; chambre: string; session?: string } = { numero, chambre };
+      if (session) {
+        whereClause.session = session;
+      }
 
       // Use findFirst instead of findUnique to avoid composite key issues
       const scrutin = await fastify.prisma.scrutin.findFirst({
-        where: { numero, chambre },
+        where: whereClause,
         include: {
           // Inclure le dossier législatif lié
           dossier: {
@@ -430,6 +437,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           page: { type: 'integer', minimum: 1, default: 1 },
           limit: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
           chambre: { type: 'string', enum: ['assemblee', 'senat'], default: 'assemblee' },
+          session: { type: 'string', description: 'Session parlementaire (ex: 2024 pour Sénat)' },
           position: { type: 'string', enum: ['pour', 'contre', 'abstention', 'absent'] },
           groupe: { type: 'string', description: 'Slug du groupe politique' },
         },
@@ -437,12 +445,18 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, _reply) => {
       const { numero } = z.object({ numero: z.coerce.number().int().positive() }).parse(request.params);
-      const { page = 1, limit = 50, chambre = 'assemblee', position, groupe } = request.query as any;
+      const { page = 1, limit = 50, chambre = 'assemblee', session, position, groupe } = request.query as any;
       const skip = (page - 1) * limit;
+
+      // Build where clause with optional session
+      const whereClause: { numero: number; chambre: string; session?: string } = { numero, chambre };
+      if (session) {
+        whereClause.session = session;
+      }
 
       // Use findFirst instead of findUnique to avoid composite key issues
       const scrutin = await fastify.prisma.scrutin.findFirst({
-        where: { numero, chambre },
+        where: whereClause,
         select: { id: true },
       });
 
