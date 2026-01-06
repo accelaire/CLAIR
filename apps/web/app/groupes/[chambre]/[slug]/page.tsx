@@ -298,28 +298,32 @@ function MembreCard({ membre, chambre }: { membre: Membre; chambre: string }) {
         <p className="font-medium truncate group-hover:text-primary transition-colors">
           {membre.prenom} {membre.nom}
         </p>
-        {membre.circonscription && (
-          <p className="text-sm text-muted-foreground truncate flex items-center gap-1">
-            <MapPin className="h-3 w-3" />
-            {membre.circonscription.nom}
-          </p>
-        )}
-      </div>
-
-      {/* Stats */}
-      <div className="hidden sm:flex items-center gap-3 text-sm text-muted-foreground">
-        {membre.statsPresence !== null && (
-          <span title="Taux de participation" className="flex items-center gap-1">
-            <Vote className="h-3 w-3" />
-            {membre.statsPresence}%
-          </span>
-        )}
-        {membre.statsLoyaute !== null && (
-          <span title="Loyauté au groupe" className="flex items-center gap-1">
-            <TrendingUp className="h-3 w-3" />
-            {membre.statsLoyaute}%
-          </span>
-        )}
+        <div className="flex items-center justify-between gap-2 mt-0.5">
+          {/* Circonscription */}
+          {membre.circonscription ? (
+            <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+              <MapPin className="h-3 w-3 shrink-0" />
+              <span className="truncate">{membre.circonscription.departement} - {membre.circonscription.numero}</span>
+            </p>
+          ) : (
+            <span />
+          )}
+          {/* Stats */}
+          <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+            {membre.statsPresence !== null && (
+              <span title="Participation" className="flex items-center gap-0.5">
+                <Vote className="h-3 w-3" />
+                {membre.statsPresence}%
+              </span>
+            )}
+            {membre.statsLoyaute !== null && (
+              <span title="Loyauté" className="flex items-center gap-0.5">
+                <TrendingUp className="h-3 w-3" />
+                {membre.statsLoyaute}%
+              </span>
+            )}
+          </div>
+        </div>
       </div>
     </Link>
   );
@@ -609,9 +613,15 @@ export default function GroupeDetailPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs sm:text-sm font-medium truncate">{scrutin.titre}</p>
-                        <p className="text-[10px] sm:text-xs text-muted-foreground">
-                          {new Date(scrutin.date).toLocaleDateString('fr-FR')} · {scrutin.cohesion}%
-                        </p>
+                        <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs text-muted-foreground flex-wrap">
+                          <span>{new Date(scrutin.date).toLocaleDateString('fr-FR')}</span>
+                          <span className="hidden xs:inline">·</span>
+                          <span className="text-green-600">{scrutin.groupeVotes.pour}+</span>
+                          <span className="text-red-600">{scrutin.groupeVotes.contre}-</span>
+                          <span className="text-yellow-600">{scrutin.groupeVotes.abstention}○</span>
+                          <span className="hidden xs:inline">·</span>
+                          <span className="font-medium text-blue-600">{scrutin.cohesion}% coh.</span>
+                        </div>
                       </div>
                     </Link>
                   ))}
