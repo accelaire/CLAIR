@@ -409,9 +409,9 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         // Requête SQL groupée pour votesByGroupe (évite de charger tous les votes en mémoire)
         fastify.prisma.$queryRaw<{ groupe_nom: string | null; position: string; count: bigint }[]>`
           SELECT gp.nom as groupe_nom, v.position, COUNT(*) as count
-          FROM "Vote" v
-          JOIN "Parlementaire" p ON v.parlementaire_id = p.id
-          LEFT JOIN "GroupePolitique" gp ON p.groupe_id = gp.id
+          FROM "votes" v
+          JOIN "parlementaires" p ON v.parlementaire_id = p.id
+          LEFT JOIN "groupes_politiques" gp ON p.groupe_id = gp.id
           WHERE v.scrutin_id = ${scrutin.id}
           GROUP BY gp.nom, v.position
         `,
