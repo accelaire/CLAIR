@@ -295,11 +295,10 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         whereClause.session = session;
       }
 
-      // Use findFirst instead of findUnique to avoid composite key issues
+      // Requête scrutin SANS les votes (optimisation mémoire)
       const scrutin = await fastify.prisma.scrutin.findFirst({
         where: whereClause,
         include: {
-          // Inclure le dossier législatif lié
           dossier: {
             select: {
               id: true,
@@ -315,7 +314,6 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
               loiTitre: true,
             },
           },
-          // Inclure l'amendement voté (si applicable)
           amendement: {
             select: {
               id: true,
@@ -329,9 +327,8 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
               dateDepot: true,
             },
           },
-          // Inclure les interventions liées (explications de vote, débats)
           interventions: {
-            take: 20, // Limiter à 20 interventions max
+            take: 20,
             orderBy: [{ date: 'asc' }, { ordre: 'asc' }],
             select: {
               id: true,
@@ -356,28 +353,6 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
               },
             },
           },
-          votes: {
-            include: {
-              parlementaire: {
-                select: {
-                  id: true,
-                  slug: true,
-                  chambre: true,
-                  nom: true,
-                  prenom: true,
-                  photoUrl: true,
-                  groupe: {
-                    select: {
-                      id: true,
-                      slug: true,
-                      nom: true,
-                      couleur: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
         },
       });
 
@@ -385,32 +360,87 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         throw new ApiError(404, 'Scrutin non trouvé');
       }
 
-      // Regrouper les votes par position
-      const votesByPosition = {
-        pour: scrutin.votes.filter((v) => v.position === 'pour'),
-        contre: scrutin.votes.filter((v) => v.position === 'contre'),
-        abstention: scrutin.votes.filter((v) => v.position === 'abstention'),
-        absent: scrutin.votes.filter((v) => v.position === 'absent'),
+      // Sélection des champs votes communs
+      const voteSelect = {
+        id: true,
+        position: true,
+        parlementaire: {
+          select: {
+            id: true,
+            slug: true,
+            chambre: true,
+            nom: true,
+            prenom: true,
+            photoUrl: true,
+            groupe: {
+              select: {
+                id: true,
+                slug: true,
+                nom: true,
+                couleur: true,
+              },
+            },
+          },
+        },
       };
 
-      // Regrouper par groupe politique
+      // Charger les votes par position (limité à 100 chacun) + agrégation par groupe EN PARALLÈLE
+      const [votesPour, votesContre, votesAbstention, votesAbsent, votesByGroupeRaw] = await Promise.all([
+        fastify.prisma.vote.findMany({
+          where: { scrutinId: scrutin.id, position: 'pour' },
+          take: 100,
+          select: voteSelect,
+        }),
+        fastify.prisma.vote.findMany({
+          where: { scrutinId: scrutin.id, position: 'contre' },
+          take: 100,
+          select: voteSelect,
+        }),
+        fastify.prisma.vote.findMany({
+          where: { scrutinId: scrutin.id, position: 'abstention' },
+          take: 100,
+          select: voteSelect,
+        }),
+        fastify.prisma.vote.findMany({
+          where: { scrutinId: scrutin.id, position: 'absent' },
+          take: 100,
+          select: voteSelect,
+        }),
+        // Requête SQL groupée pour votesByGroupe (évite de charger tous les votes en mémoire)
+        fastify.prisma.$queryRaw<{ groupe_nom: string | null; position: string; count: bigint }[]>`
+          SELECT gp.nom as groupe_nom, v.position, COUNT(*) as count
+          FROM "Vote" v
+          JOIN "Parlementaire" p ON v.parlementaire_id = p.id
+          LEFT JOIN "GroupePolitique" gp ON p.groupe_id = gp.id
+          WHERE v.scrutin_id = ${scrutin.id}
+          GROUP BY gp.nom, v.position
+        `,
+      ]);
+
+      // Construire votesByGroupe à partir de la requête agrégée
       const votesByGroupe: Record<string, { pour: number; contre: number; abstention: number; absent: number }> = {};
-      for (const vote of scrutin.votes) {
-        const groupeNom = vote.parlementaire.groupe?.nom || 'Non inscrit';
+      for (const row of votesByGroupeRaw) {
+        const groupeNom = row.groupe_nom || 'Non inscrit';
         if (!votesByGroupe[groupeNom]) {
           votesByGroupe[groupeNom] = { pour: 0, contre: 0, abstention: 0, absent: 0 };
         }
-        votesByGroupe[groupeNom][vote.position as keyof typeof votesByGroupe[string]]++;
+        votesByGroupe[groupeNom][row.position as keyof typeof votesByGroupe[string]] = Number(row.count);
       }
+
+      const votesByPosition = {
+        pour: votesPour,
+        contre: votesContre,
+        abstention: votesAbstention,
+        absent: votesAbsent,
+      };
 
       return {
         data: {
           ...scrutin,
           sourceUrl: fixSourceUrl(scrutin.sourceUrl, scrutin.chambre, scrutin.numero),
-          votes: undefined,
           votesByPosition,
           votesByGroupe,
-          totalVotes: scrutin.votes.length,
+          totalVotes: scrutin.nombrePour + scrutin.nombreContre + scrutin.nombreAbstention,
         },
       };
     },

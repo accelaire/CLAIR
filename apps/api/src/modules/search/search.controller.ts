@@ -7,6 +7,18 @@ import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { indexAll, clearAllIndexes } from './indexing.service';
 
+// Timeout pour les requêtes Meilisearch (évite les blocages si Meilisearch est down)
+const MEILISEARCH_TIMEOUT_MS = 3000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error('Meilisearch timeout')), ms)
+    ),
+  ]);
+}
+
 const searchQuerySchema = z.object({
   q: z.string().min(2, 'La recherche doit contenir au moins 2 caractères'),
   type: z.enum(['all', 'deputes', 'senateurs', 'scrutins', 'lobbyistes']).default('all'),
@@ -66,11 +78,14 @@ export const searchRoutes: FastifyPluginAsync = async (fastify) => {
       const { q, limit = 5 } = request.query as { q: string; limit?: number };
 
       try {
-        // Recherche rapide multi-index
-        const [deputesRes, scrutinsRes] = await Promise.all([
-          fastify.meiliIndexes.deputes.search(q, { limit }),
-          fastify.meiliIndexes.scrutins.search(q, { limit: Math.max(2, limit - 3) }),
-        ]);
+        // Recherche rapide multi-index avec timeout
+        const [deputesRes, scrutinsRes] = await withTimeout(
+          Promise.all([
+            fastify.meiliIndexes.deputes.search(q, { limit }),
+            fastify.meiliIndexes.scrutins.search(q, { limit: Math.max(2, limit - 3) }),
+          ]),
+          MEILISEARCH_TIMEOUT_MS
+        );
 
         const suggestions = [
           ...deputesRes.hits.map((d) => ({
@@ -210,7 +225,8 @@ async function searchWithMeilisearch(
     );
   }
 
-  await Promise.all(promises);
+  // Attendre toutes les promesses avec timeout
+  await withTimeout(Promise.all(promises), MEILISEARCH_TIMEOUT_MS);
 
   if (type === 'all') {
     const allResults = [

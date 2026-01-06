@@ -6,6 +6,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Search, ChevronDown, Users, Loader2, Check, GitCompareArrows, X } from 'lucide-react';
+import { useDebouncedCallback } from 'use-debounce';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
@@ -54,6 +55,17 @@ function DeputesPageContent() {
     search: string;
     groupe: string;
   }>(['search', 'groupe']);
+
+  // Local state for search input with debounce
+  const [searchInput, setSearchInput] = useState(filters.search);
+  const debouncedSetSearch = useDebouncedCallback((value: string) => {
+    setFilter('search', value);
+  }, 300);
+
+  // Sync local input with URL filter (for back button support)
+  useEffect(() => {
+    setSearchInput(filters.search);
+  }, [filters.search]);
 
   const [compareMode, setCompareMode] = useState(false);
   const [preselectionHandled, setPreselectionHandled] = useState(false);
@@ -189,14 +201,17 @@ function DeputesPageContent() {
 
       {/* Filtres */}
       <div className="mb-8 flex flex-col gap-4 sm:flex-row">
-        {/* Recherche */}
+        {/* Recherche avec debounce */}
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
             placeholder="Rechercher un député..."
-            value={filters.search}
-            onChange={(e) => setFilter('search', e.target.value)}
+            value={searchInput}
+            onChange={(e) => {
+              setSearchInput(e.target.value);
+              debouncedSetSearch(e.target.value);
+            }}
             className="w-full rounded-lg border bg-background px-10 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>

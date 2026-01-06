@@ -11,6 +11,13 @@ import {
   PaginationMeta,
 } from './deputes.schema';
 
+// Génère une clé de cache déterministe (ordre des propriétés fixe)
+function stableCacheKey(prefix: string, obj: Record<string, unknown>): string {
+  const sortedKeys = Object.keys(obj).sort();
+  const parts = sortedKeys.map(k => `${k}:${obj[k] ?? ''}`);
+  return `${prefix}:${parts.join('|')}`;
+}
+
 export class DeputesService {
   private readonly CACHE_TTL = 300; // 5 minutes
   private readonly CACHE_TTL_LONG = 3600; // 1 heure
@@ -25,7 +32,7 @@ export class DeputesService {
   // ===========================================================================
 
   async getDeputes(query: DeputesListQuery) {
-    const cacheKey = `deputes:list:${JSON.stringify(query)}`;
+    const cacheKey = stableCacheKey('deputes:list', query as Record<string, unknown>);
 
     // Vérifier le cache
     const cached = await this.redis.get(cacheKey);
