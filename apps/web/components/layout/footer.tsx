@@ -151,7 +151,7 @@ export function Footer() {
               <Github className="h-5 w-5" />
             </a>
             <a
-              href="https://x.com/clair_politique"
+              href="https://x.com/ClairPolitique"
               target="_blank"
               rel="noopener noreferrer"
               className="text-muted-foreground hover:text-foreground"
