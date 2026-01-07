@@ -88,7 +88,8 @@ export const deputeSchema = z.object({
 });
 
 export const deputeStatsSchema = z.object({
-  presence: z.number().min(0).max(100).describe('Taux de présence en %'),
+  presence: z.number().min(0).max(100).describe('Taux de présence en % (tous scrutins)'),
+  presenceSolennel: z.number().min(0).max(100).nullable().describe('Taux de présence aux scrutins solennels en %'),
   loyaute: z.number().min(0).max(100).describe('Taux de loyauté au groupe en %'),
   participation: z.number().describe('Nombre de votes'),
   interventions: z.number().describe('Nombre d\'interventions'),

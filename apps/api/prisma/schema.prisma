@@ -49,7 +49,8 @@ model Parlementaire {
   commissionPermanente String? @map("commission_permanente")
 
   // Stats pré-calculées (recalculées lors de l'ingestion quotidienne)
-  statsPresence       Int?      @map("stats_presence")      // % de présence aux scrutins
+  statsPresence       Int?      @map("stats_presence")      // % de présence aux scrutins (tous types)
+  statsPresenceSolennel Int?    @map("stats_presence_solennel") // % de présence aux scrutins solennels uniquement
   statsLoyaute        Int?      @map("stats_loyaute")       // % de vote avec le groupe
   statsParticipation  Int?      @map("stats_participation") // Nombre de votes (hors absences)
   statsInterventions  Int?      @map("stats_interventions") // Nombre total d'interventions

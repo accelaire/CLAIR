@@ -218,6 +218,7 @@ export class ParlementairesService {
       where: { id: parlementaireId },
       select: {
         statsPresence: true,
+        statsPresenceSolennel: true,
         statsLoyaute: true,
         statsParticipation: true,
         statsInterventions: true,
@@ -230,8 +231,9 @@ export class ParlementairesService {
 
     // Si les stats sont pré-calculées, les utiliser directement
     if (parlementaire?.statsCalculatedAt) {
-      const stats: ParlementaireStats = {
+      const stats = {
         presence: parlementaire.statsPresence ?? 0,
+        presenceSolennel: parlementaire.statsPresenceSolennel ?? null,
         loyaute: parlementaire.statsLoyaute ?? 0,
         participation: parlementaire.statsParticipation ?? 0,
         interventions: parlementaire.statsInterventions ?? 0,
@@ -283,8 +285,9 @@ export class ParlementairesService {
         }),
       ]);
 
-    const stats: ParlementaireStats = {
+    const stats = {
       presence,
+      presenceSolennel: null, // Calculé lors du batch d'ingestion
       loyaute,
       participation: votesCount,
       interventions: interventionsCount,
@@ -505,6 +508,7 @@ export class ParlementairesService {
       stats: p.statsCalculatedAt
         ? {
             presence: p.statsPresence ?? 0,
+            presenceSolennel: p.statsPresenceSolennel ?? null,
             loyaute: p.statsLoyaute ?? 0,
             participation: p.statsParticipation ?? 0,
             interventions: p.statsInterventions ?? 0,
@@ -517,6 +521,7 @@ export class ParlementairesService {
         : null,
       // Retirer les champs stats bruts de la réponse
       statsPresence: undefined,
+      statsPresenceSolennel: undefined,
       statsLoyaute: undefined,
       statsParticipation: undefined,
       statsInterventions: undefined,

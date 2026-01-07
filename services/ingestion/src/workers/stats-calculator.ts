@@ -98,6 +98,21 @@ async function getGlobalData(chambre?: 'assemblee' | 'senat') {
     scrutinCountMap.set(sc.chambre, sc._count.id);
   }
 
+  // Nombre de scrutins solennels par chambre (pour calculer la présence solennelle)
+  const scrutinSolennelCounts = await prisma.scrutin.groupBy({
+    by: ['chambre'],
+    _count: { id: true },
+    where: {
+      ...(chambre && { chambre }),
+      typeVote: 'solennel',
+    },
+  });
+
+  const scrutinSolennelCountMap = new Map<string, number>();
+  for (const sc of scrutinSolennelCounts) {
+    scrutinSolennelCountMap.set(sc.chambre, sc._count.id);
+  }
+
   // Date du premier scrutin par chambre
   const oldestScrutins = await prisma.scrutin.groupBy({
     by: ['chambre'],
@@ -114,6 +129,7 @@ async function getGlobalData(chambre?: 'assemblee' | 'senat') {
 
   return {
     scrutinCountMap,
+    scrutinSolennelCountMap,
     oldestScrutinDateMap,
   };
 }
@@ -128,11 +144,21 @@ async function calculateAndStoreStats(
   const { id, chambre, groupeId } = parlementaire;
 
   // Utiliser une seule requête SQL optimisée pour récupérer les counts
-  const [voteCounts, interventionCounts, amendementCounts] = await Promise.all([
-    // Votes: présence et participation
+  const [voteCounts, voteSolennelCounts, interventionCounts, amendementCounts] = await Promise.all([
+    // Votes: présence et participation (tous scrutins)
     prisma.vote.groupBy({
       by: ['position'],
       where: { parlementaireId: id },
+      _count: { id: true },
+    }),
+
+    // Votes sur scrutins solennels uniquement (pour présence solennelle)
+    prisma.vote.groupBy({
+      by: ['position'],
+      where: {
+        parlementaireId: id,
+        scrutin: { typeVote: 'solennel' },
+      },
       _count: { id: true },
     }),
 
@@ -151,12 +177,21 @@ async function calculateAndStoreStats(
     }),
   ]);
 
-  // Calculer présence
+  // Calculer présence (tous scrutins)
   const totalScrutins = globalData.scrutinCountMap.get(chambre) || 1;
   const votesNonAbsent = voteCounts
     .filter((v) => v.position !== 'absent')
     .reduce((sum, v) => sum + v._count.id, 0);
   const statsPresence = Math.round((votesNonAbsent / totalScrutins) * 100);
+
+  // Calculer présence sur scrutins solennels uniquement
+  const totalScrutinsSolennels = globalData.scrutinSolennelCountMap.get(chambre) || 0;
+  const votesSolennelsNonAbsent = voteSolennelCounts
+    .filter((v) => v.position !== 'absent')
+    .reduce((sum, v) => sum + v._count.id, 0);
+  const statsPresenceSolennel = totalScrutinsSolennels > 0
+    ? Math.round((votesSolennelsNonAbsent / totalScrutinsSolennels) * 100)
+    : null;
 
   // Participation (nombre de votes effectifs)
   const statsParticipation = votesNonAbsent;
@@ -184,6 +219,7 @@ async function calculateAndStoreStats(
     where: { id },
     data: {
       statsPresence,
+      statsPresenceSolennel,
       statsLoyaute,
       statsParticipation,
       statsInterventions,

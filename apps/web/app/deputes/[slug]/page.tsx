@@ -56,6 +56,7 @@ interface DeputeDetail {
   } | null;
   stats?: {
     presence: number;
+    presenceSolennel: number | null;
     loyaute: number;
     participation: number;
     interventions: number;
@@ -87,11 +88,13 @@ function StatCard({
   value,
   icon: Icon,
   suffix = '',
+  subtitle,
 }: {
   label: string;
-  value: number | string;
+  value: number | string | null;
   icon: any;
   suffix?: string;
+  subtitle?: string;
 }) {
   return (
     <div className="rounded-lg border bg-card p-4">
@@ -99,9 +102,13 @@ function StatCard({
         <Icon className="h-4 w-4" />
         <span className="text-sm">{label}</span>
       </div>
-      <div className="mt-2 text-2xl font-bold">
-        {value}
-        {suffix}
+      <div className="mt-2 flex items-baseline gap-2 flex-wrap">
+        <span className="text-2xl font-bold">
+          {value !== null ? `${value}${suffix}` : 'N/A'}
+        </span>
+        {subtitle && (
+          <span className="text-sm text-muted-foreground">{subtitle}</span>
+        )}
       </div>
     </div>
   );
@@ -785,9 +792,10 @@ export default function DeputeDetailPage() {
           <h2 className="mb-4 text-xl font-semibold">Statistiques</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
-              label="Présence"
-              value={depute.stats.presence}
+              label="Présence (solennelle)"
+              value={depute.stats.presenceSolennel}
               suffix="%"
+              subtitle={`Total: ${depute.stats.presence}%`}
               icon={TrendingUp}
             />
             <StatCard

@@ -225,6 +225,7 @@ export class DeputesService {
       where: { id: deputeId },
       select: {
         statsPresence: true,
+        statsPresenceSolennel: true,
         statsLoyaute: true,
         statsParticipation: true,
         statsInterventions: true,
@@ -237,8 +238,9 @@ export class DeputesService {
 
     // Si les stats sont pré-calculées, les utiliser directement
     if (parlementaire?.statsCalculatedAt) {
-      const stats: DeputeStats = {
+      const stats = {
         presence: parlementaire.statsPresence ?? 0,
+        presenceSolennel: parlementaire.statsPresenceSolennel ?? null,
         loyaute: parlementaire.statsLoyaute ?? 0,
         participation: parlementaire.statsParticipation ?? 0,
         interventions: parlementaire.statsInterventions ?? 0,
@@ -250,6 +252,7 @@ export class DeputesService {
       };
 
       // Cache court (les stats sont déjà pré-calculées, cache juste pour éviter les requêtes répétées)
+      console.log('STATS OBJECT:', JSON.stringify(stats));
       await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(stats));
 
       return stats;
@@ -295,6 +298,7 @@ export class DeputesService {
 
     const stats: DeputeStats = {
       presence,
+      presenceSolennel: null, // Sera calculé lors du prochain batch d'ingestion
       loyaute,
       participation: votesCount,
       interventions: interventionsCount,
@@ -509,6 +513,7 @@ export class DeputesService {
       stats: d.statsCalculatedAt
         ? {
             presence: d.statsPresence ?? 0,
+            presenceSolennel: d.statsPresenceSolennel,
             loyaute: d.statsLoyaute ?? 0,
             participation: d.statsParticipation ?? 0,
             interventions: d.statsInterventions ?? 0,
@@ -521,6 +526,7 @@ export class DeputesService {
         : null,
       // Retirer les champs stats bruts de la réponse
       statsPresence: undefined,
+      statsPresenceSolennel: undefined,
       statsLoyaute: undefined,
       statsParticipation: undefined,
       statsInterventions: undefined,
@@ -589,3 +595,4 @@ export class DeputesService {
     }
   }
 }
+
