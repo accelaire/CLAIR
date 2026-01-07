@@ -50,7 +50,7 @@ const POSITION_STYLES: Record<VotePosition, { bg: string; text: string; label: s
 function PositionBadge({ position }: { position: VotePosition }) {
   const style = POSITION_STYLES[position];
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${style.bg} ${style.text}`}>
+    <span className={`inline-flex items-center rounded-full px-1.5 sm:px-2.5 py-0.5 text-[10px] sm:text-xs font-medium ${style.bg} ${style.text}`}>
       {style.label}
     </span>
   );
@@ -152,11 +152,11 @@ export function ComparisonVotesTable({ parlementaires, chambre }: ComparisonVote
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="flex items-center gap-2 text-lg font-semibold">
-          <Vote className="h-5 w-5" />
-          Votes comparés
-          <span className="text-sm font-normal text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 text-base sm:text-lg font-semibold">
+          <Vote className="h-4 w-4 sm:h-5 sm:w-5" />
+          <span className="whitespace-nowrap">Votes comparés</span>
+          <span className="text-xs sm:text-sm font-normal text-muted-foreground whitespace-nowrap">
             ({displayedVotes.length} scrutin{displayedVotes.length > 1 ? 's' : ''})
           </span>
         </h2>
@@ -164,11 +164,11 @@ export function ComparisonVotesTable({ parlementaires, chambre }: ComparisonVote
         {/* Filtre divergent */}
         <button
           onClick={() => setDivergentOnly(!divergentOnly)}
-          className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+          className={`flex items-center gap-1.5 sm:gap-2 rounded-lg border px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm transition-colors whitespace-nowrap ${
             divergentOnly ? 'border-primary bg-primary/10 text-primary' : 'hover:bg-muted'
           }`}
         >
-          <Filter className="h-4 w-4" />
+          <Filter className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
           Divergents seulement
         </button>
       </div>
@@ -180,16 +180,16 @@ export function ComparisonVotesTable({ parlementaires, chambre }: ComparisonVote
             : 'Aucun vote commun trouvé'}
         </div>
       ) : (
-        <div className="rounded-lg border bg-card overflow-hidden">
+        <div className="rounded-lg border bg-card overflow-x-auto">
           {/* Header */}
           <div
-            className="grid gap-4 border-b bg-muted/50 p-3 text-sm font-medium"
-            style={{ gridTemplateColumns: `1fr repeat(${parlementaires.length}, 120px)` }}
+            className="grid gap-2 sm:gap-4 border-b bg-muted/50 p-2 sm:p-3 text-xs sm:text-sm font-medium min-w-fit"
+            style={{ gridTemplateColumns: `minmax(140px, 1fr) repeat(${parlementaires.length}, minmax(70px, 100px))` }}
           >
             <div>Scrutin</div>
             {parlementaires.map((p) => (
-              <div key={p.slug} className="text-center">
-                {p.prenom} {p.nom.charAt(0)}.
+              <div key={p.slug} className="text-center truncate">
+                {p.prenom.charAt(0)}. {p.nom}
               </div>
             ))}
           </div>
@@ -199,10 +199,10 @@ export function ComparisonVotesTable({ parlementaires, chambre }: ComparisonVote
             {displayedVotes.slice(0, 50).map((vote) => (
               <div
                 key={vote.scrutin.id}
-                className={`grid gap-4 p-3 text-sm hover:bg-muted/30 ${
+                className={`grid gap-2 sm:gap-4 p-2 sm:p-3 text-xs sm:text-sm hover:bg-muted/30 min-w-fit ${
                   vote.isDivergent ? 'bg-orange-500/5' : ''
                 }`}
-                style={{ gridTemplateColumns: `1fr repeat(${parlementaires.length}, 120px)` }}
+                style={{ gridTemplateColumns: `minmax(140px, 1fr) repeat(${parlementaires.length}, minmax(70px, 100px))` }}
               >
                 {/* Scrutin info */}
                 <div className="space-y-1">

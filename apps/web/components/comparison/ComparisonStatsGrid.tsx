@@ -38,11 +38,11 @@ function StatRow({ label, icon, values, format = 'number', isHigherBetter = true
   const hasVariance = maxValue !== minValue;
 
   return (
-    <div className="grid gap-4" style={{ gridTemplateColumns: `180px repeat(${values.length}, 1fr)` }}>
+    <div className="grid gap-2 sm:gap-4 min-w-fit" style={{ gridTemplateColumns: `minmax(100px, 140px) repeat(${values.length}, minmax(70px, 1fr))` }}>
       {/* Label */}
-      <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+      <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium text-muted-foreground">
         {icon}
-        <span>{label}</span>
+        <span className="truncate">{label}</span>
       </div>
 
       {/* Valeurs */}
@@ -63,7 +63,7 @@ function StatRow({ label, icon, values, format = 'number', isHigherBetter = true
         return (
           <div
             key={v.slug}
-            className={`flex flex-col items-center justify-center rounded-lg p-3 ${
+            className={`flex flex-col items-center justify-center rounded-lg p-2 sm:p-3 ${
               isBest
                 ? 'bg-green-500/10 text-green-700 dark:text-green-400'
                 : isWorst
@@ -71,7 +71,7 @@ function StatRow({ label, icon, values, format = 'number', isHigherBetter = true
                 : 'bg-muted/50'
             }`}
           >
-            <span className="text-xl font-bold">{displayValue}</span>
+            <span className="text-base sm:text-xl font-bold">{displayValue}</span>
             {format === 'percent' && (
               <div className="mt-1 h-1.5 w-full max-w-20 overflow-hidden rounded-full bg-muted">
                 <div
@@ -137,17 +137,19 @@ export function ComparisonStatsGrid({ parlementaires }: ComparisonStatsGridProps
         Statistiques
       </h2>
 
-      <div className="rounded-lg border bg-card p-4">
+      <div className="rounded-lg border bg-card p-3 sm:p-4 overflow-x-auto">
         {/* En-tête avec noms */}
         <div
-          className="mb-4 grid gap-4 border-b pb-4"
-          style={{ gridTemplateColumns: `180px repeat(${parlementaires.length}, 1fr)` }}
+          className="mb-3 sm:mb-4 grid gap-2 sm:gap-4 border-b pb-3 sm:pb-4 min-w-fit"
+          style={{ gridTemplateColumns: `minmax(100px, 140px) repeat(${parlementaires.length}, minmax(70px, 1fr))` }}
         >
           <div /> {/* Cellule vide pour l'alignement */}
           {parlementaires.map((p) => (
             <div key={p.slug} className="text-center">
-              <span className="font-semibold">
-                {p.prenom} {p.nom}
+              <span className="text-xs sm:text-sm font-semibold leading-tight block">
+                {p.prenom}
+                <br className="sm:hidden" />
+                <span className="sm:before:content-['_']">{p.nom}</span>
               </span>
             </div>
           ))}
