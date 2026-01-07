@@ -4,6 +4,7 @@ import './globals.css';
 import { Providers } from './providers';
 import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
+import { PlausibleAnalytics } from '@/components/analytics/PlausibleAnalytics';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -47,6 +48,7 @@ export default function RootLayout({
   return (
     <html lang="fr" suppressHydrationWarning>
       <body className={`${inter.className} min-h-screen bg-background antialiased`}>
+        <PlausibleAnalytics />
         <Providers>
           <div className="relative flex min-h-screen flex-col">
             <Header />
