@@ -5,6 +5,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { ApiError } from '../../utils/errors';
+import { buildTextSearchCondition } from '../../utils/search';
 
 // Cache TTL: 12 hours
 const CACHE_TTL_12H = 43200;
@@ -64,7 +65,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
       const where = {
         ...(type && { type }),
         ...(secteur && { secteur: { contains: secteur, mode: 'insensitive' as const } }),
-        ...(search && { nom: { contains: search, mode: 'insensitive' as const } }),
+        ...(search && buildTextSearchCondition('nom', search)),
       };
 
       // Build orderBy based on sort field

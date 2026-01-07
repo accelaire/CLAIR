@@ -12,6 +12,7 @@ import {
   PaginationMeta,
   Chambre,
 } from './parlementaires.schema';
+import { buildParlementaireSearchCondition } from '../../utils/search';
 
 export class ParlementairesService {
   private readonly CACHE_TTL = 3600; // 1 hour (data synced daily)
@@ -43,13 +44,7 @@ export class ParlementairesService {
       ...(chambre && { chambre }),
       ...(groupe && { groupe: { slug: groupe } }),
       ...(departement && { circonscription: { departement } }),
-      ...(search && {
-        OR: [
-          { nom: { contains: search, mode: 'insensitive' } },
-          { prenom: { contains: search, mode: 'insensitive' } },
-          { slug: { contains: search, mode: 'insensitive' } },
-        ],
-      }),
+      ...(search && buildParlementaireSearchCondition(search)),
     };
 
     const orderByMap: Record<string, Prisma.ParlementaireOrderByWithRelationInput> = {

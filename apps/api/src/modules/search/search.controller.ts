@@ -6,6 +6,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { indexAll, clearAllIndexes } from './indexing.service';
+import { buildParlementaireSearchCondition } from '../../utils/search';
 
 // Timeout pour les requêtes (évite les blocages)
 const MEILISEARCH_TIMEOUT_MS = 1500; // Réduit de 3s à 1.5s
@@ -389,71 +390,11 @@ async function searchWithDatabase(
   });
 
   // Construire les conditions de recherche pour parlementaires
-  // Gère les recherches multi-mots (ex: "Marine Le Pen", "Jean-Luc Mélenchon")
-  const buildParlementaireWhere = (chambre: string) => {
-    const words = searchTerm.split(/\s+/).filter(w => w.length > 0);
-
-    // Cas simple: un seul mot - chercher dans nom, prénom ou slug
-    if (words.length === 1) {
-      return {
-        OR: [
-          { nom: { contains: searchTerm, mode: 'insensitive' as const } },
-          { prenom: { contains: searchTerm, mode: 'insensitive' as const } },
-          { slug: { contains: searchTerm, mode: 'insensitive' as const } },
-        ],
-        chambre,
-        actif: true,
-      };
-    }
-
-    // Cas multi-mots: chercher "prénom nom" ou "nom prénom"
-    // Ex: "Marine Le Pen" → (prenom contains "Marine" AND nom contains "Le Pen")
-    //                    OR (prenom contains "Marine Le" AND nom contains "Pen")
-    //                    OR slug contains "marine-le-pen"
-    const orConditions: any[] = [];
-
-    // Essayer toutes les combinaisons de split (prénom | nom)
-    for (let i = 1; i < words.length; i++) {
-      const firstPart = words.slice(0, i).join(' ');
-      const secondPart = words.slice(i).join(' ');
-
-      // prénom + nom
-      orConditions.push({
-        AND: [
-          { prenom: { contains: firstPart, mode: 'insensitive' as const } },
-          { nom: { contains: secondPart, mode: 'insensitive' as const } },
-        ],
-      });
-
-      // nom + prénom (inversé)
-      orConditions.push({
-        AND: [
-          { nom: { contains: firstPart, mode: 'insensitive' as const } },
-          { prenom: { contains: secondPart, mode: 'insensitive' as const } },
-        ],
-      });
-    }
-
-    // Aussi chercher dans le slug (transformé avec tirets)
-    const slugSearch = searchTerm.replace(/\s+/g, '-');
-    orConditions.push({ slug: { contains: slugSearch, mode: 'insensitive' as const } });
-
-    // Et la recherche simple sur chaque mot (fallback)
-    orConditions.push({
-      AND: words.map(word => ({
-        OR: [
-          { nom: { contains: word, mode: 'insensitive' as const } },
-          { prenom: { contains: word, mode: 'insensitive' as const } },
-        ],
-      })),
-    });
-
-    return {
-      OR: orConditions,
-      chambre,
-      actif: true,
-    };
-  };
+  const buildParlementaireWhere = (chambre: string) => ({
+    ...buildParlementaireSearchCondition(searchTerm),
+    chambre,
+    actif: true,
+  });
 
   const parlementaireSelect = {
     id: true,
@@ -600,56 +541,12 @@ async function searchWithDatabase(
 
 async function suggestFromDatabase(fastify: any, q: string, limit: number) {
   const searchTerm = q.toLowerCase().trim();
-  const words = searchTerm.split(/\s+/).filter(w => w.length > 0);
 
-  // Construire la condition de recherche pour parlementaires
-  let parlementaireWhere: any;
-
-  if (words.length === 1) {
-    // Un seul mot: recherche simple avec startsWith pour l'autocomplete
-    parlementaireWhere = {
-      OR: [
-        { nom: { startsWith: searchTerm, mode: 'insensitive' } },
-        { prenom: { startsWith: searchTerm, mode: 'insensitive' } },
-        { nom: { contains: searchTerm, mode: 'insensitive' } },
-        { prenom: { contains: searchTerm, mode: 'insensitive' } },
-      ],
-      actif: true,
-    };
-  } else {
-    // Multi-mots: essayer les combinaisons prénom/nom
-    const orConditions: any[] = [];
-
-    for (let i = 1; i < words.length; i++) {
-      const firstPart = words.slice(0, i).join(' ');
-      const secondPart = words.slice(i).join(' ');
-
-      // prénom + nom
-      orConditions.push({
-        AND: [
-          { prenom: { contains: firstPart, mode: 'insensitive' } },
-          { nom: { contains: secondPart, mode: 'insensitive' } },
-        ],
-      });
-
-      // nom + prénom (inversé)
-      orConditions.push({
-        AND: [
-          { nom: { contains: firstPart, mode: 'insensitive' } },
-          { prenom: { contains: secondPart, mode: 'insensitive' } },
-        ],
-      });
-    }
-
-    // Slug avec tirets
-    const slugSearch = searchTerm.replace(/\s+/g, '-');
-    orConditions.push({ slug: { contains: slugSearch, mode: 'insensitive' } });
-
-    parlementaireWhere = {
-      OR: orConditions,
-      actif: true,
-    };
-  }
+  // Utiliser la fonction utilitaire pour la recherche parlementaires
+  const parlementaireWhere = {
+    ...buildParlementaireSearchCondition(searchTerm),
+    actif: true,
+  };
 
   try {
     const [parlementaires, scrutins] = await Promise.all([

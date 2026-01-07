@@ -10,6 +10,7 @@ import {
   DeputeStats,
   PaginationMeta,
 } from './deputes.schema';
+import { buildParlementaireSearchCondition } from '../../utils/search';
 
 // Génère une clé de cache déterministe (ordre des propriétés fixe)
 function stableCacheKey(prefix: string, obj: Record<string, unknown>): string {
@@ -49,13 +50,7 @@ export class DeputesService {
       actif,
       ...(groupe && { groupe: { slug: groupe } }),
       ...(departement && { circonscription: { departement } }),
-      ...(search && {
-        OR: [
-          { nom: { contains: search, mode: 'insensitive' } },
-          { prenom: { contains: search, mode: 'insensitive' } },
-          { slug: { contains: search, mode: 'insensitive' } },
-        ],
-      }),
+      ...(search && buildParlementaireSearchCondition(search)),
     };
 
     // Mapping des champs de tri
