@@ -17,13 +17,13 @@ export function InsightCard({ icon: Icon, label, value, trend, onClick }: Insigh
   return (
     <div
       onClick={onClick}
-      className={`rounded-xl border bg-card p-4 transition-all ${
+      className={`rounded-xl border bg-card p-3 sm:p-4 transition-all ${
         onClick ? 'cursor-pointer hover:shadow-md hover:border-primary/50' : ''
       }`}
     >
-      <div className="flex items-center justify-between mb-2">
-        <div className="p-2 rounded-lg bg-muted">
-          <Icon className="h-4 w-4 text-muted-foreground" />
+      <div className="flex items-center justify-between mb-1.5 sm:mb-2">
+        <div className="p-1.5 sm:p-2 rounded-lg bg-muted">
+          <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground" />
         </div>
         {trend && (
           <div className={`flex items-center gap-1 text-xs ${
@@ -38,10 +38,10 @@ export function InsightCard({ icon: Icon, label, value, trend, onClick }: Insigh
           </div>
         )}
       </div>
-      <div className="text-2xl font-bold">
+      <div className="text-xl sm:text-2xl font-bold">
         {typeof value === 'number' ? value.toLocaleString('fr-FR') : value}
       </div>
-      <div className="text-sm text-muted-foreground">{label}</div>
+      <div className="text-xs sm:text-sm text-muted-foreground">{label}</div>
       {trend && (
         <div className="text-xs text-muted-foreground mt-1">{trend.label}</div>
       )}

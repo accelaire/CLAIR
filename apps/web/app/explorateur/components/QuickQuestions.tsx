@@ -96,11 +96,11 @@ interface QuickQuestionsProps {
 
 export function QuickQuestions({ onSelect, selectedQuestion }: QuickQuestionsProps) {
   return (
-    <div className="mb-8">
-      <h2 className="text-sm font-medium text-muted-foreground mb-3">
+    <div className="mb-6 sm:mb-8">
+      <h2 className="text-xs sm:text-sm font-medium text-muted-foreground mb-2 sm:mb-3">
         Questions rapides
       </h2>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5 sm:gap-2">
         {QUICK_QUESTIONS.map((q) => {
           const Icon = q.icon;
           const isSelected = selectedQuestion === q.id;
@@ -109,19 +109,19 @@ export function QuickQuestions({ onSelect, selectedQuestion }: QuickQuestionsPro
             <button
               key={q.id}
               onClick={() => onSelect(q.id, q.view)}
-              className={`group relative inline-flex items-center gap-2 px-4 py-2 rounded-xl border transition-all hover:shadow-md ${
+              className={`group relative inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl border transition-all hover:shadow-md ${
                 isSelected
                   ? 'border-primary bg-primary/5 shadow-sm'
                   : 'border-transparent bg-gradient-to-br ' + q.color + ' hover:border-border'
               }`}
             >
-              <Icon className={`h-4 w-4 ${isSelected ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`} />
-              <span className={`text-sm font-medium ${isSelected ? 'text-primary' : ''}`}>
+              <Icon className={`h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0 ${isSelected ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`} />
+              <span className={`text-xs sm:text-sm font-medium ${isSelected ? 'text-primary' : ''}`}>
                 {q.label}
               </span>
 
-              {/* Tooltip on hover */}
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 rounded-lg bg-popover border shadow-lg text-xs text-muted-foreground whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-10">
+              {/* Tooltip on hover - hidden on mobile */}
+              <div className="hidden sm:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 rounded-lg bg-popover border shadow-lg text-xs text-muted-foreground whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-10">
                 {q.description}
               </div>
             </button>

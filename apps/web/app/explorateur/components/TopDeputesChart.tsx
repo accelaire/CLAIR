@@ -35,12 +35,12 @@ export function TopDeputesChart({ filters, expanded, title = 'Députés les plus
 
   if (isLoading) {
     return (
-      <div className={`rounded-xl border bg-card p-6 ${expanded ? 'col-span-2' : ''}`}>
+      <div className={`rounded-xl border bg-card p-4 sm:p-6 overflow-hidden min-w-0 ${expanded ? 'col-span-2' : ''}`}>
         <div className="animate-pulse">
-          <div className="h-5 w-48 bg-muted rounded mb-4" />
+          <div className="h-5 w-32 bg-muted rounded mb-4" />
           <div className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-12 bg-muted rounded" />
+              <div key={i} className="h-10 bg-muted rounded" />
             ))}
           </div>
         </div>
@@ -51,31 +51,32 @@ export function TopDeputesChart({ filters, expanded, title = 'Députés les plus
   const deputes = data || [];
 
   return (
-    <div className={`rounded-xl border bg-card p-6 ${expanded ? 'col-span-2' : ''}`}>
-      <h3 className="font-semibold mb-4">{title}</h3>
+    <div className={`rounded-xl border bg-card p-4 sm:p-6 overflow-hidden min-w-0 ${expanded ? 'col-span-2' : ''}`}>
+      <h3 className="text-sm sm:text-base font-semibold mb-3 sm:mb-4">{title}</h3>
 
       {expanded ? (
         // Bar chart view for expanded
-        <div className="h-96">
+        <div className="h-80 sm:h-96">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={deputes.slice(0, 15)}
               layout="vertical"
-              margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
+              margin={{ top: 5, right: 10, left: 5, bottom: 5 }}
             >
               <CartesianGrid strokeDasharray="3 3" className="stroke-muted" horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 12 }} />
+              <XAxis type="number" tick={{ fontSize: 10 }} />
               <YAxis
                 dataKey="nom"
                 type="category"
-                tick={{ fontSize: 12 }}
-                width={90}
+                tick={{ fontSize: 10 }}
+                width={70}
               />
               <Tooltip
                 contentStyle={{
                   backgroundColor: 'hsl(var(--card))',
                   border: '1px solid hsl(var(--border))',
                   borderRadius: '8px',
+                  fontSize: '12px',
                 }}
               />
               <Bar dataKey="score" name="Score d'activité" radius={[0, 4, 4, 0]}>
@@ -88,17 +89,17 @@ export function TopDeputesChart({ filters, expanded, title = 'Députés les plus
         </div>
       ) : (
         // List view for compact
-        <div className="space-y-3">
+        <div className="space-y-2 sm:space-y-3">
           {deputes.slice(0, 5).map((depute: any, index: number) => (
             <Link
               key={depute.id}
               href={`/deputes/${depute.slug}`}
-              className="flex items-center gap-3 p-2 -mx-2 rounded-lg hover:bg-muted/50 transition-colors group"
+              className="flex items-center gap-2 sm:gap-3 p-1.5 sm:p-2 -mx-1.5 sm:-mx-2 rounded-lg hover:bg-muted/50 transition-colors group"
             >
-              <div className="flex items-center justify-center w-6 h-6 rounded-full bg-muted text-xs font-bold">
+              <div className="flex items-center justify-center w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-muted text-xs font-bold flex-shrink-0">
                 {index + 1}
               </div>
-              <div className="relative w-10 h-10 rounded-full overflow-hidden bg-muted flex-shrink-0">
+              <div className="relative w-8 h-8 sm:w-10 sm:h-10 rounded-full overflow-hidden bg-muted flex-shrink-0">
                 {depute.photoUrl ? (
                   <Image
                     src={depute.photoUrl}
@@ -108,18 +109,18 @@ export function TopDeputesChart({ filters, expanded, title = 'Députés les plus
                     unoptimized
                   />
                 ) : (
-                  <Users className="absolute inset-0 m-auto h-5 w-5 text-muted-foreground" />
+                  <Users className="absolute inset-0 m-auto h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm truncate group-hover:text-primary transition-colors">
+                <div className="font-medium text-xs sm:text-sm truncate group-hover:text-primary transition-colors">
                   {depute.prenom} {depute.nom}
                 </div>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5 sm:gap-2 text-xs text-muted-foreground">
                   {depute.groupe && (
                     <>
                       <span
-                        className="w-2 h-2 rounded-full"
+                        className="w-2 h-2 rounded-full flex-shrink-0"
                         style={{ backgroundColor: getGroupColor(depute.groupe, depute.couleur) }}
                       />
                       <span className="truncate">{depute.groupe}</span>
@@ -127,18 +128,18 @@ export function TopDeputesChart({ filters, expanded, title = 'Députés les plus
                   )}
                 </div>
               </div>
-              <div className="text-right">
-                <div className="font-bold text-primary">{depute.score}</div>
-                <div className="text-xs text-muted-foreground">votes</div>
+              <div className="text-right flex-shrink-0">
+                <div className="font-bold text-primary text-sm sm:text-base">{depute.score}</div>
+                <div className="text-xs text-muted-foreground hidden sm:block">votes</div>
               </div>
-              <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+              <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block" />
             </Link>
           ))}
         </div>
       )}
 
       {!expanded && deputes.length > 5 && (
-        <button className="w-full mt-4 py-2 text-sm text-primary hover:underline">
+        <button className="w-full mt-3 sm:mt-4 py-2 text-xs sm:text-sm text-primary hover:underline">
           Voir tous les députés →
         </button>
       )}

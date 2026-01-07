@@ -28,10 +28,10 @@ export function GroupDistributionChart({ filters, expanded }: GroupDistributionC
 
   if (isLoading) {
     return (
-      <div className={`rounded-xl border bg-card p-6 ${expanded ? 'col-span-2' : ''}`}>
+      <div className={`rounded-xl border bg-card p-4 sm:p-6 overflow-hidden min-w-0 ${expanded ? 'col-span-2' : ''}`}>
         <div className="animate-pulse">
-          <div className="h-5 w-48 bg-muted rounded mb-4" />
-          <div className="h-64 bg-muted rounded" />
+          <div className="h-5 w-32 bg-muted rounded mb-4" />
+          <div className="h-48 sm:h-64 bg-muted rounded" />
         </div>
       </div>
     );
@@ -44,24 +44,21 @@ export function GroupDistributionChart({ filters, expanded }: GroupDistributionC
   })) || [];
 
   return (
-    <div className={`rounded-xl border bg-card p-6 ${expanded ? 'col-span-2' : ''}`}>
-      <h3 className="font-semibold mb-4">Répartition par groupe politique</h3>
+    <div className={`rounded-xl border bg-card p-4 sm:p-6 overflow-hidden min-w-0 ${expanded ? 'col-span-2' : ''}`}>
+      <h3 className="text-sm sm:text-base font-semibold mb-3 sm:mb-4 truncate">Répartition par groupe</h3>
 
-      <div className={`${expanded ? 'h-96' : 'h-64'}`}>
+      <div className={`${expanded ? 'h-72 sm:h-96' : 'h-48 sm:h-64'}`}>
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={chartData}
               cx="50%"
               cy="50%"
-              innerRadius={expanded ? 80 : 50}
-              outerRadius={expanded ? 140 : 90}
+              innerRadius={expanded ? 60 : 35}
+              outerRadius={expanded ? 100 : 70}
               paddingAngle={2}
               dataKey="value"
-              label={({ name, percent }) =>
-                percent > 0.05 ? `${name} (${(percent * 100).toFixed(0)}%)` : ''
-              }
-              labelLine={false}
+              label={false}
             >
               {chartData.map((entry: any, index: number) => (
                 <Cell key={`cell-${index}`} fill={entry.color} />
@@ -73,6 +70,7 @@ export function GroupDistributionChart({ filters, expanded }: GroupDistributionC
                 backgroundColor: 'hsl(var(--card))',
                 border: '1px solid hsl(var(--border))',
                 borderRadius: '8px',
+                fontSize: '12px',
               }}
             />
           </PieChart>
@@ -80,14 +78,14 @@ export function GroupDistributionChart({ filters, expanded }: GroupDistributionC
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap gap-3 mt-4 justify-center">
+      <div className="flex flex-wrap gap-2 sm:gap-3 mt-3 sm:mt-4 justify-center">
         {chartData.slice(0, 6).map((item: any) => (
-          <div key={item.name} className="flex items-center gap-1.5 text-xs">
+          <div key={item.name} className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs">
             <div
-              className="w-3 h-3 rounded-full"
+              className="w-2 h-2 sm:w-3 sm:h-3 rounded-full flex-shrink-0"
               style={{ backgroundColor: item.color }}
             />
-            <span className="text-muted-foreground">{item.name}</span>
+            <span className="text-muted-foreground truncate max-w-[80px] sm:max-w-none">{item.name}</span>
           </div>
         ))}
       </div>

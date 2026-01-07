@@ -44,45 +44,50 @@ export function LobbyingSectorsChart({ filters, expanded }: LobbyingSectorsChart
 
   if (isLoading) {
     return (
-      <div className={`rounded-xl border bg-card p-6 ${expanded ? 'col-span-2' : ''}`}>
+      <div className={`rounded-xl border bg-card p-4 sm:p-6 overflow-hidden min-w-0 ${expanded ? 'col-span-2' : ''}`}>
         <div className="animate-pulse">
-          <div className="h-5 w-48 bg-muted rounded mb-4" />
-          <div className="h-64 bg-muted rounded" />
+          <div className="h-5 w-32 bg-muted rounded mb-4" />
+          <div className="h-56 sm:h-64 bg-muted rounded" />
         </div>
       </div>
     );
   }
 
-  const chartData = (data || []).slice(0, expanded ? 15 : 8).map((item: any, i: number) => ({
+  // On mobile, show fewer items and shorter names
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+  const maxNameLength = isMobile ? 15 : (expanded ? 25 : 20);
+  const maxItems = isMobile ? 6 : (expanded ? 15 : 8);
+
+  const chartData = (data || []).slice(0, maxItems).map((item: any, i: number) => ({
     ...item,
     color: SECTOR_COLORS[i % SECTOR_COLORS.length],
     // Shorten long sector names
-    shortName: item.secteur?.length > 25
-      ? item.secteur.substring(0, 25) + '...'
+    shortName: item.secteur?.length > maxNameLength
+      ? item.secteur.substring(0, maxNameLength) + '...'
       : item.secteur,
   }));
 
   return (
-    <div className={`rounded-xl border bg-card p-6 ${expanded ? 'col-span-2' : ''}`}>
-      <div className="flex items-center gap-2 mb-4">
-        <Building2 className="h-5 w-5 text-muted-foreground" />
-        <h3 className="font-semibold">Secteurs de lobbying</h3>
+    <div className={`rounded-xl border bg-card p-4 sm:p-6 overflow-hidden min-w-0 ${expanded ? 'col-span-2' : ''}`}>
+      <div className="flex items-center gap-2 mb-3 sm:mb-4">
+        <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground flex-shrink-0" />
+        <h3 className="text-sm sm:text-base font-semibold truncate">Secteurs de lobbying</h3>
       </div>
 
-      <div className={`${expanded ? 'h-96' : 'h-64'}`}>
+      <div className={`${expanded ? 'h-80 sm:h-96' : 'h-56 sm:h-64'}`}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={chartData}
             layout="vertical"
-            margin={{ top: 5, right: 30, left: expanded ? 150 : 100, bottom: 5 }}
+            margin={{ top: 5, right: 10, left: 5, bottom: 5 }}
           >
             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" horizontal={false} />
-            <XAxis type="number" tick={{ fontSize: 11 }} />
+            <XAxis type="number" tick={{ fontSize: 10 }} />
             <YAxis
               dataKey="shortName"
               type="category"
-              tick={{ fontSize: 11 }}
-              width={expanded ? 140 : 90}
+              tick={{ fontSize: 10 }}
+              width={expanded ? 100 : 70}
             />
             <Tooltip
               formatter={(value: number, name: string, props: any) => [
@@ -93,6 +98,7 @@ export function LobbyingSectorsChart({ filters, expanded }: LobbyingSectorsChart
                 backgroundColor: 'hsl(var(--card))',
                 border: '1px solid hsl(var(--border))',
                 borderRadius: '8px',
+                fontSize: '12px',
               }}
             />
             <Bar dataKey="count" name="Lobbyistes" radius={[0, 4, 4, 0]}>
@@ -105,8 +111,8 @@ export function LobbyingSectorsChart({ filters, expanded }: LobbyingSectorsChart
       </div>
 
       {!expanded && (
-        <p className="text-xs text-muted-foreground mt-4 text-center">
-          Top {chartData.length} secteurs par nombre de lobbyistes enregistrés
+        <p className="text-xs text-muted-foreground mt-3 sm:mt-4 text-center">
+          Top {chartData.length} secteurs par nombre de lobbyistes
         </p>
       )}
     </div>

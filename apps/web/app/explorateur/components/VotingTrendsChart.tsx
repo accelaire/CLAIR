@@ -30,10 +30,10 @@ export function VotingTrendsChart({ filters, expanded }: VotingTrendsChartProps)
 
   if (isLoading) {
     return (
-      <div className={`rounded-xl border bg-card p-6 ${expanded ? 'col-span-2' : ''}`}>
+      <div className={`rounded-xl border bg-card p-4 sm:p-6 overflow-hidden min-w-0 ${expanded ? 'col-span-2' : ''}`}>
         <div className="animate-pulse">
-          <div className="h-5 w-48 bg-muted rounded mb-4" />
-          <div className="h-64 bg-muted rounded" />
+          <div className="h-5 w-32 bg-muted rounded mb-4" />
+          <div className="h-56 sm:h-64 bg-muted rounded" />
         </div>
       </div>
     );
@@ -42,10 +42,10 @@ export function VotingTrendsChart({ filters, expanded }: VotingTrendsChartProps)
   const chartData = data || [];
 
   return (
-    <div className={`rounded-xl border bg-card p-6 ${expanded ? '' : ''}`}>
-      <h3 className="font-semibold mb-4">Évolution des votes</h3>
+    <div className={`rounded-xl border bg-card p-4 sm:p-6 overflow-hidden min-w-0 ${expanded ? '' : ''}`}>
+      <h3 className="text-sm sm:text-base font-semibold mb-3 sm:mb-4">Évolution des votes</h3>
 
-      <div className={`${expanded ? 'h-96' : 'h-64'}`}>
+      <div className={`${expanded ? 'h-80 sm:h-96' : 'h-56 sm:h-64'}`}>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <defs>
