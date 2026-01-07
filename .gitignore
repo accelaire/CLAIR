@@ -1,0 +1,41 @@
+# Environnement
+.env
+.env.local
+.env.*.local
+
+# Claude Code instructions (local only)
+CLAUDE.md
+
+# Secrets
+*.pem
+*.key
+secrets/
+
+# Dependencies
+node_modules/
+
+# Build
+dist/
+.next/
+.turbo/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Coverage
+coverage/
+
+# Prisma
+apps/api/prisma/*.db
+apps/api/prisma/*.db-journal

@@ -1,0 +1,62 @@
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import './globals.css';
+import { Providers } from './providers';
+import { Header } from '@/components/layout/header';
+import { Footer } from '@/components/layout/footer';
+import { PlausibleAnalytics } from '@/components/analytics/PlausibleAnalytics';
+
+const inter = Inter({ subsets: ['latin'] });
+
+export const metadata: Metadata = {
+  title: {
+    default: 'CLAIR - Transparence Politique en France',
+    template: '%s | CLAIR',
+  },
+  description: 'Plateforme citoyenne de transparence politique. Analysez les votes des parlementaires, le lobbying et les promesses électorales en France.',
+  keywords: ['politique', 'france', 'parlementaires', 'députés', 'sénateurs', 'votes', 'assemblée nationale', 'sénat', 'lobbying', 'transparence'],
+  authors: [{ name: 'CLAIR' }],
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote'),
+  openGraph: {
+    title: 'CLAIR - Transparence Politique en France',
+    description: 'Plateforme citoyenne pour analyser les votes des députés et sénateurs, suivre le lobbying et les promesses électorales.',
+    type: 'website',
+    locale: 'fr_FR',
+    siteName: 'CLAIR',
+    images: [
+      {
+        url: '/opengraph-image.png',
+        width: 1200,
+        height: 630,
+        alt: 'CLAIR - Transparence Politique',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'CLAIR - Transparence Politique en France',
+    description: 'Plateforme citoyenne pour analyser les votes des députés et sénateurs, suivre le lobbying et les promesses électorales.',
+    images: ['/opengraph-image.png'],
+  },
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="fr" suppressHydrationWarning>
+      <body className={`${inter.className} min-h-screen bg-background antialiased`}>
+        <PlausibleAnalytics />
+        <Providers>
+          <div className="relative flex min-h-screen flex-col">
+            <Header />
+            <main className="flex-1">{children}</main>
+            <Footer />
+          </div>
+        </Providers>
+      </body>
+    </html>
+  );
+}

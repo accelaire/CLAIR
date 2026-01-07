@@ -1,0 +1,8 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "services/ingestion/Dockerfile"
+
+[deploy]
+# Cron job: tous les jours à 5h du matin (UTC)
+cronSchedule = "0 5 * * *"
+restartPolicyType = "NEVER"
