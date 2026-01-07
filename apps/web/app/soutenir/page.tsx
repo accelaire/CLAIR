@@ -1,5 +1,6 @@
 import { Metadata } from 'next';
-import { Heart, Shield, Eye, Users, Clock, Code, Server, Megaphone } from 'lucide-react';
+import Image from 'next/image';
+import { Heart, Shield, Eye, Users, Clock, Code, Server, Megaphone, Linkedin } from 'lucide-react';
 import { HelloAssoWidget } from '@/components/donations/HelloAssoWidget';
 
 export const metadata: Metadata = {
@@ -123,8 +124,49 @@ export default function SoutenirPage() {
         </div>
       </section>
 
-      {/* FAQ */}
+      {/* Derrière le projet */}
       <section className="py-16 px-4 bg-muted/30">
+        <div className="container mx-auto max-w-3xl">
+          <h2 className="text-2xl font-bold mb-8 text-center">
+            Derrière le projet
+          </h2>
+          <div className="bg-card border rounded-2xl p-8 flex flex-col md:flex-row gap-8 items-center">
+            <div className="flex-shrink-0">
+              <Image
+                src="/images/axel.jpg"
+                alt="Axel, créateur de CLAIR"
+                width={160}
+                height={160}
+                className="rounded-full object-cover"
+              />
+            </div>
+            <div className="text-center md:text-left">
+              <h3 className="text-xl font-semibold mb-2">Axel</h3>
+              <p className="text-muted-foreground mb-4">
+                Ingénieur et passionné de data
+              </p>
+              <p className="text-sm leading-relaxed mb-4">
+                J&apos;ai créé CLAIR pour donner vie aux données publiques et rendre la vie politique
+                française claire et accessible à tous. L&apos;objectif : une plateforme citoyenne qui
+                agrège le maximum de sources publiques, sans limitation, pour éclairer le débat
+                démocratique.
+              </p>
+              <a
+                href="https://www.linkedin.com/in/axel-robaldo-ensea/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
+              >
+                <Linkedin className="h-4 w-4" />
+                Retrouvez-moi sur LinkedIn
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="py-16 px-4">
         <div className="container mx-auto max-w-3xl">
           <h2 className="text-2xl font-bold mb-8 text-center">
             Questions fréquentes
