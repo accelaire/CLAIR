@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
@@ -333,6 +333,7 @@ function MembreCard({ membre, chambre }: { membre: Membre; chambre: string }) {
 
 export default function GroupeDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const chambre = params.chambre as string;
   const slug = params.slug as string;
 
@@ -401,13 +402,13 @@ export default function GroupeDetailPage() {
     <div className="container mx-auto px-4 py-8 overflow-x-hidden">
       {/* Breadcrumb */}
       <div className="mb-6">
-        <Link
-          href="/groupes"
+        <button
+          onClick={() => router.back()}
           className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
-          Retour aux groupes
-        </Link>
+          Retour
+        </button>
       </div>
 
       {/* Header */}

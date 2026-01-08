@@ -686,13 +686,16 @@ export default function SenateurDetailPage() {
 
           {/* Groupe */}
           {senateur.groupe && (
-            <div className="mt-2 flex items-center justify-center gap-2 md:justify-start">
+            <Link
+              href={`/groupes/senat/${senateur.groupe.slug}`}
+              className="mt-2 flex items-center justify-center gap-2 md:justify-start hover:underline transition-colors"
+            >
               <span
                 className="h-3 w-3 rounded-full"
                 style={{ backgroundColor: senateur.groupe.couleur || '#888' }}
               />
               <span className="text-lg">{senateur.groupe.nomComplet || senateur.groupe.nom}</span>
-            </div>
+            </Link>
           )}
 
           {/* Infos secondaires */}
