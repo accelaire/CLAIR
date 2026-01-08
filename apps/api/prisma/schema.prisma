@@ -197,6 +197,7 @@ model Circonscription {
 
   @@unique([departement, numero, type])
   @@index([type])
+  @@index([departement])
   @@map("circonscriptions")
 }
 
