@@ -5,6 +5,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { ApiError } from '../../utils/errors';
+import { buildTextSearchCondition } from '../../utils/search';
 
 // Cache TTL
 const CACHE_TTL_1H = 3600;
@@ -110,8 +111,8 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
             ],
           };
         } else {
-          // Otherwise, just search in title
-          searchCondition = { titre: { contains: searchTrimmed, mode: 'insensitive' as const } };
+          // Otherwise, search in title with multi-word support
+          searchCondition = buildTextSearchCondition('titre', searchTrimmed);
         }
       }
 

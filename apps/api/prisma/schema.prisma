@@ -328,8 +328,10 @@ model Vote {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@unique([parlementaireId, scrutinId])
+  @@index([parlementaireId])
   @@index([scrutinId])
   @@index([position])
+  @@index([scrutinId, position]) // Optimise les counts par position sur un scrutin
   @@map("votes")
 }
 
