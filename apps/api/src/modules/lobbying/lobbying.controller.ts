@@ -355,6 +355,133 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ===========================================================================
+  // GET /api/v1/lobbying/actions - Toutes les actions de lobbying (paginé)
+  // ===========================================================================
+  fastify.get('/actions', {
+    schema: {
+      tags: ['Lobbying'],
+      summary: 'Liste toutes les actions de lobbying',
+      description: 'Retourne toutes les actions de lobbying avec pagination et filtres',
+      querystring: {
+        type: 'object',
+        properties: {
+          page: { type: 'integer', minimum: 1, default: 1 },
+          limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          cible: { type: 'string' },
+          secteur: { type: 'string' },
+          search: { type: 'string' },
+          dateFrom: { type: 'string', format: 'date' },
+          dateTo: { type: 'string', format: 'date' },
+          sort: { type: 'string', enum: ['dateDebut', 'lobbyiste'], default: 'dateDebut' },
+          order: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
+        },
+      },
+    },
+    handler: async (request, _reply) => {
+      const {
+        page = 1,
+        limit = 20,
+        cible,
+        secteur,
+        search,
+        dateFrom,
+        dateTo,
+        sort = 'dateDebut',
+        order = 'desc',
+      } = request.query as {
+        page?: number;
+        limit?: number;
+        cible?: string;
+        secteur?: string;
+        search?: string;
+        dateFrom?: string;
+        dateTo?: string;
+        sort?: 'dateDebut' | 'lobbyiste';
+        order?: 'asc' | 'desc';
+      };
+
+      const skip = (page - 1) * limit;
+
+      const where: any = {};
+
+      if (cible) {
+        where.cible = cible;
+      }
+
+      if (secteur) {
+        where.lobbyiste = {
+          secteur: { contains: secteur, mode: 'insensitive' },
+        };
+      }
+
+      if (search) {
+        where.OR = [
+          { description: { contains: search, mode: 'insensitive' } },
+          { lobbyiste: { nom: { contains: search, mode: 'insensitive' } } },
+          { texteViseNom: { contains: search, mode: 'insensitive' } },
+        ];
+      }
+
+      // Filtre par période
+      if (dateFrom || dateTo) {
+        where.dateDebut = {};
+        if (dateFrom) {
+          where.dateDebut.gte = new Date(dateFrom);
+        }
+        if (dateTo) {
+          // Ajouter un jour pour inclure la date de fin complète
+          const endDate = new Date(dateTo);
+          endDate.setDate(endDate.getDate() + 1);
+          where.dateDebut.lt = endDate;
+        }
+      }
+
+      const orderBy: any = sort === 'lobbyiste'
+        ? { lobbyiste: { nom: order } }
+        : { dateDebut: order };
+
+      const [actions, total] = await Promise.all([
+        fastify.prisma.actionLobby.findMany({
+          where,
+          include: {
+            lobbyiste: {
+              select: { id: true, nom: true, type: true, secteur: true },
+            },
+            parlementaire: {
+              select: {
+                id: true,
+                slug: true,
+                nom: true,
+                prenom: true,
+                photoUrl: true,
+                groupe: { select: { nom: true, couleur: true } },
+              },
+            },
+          },
+          orderBy,
+          skip,
+          take: limit,
+        }),
+        fastify.prisma.actionLobby.count({ where }),
+      ]);
+
+      const totalPages = Math.ceil(total / limit);
+
+      return {
+        data: actions,
+        meta: {
+          total,
+          page,
+          limit,
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
+        },
+      };
+    },
+  });
+
+  // ===========================================================================
   // GET /api/v1/lobbying/actions/recent - Actions récentes
   // ===========================================================================
   fastify.get('/actions/recent', {
@@ -387,6 +514,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
               slug: true,
               nom: true,
               prenom: true,
+              photoUrl: true,
               groupe: { select: { nom: true, couleur: true } },
             },
           },
