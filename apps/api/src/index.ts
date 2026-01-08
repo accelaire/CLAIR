@@ -25,6 +25,7 @@ import { simulateurRoutes } from './modules/simulateur/simulateur.controller';
 import { candidatsAdminRoutes } from './modules/ingestion/admin.controller';
 import { analyticsRoutes } from './modules/analytics/analytics.controller';
 import { groupesRoutes } from './modules/groupes/groupes.controller';
+import { homepageRoutes } from './modules/homepage/homepage.controller';
 
 import { errorHandler } from './utils/errors';
 import { logger } from './utils/logger';
@@ -161,6 +162,7 @@ async function buildApp() {
       await api.register(simulateurRoutes, { prefix: '/simulateur' });
       await api.register(candidatsAdminRoutes, { prefix: '/admin' });
       await api.register(analyticsRoutes, { prefix: '/analytics' });
+      await api.register(homepageRoutes, { prefix: '/homepage' });
     },
     { prefix: '/api/v1' }
   );
@@ -201,10 +203,9 @@ async function warmCache(fastifyApp: Awaited<ReturnType<typeof buildApp>>) {
   logger.info('Starting cache warming...');
 
   // Routes to warm - executed SEQUENTIALLY to avoid OOM
+  // Homepage first (most important for cold start)
   const routesToWarm = [
-    '/api/v1/scrutins/importants',
-    '/api/v1/analytics/stats',
-    '/api/v1/lobbying/stats',
+    '/api/v1/homepage',           // Agrège stats + scrutins importants
     '/api/v1/deputes?limit=20',
     '/api/v1/senateurs?limit=20',
     '/api/v1/scrutins?limit=20',

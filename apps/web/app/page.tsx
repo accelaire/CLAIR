@@ -34,30 +34,16 @@ export default function HomePage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Fetch stats
-  const { data: stats } = useQuery<Stats>({
-    queryKey: ['home-stats'],
-    queryFn: async () => {
-      const [deputesRes, senateursRes, scrutinsRes, lobbyingRes, analyticsRes] = await Promise.all([
-        api.get('/deputes', { params: { limit: 1 } }),
-        api.get('/senateurs', { params: { limit: 1 } }),
-        api.get('/scrutins', { params: { limit: 1 } }),
-        api.get('/lobbying/stats'),
-        api.get('/analytics/stats'),
-      ]);
-      return {
-        deputes: deputesRes.data.meta.total,
-        senateurs: senateursRes.data.meta.total,
-        scrutins: scrutinsRes.data.meta.total,
-        lobbyistes: lobbyingRes.data.data.totalLobbyistes,
-        actionsLobby: lobbyingRes.data.data.totalActions,
-        interventions: analyticsRes.data.data.totalInterventions,
-        amendements: analyticsRes.data.data.totalAmendements,
-      };
-    },
-    staleTime: 30000, // Refresh stats every 30 seconds
+  // Fetch homepage data (stats + recent scrutins in ONE call)
+  const { data: homepageData } = useQuery<{ stats: Stats; recentScrutins: RecentScrutin[] }>({
+    queryKey: ['homepage'],
+    queryFn: () => api.get('/homepage').then(res => res.data),
+    staleTime: 30000, // Refresh every 30 seconds
     refetchOnWindowFocus: true,
   });
+
+  const stats = homepageData?.stats;
+  const recentScrutins = homepageData?.recentScrutins;
 
   // Animated counters
   const deputesCount = useCountUp(stats?.deputes);
@@ -67,14 +53,6 @@ export default function HomePage() {
   const actionsCount = useCountUp(stats?.actionsLobby);
   const interventionsCount = useCountUp(stats?.interventions);
   const amendementsCount = useCountUp(stats?.amendements);
-
-  // Fetch recent important scrutins
-  const { data: recentScrutins } = useQuery<{ data: RecentScrutin[] }>({
-    queryKey: ['home-recent-scrutins'],
-    queryFn: () => api.get('/scrutins/importants', { params: { limit: 5 } }).then(res => res.data),
-    staleTime: 30000,
-    refetchOnWindowFocus: true,
-  });
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -196,7 +174,7 @@ export default function HomePage() {
       </section>
 
       {/* Recent Important Votes */}
-      {recentScrutins?.data && recentScrutins.data.length > 0 && (
+      {recentScrutins && recentScrutins.length > 0 && (
         <section className="py-16 border-b">
           <div className="container mx-auto px-4">
             <div className="flex items-center justify-between mb-8">
@@ -211,7 +189,7 @@ export default function HomePage() {
             </div>
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {recentScrutins.data.slice(0, 6).map((scrutin) => (
+              {recentScrutins.slice(0, 6).map((scrutin) => (
                 <Link
                   key={scrutin.id}
                   href={`/scrutins/${scrutin.numero}?chambre=${scrutin.chambre || 'assemblee'}`}
