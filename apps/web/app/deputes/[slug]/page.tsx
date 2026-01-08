@@ -705,13 +705,16 @@ export default function DeputeDetailPage() {
 
           {/* Groupe */}
           {depute.groupe && (
-            <div className="mt-2 flex items-center justify-center gap-2 md:justify-start">
+            <Link
+              href={`/groupes/assemblee/${depute.groupe.slug}`}
+              className="mt-2 flex items-center justify-center gap-2 md:justify-start hover:underline transition-colors"
+            >
               <span
                 className="h-3 w-3 rounded-full"
                 style={{ backgroundColor: depute.groupe.couleur || '#888' }}
               />
               <span className="text-lg">{depute.groupe.nomComplet || depute.groupe.nom}</span>
-            </div>
+            </Link>
           )}
 
           {/* Infos secondaires */}
