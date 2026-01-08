@@ -410,6 +410,7 @@ async function calculateAndStoreGroupeStats(
     _count: { id: true },
     _avg: {
       statsPresence: true,
+      statsPresenceSolennel: true,
       statsLoyaute: true,
     },
     _sum: {
@@ -419,6 +420,9 @@ async function calculateAndStoreGroupeStats(
 
   const statsMembresActifs = memberStats._count.id;
   const statsPresenceMoyenne = Math.round(memberStats._avg.statsPresence || 0);
+  const statsPresenceSolennelMoyenne = memberStats._avg.statsPresenceSolennel != null
+    ? Math.round(memberStats._avg.statsPresenceSolennel)
+    : null;
   const statsLoyauteMoyenne = Math.round(memberStats._avg.statsLoyaute || 0);
   const statsParticipation = memberStats._sum.statsParticipation || 0;
 
@@ -434,6 +438,7 @@ async function calculateAndStoreGroupeStats(
     data: {
       statsMembresActifs,
       statsPresenceMoyenne,
+      statsPresenceSolennelMoyenne,
       statsLoyauteMoyenne,
       statsCohesion,
       statsParticipation,

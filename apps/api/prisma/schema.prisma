@@ -97,12 +97,13 @@ model GroupePolitique {
   chambre    String  @default("assemblee") // 'assemblee' | 'senat'
 
   // Stats pré-calculées (recalculées lors de l'ingestion quotidienne)
-  statsMembresActifs    Int?      @map("stats_membres_actifs")   // Nombre de membres actifs
-  statsPresenceMoyenne  Int?      @map("stats_presence_moyenne") // % moyen de présence aux scrutins
-  statsLoyauteMoyenne   Int?      @map("stats_loyaute_moyenne")  // % moyen de loyauté (cohésion)
-  statsCohesion         Int?      @map("stats_cohesion")         // % de cohésion sur TOUS les scrutins
-  statsParticipation    Int?      @map("stats_participation")    // Nombre total de votes exprimés
-  statsCalculatedAt     DateTime? @map("stats_calculated_at")    // Date du dernier calcul
+  statsMembresActifs           Int?      @map("stats_membres_actifs")            // Nombre de membres actifs
+  statsPresenceMoyenne         Int?      @map("stats_presence_moyenne")          // % moyen de présence aux scrutins
+  statsPresenceSolennelMoyenne Int?      @map("stats_presence_solennel_moyenne") // % moyen de présence aux scrutins solennels
+  statsLoyauteMoyenne          Int?      @map("stats_loyaute_moyenne")           // % moyen de loyauté (cohésion)
+  statsCohesion                Int?      @map("stats_cohesion")                  // % de cohésion sur TOUS les scrutins
+  statsParticipation           Int?      @map("stats_participation")             // Nombre total de votes exprimés
+  statsCalculatedAt            DateTime? @map("stats_calculated_at")             // Date du dernier calcul
 
   // Agrégation des votes (pré-calculées pour le camembert)
   statsVotesPour        Int?      @map("stats_votes_pour")       // Total des votes Pour
