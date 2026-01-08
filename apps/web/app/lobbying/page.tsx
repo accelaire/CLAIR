@@ -3,7 +3,7 @@
 import { Suspense } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Search, ChevronDown, Building2, Briefcase, TrendingUp, Users, ArrowUp, ArrowDown, Loader2 } from 'lucide-react';
+import { Search, ChevronDown, Building2, Briefcase, TrendingUp, Users, ArrowUp, ArrowDown, Loader2, Calendar, ArrowRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
@@ -30,12 +30,54 @@ interface LobbyistesResponse {
   };
 }
 
+interface ActionRecente {
+  id: string;
+  description: string;
+  cible: string | null;
+  cibleNom: string | null;
+  dateDebut: string | null;
+  texteVise: string | null;
+  texteViseNom: string | null;
+  lobbyiste: {
+    id: string;
+    nom: string;
+    type: string | null;
+    secteur: string | null;
+  };
+  parlementaire: {
+    id: string;
+    slug: string;
+    nom: string;
+    prenom: string;
+    groupe: { nom: string; couleur: string | null } | null;
+  } | null;
+}
+
 const typeLabels: Record<string, { label: string; icon: typeof Building2 }> = {
   entreprise: { label: 'Entreprise', icon: Building2 },
   association: { label: 'Association', icon: Users },
   cabinet: { label: 'Cabinet de conseil', icon: Briefcase },
   syndicat: { label: 'Syndicat', icon: Users },
   organisation_pro: { label: 'Organisation professionnelle', icon: Briefcase },
+};
+
+const cibleLabels: Record<string, string> = {
+  parlementaire: 'Parlement',
+  depute: 'Parlement',
+  ministre: 'Gouvernement',
+  presidence: 'Présidence',
+  collectivite: 'Collectivités',
+  autorite: 'AAI/API',
+  administration: 'Administration',
+};
+
+const formatDate = (date: string | null): string => {
+  if (!date) return '';
+  return new Date(date).toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 };
 
 const formatBudget = (budget: number | null): string => {
@@ -99,6 +141,12 @@ function LobbyingPageContent() {
     queryFn: () => api.get('/lobbying/stats').then((res) => res.data.data),
   });
 
+  // Fetch 3 dernières actions de lobbying
+  const { data: actionsRecentes } = useQuery<ActionRecente[]>({
+    queryKey: ['lobbying-actions-recentes'],
+    queryFn: () => api.get('/lobbying/actions/recent', { params: { limit: 3 } }).then((res) => res.data.data),
+  });
+
   // Hook pour le scroll infini
   const { loadMoreRef } = useInfiniteScroll({
     hasNextPage,
@@ -119,6 +167,101 @@ function LobbyingPageContent() {
           Représentants d&apos;intérêts enregistrés auprès de la HATVP
         </p>
       </div>
+
+      {/* Dernières actions de lobbying */}
+      {actionsRecentes && actionsRecentes.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Briefcase className="h-5 w-5 text-primary" />
+              Dernières actions déclarées
+            </h2>
+            <Link
+              href="/lobbying/actions"
+              className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+            >
+              Voir toutes les actions
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {actionsRecentes.map((action) => {
+              const typeConfig = typeLabels[action.lobbyiste.type || ''];
+              const Icon = typeConfig?.icon || Building2;
+
+              return (
+                <Link
+                  key={action.id}
+                  href={`/lobbying/${action.lobbyiste.id}`}
+                  className="group rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md flex flex-col"
+                >
+                  {/* Description de l'action */}
+                  <p className="font-medium line-clamp-2 mb-3 flex-1">
+                    {action.description || 'Objet non précisé'}
+                  </p>
+
+                  {/* Tags */}
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    {action.cible && (
+                      <span className="px-2 py-0.5 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded text-xs">
+                        {cibleLabels[action.cible] || action.cible}
+                      </span>
+                    )}
+                    {action.texteViseNom && (
+                      <span
+                        className="px-2 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 rounded text-xs truncate max-w-[150px]"
+                        title={action.texteViseNom}
+                      >
+                        {action.texteViseNom.length > 30
+                          ? action.texteViseNom.substring(0, 30) + '...'
+                          : action.texteViseNom}
+                      </span>
+                    )}
+                    {action.dateDebut && (
+                      <span className="flex items-center gap-1 text-muted-foreground text-xs">
+                        <Calendar className="h-3 w-3" />
+                        {formatDate(action.dateDebut)}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Parlementaire ciblé */}
+                  {action.parlementaire && (
+                    <div className="mb-3 flex items-center gap-1.5 text-xs">
+                      <span
+                        className="h-2 w-2 rounded-full shrink-0"
+                        style={{ backgroundColor: action.parlementaire.groupe?.couleur || '#888' }}
+                      />
+                      <span className="font-medium">{action.parlementaire.prenom} {action.parlementaire.nom}</span>
+                      {action.parlementaire.groupe && (
+                        <span className="text-muted-foreground truncate">
+                          ({action.parlementaire.groupe.nom})
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Lobbyiste (acteur) */}
+                  <div className="flex items-center justify-between pt-3 border-t border-border mt-auto">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="p-1.5 rounded bg-muted shrink-0">
+                        <Icon className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{action.lobbyiste.nom}</p>
+                        {action.lobbyiste.secteur && (
+                          <p className="text-xs text-muted-foreground truncate">{action.lobbyiste.secteur}</p>
+                        )}
+                      </div>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0 ml-2" />
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Stats cards */}
       {statsData && (
@@ -154,8 +297,14 @@ function LobbyingPageContent() {
         </div>
       )}
 
+      {/* Titre section Représentants d'intérêts */}
+      <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+        <Building2 className="h-5 w-5 text-primary" />
+        Représentants d&apos;intérêts
+      </h2>
+
       {/* Filtres - Responsive */}
-      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center">
         {/* Recherche */}
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

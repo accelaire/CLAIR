@@ -258,7 +258,7 @@ export default function LobbyisteDetailPage() {
                   {/* Metadata tags */}
                   <div className="flex flex-wrap items-center gap-2 text-sm">
                     {action.cible && (
-                      <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-xs">
+                      <span className="px-2 py-0.5 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded text-xs">
                         {action.cible === 'depute' ? 'Parlement' :
                          action.cible === 'ministre' ? 'Gouvernement' :
                          action.cible === 'presidence' ? 'Présidence' :
@@ -268,14 +268,14 @@ export default function LobbyisteDetailPage() {
                       </span>
                     )}
                     {action.texteViseNom && (
-                      <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded text-xs">
+                      <span className="px-2 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 rounded text-xs" title={action.texteViseNom}>
                         {action.texteViseNom.length > 50
                           ? action.texteViseNom.substring(0, 50) + '...'
                           : action.texteViseNom}
                       </span>
                     )}
                     {action.dateDebut && (
-                      <span className="flex items-center gap-1 text-muted-foreground">
+                      <span className="flex items-center gap-1 text-muted-foreground text-xs">
                         <Calendar className="h-3 w-3" />
                         {formatDate(action.dateDebut)}
                       </span>
