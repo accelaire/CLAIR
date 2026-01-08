@@ -792,10 +792,10 @@ export default function DeputeDetailPage() {
           <h2 className="mb-4 text-xl font-semibold">Statistiques</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
-              label="Présence (solennelle)"
-              value={depute.stats.presenceSolennel}
+              label="Présence solennelle"
+              value={depute.stats.presenceSolennel ?? depute.stats.presence}
               suffix="%"
-              subtitle={`Total: ${depute.stats.presence}%`}
+              subtitle={`${depute.stats.presence}% tous scrutins`}
               icon={TrendingUp}
             />
             <StatCard

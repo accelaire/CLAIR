@@ -70,6 +70,7 @@ interface GroupeDetail {
   membres: Membre[];
   stats: {
     presenceMoyenne: number;
+    presenceSolennelMoyenne: number | null;
     loyauteMoyenne: number;
     participationMoyenne: number;
   };
@@ -483,9 +484,10 @@ export default function GroupeDetailPage() {
           icon={Users}
         />
         <StatCard
-          label="Participation moyenne"
-          value={groupe.stats.presenceMoyenne}
+          label="Présence solennelle"
+          value={groupe.stats.presenceSolennelMoyenne ?? groupe.stats.presenceMoyenne}
           suffix="%"
+          subtitle={`${groupe.stats.presenceMoyenne}% tous scrutins`}
           icon={Vote}
         />
         <StatCard
@@ -575,7 +577,7 @@ export default function GroupeDetailPage() {
             <div className="space-y-4 min-w-0">
               <div className="grid grid-cols-2 gap-3 sm:gap-4">
                 <div className="rounded-xl border bg-card p-3 sm:p-4">
-                  <p className="text-xs sm:text-sm text-muted-foreground">Participation</p>
+                  <p className="text-xs sm:text-sm text-muted-foreground">Participation aux scrutins</p>
                   <p className="text-2xl sm:text-3xl font-bold text-green-600">{votingStats.tauxParticipation}%</p>
                 </div>
                 <div className="rounded-xl border bg-card p-3 sm:p-4">
