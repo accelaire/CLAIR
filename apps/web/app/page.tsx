@@ -35,7 +35,7 @@ export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch homepage data (stats + recent scrutins in ONE call)
-  const { data: homepageData } = useQuery<{ stats: Stats; recentScrutins: RecentScrutin[] }>({
+  const { data: homepageData } = useQuery<{ stats: Stats; recentScrutins: RecentScrutin[]; lastUpdate: string | null }>({
     queryKey: ['homepage'],
     queryFn: () => api.get('/homepage').then(res => res.data),
     staleTime: 30000, // Refresh every 30 seconds
@@ -169,6 +169,20 @@ export default function HomePage() {
                 <div className="text-xs text-muted-foreground">Actions lobby</div>
               </Link>
             </div>
+
+            {/* Dernière mise à jour */}
+            {homepageData?.lastUpdate && (
+              <p className="mt-4 text-right text-xs italic text-muted-foreground">
+                Données mises à jour le {new Date(homepageData.lastUpdate).toLocaleDateString('fr-FR', {
+                  day: 'numeric',
+                  month: 'long',
+                  year: 'numeric',
+                })} à {new Date(homepageData.lastUpdate).toLocaleTimeString('fr-FR', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </p>
+            )}
           </div>
         </div>
       </section>
