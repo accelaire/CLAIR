@@ -6,17 +6,81 @@
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { indexAll, clearAllIndexes } from './indexing.service';
+import { buildParlementaireSearchCondition } from '../../utils/search';
 
-// Timeout pour les requêtes Meilisearch (évite les blocages si Meilisearch est down)
-const MEILISEARCH_TIMEOUT_MS = 3000;
+// Timeout pour les requêtes (évite les blocages)
+const MEILISEARCH_TIMEOUT_MS = 1500; // Réduit de 3s à 1.5s
+const DATABASE_TIMEOUT_MS = 5000;    // Timeout pour le fallback DB
+const MAX_RETRIES = 2;               // Nombre de retries pour le fallback DB
+
+// Circuit breaker pour Meilisearch - évite de perdre du temps si Meilisearch est down
+const circuitBreaker = {
+  failures: 0,
+  lastFailure: 0,
+  isOpen: false,
+  threshold: 3,           // Ouvre le circuit après 3 échecs
+  resetTimeMs: 60000,     // Réessaie après 1 minute
+};
+
+function checkCircuitBreaker(): boolean {
+  if (!circuitBreaker.isOpen) return true;
+
+  // Vérifier si on peut réessayer (après resetTimeMs)
+  if (Date.now() - circuitBreaker.lastFailure > circuitBreaker.resetTimeMs) {
+    circuitBreaker.isOpen = false;
+    circuitBreaker.failures = 0;
+    return true;
+  }
+  return false;
+}
+
+function recordMeilisearchFailure() {
+  circuitBreaker.failures++;
+  circuitBreaker.lastFailure = Date.now();
+  if (circuitBreaker.failures >= circuitBreaker.threshold) {
+    circuitBreaker.isOpen = true;
+  }
+}
+
+function recordMeilisearchSuccess() {
+  circuitBreaker.failures = 0;
+  circuitBreaker.isOpen = false;
+}
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error('Meilisearch timeout')), ms)
+      setTimeout(() => reject(new Error('Search timeout')), ms)
     ),
   ]);
+}
+
+// Retry avec backoff exponentiel
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number,
+  timeoutMs: number,
+  logger?: any
+): Promise<T> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await withTimeout(fn(), timeoutMs);
+    } catch (err) {
+      lastError = err as Error;
+      if (logger && attempt < maxRetries) {
+        logger.warn({ attempt, err: lastError.message }, 'Search retry');
+      }
+      // Petit délai avant retry (backoff: 100ms, 200ms, 400ms...)
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 100 * Math.pow(2, attempt)));
+      }
+    }
+  }
+
+  throw lastError;
 }
 
 const searchQuerySchema = z.object({
@@ -47,12 +111,33 @@ export const searchRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request) => {
       const { q, type, limit } = searchQuerySchema.parse(request.query);
 
-      // Essayer Meilisearch d'abord
+      // Vérifier le circuit breaker avant d'essayer Meilisearch
+      if (checkCircuitBreaker()) {
+        try {
+          const result = await searchWithMeilisearch(fastify, q, type, limit);
+          recordMeilisearchSuccess();
+          return result;
+        } catch (error) {
+          recordMeilisearchFailure();
+          fastify.log.warn(
+            { circuitOpen: circuitBreaker.isOpen, failures: circuitBreaker.failures },
+            'Meilisearch search failed, falling back to database'
+          );
+        }
+      }
+
+      // Fallback sur DB avec retry - garantit un résultat complet ou erreur
       try {
-        return await searchWithMeilisearch(fastify, q, type, limit);
+        return await withRetry(
+          () => searchWithDatabase(fastify, q, type, limit),
+          MAX_RETRIES,
+          DATABASE_TIMEOUT_MS,
+          fastify.log
+        );
       } catch (error) {
-        fastify.log.warn('Meilisearch search failed, falling back to database');
-        return await searchWithDatabase(fastify, q, type, limit);
+        fastify.log.error({ err: error }, 'Search failed after retries');
+        // Renvoyer une erreur propre plutôt que des résultats partiels
+        throw new Error('La recherche est temporairement indisponible. Veuillez réessayer.');
       }
     },
   });
@@ -273,7 +358,7 @@ async function searchWithDatabase(
   type: string,
   limit: number
 ) {
-  const searchTerm = q.toLowerCase();
+  const searchTerm = q.toLowerCase().trim();
   const results: {
     deputes: any[];
     senateurs: any[];
@@ -304,34 +389,35 @@ async function searchWithDatabase(
     _type: d.chambre === 'senat' ? 'senateur' : 'depute',
   });
 
+  // Construire les conditions de recherche pour parlementaires
+  const buildParlementaireWhere = (chambre: string) => ({
+    ...buildParlementaireSearchCondition(searchTerm),
+    chambre,
+    actif: true,
+  });
+
+  const parlementaireSelect = {
+    id: true,
+    slug: true,
+    chambre: true,
+    nom: true,
+    prenom: true,
+    photoUrl: true,
+    groupe: {
+      select: { nom: true, couleur: true },
+    },
+    circonscription: {
+      select: { departement: true, nom: true },
+    },
+  };
+
   // Recherche députés (chambre = assemblee)
   if (type === 'all' || type === 'deputes') {
     promises.push(
       fastify.prisma.parlementaire
         .findMany({
-          where: {
-            OR: [
-              { nom: { contains: searchTerm, mode: 'insensitive' } },
-              { prenom: { contains: searchTerm, mode: 'insensitive' } },
-              { slug: { contains: searchTerm, mode: 'insensitive' } },
-            ],
-            chambre: 'assemblee',
-            actif: true,
-          },
-          select: {
-            id: true,
-            slug: true,
-            chambre: true,
-            nom: true,
-            prenom: true,
-            photoUrl: true,
-            groupe: {
-              select: { nom: true, couleur: true },
-            },
-            circonscription: {
-              select: { departement: true, nom: true },
-            },
-          },
+          where: buildParlementaireWhere('assemblee'),
+          select: parlementaireSelect,
           take: limit,
         })
         .then((parlementaires: any[]) => {
@@ -345,29 +431,8 @@ async function searchWithDatabase(
     promises.push(
       fastify.prisma.parlementaire
         .findMany({
-          where: {
-            OR: [
-              { nom: { contains: searchTerm, mode: 'insensitive' } },
-              { prenom: { contains: searchTerm, mode: 'insensitive' } },
-              { slug: { contains: searchTerm, mode: 'insensitive' } },
-            ],
-            chambre: 'senat',
-            actif: true,
-          },
-          select: {
-            id: true,
-            slug: true,
-            chambre: true,
-            nom: true,
-            prenom: true,
-            photoUrl: true,
-            groupe: {
-              select: { nom: true, couleur: true },
-            },
-            circonscription: {
-              select: { departement: true, nom: true },
-            },
-          },
+          where: buildParlementaireWhere('senat'),
+          select: parlementaireSelect,
           take: limit,
         })
         .then((parlementaires: any[]) => {
@@ -435,6 +500,8 @@ async function searchWithDatabase(
     );
   }
 
+  // Attendre toutes les promesses - si une échoue, tout échoue (pas de résultats partiels)
+  // Le retry au niveau du handler s'occupera de réessayer
   await Promise.all(promises);
 
   if (type === 'all') {
@@ -473,55 +540,60 @@ async function searchWithDatabase(
 }
 
 async function suggestFromDatabase(fastify: any, q: string, limit: number) {
-  const searchTerm = q.toLowerCase();
+  const searchTerm = q.toLowerCase().trim();
 
-  const [parlementaires, scrutins] = await Promise.all([
-    fastify.prisma.parlementaire.findMany({
-      where: {
-        OR: [
-          { nom: { startsWith: searchTerm, mode: 'insensitive' } },
-          { prenom: { startsWith: searchTerm, mode: 'insensitive' } },
-        ],
-        actif: true,
-      },
-      select: {
-        slug: true,
-        chambre: true,
-        nom: true,
-        prenom: true,
-        groupe: { select: { nom: true } },
-      },
-      take: limit,
-    }),
-    fastify.prisma.scrutin.findMany({
-      where: {
-        titre: { contains: searchTerm, mode: 'insensitive' },
-      },
-      select: {
-        numero: true,
-        chambre: true,
-        titre: true,
-      },
-      orderBy: [{ date: 'desc' }, { numero: 'desc' }],
-      take: Math.max(2, limit - 3),
-    }),
-  ]);
+  // Utiliser la fonction utilitaire pour la recherche parlementaires
+  const parlementaireWhere = {
+    ...buildParlementaireSearchCondition(searchTerm),
+    actif: true,
+  };
 
-  const suggestions = [
-    ...parlementaires.map((d: any) => ({
-      type: d.chambre === 'senat' ? 'senateur' : 'depute',
-      value: `${d.prenom} ${d.nom}`,
-      slug: d.slug,
-      chambre: d.chambre,
-      meta: d.groupe?.nom,
-    })),
-    ...scrutins.map((s: any) => ({
-      type: 'scrutin',
-      value: s.titre.length > 60 ? s.titre.substring(0, 60) + '...' : s.titre,
-      numero: s.numero,
-      chambre: s.chambre,
-    })),
-  ];
+  try {
+    const [parlementaires, scrutins] = await Promise.all([
+      fastify.prisma.parlementaire.findMany({
+        where: parlementaireWhere,
+        select: {
+          slug: true,
+          chambre: true,
+          nom: true,
+          prenom: true,
+          groupe: { select: { nom: true } },
+        },
+        take: limit,
+      }),
+      fastify.prisma.scrutin.findMany({
+        where: {
+          titre: { contains: searchTerm, mode: 'insensitive' },
+        },
+        select: {
+          numero: true,
+          chambre: true,
+          titre: true,
+        },
+        orderBy: [{ date: 'desc' }, { numero: 'desc' }],
+        take: Math.max(2, limit - 3),
+      }),
+    ]);
 
-  return { data: suggestions };
+    const suggestions = [
+      ...parlementaires.map((d: any) => ({
+        type: d.chambre === 'senat' ? 'senateur' : 'depute',
+        value: `${d.prenom} ${d.nom}`,
+        slug: d.slug,
+        chambre: d.chambre,
+        meta: d.groupe?.nom,
+      })),
+      ...scrutins.map((s: any) => ({
+        type: 'scrutin',
+        value: s.titre.length > 60 ? s.titre.substring(0, 60) + '...' : s.titre,
+        numero: s.numero,
+        chambre: s.chambre,
+      })),
+    ];
+
+    return { data: suggestions };
+  } catch (err) {
+    fastify.log.error({ err }, 'Suggest from database failed');
+    return { data: [] };
+  }
 }
