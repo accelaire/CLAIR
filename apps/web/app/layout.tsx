@@ -5,6 +5,7 @@ import { Providers } from './providers';
 import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
 import { PlausibleAnalytics } from '@/components/analytics/PlausibleAnalytics';
+import { OrganizationJsonLd, WebSiteJsonLd } from '@/components/seo/JsonLd';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -47,6 +48,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="fr" suppressHydrationWarning>
+      <head>
+        <OrganizationJsonLd />
+        <WebSiteJsonLd />
+      </head>
       <body className={`${inter.className} min-h-screen bg-background antialiased`}>
         <PlausibleAnalytics />
         <Providers>
