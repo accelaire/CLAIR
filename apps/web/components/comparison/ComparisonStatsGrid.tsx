@@ -1,6 +1,6 @@
 'use client';
 
-import { Users, Vote, MessageSquare, FileText, UserCheck, Activity } from 'lucide-react';
+import { Users, Vote, MessageSquare, FileText, UserCheck, Activity, Award } from 'lucide-react';
 
 interface ParlementaireStats {
   slug: string;
@@ -8,6 +8,7 @@ interface ParlementaireStats {
   prenom: string;
   stats: {
     presence: number;
+    presenceSolennel: number | null;
     loyaute: number;
     participation: number;
     interventions: number;
@@ -92,6 +93,9 @@ function StatRow({ label, icon, values, format = 'number', isHigherBetter = true
 export function ComparisonStatsGrid({ parlementaires }: ComparisonStatsGridProps) {
   if (parlementaires.length === 0) return null;
 
+  // Vérifier si on a des données de présence solennelle
+  const hasPresenceSolennel = parlementaires.some((p) => p.stats.presenceSolennel !== null);
+
   const stats = [
     {
       label: 'Présence',
@@ -99,6 +103,17 @@ export function ComparisonStatsGrid({ parlementaires }: ComparisonStatsGridProps
       format: 'percent' as const,
       getValue: (p: ParlementaireStats) => p.stats.presence,
     },
+    // Présence solennelle (affichée uniquement si des données existent)
+    ...(hasPresenceSolennel
+      ? [
+          {
+            label: 'Présence solennelle',
+            icon: <Award className="h-4 w-4" />,
+            format: 'percent' as const,
+            getValue: (p: ParlementaireStats) => p.stats.presenceSolennel ?? 0,
+          },
+        ]
+      : []),
     {
       label: 'Loyauté groupe',
       icon: <Users className="h-4 w-4" />,
