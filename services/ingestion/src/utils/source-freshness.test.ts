@@ -8,7 +8,7 @@ import { SOURCES, SourceConfig } from './source-freshness';
 describe('SOURCES Configuration', () => {
   describe('Assemblée Nationale', () => {
     it('devrait avoir une configuration pour les députés', () => {
-      const config = SOURCES['assemblee_nationale:deputes'];
+      const config = SOURCES['assemblee_nationale:deputes']!;
       expect(config).toBeDefined();
       expect(config.source).toBe('assemblee_nationale');
       expect(config.dataType).toBe('deputes');
@@ -17,7 +17,7 @@ describe('SOURCES Configuration', () => {
     });
 
     it('devrait avoir une configuration pour les scrutins', () => {
-      const config = SOURCES['assemblee_nationale:scrutins'];
+      const config = SOURCES['assemblee_nationale:scrutins']!;
       expect(config).toBeDefined();
       expect(config.source).toBe('assemblee_nationale');
       expect(config.dataType).toBe('scrutins');
@@ -25,13 +25,13 @@ describe('SOURCES Configuration', () => {
     });
 
     it('devrait avoir une configuration pour les amendements', () => {
-      const config = SOURCES['assemblee_nationale:amendements'];
+      const config = SOURCES['assemblee_nationale:amendements']!;
       expect(config).toBeDefined();
       expect(config.dataType).toBe('amendements');
     });
 
     it('devrait avoir une configuration pour les dossiers', () => {
-      const config = SOURCES['assemblee_nationale:dossiers'];
+      const config = SOURCES['assemblee_nationale:dossiers']!;
       expect(config).toBeDefined();
       expect(config.dataType).toBe('dossiers');
     });
@@ -39,7 +39,7 @@ describe('SOURCES Configuration', () => {
 
   describe('Sénat', () => {
     it('devrait avoir une configuration pour les sénateurs', () => {
-      const config = SOURCES['senat:senateurs'];
+      const config = SOURCES['senat:senateurs']!;
       expect(config).toBeDefined();
       expect(config.source).toBe('senat');
       expect(config.dataType).toBe('senateurs');
@@ -47,19 +47,19 @@ describe('SOURCES Configuration', () => {
     });
 
     it('devrait avoir une configuration pour les scrutins', () => {
-      const config = SOURCES['senat:scrutins'];
+      const config = SOURCES['senat:scrutins']!;
       expect(config).toBeDefined();
       expect(config.dataType).toBe('scrutins');
     });
 
     it('devrait avoir une configuration pour les amendements', () => {
-      const config = SOURCES['senat:amendements'];
+      const config = SOURCES['senat:amendements']!;
       expect(config).toBeDefined();
       expect(config.url).toContain('ameli.zip');
     });
 
     it('devrait avoir une configuration pour les interventions', () => {
-      const config = SOURCES['senat:interventions'];
+      const config = SOURCES['senat:interventions']!;
       expect(config).toBeDefined();
       expect(config.url).toContain('cri.zip');
     });
@@ -67,7 +67,7 @@ describe('SOURCES Configuration', () => {
 
   describe('DILA', () => {
     it('devrait avoir une configuration pour les interventions', () => {
-      const config = SOURCES['dila:interventions'];
+      const config = SOURCES['dila:interventions']!;
       expect(config).toBeDefined();
       expect(config.source).toBe('dila');
       expect(config.dataType).toBe('interventions');
@@ -75,7 +75,7 @@ describe('SOURCES Configuration', () => {
     });
 
     it("devrait utiliser l'année courante dans l'URL", () => {
-      const config = SOURCES['dila:interventions'];
+      const config = SOURCES['dila:interventions']!;
       const currentYear = new Date().getFullYear();
       expect(config.url).toContain(currentYear.toString());
     });
@@ -83,7 +83,7 @@ describe('SOURCES Configuration', () => {
 
   describe('HATVP', () => {
     it('devrait avoir une configuration pour les lobbyistes', () => {
-      const config = SOURCES['hatvp:lobbyistes'];
+      const config = SOURCES['hatvp:lobbyistes']!;
       expect(config).toBeDefined();
       expect(config.source).toBe('hatvp');
       expect(config.dataType).toBe('lobbyistes');
@@ -93,7 +93,7 @@ describe('SOURCES Configuration', () => {
 
   describe('Validation des URLs', () => {
     it('toutes les URLs devraient être valides', () => {
-      for (const [key, config] of Object.entries(SOURCES)) {
+      for (const [, config] of Object.entries(SOURCES)) {
         expect(() => new URL(config.url)).not.toThrow();
       }
     });
@@ -101,7 +101,7 @@ describe('SOURCES Configuration', () => {
     it('toutes les sources devraient avoir les champs requis', () => {
       const requiredFields: (keyof SourceConfig)[] = ['source', 'dataType', 'url'];
 
-      for (const [key, config] of Object.entries(SOURCES)) {
+      for (const [, config] of Object.entries(SOURCES)) {
         for (const field of requiredFields) {
           expect(config[field]).toBeDefined();
           expect(config[field]).not.toBe('');

@@ -153,7 +153,7 @@ describe('buildTextSearchCondition', () => {
     });
 
     it('devrait être insensible à la casse', () => {
-      const result = buildTextSearchCondition('titre', 'Budget');
+      const result = buildTextSearchCondition('titre', 'Budget') as { titre: { contains: string; mode: string } };
 
       expect(result.titre.contains).toBe('budget');
       expect(result.titre.mode).toBe('insensitive');
@@ -162,14 +162,14 @@ describe('buildTextSearchCondition', () => {
 
   describe('Recherche multi-mots', () => {
     it('devrait créer une condition AND pour plusieurs mots', () => {
-      const result = buildTextSearchCondition('titre', 'loi finances');
+      const result = buildTextSearchCondition('titre', 'loi finances') as { AND: unknown[] };
 
       expect(result).toHaveProperty('AND');
       expect(result.AND).toHaveLength(2);
     });
 
     it('devrait vérifier que chaque mot est présent', () => {
-      const result = buildTextSearchCondition('description', 'projet loi budget');
+      const result = buildTextSearchCondition('description', 'projet loi budget') as { AND: unknown[] };
 
       expect(result.AND).toHaveLength(3);
       expect(result.AND[0]).toEqual({

@@ -4,11 +4,11 @@
 
 import Fastify, { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
-import { createMockPrismaClient, createMockRedisClient } from '../mocks';
+import { createMockPrismaClient, createMockRedisClient, type MockPrismaClient, type MockRedisClient } from '../mocks';
 
 export type TestApp = FastifyInstance & {
-  mockPrisma: ReturnType<typeof createMockPrismaClient>;
-  mockRedis: ReturnType<typeof createMockRedisClient>;
+  mockPrisma: MockPrismaClient;
+  mockRedis: MockRedisClient;
 };
 
 interface BuildTestAppOptions {
@@ -24,19 +24,21 @@ export async function buildTestApp(options: BuildTestAppOptions = {}): Promise<T
 
   const app = Fastify({
     logger: false,
-  }) as TestApp;
+  });
 
   // Mock Prisma plugin
   await app.register(
     fp(async (fastify) => {
-      fastify.decorate('prisma', mockPrisma);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      fastify.decorate('prisma', mockPrisma as any);
     }, { name: 'prisma' })
   );
 
   // Mock Redis plugin
   await app.register(
     fp(async (fastify) => {
-      fastify.decorate('redis', mockRedis);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      fastify.decorate('redis', mockRedis as any);
       fastify.decorate('cache', {
         get: async (key: string) => {
           const value = await mockRedis.get(key);
@@ -59,7 +61,7 @@ export async function buildTestApp(options: BuildTestAppOptions = {}): Promise<T
   );
 
   // Error handler
-  app.setErrorHandler((error, request, reply) => {
+  app.setErrorHandler((error, _request, reply) => {
     if (error.name === 'ZodError') {
       return reply.status(400).send({
         error: 'Validation Error',
@@ -71,7 +73,7 @@ export async function buildTestApp(options: BuildTestAppOptions = {}): Promise<T
     if ('statusCode' in error && error.statusCode) {
       return reply.status(error.statusCode as number).send({
         error: error.name,
-        code: (error as any).code || 'ERROR',
+        code: (error as unknown as Record<string, unknown>).code || 'ERROR',
         message: error.message,
       });
     }
@@ -89,12 +91,13 @@ export async function buildTestApp(options: BuildTestAppOptions = {}): Promise<T
   }
 
   // Attach mocks to app for easy access in tests
-  app.mockPrisma = mockPrisma;
-  app.mockRedis = mockRedis;
+  const testApp = app as unknown as TestApp;
+  testApp.mockPrisma = mockPrisma;
+  testApp.mockRedis = mockRedis;
 
   await app.ready();
 
-  return app;
+  return testApp;
 }
 
 /**
