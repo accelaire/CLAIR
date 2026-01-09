@@ -62,6 +62,7 @@ interface InterventionScrutin {
   contenu: string;
   date: string;
   ordre: number | null;
+  sourceUrl: string | null;
   parlementaire: {
     id: string;
     slug: string;
@@ -499,13 +500,11 @@ export default function ScrutinDetailPage() {
                             {intervention.parlementaire.groupe.nom}
                           </span>
                         )}
-                        <span className={`px-2 py-0.5 text-xs rounded ${
-                          intervention.type === 'explication_vote'
-                            ? 'bg-amber-100 text-amber-700'
-                            : 'bg-blue-100 text-blue-700'
-                        }`}>
-                          {intervention.type === 'explication_vote' ? 'Explication de vote' : 'Intervention'}
-                        </span>
+                        {intervention.type === 'explication_vote' && (
+                          <span className="px-2 py-0.5 text-xs rounded bg-amber-100 text-amber-700">
+                            Explication de vote
+                          </span>
+                        )}
                       </div>
                       <p className="text-sm text-gray-700 line-clamp-4">
                         {intervention.contenu.length > 500
@@ -517,6 +516,20 @@ export default function ScrutinDetailPage() {
                 </div>
               ))}
             </div>
+            {/* Lien vers la source des interventions */}
+            {scrutin.interventions.some(i => i.sourceUrl) && (
+              <div className="mt-3 pt-3 border-t border-amber-200 flex justify-end">
+                <a
+                  href={scrutin.interventions.find(i => i.sourceUrl)?.sourceUrl || ''}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-sm text-amber-700 hover:text-amber-900 hover:underline"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Voir le compte-rendu intégral
+                </a>
+              </div>
+            )}
           </div>
         )}
 

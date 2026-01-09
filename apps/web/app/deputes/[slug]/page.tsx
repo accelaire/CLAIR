@@ -232,9 +232,9 @@ function InterventionsList({ slug }: { slug: string }) {
               ))}
             </div>
           )}
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            {/* Lien vers le scrutin associé */}
-            {intervention.scrutin && (
+          {/* Lien vers le scrutin associé */}
+          {intervention.scrutin && (
+            <div className="mt-2">
               <Link
                 href={`/scrutins/${intervention.scrutin.numero}`}
                 className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 hover:underline bg-indigo-50 px-2 py-1 rounded"
@@ -247,18 +247,8 @@ function InterventionsList({ slug }: { slug: string }) {
                   {intervention.scrutin.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
                 </span>
               </Link>
-            )}
-            {intervention.sourceUrl && (
-              <a
-                href={intervention.sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-primary hover:underline"
-              >
-                Voir la source →
-              </a>
-            )}
-          </div>
+            </div>
+          )}
         </div>
           ))}
 
