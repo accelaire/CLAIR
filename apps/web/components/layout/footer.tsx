@@ -41,11 +41,6 @@ export function Footer() {
                   Lobbying
                 </Link>
               </li>
-              <li>
-                <Link href="/explorateur" className="text-sm text-muted-foreground hover:text-foreground">
-                  Explorateur
-                </Link>
-              </li>
             </ul>
           </div>
 

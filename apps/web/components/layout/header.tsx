@@ -10,7 +10,7 @@ const navigation = [
   { name: 'Groupes', href: '/groupes' },
   { name: 'Scrutins', href: '/scrutins' },
   { name: 'Lobbying', href: '/lobbying' },
-  { name: 'Explorateur', href: '/explorateur', badge: 'Beta' },
+  // { name: 'Explorateur', href: '/explorateur', badge: 'Beta' }, // TODO: Réactiver quand la fonctionnalité sera prête
   // { name: 'Simulateur 2027', href: '/simulateur' }, // TODO: Activer quand les programmes seront sortis
 ];
 
@@ -34,14 +34,9 @@ export function Header() {
               <Link
                 key={item.name}
                 href={item.href}
-                className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground flex items-center gap-1.5"
+                className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
                 {item.name}
-                {item.badge && (
-                  <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-primary/10 text-primary">
-                    {item.badge}
-                  </span>
-                )}
               </Link>
             ))}
           </div>
@@ -97,15 +92,10 @@ export function Header() {
                 <Link
                   key={item.name}
                   href={item.href}
-                  className="text-base font-medium text-muted-foreground transition-colors hover:text-foreground flex items-center gap-2"
+                  className="text-base font-medium text-muted-foreground transition-colors hover:text-foreground"
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   {item.name}
-                  {item.badge && (
-                    <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-primary/10 text-primary">
-                      {item.badge}
-                    </span>
-                  )}
                 </Link>
               ))}
               <Link
