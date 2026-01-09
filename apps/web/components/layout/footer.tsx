@@ -59,11 +59,6 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/api" className="text-sm text-muted-foreground hover:text-foreground">
-                  API
-                </Link>
-              </li>
-              <li>
                 <Link href="/contact" className="text-sm text-muted-foreground hover:text-foreground">
                   Contact
                 </Link>
