@@ -337,6 +337,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
               contenu: true,
               date: true,
               ordre: true,
+              sourceUrl: true,
               parlementaire: {
                 select: {
                   id: true,

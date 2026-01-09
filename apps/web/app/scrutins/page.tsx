@@ -238,7 +238,7 @@ function ScrutinsPageContent() {
       {scrutins.length > 0 && (
         <>
           <div className="mb-4 text-sm text-muted-foreground">
-            {total} scrutin{total > 1 ? 's' : ''}
+            {total.toLocaleString('fr-FR')} scrutin{total > 1 ? 's' : ''}
           </div>
 
           <div className="space-y-4">

@@ -10,7 +10,10 @@ import { logger } from '../utils/logger';
 const prisma = new PrismaClient();
 
 // Limiter les requêtes parallèles pour éviter la saturation du pool
-const limit = pLimit(3);
+const limit = pLimit(2);
+
+// Taille des batches pour éviter l'accumulation mémoire
+const BATCH_SIZE = 50;
 
 export interface StatsCalculationResult {
   total: number;
@@ -44,24 +47,48 @@ export async function calculateAllStats(
   // Pré-calculer les données globales pour éviter les requêtes répétées
   const globalData = await getGlobalData(chambre);
 
-  // Traiter par batches avec concurrence limitée
-  const results = await Promise.all(
-    parlementaires.map((p) =>
-      limit(async () => {
-        try {
-          await calculateAndStoreStats(p, globalData);
-          return true;
-        } catch (error: any) {
-          logger.error({ parlementaire: p.slug, error: error.message }, 'Error calculating stats');
-          return false;
-        }
-      })
-    )
-  );
+  // Traiter par VRAIS batches pour éviter l'accumulation mémoire
+  const totalBatches = Math.ceil(parlementaires.length / BATCH_SIZE);
 
-  for (const success of results) {
-    if (success) updated++;
-    else errors++;
+  for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+    const batchStart = batchIndex * BATCH_SIZE;
+    const batchEnd = Math.min(batchStart + BATCH_SIZE, parlementaires.length);
+    const batch = parlementaires.slice(batchStart, batchEnd);
+
+    // Log progression tous les 5 batches ou au premier/dernier
+    if (batchIndex === 0 || batchIndex === totalBatches - 1 || (batchIndex + 1) % 5 === 0) {
+      logger.info({
+        batch: batchIndex + 1,
+        totalBatches,
+        progress: `${Math.round(((batchIndex + 1) / totalBatches) * 100)}%`,
+        processed: batchStart,
+        total: parlementaires.length,
+      }, 'Stats calculation progress');
+    }
+
+    const results = await Promise.all(
+      batch.map((p) =>
+        limit(async () => {
+          try {
+            await calculateAndStoreStats(p, globalData);
+            return true;
+          } catch (error: any) {
+            logger.error({ parlementaire: p.slug, error: error.message }, 'Error calculating stats');
+            return false;
+          }
+        })
+      )
+    );
+
+    for (const success of results) {
+      if (success) updated++;
+      else errors++;
+    }
+
+    // Petite pause entre les batches pour laisser le GC respirer
+    if (batchIndex < totalBatches - 1) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
   }
 
   const duration = `${((Date.now() - startTime) / 1000).toFixed(2)}s`;
@@ -354,24 +381,17 @@ export async function calculateAllGroupeStats(
   let updated = 0;
   let errors = 0;
 
-  // Traiter par batches avec concurrence limitée
-  const results = await Promise.all(
-    groupes.map((g) =>
-      limit(async () => {
-        try {
-          await calculateAndStoreGroupeStats(g);
-          return true;
-        } catch (error: any) {
-          logger.error({ groupe: g.slug, error: error.message }, 'Error calculating groupe stats');
-          return false;
-        }
-      })
-    )
-  );
-
-  for (const success of results) {
-    if (success) updated++;
-    else errors++;
+  // Traiter séquentiellement avec logging (peu de groupes, pas besoin de parallélisme excessif)
+  for (let i = 0; i < groupes.length; i++) {
+    const g = groupes[i]!;
+    try {
+      logger.debug({ groupe: g.slug, progress: `${i + 1}/${groupes.length}` }, 'Calculating groupe stats');
+      await calculateAndStoreGroupeStats(g);
+      updated++;
+    } catch (error: any) {
+      logger.error({ groupe: g.slug, error: error.message }, 'Error calculating groupe stats');
+      errors++;
+    }
   }
 
   const duration = `${((Date.now() - startTime) / 1000).toFixed(2)}s`;
@@ -410,6 +430,7 @@ async function calculateAndStoreGroupeStats(
     _count: { id: true },
     _avg: {
       statsPresence: true,
+      statsPresenceSolennel: true,
       statsLoyaute: true,
     },
     _sum: {
@@ -419,6 +440,9 @@ async function calculateAndStoreGroupeStats(
 
   const statsMembresActifs = memberStats._count.id;
   const statsPresenceMoyenne = Math.round(memberStats._avg.statsPresence || 0);
+  const statsPresenceSolennelMoyenne = memberStats._avg.statsPresenceSolennel != null
+    ? Math.round(memberStats._avg.statsPresenceSolennel)
+    : null;
   const statsLoyauteMoyenne = Math.round(memberStats._avg.statsLoyaute || 0);
   const statsParticipation = memberStats._sum.statsParticipation || 0;
 
@@ -434,6 +458,7 @@ async function calculateAndStoreGroupeStats(
     data: {
       statsMembresActifs,
       statsPresenceMoyenne,
+      statsPresenceSolennelMoyenne,
       statsLoyauteMoyenne,
       statsCohesion,
       statsParticipation,
@@ -545,14 +570,28 @@ export async function calculateAllGroupeAlliances(
 
   for (const [chambreKey, groupesInChambre] of chambreGroups) {
     // Calculer toutes les paires possibles
+    const totalPairsInChambre = (groupesInChambre.length * (groupesInChambre.length - 1)) / 2;
+    let processedInChambre = 0;
+
+    logger.info({ chambre: chambreKey, pairs: totalPairsInChambre }, 'Starting alliances calculation for chambre');
+
     for (let i = 0; i < groupesInChambre.length; i++) {
       for (let j = i + 1; j < groupesInChambre.length; j++) {
-        const g1 = groupesInChambre[i];
-        const g2 = groupesInChambre[j];
+        const g1 = groupesInChambre[i]!;
+        const g2 = groupesInChambre[j]!;
 
         try {
           await calculateAndStoreAlliance(g1.id, g2.id, chambreKey);
           totalPairs++;
+          processedInChambre++;
+
+          // Log progression tous les 10 paires
+          if (processedInChambre % 10 === 0) {
+            logger.debug({
+              chambre: chambreKey,
+              progress: `${processedInChambre}/${totalPairsInChambre}`,
+            }, 'Alliances progress');
+          }
         } catch (error: any) {
           logger.error({ g1: g1.slug, g2: g2.slug, error: error.message }, 'Error calculating alliance');
         }
@@ -702,9 +741,17 @@ export async function calculateAllGroupeThematiques(
   });
 
   let totalStats = 0;
+  const totalGroupes = groupes.length;
 
-  for (const groupe of groupes) {
+  for (let i = 0; i < groupes.length; i++) {
+    const groupe = groupes[i]!;
     try {
+      logger.debug({
+        groupe: groupe.slug,
+        progress: `${i + 1}/${totalGroupes}`,
+        thematiques: THEMATIQUES.length,
+      }, 'Calculating thematiques for groupe');
+
       await calculateAndStoreGroupeThematiques(groupe.id, groupe.chambre);
       totalStats += THEMATIQUES.length;
     } catch (error: any) {

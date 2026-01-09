@@ -162,7 +162,7 @@ function DeputesPageContent() {
         <div>
           <h1 className="text-3xl font-bold">Députés</h1>
           <p className="mt-2 text-muted-foreground">
-            {total > 0 ? total : '—'} députés à l&apos;Assemblée nationale — XVIIe législature
+            {total > 0 ? total.toLocaleString('fr-FR') : '—'} députés sur 577 sièges — XVIIe législature
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Source : <a href="https://data.assemblee-nationale.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.assemblee-nationale.fr</a>
@@ -262,7 +262,7 @@ function DeputesPageContent() {
       {deputes.length > 0 && (
         <>
           <div className="mb-4 text-sm text-muted-foreground">
-            {total} résultat{total > 1 ? 's' : ''}
+            {total.toLocaleString('fr-FR')} résultat{total > 1 ? 's' : ''}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

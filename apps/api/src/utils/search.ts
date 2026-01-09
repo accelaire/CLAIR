@@ -2,23 +2,39 @@
 // Utilitaires de recherche multi-mots
 // =============================================================================
 
+import { findDepartementCodesBySearchTerm } from './geo-france';
+
 /**
  * Construit une condition Prisma pour rechercher un parlementaire par nom/prénom
  * Gère les recherches multi-mots (ex: "Marine Le Pen", "Jean-Luc Mélenchon")
+ * Gère aussi la recherche géographique (département, région, ville)
  */
 export function buildParlementaireSearchCondition(search: string) {
   const searchTerm = search.toLowerCase().trim();
   const words = searchTerm.split(/\s+/).filter(w => w.length > 0);
 
-  // Cas simple: un seul mot - chercher dans nom, prénom ou slug
+  // Vérifier si c'est une recherche géographique
+  const matchingDepartements = findDepartementCodesBySearchTerm(searchTerm);
+  const hasGeoMatch = matchingDepartements.length > 0;
+
+  // Cas simple: un seul mot - chercher dans nom, prénom, slug ou géographie
   if (words.length === 1) {
-    return {
-      OR: [
-        { nom: { contains: searchTerm, mode: 'insensitive' as const } },
-        { prenom: { contains: searchTerm, mode: 'insensitive' as const } },
-        { slug: { contains: searchTerm, mode: 'insensitive' as const } },
-      ],
-    };
+    const orConditions: any[] = [
+      { nom: { contains: searchTerm, mode: 'insensitive' as const } },
+      { prenom: { contains: searchTerm, mode: 'insensitive' as const } },
+      { slug: { contains: searchTerm, mode: 'insensitive' as const } },
+      // Recherche dans le nom de la circonscription
+      { circonscription: { nom: { contains: searchTerm, mode: 'insensitive' as const } } },
+    ];
+
+    // Ajouter la recherche géographique si on a des départements correspondants
+    if (hasGeoMatch) {
+      orConditions.push({
+        circonscription: { departement: { in: matchingDepartements } },
+      });
+    }
+
+    return { OR: orConditions };
   }
 
   // Cas multi-mots: chercher "prénom nom" ou "nom prénom"
@@ -53,6 +69,11 @@ export function buildParlementaireSearchCondition(search: string) {
   const slugSearch = searchTerm.replace(/\s+/g, '-');
   orConditions.push({ slug: { contains: slugSearch, mode: 'insensitive' as const } });
 
+  // Recherche dans le nom de la circonscription (multi-mots)
+  orConditions.push({
+    circonscription: { nom: { contains: searchTerm, mode: 'insensitive' as const } },
+  });
+
   // Et la recherche simple sur chaque mot (fallback)
   orConditions.push({
     AND: words.map(word => ({
@@ -62,6 +83,13 @@ export function buildParlementaireSearchCondition(search: string) {
       ],
     })),
   });
+
+  // Ajouter la recherche géographique si on a des départements correspondants
+  if (hasGeoMatch) {
+    orConditions.push({
+      circonscription: { departement: { in: matchingDepartements } },
+    });
+  }
 
   return { OR: orConditions };
 }
