@@ -3,7 +3,7 @@
 import { Suspense } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Search, ChevronDown, Building2, Briefcase, TrendingUp, Users, ArrowUp, ArrowDown, Loader2, Calendar, ArrowRight } from 'lucide-react';
+import { Search, ChevronDown, Building2, Briefcase, TrendingUp, Users, ArrowUp, ArrowDown, Loader2, Calendar, ArrowRight, Info } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
@@ -296,6 +296,15 @@ function LobbyingPageContent() {
           </div>
         </div>
       )}
+
+      {/* Note méthodologique */}
+      <Link
+        href="/methodologie#hatvp"
+        className="mb-6 ml-auto flex w-fit items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <Info className="h-3.5 w-3.5" />
+        <span>Nos chiffres peuvent différer du site HATVP. Voir notre méthodologie.</span>
+      </Link>
 
       {/* Titre section Représentants d'intérêts */}
       <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">

@@ -134,7 +134,7 @@ export default function MethodologiePage() {
           </div>
 
           {/* HATVP */}
-          <div className="rounded-lg border bg-card">
+          <div id="hatvp" className="rounded-lg border bg-card scroll-mt-20">
             <div className="border-b p-4">
               <h3 className="flex items-center gap-2 font-semibold">
                 HATVP - Répertoire des représentants d&apos;intérêts
@@ -161,6 +161,20 @@ export default function MethodologiePage() {
                   <li><strong>Cibles</strong> : parlementaires ou administrations contactés</li>
                   <li><strong>Budgets déclarés</strong> : moyens consacrés au lobbying</li>
                 </ul>
+              </div>
+              <div className="mt-4 rounded-lg bg-amber-50 dark:bg-amber-950/30 p-4 border border-amber-200 dark:border-amber-900">
+                <p className="font-medium text-amber-800 dark:text-amber-400">Note sur le comptage</p>
+                <p className="mt-2 text-amber-700 dark:text-amber-500">
+                  Les chiffres affichés sur CLAIR peuvent différer de ceux du site HATVP. Cela s&apos;explique par notre méthodologie :
+                </p>
+                <ul className="mt-2 list-inside list-disc space-y-1 text-amber-700 dark:text-amber-500">
+                  <li><strong>Actions par exercice</strong> : CLAIR compte chaque activité déclarée par exercice fiscal. Une activité identique déclarée sur 3 ans = 3 actions dans CLAIR.</li>
+                  <li><strong>Historique complet</strong> : CLAIR conserve l&apos;historique depuis 2018, alors que HATVP peut n&apos;afficher que les données récentes ou agrégées.</li>
+                  <li><strong>Entités distinctes</strong> : Les branches régionales d&apos;organisations (ex: Chambres de métiers départementales) sont comptées séparément si elles ont des identifiants HATVP distincts.</li>
+                </ul>
+                <p className="mt-2 text-amber-700 dark:text-amber-500">
+                  Cette approche offre une <strong>transparence maximale</strong> sur l&apos;évolution du lobbying dans le temps.
+                </p>
               </div>
             </div>
           </div>
