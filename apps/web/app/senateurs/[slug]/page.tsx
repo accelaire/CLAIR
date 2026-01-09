@@ -239,16 +239,6 @@ function InterventionsList({ slug }: { slug: string }) {
                     Voir le scrutin n°{intervention.scrutin.numero} →
                   </Link>
                 )}
-                {intervention.sourceUrl && (
-                  <a
-                    href={intervention.sourceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-muted-foreground hover:text-foreground hover:underline"
-                  >
-                    Source externe →
-                  </a>
-                )}
               </div>
             </div>
           ))}
