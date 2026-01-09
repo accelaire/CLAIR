@@ -2,23 +2,22 @@
 // Mock Prisma Client pour les tests unitaires
 // =============================================================================
 
-import { vi } from 'vitest';
-import type { PrismaClient } from '@prisma/client';
+import { vi, type Mock } from 'vitest';
 
-// Type helper pour créer des mocks Prisma
-type MockPrismaModel = {
-  findMany: ReturnType<typeof vi.fn>;
-  findUnique: ReturnType<typeof vi.fn>;
-  findFirst: ReturnType<typeof vi.fn>;
-  create: ReturnType<typeof vi.fn>;
-  createMany: ReturnType<typeof vi.fn>;
-  update: ReturnType<typeof vi.fn>;
-  updateMany: ReturnType<typeof vi.fn>;
-  delete: ReturnType<typeof vi.fn>;
-  deleteMany: ReturnType<typeof vi.fn>;
-  count: ReturnType<typeof vi.fn>;
-  aggregate: ReturnType<typeof vi.fn>;
-  groupBy: ReturnType<typeof vi.fn>;
+// Type helper pour créer des mocks Prisma avec méthodes Vitest
+export type MockPrismaModel = {
+  findMany: Mock;
+  findUnique: Mock;
+  findFirst: Mock;
+  create: Mock;
+  createMany: Mock;
+  update: Mock;
+  updateMany: Mock;
+  delete: Mock;
+  deleteMany: Mock;
+  count: Mock;
+  aggregate: Mock;
+  groupBy: Mock;
 };
 
 function createMockModel(): MockPrismaModel {
@@ -38,7 +37,29 @@ function createMockModel(): MockPrismaModel {
   };
 }
 
-export function createMockPrismaClient() {
+export interface MockPrismaClient {
+  parlementaire: MockPrismaModel;
+  groupePolitique: MockPrismaModel;
+  circonscription: MockPrismaModel;
+  scrutin: MockPrismaModel;
+  vote: MockPrismaModel;
+  intervention: MockPrismaModel;
+  amendement: MockPrismaModel;
+  lobbyiste: MockPrismaModel;
+  actionLobby: MockPrismaModel;
+  user: MockPrismaModel;
+  alerte: MockPrismaModel;
+  favori: MockPrismaModel;
+  sourceState: MockPrismaModel;
+  dossierLegislatif: MockPrismaModel;
+  $connect: Mock;
+  $disconnect: Mock;
+  $transaction: Mock;
+  $queryRaw: Mock;
+  $executeRaw: Mock;
+}
+
+export function createMockPrismaClient(): MockPrismaClient {
   return {
     parlementaire: createMockModel(),
     groupePolitique: createMockModel(),
@@ -56,10 +77,8 @@ export function createMockPrismaClient() {
     dossierLegislatif: createMockModel(),
     $connect: vi.fn(),
     $disconnect: vi.fn(),
-    $transaction: vi.fn((callback: (tx: unknown) => Promise<unknown>) => callback(createMockPrismaClient())),
+    $transaction: vi.fn(),
     $queryRaw: vi.fn(),
     $executeRaw: vi.fn(),
-  } as unknown as PrismaClient & { [key: string]: MockPrismaModel };
+  };
 }
-
-export type MockPrismaClient = ReturnType<typeof createMockPrismaClient>;

@@ -2,13 +2,12 @@
 // Tests unitaires - Service Parlementaires
 // =============================================================================
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { ParlementairesService } from './parlementaires.service';
 import { createMockPrismaClient, createMockRedisClient } from '../../test/mocks';
 import {
   mockParlementaireWithRelations,
   mockParlementaireList,
-  mockScrutin,
   mockVote,
 } from '../../test/fixtures';
 

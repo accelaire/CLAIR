@@ -238,8 +238,7 @@ describe('errorHandler', () => {
 
   it('devrait gérer les erreurs inconnues en production', () => {
     const reply = createMockReply();
-    const originalEnv = process.env.NODE_ENV;
-    process.env.NODE_ENV = 'production';
+    vi.stubEnv('NODE_ENV', 'production');
 
     const error = new Error('Secret error message');
     errorHandler(error, mockRequest, reply as any);
@@ -251,12 +250,12 @@ describe('errorHandler', () => {
       message: 'Une erreur est survenue',
     });
 
-    process.env.NODE_ENV = originalEnv;
+    vi.unstubAllEnvs();
   });
 
   it('devrait inclure le message et stack en développement', () => {
     const reply = createMockReply();
-    process.env.NODE_ENV = 'test';
+    vi.stubEnv('NODE_ENV', 'test');
 
     const error = new Error('Debug message');
     errorHandler(error, mockRequest, reply as any);
@@ -267,5 +266,7 @@ describe('errorHandler', () => {
         stack: expect.any(String),
       })
     );
+
+    vi.unstubAllEnvs();
   });
 });

@@ -11,9 +11,10 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 // Mock environment variables for tests
-process.env.NODE_ENV = 'test';
-process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
-process.env.REDIS_URL = 'redis://localhost:6379';
+vi.stubEnv('NODE_ENV', 'test');
+vi.stubEnv('DATABASE_URL', 'postgresql://test:test@localhost:5432/test');
+vi.stubEnv('REDIS_URL', 'redis://localhost:6379');
