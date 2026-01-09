@@ -104,7 +104,7 @@ function StatCard({
       </div>
       <div className="mt-2 flex items-baseline gap-2 flex-wrap">
         <span className="text-2xl font-bold">
-          {value !== null ? `${value}${suffix}` : 'N/A'}
+          {value !== null ? `${typeof value === 'number' ? value.toLocaleString('fr-FR') : value}${suffix}` : 'N/A'}
         </span>
         {subtitle && (
           <span className="text-sm text-muted-foreground">{subtitle}</span>

@@ -191,7 +191,7 @@ function StatCard({
       </div>
       <div className="mt-1.5 sm:mt-2 flex items-baseline gap-1 sm:gap-2 flex-wrap">
         <span className="text-xl sm:text-2xl font-bold">
-          {value}
+          {typeof value === 'number' ? value.toLocaleString('fr-FR') : value}
           {suffix}
         </span>
         {subtitle && (
@@ -458,7 +458,7 @@ export default function GroupeDetailPage() {
               )}
               <span className="text-xs sm:text-sm text-muted-foreground flex items-center gap-1">
                 <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                {groupe.membresActifsCount} {membreLabel}
+                {groupe.membresActifsCount.toLocaleString('fr-FR')} {membreLabel}
                 {groupe.membresActifsCount > 1 ? 's' : ''} actif
                 {groupe.membresActifsCount > 1 ? 's' : ''}
               </span>
@@ -499,7 +499,7 @@ export default function GroupeDetailPage() {
         />
         <StatCard
           label="Amendements déposés"
-          value={groupe.totauxAmendements.toLocaleString()}
+          value={groupe.totauxAmendements.toLocaleString('fr-FR')}
           icon={FileEdit}
         />
       </div>
@@ -818,7 +818,7 @@ export default function GroupeDetailPage() {
       <section>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold">
-            Membres du groupe ({groupe.membres.length})
+            Membres du groupe ({groupe.membres.length.toLocaleString('fr-FR')})
           </h2>
         </div>
 

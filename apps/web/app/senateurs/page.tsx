@@ -150,7 +150,7 @@ function SenateursPageContent() {
         <div>
           <h1 className="text-3xl font-bold">Sénateurs</h1>
           <p className="mt-2 text-muted-foreground">
-            {total > 0 ? total : '—'} sénateurs sur 348 sièges — Session 2025-2026
+            {total > 0 ? total.toLocaleString('fr-FR') : '—'} sénateurs sur 348 sièges — Session 2025-2026
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Source : <a href="https://data.senat.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.senat.fr</a>
@@ -247,7 +247,7 @@ function SenateursPageContent() {
       {senateurs.length > 0 && (
         <>
           <div className="mb-4 text-sm text-muted-foreground">
-            {total} résultat{total > 1 ? 's' : ''}
+            {total.toLocaleString('fr-FR')} résultat{total > 1 ? 's' : ''}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
