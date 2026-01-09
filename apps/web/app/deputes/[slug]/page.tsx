@@ -26,6 +26,7 @@ import {
   ChevronUp,
   Loader2,
   GitCompareArrows,
+  AlertTriangle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
@@ -68,6 +69,7 @@ interface DeputeDetail {
 interface VoteItem {
   id: string;
   position: string;
+  groupePosition: string | null;
   scrutin: {
     id: string;
     numero: number;
@@ -104,7 +106,7 @@ function StatCard({
       </div>
       <div className="mt-2 flex items-baseline gap-2 flex-wrap">
         <span className="text-2xl font-bold">
-          {value !== null ? `${value}${suffix}` : 'N/A'}
+          {value !== null ? `${typeof value === 'number' ? value.toLocaleString('fr-FR') : value}${suffix}` : 'N/A'}
         </span>
         {subtitle && (
           <span className="text-sm text-muted-foreground">{subtitle}</span>
@@ -232,9 +234,9 @@ function InterventionsList({ slug }: { slug: string }) {
               ))}
             </div>
           )}
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            {/* Lien vers le scrutin associé */}
-            {intervention.scrutin && (
+          {/* Lien vers le scrutin associé */}
+          {intervention.scrutin && (
+            <div className="mt-2">
               <Link
                 href={`/scrutins/${intervention.scrutin.numero}`}
                 className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 hover:underline bg-indigo-50 px-2 py-1 rounded"
@@ -247,18 +249,8 @@ function InterventionsList({ slug }: { slug: string }) {
                   {intervention.scrutin.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
                 </span>
               </Link>
-            )}
-            {intervention.sourceUrl && (
-              <a
-                href={intervention.sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-primary hover:underline"
-              >
-                Voir la source →
-              </a>
-            )}
-          </div>
+            </div>
+          )}
         </div>
           ))}
 
@@ -496,6 +488,7 @@ function AmendementsList({ slug }: { slug: string }) {
 
 function VotesList({ slug }: { slug: string }) {
   const [dateRange, setDateRange] = useUrlDateRange();
+  const [dissidentOnly, setDissidentOnly] = useState(false);
   const dateParams = dateRangeToParams(dateRange);
 
   const {
@@ -506,12 +499,13 @@ function VotesList({ slug }: { slug: string }) {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['depute-votes', slug, dateParams],
+    queryKey: ['depute-votes', slug, dateParams, dissidentOnly],
     queryFn: ({ pageParam = 1 }) =>
       api.get(`/deputes/${slug}/votes`, {
         params: {
           page: pageParam,
           limit: 20,
+          dissidentOnly,
           ...dateParams,
         },
       }).then((res) => res.data),
@@ -528,10 +522,29 @@ function VotesList({ slug }: { slug: string }) {
   });
 
   const votes = data?.pages.flatMap((page) => page.data) ?? [];
+  const total = data?.pages[0]?.meta?.total ?? 0;
 
   return (
     <div className="space-y-4">
-      <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Filtrer par période" />
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+        <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Filtrer par période" />
+        <button
+          onClick={() => setDissidentOnly(!dissidentOnly)}
+          className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+            dissidentOnly
+              ? 'bg-orange-100 border-orange-300 text-orange-700 hover:bg-orange-200'
+              : 'bg-background border-input hover:bg-accent'
+          }`}
+        >
+          <AlertTriangle className={`h-4 w-4 ${dissidentOnly ? 'text-orange-600' : 'text-muted-foreground'}`} />
+          Votes dissidents
+          {dissidentOnly && total > 0 && (
+            <span className="px-1.5 py-0.5 rounded bg-orange-200 text-orange-800 text-xs">
+              {total.toLocaleString('fr-FR')}
+            </span>
+          )}
+        </button>
+      </div>
 
       {isLoading ? (
         <div className="space-y-4">
@@ -548,43 +561,55 @@ function VotesList({ slug }: { slug: string }) {
         </p>
       ) : (
         <div className="space-y-3">
-      {votes.map((vote: VoteItem) => (
-        <Link
-          key={vote.id}
-          href={`/scrutins/${vote.scrutin.numero}`}
-          className="block rounded-lg border bg-card p-4 transition-colors hover:bg-accent"
-        >
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              <p className="font-medium line-clamp-2">{vote.scrutin.titre}</p>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <span>
-                  {new Date(vote.scrutin.date).toLocaleDateString('fr-FR', {
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                  })}
-                </span>
-                <span>•</span>
-                <span className={vote.scrutin.sort === 'adopte' ? 'text-green-600' : 'text-red-600'}>
-                  {vote.scrutin.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
-                </span>
-                {vote.scrutin.tags.length > 0 && (
-                  <>
-                    <span>•</span>
-                    {vote.scrutin.tags.slice(0, 2).map((tag) => (
-                      <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                        {tag}
-                      </span>
-                    ))}
-                  </>
+      {votes.map((vote: VoteItem) => {
+        const isDissident = vote.groupePosition && vote.position !== vote.groupePosition && vote.position !== 'absent';
+        return (
+          <Link
+            key={vote.id}
+            href={`/scrutins/${vote.scrutin.numero}`}
+            className={`block rounded-lg border bg-card p-4 transition-colors hover:bg-accent ${
+              isDissident ? 'border-orange-200 bg-orange-50/50' : ''
+            }`}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium line-clamp-2">{vote.scrutin.titre}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <span>
+                    {new Date(vote.scrutin.date).toLocaleDateString('fr-FR', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                    })}
+                  </span>
+                  <span>•</span>
+                  <span className={vote.scrutin.sort === 'adopte' ? 'text-green-600' : 'text-red-600'}>
+                    {vote.scrutin.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
+                  </span>
+                  {vote.scrutin.tags.length > 0 && (
+                    <>
+                      <span>•</span>
+                      {vote.scrutin.tags.slice(0, 2).map((tag) => (
+                        <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                          {tag}
+                        </span>
+                      ))}
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-col items-end gap-1.5">
+                <VotePositionBadge position={vote.position} />
+                {isDissident && vote.groupePosition && (
+                  <span className="text-xs text-orange-600 font-medium">
+                    Groupe: {vote.groupePosition === 'pour' ? 'Pour' : vote.groupePosition === 'contre' ? 'Contre' : 'Abstention'}
+                  </span>
                 )}
               </div>
             </div>
-            <VotePositionBadge position={vote.position} />
-          </div>
-        </Link>
-      ))}
+          </Link>
+        );
+      })}
 
           {/* Sentinel pour le scroll infini */}
           <div ref={loadMoreRef} className="h-4" />
@@ -705,13 +730,16 @@ export default function DeputeDetailPage() {
 
           {/* Groupe */}
           {depute.groupe && (
-            <div className="mt-2 flex items-center justify-center gap-2 md:justify-start">
+            <Link
+              href={`/groupes/assemblee/${depute.groupe.slug}`}
+              className="mt-2 flex items-center justify-center gap-2 md:justify-start hover:underline transition-colors"
+            >
               <span
                 className="h-3 w-3 rounded-full"
                 style={{ backgroundColor: depute.groupe.couleur || '#888' }}
               />
               <span className="text-lg">{depute.groupe.nomComplet || depute.groupe.nom}</span>
-            </div>
+            </Link>
           )}
 
           {/* Infos secondaires */}
@@ -792,10 +820,10 @@ export default function DeputeDetailPage() {
           <h2 className="mb-4 text-xl font-semibold">Statistiques</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
-              label="Présence (solennelle)"
-              value={depute.stats.presenceSolennel}
+              label="Présence solennelle"
+              value={depute.stats.presenceSolennel ?? depute.stats.presence}
               suffix="%"
-              subtitle={`Total: ${depute.stats.presence}%`}
+              subtitle={`${depute.stats.presence}% tous scrutins`}
               icon={TrendingUp}
             />
             <StatCard

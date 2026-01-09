@@ -271,14 +271,14 @@ function LobbyingPageContent() {
               <Building2 className="h-4 w-4" />
               <span className="text-sm">Lobbyistes</span>
             </div>
-            <p className="text-2xl font-bold">{statsData.totalLobbyistes}</p>
+            <p className="text-2xl font-bold">{statsData.totalLobbyistes.toLocaleString('fr-FR')}</p>
           </div>
           <div className="rounded-lg border bg-card p-4">
             <div className="flex items-center gap-2 text-muted-foreground mb-1">
               <Briefcase className="h-4 w-4" />
               <span className="text-sm">Actions déclarées</span>
             </div>
-            <p className="text-2xl font-bold">{statsData.totalActions}</p>
+            <p className="text-2xl font-bold">{statsData.totalActions.toLocaleString('fr-FR')}</p>
           </div>
           <div className="rounded-lg border bg-card p-4">
             <div className="flex items-center gap-2 text-muted-foreground mb-1">
@@ -342,7 +342,7 @@ function LobbyingPageContent() {
             <option value="">Tous les secteurs</option>
             {secteursData?.slice(0, 20).map((s: { name: string; count: number }) => (
               <option key={s.name} value={s.name}>
-                {s.name} ({s.count})
+                {s.name} ({s.count.toLocaleString('fr-FR')})
               </option>
             ))}
           </select>
@@ -407,7 +407,7 @@ function LobbyingPageContent() {
       {lobbyistes.length > 0 && (
         <>
           <div className="mb-4 text-sm text-muted-foreground">
-            {total} représentant{total > 1 ? 's' : ''} d&apos;intérêts
+            {total.toLocaleString('fr-FR')} représentant{total > 1 ? 's' : ''} d&apos;intérêts
           </div>
 
           <div className="space-y-3">
@@ -451,12 +451,12 @@ function LobbyingPageContent() {
                         </div>
                       )}
                       <div className="text-center">
-                        <p className="font-semibold">{lobbyiste.actionsCount}</p>
+                        <p className="font-semibold">{lobbyiste.actionsCount.toLocaleString('fr-FR')}</p>
                         <p className="text-xs text-muted-foreground">Actions</p>
                       </div>
                       {lobbyiste.nbLobbyistes && lobbyiste.nbLobbyistes > 0 && (
                         <div className="text-center">
-                          <p className="font-semibold">{lobbyiste.nbLobbyistes}</p>
+                          <p className="font-semibold">{lobbyiste.nbLobbyistes.toLocaleString('fr-FR')}</p>
                           <p className="text-xs text-muted-foreground">Lobbyistes</p>
                         </div>
                       )}

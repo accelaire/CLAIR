@@ -23,6 +23,7 @@ export interface GroupeWithStats {
   membresActifsCount: number;
   // Stats pré-calculées (depuis l'ingestion quotidienne)
   statsPresenceMoyenne: number | null;
+  statsPresenceSolennelMoyenne: number | null;
   statsLoyauteMoyenne: number | null;
   statsCohesion: number | null;
 }
@@ -46,6 +47,7 @@ export interface GroupeDetail extends GroupeWithStats {
   }[];
   stats: {
     presenceMoyenne: number;
+    presenceSolennelMoyenne: number | null;
     loyauteMoyenne: number;
     participationMoyenne: number;
   };
@@ -104,6 +106,7 @@ export class GroupesService {
       membresActifsCount: g.statsMembresActifs ?? g._count.parlementaires,
       // Stats pré-calculées depuis l'ingestion
       statsPresenceMoyenne: g.statsPresenceMoyenne,
+      statsPresenceSolennelMoyenne: g.statsPresenceSolennelMoyenne,
       statsLoyauteMoyenne: g.statsLoyauteMoyenne,
       statsCohesion: g.statsCohesion,
     }));
@@ -214,6 +217,7 @@ export class GroupesService {
       totauxAmendements,
       // Stats pré-calculées
       statsPresenceMoyenne: groupe.statsPresenceMoyenne,
+      statsPresenceSolennelMoyenne: groupe.statsPresenceSolennelMoyenne,
       statsLoyauteMoyenne: groupe.statsLoyauteMoyenne,
       statsCohesion: groupe.statsCohesion,
       membres: membres.map((m) => ({
@@ -228,6 +232,7 @@ export class GroupesService {
       })),
       stats: {
         presenceMoyenne,
+        presenceSolennelMoyenne: groupe.statsPresenceSolennelMoyenne ?? null,
         loyauteMoyenne,
         participationMoyenne: presenceMoyenne,
       },

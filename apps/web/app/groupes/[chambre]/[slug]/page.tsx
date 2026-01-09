@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
@@ -70,6 +70,7 @@ interface GroupeDetail {
   membres: Membre[];
   stats: {
     presenceMoyenne: number;
+    presenceSolennelMoyenne: number | null;
     loyauteMoyenne: number;
     participationMoyenne: number;
   };
@@ -190,7 +191,7 @@ function StatCard({
       </div>
       <div className="mt-1.5 sm:mt-2 flex items-baseline gap-1 sm:gap-2 flex-wrap">
         <span className="text-xl sm:text-2xl font-bold">
-          {value}
+          {typeof value === 'number' ? value.toLocaleString('fr-FR') : value}
           {suffix}
         </span>
         {subtitle && (
@@ -332,6 +333,7 @@ function MembreCard({ membre, chambre }: { membre: Membre; chambre: string }) {
 
 export default function GroupeDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const chambre = params.chambre as string;
   const slug = params.slug as string;
 
@@ -400,13 +402,13 @@ export default function GroupeDetailPage() {
     <div className="container mx-auto px-4 py-8 overflow-x-hidden">
       {/* Breadcrumb */}
       <div className="mb-6">
-        <Link
-          href="/groupes"
+        <button
+          onClick={() => router.back()}
           className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
-          Retour aux groupes
-        </Link>
+          Retour
+        </button>
       </div>
 
       {/* Header */}
@@ -456,7 +458,7 @@ export default function GroupeDetailPage() {
               )}
               <span className="text-xs sm:text-sm text-muted-foreground flex items-center gap-1">
                 <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                {groupe.membresActifsCount} {membreLabel}
+                {groupe.membresActifsCount.toLocaleString('fr-FR')} {membreLabel}
                 {groupe.membresActifsCount > 1 ? 's' : ''} actif
                 {groupe.membresActifsCount > 1 ? 's' : ''}
               </span>
@@ -483,9 +485,10 @@ export default function GroupeDetailPage() {
           icon={Users}
         />
         <StatCard
-          label="Participation moyenne"
-          value={groupe.stats.presenceMoyenne}
+          label="Présence solennelle"
+          value={groupe.stats.presenceSolennelMoyenne ?? groupe.stats.presenceMoyenne}
           suffix="%"
+          subtitle={`${groupe.stats.presenceMoyenne}% tous scrutins`}
           icon={Vote}
         />
         <StatCard
@@ -496,7 +499,7 @@ export default function GroupeDetailPage() {
         />
         <StatCard
           label="Amendements déposés"
-          value={groupe.totauxAmendements.toLocaleString()}
+          value={groupe.totauxAmendements.toLocaleString('fr-FR')}
           icon={FileEdit}
         />
       </div>
@@ -575,7 +578,7 @@ export default function GroupeDetailPage() {
             <div className="space-y-4 min-w-0">
               <div className="grid grid-cols-2 gap-3 sm:gap-4">
                 <div className="rounded-xl border bg-card p-3 sm:p-4">
-                  <p className="text-xs sm:text-sm text-muted-foreground">Participation</p>
+                  <p className="text-xs sm:text-sm text-muted-foreground">Participation aux scrutins</p>
                   <p className="text-2xl sm:text-3xl font-bold text-green-600">{votingStats.tauxParticipation}%</p>
                 </div>
                 <div className="rounded-xl border bg-card p-3 sm:p-4">
@@ -815,7 +818,7 @@ export default function GroupeDetailPage() {
       <section>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold">
-            Membres du groupe ({groupe.membres.length})
+            Membres du groupe ({groupe.membres.length.toLocaleString('fr-FR')})
           </h2>
         </div>
 

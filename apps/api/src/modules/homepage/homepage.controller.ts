@@ -5,8 +5,8 @@
 
 import { FastifyPluginAsync } from 'fastify';
 
-// Cache 12 heures - données homepage changent peu (sync quotidienne)
-const CACHE_TTL = 43200;
+// Cache 1 heure - route optimisée
+const CACHE_TTL = 3600;
 
 interface HomepageStats {
   deputes: number;
@@ -55,6 +55,13 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
       const interventionsCount = await fastify.prisma.intervention.count();
       const amendementsCount = await fastify.prisma.amendement.count();
 
+      // Dernière mise à jour (dernier sync réussi)
+      const lastSync = await fastify.prisma.syncLog.findFirst({
+        where: { statut: 'completed' },
+        orderBy: { completedAt: 'desc' },
+        select: { completedAt: true },
+      });
+
       const recentScrutins = await fastify.prisma.scrutin.findMany({
         where: {
           importance: { gte: 3 },
@@ -87,9 +94,10 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
       const result = {
         stats,
         recentScrutins,
+        lastUpdate: lastSync?.completedAt || null,
       };
 
-      // Mettre en cache (12 heures)
+      // Mettre en cache (1 heure)
       await fastify.redis.setex(cacheKey, CACHE_TTL, JSON.stringify(result));
 
       return result;
