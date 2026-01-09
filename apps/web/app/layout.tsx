@@ -11,19 +11,26 @@ const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: {
-    default: 'CLAIR - Transparence Politique en France',
-    template: '%s | CLAIR',
+    default: 'CLAIR.vote - Transparence Politique en France',
+    template: '%s | CLAIR.vote',
   },
-  description: 'Plateforme citoyenne de transparence politique. Analysez les votes des parlementaires, le lobbying et les promesses électorales en France.',
+  description: 'CLAIR.vote : analysez les votes des députés et sénateurs, suivez le lobbying et la transparence politique en France. Plateforme citoyenne gratuite.',
   keywords: ['politique', 'france', 'parlementaires', 'députés', 'sénateurs', 'votes', 'assemblée nationale', 'sénat', 'lobbying', 'transparence'],
   authors: [{ name: 'CLAIR' }],
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote'),
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: '48x48' },
+      { url: '/icon.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: '/apple-icon.png',
+  },
   openGraph: {
-    title: 'CLAIR - Transparence Politique en France',
-    description: 'Plateforme citoyenne pour analyser les votes des députés et sénateurs, suivre le lobbying et les promesses électorales.',
+    title: 'CLAIR.vote - Transparence Politique en France',
+    description: 'CLAIR.vote : analysez les votes des députés et sénateurs, suivez le lobbying et la transparence politique en France.',
     type: 'website',
     locale: 'fr_FR',
-    siteName: 'CLAIR',
+    siteName: 'CLAIR.vote',
     images: [
       {
         url: '/opengraph-image.png',
@@ -35,8 +42,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'CLAIR - Transparence Politique en France',
-    description: 'Plateforme citoyenne pour analyser les votes des députés et sénateurs, suivre le lobbying et les promesses électorales.',
+    title: 'CLAIR.vote - Transparence Politique en France',
+    description: 'CLAIR.vote : analysez les votes des députés et sénateurs, suivez le lobbying et la transparence politique en France.',
     images: ['/opengraph-image.png'],
   },
 };
