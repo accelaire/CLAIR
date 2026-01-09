@@ -212,6 +212,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
             tag: { type: 'string', description: 'Filtrer par tag de scrutin' },
             dateFrom: { type: 'string', format: 'date' },
             dateTo: { type: 'string', format: 'date' },
+            dissidentOnly: { type: 'boolean', default: false, description: 'Afficher uniquement les votes dissidents' },
           },
         },
       },
@@ -221,7 +222,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
 
         const parlementaire = await fastify.prisma.parlementaire.findUnique({
           where: { slug },
-          select: { id: true, chambre: true },
+          select: { id: true, chambre: true, groupeId: true },
         });
 
         if (!parlementaire) {
@@ -232,7 +233,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           throw new ApiError(404, `${chambreLabel.slice(0, -1)} non trouvé`);
         }
 
-        const result = await service.getParlementaireVotes(parlementaire.id, query);
+        const result = await service.getParlementaireVotes(parlementaire.id, parlementaire.groupeId, query);
         return result;
       },
     });
