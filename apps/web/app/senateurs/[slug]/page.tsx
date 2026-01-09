@@ -104,7 +104,7 @@ function StatCard({
         <span className="text-sm">{label}</span>
       </div>
       <div className="mt-2 text-2xl font-bold">
-        {value}
+        {typeof value === 'number' ? value.toLocaleString('fr-FR') : value}
         {suffix}
       </div>
     </div>

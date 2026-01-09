@@ -89,7 +89,7 @@ function GroupeCard({ groupe }: { groupe: GroupePolitique }) {
           {/* Membres */}
           <div className="flex items-center gap-1 sm:gap-1.5 text-xs sm:text-sm text-muted-foreground">
             <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
-            <span className="font-medium text-foreground">{groupe.membresCount}</span>
+            <span className="font-medium text-foreground">{groupe.membresCount.toLocaleString('fr-FR')}</span>
             <span className="hidden xs:inline">membre{groupe.membresCount > 1 ? 's' : ''}</span>
           </div>
 
@@ -234,7 +234,7 @@ function GroupesPageContent() {
                   <Building2 className="h-5 w-5 text-purple-600 shrink-0" />
                   <h2 className="text-lg sm:text-xl font-semibold">Assemblée nationale</h2>
                   <span className="text-xs sm:text-sm text-muted-foreground">
-                    {filters.search ? `${assemblee.length}/${allAssemblee.length} groupes` : `${allAssemblee.length} groupes`}, {filters.search ? totalMembresAN : totalMembresANAll} députés
+                    {filters.search ? `${assemblee.length}/${allAssemblee.length} groupes` : `${allAssemblee.length} groupes`}, {(filters.search ? totalMembresAN : totalMembresANAll).toLocaleString('fr-FR')} députés
                   </span>
                 </div>
                 <Link
@@ -284,7 +284,7 @@ function GroupesPageContent() {
                   <Building2 className="h-5 w-5 text-blue-600 shrink-0" />
                   <h2 className="text-lg sm:text-xl font-semibold">Sénat</h2>
                   <span className="text-xs sm:text-sm text-muted-foreground">
-                    {filters.search ? `${senat.length}/${allSenat.length} groupes` : `${allSenat.length} groupes`}, {filters.search ? totalMembresSenat : totalMembresSenatAll} sénateurs
+                    {filters.search ? `${senat.length}/${allSenat.length} groupes` : `${allSenat.length} groupes`}, {(filters.search ? totalMembresSenat : totalMembresSenatAll).toLocaleString('fr-FR')} sénateurs
                   </span>
                 </div>
                 <Link

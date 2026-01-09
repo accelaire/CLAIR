@@ -311,7 +311,7 @@ export default function RecherchePage() {
       {data && !isLoading && (
         <>
           <div className="mb-4 text-sm text-muted-foreground">
-            {data.data.length} résultat{data.data.length > 1 ? 's' : ''} pour &quot;{data.meta.query}&quot;
+            {data.data.length.toLocaleString('fr-FR')} résultat{data.data.length > 1 ? 's' : ''} pour &quot;{data.meta.query}&quot;
           </div>
 
           {data.data.length === 0 ? (

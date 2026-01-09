@@ -176,14 +176,14 @@ export default function LobbyisteDetailPage() {
             <Users className="h-4 w-4" />
             <span className="text-sm">Lobbyistes déclarés</span>
           </div>
-          <p className="text-xl font-bold">{lobbyiste.nbLobbyistes || 'Non déclaré'}</p>
+          <p className="text-xl font-bold">{lobbyiste.nbLobbyistes ? lobbyiste.nbLobbyistes.toLocaleString('fr-FR') : 'Non déclaré'}</p>
         </div>
         <div className="rounded-lg border bg-card p-4">
           <div className="flex items-center gap-2 text-muted-foreground mb-1">
             <Briefcase className="h-4 w-4" />
             <span className="text-sm">Actions déclarées</span>
           </div>
-          <p className="text-xl font-bold">{lobbyiste.actions.length}</p>
+          <p className="text-xl font-bold">{lobbyiste.actions.length.toLocaleString('fr-FR')}</p>
         </div>
         {lobbyiste.ville && (
           <div className="rounded-lg border bg-card p-4">
@@ -228,7 +228,7 @@ export default function LobbyisteDetailPage() {
       <div>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-4">
           <h2 className="text-xl font-semibold">
-            Actions de lobbying ({filteredActions.length}{filteredActions.length !== lobbyiste.actions.length ? ` / ${lobbyiste.actions.length}` : ''})
+            Actions de lobbying ({filteredActions.length.toLocaleString('fr-FR')}{filteredActions.length !== lobbyiste.actions.length ? ` / ${lobbyiste.actions.length.toLocaleString('fr-FR')}` : ''})
           </h2>
         </div>
 
