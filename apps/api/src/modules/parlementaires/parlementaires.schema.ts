@@ -55,6 +55,7 @@ export const parlementaireVotesQuerySchema = z.object({
   tag: z.string().optional().describe('Filtrer par tag de scrutin'),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
+  dissidentOnly: z.coerce.boolean().default(false).describe('Afficher uniquement les votes dissidents (différents du groupe)'),
 });
 
 // =============================================================================

@@ -411,56 +411,176 @@ export class ParlementairesService {
   // VOTES D'UN PARLEMENTAIRE
   // ===========================================================================
 
-  async getParlementaireVotes(parlementaireId: string, query: ParlementaireVotesQuery) {
-    const { page, limit, position, tag, dateFrom, dateTo } = query;
-    const skip = (page - 1) * limit;
+  async getParlementaireVotes(parlementaireId: string, groupeId: string | null, query: ParlementaireVotesQuery) {
+    const { page, limit, position, tag, dateFrom, dateTo, dissidentOnly } = query;
+    const offset = (page - 1) * limit;
 
-    const where: Prisma.VoteWhereInput = {
-      parlementaireId,
-      ...(position && { position }),
-      scrutin: {
-        ...(tag && { tags: { has: tag } }),
-        ...((dateFrom || dateTo) && {
-          date: {
-            ...(dateFrom && { gte: dateFrom }),
-            ...(dateTo && { lte: dateTo }),
-          },
-        }),
-      },
-    };
+    // Si dissidentOnly et pas de groupe, retourner vide
+    if (dissidentOnly && !groupeId) {
+      return {
+        data: [],
+        meta: { total: 0, page, limit, totalPages: 0, hasNext: false, hasPrev: false },
+      };
+    }
 
-    const [votes, total] = await Promise.all([
-      this.prisma.vote.findMany({
-        where,
-        include: {
-          scrutin: {
-            select: {
-              id: true,
-              numero: true,
-              chambre: true,
-              date: true,
-              titre: true,
-              sort: true,
-              typeVote: true,
-              tags: true,
-              importance: true,
-              nombrePour: true,
-              nombreContre: true,
-              nombreAbstention: true,
-            },
-          },
-        },
-        orderBy: [{ scrutin: { date: 'desc' } }, { scrutin: { numero: 'desc' } }],
-        skip,
-        take: limit,
-      }),
-      this.prisma.vote.count({ where }),
+    // Build dynamic WHERE conditions
+    const conditions: string[] = ['v.parlementaire_id = $1'];
+    const countConditions: string[] = ['v.parlementaire_id = $1'];
+    const params: (string | Date)[] = [parlementaireId];
+    let paramIndex = 2;
+
+    if (position) {
+      conditions.push(`v.position = $${paramIndex}`);
+      countConditions.push(`v.position = $${paramIndex}`);
+      params.push(position);
+      paramIndex++;
+    }
+
+    if (tag) {
+      conditions.push(`$${paramIndex} = ANY(s.tags)`);
+      countConditions.push(`$${paramIndex} = ANY(s.tags)`);
+      params.push(tag);
+      paramIndex++;
+    }
+
+    if (dateFrom) {
+      conditions.push(`s.date >= $${paramIndex}`);
+      countConditions.push(`s.date >= $${paramIndex}`);
+      params.push(dateFrom);
+      paramIndex++;
+    }
+
+    if (dateTo) {
+      conditions.push(`s.date <= $${paramIndex}`);
+      countConditions.push(`s.date <= $${paramIndex}`);
+      params.push(dateTo);
+      paramIndex++;
+    }
+
+    // Add dissident filter if needed
+    if (dissidentOnly && groupeId) {
+      conditions.push(`v.position != gm.majority_position`);
+      conditions.push(`gm.majority_position IS NOT NULL`);
+      countConditions.push(`v.position != gm.majority_position`);
+      countConditions.push(`gm.majority_position IS NOT NULL`);
+    }
+
+    const whereClause = conditions.join(' AND ');
+    const countWhereClause = countConditions.join(' AND ');
+
+    // Use raw SQL with group_majority CTE for efficiency
+    // This calculates the group's majority position for each scrutin
+    const groupeIdParam = groupeId || '00000000-0000-0000-0000-000000000000';
+
+    interface VoteRow {
+      id: string;
+      position: string;
+      groupe_position: string | null;
+      scrutin_id: string;
+      scrutin_numero: number;
+      scrutin_chambre: string;
+      scrutin_session: string | null;
+      scrutin_date: Date;
+      scrutin_titre: string;
+      scrutin_sort: string;
+      scrutin_type_vote: string;
+      scrutin_tags: string[];
+      scrutin_importance: number;
+      scrutin_nombre_pour: number;
+      scrutin_nombre_contre: number;
+      scrutin_nombre_abstention: number;
+    }
+
+    const votesQuery = `
+      WITH group_majority AS (
+        SELECT
+          gv.scrutin_id,
+          gv.position as majority_position,
+          COUNT(*) as vote_count,
+          ROW_NUMBER() OVER (PARTITION BY gv.scrutin_id ORDER BY COUNT(*) DESC) as rn
+        FROM votes gv
+        JOIN parlementaires p ON gv.parlementaire_id = p.id
+        WHERE p.groupe_id = '${groupeIdParam}'
+          AND gv.position != 'absent'
+        GROUP BY gv.scrutin_id, gv.position
+      )
+      SELECT
+        v.id,
+        v.position,
+        gm.majority_position as groupe_position,
+        s.id as scrutin_id,
+        s.numero as scrutin_numero,
+        s.chambre as scrutin_chambre,
+        s.session as scrutin_session,
+        s.date as scrutin_date,
+        s.titre as scrutin_titre,
+        s.sort as scrutin_sort,
+        s.type_vote as scrutin_type_vote,
+        s.tags as scrutin_tags,
+        s.importance as scrutin_importance,
+        s.nombre_pour as scrutin_nombre_pour,
+        s.nombre_contre as scrutin_nombre_contre,
+        s.nombre_abstention as scrutin_nombre_abstention
+      FROM votes v
+      JOIN scrutins s ON v.scrutin_id = s.id
+      LEFT JOIN group_majority gm ON v.scrutin_id = gm.scrutin_id AND gm.rn = 1
+      WHERE ${whereClause}
+      ORDER BY s.date DESC, s.numero DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+
+    const countQuery = `
+      WITH group_majority AS (
+        SELECT
+          gv.scrutin_id,
+          gv.position as majority_position,
+          COUNT(*) as vote_count,
+          ROW_NUMBER() OVER (PARTITION BY gv.scrutin_id ORDER BY COUNT(*) DESC) as rn
+        FROM votes gv
+        JOIN parlementaires p ON gv.parlementaire_id = p.id
+        WHERE p.groupe_id = '${groupeIdParam}'
+          AND gv.position != 'absent'
+        GROUP BY gv.scrutin_id, gv.position
+      )
+      SELECT COUNT(*)::int as total
+      FROM votes v
+      JOIN scrutins s ON v.scrutin_id = s.id
+      LEFT JOIN group_majority gm ON v.scrutin_id = gm.scrutin_id AND gm.rn = 1
+      WHERE ${countWhereClause}
+    `;
+
+    const [votesResult, countResult] = await Promise.all([
+      this.prisma.$queryRawUnsafe<VoteRow[]>(votesQuery, ...params),
+      this.prisma.$queryRawUnsafe<{ total: number }[]>(countQuery, ...params),
     ]);
 
+    const total = countResult[0]?.total || 0;
     const totalPages = Math.ceil(total / limit);
 
+    // Transform results to match expected format
+    const data = votesResult.map((row) => ({
+      id: row.id,
+      position: row.position,
+      groupePosition: row.groupe_position,
+      scrutin: {
+        id: row.scrutin_id,
+        numero: row.scrutin_numero,
+        chambre: row.scrutin_chambre,
+        session: row.scrutin_session,
+        date: row.scrutin_date,
+        titre: row.scrutin_titre,
+        sort: row.scrutin_sort,
+        typeVote: row.scrutin_type_vote,
+        tags: row.scrutin_tags,
+        importance: row.scrutin_importance,
+        nombrePour: row.scrutin_nombre_pour,
+        nombreContre: row.scrutin_nombre_contre,
+        nombreAbstention: row.scrutin_nombre_abstention,
+      },
+    }));
+
     return {
-      data: votes,
+      data,
       meta: {
         total,
         page,
