@@ -45,6 +45,7 @@
     "tsup": "^8.0.1",
     "tsx": "^4.6.2",
     "typescript": "^5.3.0",
-    "vitest": "^1.1.0"
+    "vitest": "^1.1.0",
+    "@vitest/coverage-v8": "^1.1.0"
   }
 }

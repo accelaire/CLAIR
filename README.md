@@ -225,16 +225,107 @@ Variables principales :
 
 ## Tests
 
+Le projet utilise [Vitest](https://vitest.dev/) pour les tests unitaires et d'intégration.
+
+### Lancer les tests
+
 ```bash
-# Tests unitaires
+# Tous les tests
 pnpm test
 
-# Tests E2E
-pnpm test:e2e
+# Tests en mode watch (pendant le dev)
+pnpm --filter @clair/api test:watch
 
-# Avec couverture
-pnpm test -- --coverage
+# Tests avec couverture
+pnpm --filter @clair/api test -- --coverage
+
+# Tests E2E (Playwright)
+pnpm test:e2e
 ```
+
+### Structure des tests
+
+```
+apps/api/src/
+├── test/
+│   ├── setup.ts              # Configuration globale
+│   ├── mocks/
+│   │   ├── prisma.mock.ts    # Mock du client Prisma
+│   │   └── redis.mock.ts     # Mock du client Redis
+│   ├── fixtures/
+│   │   └── parlementaires.fixture.ts  # Données de test
+│   └── helpers/
+│       └── app.helper.ts     # Helper pour tests d'intégration
+├── utils/
+│   ├── errors.test.ts        # Tests des utilitaires d'erreur
+│   ├── search.test.ts        # Tests de la recherche
+│   └── geo-france.test.ts    # Tests des données géographiques
+└── modules/
+    └── parlementaires/
+        ├── parlementaires.service.test.ts      # Tests unitaires
+        └── parlementaires.controller.test.ts   # Tests d'intégration
+```
+
+### Écrire des tests
+
+**Test unitaire** (service) :
+```typescript
+import { describe, it, expect, beforeEach } from 'vitest';
+import { createMockPrismaClient, createMockRedisClient } from '../../test/mocks';
+
+describe('MonService', () => {
+  let service: MonService;
+  let mockPrisma: ReturnType<typeof createMockPrismaClient>;
+
+  beforeEach(() => {
+    mockPrisma = createMockPrismaClient();
+    service = new MonService(mockPrisma as any);
+  });
+
+  it('devrait faire quelque chose', async () => {
+    mockPrisma.maTable.findMany.mockResolvedValue([/* ... */]);
+    const result = await service.maMethode();
+    expect(result).toBeDefined();
+  });
+});
+```
+
+**Test d'intégration** (controller) :
+```typescript
+import { buildTestApp, closeTestApp, TestApp } from '../../test/helpers/app.helper';
+
+describe('MonController', () => {
+  let app: TestApp;
+
+  beforeAll(async () => {
+    app = await buildTestApp({
+      routes: async (fastify) => {
+        await fastify.register(mesRoutes, { prefix: '/api/v1/mon-endpoint' });
+      },
+    });
+  });
+
+  afterAll(() => closeTestApp(app));
+
+  it('GET / devrait retourner 200', async () => {
+    app.mockPrisma.maTable.findMany.mockResolvedValue([]);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/mon-endpoint',
+    });
+
+    expect(response.statusCode).toBe(200);
+  });
+});
+```
+
+### Couverture actuelle
+
+| Module | Couverture |
+|--------|------------|
+| `utils/` | ~96% |
+| `modules/parlementaires/` | ~65% |
 
 ---
 
