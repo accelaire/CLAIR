@@ -442,6 +442,7 @@ async function searchWithDatabase(
         id: true,
         numero: true,
         chambre: true,
+        session: true,
         date: true,
         titre: true,
         sort: true,
@@ -547,6 +548,7 @@ async function suggestFromDatabase(fastify: any, q: string, limit: number) {
         select: {
           numero: true,
           chambre: true,
+          session: true,
           titre: true,
         },
         orderBy: [{ date: 'desc' }, { numero: 'desc' }],
@@ -567,6 +569,7 @@ async function suggestFromDatabase(fastify: any, q: string, limit: number) {
         value: s.titre.length > 60 ? s.titre.substring(0, 60) + '...' : s.titre,
         numero: s.numero,
         chambre: s.chambre,
+        session: s.session,
       })),
     ];
 
