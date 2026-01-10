@@ -31,6 +31,7 @@ interface SearchResult {
   sort?: string;
   typeVote?: string;
   importance?: number;
+  session?: string;
   // Lobbyiste fields
   type?: string;
   secteur?: string;
@@ -102,7 +103,9 @@ export default function RecherchePage() {
           ? `/senateurs/${result.slug}`
           : `/deputes/${result.slug}`;
       case 'scrutin':
-        return `/scrutins/${result.numero}`;
+        const chambre = result.chambre || 'assemblee';
+        const sessionParam = chambre === 'senat' && result.session ? `&session=${result.session}` : '';
+        return `/scrutins/${result.numero}?chambre=${chambre}${sessionParam}`;
       case 'lobbyiste':
         return `/lobbying/${result.id}`;
       default:
