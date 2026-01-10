@@ -22,6 +22,7 @@ interface RecentScrutin {
   id: string;
   numero: number;
   chambre: string;
+  session?: string;
   date: string;
   titre: string;
   sort: string;
@@ -206,7 +207,7 @@ export default function HomePage() {
               {recentScrutins.slice(0, 6).map((scrutin) => (
                 <Link
                   key={scrutin.id}
-                  href={`/scrutins/${scrutin.numero}?chambre=${scrutin.chambre || 'assemblee'}`}
+                  href={`/scrutins/${scrutin.numero}?chambre=${scrutin.chambre || 'assemblee'}${scrutin.chambre === 'senat' && scrutin.session ? `&session=${scrutin.session}` : ''}`}
                   className="rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
                 >
                   <div className="flex items-center gap-2 mb-2 text-sm text-muted-foreground">

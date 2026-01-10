@@ -93,6 +93,7 @@ interface VotingStats {
     date: string;
     sort: string;
     typeVote: string;
+    session?: string;
     nombrePour: number;
     nombreContre: number;
     nombreAbstention: number;
@@ -596,7 +597,7 @@ export default function GroupeDetailPage() {
                   {votingStats.scrutinsRecents.map((scrutin) => (
                     <Link
                       key={scrutin.id}
-                      href={`/scrutins/${scrutin.numero}`}
+                      href={`/scrutins/${scrutin.numero}?chambre=${chambre}${chambre === 'senat' && scrutin.session ? `&session=${scrutin.session}` : ''}`}
                       className="flex items-center gap-2 p-1.5 sm:p-2 rounded-lg hover:bg-accent transition-colors"
                     >
                       {/* Position du groupe */}

@@ -487,7 +487,7 @@ export default function ScrutinDetailPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <Link
-                          href={`/deputes/${intervention.parlementaire.slug}`}
+                          href={chambre === 'senat' ? `/senateurs/${intervention.parlementaire.slug}` : `/deputes/${intervention.parlementaire.slug}`}
                           className="font-medium text-gray-900 hover:text-primary hover:underline"
                         >
                           {intervention.parlementaire.prenom} {intervention.parlementaire.nom}
