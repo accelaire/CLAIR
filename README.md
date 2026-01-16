@@ -351,6 +351,6 @@ AGPL-3.0 - voir [LICENSE](LICENSE)
 
 ## Contact
 
-- **Axel Robaldo** : axel.roba@gmail.com
+- Email : contact@clair.vote
 - GitHub : [github.com/accelaire/CLAIR](https://github.com/accelaire/CLAIR)
 - Issues : [GitHub Issues](https://github.com/accelaire/CLAIR/issues)
