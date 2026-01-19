@@ -347,16 +347,6 @@ CREATE TABLE contenus (
 
 **Note** : Pas d'API officielle, prévoir du scraping éthique
 
-### 6.4 Légifrance/PISTE (optionnel)
-
-**Base URL** : `https://sandbox-api.piste.gouv.fr/dila/legifrance/lf-engine-app`
-
-| Ressource | Description |
-|-----------|-------------|
-| `/search` | Recherche dans les textes de loi (JORF, CODE, LODA) |
-
-**Accès** : Clé API gratuite, inscription sur https://piste.gouv.fr
-
 ---
 
 ## 7. Sécurité
