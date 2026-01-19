@@ -876,7 +876,7 @@ model StatsSimulateur {
 
 model SyncLog {
   id       String @id @default(uuid())
-  source   String // 'assemblee_nationale', 'senat', 'hatvp', 'dila', 'legifrance'
+  source   String // 'assemblee_nationale', 'senat', 'hatvp', 'dila'
   dataType String @default("all") @map("data_type") // 'deputes', 'scrutins', 'interventions', 'amendements', 'lobbyistes', 'all'
   type     String // 'full', 'incremental'
   statut   String // 'started', 'completed', 'failed', 'skipped'
