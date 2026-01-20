@@ -18,6 +18,8 @@ interface ScrutinVote {
     titre: string;
     sort: string;
     tags: string[];
+    chambre?: 'assemblee' | 'senat';
+    session?: string;
   };
 }
 
@@ -207,7 +209,7 @@ export function ComparisonVotesTable({ parlementaires, chambre }: ComparisonVote
                 {/* Scrutin info */}
                 <div className="space-y-1">
                   <Link
-                    href={`/scrutins/${vote.scrutin.numero}`}
+                    href={`/scrutins/${vote.scrutin.numero}?chambre=${vote.scrutin.chambre || (chambre === 'senateurs' ? 'senat' : 'assemblee')}${(vote.scrutin.chambre === 'senat' || chambre === 'senateurs') && vote.scrutin.session ? `&session=${vote.scrutin.session}` : ''}`}
                     className="font-medium line-clamp-2 hover:text-primary hover:underline transition-colors"
                   >
                     {vote.scrutin.titre}

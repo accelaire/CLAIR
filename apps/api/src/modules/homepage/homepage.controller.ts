@@ -70,6 +70,7 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
           id: true,
           numero: true,
           chambre: true,
+          session: true,
           date: true,
           titre: true,
           sort: true,

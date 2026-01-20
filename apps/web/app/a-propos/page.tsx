@@ -182,15 +182,6 @@ export default function AProposPage() {
             <Mail className="mr-2 h-4 w-4" />
             Contact
           </Link>
-          <a
-            href="https://x.com/clair_politique"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
-          >
-            <Twitter className="mr-2 h-4 w-4" />
-            @clair_politique
-          </a>
         </div>
       </div>
     </div>
