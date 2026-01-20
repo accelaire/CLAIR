@@ -141,36 +141,17 @@ program
 program
   .command('test')
   .description('Tester la connexion aux sources de données')
-  .option('-l, --legifrance', 'Tester uniquement Légifrance/PISTE')
-  .action(async (options) => {
+  .action(async () => {
     try {
-      if (options.legifrance) {
-        // Test Légifrance uniquement
-        const { LegifranceClient } = await import('./sources/legifrance/client');
-        const client = new LegifranceClient();
+      const { AssembleeNationaleDeputesClient } = await import('./sources/assemblee-nationale/deputes-client.js');
+      const client = new AssembleeNationaleDeputesClient(17);
 
-        logger.info('Testing Légifrance/PISTE API...');
-        const result = await client.testConnection();
+      logger.info('Testing Assemblée Nationale API...');
+      const { deputes, groupes } = await client.getDeputes();
+      logger.info({ deputes: deputes.length, groupes: groupes.length }, 'Assemblée Nationale API OK');
 
-        if (result.success) {
-          logger.info(result.message);
-          process.exit(0);
-        } else {
-          logger.error(result.message);
-          process.exit(1);
-        }
-      } else {
-        // Test Assemblée Nationale API
-        const { AssembleeNationaleDeputesClient } = await import('./sources/assemblee-nationale/deputes-client.js');
-        const client = new AssembleeNationaleDeputesClient(17);
-
-        logger.info('Testing Assemblée Nationale API...');
-        const { deputes, groupes } = await client.getDeputes();
-        logger.info({ deputes: deputes.length, groupes: groupes.length }, 'Assemblée Nationale API OK');
-
-        logger.info('All tests passed!');
-        process.exit(0);
-      }
+      logger.info('All tests passed!');
+      process.exit(0);
     } catch (error: any) {
       logger.error({ error: error.message }, 'Test failed');
       process.exit(1);

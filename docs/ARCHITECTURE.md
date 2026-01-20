@@ -696,7 +696,7 @@ model Contenu {
 
 model SyncLog {
   id          String   @id @default(uuid())
-  source      String   // 'assemblee_nationale', 'dila', 'hatvp', 'legifrance'
+  source      String   // 'assemblee_nationale', 'dila', 'hatvp', 'senat'
   type        String   // 'full', 'incremental'
   statut      String   // 'started', 'completed', 'failed'
   
@@ -766,10 +766,6 @@ Le projet utilise trois sources principales :
 3. **HATVP** (`hatvp.fr`)
    - Registre des lobbyistes et leurs actions
    - Format : Scraping ou CSV
-
-4. **Légifrance/PISTE** (optionnel)
-   - Textes de loi
-   - Nécessite une clé API gratuite sur piste.gouv.fr
 
 ### 4.3 Clients d'ingestion
 
@@ -1020,11 +1016,6 @@ DILA_BASE_URL="https://echanges.dila.gouv.fr/OPENDATA/Debats/AN"
 
 # HATVP - pas d'API officielle
 HATVP_BASE_URL="https://www.hatvp.fr"
-
-# Légifrance/PISTE (optionnel)
-# Inscription gratuite sur https://piste.gouv.fr
-LEGIFRANCE_CLIENT_ID=""
-LEGIFRANCE_CLIENT_SECRET=""
 
 # =============================================================================
 # AI

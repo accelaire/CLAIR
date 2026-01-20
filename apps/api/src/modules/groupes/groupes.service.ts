@@ -375,6 +375,7 @@ export class GroupesService {
         date: Date;
         sort: string;
         type_vote: string;
+        session: string | null;
         nombre_pour: number;
         nombre_contre: number;
         nombre_abstention: number;
@@ -385,7 +386,7 @@ export class GroupesService {
       }[]
     >`
       WITH recent_scrutins AS (
-        SELECT DISTINCT s.id, s.numero, s.titre, s.date, s.sort, s.type_vote,
+        SELECT DISTINCT s.id, s.numero, s.titre, s.date, s.sort, s.type_vote, s.session,
                s.nombre_pour, s.nombre_contre, s.nombre_abstention
         FROM scrutins s
         JOIN votes v ON v.scrutin_id = s.id
@@ -411,7 +412,7 @@ export class GroupesService {
         GROUP BY s.id
       )
       SELECT
-        rs.id, rs.numero, rs.titre, rs.date, rs.sort, rs.type_vote,
+        rs.id, rs.numero, rs.titre, rs.date, rs.sort, rs.type_vote, rs.session,
         rs.nombre_pour, rs.nombre_contre, rs.nombre_abstention,
         COALESCE(gv.pour, 0) as pour,
         COALESCE(gv.contre, 0) as contre,
@@ -452,6 +453,7 @@ export class GroupesService {
         date: s.date,
         sort: s.sort,
         typeVote: s.type_vote,
+        session: s.session,
         nombrePour: s.nombre_pour,
         nombreContre: s.nombre_contre,
         nombreAbstention: s.nombre_abstention,

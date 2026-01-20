@@ -17,7 +17,7 @@ export function OrganizationJsonLd() {
   const data = {
     '@context': 'https://schema.org',
     '@type': 'Organization',
-    name: 'CLAIR',
+    name: 'CLAIR.vote',
     alternateName: 'Citoyen Libre, Analyse, Information, République',
     url: BASE_URL,
     logo: `${BASE_URL}/icon.png`,
@@ -38,10 +38,10 @@ export function WebSiteJsonLd() {
   const data = {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: 'CLAIR',
+    name: 'CLAIR.vote',
     alternateName: 'Citoyen Libre, Analyse, Information, République',
     url: BASE_URL,
-    description: 'Plateforme citoyenne de transparence politique en France',
+    description: 'CLAIR.vote : analysez les votes des députés et sénateurs, suivez le lobbying et la transparence politique en France.',
     inLanguage: 'fr-FR',
     potentialAction: {
       '@type': 'SearchAction',

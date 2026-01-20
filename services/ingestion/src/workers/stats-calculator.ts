@@ -10,10 +10,12 @@ import { logger } from '../utils/logger';
 const prisma = new PrismaClient();
 
 // Limiter les requêtes parallèles pour éviter la saturation du pool
-const limit = pLimit(2);
+// Réduit à 1 pour éviter les OOM lors du calcul de loyauté (requêtes lourdes)
+const limit = pLimit(1);
 
 // Taille des batches pour éviter l'accumulation mémoire
-const BATCH_SIZE = 50;
+// Réduit de 50 à 20 pour diminuer la pression mémoire
+const BATCH_SIZE = 20;
 
 export interface StatsCalculationResult {
   total: number;
@@ -85,9 +87,10 @@ export async function calculateAllStats(
       else errors++;
     }
 
-    // Petite pause entre les batches pour laisser le GC respirer
+    // Pause entre les batches pour laisser le GC respirer
+    // Augmentée à 500ms pour réduire la pression mémoire
     if (batchIndex < totalBatches - 1) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
 

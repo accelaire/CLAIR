@@ -25,7 +25,8 @@ const anClient = new AssembleeNationaleDeputesClient(17);
 const senatClient = new SenatSenateursClient();
 
 // Limiter les requêtes parallèles
-const limit = pLimit(5);
+// Réduit de 5 à 2 pour éviter les OOM sur les syncs avec gros payloads
+const limit = pLimit(2);
 
 // =============================================================================
 // SYNC GROUPES POLITIQUES (via API Assemblée Nationale)
@@ -508,6 +509,11 @@ export async function syncScrutins(
     } catch (error: any) {
       logger.warn({ numero: data.scrutin.numero, error: error.message }, 'Error syncing scrutin');
     }
+
+    // Pause tous les 100 scrutins pour laisser le GC respirer
+    if ((scrutinsCreated + scrutinsUpdated) % 100 === 0) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
   }
 
   logger.info({
@@ -652,6 +658,11 @@ export async function syncScrutinsSenat(
 
     } catch (error: any) {
       logger.warn({ numero: data.scrutin.numero, error: error.message }, 'Error syncing scrutin Sénat');
+    }
+
+    // Pause tous les 100 scrutins pour laisser le GC respirer
+    if ((scrutinsCreated + scrutinsUpdated) % 100 === 0) {
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
   }
 
@@ -2279,6 +2290,11 @@ export async function syncLobbyistes(
           }
         } catch (error: any) {
           logger.warn({ activite: act.activiteId, error: error.message }, 'Error syncing action');
+        }
+
+        // Pause tous les 500 actions pour laisser le GC respirer
+        if ((actionsCreated + actionsUpdated) % 500 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
       }
     }

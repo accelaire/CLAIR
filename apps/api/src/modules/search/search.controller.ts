@@ -371,8 +371,6 @@ async function searchWithDatabase(
     lobbyistes: [],
   };
 
-  const promises: Promise<void>[] = [];
-
   // Helper pour transformer les parlementaires
   const transformParlementaire = (d: any) => ({
     id: d.id,
@@ -411,98 +409,80 @@ async function searchWithDatabase(
     },
   };
 
+  // Exécution séquentielle pour éviter l'épuisement du pool de connexions
+  // (15 connexions max, 4 requêtes parallèles × N utilisateurs = saturation)
+
   // Recherche députés (chambre = assemblee)
   if (type === 'all' || type === 'deputes') {
-    promises.push(
-      fastify.prisma.parlementaire
-        .findMany({
-          where: buildParlementaireWhere('assemblee'),
-          select: parlementaireSelect,
-          take: limit,
-        })
-        .then((parlementaires: any[]) => {
-          results.deputes = parlementaires.map(transformParlementaire);
-        })
-    );
+    const parlementaires = await fastify.prisma.parlementaire.findMany({
+      where: buildParlementaireWhere('assemblee'),
+      select: parlementaireSelect,
+      take: limit,
+    });
+    results.deputes = parlementaires.map(transformParlementaire);
   }
 
   // Recherche sénateurs (chambre = senat)
   if (type === 'all' || type === 'senateurs') {
-    promises.push(
-      fastify.prisma.parlementaire
-        .findMany({
-          where: buildParlementaireWhere('senat'),
-          select: parlementaireSelect,
-          take: limit,
-        })
-        .then((parlementaires: any[]) => {
-          results.senateurs = parlementaires.map(transformParlementaire);
-        })
-    );
+    const parlementaires = await fastify.prisma.parlementaire.findMany({
+      where: buildParlementaireWhere('senat'),
+      select: parlementaireSelect,
+      take: limit,
+    });
+    results.senateurs = parlementaires.map(transformParlementaire);
   }
 
+  // Recherche scrutins
   if (type === 'all' || type === 'scrutins') {
-    promises.push(
-      fastify.prisma.scrutin
-        .findMany({
-          where: {
-            titre: { contains: searchTerm, mode: 'insensitive' },
-          },
-          select: {
-            id: true,
-            numero: true,
-            chambre: true,
-            date: true,
-            titre: true,
-            sort: true,
-            typeVote: true,
-            importance: true,
-            tags: true,
-            nombrePour: true,
-            nombreContre: true,
-          },
-          orderBy: [{ date: 'desc' }, { numero: 'desc' }],
-          take: limit,
-        })
-        .then((scrutins: any[]) => {
-          results.scrutins = scrutins.map((s) => ({
-            ...s,
-            _type: 'scrutin',
-          }));
-        })
-    );
+    const scrutins = await fastify.prisma.scrutin.findMany({
+      where: {
+        titre: { contains: searchTerm, mode: 'insensitive' },
+      },
+      select: {
+        id: true,
+        numero: true,
+        chambre: true,
+        session: true,
+        date: true,
+        titre: true,
+        sort: true,
+        typeVote: true,
+        importance: true,
+        tags: true,
+        nombrePour: true,
+        nombreContre: true,
+      },
+      orderBy: [{ date: 'desc' }, { numero: 'desc' }],
+      take: limit,
+    });
+    results.scrutins = scrutins.map((s: any) => ({
+      ...s,
+      _type: 'scrutin',
+    }));
   }
 
+  // Recherche lobbyistes
   if (type === 'all' || type === 'lobbyistes') {
-    promises.push(
-      fastify.prisma.lobbyiste
-        .findMany({
-          where: {
-            nom: { contains: searchTerm, mode: 'insensitive' },
-          },
-          select: {
-            id: true,
-            nom: true,
-            type: true,
-            secteur: true,
-            budgetAnnuel: true,
-            nbLobbyistes: true,
-            ville: true,
-          },
-          take: limit,
-        })
-        .then((lobbyistes: any[]) => {
-          results.lobbyistes = lobbyistes.map((l) => ({
-            ...l,
-            _type: 'lobbyiste',
-          }));
-        })
-    );
+    const lobbyistes = await fastify.prisma.lobbyiste.findMany({
+      where: {
+        nom: { contains: searchTerm, mode: 'insensitive' },
+      },
+      select: {
+        id: true,
+        nom: true,
+        type: true,
+        secteur: true,
+        budgetAnnuel: true,
+        nbLobbyistes: true,
+        ville: true,
+      },
+      take: limit,
+    });
+    results.lobbyistes = lobbyistes.map((l: any) => ({
+      ...l,
+      _type: 'lobbyiste',
+    }));
   }
-
-  // Attendre toutes les promesses - si une échoue, tout échoue (pas de résultats partiels)
-  // Le retry au niveau du handler s'occupera de réessayer
-  await Promise.all(promises);
 
   if (type === 'all') {
     const allResults = [
@@ -568,6 +548,7 @@ async function suggestFromDatabase(fastify: any, q: string, limit: number) {
         select: {
           numero: true,
           chambre: true,
+          session: true,
           titre: true,
         },
         orderBy: [{ date: 'desc' }, { numero: 'desc' }],
@@ -588,6 +569,7 @@ async function suggestFromDatabase(fastify: any, q: string, limit: number) {
         value: s.titre.length > 60 ? s.titre.substring(0, 60) + '...' : s.titre,
         numero: s.numero,
         chambre: s.chambre,
+        session: s.session,
       })),
     ];
 
