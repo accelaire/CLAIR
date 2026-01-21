@@ -12,6 +12,7 @@ import { SenatSenateursClient, TransformedSenateur } from '../sources/senat/sena
 import { SenatScrutinsClient } from '../sources/senat/scrutins-client';
 import { DILAInterventionsClient } from '../sources/dila/interventions-client';
 import { SenatInterventionsClient } from '../sources/senat/interventions-client';
+import { SenatDossiersClient } from '../sources/senat/dossiers-client';
 import { logger } from '../utils/logger';
 import {
   checkSourceFreshness,
@@ -1249,6 +1250,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       'senat:amendements',
       // 4. Dossiers législatifs (lie scrutins et amendements aux textes de loi)
       'assemblee_nationale:dossiers',
+      'senat:dossiers',
       // 5. Interventions
       'dila:interventions',
       'senat:interventions',
@@ -1261,7 +1263,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       'senat:senateurs',
       ...(options.includeScrutins ? ['assemblee_nationale:scrutins', 'senat:scrutins'] : []),
       ...(options.includeAmendements ? ['assemblee_nationale:amendements', 'senat:amendements'] : []),
-      ...(options.includeDossiers ? ['assemblee_nationale:dossiers'] : []),
+      ...(options.includeDossiers ? ['assemblee_nationale:dossiers', 'senat:dossiers'] : []),
       ...(options.includeInterventions ? ['dila:interventions', 'senat:interventions'] : []),
       ...(options.includeLobbying ? ['hatvp:lobbyistes'] : []),
     ];
@@ -1374,6 +1376,12 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
           case 'assemblee_nationale:dossiers': {
             const dossiersResult = await syncDossiers({ limit: options.dossiersLimit });
             syncResult = { created: dossiersResult.created, updated: dossiersResult.updated };
+            break;
+          }
+
+          case 'senat:dossiers': {
+            const senatDossiersResult = await syncDossiersSenat({ limit: options.dossiersLimit });
+            syncResult = { created: senatDossiersResult.created, updated: senatDossiersResult.updated };
             break;
           }
 
@@ -1866,6 +1874,110 @@ export async function syncDossiers(
   }
 
   logger.info({ created, updated, scrutinsLinked, total: dossiers.length }, 'Dossiers législatifs sync completed');
+  return { created, updated, scrutinsLinked };
+}
+
+// =============================================================================
+// SYNC DOSSIERS SÉNAT (via DOSLEG)
+// =============================================================================
+
+const SENAT_DOSSIERS_SESSION_START = parseInt(process.env.SENAT_SESSION_START || '2020', 10);
+const SENAT_DOSSIERS_SESSION_END = parseInt(process.env.SENAT_SESSION_END || String(new Date().getFullYear()), 10);
+
+export async function syncDossiersSenat(
+  options: { limit?: number; linkScrutins?: boolean } = {}
+): Promise<{ created: number; updated: number; scrutinsLinked: number }> {
+  const linkScrutins = options.linkScrutins ?? true;
+  logger.info({ limit: options.limit, linkScrutins }, 'Starting dossiers Sénat sync (DOSLEG)...');
+
+  const client = new SenatDossiersClient();
+  const dossiers = await client.getDossiers({
+    sessionStart: SENAT_DOSSIERS_SESSION_START,
+    sessionEnd: SENAT_DOSSIERS_SESSION_END,
+    limit: options.limit,
+  });
+
+  let created = 0;
+  let updated = 0;
+  let scrutinsLinked = 0;
+
+  // Build a map of ref -> dossierId for linking scrutins
+  const refToDossierId = new Map<string, string>();
+
+  for (const dossier of dossiers) {
+    try {
+      const data = {
+        uid: dossier.uid,
+        legislature: 0, // Sénat n'a pas de législature
+        titre: dossier.titre,
+        titreCourt: dossier.titreCourt,
+        procedureCode: dossier.procedureCode,
+        procedureLibelle: dossier.procedureLibelle,
+        urlSenat: dossier.urlSenat,
+        etat: dossier.etat,
+        loiNumero: dossier.loiNumero,
+        loiDateJO: dossier.loiDateJO,
+      };
+
+      const existing = await prisma.dossierLegislatif.findUnique({
+        where: { uid: dossier.uid },
+      });
+
+      let dossierId: string;
+
+      if (existing) {
+        await prisma.dossierLegislatif.update({
+          where: { uid: dossier.uid },
+          data,
+        });
+        dossierId = existing.id;
+        updated++;
+      } else {
+        const created_record = await prisma.dossierLegislatif.create({ data });
+        dossierId = created_record.id;
+        created++;
+      }
+
+      // Store ref -> dossierId mapping
+      refToDossierId.set(dossier.ref, dossierId);
+
+    } catch (e: any) {
+      logger.warn({ uid: dossier.uid, error: e.message }, 'Failed to upsert dossier Sénat');
+    }
+  }
+
+  // Link scrutins to dossiers via sourceData.dossierRef
+  if (linkScrutins && refToDossierId.size > 0) {
+    logger.info({ refs: refToDossierId.size }, 'Linking Sénat scrutins to dossiers...');
+
+    // Get all Sénat scrutins with a dossierRef but no dossierId
+    const scrutinsToLink = await prisma.scrutin.findMany({
+      where: {
+        chambre: 'senat',
+        dossierId: null,
+        sourceData: { not: Prisma.DbNull },
+      },
+      select: { id: true, sourceData: true },
+    });
+
+    for (const scrutin of scrutinsToLink) {
+      const sourceData = scrutin.sourceData as { dossierRef?: string } | null;
+      const dossierRef = sourceData?.dossierRef?.toLowerCase();
+
+      if (dossierRef && refToDossierId.has(dossierRef)) {
+        const dossierId = refToDossierId.get(dossierRef)!;
+        await prisma.scrutin.update({
+          where: { id: scrutin.id },
+          data: { dossierId },
+        });
+        scrutinsLinked++;
+      }
+    }
+
+    logger.info({ scrutinsLinked }, 'Sénat scrutins linked to dossiers');
+  }
+
+  logger.info({ created, updated, scrutinsLinked, total: dossiers.length }, 'Dossiers Sénat sync completed');
   return { created, updated, scrutinsLinked };
 }
 
