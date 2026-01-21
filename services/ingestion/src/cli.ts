@@ -20,6 +20,7 @@ import {
   syncAmendements,
   syncAmendementsSenat,
   syncDossiers,
+  syncDossiersSenat,
   linkInterventionsToScrutins,
   linkScrutinsToAmendements,
   syncLobbyistes,
@@ -57,6 +58,7 @@ program
   .option('-a, --amendements', 'Synchroniser uniquement les amendements (AN Open Data)')
   .option('--amendements-senat', 'Synchroniser uniquement les amendements Sénat (data.senat.fr AMELI)')
   .option('-D, --dossiers', 'Synchroniser uniquement les dossiers législatifs (AN Open Data)')
+  .option('--dossiers-senat', 'Synchroniser uniquement les dossiers législatifs Sénat (data.senat.fr DOSLEG)')
   .option('--link-interventions', 'Lier les interventions aux scrutins (par seanceRef ou date)')
   .option('--link-amendements', 'Lier les scrutins aux amendements (par parsing du titre)')
   .option('-L, --lobbying', 'Synchroniser uniquement les lobbyistes (HATVP)')
@@ -92,6 +94,8 @@ program
         await syncAmendementsSenat({ maxAmendements: options.limit });
       } else if (options.dossiers) {
         await syncDossiers({ limit: options.limit });
+      } else if (options.dossiersSenat) {
+        await syncDossiersSenat({ limit: options.limit });
       } else if (options.linkInterventions) {
         const result = await linkInterventionsToScrutins({ dryRun: options.dryRun });
         console.log(`\n📊 Interventions liées: ${result.linked}`);
