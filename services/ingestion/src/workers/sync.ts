@@ -530,37 +530,29 @@ export async function syncScrutins(
 // =============================================================================
 
 export async function syncScrutinsSenat(
-  options: { limit?: number; session?: string; sessions?: string[] } = {}
-): Promise<{ scrutins: number; votes: number }> {
-  // Par défaut, synchroniser les 3 dernières sessions parlementaires
-  const currentYear = new Date().getFullYear();
-  const defaultSessions = [
-    String(currentYear - 2), // 2024
-    String(currentYear - 1), // 2025
-    String(currentYear),     // 2026
-  ];
-
-  const sessionsToSync = options.sessions || (options.session ? [options.session] : defaultSessions);
-
-  logger.info({ limit: options.limit, sessions: sessionsToSync }, 'Starting scrutins Sénat sync...');
+  options: {
+    limit?: number;
+    session?: string;
+    sessions?: string[];
+    enrichDossiers?: boolean;
+  } = {}
+): Promise<{ scrutins: number; votes: number; dossiersLinked: number }> {
+  // Le client DOSLEG utilise maintenant les envvars SENAT_SESSION_START/END par défaut
+  // On peut override avec session/sessions si spécifié
+  logger.info({ limit: options.limit, enrichDossiers: options.enrichDossiers ?? true }, 'Starting scrutins Sénat sync (DOSLEG)...');
 
   const scrutinsClient = new SenatScrutinsClient();
 
-  // Collecter les scrutins de toutes les sessions
-  let allScrutinsData: Awaited<ReturnType<typeof scrutinsClient.getScrutins>> = [];
+  // Récupérer les scrutins depuis DOSLEG (bulk fetch)
+  const scrutinsData = await scrutinsClient.getScrutins({
+    limit: options.limit,
+    session: options.session,
+    sessions: options.sessions,
+    enrichDossiers: options.enrichDossiers ?? true,
+    parallelEnrichment: 3, // Limiter pour éviter surcharge
+  });
 
-  for (const session of sessionsToSync) {
-    try {
-      logger.info({ session }, 'Fetching scrutins for session...');
-      const sessionData = await scrutinsClient.getScrutins({ ...options, session });
-      logger.info({ session, count: sessionData.length }, 'Fetched scrutins for session');
-      allScrutinsData = allScrutinsData.concat(sessionData);
-    } catch (error: any) {
-      logger.warn({ session, error: error.message }, 'Failed to fetch scrutins for session, continuing...');
-    }
-  }
-
-  const scrutinsData = allScrutinsData;
+  logger.info({ count: scrutinsData.length }, 'Scrutins fetched from DOSLEG');
 
   // Charger les sénateurs pour le mapping matricule -> parlementaireId
   const parlementaires = await prisma.parlementaire.findMany({
@@ -572,9 +564,40 @@ export async function syncScrutinsSenat(
     if (p.sourceId) parlementaireMap.set(p.sourceId, p.id);
   }
 
+  // Charger les dossiers législatifs pour le mapping dossierRef -> dossierId
+  const dossiers = await prisma.dossierLegislatif.findMany({
+    select: { id: true, uid: true, titre: true },
+  });
+  const dossierMap = new Map<string, string>();
+  for (const d of dossiers) {
+    // Map par UID (ex: "pjlf2025")
+    if (d.uid) {
+      dossierMap.set(d.uid.toLowerCase(), d.id);
+      // Aussi mapper sans préfixe si c'est un format court
+      const shortRef = d.uid.replace(/^(pjl|ppl|cvn)/, '');
+      if (shortRef !== d.uid) {
+        dossierMap.set(shortRef.toLowerCase(), d.id);
+      }
+    }
+  }
+
+  // Charger les amendements pour le mapping numéro -> amendementId (Sénat)
+  const amendements = await prisma.amendement.findMany({
+    where: { uid: { startsWith: 'SENAT-' } },
+    select: { id: true, numero: true },
+  });
+  const amendementMap = new Map<string, string>();
+  for (const a of amendements) {
+    if (a.numero) {
+      amendementMap.set(a.numero.toUpperCase(), a.id);
+    }
+  }
+
   let scrutinsCreated = 0;
   let scrutinsUpdated = 0;
   let votesCreated = 0;
+  let dossiersLinked = 0;
+  let amendementsLinked = 0;
 
   const chambre = 'senat';
 
@@ -582,9 +605,9 @@ export async function syncScrutinsSenat(
     try {
       const { scrutin, votes } = data;
 
-      // Extraire la session depuis sourceUrl (ex: /2024/ -> "2024")
-      const sessionMatch = scrutin.sourceUrl?.match(/\/(\d{4})\//);
-      const session = sessionMatch ? sessionMatch[1] : '2024';
+      // Utiliser la session directement du client (format "2024-2025")
+      // Extraire l'année de début pour la clé unique
+      const sessionYear = scrutin.session.split('-')[0] || scrutin.session;
 
       // Tags automatiques basés sur le titre
       const tags = extractTags(scrutin.titre);
@@ -594,10 +617,30 @@ export async function syncScrutinsSenat(
       if (scrutin.nombreVotants > 300) importance = 3;
       else if (scrutin.nombreVotants > 200) importance = 2;
 
+      // Rechercher le dossier législatif par ref
+      let dossierId: string | null = null;
+      if (scrutin.dossierRef) {
+        dossierId = dossierMap.get(scrutin.dossierRef.toLowerCase()) || null;
+        if (dossierId) dossiersLinked++;
+      }
+
+      // Rechercher le premier amendement lié
+      let amendementId: string | null = null;
+      if (scrutin.amendementsNumeros && scrutin.amendementsNumeros.length > 0) {
+        for (const num of scrutin.amendementsNumeros) {
+          const found = amendementMap.get(num.toUpperCase());
+          if (found) {
+            amendementId = found;
+            amendementsLinked++;
+            break;
+          }
+        }
+      }
+
       const scrutinData = {
         numero: scrutin.numero,
         chambre,
-        session,
+        session: sessionYear, // Clé unique utilise l'année simple
         date: scrutin.date,
         titre: scrutin.titre,
         typeVote: scrutin.typeVote,
@@ -610,6 +653,9 @@ export async function syncScrutinsSenat(
         objetLibelle: scrutin.objetLibelle,
         demandeurTexte: scrutin.demandeurTexte,
         seanceRef: scrutin.seanceRef,
+        // Liens
+        dossierId,
+        amendementId,
         tags,
         importance,
         sourceUrl: scrutin.sourceUrl,
@@ -617,14 +663,14 @@ export async function syncScrutinsSenat(
       };
 
       const existing = await prisma.scrutin.findUnique({
-        where: { numero_chambre_session: { numero: scrutin.numero, chambre, session } },
+        where: { numero_chambre_session: { numero: scrutin.numero, chambre, session: sessionYear } },
       });
 
       let scrutinId: string;
 
       if (existing) {
         await prisma.scrutin.update({
-          where: { numero_chambre_session: { numero: scrutin.numero, chambre, session } },
+          where: { numero_chambre_session: { numero: scrutin.numero, chambre, session: sessionYear } },
           data: scrutinData,
         });
         scrutinId = existing.id;
@@ -669,10 +715,12 @@ export async function syncScrutinsSenat(
   logger.info({
     scrutins: { created: scrutinsCreated, updated: scrutinsUpdated },
     votes: votesCreated,
+    dossiersLinked,
+    amendementsLinked,
     total: scrutinsData.length,
   }, 'Scrutins Sénat sync completed');
 
-  return { scrutins: scrutinsCreated + scrutinsUpdated, votes: votesCreated };
+  return { scrutins: scrutinsCreated + scrutinsUpdated, votes: votesCreated, dossiersLinked };
 }
 
 // =============================================================================
