@@ -1,50 +1,42 @@
 // =============================================================================
 // Client Sénat - Récupération des scrutins
-// Source: https://www.senat.fr/scrutin-public/
+// Source principale: DOSLEG (data.senat.fr)
+// Enrichissement: HTML scraping pour dossier législatif
 // =============================================================================
 
 import axios from 'axios';
 import { logger } from '../../utils/logger';
+import { DoslegClient, TransformedDoslegScrutin, TransformedDoslegVote } from './dosleg-client';
 
 // =============================================================================
 // TYPES - Structure des données Sénat Scrutins
 // =============================================================================
 
-export interface SenatScrutinVote {
-  matricule: string; // ID du sénateur
-  vote: string;      // 'p' (pour), 'c' (contre), 'a' (abstention), 'n' (non votant)
-  siege: number;     // Numéro de siège
-}
-
-export interface SenatScrutinJson {
-  votes: SenatScrutinVote[];
-}
-
-// =============================================================================
-// TYPES TRANSFORMÉS
-// =============================================================================
-
 export interface TransformedScrutinSenat {
   numero: number;
   chambre: 'senat';
+  session: string;       // Format "2024-2025"
   date: Date;
   titre: string;
   typeVote: string;
-  sort: string; // 'adopte' | 'rejete'
+  sort: string;          // 'adopte' | 'rejete'
   nombreVotants: number;
   nombrePour: number;
   nombreContre: number;
   nombreAbstention: number;
   // Enrichissement contexte
-  objetLibelle: string | null;    // Description de l'objet voté (même que titre pour le Sénat)
-  demandeurTexte: string | null;  // Non disponible au Sénat
-  seanceRef: string | null;       // Non disponible au Sénat
+  objetLibelle: string | null;
+  demandeurTexte: string | null;
+  seanceRef: string | null;
+  // Liens
+  dossierRef: string | null;       // Ref dossier législatif (ex: "pjlf2025")
+  amendementsNumeros: string[];    // Numéros d'amendements liés
   sourceUrl: string;
   sourceData: object;
 }
 
 export interface TransformedVoteSenat {
-  matricule: string;  // Sénateur matricule
+  matricule: string;
   position: 'pour' | 'contre' | 'abstention' | 'absent';
   parDelegation: boolean;
 }
@@ -55,60 +47,264 @@ export interface ScrutinSenatWithVotes {
 }
 
 // =============================================================================
+// CONFIG
+// =============================================================================
+
+const SENAT_SESSION_START = parseInt(process.env.SENAT_SESSION_START || '2020', 10);
+const SENAT_SESSION_END = parseInt(process.env.SENAT_SESSION_END || String(new Date().getFullYear()), 10);
+
+// =============================================================================
+// HELPERS
+// =============================================================================
+
+/**
+ * Extrait le lien dossier législatif depuis la page HTML du scrutin
+ */
+async function fetchDossierRef(scrutinUrl: string): Promise<string | null> {
+  try {
+    const response = await axios.get(scrutinUrl, {
+      timeout: 15000,
+      headers: {
+        'User-Agent': 'CLAIR-Bot/1.0',
+        Accept: 'text/html',
+      },
+    });
+
+    const html = response.data;
+
+    // Pattern: href="/dossier-legislatif/xxx.html"
+    const match = html.match(/href="\/dossier-legislatif\/([^"]+)\.html"/);
+    if (match && match[1]) {
+      return match[1]; // Ex: "pjlf2025", "ppl23-479"
+    }
+
+    return null;
+  } catch (error: any) {
+    logger.debug({ url: scrutinUrl, error: error.message }, 'Failed to fetch dossier ref');
+    return null;
+  }
+}
+
+/**
+ * Convertit la session format "2024-2025" vers l'année simple "2024"
+ */
+function sessionToYear(session: string): string {
+  return session.split('-')[0] || session;
+}
+
+// =============================================================================
 // CLIENT
 // =============================================================================
 
 export class SenatScrutinsClient {
-  private baseUrl: string;
+  private doslegClient: DoslegClient;
 
   constructor() {
-    this.baseUrl = 'https://www.senat.fr';
-    logger.info('SenatScrutinsClient initialized');
+    this.doslegClient = new DoslegClient();
+    logger.info({
+      sessionStart: SENAT_SESSION_START,
+      sessionEnd: SENAT_SESSION_END
+    }, 'SenatScrutinsClient initialized (DOSLEG mode)');
   }
 
   // ===========================================================================
-  // FETCH SCRUTINS
+  // FETCH SCRUTINS FROM DOSLEG
   // ===========================================================================
 
-  async getScrutins(options: { limit?: number; session?: string } = {}): Promise<ScrutinSenatWithVotes[]> {
-    const session = options.session || '2024';
-    const indexUrl = `${this.baseUrl}/scrutin-public/scr${session}.html`;
+  async getScrutins(options: {
+    limit?: number;
+    session?: string;
+    sessions?: string[];
+    enrichDossiers?: boolean;
+    parallelEnrichment?: number;
+  } = {}): Promise<ScrutinSenatWithVotes[]> {
+    const enrichDossiers = options.enrichDossiers ?? true;
+    const parallelEnrichment = options.parallelEnrichment ?? 5;
 
-    logger.info({ session, limit: options.limit }, 'Fetching scrutins list from Sénat...');
+    // Determine session range
+    let sessionStart = SENAT_SESSION_START;
+    let sessionEnd = SENAT_SESSION_END;
+
+    if (options.session) {
+      // Single session specified (format: "2024" or "2024-2025")
+      const year = parseInt(sessionToYear(options.session), 10);
+      sessionStart = year;
+      sessionEnd = year;
+    } else if (options.sessions && options.sessions.length > 0) {
+      // Multiple sessions specified
+      const years = options.sessions.map(s => parseInt(sessionToYear(s), 10));
+      sessionStart = Math.min(...years);
+      sessionEnd = Math.max(...years);
+    }
+
+    logger.info({
+      sessionStart,
+      sessionEnd,
+      limit: options.limit,
+      enrichDossiers
+    }, 'Fetching scrutins from DOSLEG...');
+
+    // Fetch from DOSLEG
+    const { scrutins: doslegScrutins, votes: doslegVotes } = await this.doslegClient.getScrutinsAndVotes({
+      sessionStart,
+      sessionEnd,
+      limit: options.limit,
+    });
+
+    logger.info({
+      scrutins: doslegScrutins.length,
+      votes: doslegVotes.length
+    }, 'DOSLEG data fetched');
+
+    // Group votes by scrutin
+    const votesByScrutin = new Map<string, TransformedDoslegVote[]>();
+    for (const vote of doslegVotes) {
+      const key = `${vote.scrutinSession}-${vote.scrutinNumero}`;
+      const existing = votesByScrutin.get(key) || [];
+      existing.push(vote);
+      votesByScrutin.set(key, existing);
+    }
+
+    // Transform to output format
+    const results: ScrutinSenatWithVotes[] = [];
+
+    // Process scrutins (with optional dossier enrichment)
+    const toEnrich = enrichDossiers ? doslegScrutins : [];
+    const enrichedDossiers = new Map<string, string | null>();
+
+    // Batch enrich dossiers in parallel
+    if (enrichDossiers && toEnrich.length > 0) {
+      logger.info({ count: toEnrich.length, parallel: parallelEnrichment }, 'Enriching scrutins with dossier links...');
+
+      for (let i = 0; i < toEnrich.length; i += parallelEnrichment) {
+        const batch = toEnrich.slice(i, i + parallelEnrichment);
+
+        const batchResults = await Promise.all(
+          batch.map(async (scr) => {
+            const dossierRef = await fetchDossierRef(scr.sourceUrl);
+            return { url: scr.sourceUrl, dossierRef };
+          })
+        );
+
+        for (const { url, dossierRef } of batchResults) {
+          enrichedDossiers.set(url, dossierRef);
+        }
+
+        // Progress log
+        if ((i + parallelEnrichment) % 50 === 0 || i + parallelEnrichment >= toEnrich.length) {
+          logger.debug({
+            progress: Math.min(i + parallelEnrichment, toEnrich.length),
+            total: toEnrich.length
+          }, 'Enrichment progress...');
+        }
+
+        // Small pause to be nice to the server
+        if (i + parallelEnrichment < toEnrich.length) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      }
+
+      const enrichedCount = [...enrichedDossiers.values()].filter(v => v !== null).length;
+      logger.info({ enriched: enrichedCount, total: toEnrich.length }, 'Dossier enrichment completed');
+    }
+
+    // Build final results
+    for (const scr of doslegScrutins) {
+      const key = `${scr.session}-${scr.numero}`;
+      const scrutinVotes = votesByScrutin.get(key) || [];
+      const dossierRef = enrichedDossiers.get(scr.sourceUrl) ?? null;
+
+      const transformedScrutin: TransformedScrutinSenat = {
+        numero: scr.numero,
+        chambre: 'senat',
+        session: scr.session,
+        date: scr.date,
+        titre: scr.titre,
+        typeVote: 'ordinaire', // DOSLEG doesn't distinguish types
+        sort: scr.sort,
+        nombreVotants: scr.nombreVotants,
+        nombrePour: scr.nombrePour,
+        nombreContre: scr.nombreContre,
+        nombreAbstention: scr.nombreAbstention,
+        objetLibelle: scr.titre,
+        demandeurTexte: scr.demandeurTexte,
+        seanceRef: null, // Could be extracted from DOSLEG code field if needed
+        dossierRef,
+        amendementsNumeros: scr.amendementsNumeros,
+        sourceUrl: scr.sourceUrl,
+        sourceData: {
+          session: scr.session,
+          amendementsNumeros: scr.amendementsNumeros,
+          dossierRef,
+        },
+      };
+
+      const transformedVotes: TransformedVoteSenat[] = scrutinVotes.map(v => ({
+        matricule: v.senmatricule,
+        position: v.position,
+        parDelegation: false, // Not available in DOSLEG
+      }));
+
+      results.push({
+        scrutin: transformedScrutin,
+        votes: transformedVotes,
+      });
+    }
+
+    logger.info({ scrutins: results.length }, 'Scrutins Sénat processing completed');
+    return results;
+  }
+
+  // ===========================================================================
+  // LEGACY METHOD - For backward compatibility
+  // Fetches a single session using HTML scraping (deprecated)
+  // ===========================================================================
+
+  async getScrutinsLegacy(options: { limit?: number; session?: string } = {}): Promise<ScrutinSenatWithVotes[]> {
+    logger.warn('Using legacy HTML scraping method - consider migrating to DOSLEG');
+
+    const session = options.session || String(new Date().getFullYear());
+    const baseUrl = 'https://www.senat.fr';
+    const indexUrl = `${baseUrl}/scrutin-public/scr${session}.html`;
 
     try {
-      // Étape 1: Récupérer la liste des scrutins depuis la page HTML
       const indexResponse = await axios.get(indexUrl, {
         timeout: 60000,
         headers: {
-          'User-Agent': 'CLAIR-Bot/1.0 (https://github.com/clair)',
+          'User-Agent': 'CLAIR-Bot/1.0',
           Accept: 'text/html',
         },
       });
 
       const html = indexResponse.data;
-      const scrutinLinks = this.extractScrutinLinks(html, session);
+      const pattern = new RegExp(`scr${session}-(\\d+)\\.html`, 'g');
+      const matches = html.matchAll(pattern);
+      const numbers = new Set<number>();
 
-      logger.info({ count: scrutinLinks.length }, 'Found scrutin links');
-
-      // Limiter si demandé
-      const linksToProcess = options.limit ? scrutinLinks.slice(0, options.limit) : scrutinLinks;
-
-      const results: ScrutinSenatWithVotes[] = [];
-
-      // Étape 2: Pour chaque scrutin, récupérer le JSON des votes et le HTML pour les métadonnées
-      for (const link of linksToProcess) {
-        try {
-          const scrutinResult = await this.fetchScrutin(link, session);
-          if (scrutinResult) {
-            results.push(scrutinResult);
-          }
-        } catch (error: any) {
-          logger.warn({ link, error: error.message }, 'Error fetching scrutin');
+      for (const match of matches) {
+        if (match[1]) {
+          numbers.add(parseInt(match[1], 10));
         }
       }
 
-      logger.info({ scrutins: results.length }, 'Scrutins Sénat parsing completed');
+      const scrutinIds = Array.from(numbers)
+        .sort((a, b) => b - a)
+        .slice(0, options.limit || undefined)
+        .map(n => `scr${session}-${n}`);
+
+      const results: ScrutinSenatWithVotes[] = [];
+
+      for (const scrutinId of scrutinIds) {
+        try {
+          const result = await this.fetchSingleScrutinLegacy(scrutinId, session, baseUrl);
+          if (result) {
+            results.push(result);
+          }
+        } catch (error: any) {
+          logger.warn({ scrutinId, error: error.message }, 'Error fetching scrutin');
+        }
+      }
+
       return results;
 
     } catch (error: any) {
@@ -117,210 +313,119 @@ export class SenatScrutinsClient {
     }
   }
 
-  private extractScrutinLinks(html: string, session: string): string[] {
-    const pattern = new RegExp(`scr${session}-(\\d+)\\.html`, 'g');
-    const matches = html.matchAll(pattern);
-    const numbers = new Set<number>();
+  private async fetchSingleScrutinLegacy(
+    scrutinId: string,
+    session: string,
+    baseUrl: string
+  ): Promise<ScrutinSenatWithVotes | null> {
+    const jsonUrl = `${baseUrl}/scrutin-public/${session}/${scrutinId}.json`;
+    const htmlUrl = `${baseUrl}/scrutin-public/${session}/${scrutinId}.html`;
 
-    for (const match of matches) {
-      if (match[1]) {
-        numbers.add(parseInt(match[1], 10));
-      }
-    }
-
-    // Trier par numéro décroissant (plus récent en premier)
-    return Array.from(numbers)
-      .sort((a, b) => b - a)
-      .map(n => `scr${session}-${n}`);
-  }
-
-  private async fetchScrutin(scrutinId: string, session: string): Promise<ScrutinSenatWithVotes | null> {
-    const jsonUrl = `${this.baseUrl}/scrutin-public/${session}/${scrutinId}.json`;
-    const htmlUrl = `${this.baseUrl}/scrutin-public/${session}/${scrutinId}.html`;
-
-    // Extraire le numéro du scrutin
     const match = scrutinId.match(/scr\d+-(\d+)/);
     if (!match) return null;
     const numero = parseInt(match[1], 10);
 
     try {
-      // Récupérer les votes en JSON
-      const jsonResponse = await axios.get<SenatScrutinJson>(jsonUrl, {
-        timeout: 30000,
-        headers: {
-          'User-Agent': 'CLAIR-Bot/1.0',
-          Accept: 'application/json',
-        },
-      });
+      const [jsonResponse, htmlResponse] = await Promise.all([
+        axios.get(jsonUrl, { timeout: 30000, headers: { 'User-Agent': 'CLAIR-Bot/1.0' } }),
+        axios.get(htmlUrl, { timeout: 30000, headers: { 'User-Agent': 'CLAIR-Bot/1.0' } }),
+      ]);
 
       const votesData = jsonResponse.data.votes || [];
-
-      // Récupérer les métadonnées depuis le HTML
-      const htmlResponse = await axios.get(htmlUrl, {
-        timeout: 30000,
-        headers: {
-          'User-Agent': 'CLAIR-Bot/1.0',
-          Accept: 'text/html',
-        },
-      });
-
       const metadata = this.parseScrutinHtml(htmlResponse.data, numero);
 
-      // Transformer les votes
       const votes: TransformedVoteSenat[] = [];
-      let nombrePour = 0;
-      let nombreContre = 0;
-      let nombreAbstention = 0;
+      let nombrePour = 0, nombreContre = 0, nombreAbstention = 0;
 
       for (const v of votesData) {
         let position: 'pour' | 'contre' | 'abstention' | 'absent';
         switch (v.vote) {
-          case 'p':
-            position = 'pour';
-            nombrePour++;
-            break;
-          case 'c':
-            position = 'contre';
-            nombreContre++;
-            break;
-          case 'a':
-            position = 'abstention';
-            nombreAbstention++;
-            break;
-          default:
-            position = 'absent';
+          case 'p': position = 'pour'; nombrePour++; break;
+          case 'c': position = 'contre'; nombreContre++; break;
+          case 'a': position = 'abstention'; nombreAbstention++; break;
+          default: position = 'absent';
         }
-
-        votes.push({
-          matricule: v.matricule,
-          position,
-          parDelegation: false, // Non disponible dans les données Sénat
-        });
+        votes.push({ matricule: v.matricule, position, parDelegation: false });
       }
-
-      const nombreVotants = nombrePour + nombreContre + nombreAbstention;
 
       return {
         scrutin: {
           numero,
           chambre: 'senat',
+          session: `${session}-${parseInt(session) + 1}`,
           date: metadata.date,
           titre: metadata.titre,
-          typeVote: 'ordinaire', // Le Sénat n'indique pas toujours le type
+          typeVote: 'ordinaire',
           sort: metadata.sort,
-          nombreVotants,
+          nombreVotants: nombrePour + nombreContre + nombreAbstention,
           nombrePour,
           nombreContre,
           nombreAbstention,
-          // Enrichissement contexte (limité pour le Sénat)
-          objetLibelle: metadata.titre, // Même que le titre, extrait du HTML
-          demandeurTexte: null,         // Non disponible au Sénat
-          seanceRef: null,              // Non disponible au Sénat
+          objetLibelle: metadata.titre,
+          demandeurTexte: null,
+          seanceRef: null,
+          dossierRef: metadata.dossierRef,
+          amendementsNumeros: [],
           sourceUrl: htmlUrl,
           sourceData: { votesData, metadata },
         },
         votes,
       };
-
     } catch (error: any) {
       logger.debug({ scrutinId, error: error.message }, 'Scrutin fetch failed');
       return null;
     }
   }
 
-  private decodeHtmlEntities(text: string): string {
-    return text
-      .replace(/<[^>]+>/g, '')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&apos;/g, "'")
-      .replace(/&#39;/g, "'")
-      .replace(/&deg;/g, '°')
-      // Minuscules
+  private parseScrutinHtml(html: string, numero: number): {
+    titre: string;
+    date: Date;
+    sort: string;
+    dossierRef: string | null;
+  } {
+    // Decode HTML entities
+    const decoded = html
       .replace(/&eacute;/gi, 'é')
       .replace(/&egrave;/gi, 'è')
-      .replace(/&ecirc;/gi, 'ê')
-      .replace(/&euml;/gi, 'ë')
       .replace(/&agrave;/gi, 'à')
-      .replace(/&acirc;/gi, 'â')
-      .replace(/&auml;/gi, 'ä')
-      .replace(/&ugrave;/gi, 'ù')
-      .replace(/&ucirc;/gi, 'û')
-      .replace(/&uuml;/gi, 'ü')
-      .replace(/&icirc;/gi, 'î')
-      .replace(/&iuml;/gi, 'ï')
-      .replace(/&ocirc;/gi, 'ô')
-      .replace(/&ouml;/gi, 'ö')
       .replace(/&ccedil;/gi, 'ç')
-      .replace(/&oelig;/gi, 'œ')
-      .replace(/&aelig;/gi, 'æ')
-      // Majuscules (résultat en majuscule)
-      .replace(/&Eacute;/g, 'É')
-      .replace(/&Egrave;/g, 'È')
-      .replace(/&Ecirc;/g, 'Ê')
-      .replace(/&Agrave;/g, 'À')
-      .replace(/&Acirc;/g, 'Â')
-      .replace(/&Ugrave;/g, 'Ù')
-      .replace(/&Ucirc;/g, 'Û')
-      .replace(/&Icirc;/g, 'Î')
-      .replace(/&Ocirc;/g, 'Ô')
-      .replace(/&Ccedil;/g, 'Ç')
-      .replace(/&OElig;/g, 'Œ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
+      .replace(/&deg;/g, '°')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&');
 
-  private parseScrutinHtml(html: string, numero: number): { titre: string; date: Date; sort: string } {
-    // Extraire le titre depuis le lead
+    // Extract title
     let titre = `Scrutin n°${numero}`;
     const leadMatch = html.match(/<p class="page-lead">([\s\S]*?)<\/p>/i);
     if (leadMatch && leadMatch[1]) {
-      titre = this.decodeHtmlEntities(leadMatch[1]);
+      titre = leadMatch[1].replace(/<[^>]+>/g, '').replace(/&[^;]+;/g, ' ').replace(/\s+/g, ' ').trim();
     }
 
-    // D'abord décoder les entités HTML pour pouvoir matcher les mois français
-    // (le HTML contient "d&eacute;cembre" au lieu de "décembre")
-    const decodedHtml = this.decodeHtmlEntities(html);
-
-    // Extraire la date - plusieurs stratégies
+    // Extract date
     let date: Date | null = null;
-
-    // Stratégie 1: Chercher dans le <title> (format: "séance du X mois YYYY")
-    const titleMatch = decodedHtml.match(/<title>[^<]*séance du (\d{1,2})\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})/i);
-
-    // Stratégie 2: Chercher n'importe où dans le HTML décodé
-    const dateMatch = titleMatch || decodedHtml.match(/(\d{1,2})\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})/i);
-
-    if (dateMatch && dateMatch[1] && dateMatch[2] && dateMatch[3]) {
+    const dateMatch = decoded.match(/(\d{1,2})\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})/i);
+    if (dateMatch) {
       const months: Record<string, number> = {
         janvier: 0, février: 1, mars: 2, avril: 3, mai: 4, juin: 5,
         juillet: 6, août: 7, septembre: 8, octobre: 9, novembre: 10, décembre: 11
       };
-      const day = parseInt(dateMatch[1], 10);
-      const month = months[dateMatch[2].toLowerCase()];
-      const year = parseInt(dateMatch[3], 10);
-
-      if (month !== undefined && !isNaN(day) && !isNaN(year)) {
-        date = new Date(year, month, day);
-      }
+      date = new Date(parseInt(dateMatch[3]), months[dateMatch[2].toLowerCase()], parseInt(dateMatch[1]));
     }
 
-    // JAMAIS de fallback à new Date() - c'est ce qui causait le bug !
     if (!date) {
-      logger.error({ numero }, 'CRITICAL: Could not parse date for scrutin - skipping to avoid bad data');
       throw new Error(`Failed to parse date for scrutin n°${numero}`);
     }
 
-    // Déterminer si adopté ou rejeté (utiliser le HTML décodé)
-    let sort = 'rejete';
-    if (decodedHtml.toLowerCase().includes('adopté')) {
-      sort = 'adopte';
+    // Extract sort
+    const sort = decoded.toLowerCase().includes('adopté') ? 'adopte' : 'rejete';
+
+    // Extract dossier ref
+    let dossierRef: string | null = null;
+    const dossierMatch = html.match(/href="\/dossier-legislatif\/([^"]+)\.html"/);
+    if (dossierMatch && dossierMatch[1]) {
+      dossierRef = dossierMatch[1];
     }
 
-    return { titre, date, sort };
+    return { titre, date, sort, dossierRef };
   }
 }
 
