@@ -1443,6 +1443,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
   const hasScrutinsChanged = results.sourcesChanged.some(s => s.includes('scrutins'));
   const hasInterventionsChanged = results.sourcesChanged.some(s => s.includes('interventions'));
   const hasAmendementsChanged = results.sourcesChanged.some(s => s.includes('amendements'));
+  const hasDossiersChanged = results.sourcesChanged.some(s => s.includes('dossiers'));
 
   if (hasInterventionsChanged || hasScrutinsChanged) {
     logger.info('Linking interventions to scrutins...');
@@ -1468,6 +1469,18 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       }, 'Scrutins-Amendements linking completed');
     } catch (error: any) {
       logger.error({ error: error.message }, 'Scrutins-Amendements linking failed (non-blocking)');
+    }
+  }
+
+  if (hasDossiersChanged || hasScrutinsChanged) {
+    logger.info('Linking Sénat scrutins to dossiers...');
+    try {
+      const linkResult = await linkSenatScrutinsToDossiers();
+      logger.info({
+        linked: linkResult.linked,
+      }, 'Sénat scrutins-dossiers linking completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Sénat scrutins-dossiers linking failed (non-blocking)');
     }
   }
 
@@ -1947,38 +1960,54 @@ export async function syncDossiersSenat(
   }
 
   // Link scrutins to dossiers via sourceData.dossierRef
-  if (linkScrutins && refToDossierId.size > 0) {
-    logger.info({ refs: refToDossierId.size }, 'Linking Sénat scrutins to dossiers...');
+  // Use a single SQL query to avoid loading all dossiers into memory
+  if (linkScrutins) {
+    logger.info('Linking Sénat scrutins to dossiers (SQL join)...');
 
-    // Get all Sénat scrutins with a dossierRef but no dossierId
-    const scrutinsToLink = await prisma.scrutin.findMany({
-      where: {
-        chambre: 'senat',
-        dossierId: null,
-        sourceData: { not: Prisma.DbNull },
-      },
-      select: { id: true, sourceData: true },
-    });
+    // Single UPDATE query with JOIN - no memory overhead!
+    const result = await prisma.$executeRaw`
+      UPDATE "Scrutin" s
+      SET "dossierId" = d.id
+      FROM "DossierLegislatif" d
+      WHERE s.chambre = 'senat'
+        AND s."dossierId" IS NULL
+        AND s."sourceData"->>'dossierRef' IS NOT NULL
+        AND d.uid = 'SENAT-' || LOWER(s."sourceData"->>'dossierRef')
+    `;
 
-    for (const scrutin of scrutinsToLink) {
-      const sourceData = scrutin.sourceData as { dossierRef?: string } | null;
-      const dossierRef = sourceData?.dossierRef?.toLowerCase();
-
-      if (dossierRef && refToDossierId.has(dossierRef)) {
-        const dossierId = refToDossierId.get(dossierRef)!;
-        await prisma.scrutin.update({
-          where: { id: scrutin.id },
-          data: { dossierId },
-        });
-        scrutinsLinked++;
-      }
-    }
-
+    scrutinsLinked = result;
     logger.info({ scrutinsLinked }, 'Sénat scrutins linked to dossiers');
   }
 
   logger.info({ created, updated, scrutinsLinked, total: dossiers.length }, 'Dossiers Sénat sync completed');
   return { created, updated, scrutinsLinked };
+}
+
+// =============================================================================
+// LINK SENAT SCRUTINS TO DOSSIERS
+// =============================================================================
+
+/**
+ * Lie les scrutins Sénat aux dossiers législatifs existants via sourceData.dossierRef
+ * Cette fonction peut être appelée indépendamment du sync des dossiers.
+ * Utilise une requête SQL UPDATE avec JOIN pour éviter de charger tous les dossiers en mémoire.
+ */
+export async function linkSenatScrutinsToDossiers(): Promise<{ linked: number }> {
+  logger.info('Linking Sénat scrutins to dossiers (SQL join)...');
+
+  // Single UPDATE query with JOIN - no memory overhead!
+  const result = await prisma.$executeRaw`
+    UPDATE "Scrutin" s
+    SET "dossierId" = d.id
+    FROM "DossierLegislatif" d
+    WHERE s.chambre = 'senat'
+      AND s."dossierId" IS NULL
+      AND s."sourceData"->>'dossierRef' IS NOT NULL
+      AND d.uid = 'SENAT-' || LOWER(s."sourceData"->>'dossierRef')
+  `;
+
+  logger.info({ linked: result }, 'Sénat scrutins linked to dossiers');
+  return { linked: result };
 }
 
 // =============================================================================
@@ -2120,12 +2149,12 @@ function parseScrutinAmendement(titre: string): {
   // Extraire le numéro d'amendement
   // Pattern: "l'amendement n° 287" ou "n° 287"
   const numeroMatch = titre.match(/amendement\s+n[°º]\s*(\d+)/i);
-  const numero = numeroMatch ? numeroMatch[1] : null;
+  const numero: string | null = numeroMatch?.[1] ?? null;
 
   // Extraire l'article visé
   // Pattern: "à l'article 7" ou "après l'article 11" ou "à l'article premier"
   const articleMatch = titre.match(/(?:à|après)\s+l['']article\s+([\w\s]+?)(?:\s+(?:du|de la|bis|ter)|$)/i);
-  let article: string | null = articleMatch && articleMatch[1] ? articleMatch[1].trim() : null;
+  let article: string | null = articleMatch?.[1]?.trim() ?? null;
 
   // Normaliser l'article (premier -> 1ER, etc.)
   if (article) {
@@ -2141,7 +2170,7 @@ function parseScrutinAmendement(titre: string): {
 
   // Extraire l'auteur (optionnel, pour affiner le matching)
   const auteurMatch = titre.match(/amendement\s+n[°º]\s*\d+\s+de\s+(?:M\.|Mme|MM\.)\s+([A-Za-zÀ-ÿ\-\s]+?)(?:\s+(?:et|à|après)|$)/i);
-  const auteur: string | null = auteurMatch && auteurMatch[1] ? auteurMatch[1].trim() : null;
+  const auteur: string | null = auteurMatch?.[1]?.trim() ?? null;
 
   return { numero, article, auteur };
 }
