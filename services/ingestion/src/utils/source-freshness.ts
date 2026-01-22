@@ -84,6 +84,12 @@ export const SOURCES: Record<string, SourceConfig> = {
     // Comptes rendus intégraux (~500MB)
     url: 'https://data.senat.fr/data/debats/cri.zip',
   },
+  'senat:dossiers': {
+    source: 'senat',
+    dataType: 'dossiers',
+    // Base DOSLEG (dossiers législatifs)
+    url: 'https://data.senat.fr/data/dosleg/dosleg.zip',
+  },
 
   // ==========================================================================
   // DILA (Débats AN - echanges.dila.gouv.fr)
