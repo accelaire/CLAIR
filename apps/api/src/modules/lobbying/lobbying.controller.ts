@@ -187,6 +187,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         budgetTotal,
         byType,
         topSecteurs,
+        totalSecteurs,
       ] = await Promise.all([
         fastify.prisma.lobbyiste.count(),
         fastify.prisma.actionLobby.count(),
@@ -204,6 +205,15 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           orderBy: { _count: { secteur: 'desc' } },
           take: 10,
         }),
+        // Count distinct base secteurs (split by ", " since HATVP stores combinations)
+        fastify.prisma.$queryRaw<[{ count: bigint }]>`
+          SELECT COUNT(*) as count FROM (
+            SELECT DISTINCT LOWER(TRIM(s.secteur_split)) as secteur
+            FROM lobbyistes l,
+                 LATERAL unnest(string_to_array(l.secteur, ', ')) AS s(secteur_split)
+            WHERE l.secteur IS NOT NULL
+          ) sub
+        `.then((result) => Number(result[0]?.count || 0)),
       ]);
 
       const response = {
@@ -211,6 +221,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           totalLobbyistes,
           totalActions,
           budgetTotal: budgetTotal._sum.budgetAnnuel || 0,
+          totalSecteurs,
           byType: byType.map((t) => ({ type: t.type, count: t._count.type })),
           topSecteurs: topSecteurs.map((s) => ({ secteur: s.secteur, count: s._count.secteur })),
         },
@@ -445,7 +456,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           where,
           include: {
             lobbyiste: {
-              select: { id: true, nom: true, type: true, secteur: true },
+              select: { id: true, nom: true, type: true, secteur: true, siteWeb: true },
             },
             parlementaire: {
               select: {
@@ -506,7 +517,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         },
         include: {
           lobbyiste: {
-            select: { id: true, nom: true, type: true, secteur: true },
+            select: { id: true, nom: true, type: true, secteur: true, siteWeb: true },
           },
           parlementaire: {
             select: {

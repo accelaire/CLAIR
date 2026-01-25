@@ -9,6 +9,7 @@ import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useUrlFilters, useUrlDateRange } from '@/hooks/useUrlFilters';
 import { DateRangePicker } from '@/components/DateRangePicker';
+import { LobbyisteLogo } from '@/components/lobbying';
 
 interface ActionLobby {
   id: string;
@@ -24,6 +25,7 @@ interface ActionLobby {
     nom: string;
     type: string | null;
     secteur: string | null;
+    siteWeb: string | null;
   };
   parlementaire: {
     id: string;
@@ -71,6 +73,38 @@ const formatDate = (date: string | null): string => {
     month: 'short',
     year: 'numeric',
   });
+};
+
+// Extraire le secteur entre crochets de la description
+const extractSecteur = (description: string): { secteur: string | null; cleanDescription: string } => {
+  const match = description.match(/^\[([^\]]+)\]\s*/);
+  if (match) {
+    return {
+      secteur: match[1],
+      cleanDescription: description.replace(match[0], ''),
+    };
+  }
+  return { secteur: null, cleanDescription: description };
+};
+
+// Couleurs pour les secteurs (basées sur un hash simple du nom)
+const secteurColorClasses = [
+  'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400',
+  'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
+  'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400',
+  'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400',
+  'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
+  'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400',
+  'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400',
+  'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-400',
+];
+
+const getSecteurColor = (secteur: string): string => {
+  let hash = 0;
+  for (let i = 0; i < secteur.length; i++) {
+    hash = secteur.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return secteurColorClasses[Math.abs(hash) % secteurColorClasses.length];
 };
 
 function ActionsPageContent() {
@@ -275,6 +309,7 @@ function ActionsPageContent() {
             {actions.map((action) => {
               const typeConfig = typeLabels[action.lobbyiste.type || ''];
               const Icon = typeConfig?.icon || Building2;
+              const { secteur, cleanDescription } = extractSecteur(action.description || '');
 
               return (
                 <Link
@@ -285,26 +320,16 @@ function ActionsPageContent() {
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     {/* Contenu principal */}
                     <div className="flex-1 min-w-0">
-                      {/* Description */}
-                      <p className="font-medium mb-3">
-                        {action.description || 'Objet non précisé'}
-                      </p>
-
-                      {/* Tags */}
+                      {/* Tags: Secteur + Cible type + Date */}
                       <div className="flex flex-wrap items-center gap-2 text-sm mb-3">
+                        {secteur && (
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${getSecteurColor(secteur)}`}>
+                            {secteur}
+                          </span>
+                        )}
                         {action.cible && (
                           <span className="px-2 py-0.5 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded text-xs">
                             {cibleLabels[action.cible] || action.cible}
-                          </span>
-                        )}
-                        {action.texteViseNom && (
-                          <span
-                            className="px-2 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 rounded text-xs max-w-[250px] truncate"
-                            title={action.texteViseNom}
-                          >
-                            {action.texteViseNom.length > 50
-                              ? action.texteViseNom.substring(0, 50) + '...'
-                              : action.texteViseNom}
                           </span>
                         )}
                         {action.dateDebut && (
@@ -315,12 +340,22 @@ function ActionsPageContent() {
                         )}
                       </div>
 
+                      {/* Description (nettoyée du secteur) */}
+                      <p className="font-medium mb-3">
+                        {cleanDescription || 'Objet non précisé'}
+                      </p>
+
+                      {/* Texte visé */}
+                      {action.texteViseNom && (
+                        <p className="text-sm text-muted-foreground mb-2">
+                          <strong>Texte visé :</strong> {action.texteViseNom}
+                        </p>
+                      )}
+
                       {/* Cible détaillée */}
                       {action.cibleNom && (
                         <p className="text-sm text-muted-foreground mb-3">
-                          <strong>Cible :</strong> {action.cibleNom.length > 100
-                            ? action.cibleNom.substring(0, 100) + '...'
-                            : action.cibleNom}
+                          <strong>Cible :</strong> {action.cibleNom}
                         </p>
                       )}
 
@@ -360,9 +395,7 @@ function ActionsPageContent() {
 
                     {/* Lobbyiste */}
                     <div className="flex items-center gap-3 sm:min-w-[250px] sm:max-w-[300px] pt-3 sm:pt-0 sm:pl-4 border-t sm:border-t-0 sm:border-l border-border">
-                      <div className="p-2 rounded-lg bg-muted shrink-0">
-                        <Icon className="h-5 w-5 text-muted-foreground" />
-                      </div>
+                      <LobbyisteLogo siteWeb={action.lobbyiste.siteWeb} nom={action.lobbyiste.nom} size="md" />
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold truncate">{action.lobbyiste.nom}</p>
                         <div className="flex flex-wrap items-center gap-1 mt-0.5">
