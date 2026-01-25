@@ -26,6 +26,7 @@ import { candidatsAdminRoutes } from './modules/ingestion/admin.controller';
 import { analyticsRoutes } from './modules/analytics/analytics.controller';
 import { groupesRoutes } from './modules/groupes/groupes.controller';
 import { homepageRoutes } from './modules/homepage/homepage.controller';
+import { sujetsRoutes, sujetsAdminRoutes } from './modules/sujets/sujets.controller';
 
 import { errorHandler } from './utils/errors';
 import { logger } from './utils/logger';
@@ -105,10 +106,12 @@ async function buildApp() {
           { name: 'Sénateurs', description: 'Données sur les sénateurs' },
           { name: 'Groupes politiques', description: 'Groupes parlementaires de l\'AN et du Sénat' },
           { name: 'Scrutins', description: 'Votes à l\'Assemblée nationale et au Sénat' },
+          { name: 'Sujets', description: 'Thématiques dynamiques des scrutins (via embeddings)' },
           { name: 'Lobbying', description: 'Données HATVP sur le lobbying' },
           { name: 'Search', description: 'Recherche globale' },
           { name: 'Simulateur', description: 'Simulateur électoral 2027' },
           { name: 'Admin', description: 'Administration des candidats et ingestion' },
+          { name: 'Admin - Sujets', description: 'Administration des sujets' },
           { name: 'Analytics', description: 'Statistiques et analyses pour l\'explorateur' },
         ],
         components: {
@@ -163,6 +166,8 @@ async function buildApp() {
       await api.register(candidatsAdminRoutes, { prefix: '/admin' });
       await api.register(analyticsRoutes, { prefix: '/analytics' });
       await api.register(homepageRoutes, { prefix: '/homepage' });
+      await api.register(sujetsRoutes, { prefix: '/sujets' });
+      await api.register(sujetsAdminRoutes, { prefix: '/admin/sujets' });
     },
     { prefix: '/api/v1' }
   );

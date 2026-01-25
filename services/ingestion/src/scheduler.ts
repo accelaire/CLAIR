@@ -4,6 +4,9 @@
 
 import cron, { ScheduledTask } from 'node-cron';
 import { smartSync, syncScrutins, syncScrutinsSenat, syncLobbyistes, syncInterventions } from './workers/sync.js';
+import { generateMissingEmbeddings } from './workers/embedding-generator.js';
+import { assignToExistingSujets, detectNewClusters } from './workers/cluster-manager.js';
+import { generatePendingLabels } from './workers/label-generator.js';
 import { logger } from './utils/logger';
 
 // =============================================================================
@@ -97,6 +100,60 @@ export const SCHEDULES: Record<string, ScheduleConfig> = {
       logger.info('Running weekly interventions sync...');
       await syncInterventions({ maxSeances: 50 });
       logger.info('Weekly interventions sync completed');
+    },
+  },
+
+  // ==========================================================================
+  // SUJETS DYNAMIQUES (Embeddings & Clustering)
+  // ==========================================================================
+
+  // Génération des embeddings - 05:30 (après sync quotidien)
+  dailyEmbeddings: {
+    cron: '30 5 * * *',
+    description: 'Génération des embeddings manquants',
+    enabled: true,
+    handler: async () => {
+      logger.info('Running daily embedding generation...');
+      const result = await generateMissingEmbeddings({ limit: 200 });
+      logger.info({ generated: result.generated, errors: result.errors }, 'Daily embedding generation completed');
+    },
+  },
+
+  // Attribution aux sujets existants - 06:00
+  dailySujetAssignment: {
+    cron: '0 6 * * *',
+    description: 'Attribution des scrutins aux sujets existants',
+    enabled: true,
+    handler: async () => {
+      logger.info('Running daily sujet assignment...');
+      const result = await assignToExistingSujets({ limit: 500 });
+      logger.info({ assigned: result.assigned, skipped: result.skipped }, 'Daily sujet assignment completed');
+    },
+  },
+
+  // Détection de nouveaux clusters - Dimanche 04:00
+  weeklyClusterDetection: {
+    cron: '0 4 * * 0', // Dimanche à 04:00
+    description: 'Détection de nouveaux clusters et génération de labels',
+    enabled: true,
+    handler: async () => {
+      logger.info('Running weekly cluster detection...');
+
+      // 1. Détecter les nouveaux clusters
+      const detectResult = await detectNewClusters({ minClusterSize: 10 });
+      logger.info({
+        newClusters: detectResult.newClusters,
+        merged: detectResult.merged,
+      }, 'Cluster detection completed');
+
+      // 2. Générer les labels pour les nouveaux clusters
+      if (detectResult.newClusters > 0) {
+        logger.info('Generating labels for new clusters...');
+        const labelResult = await generatePendingLabels({ limit: 20 });
+        logger.info({ labeled: labelResult.labeled }, 'Label generation completed');
+      }
+
+      logger.info('Weekly cluster detection completed');
     },
   },
 };

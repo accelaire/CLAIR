@@ -295,6 +295,10 @@ model Scrutin {
   votes         Vote[]
   interventions Intervention[]  // Interventions liées (explications de vote, débats)
 
+  // Sujets (tags dynamiques via embeddings)
+  sujets        ScrutinSujet[]
+  embedding     ScrutinEmbedding?
+
   // Métadonnées source
   sourceUrl  String? @map("source_url")
   sourceData Json?   @map("source_data")
@@ -956,4 +960,80 @@ model ValidationQueue {
   @@index([status])
   @@index([priority])
   @@map("validation_queue")
+}
+
+// =============================================================================
+// SUJETS (Tags Dynamiques via Embeddings)
+// Regroupement sémantique automatique des scrutins par thème
+// =============================================================================
+
+model Sujet {
+  id            String    @id @default(uuid())
+  slug          String    @unique
+  label         String
+  description   String?
+  category      String?   // budget|sante|securite|immigration|environnement|travail|education|justice|institutions|autre
+
+  // Cluster data (centroïde stocké via pgvector, voir migration SQL)
+  memberCount   Int       @default(0) @map("member_count")
+
+  // Période couverte
+  dateDebut     DateTime? @map("date_debut")
+  dateFin       DateTime? @map("date_fin")
+
+  // Admin
+  actif         Boolean   @default(true)
+  featured      Boolean   @default(false)
+  featuredOrder Int       @default(0) @map("featured_order")
+
+  // Liens utiles pour contexte éditorial
+  usefulLinks   Json      @default("[]") @map("useful_links")
+  newsUrl       String?   @map("news_url")
+
+  // Relations
+  scrutins      ScrutinSujet[]
+
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([actif])
+  @@index([category])
+  @@index([featured, featuredOrder])
+  @@map("sujets")
+}
+
+model ScrutinSujet {
+  id         String   @id @default(uuid())
+  scrutinId  String   @map("scrutin_id")
+  scrutin    Scrutin  @relation(fields: [scrutinId], references: [id], onDelete: Cascade)
+  sujetId    String   @map("sujet_id")
+  sujet      Sujet    @relation(fields: [sujetId], references: [id], onDelete: Cascade)
+
+  similarity Float?   // Score de similarité avec le centroïde (0-1)
+  auto       Boolean  @default(true) // true si assigné automatiquement, false si manuel
+
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([scrutinId, sujetId])
+  @@index([scrutinId])
+  @@index([sujetId])
+  @@map("scrutins_sujets")
+}
+
+model ScrutinEmbedding {
+  id        String   @id @default(uuid())
+  scrutinId String   @unique @map("scrutin_id")
+  scrutin   Scrutin  @relation(fields: [scrutinId], references: [id], onDelete: Cascade)
+
+  // Embedding 768 dimensions (stocké via pgvector, voir migration SQL)
+  // La colonne embedding_vec est gérée manuellement pour utiliser le type vector(768)
+
+  clustered Boolean  @default(false) // true si déjà assigné à un sujet
+  sujetId   String?  @map("sujet_id")  // Sujet assigné (référence informative, pas FK)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([clustered])
+  @@index([sujetId])
+  @@map("scrutins_embeddings")
 }

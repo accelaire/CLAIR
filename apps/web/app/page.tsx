@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, Users, Vote, Building2, ArrowRight, CheckCircle, XCircle, Calendar, BarChart3, Sparkles } from 'lucide-react';
+import { Search, Users, Vote, Building2, ArrowRight, CheckCircle, XCircle, Calendar, BarChart3, Sparkles, Hash, TrendingUp } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useCountUp } from '@/hooks/useCountUp';
 
@@ -31,6 +31,29 @@ interface RecentScrutin {
   importance: number;
 }
 
+interface FeaturedSujet {
+  id: string;
+  slug: string;
+  label: string;
+  description: string | null;
+  category: string | null;
+  memberCount: number;
+  newsUrl: string | null;
+}
+
+const categoryColors: Record<string, string> = {
+  budget: 'bg-emerald-100 text-emerald-700',
+  sante: 'bg-red-100 text-red-700',
+  securite: 'bg-orange-100 text-orange-700',
+  immigration: 'bg-amber-100 text-amber-700',
+  environnement: 'bg-green-100 text-green-700',
+  travail: 'bg-blue-100 text-blue-700',
+  education: 'bg-purple-100 text-purple-700',
+  justice: 'bg-slate-100 text-slate-700',
+  institutions: 'bg-indigo-100 text-indigo-700',
+  autre: 'bg-gray-100 text-gray-700',
+};
+
 export default function HomePage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
@@ -41,6 +64,13 @@ export default function HomePage() {
     queryFn: () => api.get('/homepage').then(res => res.data),
     staleTime: 30000, // Refresh every 30 seconds
     refetchOnWindowFocus: true,
+  });
+
+  // Fetch featured sujets
+  const { data: featuredSujets } = useQuery<FeaturedSujet[]>({
+    queryKey: ['sujets-featured'],
+    queryFn: () => api.get('/sujets/featured', { params: { limit: 6 } }).then(res => res.data.data),
+    staleTime: 60000, // Refresh every minute
   });
 
   const stats = homepageData?.stats;
@@ -238,6 +268,53 @@ export default function HomePage() {
                       <XCircle className="h-4 w-4" />
                       {scrutin.nombreContre}
                     </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Featured Sujets Section */}
+      {featuredSujets && featuredSujets.length > 0 && (
+        <section className="py-16 border-b">
+          <div className="container mx-auto px-4">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-amber-500" />
+                <h2 className="text-2xl font-bold">Sujets d&apos;actualité</h2>
+              </div>
+              <Link
+                href="/sujets"
+                className="flex items-center text-sm font-medium text-primary hover:underline"
+              >
+                Voir tous les sujets
+                <ArrowRight className="ml-1 h-4 w-4" />
+              </Link>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {featuredSujets.slice(0, 6).map((sujet) => (
+                <Link
+                  key={sujet.id}
+                  href={`/sujets/${sujet.slug}`}
+                  className="rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
+                >
+                  {sujet.category && (
+                    <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded mb-2 ${categoryColors[sujet.category] || 'bg-gray-100 text-gray-700'}`}>
+                      {sujet.category.charAt(0).toUpperCase() + sujet.category.slice(1)}
+                    </span>
+                  )}
+                  <h3 className="font-semibold line-clamp-2 mb-2">{sujet.label}</h3>
+                  {sujet.description && (
+                    <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
+                      {sujet.description}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                    <Hash className="h-4 w-4" />
+                    {sujet.memberCount} scrutin{sujet.memberCount > 1 ? 's' : ''}
                   </div>
                 </Link>
               ))}

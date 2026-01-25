@@ -355,6 +355,21 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
               },
             },
           },
+          // Sujets associés
+          sujets: {
+            select: {
+              similarity: true,
+              auto: true,
+              sujet: {
+                select: {
+                  id: true,
+                  slug: true,
+                  label: true,
+                  category: true,
+                },
+              },
+            },
+          },
         },
       });
 
@@ -436,9 +451,17 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         absent: votesAbsent,
       };
 
+      // Formater les sujets pour la réponse
+      const sujets = scrutin.sujets.map(ss => ({
+        ...ss.sujet,
+        similarity: ss.similarity,
+        auto: ss.auto,
+      }));
+
       return {
         data: {
           ...scrutin,
+          sujets,
           sourceUrl: fixSourceUrl(scrutin.sourceUrl, scrutin.chambre, scrutin.numero),
           votesByPosition,
           votesByGroupe,

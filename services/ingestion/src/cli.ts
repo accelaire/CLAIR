@@ -31,6 +31,21 @@ import {
   calculateAllGroupeAlliances,
   calculateAllGroupeThematiques,
 } from './workers/stats-calculator.js';
+import {
+  generateMissingEmbeddings,
+  regenerateAllEmbeddings,
+  checkEmbeddingsStatus,
+} from './workers/embedding-generator.js';
+import {
+  assignToExistingSujets,
+  detectNewClusters,
+  recalculateAllCentroids,
+  mergeSimilarSujets,
+} from './workers/cluster-manager.js';
+import {
+  generatePendingLabels,
+  checkLabelQuality,
+} from './workers/label-generator.js';
 import { logger } from './utils/logger';
 
 const program = new Command();
@@ -306,6 +321,185 @@ program
       process.exit(totalErrors > 0 ? 1 : 0);
     } catch (error: any) {
       logger.error({ error: error.message }, 'Stats calculation failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: generate-embeddings
+// =============================================================================
+program
+  .command('generate-embeddings')
+  .description('Générer les embeddings pour les scrutins')
+  .option('-a, --all', 'Régénérer tous les embeddings (backfill complet)')
+  .option('-l, --limit <number>', 'Limiter le nombre de scrutins à traiter', parseInt)
+  .option('--dry-run', 'Mode simulation')
+  .action(async (options) => {
+    try {
+      logger.info({ options }, 'Starting embedding generation');
+
+      if (options.all) {
+        const result = await regenerateAllEmbeddings({
+          batchSize: 10,
+        });
+        console.log(`\n📊 Embeddings régénérés: ${result.generated}/${result.total}`);
+        console.log(`   ❌ Erreurs: ${result.errors}`);
+        console.log(`   ⏱️  Durée: ${result.duration}`);
+      } else {
+        const result = await generateMissingEmbeddings({
+          limit: options.limit || 200,
+          dryRun: options.dryRun,
+        });
+        console.log(`\n📊 Embeddings générés: ${result.generated}/${result.total}`);
+        console.log(`   ⏭️  Ignorés: ${result.skipped}`);
+        console.log(`   ❌ Erreurs: ${result.errors}`);
+        console.log(`   ⏱️  Durée: ${result.duration}`);
+      }
+
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Embedding generation failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: detect-clusters
+// =============================================================================
+program
+  .command('detect-clusters')
+  .description('Détecter de nouveaux clusters (sujets) parmi les scrutins')
+  .option('--min-size <number>', 'Taille minimum d\'un cluster', parseInt)
+  .option('--dry-run', 'Mode simulation')
+  .action(async (options) => {
+    try {
+      logger.info({ options }, 'Starting cluster detection');
+
+      // D'abord, assigner aux sujets existants
+      console.log('\n🔗 Attribution aux sujets existants...');
+      const assignResult = await assignToExistingSujets({
+        dryRun: options.dryRun,
+      });
+      console.log(`   ✅ Assignés: ${assignResult.assigned}`);
+      console.log(`   ⏭️  En attente: ${assignResult.skipped}`);
+
+      // Ensuite, détecter les nouveaux clusters
+      console.log('\n🔍 Détection de nouveaux clusters...');
+      const detectResult = await detectNewClusters({
+        minClusterSize: options.minSize || 10,
+        dryRun: options.dryRun,
+      });
+      console.log(`   🆕 Nouveaux clusters: ${detectResult.newClusters}`);
+      console.log(`   🔄 Fusionnés: ${detectResult.merged}`);
+      console.log(`   ⏭️  Non clusterés: ${detectResult.pending}`);
+      console.log(`   ⏱️  Durée: ${detectResult.duration}`);
+
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Cluster detection failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: generate-labels
+// =============================================================================
+program
+  .command('generate-labels')
+  .description('Générer les labels des sujets via Mistral API')
+  .option('-l, --limit <number>', 'Limiter le nombre de sujets', parseInt)
+  .option('--dry-run', 'Mode simulation')
+  .action(async (options) => {
+    try {
+      logger.info({ options }, 'Starting label generation');
+
+      const result = await generatePendingLabels({
+        limit: options.limit || 10,
+        dryRun: options.dryRun,
+      });
+
+      console.log(`\n🏷️  Labels générés: ${result.labeled}/${result.total}`);
+      console.log(`   ❌ Erreurs: ${result.errors}`);
+      console.log(`   ⏱️  Durée: ${result.duration}`);
+
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Label generation failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: sujets-status
+// =============================================================================
+program
+  .command('sujets-status')
+  .description('Afficher l\'état du système de sujets')
+  .action(async () => {
+    try {
+      console.log('\n📊 État des embeddings:');
+      const embStatus = await checkEmbeddingsStatus();
+      console.log(`   Total scrutins: ${embStatus.totalScrutins}`);
+      console.log(`   Avec embedding: ${embStatus.withEmbedding}`);
+      console.log(`   Sans embedding: ${embStatus.withoutEmbedding}`);
+      console.log(`   Clusterés: ${embStatus.clustered}`);
+      console.log(`   En attente: ${embStatus.pending}`);
+
+      console.log('\n🏷️  Qualité des labels:');
+      const labelStatus = await checkLabelQuality();
+      console.log(`   Total sujets: ${labelStatus.total}`);
+      console.log(`   Labels temporaires: ${labelStatus.temporary}`);
+      console.log(`   Doublons potentiels: ${labelStatus.possibleDuplicates}`);
+      console.log(`   Descriptions anglais: ${labelStatus.englishDescriptions}`);
+
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Status check failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: recalculate-centroids
+// =============================================================================
+program
+  .command('recalculate-centroids')
+  .description('Recalculer tous les centroïdes des sujets')
+  .action(async () => {
+    try {
+      console.log('\n🔄 Recalcul des centroïdes...');
+      await recalculateAllCentroids();
+      console.log('✅ Centroïdes recalculés');
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Centroid recalculation failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: merge-sujets
+// =============================================================================
+program
+  .command('merge-sujets')
+  .description('Fusionner les sujets similaires (post-labeling)')
+  .option('-t, --threshold <number>', 'Seuil de similarité pour fusion (default: 0.85)', parseFloat)
+  .option('--dry-run', 'Mode simulation')
+  .action(async (options) => {
+    try {
+      console.log('\n🔗 Fusion des sujets similaires...\n');
+      const result = await mergeSimilarSujets({
+        threshold: options.threshold,
+        dryRun: options.dryRun,
+      });
+      console.log(`\n📊 Résultat:`);
+      console.log(`   Total sujets: ${result.total}`);
+      console.log(`   Fusionnés: ${result.merged}`);
+      console.log(`   Conservés: ${result.kept}`);
+      console.log(`   Durée: ${result.duration}`);
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Merge failed');
       process.exit(1);
     }
   });
