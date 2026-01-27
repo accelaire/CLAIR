@@ -1,16 +1,17 @@
 'use client';
 
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useMemo } from 'react';
+import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft, Calendar, CheckCircle, XCircle, MinusCircle, Users,
-  Tag, ExternalLink, FileText, Info, ChevronDown, ChevronUp, MessageSquare,
-  ArrowUpDown, ArrowUp, ArrowDown
+  Tag, ExternalLink, FileText, Info, MessageSquare,
+  ArrowUp, ArrowDown, Loader2
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 
 interface Vote {
   id: string;
@@ -112,6 +113,18 @@ interface ScrutinDetail {
   };
   votesByGroupe: Record<string, { pour: number; contre: number; abstention: number; absent: number }>;
   totalVotes: number;
+  totalInterventions: number;
+}
+
+interface InterventionsResponse {
+  data: InterventionScrutin[];
+  meta: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNext: boolean;
+  };
 }
 
 const chambreLabels: Record<string, string> = {
@@ -125,17 +138,50 @@ const typeVoteLabels: Record<string, string> = {
   motion: 'Motion',
 };
 
-// Formater la session pour l'affichage
-const formatSession = (chambre: string, session: string): string | null => {
-  if (chambre === 'senat') {
-    const year = parseInt(session, 10);
-    if (!isNaN(year)) {
-      return `Session ${year}-${year + 1}`;
-    }
-    return session;
-  }
-  return null;
+// Normaliser une chaîne pour la comparaison (minuscules + sans accents + tirets uniformisés)
+const normalizeString = (str: string): string => {
+  return str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Enlever les accents
+    .replace(/[\u0096\u2013\u2014]/g, '-'); // Normaliser les différents tirets
 };
+
+// Mapping des noms complets de groupes vers leurs abréviations/slugs
+// Utilisé pour matcher les demandeurs de vote avec les groupes
+// Les clés sont normalisées (sans accents, minuscules)
+// Les entrées sont triées par longueur décroissante pour matcher les noms les plus spécifiques d'abord
+const groupeFullNameToSlug: [string, { slug: string; chambre: 'assemblee' | 'senat' }][] = [
+  // Assemblée nationale - noms longs d'abord
+  ['la france insoumise - nouveau front populaire', { slug: 'lfi-nfp', chambre: 'assemblee' }],
+  ['france insoumise - nouveau front populaire', { slug: 'lfi-nfp', chambre: 'assemblee' }],
+  ['socialistes et apparentes - nouveau front populaire', { slug: 'soc', chambre: 'assemblee' }],
+  ['ecologiste et social - nouveau front populaire', { slug: 'ges', chambre: 'assemblee' }],
+  ['gauche democrate et republicaine - nouveau front populaire', { slug: 'gdr', chambre: 'assemblee' }],
+  ['libertes, independants, outre-mer et territoires', { slug: 'liot', chambre: 'assemblee' }],
+  ['union des droites pour la republique', { slug: 'udr', chambre: 'assemblee' }],
+  ['gauche democrate et republicaine', { slug: 'gdr', chambre: 'assemblee' }],
+  ['ensemble pour la republique', { slug: 'epr', chambre: 'assemblee' }],
+  ['rassemblement national', { slug: 'rn', chambre: 'assemblee' }],
+  ['la france insoumise', { slug: 'lfi-nfp', chambre: 'assemblee' }],
+  ['france insoumise', { slug: 'lfi-nfp', chambre: 'assemblee' }],
+  ['droite republicaine', { slug: 'dr', chambre: 'assemblee' }],
+  ['les republicains', { slug: 'lr', chambre: 'assemblee' }],
+  ['ecologiste et social', { slug: 'ges', chambre: 'assemblee' }],
+  ['republicains', { slug: 'lr', chambre: 'assemblee' }],
+  ['socialistes', { slug: 'soc', chambre: 'assemblee' }],
+  ['horizons', { slug: 'hor', chambre: 'assemblee' }],
+  ['democrate', { slug: 'dem', chambre: 'assemblee' }],
+  // Sénat - noms longs d'abord
+  ['communiste republicain citoyen et ecologiste - kanaky', { slug: 'crce-k', chambre: 'senat' }],
+  ['rassemblement des democrates, progressistes et independants', { slug: 'rdpi', chambre: 'senat' }],
+  ['communiste republicain citoyen et ecologiste', { slug: 'crce-k', chambre: 'senat' }],
+  ['ecologiste - solidarite et territoires', { slug: 'gest', chambre: 'senat' }],
+  ['rassemblement des democrates', { slug: 'rdpi', chambre: 'senat' }],
+  ['union centriste', { slug: 'uc', chambre: 'senat' }],
+  ['socialiste', { slug: 'soc', chambre: 'senat' }],
+];
+
 
 export default function ScrutinDetailPage() {
   const params = useParams();
@@ -153,6 +199,100 @@ export default function ScrutinDetailPage() {
     queryKey: ['scrutin', numero, chambre, session],
     queryFn: () => api.get(`/scrutins/${numero}`, { params: { chambre, session } }).then((res) => res.data),
   });
+
+  // Query paginée pour les interventions
+  const {
+    data: interventionsData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery<InterventionsResponse>({
+    queryKey: ['scrutin-interventions', numero, chambre, session, interventionsSortAsc ? 'asc' : 'desc'],
+    queryFn: ({ pageParam = 1 }) =>
+      api.get(`/scrutins/${numero}/interventions`, {
+        params: {
+          chambre,
+          session,
+          page: pageParam,
+          limit: 10,
+          sort: interventionsSortAsc ? 'asc' : 'desc',
+        },
+      }).then((res) => res.data),
+    getNextPageParam: (lastPage) =>
+      lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
+    initialPageParam: 1,
+    enabled: !!data, // N'exécuter qu'après avoir les données du scrutin
+  });
+
+  // Hook pour le scroll infini des interventions
+  const { loadMoreRef: interventionsLoadMoreRef } = useInfiniteScroll({
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  });
+
+  // Toutes les interventions chargées
+  const allInterventions = interventionsData?.pages.flatMap((page) => page.data) ?? [];
+  const totalInterventions = data?.data.totalInterventions ?? 0;
+
+  // Extraire les groupes depuis les votes (avec slug et chambre pour les liens)
+  // Doit être avant les returns conditionnels pour respecter les règles des hooks
+  const groupesMap = useMemo(() => {
+    const groups = new Map<string, { slug: string; nom: string; chambre: string }>();
+    if (data?.data.votesByPosition) {
+      Object.values(data.data.votesByPosition).flat().forEach(vote => {
+        if (vote.parlementaire.groupe) {
+          groups.set(vote.parlementaire.groupe.nom.toLowerCase(), {
+            slug: vote.parlementaire.groupe.slug,
+            nom: vote.parlementaire.groupe.nom,
+            chambre: vote.parlementaire.chambre,
+          });
+        }
+      });
+    }
+    return groups;
+  }, [data?.data.votesByPosition]);
+
+  // Extraire les parlementaires depuis les votes ET les interventions (avec slug et chambre pour les liens)
+  const parlementairesMap = useMemo(() => {
+    const parlementaires = new Map<string, { slug: string; prenom: string; nom: string; chambre: string }>();
+
+    // Depuis les votes
+    if (data?.data.votesByPosition) {
+      Object.values(data.data.votesByPosition).flat().forEach(vote => {
+        const p = vote.parlementaire;
+        const fullName = `${p.prenom} ${p.nom}`;
+        parlementaires.set(normalizeString(fullName), {
+          slug: p.slug,
+          prenom: p.prenom,
+          nom: p.nom,
+          chambre: p.chambre,
+        });
+      });
+    }
+
+    // Depuis les interventions (pour les parlementaires qui n'ont pas voté mais sont intervenus)
+    // On utilise à la fois les interventions initiales et celles chargées via infinite scroll
+    const interventionsToCheck = [
+      ...(data?.data.interventions || []),
+      ...allInterventions,
+    ];
+    interventionsToCheck.forEach(intervention => {
+      const p = intervention.parlementaire;
+      const fullName = `${p.prenom} ${p.nom}`;
+      const key = normalizeString(fullName);
+      if (!parlementaires.has(key)) {
+        parlementaires.set(key, {
+          slug: p.slug,
+          prenom: p.prenom,
+          nom: p.nom,
+          chambre: data?.data.chambre || 'assemblee',
+        });
+      }
+    });
+
+    return parlementaires;
+  }, [data?.data.votesByPosition, data?.data.interventions, data?.data.chambre, allInterventions]);
 
   const getParlementaireRoute = (parlementaire: Vote['parlementaire']) => {
     return parlementaire.chambre === 'senat'
@@ -200,6 +340,150 @@ export default function ScrutinDetailPage() {
   const abstPct = totalExprime > 0 ? (scrutin.nombreAbstention / totalExprime) * 100 : 0;
   const isAdopted = scrutin.sort === 'adopte';
 
+  // Type pour les matches trouvés dans le texte
+  type TextMatch = {
+    type: 'groupe' | 'parlementaire';
+    slug: string;
+    chambre: string;
+    start: number;
+    end: number;
+  };
+
+  // Vérifier si un match est sur des limites de mots (pas au milieu d'un mot)
+  const isWordBoundary = (text: string, start: number, end: number): boolean => {
+    // Caractères qui délimitent les mots
+    const boundaryChars = /[\s,.:;!?()[\]"'«»\-]/;
+
+    // Vérifier le caractère avant le match (ou début de chaîne)
+    const charBefore = start === 0 ? ' ' : text[start - 1];
+    const validStart = start === 0 || boundaryChars.test(charBefore);
+
+    // Vérifier le caractère après le match (ou fin de chaîne)
+    const charAfter = end >= text.length ? ' ' : text[end];
+    const validEnd = end >= text.length || boundaryChars.test(charAfter);
+
+    return validStart && validEnd;
+  };
+
+  // Chercher tous les groupes et parlementaires dans le texte
+  const findAllMatchesInText = (text: string): TextMatch[] => {
+    const normalizedText = normalizeString(text);
+    const matches: TextMatch[] = [];
+
+    // 1. Chercher les groupes dans le mapping (noms complets, triés par longueur)
+    for (const [fullName, info] of groupeFullNameToSlug) {
+      const idx = normalizedText.indexOf(fullName);
+      if (idx !== -1 && isWordBoundary(normalizedText, idx, idx + fullName.length)) {
+        matches.push({
+          type: 'groupe',
+          slug: info.slug,
+          chambre: info.chambre,
+          start: idx,
+          end: idx + fullName.length,
+        });
+        break; // Un seul groupe par texte
+      }
+    }
+
+    // 2. Chercher les groupes extraits des votes (noms abrégés)
+    if (matches.length === 0) {
+      for (const [nomLower, groupe] of groupesMap.entries()) {
+        const normalizedNom = normalizeString(nomLower);
+        const idx = normalizedText.indexOf(normalizedNom);
+        if (idx !== -1 && isWordBoundary(normalizedText, idx, idx + normalizedNom.length)) {
+          matches.push({
+            type: 'groupe',
+            slug: groupe.slug,
+            chambre: groupe.chambre,
+            start: idx,
+            end: idx + normalizedNom.length,
+          });
+          break;
+        }
+      }
+    }
+
+    // 3. Chercher les parlementaires
+    for (const [normalizedName, parlementaire] of parlementairesMap.entries()) {
+      // Ignorer les noms trop courts (< 5 chars) pour éviter les faux positifs
+      if (normalizedName.length < 5) continue;
+
+      // Chercher "Prénom Nom" dans le texte normalisé
+      const idx = normalizedText.indexOf(normalizedName);
+      if (idx !== -1 && isWordBoundary(normalizedText, idx, idx + normalizedName.length)) {
+        // Vérifier que ce n'est pas à l'intérieur d'un match groupe existant
+        const isInsideGroupe = matches.some(m => idx >= m.start && idx < m.end);
+        if (!isInsideGroupe) {
+          matches.push({
+            type: 'parlementaire',
+            slug: parlementaire.slug,
+            chambre: parlementaire.chambre,
+            start: idx,
+            end: idx + normalizedName.length,
+          });
+          break; // Un seul parlementaire principal par texte
+        }
+      }
+    }
+
+    // Trier par position dans le texte
+    return matches.sort((a, b) => a.start - b.start);
+  };
+
+  // Formater les demandeurs avec liens vers les groupes et parlementaires
+  const formatDemandeurs = (demandeurTexte: string) => {
+    const matches = findAllMatchesInText(demandeurTexte);
+
+    if (matches.length === 0) {
+      return demandeurTexte;
+    }
+
+    const result: React.ReactNode[] = [];
+    let lastIndex = 0;
+
+    for (const match of matches) {
+      // Texte avant le match
+      if (match.start > lastIndex) {
+        result.push(demandeurTexte.slice(lastIndex, match.start));
+      }
+
+      // Le match avec lien
+      const matchText = demandeurTexte.slice(match.start, match.end);
+      const chambreRoute = match.chambre === 'senat' ? 'senat' : 'assemblee';
+
+      if (match.type === 'groupe') {
+        result.push(
+          <Link
+            key={`groupe-${match.start}`}
+            href={`/groupes/${chambreRoute}/${match.slug}`}
+            className="text-purple-700 hover:text-purple-900 hover:underline font-medium"
+          >
+            {matchText}
+          </Link>
+        );
+      } else {
+        result.push(
+          <Link
+            key={`parlementaire-${match.start}`}
+            href={`/${chambreRoute === 'senat' ? 'senateurs' : 'deputes'}/${match.slug}`}
+            className="text-purple-700 hover:text-purple-900 hover:underline font-medium"
+          >
+            {matchText}
+          </Link>
+        );
+      }
+
+      lastIndex = match.end;
+    }
+
+    // Texte après le dernier match
+    if (lastIndex < demandeurTexte.length) {
+      result.push(demandeurTexte.slice(lastIndex));
+    }
+
+    return <>{result}</>;
+  };
+
   // Filter votes by groupe if selected
   const getFilteredVotes = (position: keyof typeof scrutin.votesByPosition) => {
     const votes = scrutin.votesByPosition[position] || [];
@@ -222,10 +506,8 @@ export default function ScrutinDetailPage() {
       <div className="rounded-xl border bg-card p-6 mb-6">
         {/* Top row: badges */}
         <div className="flex flex-wrap items-center gap-2 mb-3">
-          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-            isAdopted ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-          }`}>
-            {isAdopted ? '✓ Adopté' : '✗ Rejeté'}
+          <span className="text-sm font-medium text-muted-foreground">
+            Scrutin n°{scrutin.numero}
           </span>
           <span className={`px-2 py-1 text-xs font-medium rounded ${
             scrutin.chambre === 'senat' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
@@ -240,8 +522,11 @@ export default function ScrutinDetailPage() {
               ★ Important
             </span>
           )}
-          <span className="text-sm text-muted-foreground ml-auto">
-            Scrutin n°{scrutin.numero}
+          <span className={`ml-auto px-3 py-1 rounded-full text-sm font-medium flex items-center gap-1 ${
+            isAdopted ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'
+          }`}>
+            {isAdopted ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+            {isAdopted ? 'Adopté' : 'Rejeté'}
           </span>
         </div>
 
@@ -293,7 +578,7 @@ export default function ScrutinDetailPage() {
                 <Users className="h-4 w-4 mt-0.5 text-purple-600 flex-shrink-0" />
                 <div>
                   <span className="text-purple-700 font-medium">Vote demandé par : </span>
-                  <span className="text-purple-900">{scrutin.demandeurTexte}</span>
+                  <span className="text-purple-900">{formatDemandeurs(scrutin.demandeurTexte)}</span>
                 </div>
               </div>
             )}
@@ -427,41 +712,35 @@ export default function ScrutinDetailPage() {
         )}
 
         {/* Interventions / Débats liés */}
-        {scrutin.interventions && scrutin.interventions.length > 0 && (
+        {totalInterventions > 0 && (
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-3">
               <MessageSquare className="h-5 w-5 text-amber-600" />
               <h3 className="font-semibold text-gray-900">Débats et explications de vote</h3>
               <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                {scrutin.interventions.length}
+                {totalInterventions}
               </span>
               {/* Bouton de tri */}
               <button
                 onClick={() => setInterventionsSortAsc(!interventionsSortAsc)}
                 className="ml-auto flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 rounded-md transition-colors"
-                title={interventionsSortAsc ? 'Ordre chronologique' : 'Plus récent d\'abord'}
+                title={interventionsSortAsc ? 'Plus anciens d\'abord' : 'Plus récents d\'abord'}
               >
                 {interventionsSortAsc ? (
                   <>
                     <ArrowUp className="h-3.5 w-3.5" />
-                    Chronologique
+                    Plus anciens d&apos;abord
                   </>
                 ) : (
                   <>
                     <ArrowDown className="h-3.5 w-3.5" />
-                    Plus récent
+                    Plus récents d&apos;abord
                   </>
                 )}
               </button>
             </div>
-            <div className="space-y-3 max-h-[400px] overflow-y-auto">
-              {[...scrutin.interventions]
-                .sort((a, b) => {
-                  const ordreA = a.ordre ?? 0;
-                  const ordreB = b.ordre ?? 0;
-                  return interventionsSortAsc ? ordreA - ordreB : ordreB - ordreA;
-                })
-                .map((intervention) => (
+            <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+              {allInterventions.map((intervention) => (
                 <div
                   key={intervention.id}
                   className="p-4 rounded-lg border bg-amber-50/50 border-amber-200"
@@ -506,21 +785,35 @@ export default function ScrutinDetailPage() {
                           </span>
                         )}
                       </div>
-                      <p className="text-sm text-gray-700 line-clamp-4">
-                        {intervention.contenu.length > 500
-                          ? `${intervention.contenu.slice(0, 500)}...`
-                          : intervention.contenu}
+                      <p className="text-sm text-gray-700 line-clamp-5">
+                        {intervention.contenu}
                       </p>
                     </div>
                   </div>
                 </div>
               ))}
+
+              {/* Infinite scroll trigger - inside scrollable container */}
+              <div ref={interventionsLoadMoreRef} className="flex justify-center py-2">
+                {isFetchingNextPage && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm">Chargement...</span>
+                  </div>
+                )}
+                {!hasNextPage && allInterventions.length > 0 && allInterventions.length >= 10 && (
+                  <p className="text-xs text-muted-foreground">
+                    Toutes les interventions ont été chargées
+                  </p>
+                )}
+              </div>
             </div>
+
             {/* Lien vers la source des interventions */}
-            {scrutin.interventions.some(i => i.sourceUrl) && (
+            {allInterventions.some(i => i.sourceUrl) && (
               <div className="mt-3 pt-3 border-t border-amber-200 flex justify-end">
                 <a
-                  href={scrutin.interventions.find(i => i.sourceUrl)?.sourceUrl || ''}
+                  href={allInterventions.find(i => i.sourceUrl)?.sourceUrl || ''}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-sm text-amber-700 hover:text-amber-900 hover:underline"
