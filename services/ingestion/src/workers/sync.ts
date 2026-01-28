@@ -2122,7 +2122,7 @@ export async function linkScrutinsToAmendements(
         SELECT
           s.id,
           s.chambre,
-          SUBSTRING(s.titre FROM 'amendement[[:space:]]+n[°º][[:space:]]*([0-9]+)') as amendement_numero
+          SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero
         FROM scrutins s
         WHERE s.titre ILIKE '%amendement%'
           AND s.amendement_id IS NULL
@@ -2149,6 +2149,8 @@ export async function linkScrutinsToAmendements(
 
   // Single SQL UPDATE with regex extraction and JOIN
   // PostgreSQL SUBSTRING with POSIX regex extracts the amendment number from titre
+  // Pattern captures: II-360, I-1661, COM-52, 75, etc. (optional prefix + optional dash + digits)
+  // Handles: "amendement n° X", "amendements identiques n° X", "lamendement X"
   const result = await prisma.$executeRaw`
     UPDATE scrutins s
     SET amendement_id = a.id
@@ -2156,7 +2158,7 @@ export async function linkScrutinsToAmendements(
     WHERE s.titre ILIKE '%amendement%'
       AND s.amendement_id IS NULL
       AND a.chambre = s.chambre
-      AND a.numero = SUBSTRING(s.titre FROM 'amendement[[:space:]]+n[°º][[:space:]]*([0-9]+)')
+      AND a.numero = SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]')
       AND s.chambre LIKE ${chambreFilter}
   `;
 
@@ -2166,7 +2168,7 @@ export async function linkScrutinsToAmendements(
     FROM scrutins s
     WHERE s.titre ILIKE '%amendement%'
       AND s.amendement_id IS NULL
-      AND SUBSTRING(s.titre FROM 'amendement[[:space:]]+n[°º][[:space:]]*([0-9]+)') IS NOT NULL
+      AND SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') IS NOT NULL
       AND s.chambre LIKE ${chambreFilter}
   `;
 
