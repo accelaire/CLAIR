@@ -352,7 +352,7 @@ export default function ScrutinDetailPage() {
   // Vérifier si un match est sur des limites de mots (pas au milieu d'un mot)
   const isWordBoundary = (text: string, start: number, end: number): boolean => {
     // Caractères qui délimitent les mots
-    const boundaryChars = /[\s,.:;!?()[\]"'«»\-]/;
+    const boundaryChars = /[\s,.:;!?()[\]"'«»-]/;
 
     // Vérifier le caractère avant le match (ou début de chaîne)
     const charBefore = start === 0 ? ' ' : text[start - 1];

@@ -261,10 +261,6 @@ function DeputesPageContent() {
       {/* Liste des députés */}
       {deputes.length > 0 && (
         <>
-          <div className="mb-4 text-sm text-muted-foreground">
-            {total.toLocaleString('fr-FR')} résultat{total > 1 ? 's' : ''}
-          </div>
-
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {deputes.map((depute) => {
               const deputeSelected = isSelected(depute.slug);

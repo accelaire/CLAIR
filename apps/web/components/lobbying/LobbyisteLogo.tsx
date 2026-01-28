@@ -21,7 +21,7 @@ function extractDomain(siteWeb: string | null | undefined): string | null {
     return parsed.hostname.replace(/^www\./, '');
   } catch {
     // If URL parsing fails, try to extract domain directly
-    const match = siteWeb.match(/(?:https?:\/\/)?(?:www\.)?([^\/\s]+)/i);
+    const match = siteWeb.match(/(?:https?:\/\/)?(?:www\.)?([^/\s]+)/i);
     return match ? match[1] : null;
   }
 }
@@ -72,7 +72,6 @@ export function LobbyisteLogo({ siteWeb, nom, size = 'md', className = '' }: Lob
 
   return (
     <div className={containerClass}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={logoUrl}
         alt={`Logo ${nom}`}
