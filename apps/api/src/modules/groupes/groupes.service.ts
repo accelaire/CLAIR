@@ -321,8 +321,9 @@ export class GroupesService {
   // Optimisé avec une seule requête SQL pour éviter les O(n) queries
   // ===========================================================================
 
-  async getGroupeVotingStats(chambre: Chambre, slug: string) {
-    const cacheKey = `groupe:voting-stats:${chambre}:${slug}`;
+  async getGroupeVotingStats(chambre: Chambre, slug: string, options?: { groupeInitie?: boolean }) {
+    const groupeInitie = options?.groupeInitie ?? false;
+    const cacheKey = `groupe:voting-stats:${chambre}:${slug}${groupeInitie ? ':initie' : ''}`;
 
     const cached = await this.redis.get(cacheKey);
     if (cached) {
@@ -333,22 +334,36 @@ export class GroupesService {
       where: {
         slug_chambre: { slug, chambre },
       },
-      select: { id: true, statsCohesion: true },
+      select: { id: true, nom: true, nomComplet: true, statsCohesion: true },
     });
 
     if (!groupe) return null;
 
     // Requête SQL optimisée: agrège tous les votes du groupe en UNE seule requête
-    const votesAggregation = await this.prisma.$queryRaw<
-      { position: string; count: bigint }[]
-    >`
-      SELECT v.position, COUNT(*) as count
-      FROM votes v
-      JOIN parlementaires p ON v.parlementaire_id = p.id
-      WHERE p.groupe_id = ${groupe.id}
-        AND p.actif = true
-      GROUP BY v.position
-    `;
+    // Si groupeInitie=true, on filtre sur les scrutins où demandeur_texte contient le nom du groupe
+    const votesAggregation = groupeInitie
+      ? await this.prisma.$queryRaw<{ position: string; count: bigint }[]>`
+          SELECT v.position, COUNT(*) as count
+          FROM votes v
+          JOIN parlementaires p ON v.parlementaire_id = p.id
+          JOIN scrutins s ON v.scrutin_id = s.id
+          WHERE p.groupe_id = ${groupe.id}
+            AND p.actif = true
+            AND s.demandeur_texte IS NOT NULL
+            AND (
+              s.demandeur_texte ILIKE ${'%' + groupe.nom + '%'}
+              OR s.demandeur_texte ILIKE ${'%' + (groupe.nomComplet || groupe.nom) + '%'}
+            )
+          GROUP BY v.position
+        `
+      : await this.prisma.$queryRaw<{ position: string; count: bigint }[]>`
+          SELECT v.position, COUNT(*) as count
+          FROM votes v
+          JOIN parlementaires p ON v.parlementaire_id = p.id
+          WHERE p.groupe_id = ${groupe.id}
+            AND p.actif = true
+          GROUP BY v.position
+        `;
 
     const positions: Record<string, number> = {
       pour: 0,
@@ -366,62 +381,127 @@ export class GroupesService {
     const votesExprimes = totalVotes - (positions.absent || 0);
     const tauxParticipation = totalVotes > 0 ? Math.round((votesExprimes / totalVotes) * 100) : 0;
 
-    // Requête SQL optimisée: récupère les 10 derniers scrutins avec les votes du groupe EN UNE SEULE REQUÊTE
-    const scrutinsWithVotes = await this.prisma.$queryRaw<
-      {
-        id: string;
-        numero: number;
-        titre: string;
-        date: Date;
-        sort: string;
-        type_vote: string;
-        session: string | null;
-        nombre_pour: number;
-        nombre_contre: number;
-        nombre_abstention: number;
-        pour: bigint;
-        contre: bigint;
-        abstention: bigint;
-        absent: bigint;
-      }[]
-    >`
-      WITH recent_scrutins AS (
-        SELECT DISTINCT s.id, s.numero, s.titre, s.date, s.sort, s.type_vote, s.session,
-               s.nombre_pour, s.nombre_contre, s.nombre_abstention
-        FROM scrutins s
-        JOIN votes v ON v.scrutin_id = s.id
-        JOIN parlementaires p ON v.parlementaire_id = p.id
-        WHERE p.groupe_id = ${groupe.id}
-          AND p.actif = true
-          AND s.chambre = ${chambre}
-        ORDER BY s.date DESC
-        LIMIT 20
-      ),
-      groupe_votes AS (
-        SELECT
-          s.id as scrutin_id,
-          SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) as pour,
-          SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) as contre,
-          SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) as abstention,
-          SUM(CASE WHEN v.position = 'absent' THEN 1 ELSE 0 END) as absent
-        FROM recent_scrutins s
-        JOIN votes v ON v.scrutin_id = s.id
-        JOIN parlementaires p ON v.parlementaire_id = p.id
-        WHERE p.groupe_id = ${groupe.id}
-          AND p.actif = true
-        GROUP BY s.id
-      )
-      SELECT
-        rs.id, rs.numero, rs.titre, rs.date, rs.sort, rs.type_vote, rs.session,
-        rs.nombre_pour, rs.nombre_contre, rs.nombre_abstention,
-        COALESCE(gv.pour, 0) as pour,
-        COALESCE(gv.contre, 0) as contre,
-        COALESCE(gv.abstention, 0) as abstention,
-        COALESCE(gv.absent, 0) as absent
-      FROM recent_scrutins rs
-      LEFT JOIN groupe_votes gv ON rs.id = gv.scrutin_id
-      ORDER BY rs.date DESC
-    `;
+    // Requête SQL optimisée: récupère les 20 derniers scrutins avec les votes du groupe EN UNE SEULE REQUÊTE
+    // Si groupeInitie=true, filtre sur les scrutins où demandeur_texte contient le nom du groupe
+    const groupeNom = groupe.nom;
+    const groupeNomComplet = groupe.nomComplet || groupe.nom;
+
+    const scrutinsWithVotes = groupeInitie
+      ? await this.prisma.$queryRaw<
+          {
+            id: string;
+            numero: number;
+            titre: string;
+            date: Date;
+            sort: string;
+            type_vote: string;
+            session: string | null;
+            nombre_pour: number;
+            nombre_contre: number;
+            nombre_abstention: number;
+            pour: bigint;
+            contre: bigint;
+            abstention: bigint;
+            absent: bigint;
+          }[]
+        >`
+          WITH recent_scrutins AS (
+            SELECT DISTINCT s.id, s.numero, s.titre, s.date, s.sort, s.type_vote, s.session,
+                   s.nombre_pour, s.nombre_contre, s.nombre_abstention
+            FROM scrutins s
+            JOIN votes v ON v.scrutin_id = s.id
+            JOIN parlementaires p ON v.parlementaire_id = p.id
+            WHERE p.groupe_id = ${groupe.id}
+              AND p.actif = true
+              AND s.chambre = ${chambre}
+              AND s.demandeur_texte IS NOT NULL
+              AND (
+                s.demandeur_texte ILIKE ${'%' + groupeNom + '%'}
+                OR s.demandeur_texte ILIKE ${'%' + groupeNomComplet + '%'}
+              )
+            ORDER BY s.date DESC
+            LIMIT 20
+          ),
+          groupe_votes AS (
+            SELECT
+              s.id as scrutin_id,
+              SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) as pour,
+              SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) as contre,
+              SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) as abstention,
+              SUM(CASE WHEN v.position = 'absent' THEN 1 ELSE 0 END) as absent
+            FROM recent_scrutins s
+            JOIN votes v ON v.scrutin_id = s.id
+            JOIN parlementaires p ON v.parlementaire_id = p.id
+            WHERE p.groupe_id = ${groupe.id}
+              AND p.actif = true
+            GROUP BY s.id
+          )
+          SELECT
+            rs.id, rs.numero, rs.titre, rs.date, rs.sort, rs.type_vote, rs.session,
+            rs.nombre_pour, rs.nombre_contre, rs.nombre_abstention,
+            COALESCE(gv.pour, 0) as pour,
+            COALESCE(gv.contre, 0) as contre,
+            COALESCE(gv.abstention, 0) as abstention,
+            COALESCE(gv.absent, 0) as absent
+          FROM recent_scrutins rs
+          LEFT JOIN groupe_votes gv ON rs.id = gv.scrutin_id
+          ORDER BY rs.date DESC
+        `
+      : await this.prisma.$queryRaw<
+          {
+            id: string;
+            numero: number;
+            titre: string;
+            date: Date;
+            sort: string;
+            type_vote: string;
+            session: string | null;
+            nombre_pour: number;
+            nombre_contre: number;
+            nombre_abstention: number;
+            pour: bigint;
+            contre: bigint;
+            abstention: bigint;
+            absent: bigint;
+          }[]
+        >`
+          WITH recent_scrutins AS (
+            SELECT DISTINCT s.id, s.numero, s.titre, s.date, s.sort, s.type_vote, s.session,
+                   s.nombre_pour, s.nombre_contre, s.nombre_abstention
+            FROM scrutins s
+            JOIN votes v ON v.scrutin_id = s.id
+            JOIN parlementaires p ON v.parlementaire_id = p.id
+            WHERE p.groupe_id = ${groupe.id}
+              AND p.actif = true
+              AND s.chambre = ${chambre}
+            ORDER BY s.date DESC
+            LIMIT 20
+          ),
+          groupe_votes AS (
+            SELECT
+              s.id as scrutin_id,
+              SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) as pour,
+              SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) as contre,
+              SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) as abstention,
+              SUM(CASE WHEN v.position = 'absent' THEN 1 ELSE 0 END) as absent
+            FROM recent_scrutins s
+            JOIN votes v ON v.scrutin_id = s.id
+            JOIN parlementaires p ON v.parlementaire_id = p.id
+            WHERE p.groupe_id = ${groupe.id}
+              AND p.actif = true
+            GROUP BY s.id
+          )
+          SELECT
+            rs.id, rs.numero, rs.titre, rs.date, rs.sort, rs.type_vote, rs.session,
+            rs.nombre_pour, rs.nombre_contre, rs.nombre_abstention,
+            COALESCE(gv.pour, 0) as pour,
+            COALESCE(gv.contre, 0) as contre,
+            COALESCE(gv.abstention, 0) as abstention,
+            COALESCE(gv.absent, 0) as absent
+          FROM recent_scrutins rs
+          LEFT JOIN groupe_votes gv ON rs.id = gv.scrutin_id
+          ORDER BY rs.date DESC
+        `;
 
     // Transformer les résultats SQL en format attendu
     const scrutinsRecents = scrutinsWithVotes.map((s) => {
@@ -572,8 +652,9 @@ export class GroupesService {
   // STATS PAR THÉMATIQUE (pré-calculées pour radar chart)
   // ===========================================================================
 
-  async getGroupeThematiques(chambre: Chambre, slug: string) {
-    const cacheKey = `groupe:thematiques:${chambre}:${slug}`;
+  async getGroupeThematiques(chambre: Chambre, slug: string, options?: { groupeInitie?: boolean }) {
+    const groupeInitie = options?.groupeInitie ?? false;
+    const cacheKey = `groupe:thematiques:${chambre}:${slug}${groupeInitie ? ':initie' : ''}`;
 
     const cached = await this.redis.get(cacheKey);
     if (cached) {
@@ -584,40 +665,142 @@ export class GroupesService {
       where: {
         slug_chambre: { slug, chambre },
       },
-      select: { id: true, nom: true, couleur: true },
+      select: { id: true, nom: true, nomComplet: true, couleur: true },
     });
 
     if (!groupe) return null;
 
-    // Récupérer les stats thématiques pré-calculées
-    const thematiques = await this.prisma.groupeThematique.findMany({
-      where: { groupeId: groupe.id },
-      orderBy: { votesTotaux: 'desc' },
-    });
+    let radarData: {
+      thematique: string;
+      position: number;
+      cohesion: number;
+      votesTotaux: number;
+      votesPour: number;
+      votesContre: number;
+      votesAbstention: number;
+    }[];
 
-    // Transformer pour le frontend (radar chart)
-    const radarData = thematiques.map((t) => ({
-      thematique: t.thematique,
-      // Position de -100 (contre) à +100 (pour)
-      position: t.positionMoyenne,
-      // Cohésion interne du groupe sur ce thème (0-100)
-      cohesion: t.cohesionMoyenne,
-      // Stats brutes
-      votesTotaux: t.votesTotaux,
-      votesPour: t.votesPour,
-      votesContre: t.votesContre,
-      votesAbstention: t.votesAbstention,
-    }));
+    if (groupeInitie) {
+      // Calcul à la volée pour les scrutins initiés par le groupe
+      const groupeNom = groupe.nom;
+      const groupeNomComplet = groupe.nomComplet || groupe.nom;
+
+      // Requête SQL qui calcule les stats par thématique pour les scrutins initiés par le groupe
+      // Limite à 500 scrutins max pour éviter les requêtes trop lourdes
+      const thematiquesData = await this.prisma.$queryRaw<
+        {
+          tag: string;
+          votes_totaux: bigint;
+          votes_pour: bigint;
+          votes_contre: bigint;
+          votes_abstention: bigint;
+        }[]
+      >`
+        WITH scrutins_groupe AS (
+          SELECT DISTINCT s.id, s.tags
+          FROM scrutins s
+          WHERE s.chambre = ${chambre}
+            AND s.demandeur_texte IS NOT NULL
+            AND (
+              s.demandeur_texte ILIKE ${'%' + groupeNom + '%'}
+              OR s.demandeur_texte ILIKE ${'%' + groupeNomComplet + '%'}
+            )
+          ORDER BY s.date DESC
+          LIMIT 500
+        ),
+        scrutin_tags AS (
+          SELECT sg.id as scrutin_id, unnest(sg.tags) as tag
+          FROM scrutins_groupe sg
+        ),
+        votes_par_tag AS (
+          SELECT
+            st.tag,
+            v.scrutin_id,
+            SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) as pour,
+            SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) as contre,
+            SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) as abstention
+          FROM scrutin_tags st
+          JOIN votes v ON v.scrutin_id = st.scrutin_id
+          JOIN parlementaires p ON v.parlementaire_id = p.id
+          WHERE p.groupe_id = ${groupe.id}
+            AND p.actif = true
+          GROUP BY st.tag, v.scrutin_id
+        ),
+        position_majoritaire AS (
+          SELECT
+            tag,
+            scrutin_id,
+            CASE
+              WHEN pour >= contre AND pour >= abstention THEN 'pour'
+              WHEN contre >= pour AND contre >= abstention THEN 'contre'
+              ELSE 'abstention'
+            END as position_maj
+          FROM votes_par_tag
+        )
+        SELECT
+          pm.tag,
+          COUNT(DISTINCT pm.scrutin_id) as votes_totaux,
+          SUM(CASE WHEN pm.position_maj = 'pour' THEN 1 ELSE 0 END) as votes_pour,
+          SUM(CASE WHEN pm.position_maj = 'contre' THEN 1 ELSE 0 END) as votes_contre,
+          SUM(CASE WHEN pm.position_maj = 'abstention' THEN 1 ELSE 0 END) as votes_abstention
+        FROM position_majoritaire pm
+        GROUP BY pm.tag
+        HAVING COUNT(DISTINCT pm.scrutin_id) >= 2
+        ORDER BY COUNT(DISTINCT pm.scrutin_id) DESC
+      `;
+
+      radarData = thematiquesData.map((t) => {
+        const votesTotaux = Number(t.votes_totaux);
+        const votesPour = Number(t.votes_pour);
+        const votesContre = Number(t.votes_contre);
+        const votesAbstention = Number(t.votes_abstention);
+        // Position: de -100 (tout contre) à +100 (tout pour)
+        const position = votesTotaux > 0
+          ? Math.round(((votesPour - votesContre) / votesTotaux) * 100)
+          : 0;
+        // Cohésion: % de la position majoritaire
+        const maxVotes = Math.max(votesPour, votesContre, votesAbstention);
+        const cohesion = votesTotaux > 0 ? Math.round((maxVotes / votesTotaux) * 100) : 0;
+
+        return {
+          thematique: t.tag,
+          position,
+          cohesion,
+          votesTotaux,
+          votesPour,
+          votesContre,
+          votesAbstention,
+        };
+      });
+    } else {
+      // Utiliser les stats thématiques pré-calculées
+      const thematiques = await this.prisma.groupeThematique.findMany({
+        where: { groupeId: groupe.id },
+        orderBy: { votesTotaux: 'desc' },
+      });
+
+      radarData = thematiques.map((t) => ({
+        thematique: t.thematique,
+        position: t.positionMoyenne,
+        cohesion: t.cohesionMoyenne,
+        votesTotaux: t.votesTotaux,
+        votesPour: t.votesPour,
+        votesContre: t.votesContre,
+        votesAbstention: t.votesAbstention,
+      }));
+    }
 
     const result = {
       groupeId: groupe.id,
       groupeNom: groupe.nom,
       groupeCouleur: groupe.couleur,
       thematiques: radarData,
-      calculatedAt: thematiques[0]?.calculatedAt ?? null,
+      calculatedAt: groupeInitie ? new Date().toISOString() : null,
     };
 
-    await this.redis.setex(cacheKey, this.CACHE_TTL_LONG, JSON.stringify(result));
+    // Cache plus court pour les calculs à la volée
+    const ttl = groupeInitie ? this.CACHE_TTL : this.CACHE_TTL_LONG;
+    await this.redis.setex(cacheKey, ttl, JSON.stringify(result));
 
     return result;
   }

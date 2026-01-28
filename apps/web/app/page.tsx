@@ -336,9 +336,8 @@ export default function HomePage() {
       {/* Explorer CTA */}
       <section className="py-16 border-t">
         <div className="container mx-auto px-4">
-          <Link
-            href="/explorateur"
-            className="group block rounded-2xl bg-gradient-to-r from-primary/10 via-purple-500/10 to-pink-500/10 p-8 md:p-12 transition-all hover:shadow-xl border border-primary/20 hover:border-primary/40"
+          <div
+            className="block rounded-2xl bg-gradient-to-r from-primary/10 via-purple-500/10 to-pink-500/10 p-8 md:p-12 border border-primary/20 opacity-75"
           >
             <div className="flex flex-col md:flex-row md:items-center gap-6">
               <div className="flex-shrink-0">
@@ -360,13 +359,12 @@ export default function HomePage() {
                 </p>
               </div>
               <div className="flex-shrink-0">
-                <span className="inline-flex items-center gap-2 text-primary font-medium group-hover:gap-3 transition-all">
-                  Explorer maintenant
-                  <ArrowRight className="h-5 w-5" />
+                <span className="inline-flex items-center gap-2 text-muted-foreground font-medium">
+                  Arrive prochainement
                 </span>
               </div>
             </div>
-          </Link>
+          </div>
         </div>
       </section>
 
