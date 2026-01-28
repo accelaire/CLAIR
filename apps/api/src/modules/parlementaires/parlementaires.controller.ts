@@ -261,12 +261,13 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
             sort: { type: 'string', enum: ['Adopté', 'Rejeté', 'Retiré', 'Non soutenu', 'Tombé'] },
             dateFrom: { type: 'string', format: 'date' },
             dateTo: { type: 'string', format: 'date' },
+            votedOnly: { type: 'boolean', default: false },
           },
         },
       },
       handler: async (request, _reply) => {
         const { slug } = parlementaireParamsSchema.parse(request.params);
-        const { page = 1, limit = 20, sort, dateFrom, dateTo } = request.query as any;
+        const { page = 1, limit = 20, sort, dateFrom, dateTo, votedOnly } = request.query as any;
 
         const parlementaire = await fastify.prisma.parlementaire.findUnique({
           where: { slug },
@@ -291,12 +292,16 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           },
         } : {};
 
+        // Build voted filter (uses EXISTS subquery - performant)
+        const votedFilter = votedOnly ? { scrutins: { some: {} } } : {};
+
         const [amendements, total] = await Promise.all([
           fastify.prisma.amendement.findMany({
             where: {
               parlementaireId: parlementaire.id,
               ...(sort && { sort }),
               ...dateFilter,
+              ...votedFilter,
             },
             orderBy: { dateDepot: 'desc' },
             skip,
@@ -333,6 +338,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
               parlementaireId: parlementaire.id,
               ...(sort && { sort }),
               ...dateFilter,
+              ...votedFilter,
             },
           }),
         ]);
