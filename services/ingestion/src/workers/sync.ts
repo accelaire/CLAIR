@@ -12,6 +12,7 @@ import { SenatSenateursClient, TransformedSenateur } from '../sources/senat/sena
 import { SenatScrutinsClient } from '../sources/senat/scrutins-client';
 import { DILAInterventionsClient } from '../sources/dila/interventions-client';
 import { SenatInterventionsClient } from '../sources/senat/interventions-client';
+import { SenatDossiersClient } from '../sources/senat/dossiers-client';
 import { logger } from '../utils/logger';
 import {
   checkSourceFreshness,
@@ -530,37 +531,29 @@ export async function syncScrutins(
 // =============================================================================
 
 export async function syncScrutinsSenat(
-  options: { limit?: number; session?: string; sessions?: string[] } = {}
-): Promise<{ scrutins: number; votes: number }> {
-  // Par défaut, synchroniser les 3 dernières sessions parlementaires
-  const currentYear = new Date().getFullYear();
-  const defaultSessions = [
-    String(currentYear - 2), // 2024
-    String(currentYear - 1), // 2025
-    String(currentYear),     // 2026
-  ];
-
-  const sessionsToSync = options.sessions || (options.session ? [options.session] : defaultSessions);
-
-  logger.info({ limit: options.limit, sessions: sessionsToSync }, 'Starting scrutins Sénat sync...');
+  options: {
+    limit?: number;
+    session?: string;
+    sessions?: string[];
+    enrichDossiers?: boolean;
+  } = {}
+): Promise<{ scrutins: number; votes: number; dossiersLinked: number }> {
+  // Le client DOSLEG utilise maintenant les envvars SENAT_SESSION_START/END par défaut
+  // On peut override avec session/sessions si spécifié
+  logger.info({ limit: options.limit, enrichDossiers: options.enrichDossiers ?? true }, 'Starting scrutins Sénat sync (DOSLEG)...');
 
   const scrutinsClient = new SenatScrutinsClient();
 
-  // Collecter les scrutins de toutes les sessions
-  let allScrutinsData: Awaited<ReturnType<typeof scrutinsClient.getScrutins>> = [];
+  // Récupérer les scrutins depuis DOSLEG (bulk fetch)
+  const scrutinsData = await scrutinsClient.getScrutins({
+    limit: options.limit,
+    session: options.session,
+    sessions: options.sessions,
+    enrichDossiers: options.enrichDossiers ?? true,
+    parallelEnrichment: 3, // Limiter pour éviter surcharge
+  });
 
-  for (const session of sessionsToSync) {
-    try {
-      logger.info({ session }, 'Fetching scrutins for session...');
-      const sessionData = await scrutinsClient.getScrutins({ ...options, session });
-      logger.info({ session, count: sessionData.length }, 'Fetched scrutins for session');
-      allScrutinsData = allScrutinsData.concat(sessionData);
-    } catch (error: any) {
-      logger.warn({ session, error: error.message }, 'Failed to fetch scrutins for session, continuing...');
-    }
-  }
-
-  const scrutinsData = allScrutinsData;
+  logger.info({ count: scrutinsData.length }, 'Scrutins fetched from DOSLEG');
 
   // Charger les sénateurs pour le mapping matricule -> parlementaireId
   const parlementaires = await prisma.parlementaire.findMany({
@@ -572,9 +565,40 @@ export async function syncScrutinsSenat(
     if (p.sourceId) parlementaireMap.set(p.sourceId, p.id);
   }
 
+  // Charger les dossiers législatifs pour le mapping dossierRef -> dossierId
+  const dossiers = await prisma.dossierLegislatif.findMany({
+    select: { id: true, uid: true, titre: true },
+  });
+  const dossierMap = new Map<string, string>();
+  for (const d of dossiers) {
+    // Map par UID (ex: "pjlf2025")
+    if (d.uid) {
+      dossierMap.set(d.uid.toLowerCase(), d.id);
+      // Aussi mapper sans préfixe si c'est un format court
+      const shortRef = d.uid.replace(/^(pjl|ppl|cvn)/, '');
+      if (shortRef !== d.uid) {
+        dossierMap.set(shortRef.toLowerCase(), d.id);
+      }
+    }
+  }
+
+  // Charger les amendements pour le mapping numéro -> amendementId (Sénat)
+  const amendements = await prisma.amendement.findMany({
+    where: { uid: { startsWith: 'SENAT-' } },
+    select: { id: true, numero: true },
+  });
+  const amendementMap = new Map<string, string>();
+  for (const a of amendements) {
+    if (a.numero) {
+      amendementMap.set(a.numero.toUpperCase(), a.id);
+    }
+  }
+
   let scrutinsCreated = 0;
   let scrutinsUpdated = 0;
   let votesCreated = 0;
+  let dossiersLinked = 0;
+  let amendementsLinked = 0;
 
   const chambre = 'senat';
 
@@ -582,9 +606,9 @@ export async function syncScrutinsSenat(
     try {
       const { scrutin, votes } = data;
 
-      // Extraire la session depuis sourceUrl (ex: /2024/ -> "2024")
-      const sessionMatch = scrutin.sourceUrl?.match(/\/(\d{4})\//);
-      const session = sessionMatch ? sessionMatch[1] : '2024';
+      // Utiliser la session directement du client (format "2024-2025")
+      // Extraire l'année de début pour la clé unique
+      const sessionYear = scrutin.session.split('-')[0] || scrutin.session;
 
       // Tags automatiques basés sur le titre
       const tags = extractTags(scrutin.titre);
@@ -594,10 +618,30 @@ export async function syncScrutinsSenat(
       if (scrutin.nombreVotants > 300) importance = 3;
       else if (scrutin.nombreVotants > 200) importance = 2;
 
+      // Rechercher le dossier législatif par ref
+      let dossierId: string | null = null;
+      if (scrutin.dossierRef) {
+        dossierId = dossierMap.get(scrutin.dossierRef.toLowerCase()) || null;
+        if (dossierId) dossiersLinked++;
+      }
+
+      // Rechercher le premier amendement lié
+      let amendementId: string | null = null;
+      if (scrutin.amendementsNumeros && scrutin.amendementsNumeros.length > 0) {
+        for (const num of scrutin.amendementsNumeros) {
+          const found = amendementMap.get(num.toUpperCase());
+          if (found) {
+            amendementId = found;
+            amendementsLinked++;
+            break;
+          }
+        }
+      }
+
       const scrutinData = {
         numero: scrutin.numero,
         chambre,
-        session,
+        session: sessionYear, // Clé unique utilise l'année simple
         date: scrutin.date,
         titre: scrutin.titre,
         typeVote: scrutin.typeVote,
@@ -610,6 +654,9 @@ export async function syncScrutinsSenat(
         objetLibelle: scrutin.objetLibelle,
         demandeurTexte: scrutin.demandeurTexte,
         seanceRef: scrutin.seanceRef,
+        // Liens
+        dossierId,
+        amendementId,
         tags,
         importance,
         sourceUrl: scrutin.sourceUrl,
@@ -617,14 +664,14 @@ export async function syncScrutinsSenat(
       };
 
       const existing = await prisma.scrutin.findUnique({
-        where: { numero_chambre_session: { numero: scrutin.numero, chambre, session } },
+        where: { numero_chambre_session: { numero: scrutin.numero, chambre, session: sessionYear } },
       });
 
       let scrutinId: string;
 
       if (existing) {
         await prisma.scrutin.update({
-          where: { numero_chambre_session: { numero: scrutin.numero, chambre, session } },
+          where: { numero_chambre_session: { numero: scrutin.numero, chambre, session: sessionYear } },
           data: scrutinData,
         });
         scrutinId = existing.id;
@@ -669,10 +716,12 @@ export async function syncScrutinsSenat(
   logger.info({
     scrutins: { created: scrutinsCreated, updated: scrutinsUpdated },
     votes: votesCreated,
+    dossiersLinked,
+    amendementsLinked,
     total: scrutinsData.length,
   }, 'Scrutins Sénat sync completed');
 
-  return { scrutins: scrutinsCreated + scrutinsUpdated, votes: votesCreated };
+  return { scrutins: scrutinsCreated + scrutinsUpdated, votes: votesCreated, dossiersLinked };
 }
 
 // =============================================================================
@@ -1201,6 +1250,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       'senat:amendements',
       // 4. Dossiers législatifs (lie scrutins et amendements aux textes de loi)
       'assemblee_nationale:dossiers',
+      'senat:dossiers',
       // 5. Interventions
       'dila:interventions',
       'senat:interventions',
@@ -1213,7 +1263,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       'senat:senateurs',
       ...(options.includeScrutins ? ['assemblee_nationale:scrutins', 'senat:scrutins'] : []),
       ...(options.includeAmendements ? ['assemblee_nationale:amendements', 'senat:amendements'] : []),
-      ...(options.includeDossiers ? ['assemblee_nationale:dossiers'] : []),
+      ...(options.includeDossiers ? ['assemblee_nationale:dossiers', 'senat:dossiers'] : []),
       ...(options.includeInterventions ? ['dila:interventions', 'senat:interventions'] : []),
       ...(options.includeLobbying ? ['hatvp:lobbyistes'] : []),
     ];
@@ -1329,6 +1379,12 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
             break;
           }
 
+          case 'senat:dossiers': {
+            const senatDossiersResult = await syncDossiersSenat({ limit: options.dossiersLimit });
+            syncResult = { created: senatDossiersResult.created, updated: senatDossiersResult.updated };
+            break;
+          }
+
           case 'hatvp:lobbyistes': {
             const lobbyingResult = await syncLobbyistes({
               limit: options.lobbyingLimit,
@@ -1387,6 +1443,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
   const hasScrutinsChanged = results.sourcesChanged.some(s => s.includes('scrutins'));
   const hasInterventionsChanged = results.sourcesChanged.some(s => s.includes('interventions'));
   const hasAmendementsChanged = results.sourcesChanged.some(s => s.includes('amendements'));
+  const hasDossiersChanged = results.sourcesChanged.some(s => s.includes('dossiers'));
 
   if (hasInterventionsChanged || hasScrutinsChanged) {
     logger.info('Linking interventions to scrutins...');
@@ -1412,6 +1469,18 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       }, 'Scrutins-Amendements linking completed');
     } catch (error: any) {
       logger.error({ error: error.message }, 'Scrutins-Amendements linking failed (non-blocking)');
+    }
+  }
+
+  if (hasDossiersChanged || hasScrutinsChanged) {
+    logger.info('Linking Sénat scrutins to dossiers...');
+    try {
+      const linkResult = await linkSenatScrutinsToDossiers();
+      logger.info({
+        linked: linkResult.linked,
+      }, 'Sénat scrutins-dossiers linking completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Sénat scrutins-dossiers linking failed (non-blocking)');
     }
   }
 
@@ -1822,123 +1891,209 @@ export async function syncDossiers(
 }
 
 // =============================================================================
+// SYNC DOSSIERS SÉNAT (via DOSLEG)
+// =============================================================================
+
+const SENAT_DOSSIERS_SESSION_START = parseInt(process.env.SENAT_SESSION_START || '2020', 10);
+const SENAT_DOSSIERS_SESSION_END = parseInt(process.env.SENAT_SESSION_END || String(new Date().getFullYear()), 10);
+
+export async function syncDossiersSenat(
+  options: { limit?: number; linkScrutins?: boolean } = {}
+): Promise<{ created: number; updated: number; scrutinsLinked: number }> {
+  const linkScrutins = options.linkScrutins ?? true;
+  logger.info({ limit: options.limit, linkScrutins }, 'Starting dossiers Sénat sync (DOSLEG)...');
+
+  const client = new SenatDossiersClient();
+  const dossiers = await client.getDossiers({
+    sessionStart: SENAT_DOSSIERS_SESSION_START,
+    sessionEnd: SENAT_DOSSIERS_SESSION_END,
+    limit: options.limit,
+  });
+
+  let created = 0;
+  let updated = 0;
+  let scrutinsLinked = 0;
+
+  // Build a map of ref -> dossierId for linking scrutins
+  const refToDossierId = new Map<string, string>();
+
+  for (const dossier of dossiers) {
+    try {
+      const data = {
+        uid: dossier.uid,
+        legislature: 0, // Sénat n'a pas de législature
+        titre: dossier.titre,
+        titreCourt: dossier.titreCourt,
+        procedureCode: dossier.procedureCode,
+        procedureLibelle: dossier.procedureLibelle,
+        urlSenat: dossier.urlSenat,
+        etat: dossier.etat,
+        loiNumero: dossier.loiNumero,
+        loiDateJO: dossier.loiDateJO,
+      };
+
+      const existing = await prisma.dossierLegislatif.findUnique({
+        where: { uid: dossier.uid },
+      });
+
+      let dossierId: string;
+
+      if (existing) {
+        await prisma.dossierLegislatif.update({
+          where: { uid: dossier.uid },
+          data,
+        });
+        dossierId = existing.id;
+        updated++;
+      } else {
+        const created_record = await prisma.dossierLegislatif.create({ data });
+        dossierId = created_record.id;
+        created++;
+      }
+
+      // Store ref -> dossierId mapping
+      refToDossierId.set(dossier.ref, dossierId);
+
+    } catch (e: any) {
+      logger.warn({ uid: dossier.uid, error: e.message }, 'Failed to upsert dossier Sénat');
+    }
+  }
+
+  // Link scrutins to dossiers via sourceData.dossierRef
+  // Use a single SQL query to avoid loading all dossiers into memory
+  if (linkScrutins) {
+    logger.info('Linking Sénat scrutins to dossiers (SQL join)...');
+
+    // Single UPDATE query with JOIN - no memory overhead!
+    // Note: use snake_case table names (Prisma @@map)
+    const result = await prisma.$executeRaw`
+      UPDATE scrutins s
+      SET dossier_id = d.id
+      FROM dossiers_legislatifs d
+      WHERE s.chambre = 'senat'
+        AND s.dossier_id IS NULL
+        AND s.source_data->>'dossierRef' IS NOT NULL
+        AND d.uid = 'SENAT-' || LOWER(s.source_data->>'dossierRef')
+    `;
+
+    scrutinsLinked = result;
+    logger.info({ scrutinsLinked }, 'Sénat scrutins linked to dossiers');
+  }
+
+  logger.info({ created, updated, scrutinsLinked, total: dossiers.length }, 'Dossiers Sénat sync completed');
+  return { created, updated, scrutinsLinked };
+}
+
+// =============================================================================
+// LINK SENAT SCRUTINS TO DOSSIERS
+// =============================================================================
+
+/**
+ * Lie les scrutins Sénat aux dossiers législatifs existants via sourceData.dossierRef
+ * Cette fonction peut être appelée indépendamment du sync des dossiers.
+ * Utilise une requête SQL UPDATE avec JOIN pour éviter de charger tous les dossiers en mémoire.
+ */
+export async function linkSenatScrutinsToDossiers(): Promise<{ linked: number }> {
+  logger.info('Linking Sénat scrutins to dossiers (SQL join)...');
+
+  // Single UPDATE query with JOIN - no memory overhead!
+  // Note: use snake_case table names (Prisma @@map)
+  const result = await prisma.$executeRaw`
+    UPDATE scrutins s
+    SET dossier_id = d.id
+    FROM dossiers_legislatifs d
+    WHERE s.chambre = 'senat'
+      AND s.dossier_id IS NULL
+      AND s.source_data->>'dossierRef' IS NOT NULL
+      AND d.uid = 'SENAT-' || LOWER(s.source_data->>'dossierRef')
+  `;
+
+  logger.info({ linked: result }, 'Sénat scrutins linked to dossiers');
+  return { linked: result };
+}
+
+// =============================================================================
 // LINK INTERVENTIONS TO SCRUTINS
 // =============================================================================
 
+/**
+ * Lie les interventions aux scrutins via seanceRef ou date.
+ * Utilise des requêtes SQL UPDATE avec JOIN pour éviter les OOM.
+ */
 export async function linkInterventionsToScrutins(
   options: { chambre?: 'assemblee' | 'senat'; dryRun?: boolean } = {}
 ): Promise<{ linked: number; bySeanceRef: number; byDate: number }> {
   const chambre = options.chambre;
   const dryRun = options.dryRun ?? false;
+  // Pour le filtre SQL: si chambre est null, on matche tout
+  const chambreFilter = chambre || '%';
 
-  logger.info({ chambre: chambre || 'all', dryRun }, 'Starting interventions-scrutins linking...');
+  logger.info({ chambre: chambre || 'all', dryRun }, 'Starting interventions-scrutins linking (SQL optimized)...');
 
-  let linked = 0;
   let bySeanceRef = 0;
   let byDate = 0;
 
-  // Stratégie 1: Matcher par seanceRef (le plus précis)
-  // Les scrutins ont seanceRef, les interventions ont seanceId
-  const scrutinsWithSeance = await prisma.scrutin.findMany({
-    where: {
-      seanceRef: { not: null },
-      ...(chambre && { chambre }),
-    },
-    select: {
-      id: true,
-      numero: true,
-      seanceRef: true,
-      chambre: true,
-      date: true,
-    },
-  });
+  if (dryRun) {
+    // Mode dry-run: compter sans modifier
+    const countBySeanceRef = await prisma.$queryRaw<{ count: bigint }[]>`
+      SELECT COUNT(*) as count
+      FROM interventions i
+      JOIN scrutins s ON i.seance_id = s.seance_ref AND i.chambre = s.chambre
+      WHERE i.scrutin_id IS NULL
+        AND s.seance_ref IS NOT NULL
+        AND i.chambre LIKE ${chambreFilter}
+    `;
+    bySeanceRef = Number(countBySeanceRef[0]?.count || 0);
 
-  logger.info({ count: scrutinsWithSeance.length }, 'Scrutins with seanceRef found');
+    const countByDate = await prisma.$queryRaw<{ count: bigint }[]>`
+      SELECT COUNT(*) as count
+      FROM interventions i
+      JOIN scrutins s ON DATE(i.date) = DATE(s.date) AND i.chambre = s.chambre
+      WHERE i.scrutin_id IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM interventions i2 WHERE i2.scrutin_id = s.id
+        )
+        AND i.chambre LIKE ${chambreFilter}
+    `;
+    byDate = Number(countByDate[0]?.count || 0);
 
-  for (const scrutin of scrutinsWithSeance) {
-    if (!scrutin.seanceRef) continue;
-
-    // Chercher les interventions avec le même seanceId
-    const where = {
-      seanceId: scrutin.seanceRef,
-      chambre: scrutin.chambre,
-      scrutinId: null, // Seulement celles non encore liées
-    };
-
-    if (dryRun) {
-      const count = await prisma.intervention.count({ where });
-      if (count > 0) {
-        logger.debug({ scrutinNumero: scrutin.numero, seanceRef: scrutin.seanceRef, count }, 'Would link interventions (dry-run)');
-        bySeanceRef += count;
-        linked += count;
-      }
-    } else {
-      const result = await prisma.intervention.updateMany({
-        where,
-        data: { scrutinId: scrutin.id },
-      });
-      if (result.count > 0) {
-        logger.debug({ scrutinNumero: scrutin.numero, seanceRef: scrutin.seanceRef, count: result.count }, 'Linked interventions by seanceRef');
-        bySeanceRef += result.count;
-        linked += result.count;
-      }
-    }
+    logger.info({ bySeanceRef, byDate, dryRun }, 'Interventions-scrutins linking completed (dry-run)');
+    return { linked: bySeanceRef + byDate, bySeanceRef, byDate };
   }
 
-  // Stratégie 2: Matcher par date + chambre
-  // Lie toutes les interventions du même jour au scrutin
-  const scrutinsWithoutInterventions = await prisma.scrutin.findMany({
-    where: {
-      ...(chambre && { chambre }),
-      interventions: { none: {} }, // Scrutins sans interventions liées
-    },
-    select: {
-      id: true,
-      numero: true,
-      chambre: true,
-      date: true,
-    },
-  });
+  // Stratégie 1: Matcher par seanceRef (le plus précis) - Single SQL UPDATE
+  const resultSeanceRef = await prisma.$executeRaw`
+    UPDATE interventions i
+    SET scrutin_id = s.id
+    FROM scrutins s
+    WHERE i.seance_id = s.seance_ref
+      AND i.chambre = s.chambre
+      AND i.scrutin_id IS NULL
+      AND s.seance_ref IS NOT NULL
+      AND i.chambre LIKE ${chambreFilter}
+  `;
+  bySeanceRef = resultSeanceRef;
+  logger.info({ bySeanceRef }, 'Linked interventions by seanceRef');
 
-  logger.info({ count: scrutinsWithoutInterventions.length }, 'Scrutins without linked interventions');
+  // Stratégie 2: Matcher par date + chambre - Single SQL UPDATE
+  // Seulement pour les scrutins qui n'ont toujours pas d'interventions liées
+  const resultByDate = await prisma.$executeRaw`
+    UPDATE interventions i
+    SET scrutin_id = s.id
+    FROM scrutins s
+    WHERE DATE(i.date) = DATE(s.date)
+      AND i.chambre = s.chambre
+      AND i.scrutin_id IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM interventions i2 WHERE i2.scrutin_id = s.id
+      )
+      AND i.chambre LIKE ${chambreFilter}
+  `;
+  byDate = resultByDate;
+  logger.info({ byDate }, 'Linked interventions by date');
 
-  for (const scrutin of scrutinsWithoutInterventions) {
-    // Chercher les interventions du même jour
-    const startOfDay = new Date(scrutin.date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(scrutin.date);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    const where = {
-      chambre: scrutin.chambre,
-      date: {
-        gte: startOfDay,
-        lte: endOfDay,
-      },
-      scrutinId: null, // Seulement celles non encore liées
-    };
-
-    if (dryRun) {
-      const count = await prisma.intervention.count({ where });
-      if (count > 0) {
-        logger.debug({ scrutinNumero: scrutin.numero, date: scrutin.date, count }, 'Would link interventions by date (dry-run)');
-        byDate += count;
-        linked += count;
-      }
-    } else {
-      const result = await prisma.intervention.updateMany({
-        where,
-        data: { scrutinId: scrutin.id },
-      });
-      if (result.count > 0) {
-        logger.debug({ scrutinNumero: scrutin.numero, date: scrutin.date, count: result.count }, 'Linked interventions by date');
-        byDate += result.count;
-        linked += result.count;
-      }
-    }
-  }
-
-  logger.info({ linked, bySeanceRef, byDate, dryRun }, 'Interventions-scrutins linking completed');
+  const linked = bySeanceRef + byDate;
+  logger.info({ linked, bySeanceRef, byDate }, 'Interventions-scrutins linking completed');
   return { linked, bySeanceRef, byDate };
 }
 
@@ -1947,124 +2102,80 @@ export async function linkInterventionsToScrutins(
 // =============================================================================
 
 /**
- * Parse le titre d'un scrutin pour extraire les informations sur l'amendement
- * Exemples:
- * - "l'amendement n° 287 de M. Courbon à l'article 7 du projet de loi..."
- * - "l'amendement n° 61 de Mme Duby-Muller et les amendements identiques suivants après l'article 11..."
+ * Lie les scrutins aux amendements en utilisant le numéro extrait du titre.
+ * Utilise des requêtes SQL avec regex PostgreSQL pour éviter les OOM.
  */
-function parseScrutinAmendement(titre: string): {
-  numero: string | null;
-  article: string | null;
-  auteur: string | null;
-} {
-  // Extraire le numéro d'amendement
-  // Pattern: "l'amendement n° 287" ou "n° 287"
-  const numeroMatch = titre.match(/amendement\s+n[°º]\s*(\d+)/i);
-  const numero = numeroMatch ? numeroMatch[1] : null;
-
-  // Extraire l'article visé
-  // Pattern: "à l'article 7" ou "après l'article 11" ou "à l'article premier"
-  const articleMatch = titre.match(/(?:à|après)\s+l['']article\s+([\w\s]+?)(?:\s+(?:du|de la|bis|ter)|$)/i);
-  let article: string | null = articleMatch && articleMatch[1] ? articleMatch[1].trim() : null;
-
-  // Normaliser l'article (premier -> 1ER, etc.)
-  if (article) {
-    article = article
-      .replace(/^premier$/i, '1ER')
-      .replace(/^unique$/i, 'UNIQUE')
-      .replace(/^(\d+)$/, 'ART. $1')
-      .toUpperCase();
-    if (!article.startsWith('ART.')) {
-      article = 'ART. ' + article;
-    }
-  }
-
-  // Extraire l'auteur (optionnel, pour affiner le matching)
-  const auteurMatch = titre.match(/amendement\s+n[°º]\s*\d+\s+de\s+(?:M\.|Mme|MM\.)\s+([A-Za-zÀ-ÿ\-\s]+?)(?:\s+(?:et|à|après)|$)/i);
-  const auteur: string | null = auteurMatch && auteurMatch[1] ? auteurMatch[1].trim() : null;
-
-  return { numero, article, auteur };
-}
-
 export async function linkScrutinsToAmendements(
   options: { chambre?: 'assemblee' | 'senat'; dryRun?: boolean } = {}
 ): Promise<{ linked: number; notFound: number }> {
   const chambre = options.chambre;
   const dryRun = options.dryRun ?? false;
+  // Pour le filtre SQL: si chambre est null, on matche tout
+  const chambreFilter = chambre || '%';
 
-  logger.info({ chambre: chambre || 'all', dryRun }, 'Starting scrutins-amendements linking...');
+  logger.info({ chambre: chambre || 'all', dryRun }, 'Starting scrutins-amendements linking (SQL optimized)...');
 
-  let linked = 0;
-  let notFound = 0;
+  if (dryRun) {
+    // Mode dry-run: compter les correspondances potentielles
+    const countResult = await prisma.$queryRaw<{ linked: bigint; not_found: bigint }[]>`
+      WITH scrutins_with_numero AS (
+        SELECT
+          s.id,
+          s.chambre,
+          SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero
+        FROM scrutins s
+        WHERE s.titre ILIKE '%amendement%'
+          AND s.amendement_id IS NULL
+          AND s.chambre LIKE ${chambreFilter}
+      ),
+      matched AS (
+        SELECT swn.id, a.id as amendement_id
+        FROM scrutins_with_numero swn
+        LEFT JOIN amendements a ON a.numero = swn.amendement_numero AND a.chambre = swn.chambre
+        WHERE swn.amendement_numero IS NOT NULL
+      )
+      SELECT
+        COUNT(CASE WHEN amendement_id IS NOT NULL THEN 1 END)::bigint as linked,
+        COUNT(CASE WHEN amendement_id IS NULL THEN 1 END)::bigint as not_found
+      FROM matched
+    `;
 
-  // Trouver tous les scrutins qui portent sur des amendements et n'ont pas encore d'amendement lié
-  const scrutins = await prisma.scrutin.findMany({
-    where: {
-      titre: { contains: 'amendement' },
-      amendementId: null, // Pas encore lié
-      ...(chambre && { chambre }),
-    },
-    select: {
-      id: true,
-      numero: true,
-      titre: true,
-      objetLibelle: true,
-      chambre: true,
-      date: true,
-    },
-  });
+    const linked = Number(countResult[0]?.linked || 0);
+    const notFound = Number(countResult[0]?.not_found || 0);
 
-  logger.info({ count: scrutins.length }, 'Scrutins about amendements without link found');
-
-  for (const scrutin of scrutins) {
-    // Parser le titre pour extraire les infos de l'amendement
-    const parsed = parseScrutinAmendement(scrutin.titre);
-
-    if (!parsed.numero) {
-      logger.debug({ scrutinNumero: scrutin.numero, titre: scrutin.titre }, 'Could not parse amendement number');
-      notFound++;
-      continue;
-    }
-
-    // Chercher l'amendement correspondant
-    // Stratégie: chercher par numéro exact (sans préfixe de commission)
-    const amendement = await prisma.amendement.findFirst({
-      where: {
-        numero: parsed.numero,
-        chambre: scrutin.chambre,
-        // Si on a l'article, on peut affiner
-        ...(parsed.article && { articleVise: { contains: parsed.article.replace('ART. ', '') } }),
-      },
-      select: { id: true, uid: true, numero: true, articleVise: true },
-    });
-
-    if (amendement) {
-      if (dryRun) {
-        logger.debug(
-          { scrutinNumero: scrutin.numero, amendementUid: amendement.uid, numero: parsed.numero },
-          'Would link scrutin to amendement (dry-run)'
-        );
-      } else {
-        await prisma.scrutin.update({
-          where: { id: scrutin.id },
-          data: { amendementId: amendement.id },
-        });
-        logger.debug(
-          { scrutinNumero: scrutin.numero, amendementUid: amendement.uid, numero: parsed.numero },
-          'Linked scrutin to amendement'
-        );
-      }
-      linked++;
-    } else {
-      logger.debug(
-        { scrutinNumero: scrutin.numero, parsedNumero: parsed.numero, parsedArticle: parsed.article },
-        'Amendement not found in database'
-      );
-      notFound++;
-    }
+    logger.info({ linked, notFound, dryRun }, 'Scrutins-amendements linking completed (dry-run)');
+    return { linked, notFound };
   }
 
-  logger.info({ linked, notFound, dryRun }, 'Scrutins-amendements linking completed');
+  // Single SQL UPDATE with regex extraction and JOIN
+  // PostgreSQL SUBSTRING with POSIX regex extracts the amendment number from titre
+  // Pattern captures: II-360, I-1661, COM-52, 75, etc. (optional prefix + optional dash + digits)
+  // Handles: "amendement n° X", "amendements identiques n° X", "lamendement X"
+  const result = await prisma.$executeRaw`
+    UPDATE scrutins s
+    SET amendement_id = a.id
+    FROM amendements a
+    WHERE s.titre ILIKE '%amendement%'
+      AND s.amendement_id IS NULL
+      AND a.chambre = s.chambre
+      AND a.numero = SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]')
+      AND s.chambre LIKE ${chambreFilter}
+  `;
+
+  // Count scrutins that couldn't be matched (no amendement found)
+  const notFoundResult = await prisma.$queryRaw<{ count: bigint }[]>`
+    SELECT COUNT(*) as count
+    FROM scrutins s
+    WHERE s.titre ILIKE '%amendement%'
+      AND s.amendement_id IS NULL
+      AND SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') IS NOT NULL
+      AND s.chambre LIKE ${chambreFilter}
+  `;
+
+  const linked = result;
+  const notFound = Number(notFoundResult[0]?.count || 0);
+
+  logger.info({ linked, notFound }, 'Scrutins-amendements linking completed');
   return { linked, notFound };
 }
 

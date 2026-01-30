@@ -9,13 +9,8 @@ import { logger } from '../utils/logger';
 
 const prisma = new PrismaClient();
 
-// Limiter les requêtes parallèles pour éviter la saturation du pool
-// Réduit à 1 pour éviter les OOM lors du calcul de loyauté (requêtes lourdes)
+// Pour la version legacy uniquement
 const limit = pLimit(1);
-
-// Taille des batches pour éviter l'accumulation mémoire
-// Réduit de 50 à 20 pour diminuer la pression mémoire
-const BATCH_SIZE = 20;
 
 export interface StatsCalculationResult {
   total: number;
@@ -26,13 +21,196 @@ export interface StatsCalculationResult {
 
 /**
  * Calcule et stocke les stats pour tous les parlementaires d'une chambre
+ * VERSION OPTIMISÉE: Une seule requête SQL pour calculer toutes les stats
  */
 export async function calculateAllStats(
   chambre?: 'assemblee' | 'senat'
 ): Promise<StatsCalculationResult> {
   const startTime = Date.now();
+  // Pour le filtre SQL: si chambre est null, on matche tout
+  const chambreFilter = chambre || '%';
 
-  logger.info({ chambre: chambre || 'all' }, 'Starting stats calculation...');
+  logger.info({ chambre: chambre || 'all' }, 'Starting stats calculation (SQL optimized)...');
+
+  try {
+    // Étape 1: Calculer les stats de base (présence, participation, interventions, amendements)
+    // en une seule requête SQL massive avec CTEs
+    logger.info('Calculating base stats (votes, interventions, amendments)...');
+
+    const baseStatsUpdated = await prisma.$executeRaw`
+      WITH scrutin_counts AS (
+        SELECT chambre, COUNT(*) as total
+        FROM scrutins
+        WHERE chambre LIKE ${chambreFilter}
+        GROUP BY chambre
+      ),
+      scrutin_solennel_counts AS (
+        SELECT chambre, COUNT(*) as total
+        FROM scrutins
+        WHERE type_vote = 'solennel'
+          AND chambre LIKE ${chambreFilter}
+        GROUP BY chambre
+      ),
+      vote_stats AS (
+        SELECT
+          v.parlementaire_id,
+          COUNT(*) FILTER (WHERE v.position != 'absent') as votes_non_absent,
+          COUNT(*) FILTER (WHERE v.position != 'absent' AND s.type_vote = 'solennel') as votes_solennel_non_absent
+        FROM votes v
+        JOIN scrutins s ON v.scrutin_id = s.id
+        WHERE s.chambre LIKE ${chambreFilter}
+        GROUP BY v.parlementaire_id
+      ),
+      intervention_stats AS (
+        SELECT
+          i.parlementaire_id,
+          COUNT(*) as total_interventions,
+          COUNT(*) FILTER (WHERE i.type = 'question') as total_questions
+        FROM interventions i
+        WHERE i.chambre LIKE ${chambreFilter}
+        GROUP BY i.parlementaire_id
+      ),
+      amendement_stats AS (
+        SELECT
+          a.parlementaire_id,
+          COUNT(*) as total_amendements,
+          COUNT(*) FILTER (WHERE a.sort IN ('Adopté', 'adopte', 'adopte_modifie')) as total_adoptes
+        FROM amendements a
+        WHERE a.chambre LIKE ${chambreFilter}
+        GROUP BY a.parlementaire_id
+      ),
+      all_stats AS (
+        SELECT
+          p.id,
+          CASE
+            WHEN sc.total > 0 THEN ROUND((COALESCE(vs.votes_non_absent, 0)::float / sc.total) * 100)
+            ELSE 0
+          END as new_presence,
+          CASE
+            WHEN ssc.total > 0 THEN ROUND((COALESCE(vs.votes_solennel_non_absent, 0)::float / ssc.total) * 100)
+            ELSE NULL
+          END as new_presence_solennel,
+          COALESCE(vs.votes_non_absent, 0) as new_participation,
+          COALESCE(ist.total_interventions, 0) as new_interventions,
+          COALESCE(ist.total_questions, 0) as new_questions,
+          COALESCE(ast.total_amendements, 0) as new_amendements,
+          COALESCE(ast.total_adoptes, 0) as new_adoptes
+        FROM parlementaires p
+        LEFT JOIN scrutin_counts sc ON sc.chambre = p.chambre
+        LEFT JOIN scrutin_solennel_counts ssc ON ssc.chambre = p.chambre
+        LEFT JOIN vote_stats vs ON vs.parlementaire_id = p.id
+        LEFT JOIN intervention_stats ist ON ist.parlementaire_id = p.id
+        LEFT JOIN amendement_stats ast ON ast.parlementaire_id = p.id
+        WHERE p.actif = true
+          AND p.chambre LIKE ${chambreFilter}
+      )
+      UPDATE parlementaires
+      SET
+        stats_presence = all_stats.new_presence,
+        stats_presence_solennel = all_stats.new_presence_solennel,
+        stats_participation = all_stats.new_participation,
+        stats_interventions = all_stats.new_interventions,
+        stats_questions = all_stats.new_questions,
+        stats_amendements = all_stats.new_amendements,
+        stats_amendements_adoptes = all_stats.new_adoptes,
+        stats_calculated_at = NOW()
+      FROM all_stats
+      WHERE parlementaires.id = all_stats.id
+    `;
+
+    logger.info({ updated: baseStatsUpdated }, 'Base stats calculated');
+
+    // Étape 2: Calculer la loyauté (requête plus complexe avec window functions)
+    // Exécuté séparément car très lourd
+    logger.info('Calculating loyalty stats...');
+
+    const loyaltyUpdated = await prisma.$executeRaw`
+      WITH group_majority_positions AS (
+        SELECT
+          v.scrutin_id,
+          p.groupe_id,
+          v.position,
+          COUNT(*) as vote_count,
+          ROW_NUMBER() OVER (PARTITION BY v.scrutin_id, p.groupe_id ORDER BY COUNT(*) DESC) as rn
+        FROM votes v
+        JOIN parlementaires p ON v.parlementaire_id = p.id
+        JOIN scrutins s ON v.scrutin_id = s.id
+        WHERE v.position != 'absent'
+          AND p.groupe_id IS NOT NULL
+          AND s.chambre LIKE ${chambreFilter}
+        GROUP BY v.scrutin_id, p.groupe_id, v.position
+      ),
+      parlementaire_loyalty AS (
+        SELECT
+          v.parlementaire_id,
+          COUNT(*) as total_votes,
+          COUNT(*) FILTER (WHERE v.position = gmp.position) as loyal_votes
+        FROM votes v
+        JOIN parlementaires p ON v.parlementaire_id = p.id
+        JOIN scrutins s ON v.scrutin_id = s.id
+        LEFT JOIN group_majority_positions gmp
+          ON gmp.scrutin_id = v.scrutin_id
+          AND gmp.groupe_id = p.groupe_id
+          AND gmp.rn = 1
+        WHERE v.position != 'absent'
+          AND p.groupe_id IS NOT NULL
+          AND s.chambre LIKE ${chambreFilter}
+        GROUP BY v.parlementaire_id
+      )
+      UPDATE parlementaires
+      SET stats_loyaute = CASE
+        WHEN pl.total_votes > 0 THEN ROUND((pl.loyal_votes::float / pl.total_votes) * 100)
+        ELSE 0
+      END
+      FROM parlementaire_loyalty pl
+      WHERE parlementaires.id = pl.parlementaire_id
+        AND parlementaires.actif = true
+        AND parlementaires.groupe_id IS NOT NULL
+        AND parlementaires.chambre LIKE ${chambreFilter}
+    `;
+
+    logger.info({ updated: loyaltyUpdated }, 'Loyalty stats calculated');
+
+    // Compter le total mis à jour
+    const countResult = await prisma.parlementaire.count({
+      where: {
+        actif: true,
+        statsCalculatedAt: { not: null },
+        ...(chambre && { chambre }),
+      },
+    });
+
+    const duration = `${((Date.now() - startTime) / 1000).toFixed(2)}s`;
+
+    logger.info({
+      total: countResult,
+      updated: countResult,
+      errors: 0,
+      duration,
+    }, 'Stats calculation completed');
+
+    return {
+      total: countResult,
+      updated: countResult,
+      errors: 0,
+      duration,
+    };
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Stats calculation failed');
+    throw error;
+  }
+}
+
+/**
+ * Version legacy avec batches (fallback si la version SQL pose problème)
+ */
+export async function calculateAllStatsLegacy(
+  chambre?: 'assemblee' | 'senat'
+): Promise<StatsCalculationResult> {
+  const startTime = Date.now();
+  const BATCH_SIZE = 20;
+
+  logger.info({ chambre: chambre || 'all' }, 'Starting stats calculation (legacy batch mode)...');
 
   // Récupérer tous les parlementaires actifs
   const parlementaires = await prisma.parlementaire.findMany({

@@ -89,7 +89,13 @@ function stripHtml(html: string | null): string | null {
   if (!html) return null;
   let text = html.replace(/<[^>]*>/g, ' ');
   text = decodeHtmlEntities(text);
-  return text.replace(/\s+/g, ' ').trim();
+  // Convert escaped newlines from SQL dump to actual newlines
+  text = text.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\r/g, '\n');
+  // Collapse multiple spaces (but preserve newlines)
+  text = text.replace(/[^\S\n]+/g, ' ');
+  // Collapse multiple newlines to max 2
+  text = text.replace(/\n{3,}/g, '\n\n');
+  return text.trim();
 }
 
 function parseDate(dateStr: string | null): Date | null {
