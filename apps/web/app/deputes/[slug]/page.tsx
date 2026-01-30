@@ -416,6 +416,7 @@ function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }
 
 function AmendementsList({ slug }: { slug: string }) {
   const [dateRange, setDateRange] = useUrlDateRange();
+  const [votedOnly, setVotedOnly] = useState(false);
   const dateParams = dateRangeToParams(dateRange);
 
   const {
@@ -426,12 +427,13 @@ function AmendementsList({ slug }: { slug: string }) {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['depute-amendements', slug, dateParams],
+    queryKey: ['depute-amendements', slug, dateParams, votedOnly],
     queryFn: ({ pageParam = 1 }) =>
       api.get(`/deputes/${slug}/amendements`, {
         params: {
           page: pageParam,
           limit: 20,
+          votedOnly,
           ...dateParams,
         },
       }).then((res) => res.data),
@@ -448,10 +450,29 @@ function AmendementsList({ slug }: { slug: string }) {
   });
 
   const amendements = data?.pages.flatMap((page) => page.data) ?? [];
+  const total = data?.pages[0]?.meta?.total ?? 0;
 
   return (
     <div className="space-y-4">
-      <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Filtrer par période" />
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+        <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Filtrer par période" />
+        <button
+          onClick={() => setVotedOnly(!votedOnly)}
+          className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+            votedOnly
+              ? 'bg-indigo-100 border-indigo-300 text-indigo-700 hover:bg-indigo-200'
+              : 'bg-background border-input hover:bg-accent'
+          }`}
+        >
+          <Vote className={`h-4 w-4 ${votedOnly ? 'text-indigo-600' : 'text-muted-foreground'}`} />
+          Votés individuellement
+          {votedOnly && total > 0 && (
+            <span className="px-1.5 py-0.5 rounded bg-indigo-200 text-indigo-800 text-xs">
+              {total.toLocaleString('fr-FR')}
+            </span>
+          )}
+        </button>
+      </div>
 
       {isLoading ? (
         <div className="space-y-4">
