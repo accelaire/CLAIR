@@ -270,15 +270,26 @@ export class AssembleeNationaleClient {
       return text;
     };
 
-    // Strip HTML tags and decode entities
+    // Strip HTML tags and decode entities, preserving paragraph breaks
     const stripHtml = (html: string | undefined): string | null => {
       if (!html) return null;
-      // Remove HTML tags first
-      let text = html.replace(/<[^>]*>/g, '');
+      // Convert block elements to newlines before stripping
+      let text = html
+        .replace(/<\/p>/gi, '\n\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/div>/gi, '\n')
+        .replace(/<\/li>/gi, '\n');
+      // Remove remaining HTML tags
+      text = text.replace(/<[^>]*>/g, '');
       // Decode HTML entities
       text = decodeHtmlEntities(text);
-      // Clean up whitespace
-      return text.replace(/\s+/g, ' ').trim();
+      // Collapse multiple spaces (but preserve newlines)
+      text = text.replace(/[^\S\n]+/g, ' ');
+      // Collapse multiple newlines to max 2
+      text = text.replace(/\n{3,}/g, '\n\n');
+      // Trim each line
+      text = text.split('\n').map(line => line.trim()).join('\n');
+      return text.trim();
     };
 
     // Safe string extraction (some fields can be objects with @xsi:nil)
