@@ -583,14 +583,29 @@ export async function syncScrutinsSenat(
   }
 
   // Charger les amendements pour le mapping numéro -> amendementId (Sénat)
+  // IMPORTANT: Le numéro seul n'est pas unique ! On utilise texteRef+numero comme clé préférée.
+  // On utilise select minimal pour réduire la mémoire (~50k amendements Sénat)
   const amendements = await prisma.amendement.findMany({
     where: { uid: { startsWith: 'SENAT-' } },
-    select: { id: true, numero: true },
+    select: { id: true, numero: true, texteRef: true },
   });
-  const amendementMap = new Map<string, string>();
+
+  // Map par numéro seul (fallback, peut avoir des collisions)
+  const amendementByNumero = new Map<string, string>();
+  // Map par texteRef+numero (précis, pas de collision)
+  const amendementByTexteNumero = new Map<string, string>();
+
   for (const a of amendements) {
     if (a.numero) {
-      amendementMap.set(a.numero.toUpperCase(), a.id);
+      const numUpper = a.numero.toUpperCase();
+
+      // Fallback: juste le numéro (peut être écrasé si plusieurs amendements ont le même numéro)
+      amendementByNumero.set(numUpper, a.id);
+
+      // Précis: texteRef + numéro
+      if (a.texteRef) {
+        amendementByTexteNumero.set(`${a.texteRef}-${numUpper}`, a.id);
+      }
     }
   }
 
@@ -626,10 +641,15 @@ export async function syncScrutinsSenat(
       }
 
       // Rechercher le premier amendement lié
+      // NOTE: Pour le Sénat, le matching par numero seul est imprécis car plusieurs
+      // amendements peuvent avoir le même numéro sur des textes différents.
+      // Le matching précis se fait dans linkScrutinsToAmendements() pour l'AN.
+      // Pour le Sénat, on garde ce fallback mais le linking peut être incorrect.
       let amendementId: string | null = null;
       if (scrutin.amendementsNumeros && scrutin.amendementsNumeros.length > 0) {
         for (const num of scrutin.amendementsNumeros) {
-          const found = amendementMap.get(num.toUpperCase());
+          const numUpper = num.toUpperCase();
+          const found = amendementByNumero.get(numUpper);
           if (found) {
             amendementId = found;
             amendementsLinked++;
@@ -1467,6 +1487,20 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         linked: linkResult.linked,
         notFound: linkResult.notFound,
       }, 'Scrutins-Amendements linking completed');
+
+      // Enrichissement AN: scrape les pages HTML pour lier les amendements manquants
+      // Cela corrige les cas où le numéro d'amendement seul n'est pas suffisant
+      if (linkResult.notFound > 0) {
+        logger.info('Enriching AN scrutins with HTML scraping...');
+        const enrichResult = await enrichScrutinsANAmendements({
+          concurrency: 5, // Parallélisme modéré pour éviter le rate limiting
+        });
+        logger.info({
+          enriched: enrichResult.enriched,
+          notFound: enrichResult.notFound,
+          errors: enrichResult.errors,
+        }, 'AN scrutins enrichment completed');
+      }
     } catch (error: any) {
       logger.error({ error: error.message }, 'Scrutins-Amendements linking failed (non-blocking)');
     }
@@ -2102,81 +2136,370 @@ export async function linkInterventionsToScrutins(
 // =============================================================================
 
 /**
- * Lie les scrutins aux amendements en utilisant le numéro extrait du titre.
- * Utilise des requêtes SQL avec regex PostgreSQL pour éviter les OOM.
+ * Lie les scrutins aux amendements en utilisant le numéro ET le texte législatif.
+ *
+ * IMPORTANT: Le numéro d'amendement seul n'est PAS unique !
+ * Il existe des dizaines d'amendements "n°2" sur différents textes.
+ * On doit donc matcher sur le couple (numéro amendement, numéro texte).
+ *
+ * Pour l'AN: on extrait le numéro de texte depuis sourceData.objet ou le titre
+ * et on le compare avec texte_ref de l'amendement (ex: PIONANR5L17B2364 contient "2364")
+ *
+ * Pour le Sénat: traité séparément car le format texteRef est différent (SENAT-TXT-XXXXXX)
  */
 export async function linkScrutinsToAmendements(
-  options: { chambre?: 'assemblee' | 'senat'; dryRun?: boolean } = {}
+  options: { chambre?: 'assemblee' | 'senat'; dryRun?: boolean; reset?: boolean } = {}
 ): Promise<{ linked: number; notFound: number }> {
   const chambre = options.chambre;
   const dryRun = options.dryRun ?? false;
-  // Pour le filtre SQL: si chambre est null, on matche tout
-  const chambreFilter = chambre || '%';
+  const reset = options.reset ?? false;
 
-  logger.info({ chambre: chambre || 'all', dryRun }, 'Starting scrutins-amendements linking (SQL optimized)...');
+  logger.info({ chambre: chambre || 'all', dryRun, reset }, 'Starting scrutins-amendements linking (with texte matching)...');
 
-  if (dryRun) {
-    // Mode dry-run: compter les correspondances potentielles
-    const countResult = await prisma.$queryRaw<{ linked: bigint; not_found: bigint }[]>`
-      WITH scrutins_with_numero AS (
+  // Si reset est demandé, réinitialiser les liens existants
+  if (reset && !dryRun) {
+    const chambreFilter = chambre || '%';
+    const resetCount = await prisma.$executeRaw`
+      UPDATE scrutins
+      SET amendement_id = NULL
+      WHERE amendement_id IS NOT NULL
+        AND chambre LIKE ${chambreFilter}
+    `;
+    logger.info({ resetCount }, 'Reset existing amendement links');
+  }
+
+  let totalLinked = 0;
+  let totalNotFound = 0;
+
+  // === ASSEMBLÉE NATIONALE ===
+  // Pour l'AN, on peut extraire le numéro de texte depuis:
+  // 1. sourceData->'objet'->>'referenceLegislative' (ex: "PIONANR5L17B2364")
+  // 2. Le titre lui-même (ex: "projet de loi n° 2364")
+  // Et on le compare avec texte_ref de l'amendement qui contient ce numéro
+  if (!chambre || chambre === 'assemblee') {
+    if (dryRun) {
+      // Mode dry-run avec matching optimisé (comparaison exacte du numéro de texte)
+      const countResult = await prisma.$queryRaw<{ linked: bigint; not_found: bigint }[]>`
+        WITH scrutins_with_info AS (
+          SELECT
+            s.id,
+            SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero,
+            COALESCE(
+              SUBSTRING(s.source_data->'objet'->>'referenceLegislative' FROM 'B(?:TC)?([0-9]{3,5})'),
+              SUBSTRING(s.titre FROM '(?:projet|proposition|texte)[^0-9]*n[°º]?\s*([0-9]{3,5})')
+            ) as texte_numero
+          FROM scrutins s
+          WHERE s.titre ILIKE '%amendement%'
+            AND s.amendement_id IS NULL
+            AND s.chambre = 'assemblee'
+        ),
+        amendements_with_texte AS (
+          SELECT
+            a.id,
+            a.numero,
+            SUBSTRING(a.texte_ref FROM 'B(?:TC)?([0-9]+)') as amendement_texte_numero
+          FROM amendements a
+          WHERE a.chambre = 'assemblee'
+        ),
+        matched AS (
+          SELECT swn.id, awt.id as amendement_id
+          FROM scrutins_with_info swn
+          LEFT JOIN amendements_with_texte awt ON
+            awt.numero = swn.amendement_numero
+            AND (
+              swn.texte_numero IS NULL
+              OR awt.amendement_texte_numero = swn.texte_numero
+            )
+          WHERE swn.amendement_numero IS NOT NULL
+        )
         SELECT
-          s.id,
-          s.chambre,
-          SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero
+          COUNT(CASE WHEN amendement_id IS NOT NULL THEN 1 END)::bigint as linked,
+          COUNT(CASE WHEN amendement_id IS NULL THEN 1 END)::bigint as not_found
+        FROM matched
+      `;
+      totalLinked += Number(countResult[0]?.linked || 0);
+      totalNotFound += Number(countResult[0]?.not_found || 0);
+    } else {
+      // UPDATE pour l'AN avec matching sur texte_ref
+      // Optimisation: extraire le numéro de texte depuis texte_ref pour comparaison exacte
+      // Format texte_ref AN: PIONANR5L17B2364 ou PIONANR5L17BTC2364
+      const resultAN = await prisma.$executeRaw`
+        WITH scrutins_with_info AS (
+          SELECT
+            s.id,
+            SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero,
+            COALESCE(
+              SUBSTRING(s.source_data->'objet'->>'referenceLegislative' FROM 'B(?:TC)?([0-9]{3,5})'),
+              SUBSTRING(s.titre FROM '(?:projet|proposition|texte)[^0-9]*n[°º]?\s*([0-9]{3,5})')
+            ) as texte_numero
+          FROM scrutins s
+          WHERE s.titre ILIKE '%amendement%'
+            AND s.amendement_id IS NULL
+            AND s.chambre = 'assemblee'
+        ),
+        amendements_with_texte AS (
+          -- Pré-calculer le numéro de texte depuis texte_ref pour chaque amendement AN
+          SELECT
+            a.id,
+            a.numero,
+            SUBSTRING(a.texte_ref FROM 'B(?:TC)?([0-9]+)') as amendement_texte_numero
+          FROM amendements a
+          WHERE a.chambre = 'assemblee'
+        ),
+        best_match AS (
+          SELECT DISTINCT ON (swn.id) swn.id as scrutin_id, awt.id as amendement_id
+          FROM scrutins_with_info swn
+          INNER JOIN amendements_with_texte awt ON
+            awt.numero = swn.amendement_numero
+            AND (
+              swn.texte_numero IS NULL
+              OR awt.amendement_texte_numero = swn.texte_numero
+            )
+          WHERE swn.amendement_numero IS NOT NULL
+          ORDER BY swn.id,
+            -- Préférer les amendements qui matchent exactement le texte_numero
+            CASE WHEN swn.texte_numero IS NOT NULL AND awt.amendement_texte_numero = swn.texte_numero THEN 0 ELSE 1 END,
+            awt.id
+        )
+        UPDATE scrutins s
+        SET amendement_id = bm.amendement_id
+        FROM best_match bm
+        WHERE s.id = bm.scrutin_id
+      `;
+      totalLinked += resultAN;
+
+      // Compter les non trouvés pour AN
+      const notFoundAN = await prisma.$queryRaw<{ count: bigint }[]>`
+        SELECT COUNT(*) as count
         FROM scrutins s
         WHERE s.titre ILIKE '%amendement%'
           AND s.amendement_id IS NULL
-          AND s.chambre LIKE ${chambreFilter}
-      ),
-      matched AS (
-        SELECT swn.id, a.id as amendement_id
-        FROM scrutins_with_numero swn
-        LEFT JOIN amendements a ON a.numero = swn.amendement_numero AND a.chambre = swn.chambre
-        WHERE swn.amendement_numero IS NOT NULL
-      )
-      SELECT
-        COUNT(CASE WHEN amendement_id IS NOT NULL THEN 1 END)::bigint as linked,
-        COUNT(CASE WHEN amendement_id IS NULL THEN 1 END)::bigint as not_found
-      FROM matched
-    `;
-
-    const linked = Number(countResult[0]?.linked || 0);
-    const notFound = Number(countResult[0]?.not_found || 0);
-
-    logger.info({ linked, notFound, dryRun }, 'Scrutins-amendements linking completed (dry-run)');
-    return { linked, notFound };
+          AND s.chambre = 'assemblee'
+          AND SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') IS NOT NULL
+      `;
+      totalNotFound += Number(notFoundAN[0]?.count || 0);
+    }
+    logger.info({ chambre: 'assemblee', linked: totalLinked, notFound: totalNotFound }, 'AN linking done');
   }
 
-  // Single SQL UPDATE with regex extraction and JOIN
-  // PostgreSQL SUBSTRING with POSIX regex extracts the amendment number from titre
-  // Pattern captures: II-360, I-1661, COM-52, 75, etc. (optional prefix + optional dash + digits)
-  // Handles: "amendement n° X", "amendements identiques n° X", "lamendement X"
-  const result = await prisma.$executeRaw`
-    UPDATE scrutins s
-    SET amendement_id = a.id
-    FROM amendements a
-    WHERE s.titre ILIKE '%amendement%'
-      AND s.amendement_id IS NULL
-      AND a.chambre = s.chambre
-      AND a.numero = SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]')
-      AND s.chambre LIKE ${chambreFilter}
-  `;
+  // === SÉNAT ===
+  // Pour le Sénat, le format texteRef est SENAT-TXT-XXXXXX (ID interne, pas le numéro visible)
+  // On utilise une approche différente: matcher par le titre qui contient souvent l'info du dossier
+  // ou par les amendementsNumeros stockés dans sourceData
+  if (!chambre || chambre === 'senat') {
+    const linkedBeforeSenat = totalLinked;
 
-  // Count scrutins that couldn't be matched (no amendement found)
-  const notFoundResult = await prisma.$queryRaw<{ count: bigint }[]>`
-    SELECT COUNT(*) as count
-    FROM scrutins s
-    WHERE s.titre ILIKE '%amendement%'
-      AND s.amendement_id IS NULL
-      AND SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') IS NOT NULL
-      AND s.chambre LIKE ${chambreFilter}
-  `;
+    if (dryRun) {
+      // Pour le Sénat en dry-run, on compte juste les scrutins avec amendement dans le titre
+      const countSenat = await prisma.$queryRaw<{ linked: bigint; not_found: bigint }[]>`
+        WITH scrutins_senat AS (
+          SELECT
+            s.id,
+            SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero
+          FROM scrutins s
+          WHERE s.titre ILIKE '%amendement%'
+            AND s.amendement_id IS NULL
+            AND s.chambre = 'senat'
+        ),
+        matched AS (
+          SELECT ss.id, a.id as amendement_id
+          FROM scrutins_senat ss
+          LEFT JOIN amendements a ON a.numero = ss.amendement_numero AND a.chambre = 'senat'
+          WHERE ss.amendement_numero IS NOT NULL
+        )
+        SELECT
+          COUNT(CASE WHEN amendement_id IS NOT NULL THEN 1 END)::bigint as linked,
+          COUNT(CASE WHEN amendement_id IS NULL THEN 1 END)::bigint as not_found
+        FROM matched
+      `;
+      totalLinked += Number(countSenat[0]?.linked || 0);
+      totalNotFound += Number(countSenat[0]?.not_found || 0);
+    } else {
+      // Pour le Sénat, on fait un matching plus simple car le format est différent
+      // On garde l'ancien comportement mais on log un warning
+      // TODO: Améliorer le matching Sénat avec les données DOSLEG amescr
+      const resultSenat = await prisma.$executeRaw`
+        UPDATE scrutins s
+        SET amendement_id = a.id
+        FROM amendements a
+        WHERE s.titre ILIKE '%amendement%'
+          AND s.amendement_id IS NULL
+          AND a.chambre = 'senat'
+          AND s.chambre = 'senat'
+          AND a.numero = SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]')
+      `;
+      totalLinked += resultSenat;
 
-  const linked = result;
-  const notFound = Number(notFoundResult[0]?.count || 0);
+      const notFoundSenat = await prisma.$queryRaw<{ count: bigint }[]>`
+        SELECT COUNT(*) as count
+        FROM scrutins s
+        WHERE s.titre ILIKE '%amendement%'
+          AND s.amendement_id IS NULL
+          AND s.chambre = 'senat'
+          AND SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') IS NOT NULL
+      `;
+      totalNotFound += Number(notFoundSenat[0]?.count || 0);
 
-  logger.info({ linked, notFound }, 'Scrutins-amendements linking completed');
-  return { linked, notFound };
+      if (resultSenat > 0) {
+        logger.warn(
+          { linked: resultSenat },
+          'Sénat linking uses simple numero matching - some may be incorrect. Consider using syncScrutinsSenat with enriched amendement data.'
+        );
+      }
+    }
+    logger.info({ chambre: 'senat', linked: totalLinked - linkedBeforeSenat }, 'Sénat linking done');
+  }
+
+  logger.info({ linked: totalLinked, notFound: totalNotFound, dryRun }, 'Scrutins-amendements linking completed');
+  return { linked: totalLinked, notFound: totalNotFound };
+}
+
+// =============================================================================
+// ENRICH SCRUTINS AN - Scrape HTML to get amendment links
+// =============================================================================
+
+/**
+ * Enrichit les scrutins AN en scrappant la page HTML pour extraire le lien vers l'amendement.
+ * Les données Open Data AN ne contiennent pas la référence à l'amendement, donc on doit
+ * aller chercher cette info sur la page web du scrutin.
+ *
+ * Le lien a le format: /dyn/17/amendements/{texteNumero}/{commission}/{amendementNumero}
+ * Exemple: /dyn/17/amendements/2364/AN/2
+ *
+ * On utilise ce lien pour construire la clé de matching : texteNumero + amendementNumero
+ */
+export async function enrichScrutinsANAmendements(
+  options: { limit?: number; dryRun?: boolean; concurrency?: number } = {}
+): Promise<{ enriched: number; notFound: number; errors: number }> {
+  const dryRun = options.dryRun ?? false;
+  const concurrency = options.concurrency ?? 3; // Limiter les requêtes parallèles pour éviter le rate limiting
+  const limitCount = options.limit;
+
+  logger.info({ dryRun, concurrency, limit: limitCount }, 'Starting AN scrutins enrichment (scraping HTML)...');
+
+  // Charger les scrutins AN qui mentionnent "amendement" mais n'ont pas d'amendement lié
+  const scrutinsToEnrich = await prisma.scrutin.findMany({
+    where: {
+      chambre: 'assemblee',
+      titre: { contains: 'amendement', mode: 'insensitive' },
+      amendementId: null,
+    },
+    select: {
+      id: true,
+      numero: true,
+      titre: true,
+      sourceUrl: true,
+      session: true,
+    },
+    take: limitCount,
+    orderBy: { numero: 'desc' }, // Plus récents d'abord
+  });
+
+  logger.info({ count: scrutinsToEnrich.length }, 'Scrutins to enrich');
+
+  if (scrutinsToEnrich.length === 0) {
+    return { enriched: 0, notFound: 0, errors: 0 };
+  }
+
+  // Charger tous les amendements AN pour le matching rapide
+  // Clé: "{texteNumero}-{amendementNumero}" -> amendementId
+  const amendementsAN = await prisma.amendement.findMany({
+    where: { chambre: 'assemblee' },
+    select: { id: true, numero: true, texteRef: true },
+  });
+
+  const amendementMap = new Map<string, string>();
+  for (const a of amendementsAN) {
+    if (a.texteRef && a.numero) {
+      // Extraire le numéro de texte depuis texte_ref (format: PIONANR5L17B2364 ou PRJLANR5L17BTC2364)
+      const texteMatch = a.texteRef.match(/B(?:TC)?(\d+)/);
+      if (texteMatch) {
+        const texteNumero = texteMatch[1];
+        const key = `${texteNumero}-${a.numero}`.toUpperCase();
+        amendementMap.set(key, a.id);
+      }
+    }
+  }
+
+  logger.info({ amendementMapSize: amendementMap.size }, 'Amendment map built');
+
+  let enriched = 0;
+  let notFound = 0;
+  let errors = 0;
+
+  // Import axios pour les requêtes HTTP
+  const axios = (await import('axios')).default;
+
+  // Regex pour extraire le lien vers l'amendement
+  // Format: href="...amendements/{texteNumero}/{commission}/{amendementNumero}"
+  const amendementLinkRegex = /href="[^"]*\/amendements\/(\d+)\/([A-Z]+)\/(\d+)"/;
+
+  // Traiter les scrutins avec un rate limit
+  const enrichLimit = pLimit(concurrency);
+
+  const results = await Promise.all(
+    scrutinsToEnrich.map((scrutin) =>
+      enrichLimit(async () => {
+        try {
+          // Construire l'URL de la page du scrutin
+          // Note: l'URL correcte utilise le numéro simple, pas l'UID complet
+          const legislature = scrutin.session || '17';
+          const url = `https://www.assemblee-nationale.fr/dyn/${legislature}/scrutins/${scrutin.numero}`;
+
+          // Fetch la page HTML
+          const response = await axios.get(url, {
+            timeout: 10000,
+            headers: {
+              'User-Agent': 'CLAIR-Bot/1.0 (https://github.com/clair)',
+            },
+          });
+
+          const html = response.data as string;
+
+          // Extraire le lien vers l'amendement
+          const match = html.match(amendementLinkRegex);
+          if (!match) {
+            logger.debug({ scrutinNumero: scrutin.numero }, 'No amendment link found in HTML');
+            return { status: 'notFound' as const };
+          }
+
+          const [, texteNumero, , amendementNumero] = match;
+          const key = `${texteNumero}-${amendementNumero}`.toUpperCase();
+
+          // Chercher l'amendement correspondant
+          const amendementId = amendementMap.get(key);
+          if (!amendementId) {
+            logger.debug({ scrutinNumero: scrutin.numero, key }, 'Amendment not found in database');
+            return { status: 'notFound' as const };
+          }
+
+          // Mettre à jour le scrutin
+          if (!dryRun) {
+            await prisma.scrutin.update({
+              where: { id: scrutin.id },
+              data: { amendementId },
+            });
+          }
+
+          logger.debug({ scrutinNumero: scrutin.numero, key, amendementId, dryRun }, 'Amendment linked');
+          return { status: 'enriched' as const };
+        } catch (error: any) {
+          logger.warn({ scrutinNumero: scrutin.numero, error: error.message }, 'Error enriching scrutin');
+          return { status: 'error' as const };
+        }
+      })
+    )
+  );
+
+  // Compter les résultats
+  for (const result of results) {
+    if (result.status === 'enriched') enriched++;
+    else if (result.status === 'notFound') notFound++;
+    else errors++;
+  }
+
+  logger.info({ enriched, notFound, errors, dryRun }, 'AN scrutins enrichment completed');
+  return { enriched, notFound, errors };
 }
 
 // =============================================================================
