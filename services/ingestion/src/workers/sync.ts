@@ -1480,29 +1480,35 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
   }
 
   if (hasAmendementsChanged || hasScrutinsChanged) {
-    logger.info('Linking scrutins to amendements...');
+    logger.info('Enriching scrutins with amendements (HTML scraping for new scrutins only)...');
     try {
-      const linkResult = await linkScrutinsToAmendements();
+      // Enrichissement AN: scrape les pages HTML pour les NOUVEAUX scrutins uniquement
+      // Pas de reset - on enrichit seulement ceux sans lien (amendementId: null)
+      // Pour corriger des liens existants, utiliser CLI: sync --enrich-amendements-an --reset
+      logger.info('Enriching AN scrutins with HTML scraping...');
+      const enrichANResult = await enrichScrutinsANAmendements({
+        concurrency: 5,
+      });
       logger.info({
-        linked: linkResult.linked,
-        notFound: linkResult.notFound,
-      }, 'Scrutins-Amendements linking completed');
+        enriched: enrichANResult.enriched,
+        notFound: enrichANResult.notFound,
+        errors: enrichANResult.errors,
+      }, 'AN scrutins enrichment completed');
 
-      // Enrichissement AN: scrape les pages HTML pour lier les amendements manquants
-      // Cela corrige les cas où le numéro d'amendement seul n'est pas suffisant
-      if (linkResult.notFound > 0) {
-        logger.info('Enriching AN scrutins with HTML scraping...');
-        const enrichResult = await enrichScrutinsANAmendements({
-          concurrency: 5, // Parallélisme modéré pour éviter le rate limiting
-        });
-        logger.info({
-          enriched: enrichResult.enriched,
-          notFound: enrichResult.notFound,
-          errors: enrichResult.errors,
-        }, 'AN scrutins enrichment completed');
-      }
+      // Enrichissement Sénat: scrape les pages HTML pour les NOUVEAUX scrutins uniquement
+      // Pas de reset - on enrichit seulement ceux sans lien (amendementId: null)
+      // Pour corriger des liens existants, utiliser CLI: sync --enrich-amendements-senat --reset
+      logger.info('Enriching Sénat scrutins with HTML scraping...');
+      const enrichSenatResult = await enrichScrutinsSenatAmendements({
+        concurrency: 5,
+      });
+      logger.info({
+        enriched: enrichSenatResult.enriched,
+        notFound: enrichSenatResult.notFound,
+        errors: enrichSenatResult.errors,
+      }, 'Sénat scrutins enrichment completed');
     } catch (error: any) {
-      logger.error({ error: error.message }, 'Scrutins-Amendements linking failed (non-blocking)');
+      logger.error({ error: error.message }, 'Scrutins-Amendements enrichment failed (non-blocking)');
     }
   }
 
@@ -2369,13 +2375,43 @@ export async function linkScrutinsToAmendements(
  * On utilise ce lien pour construire la clé de matching : texteNumero + amendementNumero
  */
 export async function enrichScrutinsANAmendements(
-  options: { limit?: number; dryRun?: boolean; concurrency?: number } = {}
-): Promise<{ enriched: number; notFound: number; errors: number }> {
+  options: { limit?: number; dryRun?: boolean; concurrency?: number; reset?: boolean } = {}
+): Promise<{ enriched: number; notFound: number; errors: number; resetCount?: number }> {
   const dryRun = options.dryRun ?? false;
   const concurrency = options.concurrency ?? 3; // Limiter les requêtes parallèles pour éviter le rate limiting
   const limitCount = options.limit;
+  const reset = options.reset ?? false;
 
-  logger.info({ dryRun, concurrency, limit: limitCount }, 'Starting AN scrutins enrichment (scraping HTML)...');
+  logger.info({ dryRun, concurrency, limit: limitCount, reset }, 'Starting AN scrutins enrichment (scraping HTML)...');
+
+  // Si reset demandé, réinitialiser les liens existants
+  let resetCount = 0;
+  if (reset) {
+    const countToReset = await prisma.scrutin.count({
+      where: {
+        chambre: 'assemblee',
+        titre: { contains: 'amendement', mode: 'insensitive' },
+        amendementId: { not: null },
+      },
+    });
+
+    if (countToReset === 0) {
+      logger.info('No AN amendement links to reset - skipping');
+    } else if (!dryRun) {
+      const result = await prisma.$executeRaw`
+        UPDATE scrutins
+        SET amendement_id = NULL
+        WHERE amendement_id IS NOT NULL
+          AND chambre = 'assemblee'
+          AND titre ILIKE '%amendement%'
+      `;
+      resetCount = Number(result);
+      logger.info({ resetCount }, 'Reset existing AN amendement links');
+    } else {
+      resetCount = countToReset;
+      logger.info({ wouldReset: resetCount }, 'Would reset AN amendement links (dry-run)');
+    }
+  }
 
   // Charger les scrutins AN qui mentionnent "amendement" mais n'ont pas d'amendement lié
   const scrutinsToEnrich = await prisma.scrutin.findMany({
@@ -2498,8 +2534,260 @@ export async function enrichScrutinsANAmendements(
     else errors++;
   }
 
-  logger.info({ enriched, notFound, errors, dryRun }, 'AN scrutins enrichment completed');
-  return { enriched, notFound, errors };
+  logger.info({ enriched, notFound, errors, resetCount, dryRun }, 'AN scrutins enrichment completed');
+  return { enriched, notFound, errors, resetCount };
+}
+
+// =============================================================================
+// ENRICH SCRUTINS SENAT - Scrape HTML to get amendment links
+// =============================================================================
+
+/**
+ * Enrichit les scrutins Sénat en scrappant la page HTML pour extraire le lien vers l'amendement.
+ * Les données DOSLEG ne contiennent que le numéro d'amendement, pas la référence au texte,
+ * ce qui cause des erreurs de matching quand plusieurs amendements ont le même numéro.
+ *
+ * Le lien a le format: /amendements/{session}/{texteNumero}/Amdt_{amendementNumero}.html
+ * Exemple: /amendements/2025-2026/265/Amdt_72.html
+ *
+ * Comme on ne peut pas mapper directement le texteNumero visible (265) vers le texte_ref interne
+ * (SENAT-TXT-106870), on utilise une combinaison de:
+ * - Session extraite de l'URL (ex: 2025-2026 -> filtre par année)
+ * - Numéro d'amendement
+ * - Date du scrutin (pour matcher avec date_depot proche)
+ */
+export async function enrichScrutinsSenatAmendements(
+  options: { limit?: number; dryRun?: boolean; concurrency?: number; reset?: boolean } = {}
+): Promise<{ enriched: number; notFound: number; errors: number; resetCount?: number }> {
+  const dryRun = options.dryRun ?? false;
+  const concurrency = options.concurrency ?? 3;
+  const limitCount = options.limit;
+  const reset = options.reset ?? false;
+
+  logger.info({ dryRun, concurrency, limit: limitCount, reset }, 'Starting Sénat scrutins enrichment (scraping HTML)...');
+
+  // Si reset demandé, réinitialiser les liens existants (comme linkScrutinsToAmendements)
+  let resetCount = 0;
+  if (reset) {
+    // D'abord compter combien seraient réinitialisés
+    const countToReset = await prisma.scrutin.count({
+      where: {
+        chambre: 'senat',
+        titre: { contains: 'amendement', mode: 'insensitive' },
+        amendementId: { not: null },
+      },
+    });
+
+    if (countToReset === 0) {
+      logger.info('No Sénat amendement links to reset - skipping');
+    } else if (!dryRun) {
+      const result = await prisma.$executeRaw`
+        UPDATE scrutins
+        SET amendement_id = NULL
+        WHERE amendement_id IS NOT NULL
+          AND chambre = 'senat'
+          AND titre ILIKE '%amendement%'
+      `;
+      resetCount = Number(result);
+      logger.info({ resetCount }, 'Reset existing Sénat amendement links');
+    } else {
+      resetCount = countToReset;
+      logger.info({ wouldReset: resetCount }, 'Would reset Sénat amendement links (dry-run)');
+    }
+  }
+
+  // Charger les scrutins Sénat qui mentionnent "amendement" mais n'ont pas d'amendement lié
+  const scrutinsToEnrich = await prisma.scrutin.findMany({
+    where: {
+      chambre: 'senat',
+      titre: { contains: 'amendement', mode: 'insensitive' },
+      amendementId: null,
+    },
+    select: {
+      id: true,
+      numero: true,
+      titre: true,
+      sourceUrl: true,
+      session: true,
+      date: true,
+    },
+    take: limitCount,
+    orderBy: { numero: 'desc' },
+  });
+
+  logger.info({ count: scrutinsToEnrich.length }, 'Sénat scrutins to enrich');
+
+  if (scrutinsToEnrich.length === 0) {
+    return { enriched: 0, notFound: 0, errors: 0 };
+  }
+
+  let enriched = 0;
+  let notFound = 0;
+  let errors = 0;
+
+  const axios = (await import('axios')).default;
+
+  // Regex pour extraire le lien vers l'amendement Sénat
+  // Format: href="https://www.senat.fr/amendements/{session}/{texteNumero}/Amdt_{numero}.html"
+  // ou href="/amendements/{session}/{texteNumero}/Amdt_{numero}.html"
+  const amendementLinkRegex = /href="[^"]*\/amendements\/(\d{4}-\d{4})\/(\d+)\/Amdt_([A-Z0-9-]+)\.html"/i;
+
+  const enrichLimit = pLimit(concurrency);
+
+  const results = await Promise.all(
+    scrutinsToEnrich.map((scrutin) =>
+      enrichLimit(async () => {
+        try {
+          // L'URL source est déjà complète (ex: https://www.senat.fr/scrutin-public/2025/scr2025-159.html)
+          const url = scrutin.sourceUrl;
+          if (!url) {
+            logger.debug({ scrutinNumero: scrutin.numero }, 'No sourceUrl for scrutin');
+            return { status: 'notFound' as const };
+          }
+
+          // Fetch la page HTML
+          const response = await axios.get(url, {
+            timeout: 10000,
+            headers: {
+              'User-Agent': 'CLAIR-Bot/1.0 (https://github.com/clair)',
+            },
+          });
+
+          const html = response.data as string;
+
+          // Extraire le lien vers l'amendement
+          const match = html.match(amendementLinkRegex);
+          if (!match) {
+            logger.debug({ scrutinNumero: scrutin.numero, url }, 'No amendment link found in HTML');
+            return { status: 'notFound' as const };
+          }
+
+          const [, , , amendementNumeroRaw] = match;
+          if (!amendementNumeroRaw) {
+            logger.debug({ scrutinNumero: scrutin.numero }, 'Could not extract amendment number from URL');
+            return { status: 'notFound' as const };
+          }
+
+          // Nettoyer le numéro d'amendement (enlever "rect.", etc.)
+          const baseNumero = amendementNumeroRaw.replace(/\s*rect.*$/i, '').trim();
+
+          // Chercher l'amendement avec ce numéro ET date proche du scrutin
+          // On cherche les amendements déposés dans les 14 jours avant le scrutin
+          const scrutinDate = scrutin.date;
+          const minDate = new Date(scrutinDate);
+          minDate.setDate(minDate.getDate() - 14);
+
+          // Chercher par numéro + date proche + année de session
+          const candidates = await prisma.amendement.findMany({
+            where: {
+              chambre: 'senat',
+              numero: baseNumero,
+              dateDepot: {
+                gte: minDate,
+                lte: scrutinDate,
+              },
+            },
+            select: {
+              id: true,
+              numero: true,
+              texteRef: true,
+              dateDepot: true,
+            },
+            orderBy: { dateDepot: 'desc' },
+          });
+
+          if (candidates.length === 0) {
+            // Essayer avec une fenêtre plus large (30 jours)
+            const minDateWide = new Date(scrutinDate);
+            minDateWide.setDate(minDateWide.getDate() - 30);
+
+            const wideCandidates = await prisma.amendement.findMany({
+              where: {
+                chambre: 'senat',
+                numero: baseNumero,
+                dateDepot: {
+                  gte: minDateWide,
+                  lte: scrutinDate,
+                },
+              },
+              select: {
+                id: true,
+                numero: true,
+                texteRef: true,
+                dateDepot: true,
+              },
+              orderBy: { dateDepot: 'desc' },
+            });
+
+            const wideCandidate = wideCandidates[0];
+            if (!wideCandidate) {
+              logger.debug({
+                scrutinNumero: scrutin.numero,
+                amendementNumero: baseNumero,
+                scrutinDate: scrutinDate.toISOString(),
+              }, 'No matching amendment found by date proximity');
+              return { status: 'notFound' as const };
+            }
+
+            // Prendre le plus récent (le plus proche de la date du scrutin)
+            const amendementIdWide = wideCandidate.id;
+
+            if (!dryRun) {
+              await prisma.scrutin.update({
+                where: { id: scrutin.id },
+                data: { amendementId: amendementIdWide },
+              });
+            }
+
+            logger.debug({
+              scrutinNumero: scrutin.numero,
+              amendementNumero: baseNumero,
+              amendementId: amendementIdWide,
+              texteRef: wideCandidate.texteRef,
+              dryRun,
+            }, 'Amendment linked (wide window)');
+            return { status: 'enriched' as const };
+          }
+
+          // Prendre le plus récent parmi les candidats
+          const candidate = candidates[0];
+          if (!candidate) {
+            return { status: 'notFound' as const };
+          }
+          const amendementId = candidate.id;
+
+          if (!dryRun) {
+            await prisma.scrutin.update({
+              where: { id: scrutin.id },
+              data: { amendementId },
+            });
+          }
+
+          logger.debug({
+            scrutinNumero: scrutin.numero,
+            amendementNumero: baseNumero,
+            amendementId,
+            texteRef: candidate.texteRef,
+            dryRun,
+          }, 'Amendment linked');
+          return { status: 'enriched' as const };
+
+        } catch (error: any) {
+          logger.warn({ scrutinNumero: scrutin.numero, error: error.message }, 'Error enriching Sénat scrutin');
+          return { status: 'error' as const };
+        }
+      })
+    )
+  );
+
+  for (const result of results) {
+    if (result.status === 'enriched') enriched++;
+    else if (result.status === 'notFound') notFound++;
+    else errors++;
+  }
+
+  logger.info({ enriched, notFound, errors, resetCount, dryRun }, 'Sénat scrutins enrichment completed');
+  return { enriched, notFound, errors, resetCount };
 }
 
 // =============================================================================
