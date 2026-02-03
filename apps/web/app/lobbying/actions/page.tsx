@@ -4,7 +4,7 @@ import { Suspense } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Search, ChevronDown, Building2, Briefcase, Users, ArrowUp, ArrowDown, Loader2, Calendar, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Search, ChevronDown, Building2, Briefcase, Users, Loader2, Calendar, ArrowLeft, ArrowRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useUrlFilters, useUrlDateRange } from '@/hooks/useUrlFilters';
@@ -246,35 +246,24 @@ function ActionsPageContent() {
         </div>
 
         {/* Tri */}
-        <div className="flex items-center gap-0 w-full sm:w-auto">
-          <div className="relative flex-1 sm:flex-none">
-            <select
-              value={sort}
-              onChange={(e) => {
-                const newSort = e.target.value as 'dateDebut' | 'lobbyiste';
-                setFilters({
-                  sort: newSort,
-                  order: newSort === 'lobbyiste' ? 'asc' : 'desc',
-                });
-              }}
-              className="w-full appearance-none rounded-lg rounded-r-none border border-r-0 bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="dateDebut">Tri: Date</option>
-              <option value="lobbyiste">Tri: Lobbyiste</option>
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-          </div>
-          <button
-            onClick={() => setFilter('order', order === 'asc' ? 'desc' : 'asc')}
-            className="flex items-center justify-center rounded-lg rounded-l-none border bg-background px-3 py-2 hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
-            title={order === 'asc' ? 'Croissant' : 'Décroissant'}
+        <div className="relative w-full sm:w-auto">
+          <select
+            value={`${sort}-${order}`}
+            onChange={(e) => {
+              const [newSort, newOrder] = e.target.value.split('-') as [
+                'dateDebut' | 'lobbyiste',
+                'asc' | 'desc',
+              ];
+              setFilters({ sort: newSort, order: newOrder });
+            }}
+            className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
-            {order === 'asc' ? (
-              <ArrowUp className="h-4 w-4" />
-            ) : (
-              <ArrowDown className="h-4 w-4" />
-            )}
-          </button>
+            <option value="dateDebut-desc">Date (récentes en premier)</option>
+            <option value="dateDebut-asc">Date (anciennes en premier)</option>
+            <option value="lobbyiste-asc">Lobbyiste (A → Z)</option>
+            <option value="lobbyiste-desc">Lobbyiste (Z → A)</option>
+          </select>
+          <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>
       </div>
 
