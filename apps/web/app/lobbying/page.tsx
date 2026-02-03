@@ -3,7 +3,7 @@
 import { Suspense } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Search, ChevronDown, Building2, Briefcase, TrendingUp, Users, ArrowUp, ArrowDown, Loader2, Calendar, ArrowRight } from 'lucide-react';
+import { Search, ChevronDown, Building2, Briefcase, TrendingUp, Users, Loader2, Calendar, ArrowRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
@@ -383,37 +383,26 @@ function LobbyingPageContent() {
         </div>
 
         {/* Tri */}
-        <div className="flex items-center gap-0 w-full sm:w-auto">
-          <div className="relative flex-1 sm:flex-none">
-            <select
-              value={sort}
-              onChange={(e) => {
-                const newSort = e.target.value as 'nom' | 'budget' | 'actions';
-                // Use batch update to set both sort and order at once
-                setFilters({
-                  sort: newSort,
-                  order: newSort === 'nom' ? 'asc' : 'desc',
-                });
-              }}
-              className="w-full appearance-none rounded-lg rounded-r-none border border-r-0 bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="nom">Tri: Nom</option>
-              <option value="budget">Tri: Budget</option>
-              <option value="actions">Tri: Actions</option>
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-          </div>
-          <button
-            onClick={() => setFilter('order', order === 'asc' ? 'desc' : 'asc')}
-            className="flex items-center justify-center rounded-lg rounded-l-none border bg-background px-3 py-2 hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
-            title={order === 'asc' ? 'Croissant' : 'Décroissant'}
+        <div className="relative w-full sm:w-auto">
+          <select
+            value={`${sort}-${order}`}
+            onChange={(e) => {
+              const [newSort, newOrder] = e.target.value.split('-') as [
+                'nom' | 'budget' | 'actions',
+                'asc' | 'desc',
+              ];
+              setFilters({ sort: newSort, order: newOrder });
+            }}
+            className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
-            {order === 'asc' ? (
-              <ArrowUp className="h-4 w-4" />
-            ) : (
-              <ArrowDown className="h-4 w-4" />
-            )}
-          </button>
+            <option value="nom-asc">Nom (A → Z)</option>
+            <option value="nom-desc">Nom (Z → A)</option>
+            <option value="budget-asc">Budget (croissant)</option>
+            <option value="budget-desc">Budget (décroissant)</option>
+            <option value="actions-asc">Nombre d&apos;actions (croissant)</option>
+            <option value="actions-desc">Nombre d&apos;actions (décroissant)</option>
+          </select>
+          <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>
       </div>
 
