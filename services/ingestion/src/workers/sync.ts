@@ -2569,11 +2569,14 @@ export async function enrichScrutinsSenatAmendements(
   // Si reset demandé, réinitialiser les liens existants (comme linkScrutinsToAmendements)
   let resetCount = 0;
   if (reset) {
-    // D'abord compter combien seraient réinitialisés
+    // D'abord compter combien seraient réinitialisés (amendement OU motion)
     const countToReset = await prisma.scrutin.count({
       where: {
         chambre: 'senat',
-        titre: { contains: 'amendement', mode: 'insensitive' },
+        OR: [
+          { titre: { contains: 'amendement', mode: 'insensitive' } },
+          { titre: { contains: 'motion', mode: 'insensitive' } },
+        ],
         amendementId: { not: null },
       },
     });
@@ -2586,7 +2589,7 @@ export async function enrichScrutinsSenatAmendements(
         SET amendement_id = NULL
         WHERE amendement_id IS NOT NULL
           AND chambre = 'senat'
-          AND titre ILIKE '%amendement%'
+          AND (titre ILIKE '%amendement%' OR titre ILIKE '%motion%')
       `;
       resetCount = Number(result);
       logger.info({ resetCount }, 'Reset existing Sénat amendement links');
@@ -2596,11 +2599,14 @@ export async function enrichScrutinsSenatAmendements(
     }
   }
 
-  // Charger les scrutins Sénat qui mentionnent "amendement" mais n'ont pas d'amendement lié
+  // Charger les scrutins Sénat qui mentionnent "amendement" OU "motion" mais n'ont pas d'amendement lié
   const scrutinsToEnrich = await prisma.scrutin.findMany({
     where: {
       chambre: 'senat',
-      titre: { contains: 'amendement', mode: 'insensitive' },
+      OR: [
+        { titre: { contains: 'amendement', mode: 'insensitive' } },
+        { titre: { contains: 'motion', mode: 'insensitive' } },
+      ],
       amendementId: null,
     },
     select: {
@@ -2627,10 +2633,100 @@ export async function enrichScrutinsSenatAmendements(
 
   const axios = (await import('axios')).default;
 
-  // Regex pour extraire le lien vers l'amendement Sénat
+  // =========================================================================
+  // Télécharger et parser le mapping txt_ameli pour convertir texteNumero externe -> texte_ref interne
+  // =========================================================================
+  logger.info('Downloading AMELI dump to build texte number mapping...');
+  const texteNumToInternalId = new Map<string, number[]>(); // "298" -> [106889, ...]
+
+  try {
+    const fs = await import('fs');
+    const os = await import('os');
+    const path = await import('path');
+    const { pipeline } = await import('stream/promises');
+    const { createWriteStream, createReadStream } = await import('fs');
+    const readline = await import('readline');
+
+    const tempDir = path.join(os.tmpdir(), 'clair-ameli-mapping');
+    const zipPath = path.join(tempDir, 'ameli.zip');
+    const extractDir = path.join(tempDir, 'extracted');
+
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+    await fs.promises.mkdir(tempDir, { recursive: true });
+
+    // Download AMELI
+    const ameliUrl = 'https://data.senat.fr/data/ameli/ameli.zip';
+    const response = await axios({
+      method: 'GET',
+      url: ameliUrl,
+      responseType: 'stream',
+      timeout: 300000,
+      headers: { 'User-Agent': 'CLAIR-Bot/1.0' },
+    });
+    const writer = createWriteStream(zipPath);
+    await pipeline(response.data, writer);
+
+    // Extract
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+    await fs.promises.mkdir(extractDir, { recursive: true });
+    await execAsync(`unzip -o "${zipPath}" -d "${extractDir}"`, { maxBuffer: 1024 * 1024 * 100 });
+
+    // Find SQL file
+    const files = await fs.promises.readdir(extractDir, { recursive: true });
+    const sqlFile = files.find(f => f.toString().endsWith('.sql'));
+    if (!sqlFile) throw new Error('No SQL file found');
+    const sqlPath = path.join(extractDir, sqlFile.toString());
+
+    // Parse txt_ameli table only
+    const rl = readline.createInterface({
+      input: createReadStream(sqlPath, { encoding: 'latin1' }),
+      crlfDelay: Infinity,
+    });
+
+    let currentTable: string | null = null;
+    let txtCount = 0;
+
+    for await (const line of rl) {
+      if (line.startsWith('COPY ')) {
+        const match = line.match(/COPY (\w+)/);
+        currentTable = match ? match[1] : null;
+        continue;
+      }
+      if (line === '\\.' || line === '\\.') {
+        currentTable = null;
+        continue;
+      }
+
+      // Parse txt_ameli: id(0), natid(1), lecid(2), sesinsid(3), sesdepid(4), fbuid(5), num(6), ...
+      if (currentTable === 'txt_ameli') {
+        const fields = line.split('\t');
+        if (fields.length < 7) continue;
+        const id = parseInt(fields[0] ?? '0', 10);
+        const num = (fields[6] ?? '').trim();
+        if (id && num) {
+          const existing = texteNumToInternalId.get(num) || [];
+          existing.push(id);
+          texteNumToInternalId.set(num, existing);
+          txtCount++;
+        }
+      }
+    }
+
+    logger.info({ txtCount, uniqueNums: texteNumToInternalId.size }, 'Texte number mapping loaded');
+
+    // Cleanup
+    await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  } catch (error: any) {
+    logger.warn({ error: error.message }, 'Failed to load texte mapping - will fallback to date-based matching');
+  }
+
+  // =========================================================================
+  // Regex pour extraire TOUS les liens vers amendements Sénat
   // Format: href="https://www.senat.fr/amendements/{session}/{texteNumero}/Amdt_{numero}.html"
-  // ou href="/amendements/{session}/{texteNumero}/Amdt_{numero}.html"
-  const amendementLinkRegex = /href="[^"]*\/amendements\/(\d{4}-\d{4})\/(\d+)\/Amdt_([A-Z0-9-]+)\.html"/i;
+  // =========================================================================
+  const amendementLinkRegex = /href="[^"]*\/amendements\/(\d{4}-\d{4})\/(\d+)\/Amdt_([A-Z0-9-]+)\.html"/gi;
 
   const enrichLimit = pLimit(concurrency);
 
@@ -2638,7 +2734,6 @@ export async function enrichScrutinsSenatAmendements(
     scrutinsToEnrich.map((scrutin) =>
       enrichLimit(async () => {
         try {
-          // L'URL source est déjà complète (ex: https://www.senat.fr/scrutin-public/2025/scr2025-159.html)
           const url = scrutin.sourceUrl;
           if (!url) {
             logger.debug({ scrutinNumero: scrutin.numero }, 'No sourceUrl for scrutin');
@@ -2646,23 +2741,43 @@ export async function enrichScrutinsSenatAmendements(
           }
 
           // Fetch la page HTML
-          const response = await axios.get(url, {
+          const htmlResponse = await axios.get(url, {
             timeout: 10000,
-            headers: {
-              'User-Agent': 'CLAIR-Bot/1.0 (https://github.com/clair)',
-            },
+            headers: { 'User-Agent': 'CLAIR-Bot/1.0 (https://github.com/clair)' },
           });
 
-          const html = response.data as string;
+          const html = htmlResponse.data as string;
 
-          // Extraire le lien vers l'amendement
-          const match = html.match(amendementLinkRegex);
-          if (!match) {
-            logger.debug({ scrutinNumero: scrutin.numero, url }, 'No amendment link found in HTML');
+          // Extraire TOUS les liens vers amendements
+          const allMatches = [...html.matchAll(amendementLinkRegex)];
+          if (allMatches.length === 0) {
+            logger.debug({ scrutinNumero: scrutin.numero, url }, 'No amendment links found in HTML');
             return { status: 'notFound' as const };
           }
 
-          const [, , , amendementNumeroRaw] = match;
+          // Extraire le numéro d'amendement/motion mentionné dans le TITRE du scrutin
+          // Ex: "sur l'amendement n° 4" ou "sur la motion n° I-2"
+          const titreNumeroMatch = scrutin.titre.match(/(?:amendement|motion)\s+n[°o]\s*([A-Z0-9-]+)/i);
+          const titreNumero = titreNumeroMatch ? titreNumeroMatch[1]?.replace(/\s*rect.*$/i, '').trim() : null;
+
+          // Chercher le lien correspondant au numéro du titre, sinon prendre le premier
+          let selectedMatch = allMatches[0];
+          if (titreNumero) {
+            const matchingLink = allMatches.find(m => {
+              const linkNumero = m[3]?.replace(/\s*rect.*$/i, '').trim();
+              return linkNumero === titreNumero;
+            });
+            if (matchingLink) {
+              selectedMatch = matchingLink;
+              logger.debug({
+                scrutinNumero: scrutin.numero,
+                titreNumero,
+                matchedFromTitle: true,
+              }, 'Found matching amendment from title');
+            }
+          }
+
+          const [, sessionUrl, texteNumExterne, amendementNumeroRaw] = selectedMatch;
           if (!amendementNumeroRaw) {
             logger.debug({ scrutinNumero: scrutin.numero }, 'Could not extract amendment number from URL');
             return { status: 'notFound' as const };
@@ -2671,42 +2786,48 @@ export async function enrichScrutinsSenatAmendements(
           // Nettoyer le numéro d'amendement (enlever "rect.", etc.)
           const baseNumero = amendementNumeroRaw.replace(/\s*rect.*$/i, '').trim();
 
-          // Chercher l'amendement avec ce numéro ET date proche du scrutin
-          // On cherche les amendements déposés dans les 14 jours avant le scrutin
+          // Utiliser le mapping txt_ameli pour trouver le bon texte_ref
+          let targetTexteRefs: string[] = [];
+          if (texteNumExterne && texteNumToInternalId.has(texteNumExterne)) {
+            const internalIds = texteNumToInternalId.get(texteNumExterne) || [];
+            targetTexteRefs = internalIds.map(id => `SENAT-TXT-${id}`);
+            logger.debug({
+              scrutinNumero: scrutin.numero,
+              texteNumExterne,
+              possibleTexteRefs: targetTexteRefs.length,
+            }, 'Found texte mapping');
+          }
+
+          // Chercher l'amendement avec le bon texte_ref si disponible
           const scrutinDate = scrutin.date;
           const minDate = new Date(scrutinDate);
-          minDate.setDate(minDate.getDate() - 14);
+          minDate.setDate(minDate.getDate() - 60); // Fenêtre plus large car on a le texte_ref
 
-          // Chercher par numéro + date proche + année de session
-          const candidates = await prisma.amendement.findMany({
-            where: {
-              chambre: 'senat',
-              numero: baseNumero,
-              dateDepot: {
-                gte: minDate,
-                lte: scrutinDate,
+          let candidates;
+          if (targetTexteRefs.length > 0) {
+            // Recherche précise par texte_ref
+            candidates = await prisma.amendement.findMany({
+              where: {
+                chambre: 'senat',
+                numero: baseNumero,
+                texteRef: { in: targetTexteRefs },
               },
-            },
-            select: {
-              id: true,
-              numero: true,
-              texteRef: true,
-              dateDepot: true,
-            },
-            orderBy: { dateDepot: 'desc' },
-          });
-
-          if (candidates.length === 0) {
-            // Essayer avec une fenêtre plus large (30 jours)
-            const minDateWide = new Date(scrutinDate);
-            minDateWide.setDate(minDateWide.getDate() - 30);
-
-            const wideCandidates = await prisma.amendement.findMany({
+              select: {
+                id: true,
+                numero: true,
+                texteRef: true,
+                dateDepot: true,
+              },
+              orderBy: { dateDepot: 'desc' },
+            });
+          } else {
+            // Fallback: recherche par date (ancien comportement)
+            candidates = await prisma.amendement.findMany({
               where: {
                 chambre: 'senat',
                 numero: baseNumero,
                 dateDepot: {
-                  gte: minDateWide,
+                  gte: minDate,
                   lte: scrutinDate,
                 },
               },
@@ -2718,35 +2839,17 @@ export async function enrichScrutinsSenatAmendements(
               },
               orderBy: { dateDepot: 'desc' },
             });
+          }
 
-            const wideCandidate = wideCandidates[0];
-            if (!wideCandidate) {
-              logger.debug({
-                scrutinNumero: scrutin.numero,
-                amendementNumero: baseNumero,
-                scrutinDate: scrutinDate.toISOString(),
-              }, 'No matching amendment found by date proximity');
-              return { status: 'notFound' as const };
-            }
-
-            // Prendre le plus récent (le plus proche de la date du scrutin)
-            const amendementIdWide = wideCandidate.id;
-
-            if (!dryRun) {
-              await prisma.scrutin.update({
-                where: { id: scrutin.id },
-                data: { amendementId: amendementIdWide },
-              });
-            }
-
+          if (candidates.length === 0) {
             logger.debug({
               scrutinNumero: scrutin.numero,
               amendementNumero: baseNumero,
-              amendementId: amendementIdWide,
-              texteRef: wideCandidate.texteRef,
-              dryRun,
-            }, 'Amendment linked (wide window)');
-            return { status: 'enriched' as const };
+              texteNumExterne,
+              targetTexteRefs,
+              scrutinDate: scrutinDate.toISOString(),
+            }, 'No matching amendment found');
+            return { status: 'notFound' as const };
           }
 
           // Prendre le plus récent parmi les candidats
@@ -2754,20 +2857,21 @@ export async function enrichScrutinsSenatAmendements(
           if (!candidate) {
             return { status: 'notFound' as const };
           }
-          const amendementId = candidate.id;
 
           if (!dryRun) {
             await prisma.scrutin.update({
               where: { id: scrutin.id },
-              data: { amendementId },
+              data: { amendementId: candidate.id },
             });
           }
 
           logger.debug({
             scrutinNumero: scrutin.numero,
             amendementNumero: baseNumero,
-            amendementId,
+            texteNumExterne,
+            amendementId: candidate.id,
             texteRef: candidate.texteRef,
+            candidatesCount: candidates.length,
             dryRun,
           }, 'Amendment linked');
           return { status: 'enriched' as const };
