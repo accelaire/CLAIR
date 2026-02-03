@@ -17,6 +17,29 @@ import { logger } from '../../utils/logger';
 const execAsync = promisify(exec);
 
 // =============================================================================
+// Nettoyage des caractères Windows-1252 mal encodés en UTF-8
+// Le dump SQL du Sénat contient des caractères Windows-1252 (CP1252) qui,
+// lus comme UTF-8, produisent des caractères de contrôle C1 (U+0080-U+009F)
+// encodés en UTF-8 comme C2 80 à C2 9F.
+// =============================================================================
+function cleanWindows1252Artifacts(text: string): string {
+  return text
+    // Apostrophes typographiques mal encodées (les plus fréquentes)
+    .replace(/\u0091/g, "'")  // U+0091 (CP1252: left single quote) → apostrophe
+    .replace(/\u0092/g, "'")  // U+0092 (CP1252: right single quote) → apostrophe
+    // Guillemets
+    .replace(/\u0093/g, '"')  // U+0093 (CP1252: left double quote) → guillemet
+    .replace(/\u0094/g, '"')  // U+0094 (CP1252: right double quote) → guillemet
+    // Tirets
+    .replace(/\u0096/g, '–')  // U+0096 (CP1252: en dash) → tiret demi-cadratin
+    .replace(/\u0097/g, '—')  // U+0097 (CP1252: em dash) → tiret cadratin
+    // Points de suspension
+    .replace(/\u0085/g, '...')  // U+0085 (CP1252: ellipsis) → trois points
+    // Autres caractères de contrôle C1 → supprimer
+    .replace(/[\u0080-\u009F]/g, '');
+}
+
+// =============================================================================
 // TYPES - Structure des données DOSLEG
 // =============================================================================
 
@@ -283,7 +306,7 @@ export class DoslegClient {
 
             const scrnum = parseInt(fields[1] || '0', 10);
             const code = fields[2] && fields[2] !== '\\N' ? parseInt(fields[2], 10) : null;
-            const scrint = fields[3] || '';
+            const scrint = cleanWindows1252Artifacts(fields[3] || '');
             const scrdat = parseTimestamp(fields[4]);
             const scrpou = parseInt(fields[5] || '0', 10);
             const scrcon = parseInt(fields[6] || '0', 10);
