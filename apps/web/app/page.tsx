@@ -105,10 +105,10 @@ export default function HomePage() {
             </form>
 
             {/* Quick Stats - Clickable with animation */}
-            <div className="mt-12 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+            <div className="mt-12 flex flex-wrap justify-center gap-3">
               <Link
                 href="/deputes"
-                className="rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
               >
                 <div className="text-xl font-bold text-primary tabular-nums">
                   {stats?.deputes ? deputesCount.toLocaleString('fr-FR') : '—'}
@@ -117,7 +117,7 @@ export default function HomePage() {
               </Link>
               <Link
                 href="/senateurs"
-                className="rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
               >
                 <div className="text-xl font-bold text-primary tabular-nums">
                   {stats?.senateurs ? senateursCount.toLocaleString('fr-FR') : '—'}
@@ -126,7 +126,7 @@ export default function HomePage() {
               </Link>
               <Link
                 href="/scrutins"
-                className="rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
               >
                 <div className="text-xl font-bold text-primary tabular-nums">
                   {stats?.scrutins ? scrutinsCount.toLocaleString('fr-FR') : '—'}
@@ -135,7 +135,7 @@ export default function HomePage() {
               </Link>
               <Link
                 href="/deputes"
-                className="rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
               >
                 <div className="text-xl font-bold text-primary tabular-nums">
                   {stats?.interventions ? interventionsCount.toLocaleString('fr-FR') : '—'}
@@ -144,7 +144,7 @@ export default function HomePage() {
               </Link>
               <Link
                 href="/deputes"
-                className="rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
               >
                 <div className="text-xl font-bold text-primary tabular-nums">
                   {stats?.amendements ? amendementsCount.toLocaleString('fr-FR') : '—'}
@@ -153,7 +153,7 @@ export default function HomePage() {
               </Link>
               <Link
                 href="/lobbying"
-                className="rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
               >
                 <div className="text-xl font-bold text-primary tabular-nums">
                   {stats?.lobbyistes ? lobbyistesCount.toLocaleString('fr-FR') : '—'}
@@ -162,7 +162,7 @@ export default function HomePage() {
               </Link>
               <Link
                 href="/lobbying"
-                className="rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
               >
                 <div className="text-xl font-bold text-primary tabular-nums">
                   {stats?.actionsLobby ? actionsCount.toLocaleString('fr-FR') : '—'}
