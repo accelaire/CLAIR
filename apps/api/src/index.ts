@@ -211,6 +211,9 @@ async function warmCache(fastifyApp: Awaited<ReturnType<typeof buildApp>>) {
     '/api/v1/scrutins?limit=20',
     '/api/v1/deputes/groupes',
     '/api/v1/senateurs/groupes',
+    '/api/v1/lobbying/stats',     // Stats lobbying (requêtes séquentielles)
+    '/api/v1/lobbying/secteurs',  // Liste des secteurs
+    '/api/v1/lobbying?limit=20',  // Liste des lobbyistes
   ];
 
   for (const route of routesToWarm) {

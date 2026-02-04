@@ -82,6 +82,27 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         take: 6,
       });
 
+      // Dernières actions de lobbying déclarées
+      const recentActions = await fastify.prisma.actionLobby.findMany({
+        select: {
+          id: true,
+          description: true,
+          cible: true,
+          dateDebut: true,
+          lobbyiste: {
+            select: {
+              id: true,
+              nom: true,
+              type: true,
+              secteur: true,
+              siteWeb: true,
+            },
+          },
+        },
+        orderBy: { dateDebut: 'desc' },
+        take: 6,
+      });
+
       const stats: HomepageStats = {
         deputes: deputesCount,
         senateurs: senateursCount,
@@ -95,6 +116,7 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
       const result = {
         stats,
         recentScrutins,
+        recentActions,
         lastUpdate: lastSync?.completedAt || null,
       };
 

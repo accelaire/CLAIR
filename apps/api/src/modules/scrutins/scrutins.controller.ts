@@ -329,7 +329,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
             },
           },
           interventions: {
-            take: 20,
+            take: 5, // Premières interventions seulement, le reste via endpoint paginé
             orderBy: [{ date: 'asc' }, { ordre: 'asc' }],
             select: {
               id: true,
@@ -353,6 +353,11 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
                   },
                 },
               },
+            },
+          },
+          _count: {
+            select: {
+              interventions: true,
             },
           },
         },
@@ -436,13 +441,112 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         absent: votesAbsent,
       };
 
+      // Extraire _count et le reste du scrutin
+      const { _count, ...scrutinData } = scrutin;
+
       return {
         data: {
-          ...scrutin,
-          sourceUrl: fixSourceUrl(scrutin.sourceUrl, scrutin.chambre, scrutin.numero),
+          ...scrutinData,
+          sourceUrl: fixSourceUrl(scrutinData.sourceUrl, scrutinData.chambre, scrutinData.numero),
           votesByPosition,
           votesByGroupe,
-          totalVotes: scrutin.nombrePour + scrutin.nombreContre + scrutin.nombreAbstention,
+          totalVotes: scrutinData.nombrePour + scrutinData.nombreContre + scrutinData.nombreAbstention,
+          totalInterventions: _count?.interventions || 0,
+        },
+      };
+    },
+  });
+
+  // ===========================================================================
+  // GET /api/v1/scrutins/:numero/interventions - Interventions d'un scrutin
+  // ===========================================================================
+  fastify.get('/:numero/interventions', {
+    schema: {
+      tags: ['Scrutins'],
+      summary: 'Interventions d\'un scrutin',
+      description: 'Retourne la liste paginée des interventions (débats, explications de vote) pour un scrutin',
+      params: {
+        type: 'object',
+        required: ['numero'],
+        properties: {
+          numero: { type: 'integer' },
+        },
+      },
+      querystring: {
+        type: 'object',
+        properties: {
+          page: { type: 'integer', minimum: 1, default: 1 },
+          limit: { type: 'integer', minimum: 1, maximum: 50, default: 10 },
+          chambre: { type: 'string', enum: ['assemblee', 'senat'], default: 'assemblee' },
+          session: { type: 'string', description: 'Session parlementaire (ex: 2024 pour Sénat)' },
+          sort: { type: 'string', enum: ['asc', 'desc'], default: 'asc' },
+        },
+      },
+    },
+    handler: async (request, _reply) => {
+      const { numero } = z.object({ numero: z.coerce.number().int().positive() }).parse(request.params);
+      const { page = 1, limit = 10, chambre = 'assemblee', session, sort = 'asc' } = request.query as any;
+      const skip = (page - 1) * limit;
+
+      // Build where clause with optional session
+      const whereClause: { numero: number; chambre: string; session?: string } = { numero, chambre };
+      if (session) {
+        whereClause.session = session;
+      }
+
+      const scrutin = await fastify.prisma.scrutin.findFirst({
+        where: whereClause,
+        select: { id: true },
+      });
+
+      if (!scrutin) {
+        throw new ApiError(404, 'Scrutin non trouvé');
+      }
+
+      const [interventions, total] = await Promise.all([
+        fastify.prisma.intervention.findMany({
+          where: { scrutinId: scrutin.id },
+          orderBy: [{ date: sort }, { ordre: sort }],
+          skip,
+          take: limit,
+          select: {
+            id: true,
+            type: true,
+            contenu: true,
+            date: true,
+            ordre: true,
+            sourceUrl: true,
+            parlementaire: {
+              select: {
+                id: true,
+                slug: true,
+                nom: true,
+                prenom: true,
+                photoUrl: true,
+                groupe: {
+                  select: {
+                    nom: true,
+                    couleur: true,
+                  },
+                },
+              },
+            },
+          },
+        }),
+        fastify.prisma.intervention.count({ where: { scrutinId: scrutin.id } }),
+      ]);
+
+      const totalPages = Math.ceil(total / limit);
+
+      return {
+        data: interventions,
+        meta: {
+          total,
+          page,
+          limit,
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
         },
       };
     },
