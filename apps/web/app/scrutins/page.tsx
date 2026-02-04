@@ -54,6 +54,12 @@ const chambreLabels: Record<string, string> = {
   senat: 'Sénat',
 };
 
+// Capitalize first letter of a string
+const capitalize = (str: string): string => {
+  if (!str) return str;
+  return str.charAt(0).toUpperCase() + str.slice(1);
+};
+
 // Formater la session pour l'affichage
 const formatSession = (chambre: string, session: string): string | null => {
   if (chambre === 'senat') {
@@ -138,7 +144,7 @@ function ScrutinsPageContent() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold">Scrutins</h1>
         <p className="mt-2 text-muted-foreground">
-          Tous les votes publics de l&apos;Assemblée nationale et du Sénat
+          {total > 0 ? total.toLocaleString('fr-FR') : '—'} votes publics de l&apos;Assemblée nationale et du Sénat
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
           Sources : <a href="https://data.assemblee-nationale.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.assemblee-nationale.fr</a>, <a href="https://data.senat.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.senat.fr</a>
@@ -198,21 +204,13 @@ function ScrutinsPageContent() {
             <option value="">Toutes les thématiques</option>
             {tagsData?.map((t: { name: string; count: number }) => (
               <option key={t.name} value={t.name}>
-                {t.name} ({t.count})
+                {capitalize(t.name)} ({t.count})
               </option>
             ))}
           </select>
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>
 
-        {/* Filtre par période */}
-        <div className="w-full sm:w-auto">
-          <DateRangePicker
-            value={dateRange}
-            onChange={setDateRange}
-            placeholder="Période"
-          />
-        </div>
       </div>
 
       {/* Loading initial */}
@@ -234,13 +232,18 @@ function ScrutinsPageContent() {
         </div>
       )}
 
+      {/* Filtre par période */}
+      <div className="mb-6">
+        <DateRangePicker
+          value={dateRange}
+          onChange={setDateRange}
+          placeholder="Période"
+        />
+      </div>
+
       {/* Liste des scrutins */}
       {scrutins.length > 0 && (
         <>
-          <div className="mb-4 text-sm text-muted-foreground">
-            {total.toLocaleString('fr-FR')} scrutin{total > 1 ? 's' : ''}
-          </div>
-
           <div className="space-y-4">
             {scrutins.map((scrutin) => (
               <Link
@@ -283,10 +286,14 @@ function ScrutinsPageContent() {
                         {typeLabels[scrutin.typeVote] || scrutin.typeVote}
                       </span>
                       {scrutin.tags && scrutin.tags.length > 0 && (
-                        <span className="flex items-center gap-1">
+                        <span className="flex items-center gap-1 flex-wrap">
                           <Tag className="h-3 w-3" />
-                          {scrutin.tags[0]}
-                          {scrutin.tags.length > 1 && ` +${scrutin.tags.length - 1}`}
+                          {scrutin.tags.slice(0, 3).map((tag, idx) => (
+                            <span key={tag}>
+                              {capitalize(tag)}{idx < Math.min(scrutin.tags.length, 3) - 1 && ','}
+                            </span>
+                          ))}
+                          {scrutin.tags.length > 3 && ` +${scrutin.tags.length - 3}`}
                         </span>
                       )}
                     </div>
@@ -310,7 +317,9 @@ function ScrutinsPageContent() {
                     </div>
 
                     {/* Badge résultat */}
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${sortLabels[scrutin.sort]?.color || 'bg-muted text-muted-foreground'}`}>
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium flex items-center gap-1 ${sortLabels[scrutin.sort]?.color || 'bg-muted text-muted-foreground'}`}>
+                      {scrutin.sort === 'adopte' && <CheckCircle className="h-4 w-4" />}
+                      {scrutin.sort === 'rejete' && <XCircle className="h-4 w-4" />}
                       {sortLabels[scrutin.sort]?.label || scrutin.sort}
                     </span>
                   </div>

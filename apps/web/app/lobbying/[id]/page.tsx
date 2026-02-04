@@ -9,6 +9,7 @@ import { ArrowLeft, Building2, Calendar, Users, Briefcase, Globe, TrendingUp, Ex
 import { api } from '@/lib/api';
 import { DateRangePicker } from '@/components/DateRangePicker';
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
+import { LobbyisteLogo } from '@/components/lobbying';
 
 interface Action {
   id: string;
@@ -68,6 +69,48 @@ const formatDate = (dateStr: string | null) => {
     month: 'short',
     year: 'numeric',
   });
+};
+
+// Extraire le secteur entre crochets de la description
+const extractSecteur = (description: string): { secteur: string | null; cleanDescription: string } => {
+  const match = description.match(/^\[([^\]]+)\]\s*/);
+  if (match) {
+    return {
+      secteur: match[1],
+      cleanDescription: description.replace(match[0], ''),
+    };
+  }
+  return { secteur: null, cleanDescription: description };
+};
+
+// Couleurs pour les secteurs (basées sur un hash simple du nom)
+const secteurColorClasses = [
+  'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400',
+  'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
+  'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400',
+  'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400',
+  'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
+  'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400',
+  'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400',
+  'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-400',
+];
+
+const getSecteurColor = (secteur: string): string => {
+  let hash = 0;
+  for (let i = 0; i < secteur.length; i++) {
+    hash = secteur.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return secteurColorClasses[Math.abs(hash) % secteurColorClasses.length];
+};
+
+const cibleLabels: Record<string, string> = {
+  parlementaire: 'Parlement',
+  depute: 'Parlement',
+  ministre: 'Gouvernement',
+  presidence: 'Présidence',
+  collectivite: 'Collectivités',
+  autorite: 'AAI/API',
+  administration: 'Administration',
 };
 
 export default function LobbyisteDetailPage() {
@@ -140,9 +183,7 @@ export default function LobbyisteDetailPage() {
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-start gap-4">
-          <div className="p-3 rounded-lg bg-muted">
-            <Building2 className="h-8 w-8 text-muted-foreground" />
-          </div>
+          <LobbyisteLogo siteWeb={lobbyiste.siteWeb} nom={lobbyiste.nom} size="lg" />
           <div>
             <h1 className="text-2xl md:text-3xl font-bold mb-2">{lobbyiste.nom}</h1>
             <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
@@ -161,6 +202,34 @@ export default function LobbyisteDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Additional info */}
+      {(lobbyiste.adresse || lobbyiste.siteWeb) && (
+        <div className="rounded-lg border bg-card p-4 mb-8">
+          <h2 className="text-lg font-semibold mb-3">Informations</h2>
+          <div className="space-y-2 text-sm">
+            {lobbyiste.adresse && (
+              <p className="text-muted-foreground">
+                <strong>Adresse :</strong> {lobbyiste.adresse}
+              </p>
+            )}
+            {lobbyiste.siteWeb && (
+              <p className="flex items-center gap-2">
+                <Globe className="h-4 w-4 text-muted-foreground" />
+                <a
+                  href={lobbyiste.siteWeb.startsWith('http') ? lobbyiste.siteWeb : `https://${lobbyiste.siteWeb}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline flex items-center gap-1"
+                >
+                  {lobbyiste.siteWeb}
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Info cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
@@ -196,34 +265,6 @@ export default function LobbyisteDetailPage() {
         )}
       </div>
 
-      {/* Additional info */}
-      {(lobbyiste.adresse || lobbyiste.siteWeb) && (
-        <div className="rounded-lg border bg-card p-4 mb-8">
-          <h2 className="text-lg font-semibold mb-3">Informations</h2>
-          <div className="space-y-2 text-sm">
-            {lobbyiste.adresse && (
-              <p className="text-muted-foreground">
-                <strong>Adresse :</strong> {lobbyiste.adresse}
-              </p>
-            )}
-            {lobbyiste.siteWeb && (
-              <p className="flex items-center gap-2">
-                <Globe className="h-4 w-4 text-muted-foreground" />
-                <a
-                  href={lobbyiste.siteWeb.startsWith('http') ? lobbyiste.siteWeb : `https://${lobbyiste.siteWeb}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline flex items-center gap-1"
-                >
-                  {lobbyiste.siteWeb}
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Actions */}
       <div>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-4">
@@ -249,29 +290,22 @@ export default function LobbyisteDetailPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {filteredActions.map((action) => (
+            {filteredActions.map((action) => {
+              const { secteur, cleanDescription } = extractSecteur(action.description || '');
+
+              return (
               <div key={action.id} className="rounded-lg border bg-card p-4">
                 <div className="flex flex-col gap-3">
-                  {/* Description */}
-                  <p className="font-medium">{action.description || 'Objet non précisé'}</p>
-
-                  {/* Metadata tags */}
+                  {/* Tags: Secteur + Cible type + Date */}
                   <div className="flex flex-wrap items-center gap-2 text-sm">
-                    {action.cible && (
-                      <span className="px-2 py-0.5 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded text-xs">
-                        {action.cible === 'depute' ? 'Parlement' :
-                         action.cible === 'ministre' ? 'Gouvernement' :
-                         action.cible === 'presidence' ? 'Présidence' :
-                         action.cible === 'collectivite' ? 'Collectivités' :
-                         action.cible === 'autorite' ? 'AAI/API' :
-                         'Administration'}
+                    {secteur && (
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${getSecteurColor(secteur)}`}>
+                        {secteur}
                       </span>
                     )}
-                    {action.texteViseNom && (
-                      <span className="px-2 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 rounded text-xs" title={action.texteViseNom}>
-                        {action.texteViseNom.length > 50
-                          ? action.texteViseNom.substring(0, 50) + '...'
-                          : action.texteViseNom}
+                    {action.cible && (
+                      <span className="px-2 py-0.5 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded text-xs">
+                        {cibleLabels[action.cible] || action.cible}
                       </span>
                     )}
                     {action.dateDebut && (
@@ -282,12 +316,20 @@ export default function LobbyisteDetailPage() {
                     )}
                   </div>
 
+                  {/* Description (nettoyée du secteur) */}
+                  <p className="font-medium">{cleanDescription || 'Objet non précisé'}</p>
+
+                  {/* Texte visé */}
+                  {action.texteViseNom && (
+                    <p className="text-sm text-muted-foreground">
+                      <strong>Texte visé :</strong> {action.texteViseNom}
+                    </p>
+                  )}
+
                   {/* Cible details */}
                   {action.cibleNom && (
                     <p className="text-sm text-muted-foreground">
-                      <strong>Cible :</strong> {action.cibleNom.length > 100
-                        ? action.cibleNom.substring(0, 100) + '...'
-                        : action.cibleNom}
+                      <strong>Cible :</strong> {action.cibleNom}
                     </p>
                   )}
 
@@ -328,7 +370,8 @@ export default function LobbyisteDetailPage() {
                   )}
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
       </div>

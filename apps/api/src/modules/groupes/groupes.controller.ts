@@ -129,11 +129,21 @@ export const groupesRoutes: FastifyPluginAsync = async (fastify) => {
           },
         },
       },
+      querystring: {
+        type: 'object',
+        properties: {
+          groupeInitie: {
+            type: 'boolean',
+            description: 'Filtrer uniquement les scrutins initiés par ce groupe',
+          },
+        },
+      },
     },
     handler: async (request, _reply) => {
       const { chambre, slug } = request.params as { chambre: Chambre; slug: string };
+      const { groupeInitie } = request.query as { groupeInitie?: boolean };
 
-      const votingStats = await service.getGroupeVotingStats(chambre, slug);
+      const votingStats = await service.getGroupeVotingStats(chambre, slug, { groupeInitie });
 
       if (!votingStats) {
         throw new ApiError(404, 'Groupe non trouvé');
@@ -199,11 +209,21 @@ export const groupesRoutes: FastifyPluginAsync = async (fastify) => {
           },
         },
       },
+      querystring: {
+        type: 'object',
+        properties: {
+          groupeInitie: {
+            type: 'boolean',
+            description: 'Filtrer uniquement les scrutins initiés par ce groupe',
+          },
+        },
+      },
     },
     handler: async (request, _reply) => {
       const { chambre, slug } = request.params as { chambre: Chambre; slug: string };
+      const { groupeInitie } = request.query as { groupeInitie?: boolean };
 
-      const thematiques = await service.getGroupeThematiques(chambre, slug);
+      const thematiques = await service.getGroupeThematiques(chambre, slug, { groupeInitie });
 
       if (!thematiques) {
         throw new ApiError(404, 'Groupe non trouvé');

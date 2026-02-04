@@ -4,9 +4,47 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, Users, Vote, Building2, ArrowRight, CheckCircle, XCircle, Calendar, BarChart3, Sparkles } from 'lucide-react';
+import { Search, Users, Vote, Building2, ArrowRight, CheckCircle, XCircle, Calendar, BarChart3, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useCountUp } from '@/hooks/useCountUp';
+import { LobbyisteLogo } from '@/components/lobbying';
+
+// Labels pour les cibles de lobbying
+const cibleLabels: Record<string, string> = {
+  parlementaire: 'Parlement',
+  depute: 'Parlement',
+  ministre: 'Gouvernement',
+  presidence: 'Présidence',
+  collectivite: 'Collectivités',
+  autorite: 'AAI/API',
+  administration: 'Administration',
+};
+
+// Extraire le secteur entre crochets de la description
+const extractSecteur = (description: string): { secteur: string | null; cleanDescription: string } => {
+  const match = description.match(/^\[([^\]]+)\]\s*/);
+  if (match) {
+    return { secteur: match[1], cleanDescription: description.replace(match[0], '') };
+  }
+  return { secteur: null, cleanDescription: description };
+};
+
+// Couleurs pour les secteurs
+const secteurColorClasses = [
+  'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400',
+  'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
+  'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400',
+  'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400',
+  'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
+];
+
+const getSecteurColor = (secteur: string): string => {
+  let hash = 0;
+  for (let i = 0; i < secteur.length; i++) {
+    hash = secteur.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return secteurColorClasses[Math.abs(hash) % secteurColorClasses.length];
+};
 
 interface Stats {
   deputes: number;
@@ -31,12 +69,26 @@ interface RecentScrutin {
   importance: number;
 }
 
+interface RecentAction {
+  id: string;
+  description: string;
+  cible: string | null;
+  dateDebut: string;
+  lobbyiste: {
+    id: string;
+    nom: string;
+    type: string | null;
+    secteur: string | null;
+    siteWeb: string | null;
+  };
+}
+
 export default function HomePage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Fetch homepage data (stats + recent scrutins in ONE call)
-  const { data: homepageData } = useQuery<{ stats: Stats; recentScrutins: RecentScrutin[]; lastUpdate: string | null }>({
+  // Fetch homepage data (stats + recent scrutins + recent actions in ONE call)
+  const { data: homepageData } = useQuery<{ stats: Stats; recentScrutins: RecentScrutin[]; recentActions: RecentAction[]; lastUpdate: string | null }>({
     queryKey: ['homepage'],
     queryFn: () => api.get('/homepage').then(res => res.data),
     staleTime: 30000, // Refresh every 30 seconds
@@ -45,6 +97,7 @@ export default function HomePage() {
 
   const stats = homepageData?.stats;
   const recentScrutins = homepageData?.recentScrutins;
+  const recentActions = homepageData?.recentActions;
 
   // Animated counters
   const deputesCount = useCountUp(stats?.deputes);
@@ -105,10 +158,10 @@ export default function HomePage() {
             </form>
 
             {/* Quick Stats - Clickable with animation */}
-            <div className="mt-12 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+            <div className="mt-12 flex flex-wrap justify-center gap-3">
               <Link
                 href="/deputes"
-                className="rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
               >
                 <div className="text-xl font-bold text-primary tabular-nums">
                   {stats?.deputes ? deputesCount.toLocaleString('fr-FR') : '—'}
@@ -117,7 +170,7 @@ export default function HomePage() {
               </Link>
               <Link
                 href="/senateurs"
-                className="rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
               >
                 <div className="text-xl font-bold text-primary tabular-nums">
                   {stats?.senateurs ? senateursCount.toLocaleString('fr-FR') : '—'}
@@ -126,7 +179,7 @@ export default function HomePage() {
               </Link>
               <Link
                 href="/scrutins"
-                className="rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
               >
                 <div className="text-xl font-bold text-primary tabular-nums">
                   {stats?.scrutins ? scrutinsCount.toLocaleString('fr-FR') : '—'}
@@ -135,7 +188,7 @@ export default function HomePage() {
               </Link>
               <Link
                 href="/deputes"
-                className="rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
               >
                 <div className="text-xl font-bold text-primary tabular-nums">
                   {stats?.interventions ? interventionsCount.toLocaleString('fr-FR') : '—'}
@@ -144,7 +197,7 @@ export default function HomePage() {
               </Link>
               <Link
                 href="/deputes"
-                className="rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
               >
                 <div className="text-xl font-bold text-primary tabular-nums">
                   {stats?.amendements ? amendementsCount.toLocaleString('fr-FR') : '—'}
@@ -153,7 +206,7 @@ export default function HomePage() {
               </Link>
               <Link
                 href="/lobbying"
-                className="rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
               >
                 <div className="text-xl font-bold text-primary tabular-nums">
                   {stats?.lobbyistes ? lobbyistesCount.toLocaleString('fr-FR') : '—'}
@@ -162,7 +215,7 @@ export default function HomePage() {
               </Link>
               <Link
                 href="/lobbying"
-                className="rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
               >
                 <div className="text-xl font-bold text-primary tabular-nums">
                   {stats?.actionsLobby ? actionsCount.toLocaleString('fr-FR') : '—'}
@@ -190,7 +243,7 @@ export default function HomePage() {
 
       {/* Recent Important Votes */}
       {recentScrutins && recentScrutins.length > 0 && (
-        <section className="py-16 border-b">
+        <section className="py-16 overflow-hidden">
           <div className="container mx-auto px-4">
             <div className="flex items-center justify-between mb-8">
               <h2 className="text-2xl font-bold">Scrutins importants récents</h2>
@@ -202,45 +255,176 @@ export default function HomePage() {
                 <ArrowRight className="ml-1 h-4 w-4" />
               </Link>
             </div>
+          </div>
 
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {recentScrutins.slice(0, 6).map((scrutin) => (
-                <Link
-                  key={scrutin.id}
-                  href={`/scrutins/${scrutin.numero}?chambre=${scrutin.chambre || 'assemblee'}${scrutin.chambre === 'senat' && scrutin.session ? `&session=${scrutin.session}` : ''}`}
-                  className="rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
-                >
-                  <div className="flex items-center gap-2 mb-2 text-sm text-muted-foreground">
-                    <Calendar className="h-4 w-4" />
-                    {formatDate(scrutin.date)}
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                      scrutin.chambre === 'senat'
-                        ? 'bg-blue-100 text-blue-700'
-                        : 'bg-purple-100 text-purple-700'
-                    }`}>
-                      {scrutin.chambre === 'senat' ? 'Sénat' : 'AN'}
-                    </span>
-                    <span className={`ml-auto px-2 py-0.5 rounded text-xs font-medium ${
-                      scrutin.sort === 'adopte'
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-red-100 text-red-700'
-                    }`}>
-                      {scrutin.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
-                    </span>
-                  </div>
-                  <h3 className="font-medium line-clamp-2 mb-2">{scrutin.titre}</h3>
-                  <div className="flex items-center gap-3 text-sm">
-                    <span className="flex items-center gap-1 text-green-600">
-                      <CheckCircle className="h-4 w-4" />
-                      {scrutin.nombrePour}
-                    </span>
-                    <span className="flex items-center gap-1 text-red-600">
-                      <XCircle className="h-4 w-4" />
-                      {scrutin.nombreContre}
-                    </span>
-                  </div>
-                </Link>
-              ))}
+          {/* Carrousel avec auto-scroll */}
+          <div className="relative group">
+            {/* Boutons de navigation */}
+            <button
+              onClick={() => {
+                const container = document.getElementById('scrutins-carousel');
+                if (container) container.scrollBy({ left: -376, behavior: 'smooth' });
+              }}
+              className="absolute left-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-10 h-10 rounded-full bg-background/90 border shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-background"
+              aria-label="Précédent"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              onClick={() => {
+                const container = document.getElementById('scrutins-carousel');
+                if (container) container.scrollBy({ left: 376, behavior: 'smooth' });
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-10 h-10 rounded-full bg-background/90 border shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-background"
+              aria-label="Suivant"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+
+            {/* Container scrollable */}
+            <div
+              id="scrutins-carousel"
+              className="overflow-x-auto pb-4 px-4 md:px-[max(1rem,calc((100%-768px)/2+1rem))] lg:px-[max(1rem,calc((100%-1024px)/2+1rem))] xl:px-[max(1rem,calc((100%-1280px)/2+1rem))] [&::-webkit-scrollbar]:hidden"
+              style={{ scrollbarWidth: 'none' }}
+            >
+              <div className="flex gap-4 w-max animate-carousel-scroll group-hover:[animation-play-state:paused]">
+                {/* Cartes dupliquées pour effet de boucle infinie */}
+                {[...recentScrutins.slice(0, 6), ...recentScrutins.slice(0, 6)].map((scrutin, index) => (
+                  <Link
+                    key={`${scrutin.id}-${index}`}
+                    href={`/scrutins/${scrutin.numero}?chambre=${scrutin.chambre || 'assemblee'}${scrutin.chambre === 'senat' && scrutin.session ? `&session=${scrutin.session}` : ''}`}
+                    className="w-[360px] flex-shrink-0 rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
+                  >
+                    <div className="flex items-center gap-2 mb-2 text-sm text-muted-foreground">
+                      <Calendar className="h-4 w-4" />
+                      {formatDate(scrutin.date)}
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        scrutin.chambre === 'senat'
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-purple-100 text-purple-700'
+                      }`}>
+                        {scrutin.chambre === 'senat' ? 'Sénat' : 'AN'}
+                      </span>
+                      <span className={`ml-auto px-2 py-0.5 rounded text-xs font-medium ${
+                        scrutin.sort === 'adopte'
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-red-100 text-red-700'
+                      }`}>
+                        {scrutin.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
+                      </span>
+                    </div>
+                    <h3 className="font-medium line-clamp-3 mb-2">{scrutin.titre}</h3>
+                    <div className="flex items-center gap-3 text-sm">
+                      <span className="flex items-center gap-1 text-green-600">
+                        <CheckCircle className="h-4 w-4" />
+                        {scrutin.nombrePour}
+                      </span>
+                      <span className="flex items-center gap-1 text-red-600">
+                        <XCircle className="h-4 w-4" />
+                        {scrutin.nombreContre}
+                      </span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Recent Lobbying Actions */}
+      {recentActions && recentActions.length > 0 && (
+        <section className="py-16 border-b overflow-hidden">
+          <div className="container mx-auto px-4">
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="text-2xl font-bold">Dernières actions lobby déclarées</h2>
+              <Link
+                href="/lobbying/actions"
+                className="flex items-center text-sm font-medium text-primary hover:underline"
+              >
+                Voir toutes les actions
+                <ArrowRight className="ml-1 h-4 w-4" />
+              </Link>
+            </div>
+          </div>
+
+          {/* Carrousel avec auto-scroll */}
+          <div className="relative group">
+            {/* Boutons de navigation */}
+            <button
+              onClick={() => {
+                const container = document.getElementById('actions-carousel');
+                if (container) container.scrollBy({ left: -376, behavior: 'smooth' });
+              }}
+              className="absolute left-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-10 h-10 rounded-full bg-background/90 border shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-background"
+              aria-label="Précédent"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              onClick={() => {
+                const container = document.getElementById('actions-carousel');
+                if (container) container.scrollBy({ left: 376, behavior: 'smooth' });
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-10 h-10 rounded-full bg-background/90 border shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-background"
+              aria-label="Suivant"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+
+            {/* Container scrollable */}
+            <div
+              id="actions-carousel"
+              className="overflow-x-auto pb-4 px-4 md:px-[max(1rem,calc((100%-768px)/2+1rem))] lg:px-[max(1rem,calc((100%-1024px)/2+1rem))] xl:px-[max(1rem,calc((100%-1280px)/2+1rem))] [&::-webkit-scrollbar]:hidden"
+              style={{ scrollbarWidth: 'none' }}
+            >
+              <div className="flex gap-4 w-max animate-carousel-scroll group-hover:[animation-play-state:paused]">
+                {/* Cartes dupliquées pour effet de boucle infinie */}
+                {[...recentActions, ...recentActions].map((action, index) => {
+                  const { secteur, cleanDescription } = extractSecteur(action.description || '');
+                  return (
+                    <Link
+                      key={`${action.id}-${index}`}
+                      href={`/lobbying/${action.lobbyiste.id}`}
+                      className="w-[360px] flex-shrink-0 rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
+                    >
+                      {/* Tags: Secteur + Cible + Date */}
+                      <div className="flex flex-wrap items-center gap-2 text-sm mb-3">
+                        {secteur && (
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${getSecteurColor(secteur)}`}>
+                            {secteur}
+                          </span>
+                        )}
+                        {action.cible && (
+                          <span className="px-2 py-0.5 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded text-xs">
+                            {cibleLabels[action.cible] || action.cible}
+                          </span>
+                        )}
+                        <span className="flex items-center gap-1 text-muted-foreground text-xs ml-auto">
+                          <Calendar className="h-3 w-3" />
+                          {new Date(action.dateDebut).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                        </span>
+                      </div>
+
+                      {/* Description */}
+                      <p className="font-medium line-clamp-3 mb-3 min-h-[4.5rem]">
+                        {cleanDescription || 'Objet non précisé'}
+                      </p>
+
+                      {/* Lobbyiste */}
+                      <div className="flex items-center gap-3 pt-3 border-t">
+                        <LobbyisteLogo siteWeb={action.lobbyiste.siteWeb} nom={action.lobbyiste.nom} size="sm" />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-sm truncate">{action.lobbyiste.nom}</p>
+                          {action.lobbyiste.secteur && (
+                            <p className="text-xs text-muted-foreground truncate">{action.lobbyiste.secteur}</p>
+                          )}
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </section>
@@ -336,9 +520,8 @@ export default function HomePage() {
       {/* Explorer CTA */}
       <section className="py-16 border-t">
         <div className="container mx-auto px-4">
-          <Link
-            href="/explorateur"
-            className="group block rounded-2xl bg-gradient-to-r from-primary/10 via-purple-500/10 to-pink-500/10 p-8 md:p-12 transition-all hover:shadow-xl border border-primary/20 hover:border-primary/40"
+          <div
+            className="block rounded-2xl bg-gradient-to-r from-primary/10 via-purple-500/10 to-pink-500/10 p-8 md:p-12 border border-primary/20 opacity-75"
           >
             <div className="flex flex-col md:flex-row md:items-center gap-6">
               <div className="flex-shrink-0">
@@ -360,13 +543,12 @@ export default function HomePage() {
                 </p>
               </div>
               <div className="flex-shrink-0">
-                <span className="inline-flex items-center gap-2 text-primary font-medium group-hover:gap-3 transition-all">
-                  Explorer maintenant
-                  <ArrowRight className="h-5 w-5" />
+                <span className="inline-flex items-center gap-2 text-muted-foreground font-medium">
+                  Arrive prochainement
                 </span>
               </div>
             </div>
-          </Link>
+          </div>
         </div>
       </section>
 

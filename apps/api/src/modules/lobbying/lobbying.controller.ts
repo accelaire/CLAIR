@@ -181,36 +181,45 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         return JSON.parse(cached);
       }
 
-      const [
-        totalLobbyistes,
-        totalActions,
-        budgetTotal,
-        byType,
-        topSecteurs,
-      ] = await Promise.all([
-        fastify.prisma.lobbyiste.count(),
-        fastify.prisma.actionLobby.count(),
-        fastify.prisma.lobbyiste.aggregate({
-          _sum: { budgetAnnuel: true },
-        }),
-        fastify.prisma.lobbyiste.groupBy({
-          by: ['type'],
-          _count: { type: true },
-        }),
-        fastify.prisma.lobbyiste.groupBy({
-          by: ['secteur'],
-          _count: { secteur: true },
-          where: { secteur: { not: null } },
-          orderBy: { _count: { secteur: 'desc' } },
-          take: 10,
-        }),
-      ]);
+      // Exécuter les requêtes SÉQUENTIELLEMENT pour éviter de saturer le pool
+      // de connexions Prisma et provoquer des OOM sur cold start
+      const totalLobbyistes = await fastify.prisma.lobbyiste.count();
+      const totalActions = await fastify.prisma.actionLobby.count();
+
+      const budgetTotal = await fastify.prisma.lobbyiste.aggregate({
+        _sum: { budgetAnnuel: true },
+      });
+
+      const byType = await fastify.prisma.lobbyiste.groupBy({
+        by: ['type'],
+        _count: { type: true },
+      });
+
+      const topSecteurs = await fastify.prisma.lobbyiste.groupBy({
+        by: ['secteur'],
+        _count: { secteur: true },
+        where: { secteur: { not: null } },
+        orderBy: { _count: { secteur: 'desc' } },
+        take: 10,
+      });
+
+      // Count distinct base secteurs (split by ", " since HATVP stores combinations)
+      const totalSecteursResult = await fastify.prisma.$queryRaw<[{ count: bigint }]>`
+        SELECT COUNT(*) as count FROM (
+          SELECT DISTINCT LOWER(TRIM(s.secteur_split)) as secteur
+          FROM lobbyistes l,
+               LATERAL unnest(string_to_array(l.secteur, ', ')) AS s(secteur_split)
+          WHERE l.secteur IS NOT NULL
+        ) sub
+      `;
+      const totalSecteurs = Number(totalSecteursResult[0]?.count || 0);
 
       const response = {
         data: {
           totalLobbyistes,
           totalActions,
           budgetTotal: budgetTotal._sum.budgetAnnuel || 0,
+          totalSecteurs,
           byType: byType.map((t) => ({ type: t.type, count: t._count.type })),
           topSecteurs: topSecteurs.map((s) => ({ secteur: s.secteur, count: s._count.secteur })),
         },
@@ -445,7 +454,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           where,
           include: {
             lobbyiste: {
-              select: { id: true, nom: true, type: true, secteur: true },
+              select: { id: true, nom: true, type: true, secteur: true, siteWeb: true },
             },
             parlementaire: {
               select: {
@@ -506,7 +515,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         },
         include: {
           lobbyiste: {
-            select: { id: true, nom: true, type: true, secteur: true },
+            select: { id: true, nom: true, type: true, secteur: true, siteWeb: true },
           },
           parlementaire: {
             select: {

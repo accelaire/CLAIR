@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -11,23 +12,20 @@ import {
   Vote,
   MapPin,
   Loader2,
-  ExternalLink,
   ThumbsUp,
   ThumbsDown,
   Minus,
   BarChart3,
-  CheckCircle,
-  XCircle,
   Users2,
   FileEdit,
   Radar as RadarIcon,
+  Filter,
 } from 'lucide-react';
 import {
   PieChart,
   Pie,
   Cell,
   ResponsiveContainer,
-  Tooltip,
   RadarChart,
   PolarGrid,
   PolarAngleAxis,
@@ -338,9 +336,10 @@ export default function GroupeDetailPage() {
   const chambre = params.chambre as string;
   const slug = params.slug as string;
 
-  const chambreRoute = chambre === 'assemblee' ? 'deputes' : 'senateurs';
-  const chambreLabel = chambre === 'assemblee' ? "l'Assemblée nationale" : 'du Sénat';
   const membreLabel = chambre === 'assemblee' ? 'député' : 'sénateur';
+
+  // State pour filtrer les votes initiés par le groupe
+  const [groupeInitie, setGroupeInitie] = useState(false);
 
   // Fetch groupe detail
   const { data, isLoading, error } = useQuery<{ data: GroupeDetail }>({
@@ -349,10 +348,12 @@ export default function GroupeDetailPage() {
     enabled: !!chambre && !!slug,
   });
 
-  // Fetch voting stats
+  // Fetch voting stats (avec filtre groupeInitie)
   const { data: votingData, isLoading: votingLoading } = useQuery<{ data: VotingStats }>({
-    queryKey: ['groupe-votes', chambre, slug],
-    queryFn: () => api.get(`/groupes/${chambre}/${slug}/votes`).then((res) => res.data),
+    queryKey: ['groupe-votes', chambre, slug, groupeInitie],
+    queryFn: () => api.get(`/groupes/${chambre}/${slug}/votes`, {
+      params: groupeInitie ? { groupeInitie: true } : undefined,
+    }).then((res) => res.data),
     enabled: !!chambre && !!slug,
   });
 
@@ -457,24 +458,18 @@ export default function GroupeDetailPage() {
                   {positionLabels[groupe.position] || groupe.position}
                 </span>
               )}
-              <span className="text-xs sm:text-sm text-muted-foreground flex items-center gap-1">
+              <a
+                href="#membres"
+                className="text-xs sm:text-sm text-muted-foreground hover:text-primary flex items-center gap-1 transition-colors"
+              >
                 <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 {groupe.membresActifsCount.toLocaleString('fr-FR')} {membreLabel}
                 {groupe.membresActifsCount > 1 ? 's' : ''} actif
                 {groupe.membresActifsCount > 1 ? 's' : ''}
-              </span>
+              </a>
             </div>
           </div>
         </div>
-
-        {/* Lien vers liste filtrée - full width on mobile */}
-        <Link
-          href={`/${chambreRoute}?groupe=${groupe.slug}`}
-          className="inline-flex items-center justify-center sm:justify-start gap-2 rounded-lg border px-4 py-2.5 sm:py-2 text-sm font-medium hover:bg-accent transition-colors w-full sm:w-auto sm:self-start"
-        >
-          Voir tous les {membreLabel}s
-          <ExternalLink className="h-4 w-4" />
-        </Link>
       </div>
 
       {/* Stats */}
@@ -520,59 +515,86 @@ export default function GroupeDetailPage() {
           <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
             {/* Graphique de répartition des votes */}
             <div className="rounded-xl border bg-card p-4 sm:p-6 min-w-0">
-              <h3 className="font-medium mb-3 sm:mb-4 text-sm sm:text-base">Répartition des votes</h3>
-              <div className="h-40 sm:h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={[
-                        { name: 'Pour', value: votingStats.positions.pour, color: VOTE_COLORS.pour },
-                        { name: 'Contre', value: votingStats.positions.contre, color: VOTE_COLORS.contre },
-                        { name: 'Abstention', value: votingStats.positions.abstention, color: VOTE_COLORS.abstention },
-                      ]}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={35}
-                      outerRadius={60}
-                      paddingAngle={3}
-                      dataKey="value"
-                    >
-                      {[
-                        { color: VOTE_COLORS.pour },
-                        { color: VOTE_COLORS.contre },
-                        { color: VOTE_COLORS.abstention },
-                      ].map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(value: number) => [value.toLocaleString(), 'Votes']}
-                      contentStyle={{
-                        backgroundColor: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '8px',
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-medium text-sm sm:text-base">Répartition des votes</h3>
+                <button
+                  onClick={() => setGroupeInitie(!groupeInitie)}
+                  className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full transition-colors ${
+                    groupeInitie
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                  }`}
+                  title="Filtrer uniquement les scrutins demandés par ce groupe"
+                >
+                  <Filter className="h-3 w-3" />
+                  <span className="hidden sm:inline">Initiés par le groupe</span>
+                  <span className="sm:hidden">Initiés</span>
+                </button>
               </div>
-              <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 mt-3">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: VOTE_COLORS.pour }} />
-                  <span className="text-xs text-muted-foreground">Pour</span>
-                  <span className="text-xs font-medium">{votingStats.positions.pour.toLocaleString()}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: VOTE_COLORS.contre }} />
-                  <span className="text-xs text-muted-foreground">Contre</span>
-                  <span className="text-xs font-medium">{votingStats.positions.contre.toLocaleString()}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: VOTE_COLORS.abstention }} />
-                  <span className="text-xs text-muted-foreground">Abst.</span>
-                  <span className="text-xs font-medium">{votingStats.positions.abstention.toLocaleString()}</span>
-                </div>
-              </div>
+
+              {/* Donut amélioré avec stats au centre */}
+              {(() => {
+                const total = votingStats.positions.pour + votingStats.positions.contre + votingStats.positions.abstention;
+                const pourPct = total > 0 ? Math.round((votingStats.positions.pour / total) * 100) : 0;
+                const contrePct = total > 0 ? Math.round((votingStats.positions.contre / total) * 100) : 0;
+                const abstPct = total > 0 ? 100 - pourPct - contrePct : 0;
+
+                return (
+                  <>
+                    <div className="relative h-44 sm:h-52">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={[
+                              { name: 'Pour', value: votingStats.positions.pour },
+                              { name: 'Contre', value: votingStats.positions.contre },
+                              { name: 'Abstention', value: votingStats.positions.abstention },
+                            ]}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius="55%"
+                            outerRadius="85%"
+                            paddingAngle={2}
+                            dataKey="value"
+                            strokeWidth={0}
+                          >
+                            <Cell fill={VOTE_COLORS.pour} />
+                            <Cell fill={VOTE_COLORS.contre} />
+                            <Cell fill={VOTE_COLORS.abstention} />
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                      {/* Label central */}
+                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                        <span className="text-2xl sm:text-3xl font-bold">{total.toLocaleString('fr-FR')}</span>
+                        <span className="text-xs text-muted-foreground">votes exprimés</span>
+                      </div>
+                    </div>
+
+                    {/* Légende avec pills */}
+                    <div className="flex flex-wrap justify-center gap-2 mt-4">
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+                        <ThumbsUp className="h-3 w-3" />
+                        <span className="text-xs font-semibold">{pourPct}%</span>
+                        <span className="text-xs opacity-75">Pour</span>
+                        <span className="text-[10px] opacity-60">({votingStats.positions.pour.toLocaleString()})</span>
+                      </div>
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
+                        <ThumbsDown className="h-3 w-3" />
+                        <span className="text-xs font-semibold">{contrePct}%</span>
+                        <span className="text-xs opacity-75">Contre</span>
+                        <span className="text-[10px] opacity-60">({votingStats.positions.contre.toLocaleString()})</span>
+                      </div>
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400">
+                        <Minus className="h-3 w-3" />
+                        <span className="text-xs font-semibold">{abstPct}%</span>
+                        <span className="text-xs opacity-75">Abst.</span>
+                        <span className="text-[10px] opacity-60">({votingStats.positions.abstention.toLocaleString()})</span>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
 
             {/* Stats clés */}
@@ -699,11 +721,11 @@ export default function GroupeDetailPage() {
         )}
       </section>
 
-      {/* Positions thématiques - Radar Chart */}
+      {/* Cohésion par thématique - Radar Chart */}
       <section className="mb-10 overflow-hidden">
         <div className="flex items-center gap-3 mb-4">
           <RadarIcon className="h-5 w-5 text-primary shrink-0" />
-          <h2 className="text-xl font-semibold">Positions par thématique</h2>
+          <h2 className="text-xl font-semibold">Cohésion par thématique</h2>
         </div>
 
         {thematiquesLoading ? (
@@ -712,19 +734,17 @@ export default function GroupeDetailPage() {
           </div>
         ) : thematiques && thematiques.thematiques.length > 0 ? (
           <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
-            {/* Radar Chart */}
+            {/* Radar Chart - Cohésion */}
             <div className="rounded-xl border bg-card p-4 sm:p-6">
-              <h3 className="font-medium mb-3 sm:mb-4 text-sm sm:text-base">Radar des positions</h3>
+              <h3 className="font-medium mb-3 sm:mb-4 text-sm sm:text-base">Radar de cohésion</h3>
               <div className="h-64 sm:h-80">
                 <ResponsiveContainer width="100%" height="100%">
                   <RadarChart
                     data={thematiques.thematiques
-                      .filter((t) => t.votesTotaux >= 5) // Au moins 5 votes pour être représentatif
-                      .slice(0, 8) // Max 8 axes pour lisibilité
+                      .filter((t) => t.votesTotaux >= 5)
+                      .slice(0, 8)
                       .map((t) => ({
                         subject: thematiqueLabels[t.thematique] || t.thematique,
-                        // Normaliser la position de 0 à 100 (position va de -100 à +100)
-                        position: Math.round((t.position + 100) / 2),
                         cohesion: t.cohesion,
                       }))}
                     cx="50%"
@@ -735,75 +755,63 @@ export default function GroupeDetailPage() {
                     <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11 }} />
                     <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} />
                     <Radar
-                      name="Position (Pour)"
-                      dataKey="position"
+                      name="Cohésion"
+                      dataKey="cohesion"
                       stroke={color}
                       fill={color}
                       fillOpacity={0.4}
-                    />
-                    <Tooltip
-                      formatter={(value: number, name: string) => {
-                        if (name === 'Position (Pour)') {
-                          const realValue = (value * 2) - 100;
-                          return [
-                            realValue > 0 ? `Pour (+${realValue})` : realValue < 0 ? `Contre (${realValue})` : 'Neutre',
-                            'Position',
-                          ];
-                        }
-                        return [value, name];
-                      }}
-                      contentStyle={{
-                        backgroundColor: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '8px',
-                      }}
                     />
                   </RadarChart>
                 </ResponsiveContainer>
               </div>
               <p className="text-xs text-muted-foreground text-center mt-2">
-                Plus la zone est étendue, plus le groupe vote "Pour" sur cette thématique
+                Plus la zone est étendue, plus le groupe vote de façon unanime sur ce thème
               </p>
             </div>
 
-            {/* Liste des thématiques */}
+            {/* Liste des thématiques - triée par cohésion */}
             <div className="rounded-xl border bg-card p-4 sm:p-6">
               <h3 className="font-medium mb-3 sm:mb-4 text-sm sm:text-base">Détail par thème</h3>
               <div className="space-y-2 max-h-64 sm:max-h-80 overflow-y-auto">
                 {thematiques.thematiques
                   .filter((t) => t.votesTotaux >= 3)
-                  .sort((a, b) => b.votesTotaux - a.votesTotaux)
-                  .map((t) => (
-                    <div
-                      key={t.thematique}
-                      className="flex items-center gap-2 sm:gap-3 p-2 rounded-lg bg-muted/50"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-xs sm:text-sm truncate">
-                          {thematiqueLabels[t.thematique] || t.thematique}
-                        </p>
-                        <div className="flex items-center gap-2 sm:gap-4 text-[10px] sm:text-xs text-muted-foreground">
-                          <span>{t.votesTotaux} scrut.</span>
-                          <span className="text-green-600">+{t.votesPour}</span>
-                          <span className="text-red-600">-{t.votesContre}</span>
+                  .sort((a, b) => b.cohesion - a.cohesion)
+                  .map((t) => {
+                    const isUnited = t.cohesion >= 90;
+                    const isDivided = t.cohesion < 75;
+                    return (
+                      <div
+                        key={t.thematique}
+                        className="flex items-center gap-2 sm:gap-3 p-2 rounded-lg bg-muted/50"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-xs sm:text-sm truncate">
+                            {thematiqueLabels[t.thematique] || t.thematique}
+                          </p>
+                          <p className="text-[10px] sm:text-xs text-muted-foreground">
+                            {t.votesTotaux} scrutins
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="w-16 sm:w-24 h-2 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                isUnited ? 'bg-green-500' : isDivided ? 'bg-red-500' : 'bg-orange-500'
+                              }`}
+                              style={{ width: `${t.cohesion}%` }}
+                            />
+                          </div>
+                          <span
+                            className={`text-xs sm:text-sm font-bold w-10 text-right ${
+                              isUnited ? 'text-green-600' : isDivided ? 'text-red-600' : 'text-orange-600'
+                            }`}
+                          >
+                            {t.cohesion}%
+                          </span>
                         </div>
                       </div>
-                      <div className="text-right shrink-0">
-                        <p
-                          className={`text-xs sm:text-sm font-bold ${
-                            t.position > 20
-                              ? 'text-green-600'
-                              : t.position < -20
-                              ? 'text-red-600'
-                              : 'text-yellow-600'
-                          }`}
-                        >
-                          {t.position > 0 ? '+' : ''}{Math.round(t.position)}
-                        </p>
-                        <p className="text-[10px] sm:text-xs text-muted-foreground">{t.cohesion}%</p>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
               </div>
             </div>
           </div>
@@ -816,7 +824,7 @@ export default function GroupeDetailPage() {
       </section>
 
       {/* Liste des membres */}
-      <section>
+      <section id="membres">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold">
             Membres du groupe ({groupe.membres.length.toLocaleString('fr-FR')})
