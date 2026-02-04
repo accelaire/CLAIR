@@ -23,6 +23,8 @@ import {
   syncDossiersSenat,
   linkInterventionsToScrutins,
   linkScrutinsToAmendements,
+  enrichScrutinsANAmendements,
+  enrichScrutinsSenatAmendements,
   syncLobbyistes,
 } from './workers/sync.js';
 import {
@@ -61,6 +63,9 @@ program
   .option('--dossiers-senat', 'Synchroniser uniquement les dossiers législatifs Sénat (data.senat.fr DOSLEG)')
   .option('--link-interventions', 'Lier les interventions aux scrutins (par seanceRef ou date)')
   .option('--link-amendements', 'Lier les scrutins aux amendements (par parsing du titre)')
+  .option('--enrich-amendements-an', 'Enrichir les scrutins AN en scrappant la page HTML pour extraire le lien amendement')
+  .option('--enrich-amendements-senat', 'Enrichir les scrutins Sénat en scrappant la page HTML pour extraire le lien amendement')
+  .option('--reset', 'Avec --link-amendements: réinitialiser les liens existants avant de re-lier')
   .option('-L, --lobbying', 'Synchroniser uniquement les lobbyistes (HATVP)')
   .option('-l, --limit <number>', 'Limiter le nombre de scrutins/séances/amendements/lobbyistes', parseInt)
   .option('--no-actions', 'Ne pas synchroniser les actions de lobbying (avec -L)')
@@ -102,9 +107,41 @@ program
         console.log(`   - Par seanceRef: ${result.bySeanceRef}`);
         console.log(`   - Par date: ${result.byDate}`);
       } else if (options.linkAmendements) {
-        const result = await linkScrutinsToAmendements({ dryRun: options.dryRun });
+        const result = await linkScrutinsToAmendements({
+          dryRun: options.dryRun,
+          reset: options.reset,
+        });
         console.log(`\n📊 Scrutins liés à des amendements: ${result.linked}`);
         console.log(`   - Non trouvés en base: ${result.notFound}`);
+        if (options.reset && !options.dryRun) {
+          console.log(`   ⚠️  Les liens existants ont été réinitialisés avant re-linkage`);
+        }
+      } else if (options.enrichAmendementsAn) {
+        const result = await enrichScrutinsANAmendements({
+          limit: options.limit,
+          dryRun: options.dryRun,
+          reset: options.reset,
+        });
+        console.log(`\n📊 Enrichissement scrutins AN (scraping HTML):`);
+        if (options.reset && result.resetCount) {
+          console.log(`   - Liens réinitialisés: ${result.resetCount}`);
+        }
+        console.log(`   - Enrichis: ${result.enriched}`);
+        console.log(`   - Non trouvés: ${result.notFound}`);
+        console.log(`   - Erreurs: ${result.errors}`);
+      } else if (options.enrichAmendementsSenat) {
+        const result = await enrichScrutinsSenatAmendements({
+          limit: options.limit,
+          dryRun: options.dryRun,
+          reset: options.reset,
+        });
+        console.log(`\n📊 Enrichissement scrutins Sénat (scraping HTML):`);
+        if (options.reset && result.resetCount) {
+          console.log(`   - Liens réinitialisés: ${result.resetCount}`);
+        }
+        console.log(`   - Enrichis: ${result.enriched}`);
+        console.log(`   - Non trouvés: ${result.notFound}`);
+        console.log(`   - Erreurs: ${result.errors}`);
       } else if (options.lobbying) {
         await syncLobbyistes({ limit: options.limit, includeActions: options.actions !== false });
       } else {
