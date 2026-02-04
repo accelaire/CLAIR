@@ -10,6 +10,7 @@ import * as os from 'os';
 import { createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
 import { logger } from '../../utils/logger';
+import { removeOrateurPrefix } from '../../utils/text-cleaning';
 
 // Helper pour décoder les entités HTML
 function decodeHtmlEntities(text: string): string {
@@ -307,6 +308,9 @@ export class SenatInterventionsClient {
 
         ordre++; // Incrémenter l'ordre chronologique
 
+        // Nettoyer le préfixe redondant "M./Mme Nom." si présent
+        const contenuNettoye = removeOrateurPrefix(texte, prenom, nom);
+
         interventions.push({
           seanceId,
           date: seanceDate,
@@ -314,7 +318,7 @@ export class SenatInterventionsClient {
           orateurNom: nom,
           orateurPrenom: prenom || undefined,
           orateurRef: orateurRef || undefined,
-          contenu: texte.substring(0, 5000),
+          contenu: contenuNettoye.substring(0, 5000),
           type,
           sourceUrl: generateSeanceUrl(seanceId, seanceDate),
         });
