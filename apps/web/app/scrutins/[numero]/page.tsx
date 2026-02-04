@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -182,6 +182,43 @@ const groupeFullNameToSlug: [string, { slug: string; chambre: 'assemblee' | 'sen
   ['socialiste', { slug: 'soc', chambre: 'senat' }],
 ];
 
+// Composant pour texte extensible avec détection d'overflow
+function ExpandableText({ text, className = '' }: { text: string; className?: string }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isTruncated, setIsTruncated] = useState(false);
+  const textRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    const checkTruncation = () => {
+      if (textRef.current) {
+        setIsTruncated(textRef.current.scrollHeight > textRef.current.clientHeight);
+      }
+    };
+
+    checkTruncation();
+    window.addEventListener('resize', checkTruncation);
+    return () => window.removeEventListener('resize', checkTruncation);
+  }, [text]);
+
+  return (
+    <div>
+      <p
+        ref={textRef}
+        className={`text-sm text-gray-700 ${isExpanded ? '' : 'line-clamp-5'} ${className}`}
+      >
+        {text}
+      </p>
+      {(isTruncated || isExpanded) && (
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="text-xs text-primary hover:underline mt-1"
+        >
+          {isExpanded ? 'Voir moins' : 'Voir plus'}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function ScrutinDetailPage() {
   const params = useParams();
@@ -785,9 +822,7 @@ export default function ScrutinDetailPage() {
                           </span>
                         )}
                       </div>
-                      <p className="text-sm text-gray-700 line-clamp-5">
-                        {intervention.contenu}
-                      </p>
+                      <ExpandableText text={intervention.contenu} />
                     </div>
                   </div>
                 </div>
