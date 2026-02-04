@@ -87,7 +87,14 @@ function decodeHtmlEntities(text: string): string {
 
 function stripHtml(html: string | null): string | null {
   if (!html) return null;
-  let text = html.replace(/<[^>]*>/g, ' ');
+  // Convert block elements to newlines before stripping
+  let text = html
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/li>/gi, '\n');
+  // Remove remaining HTML tags
+  text = text.replace(/<[^>]*>/g, '');
   text = decodeHtmlEntities(text);
   // Convert escaped newlines from SQL dump to actual newlines
   text = text.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\r/g, '\n');
@@ -95,6 +102,8 @@ function stripHtml(html: string | null): string | null {
   text = text.replace(/[^\S\n]+/g, ' ');
   // Collapse multiple newlines to max 2
   text = text.replace(/\n{3,}/g, '\n\n');
+  // Trim each line
+  text = text.split('\n').map(line => line.trim()).join('\n');
   return text.trim();
 }
 

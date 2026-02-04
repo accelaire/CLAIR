@@ -13,6 +13,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as readline from 'readline';
 import { logger } from '../../utils/logger';
+import { cleanWindows1252Artifacts } from '../../utils/text-cleaning';
 
 const execAsync = promisify(exec);
 
@@ -283,7 +284,7 @@ export class DoslegClient {
 
             const scrnum = parseInt(fields[1] || '0', 10);
             const code = fields[2] && fields[2] !== '\\N' ? parseInt(fields[2], 10) : null;
-            const scrint = fields[3] || '';
+            const scrint = cleanWindows1252Artifacts(fields[3] || '');
             const scrdat = parseTimestamp(fields[4]);
             const scrpou = parseInt(fields[5] || '0', 10);
             const scrcon = parseInt(fields[6] || '0', 10);
