@@ -288,9 +288,8 @@ model Scrutin {
   dossierId       String? @map("dossier_id")
   dossier         DossierLegislatif? @relation(fields: [dossierId], references: [id])
 
-  // Relation vers l'amendement voté (si le scrutin porte sur un amendement)
-  amendementId    String? @map("amendement_id")
-  amendement      Amendement? @relation(fields: [amendementId], references: [id])
+  // Relation M:N vers les amendements votés (un scrutin peut porter sur plusieurs amendements)
+  amendements     Amendement[]
 
   votes         Vote[]
   interventions Intervention[]  // Interventions liées (explications de vote, débats)
@@ -310,7 +309,6 @@ model Scrutin {
   @@index([importance])
   @@index([texteId])
   @@index([dossierId])
-  @@index([amendementId])
   @@map("scrutins")
 }
 

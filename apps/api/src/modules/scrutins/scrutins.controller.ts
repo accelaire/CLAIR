@@ -315,7 +315,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
               loiTitre: true,
             },
           },
-          amendement: {
+          amendements: {
             select: {
               id: true,
               uid: true,
