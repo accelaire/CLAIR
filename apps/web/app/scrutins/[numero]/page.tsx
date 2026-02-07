@@ -100,8 +100,8 @@ interface ScrutinDetail {
   seanceRef: string | null;
   // Dossier législatif lié
   dossier: DossierLegislatif | null;
-  // Amendement voté (si le scrutin porte sur un amendement)
-  amendement: AmendementDetail | null;
+  // Amendements votés (un scrutin peut porter sur plusieurs amendements)
+  amendements: AmendementDetail[];
   // Interventions liées (débats, explications de vote)
   interventions: InterventionScrutin[];
   sourceUrl: string | null;
@@ -700,51 +700,63 @@ export default function ScrutinDetailPage() {
           </div>
         )}
 
-        {/* Amendement voté - affiche le contenu de l'amendement si disponible */}
-        {scrutin.amendement && (
-          <div className="p-4 rounded-lg border border-amber-200 bg-amber-50/50 mb-4">
-            <div className="flex items-start gap-3">
-              <div className="p-2 rounded-lg bg-amber-100">
-                <FileText className="h-5 w-5 text-amber-600" />
+        {/* Amendements votés - affiche le contenu des amendements si disponibles */}
+        {scrutin.amendements && scrutin.amendements.length > 0 && (
+          <div className="space-y-3 mb-4">
+            {scrutin.amendements.length > 1 && (
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-amber-600" />
+                <span className="text-sm font-medium text-amber-700">
+                  {scrutin.amendements.length} amendements votés
+                </span>
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-medium text-amber-700 uppercase tracking-wide">
-                    Amendement n°{scrutin.amendement.numero}
-                  </span>
-                  {scrutin.amendement.articleVise && (
-                    <span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded">
-                      {scrutin.amendement.articleVise}
-                    </span>
-                  )}
-                  {scrutin.amendement.auteurLibelle && (
-                    <span className="text-xs text-amber-600">
-                      par {scrutin.amendement.auteurLibelle}
-                    </span>
-                  )}
+            )}
+            {scrutin.amendements.map((amendement) => (
+              <div key={amendement.id} className="p-4 rounded-lg border border-amber-200 bg-amber-50/50">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-lg bg-amber-100">
+                    <FileText className="h-5 w-5 text-amber-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs font-medium text-amber-700 uppercase tracking-wide">
+                        Amendement n°{amendement.numero}
+                      </span>
+                      {amendement.articleVise && (
+                        <span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded">
+                          {amendement.articleVise}
+                        </span>
+                      )}
+                      {amendement.auteurLibelle && (
+                        <span className="text-xs text-amber-600">
+                          par {amendement.auteurLibelle}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Dispositif (texte de l'amendement) */}
+                    {amendement.dispositif && (
+                      <div className="mb-3">
+                        <h4 className="text-xs font-semibold text-amber-800 mb-1">Texte de l&apos;amendement :</h4>
+                        <div className="text-sm text-gray-800 bg-white/60 rounded p-3 border border-amber-200">
+                          <div dangerouslySetInnerHTML={{ __html: amendement.dispositif.replace(/\n/g, '<br/>') }} />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Exposé sommaire */}
+                    {amendement.exposeSommaire && (
+                      <div>
+                        <h4 className="text-xs font-semibold text-amber-800 mb-1">Exposé des motifs :</h4>
+                        <div className="text-sm text-gray-700 bg-white/40 rounded p-3 border border-amber-100">
+                          <div dangerouslySetInnerHTML={{ __html: amendement.exposeSommaire.replace(/\n/g, '<br/>') }} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-
-                {/* Dispositif (texte de l'amendement) */}
-                {scrutin.amendement.dispositif && (
-                  <div className="mb-3">
-                    <h4 className="text-xs font-semibold text-amber-800 mb-1">Texte de l&apos;amendement :</h4>
-                    <div className="text-sm text-gray-800 bg-white/60 rounded p-3 border border-amber-200">
-                      <div dangerouslySetInnerHTML={{ __html: scrutin.amendement.dispositif.replace(/\n/g, '<br/>') }} />
-                    </div>
-                  </div>
-                )}
-
-                {/* Exposé sommaire */}
-                {scrutin.amendement.exposeSommaire && (
-                  <div>
-                    <h4 className="text-xs font-semibold text-amber-800 mb-1">Exposé des motifs :</h4>
-                    <div className="text-sm text-gray-700 bg-white/40 rounded p-3 border border-amber-100">
-                      <div dangerouslySetInnerHTML={{ __html: scrutin.amendement.exposeSommaire.replace(/\n/g, '<br/>') }} />
-                    </div>
-                  </div>
-                )}
               </div>
-            </div>
+            ))}
           </div>
         )}
 
