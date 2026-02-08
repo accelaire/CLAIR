@@ -231,6 +231,7 @@ model DossierLegislatif {
   loiNumero    String?  @map("loi_numero")     // Ex: "2024-1177"
   loiTitre     String?  @map("loi_titre")
   loiDateJO    DateTime? @map("loi_date_jo")   // Date publication JO
+  urlLegifrance String?  @map("url_legifrance") // URL Légifrance pour les lois promulguées
 
   // Relations
   scrutins     Scrutin[]
