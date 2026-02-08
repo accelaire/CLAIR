@@ -17,6 +17,7 @@ import {
   TrendingUp,
   Vote,
   MessageSquare,
+  FileText,
   ArrowLeft,
   ThumbsUp,
   ThumbsDown,
@@ -279,6 +280,25 @@ interface AmendementItem {
     date: string;
     sort: string;
   }>;
+  dossier: {
+    uid: string;
+    titre: string;
+    titreCourt: string | null;
+  } | null;
+}
+
+/** Formate un titreCourt slug-like en texte lisible, sinon fallback sur titre */
+function formatDossierLabel(dossier: { titre: string; titreCourt: string | null }): string {
+  const short = dossier.titreCourt;
+  if (!short) return dossier.titre;
+  // UID technique → fallback titre
+  if (/^[A-Z0-9]{5,}/.test(short)) return dossier.titre;
+  // Slug avec underscores → humanize
+  if (short.includes('_')) {
+    const humanized = short.replace(/_/g, ' ').replace(/\d+e?$/, '').trim();
+    return humanized.charAt(0).toUpperCase() + humanized.slice(1);
+  }
+  return short;
 }
 
 function AmendementSortBadge({ sort }: { sort: string | null }) {
@@ -364,8 +384,17 @@ function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }
         <AmendementSortBadge sort={amendement.sort} />
       </div>
 
-      {/* Lien vers le scrutin et bouton expand/collapse */}
-      <div className="mt-3 flex items-center gap-4">
+      {/* Liens dossier / scrutin et bouton expand/collapse */}
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        {amendement.dossier && (
+          <Link
+            href={`/dossiers/${amendement.dossier.uid}`}
+            className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 hover:underline bg-blue-50 px-2.5 py-1 rounded-md transition-colors"
+          >
+            <FileText className="h-3 w-3" />
+            <span className="line-clamp-1">{formatDossierLabel(amendement.dossier)}</span>
+          </Link>
+        )}
         {amendement.scrutins && amendement.scrutins.length > 0 && (
           <Link
             href={`/scrutins/${amendement.scrutins[0].numero}?chambre=senat`}

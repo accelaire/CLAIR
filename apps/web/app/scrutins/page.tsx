@@ -3,11 +3,37 @@
 import { Suspense } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Search, ChevronDown, CheckCircle, XCircle, Calendar, Tag, Loader2 } from 'lucide-react';
+import { Search, ChevronDown, CheckCircle, XCircle, Calendar, Tag, Loader2, ArrowRight, Vote } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
 import { useUrlFilters, useUrlDateRange } from '@/hooks/useUrlFilters';
+
+interface TrendingDossier {
+  id: string;
+  uid: string;
+  titre: string;
+  titreCourt: string | null;
+  etat: string | null;
+  procedureLibelle: string | null;
+  _count: { scrutins: number };
+  lastScrutinDate: string | null;
+}
+
+const formatDossierTitre = (titre: string, procedureLibelle?: string | null): string => {
+  const firstChar = titre.charAt(0);
+  if (firstChar !== firstChar.toUpperCase() && procedureLibelle) {
+    return `${procedureLibelle} ${titre}`;
+  }
+  return titre;
+};
+
+const etatLabels: Record<string, { label: string; color: string }> = {
+  en_cours: { label: 'En cours', color: 'bg-amber-100 text-amber-700' },
+  adopte: { label: 'Adopté', color: 'bg-blue-100 text-blue-700' },
+  rejete: { label: 'Rejeté', color: 'bg-red-100 text-red-700' },
+  promulgue: { label: 'Promulgué', color: 'bg-green-100 text-green-700' },
+};
 
 interface Scrutin {
   id: string;
@@ -119,6 +145,12 @@ function ScrutinsPageContent() {
     queryFn: () => api.get('/scrutins/tags').then((res) => res.data.data),
   });
 
+  // Fetch trending dossiers
+  const { data: trendingData } = useQuery<{ data: TrendingDossier[] }>({
+    queryKey: ['dossiers-trending'],
+    queryFn: () => api.get('/dossiers/trending', { params: { limit: 6 } }).then((res) => res.data),
+  });
+
   // Hook pour le scroll infini
   const { loadMoreRef } = useInfiniteScroll({
     hasNextPage,
@@ -150,6 +182,46 @@ function ScrutinsPageContent() {
           Sources : <a href="https://data.assemblee-nationale.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.assemblee-nationale.fr</a>, <a href="https://data.senat.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.senat.fr</a>
         </p>
       </div>
+
+      {/* Dossiers en cours */}
+      {trendingData?.data && trendingData.data.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Dossiers en cours</h2>
+            <Link
+              href="/dossiers"
+              className="flex items-center text-sm font-medium text-primary hover:underline"
+            >
+              Voir tous les dossiers
+              <ArrowRight className="ml-1 h-4 w-4" />
+            </Link>
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: 'none' }}>
+            {trendingData.data.map((d) => (
+              <Link
+                key={d.id}
+                href={`/dossiers/${d.uid}`}
+                className="min-w-[260px] max-w-[300px] flex-shrink-0 rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  {d.etat && (
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded ${etatLabels[d.etat]?.color || 'bg-muted text-muted-foreground'}`}>
+                      {etatLabels[d.etat]?.label || d.etat}
+                    </span>
+                  )}
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground ml-auto">
+                    <Vote className="h-3 w-3" />
+                    {d._count.scrutins}
+                  </span>
+                </div>
+                <h3 className="font-medium text-sm leading-tight line-clamp-2">
+                  {formatDossierTitre(d.titre, d.procedureLibelle)}
+                </h3>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Filtres */}
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start">
