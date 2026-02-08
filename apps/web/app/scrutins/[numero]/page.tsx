@@ -43,6 +43,8 @@ interface DossierLegislatif {
   dateDepot: string | null;
   loiNumero: string | null;
   loiTitre: string | null;
+  urlLegifrance: string | null;
+  _count?: { scrutins: number; amendements: number };
 }
 
 interface AmendementDetail {
@@ -669,7 +671,33 @@ export default function ScrutinDetailPage() {
                         {scrutin.dossier.loiTitre && ` - ${scrutin.dossier.loiTitre}`}
                       </p>
                     )}
+                    {scrutin.dossier.loiNumero && scrutin.dossier.urlLegifrance && (
+                      <div className="mt-2">
+                        <a
+                          href={scrutin.dossier.urlLegifrance}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700 hover:text-green-900 hover:underline bg-green-100 px-2.5 py-1 rounded-md"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Consulter le texte de loi sur Légifrance
+                        </a>
+                      </div>
+                    )}
                     <div className="flex flex-wrap gap-2 mt-2">
+                      <Link
+                        href={`/dossiers/${scrutin.dossier.uid}`}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-indigo-700 hover:text-indigo-900 bg-indigo-100 px-2.5 py-1 rounded-md hover:bg-indigo-200 transition-colors"
+                      >
+                        <FileText className="h-3 w-3" />
+                        Voir le dossier complet
+                        {(() => {
+                          const parts = [];
+                          if ((scrutin.dossier._count?.scrutins ?? 0) > 1) parts.push(`${scrutin.dossier._count!.scrutins} scrutins`);
+                          if ((scrutin.dossier._count?.amendements ?? 0) > 0) parts.push(`${scrutin.dossier._count!.amendements} amendements`);
+                          return parts.length > 0 ? ` (${parts.join(', ')})` : '';
+                        })()}
+                      </Link>
                       {scrutin.dossier.urlAN && (
                         <a
                           href={scrutin.dossier.urlAN}
