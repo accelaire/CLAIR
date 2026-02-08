@@ -331,6 +331,14 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
                 },
                 take: 1, // Généralement un seul scrutin par amendement
               },
+              // Dossier législatif associé
+              dossier: {
+                select: {
+                  uid: true,
+                  titre: true,
+                  titreCourt: true,
+                },
+              },
             },
           }),
           fastify.prisma.amendement.count({

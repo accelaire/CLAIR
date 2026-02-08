@@ -313,6 +313,10 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
               dateDepot: true,
               loiNumero: true,
               loiTitre: true,
+              urlLegifrance: true,
+              _count: {
+                select: { scrutins: true, amendements: true },
+              },
             },
           },
           amendements: {

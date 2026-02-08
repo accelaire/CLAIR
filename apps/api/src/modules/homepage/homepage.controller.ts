@@ -12,6 +12,7 @@ interface HomepageStats {
   deputes: number;
   senateurs: number;
   scrutins: number;
+  dossiers: number;
   lobbyistes: number;
   actionsLobby: number;
   interventions: number;
@@ -54,6 +55,10 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
 
       const interventionsCount = await fastify.prisma.intervention.count();
       const amendementsCount = await fastify.prisma.amendement.count();
+
+      const dossiersCount = await fastify.prisma.dossierLegislatif.count({
+        where: { scrutins: { some: {} } },
+      });
 
       // Dernière mise à jour (dernier sync réussi)
       const lastSync = await fastify.prisma.syncLog.findFirst({
@@ -103,10 +108,54 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         take: 6,
       });
 
+      // Trending dossiers (6 dossiers avec le plus de scrutins récents)
+      const threeMonthsAgo = new Date();
+      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+
+      const trendingDossiers = await fastify.prisma.dossierLegislatif.findMany({
+        where: {
+          scrutins: {
+            some: {
+              date: { gte: threeMonthsAgo },
+            },
+          },
+        },
+        select: {
+          id: true,
+          uid: true,
+          titre: true,
+          titreCourt: true,
+          etat: true,
+          procedureLibelle: true,
+          _count: {
+            select: { scrutins: true },
+          },
+          scrutins: {
+            orderBy: { date: 'desc' },
+            take: 3,
+            select: {
+              numero: true,
+              chambre: true,
+              session: true,
+              date: true,
+              titre: true,
+              sort: true,
+              nombrePour: true,
+              nombreContre: true,
+            },
+          },
+        },
+        orderBy: {
+          scrutins: { _count: 'desc' },
+        },
+        take: 6,
+      });
+
       const stats: HomepageStats = {
         deputes: deputesCount,
         senateurs: senateursCount,
         scrutins: scrutinsCount,
+        dossiers: dossiersCount,
         lobbyistes: lobbyistesCount,
         actionsLobby: actionsCount,
         interventions: interventionsCount,
@@ -117,6 +166,17 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         stats,
         recentScrutins,
         recentActions,
+        trendingDossiers: trendingDossiers.map((d: typeof trendingDossiers[number]) => ({
+          id: d.id,
+          uid: d.uid,
+          titre: d.titre,
+          titreCourt: d.titreCourt,
+          etat: d.etat,
+          procedureLibelle: d.procedureLibelle,
+          scrutinsCount: d._count.scrutins,
+          lastScrutinDate: d.scrutins[0]?.date || null,
+          scrutins: d.scrutins,
+        })),
         lastUpdate: lastSync?.completedAt || null,
       };
 
