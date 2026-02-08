@@ -113,7 +113,7 @@ function DossiersPageContent() {
           {total > 0 ? total.toLocaleString('fr-FR') : '\u2014'} dossiers avec des scrutins associés
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Source : <a href="https://data.assemblee-nationale.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.assemblee-nationale.fr</a>
+          Sources : <a href="https://data.assemblee-nationale.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.assemblee-nationale.fr</a>, <a href="https://data.senat.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.senat.fr</a>
         </p>
       </div>
 

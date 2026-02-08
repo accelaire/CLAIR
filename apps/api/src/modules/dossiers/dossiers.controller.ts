@@ -207,7 +207,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
           loiDateJO: true,
           urlLegifrance: true,
           scrutins: {
-            orderBy: { date: 'desc' },
+            orderBy: [{ date: 'desc' }, { numero: 'asc' }],
             take: 20,
             select: {
               id: true,
@@ -334,7 +334,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
       const [scrutins, total] = await Promise.all([
         fastify.prisma.scrutin.findMany({
           where: { dossierId: dossier.id },
-          orderBy: { date: 'desc' },
+          orderBy: [{ date: 'desc' }, { numero: 'asc' }],
           skip,
           take: limit,
           select: {

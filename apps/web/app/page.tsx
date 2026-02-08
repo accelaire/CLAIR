@@ -277,104 +277,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Recent Lobbying Actions */}
-      {recentActions && recentActions.length > 0 && (
-        <section className="py-16 border-b overflow-hidden">
-          <div className="container mx-auto px-4">
-            <div className="flex items-center justify-between mb-8">
-              <h2 className="text-2xl font-bold">Dernières actions lobby déclarées</h2>
-              <Link
-                href="/lobbying/actions"
-                className="flex items-center text-sm font-medium text-primary hover:underline"
-              >
-                Voir toutes les actions
-                <ArrowRight className="ml-1 h-4 w-4" />
-              </Link>
-            </div>
-          </div>
-
-          {/* Carrousel avec auto-scroll */}
-          <div className="relative group">
-            {/* Boutons de navigation */}
-            <button
-              onClick={() => {
-                const container = document.getElementById('actions-carousel');
-                if (container) container.scrollBy({ left: -376, behavior: 'smooth' });
-              }}
-              className="absolute left-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-10 h-10 rounded-full bg-background/90 border shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-background"
-              aria-label="Précédent"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <button
-              onClick={() => {
-                const container = document.getElementById('actions-carousel');
-                if (container) container.scrollBy({ left: 376, behavior: 'smooth' });
-              }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-10 h-10 rounded-full bg-background/90 border shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-background"
-              aria-label="Suivant"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
-
-            {/* Container scrollable */}
-            <div
-              id="actions-carousel"
-              className="overflow-x-auto pb-4 px-4 md:px-[max(1rem,calc((100%-768px)/2+1rem))] lg:px-[max(1rem,calc((100%-1024px)/2+1rem))] xl:px-[max(1rem,calc((100%-1280px)/2+1rem))] [&::-webkit-scrollbar]:hidden"
-              style={{ scrollbarWidth: 'none' }}
-            >
-              <div className="flex gap-4 w-max animate-carousel-scroll group-hover:[animation-play-state:paused]">
-                {/* Cartes dupliquées pour effet de boucle infinie */}
-                {[...recentActions, ...recentActions].map((action, index) => {
-                  const { secteur, cleanDescription } = extractSecteur(action.description || '');
-                  return (
-                    <Link
-                      key={`${action.id}-${index}`}
-                      href={`/lobbying/${action.lobbyiste.id}`}
-                      className="w-[360px] flex-shrink-0 rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
-                    >
-                      {/* Tags: Secteur + Cible + Date */}
-                      <div className="flex flex-wrap items-center gap-2 text-sm mb-3">
-                        {secteur && (
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${getSecteurColor(secteur)}`}>
-                            {secteur}
-                          </span>
-                        )}
-                        {action.cible && (
-                          <span className="px-2 py-0.5 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded text-xs">
-                            {cibleLabels[action.cible] || action.cible}
-                          </span>
-                        )}
-                        <span className="flex items-center gap-1 text-muted-foreground text-xs ml-auto">
-                          <Calendar className="h-3 w-3" />
-                          {new Date(action.dateDebut).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
-                        </span>
-                      </div>
-
-                      {/* Description */}
-                      <p className="font-medium line-clamp-3 mb-3 min-h-[4.5rem]">
-                        {cleanDescription || 'Objet non précisé'}
-                      </p>
-
-                      {/* Lobbyiste */}
-                      <div className="flex items-center gap-3 pt-3 border-t">
-                        <LobbyisteLogo siteWeb={action.lobbyiste.siteWeb} nom={action.lobbyiste.nom} size="sm" />
-                        <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-sm truncate">{action.lobbyiste.nom}</p>
-                          {action.lobbyiste.secteur && (
-                            <p className="text-xs text-muted-foreground truncate">{action.lobbyiste.secteur}</p>
-                          )}
-                        </div>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-
       {/* Trending Dossiers Législatifs - enriched with mini-scrutins */}
       {trendingDossiers && trendingDossiers.length > 0 && (
         <section className="py-16 overflow-hidden">
@@ -477,6 +379,104 @@ export default function HomePage() {
                     )}
                   </Link>
                 ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Recent Lobbying Actions */}
+      {recentActions && recentActions.length > 0 && (
+        <section className="py-16 border-b overflow-hidden">
+          <div className="container mx-auto px-4">
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="text-2xl font-bold">Dernières actions lobby déclarées</h2>
+              <Link
+                href="/lobbying/actions"
+                className="flex items-center text-sm font-medium text-primary hover:underline"
+              >
+                Voir toutes les actions
+                <ArrowRight className="ml-1 h-4 w-4" />
+              </Link>
+            </div>
+          </div>
+
+          {/* Carrousel avec auto-scroll */}
+          <div className="relative group">
+            {/* Boutons de navigation */}
+            <button
+              onClick={() => {
+                const container = document.getElementById('actions-carousel');
+                if (container) container.scrollBy({ left: -376, behavior: 'smooth' });
+              }}
+              className="absolute left-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-10 h-10 rounded-full bg-background/90 border shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-background"
+              aria-label="Précédent"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              onClick={() => {
+                const container = document.getElementById('actions-carousel');
+                if (container) container.scrollBy({ left: 376, behavior: 'smooth' });
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-10 h-10 rounded-full bg-background/90 border shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-background"
+              aria-label="Suivant"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+
+            {/* Container scrollable */}
+            <div
+              id="actions-carousel"
+              className="overflow-x-auto pb-4 px-4 md:px-[max(1rem,calc((100%-768px)/2+1rem))] lg:px-[max(1rem,calc((100%-1024px)/2+1rem))] xl:px-[max(1rem,calc((100%-1280px)/2+1rem))] [&::-webkit-scrollbar]:hidden"
+              style={{ scrollbarWidth: 'none' }}
+            >
+              <div className="flex gap-4 w-max animate-carousel-scroll group-hover:[animation-play-state:paused]">
+                {/* Cartes dupliquées pour effet de boucle infinie */}
+                {[...recentActions, ...recentActions].map((action, index) => {
+                  const { secteur, cleanDescription } = extractSecteur(action.description || '');
+                  return (
+                    <Link
+                      key={`${action.id}-${index}`}
+                      href={`/lobbying/${action.lobbyiste.id}`}
+                      className="w-[360px] flex-shrink-0 rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
+                    >
+                      {/* Tags: Secteur + Cible + Date */}
+                      <div className="flex flex-wrap items-center gap-2 text-sm mb-3">
+                        {secteur && (
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${getSecteurColor(secteur)}`}>
+                            {secteur}
+                          </span>
+                        )}
+                        {action.cible && (
+                          <span className="px-2 py-0.5 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded text-xs">
+                            {cibleLabels[action.cible] || action.cible}
+                          </span>
+                        )}
+                        <span className="flex items-center gap-1 text-muted-foreground text-xs ml-auto">
+                          <Calendar className="h-3 w-3" />
+                          {new Date(action.dateDebut).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                        </span>
+                      </div>
+
+                      {/* Description */}
+                      <p className="font-medium line-clamp-3 mb-3 min-h-[4.5rem]">
+                        {cleanDescription || 'Objet non précisé'}
+                      </p>
+
+                      {/* Lobbyiste */}
+                      <div className="flex items-center gap-3 pt-3 border-t">
+                        <LobbyisteLogo siteWeb={action.lobbyiste.siteWeb} nom={action.lobbyiste.nom} size="sm" />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-sm truncate">{action.lobbyiste.nom}</p>
+                          {action.lobbyiste.secteur && (
+                            <p className="text-xs text-muted-foreground truncate">{action.lobbyiste.secteur}</p>
+                          )}
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
             </div>
           </div>
