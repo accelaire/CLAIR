@@ -1533,6 +1533,38 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     } catch (error: any) {
       logger.error({ error: error.message }, 'Sénat scrutins-dossiers linking failed (non-blocking)');
     }
+
+    // AN scrutins-dossiers title matching
+    logger.info('Linking AN scrutins to dossiers by title matching...');
+    try {
+      const anLinkResult = await linkANScrutinsByTitle();
+      logger.info({
+        linked: anLinkResult.linked,
+      }, 'AN scrutins-dossiers title linking completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'AN scrutins-dossiers title linking failed (non-blocking)');
+    }
+
+    // Propagate dossier_id from scrutins to amendements (only fills NULL, never resets)
+    logger.info('Propagating dossier_id from scrutins to amendements...');
+    try {
+      const amdtLinkResult = await linkAmendementsToDossiers();
+      logger.info({
+        linked: amdtLinkResult.linked,
+      }, 'Amendements-dossiers linking via scrutins completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Amendements-dossiers linking via scrutins failed (non-blocking)');
+    }
+
+    // Link amendements to dossiers via texte_ref (catches non-voted amendements)
+    try {
+      const texteRefResult = await linkAmendementsToDossiersByTexteRef();
+      logger.info({
+        linked: texteRefResult.linked,
+      }, 'Amendements-dossiers linking via texteRef completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Amendements-dossiers linking via texteRef failed (non-blocking)');
+    }
   }
 
   // Recalculer les stats si des sources ont changé (sauf si skip demandé)
@@ -1869,6 +1901,7 @@ export async function syncDossiers(
   let created = 0;
   let updated = 0;
   let scrutinsLinked = 0;
+  let amendementsLinked = 0;
 
   for (const dossier of dossiers) {
     try {
@@ -1887,6 +1920,7 @@ export async function syncDossiers(
         loiNumero: dossier.loiNumero,
         loiTitre: dossier.loiTitre,
         loiDateJO: dossier.loiDateJO,
+        urlLegifrance: dossier.urlLegifrance,
         sourceData: dossier.sourceData as object,
       };
 
@@ -1932,13 +1966,42 @@ export async function syncDossiers(
         }
       }
 
+      // Lier les amendements au dossier via texteRefs
+      if (dossier.texteRefs.length > 0) {
+        const result = await prisma.amendement.updateMany({
+          where: {
+            texteRef: { in: dossier.texteRefs },
+            dossierId: null,
+          },
+          data: { dossierId },
+        });
+        if (result.count > 0) {
+          amendementsLinked += result.count;
+        }
+      }
+
     } catch (e: any) {
       logger.warn({ uid: dossier.uid, error: e.message }, 'Failed to upsert dossier');
     }
   }
 
-  logger.info({ created, updated, scrutinsLinked, total: dossiers.length }, 'Dossiers législatifs sync completed');
-  return { created, updated, scrutinsLinked };
+  // Propagate urlLegifrance to Sénat dossiers sharing the same loi_numero
+  // (Sénat source doesn't provide this field, but it's the same law)
+  const propagated = await prisma.$executeRaw`
+    UPDATE dossiers_legislatifs senat
+    SET url_legifrance = an.url_legifrance
+    FROM dossiers_legislatifs an
+    WHERE senat.loi_numero = an.loi_numero
+      AND senat.url_legifrance IS NULL
+      AND an.url_legifrance IS NOT NULL
+      AND senat.id != an.id
+  `;
+  if (propagated > 0) {
+    logger.info({ propagated }, 'Propagated urlLegifrance to Sénat dossiers');
+  }
+
+  logger.info({ created, updated, scrutinsLinked, amendementsLinked, total: dossiers.length }, 'Dossiers législatifs sync completed');
+  return { created, updated, scrutinsLinked, amendementsLinked };
 }
 
 // =============================================================================
@@ -2061,6 +2124,187 @@ export async function linkSenatScrutinsToDossiers(): Promise<{ linked: number }>
 
   logger.info({ linked: result }, 'Sénat scrutins linked to dossiers');
   return { linked: result };
+}
+
+// =============================================================================
+// LINK AN SCRUTINS TO DOSSIERS BY TITLE MATCHING
+// =============================================================================
+
+/**
+ * Lie les scrutins AN orphelins aux dossiers législatifs par matching de titre.
+ * Utilise le champ `titre` du dossier (pas titre_court qui est un slug pour les dossiers AN).
+ * Ne matche que AN scrutins -> AN dossiers pour éviter le cross-chamber linking.
+ * Pass 1: Matchs uniques (1 seul dossier matche)
+ * Pass 2: Matchs ambigus (plusieurs dossiers) - disambiguë par proximité de date
+ */
+export async function linkANScrutinsByTitle(): Promise<{ linked: number }> {
+  logger.info('Linking AN scrutins to dossiers by title matching...');
+
+  // First: clean up any wrong cross-chamber links (AN scrutins on SENAT dossiers)
+  const cleaned = await prisma.$executeRaw`
+    UPDATE scrutins SET dossier_id = NULL
+    FROM dossiers_legislatifs d
+    WHERE scrutins.dossier_id = d.id
+      AND scrutins.chambre = 'assemblee'
+      AND d.uid LIKE 'SENAT%'
+  `;
+  if (cleaned > 0) {
+    logger.info({ cleaned }, 'Cleaned cross-chamber AN→SENAT links');
+  }
+
+  // Pass 1: Match unique via titre du dossier (substring match dans scrutin.titre)
+  // Only AN scrutins against AN dossiers (uid NOT LIKE 'SENAT%')
+  const uniqueMatches = await prisma.$executeRaw`
+    WITH unique_matches AS (
+      SELECT s.id as scrutin_id, MIN(d.id) as dossier_id
+      FROM scrutins s
+      CROSS JOIN dossiers_legislatifs d
+      WHERE s.chambre = 'assemblee'
+        AND s.dossier_id IS NULL
+        AND d.uid NOT LIKE 'SENAT%'
+        AND d.titre IS NOT NULL
+        AND LENGTH(d.titre) > 15
+        AND LOWER(s.titre) LIKE '%' || LOWER(d.titre) || '%'
+      GROUP BY s.id
+      HAVING COUNT(DISTINCT d.id) = 1
+    )
+    UPDATE scrutins SET dossier_id = um.dossier_id
+    FROM unique_matches um WHERE scrutins.id = um.scrutin_id
+  `;
+
+  logger.info({ uniqueMatches }, 'Pass 1 (unique title matches) completed');
+
+  // Pass 2: Ambigus - disambiguër par proximité de date
+  // Same chamber filter: AN scrutins only match AN dossiers
+  const dateMatches = await prisma.$executeRaw`
+    WITH ranked AS (
+      SELECT s.id as scrutin_id, d.id as dossier_id,
+        ROW_NUMBER() OVER (
+          PARTITION BY s.id
+          ORDER BY ABS(EXTRACT(EPOCH FROM (s.date - COALESCE(d.date_depot, d.created_at))))
+        ) as rn
+      FROM scrutins s
+      CROSS JOIN dossiers_legislatifs d
+      WHERE s.chambre = 'assemblee'
+        AND s.dossier_id IS NULL
+        AND d.uid NOT LIKE 'SENAT%'
+        AND d.titre IS NOT NULL
+        AND LENGTH(d.titre) > 15
+        AND LOWER(s.titre) LIKE '%' || LOWER(d.titre) || '%'
+    )
+    UPDATE scrutins SET dossier_id = r.dossier_id
+    FROM ranked r WHERE scrutins.id = r.scrutin_id AND r.rn = 1
+  `;
+
+  logger.info({ dateMatches }, 'Pass 2 (date-disambiguated matches) completed');
+
+  const linked = uniqueMatches + dateMatches;
+  logger.info({ linked }, 'AN scrutins-dossiers title linking completed');
+  return { linked };
+}
+
+// =============================================================================
+// LINK AMENDEMENTS TO DOSSIERS (via scrutin → dossier)
+// =============================================================================
+
+/**
+ * Propage dossier_id des scrutins vers les amendements.
+ * Si un amendement est lié (M:N) à un scrutin qui a un dossier_id,
+ * on set l'amendement.dossier_id à la même valeur.
+ * Sûr seulement si le M:N amendement-scrutin est correct.
+ */
+export async function linkAmendementsToDossiers(): Promise<{ linked: number }> {
+  logger.info('Propagating dossier_id from scrutins to amendements...');
+
+  const linked = await prisma.$executeRaw`
+    UPDATE amendements a
+    SET dossier_id = s.dossier_id
+    FROM "_AmendementToScrutin" ats
+    JOIN scrutins s ON ats."B" = s.id
+    WHERE ats."A" = a.id
+      AND a.dossier_id IS NULL
+      AND s.dossier_id IS NOT NULL
+  `;
+
+  logger.info({ linked }, 'Amendements-dossiers linking completed');
+  return { linked };
+}
+
+/**
+ * Lie les amendements aux dossiers via texte_ref.
+ * Extrait les texteRefs de chaque dossier (sourceData JSON) et matche
+ * avec amendements.texte_ref. Ne touche pas les liens existants.
+ */
+export async function linkAmendementsToDossiersByTexteRef(): Promise<{ linked: number }> {
+  logger.info('Linking amendements to dossiers by texte_ref...');
+
+  const dossiers = await prisma.dossierLegislatif.findMany({
+    select: { id: true, sourceData: true },
+  });
+
+  let totalLinked = 0;
+
+  for (const dossier of dossiers) {
+    const texteRefs = extractTexteRefsFromSourceData(dossier.sourceData);
+    if (texteRefs.length === 0) continue;
+
+    const result = await prisma.amendement.updateMany({
+      where: {
+        texteRef: { in: texteRefs },
+        dossierId: null,
+      },
+      data: { dossierId: dossier.id },
+    });
+
+    if (result.count > 0) {
+      totalLinked += result.count;
+      logger.debug({ dossierId: dossier.id, refs: texteRefs.length, linked: result.count }, 'Linked amendements by texteRef');
+    }
+  }
+
+  logger.info({ linked: totalLinked }, 'Amendements-dossiers texteRef linking completed');
+  return { linked: totalLinked };
+}
+
+/** Extrait récursivement tous les texteRefs du sourceData brut d'un dossier AN */
+function extractTexteRefsFromSourceData(sourceData: unknown): string[] {
+  if (!sourceData || typeof sourceData !== 'object') return [];
+  const refs: string[] = [];
+
+  function walk(node: any) {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+
+    if (node.texteAssocie) {
+      if (typeof node.texteAssocie === 'string') {
+        refs.push(node.texteAssocie);
+      } else if (Array.isArray(node.texteAssocie)) {
+        for (const t of node.texteAssocie) {
+          if (typeof t === 'string') refs.push(t);
+          else if (t?.refTexteAssocie) refs.push(t.refTexteAssocie);
+        }
+      } else if (node.texteAssocie.refTexteAssocie) {
+        refs.push(node.texteAssocie.refTexteAssocie);
+      }
+    }
+    if (typeof node.texteAdopte === 'string') {
+      refs.push(node.texteAdopte);
+    }
+
+    // Recurse into nested actes
+    if (node.actesLegislatifs?.acteLegislatif) {
+      const nested = node.actesLegislatifs.acteLegislatif;
+      (Array.isArray(nested) ? nested : [nested]).forEach(walk);
+    }
+  }
+
+  const sd = sourceData as any;
+  if (sd.actesLegislatifs?.acteLegislatif) {
+    const actes = sd.actesLegislatifs.acteLegislatif;
+    (Array.isArray(actes) ? actes : [actes]).forEach(walk);
+  }
+
+  return [...new Set(refs)];
 }
 
 // =============================================================================
@@ -2301,16 +2545,21 @@ export async function linkScrutinsToAmendements(
         WITH scrutins_senat AS (
           SELECT
             s.id,
-            SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero
+            s.dossier_id,
+            SUBSTRING(s.titre FROM '[°º\u0092[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero
           FROM scrutins s
           WHERE s.titre ILIKE '%amendement%'
             AND NOT EXISTS (SELECT 1 FROM "_AmendementToScrutin" WHERE "B" = s.id)
             AND s.chambre = 'senat'
+            AND s.dossier_id IS NOT NULL
         ),
         matched AS (
           SELECT ss.id, a.id as amendement_id
           FROM scrutins_senat ss
-          LEFT JOIN amendements a ON a.numero = ss.amendement_numero AND a.chambre = 'senat'
+          LEFT JOIN amendements a ON
+            a.numero = ss.amendement_numero
+            AND a.chambre = 'senat'
+            AND a.dossier_id = ss.dossier_id
           WHERE ss.amendement_numero IS NOT NULL
         )
         SELECT
@@ -2322,16 +2571,34 @@ export async function linkScrutinsToAmendements(
       totalNotFound += Number(countSenat[0]?.not_found || 0);
     } else {
       // INSERT into join table for Sénat
+      // Sénat amendment numbering is per-text, so we can ONLY safely link when the
+      // scrutin has a dossier_id (gives us context to identify the right text).
+      // Without dossier_id, matching just by numero produces massive false positives
+      // (e.g. "amendement n° 3" appears in 20+ different scrutins on different texts).
       const resultSenat = await prisma.$executeRaw`
+        WITH scrutins_senat AS (
+          SELECT
+            s.id,
+            s.dossier_id,
+            SUBSTRING(s.titre FROM '[°º\u0092[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero
+          FROM scrutins s
+          WHERE s.titre ILIKE '%amendement%'
+            AND NOT EXISTS (SELECT 1 FROM "_AmendementToScrutin" WHERE "B" = s.id)
+            AND s.chambre = 'senat'
+            AND s.dossier_id IS NOT NULL
+        ),
+        best_match AS (
+          SELECT DISTINCT ON (ss.id) ss.id as scrutin_id, a.id as amendement_id
+          FROM scrutins_senat ss
+          INNER JOIN amendements a ON
+            a.numero = ss.amendement_numero
+            AND a.chambre = 'senat'
+            AND a.dossier_id = ss.dossier_id
+          WHERE ss.amendement_numero IS NOT NULL
+          ORDER BY ss.id, a.id
+        )
         INSERT INTO "_AmendementToScrutin" ("A", "B")
-        SELECT a.id, s.id
-        FROM scrutins s
-        INNER JOIN amendements a ON
-          a.numero = SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]')
-          AND a.chambre = 'senat'
-        WHERE s.titre ILIKE '%amendement%'
-          AND NOT EXISTS (SELECT 1 FROM "_AmendementToScrutin" WHERE "B" = s.id)
-          AND s.chambre = 'senat'
+        SELECT amendement_id, scrutin_id FROM best_match
         ON CONFLICT DO NOTHING
       `;
       totalLinked += resultSenat;
@@ -2342,16 +2609,9 @@ export async function linkScrutinsToAmendements(
         WHERE s.titre ILIKE '%amendement%'
           AND NOT EXISTS (SELECT 1 FROM "_AmendementToScrutin" WHERE "B" = s.id)
           AND s.chambre = 'senat'
-          AND SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') IS NOT NULL
+          AND SUBSTRING(s.titre FROM '[°º\u0092[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') IS NOT NULL
       `;
       totalNotFound += Number(notFoundSenat[0]?.count || 0);
-
-      if (resultSenat > 0) {
-        logger.warn(
-          { linked: resultSenat },
-          'Sénat linking uses simple numero matching - some may be incorrect. Consider using syncScrutinsSenat with enriched amendement data.'
-        );
-      }
     }
     logger.info({ chambre: 'senat', linked: totalLinked - linkedBeforeSenat }, 'Sénat linking done');
   }

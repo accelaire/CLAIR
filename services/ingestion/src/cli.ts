@@ -26,6 +26,9 @@ import {
   enrichScrutinsANAmendements,
   enrichScrutinsSenatAmendements,
   syncLobbyistes,
+  linkANScrutinsByTitle,
+  linkAmendementsToDossiers,
+  linkAmendementsToDossiersByTexteRef,
 } from './workers/sync.js';
 import {
   calculateAllStats,
@@ -376,6 +379,43 @@ program
 
     } catch (error: any) {
       logger.error({ error: error.message }, 'Scheduler failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: link-scrutins-dossiers
+// =============================================================================
+program
+  .command('link-scrutins-dossiers')
+  .description('Lier les scrutins AN orphelins aux dossiers législatifs par matching de titre')
+  .action(async () => {
+    try {
+      logger.info('Starting AN scrutins-dossiers title linking...');
+      const result = await linkANScrutinsByTitle();
+      console.log(`\nScrutins liés aux dossiers: ${result.linked}`);
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'link-scrutins-dossiers failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: link-amendements-dossiers
+// =============================================================================
+program
+  .command('link-amendements-dossiers')
+  .description('Propager dossier_id des scrutins vers les amendements')
+  .action(async () => {
+    try {
+      const result = await linkAmendementsToDossiers();
+      console.log(`\nAmendements liés via scrutins: ${result.linked}`);
+      const result2 = await linkAmendementsToDossiersByTexteRef();
+      console.log(`Amendements liés via texteRef: ${result2.linked}`);
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'link-amendements-dossiers failed');
       process.exit(1);
     }
   });
