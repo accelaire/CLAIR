@@ -73,6 +73,7 @@ interface TrendingDossier {
   uid: string;
   titre: string;
   titreCourt: string | null;
+  chambre: string;
   etat: string | null;
   procedureLibelle: string | null;
   scrutinsCount: number;
@@ -327,8 +328,11 @@ export default function HomePage() {
                     href={`/dossiers/${dossier.uid}`}
                     className="w-[400px] flex-shrink-0 rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
                   >
-                    {/* Header: etat + procedure + scrutin count */}
+                    {/* Header: chambre + etat + procedure + scrutin count */}
                     <div className="flex items-center gap-2 mb-2 text-sm">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${dossier.chambre === 'senat' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                        {dossier.chambre === 'senat' ? 'Sénat' : 'AN'}
+                      </span>
                       {dossier.etat && (
                         <span className={`px-2 py-0.5 rounded text-xs font-medium ${dossierEtatLabels[dossier.etat]?.color || 'bg-muted text-muted-foreground'}`}>
                           {dossierEtatLabels[dossier.etat]?.label || dossier.etat}

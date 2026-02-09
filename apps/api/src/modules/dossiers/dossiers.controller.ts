@@ -10,6 +10,8 @@ import { buildMultiFieldSearchCondition } from '../../utils/search';
 
 const CACHE_TTL_1H = 3600;
 
+const dossierChambre = (legislature: number) => legislature === 0 ? 'senat' : 'assemblee';
+
 export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
   // ===========================================================================
   // GET /api/v1/dossiers - Liste paginée avec filtres
@@ -22,7 +24,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, _reply) => {
       const query = dossiersListQuerySchema.parse(request.query);
-      const { page, limit, etat, procedureCode, search, dateFrom, dateTo, sort, order } = query;
+      const { page, limit, etat, chambre, procedureCode, procedureLibelle, search, dateFrom, dateTo, sort, order } = query;
 
       const cacheKey = `dossiers:list:${JSON.stringify(query)}`;
       const cached = await fastify.redis.get(cacheKey);
@@ -31,7 +33,10 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
       const where: any = {};
 
       if (etat) where.etat = etat;
+      if (chambre === 'senat') where.legislature = 0;
+      else if (chambre === 'assemblee') where.legislature = { gt: 0 };
       if (procedureCode) where.procedureCode = procedureCode;
+      if (procedureLibelle) where.procedureLibelle = procedureLibelle;
       if (search) {
         Object.assign(where, buildMultiFieldSearchCondition(['titre', 'titreCourt'], search));
       }
@@ -64,6 +69,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
             uid: true,
             titre: true,
             titreCourt: true,
+            legislature: true,
             procedureCode: true,
             procedureLibelle: true,
             etat: true,
@@ -83,7 +89,10 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
       const totalPages = Math.ceil(total / limit);
 
       const result = {
-        data: dossiers,
+        data: dossiers.map(d => ({
+          ...d,
+          chambre: dossierChambre(d.legislature),
+        })),
         meta: {
           total,
           page,
@@ -92,6 +101,44 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
           hasNext: page < totalPages,
           hasPrev: page > 1,
         },
+      };
+
+      await fastify.redis.setex(cacheKey, CACHE_TTL_1H, JSON.stringify(result));
+      return result;
+    },
+  });
+
+  // ===========================================================================
+  // GET /api/v1/dossiers/filters - Valeurs distinctes pour les filtres
+  // ===========================================================================
+  fastify.get('/filters', {
+    schema: {
+      tags: ['Dossiers'],
+      summary: 'Valeurs de filtres disponibles',
+      description: 'Retourne les procedureLibelle distinctes (dossiers avec scrutins uniquement)',
+    },
+    handler: async (_request, _reply) => {
+      const cacheKey = 'dossiers:filters';
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+
+      const procedures = await fastify.prisma.dossierLegislatif.groupBy({
+        by: ['procedureLibelle'],
+        where: {
+          scrutins: { some: {} },
+          procedureLibelle: { not: null },
+        },
+        _count: true,
+        orderBy: { _count: { procedureLibelle: 'desc' } },
+      });
+
+      const result = {
+        procedures: procedures
+          .filter((p) => p.procedureLibelle)
+          .map((p) => ({
+            label: p.procedureLibelle!,
+            count: p._count,
+          })),
       };
 
       await fastify.redis.setex(cacheKey, CACHE_TTL_1H, JSON.stringify(result));
@@ -131,6 +178,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
           uid: true,
           titre: true,
           titreCourt: true,
+          legislature: true,
           etat: true,
           procedureLibelle: true,
           dateDepot: true,
@@ -159,6 +207,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
           uid: d.uid,
           titre: d.titre,
           titreCourt: d.titreCourt,
+          chambre: dossierChambre(d.legislature),
           etat: d.etat,
           procedureLibelle: d.procedureLibelle,
           dateDepot: d.dateDepot,
@@ -195,6 +244,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
           uid: true,
           titre: true,
           titreCourt: true,
+          legislature: true,
           procedureCode: true,
           procedureLibelle: true,
           urlAN: true,
@@ -292,6 +342,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
 
       const result = {
         ...dossier,
+        chambre: dossierChambre(dossier.legislature),
         scrutinsCount: dossier._count.scrutins,
         amendementsCount: dossier._count.amendements,
         votedAmendementsCount,
