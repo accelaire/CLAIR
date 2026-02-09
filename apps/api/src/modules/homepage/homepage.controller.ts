@@ -8,6 +8,8 @@ import { FastifyPluginAsync } from 'fastify';
 // Cache 1 heure - route optimisée
 const CACHE_TTL = 3600;
 
+const dossierChambre = (legislature: number) => legislature === 0 ? 'senat' : 'assemblee';
+
 interface HomepageStats {
   deputes: number;
   senateurs: number;
@@ -125,6 +127,7 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
           uid: true,
           titre: true,
           titreCourt: true,
+          legislature: true,
           etat: true,
           procedureLibelle: true,
           _count: {
@@ -171,6 +174,7 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
           uid: d.uid,
           titre: d.titre,
           titreCourt: d.titreCourt,
+          chambre: dossierChambre(d.legislature),
           etat: d.etat,
           procedureLibelle: d.procedureLibelle,
           scrutinsCount: d._count.scrutins,

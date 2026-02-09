@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Search, ChevronDown, Calendar, FileText, Vote, Loader2, ArrowRight } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -14,6 +14,7 @@ interface Dossier {
   uid: string;
   titre: string;
   titreCourt: string | null;
+  chambre: string;
   procedureCode: string | null;
   procedureLibelle: string | null;
   etat: string | null;
@@ -64,8 +65,16 @@ function DossiersPageContent() {
   const [filters, setFilter] = useUrlFilters<{
     search: string;
     etat: string;
+    chambre: string;
     procedureCode: string;
-  }>(['search', 'etat', 'procedureCode']);
+    procedureLibelle: string;
+  }>(['search', 'etat', 'chambre', 'procedureCode', 'procedureLibelle']);
+
+  const { data: filtersData } = useQuery<{ procedures: { label: string; count: number }[] }>({
+    queryKey: ['dossiers-filters'],
+    queryFn: () => api.get('/dossiers/filters').then(res => res.data),
+    staleTime: 60000,
+  });
 
   const [dateRange, setDateRange] = useUrlDateRange();
   const dateParams = dateRangeToParams(dateRange);
@@ -84,7 +93,9 @@ function DossiersPageContent() {
         params: {
           search: filters.search || undefined,
           etat: filters.etat || undefined,
+          chambre: filters.chambre || undefined,
           procedureCode: filters.procedureCode || undefined,
+          procedureLibelle: filters.procedureLibelle || undefined,
           page: pageParam,
           limit: 20,
           ...dateParams,
@@ -131,6 +142,20 @@ function DossiersPageContent() {
           />
         </div>
 
+        {/* Filtre par chambre */}
+        <div className="relative w-full sm:w-auto">
+          <select
+            value={filters.chambre}
+            onChange={(e) => setFilter('chambre', e.target.value)}
+            className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="">Toutes les chambres</option>
+            <option value="assemblee">Assemblée nationale</option>
+            <option value="senat">Sénat</option>
+          </select>
+          <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+        </div>
+
         {/* Filtre par état */}
         <div className="relative w-full sm:w-auto">
           <select
@@ -146,6 +171,25 @@ function DossiersPageContent() {
           </select>
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>
+
+        {/* Filtre par procédure */}
+        {filtersData?.procedures && filtersData.procedures.length > 0 && (
+          <div className="relative w-full sm:w-auto">
+            <select
+              value={filters.procedureLibelle}
+              onChange={(e) => setFilter('procedureLibelle', e.target.value)}
+              className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Toutes les procédures</option>
+              {filtersData.procedures.map((p) => (
+                <option key={p.label} value={p.label}>
+                  {p.label} ({p.count})
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          </div>
+        )}
       </div>
 
       {/* Filtre par periode */}
@@ -190,6 +234,9 @@ function DossiersPageContent() {
                   <div className="flex-1 min-w-0">
                     {/* Badges */}
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded ${dossier.chambre === 'senat' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                        {dossier.chambre === 'senat' ? 'Sénat' : 'AN'}
+                      </span>
                       {dossier.etat && (
                         <span className={`px-2 py-0.5 text-xs font-medium rounded ${etatLabels[dossier.etat]?.color || 'bg-muted text-muted-foreground'}`}>
                           {etatLabels[dossier.etat]?.label || dossier.etat}

@@ -65,6 +65,7 @@ interface DossierDetail {
   uid: string;
   titre: string;
   titreCourt: string | null;
+  chambre: string;
   procedureCode: string | null;
   procedureLibelle: string | null;
   urlAN: string | null;
@@ -404,6 +405,9 @@ export default function DossierDetailPage() {
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-3 flex-wrap">
+          <span className={`px-3 py-1 text-sm font-medium rounded-full ${dossier.chambre === 'senat' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+            {dossier.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale'}
+          </span>
           {dossier.etat && (
             <span className={`px-3 py-1 text-sm font-medium rounded-full ${etatLabels[dossier.etat]?.color || 'bg-muted text-muted-foreground'}`}>
               {etatLabels[dossier.etat]?.label || dossier.etat}
@@ -427,13 +431,13 @@ export default function DossierDetailPage() {
               Déposé le {formatDate(dossier.dateDepot)}
             </span>
           )}
-          {dossier.urlAN && (
+          {dossier.urlAN && dossier.chambre === 'assemblee' && (
             <a href={dossier.urlAN} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 hover:underline">
               <ExternalLink className="h-3 w-3" /> Assemblée nationale
             </a>
           )}
-          {dossier.urlSenat && (
+          {dossier.urlSenat && dossier.chambre === 'senat' && (
             <a href={dossier.urlSenat} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 hover:underline">
               <ExternalLink className="h-3 w-3" /> Sénat
