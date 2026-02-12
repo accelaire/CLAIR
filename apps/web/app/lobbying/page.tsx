@@ -10,6 +10,12 @@ import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
 import { LobbyisteLogo } from '@/components/lobbying';
 import { FilterBar } from '@/components/FilterBar';
+import { MultiSelectFilter } from '@/components/MultiSelectFilter';
+
+interface SecteurRef {
+  slug: string;
+  label: string;
+}
 
 interface Lobbyiste {
   id: string;
@@ -21,6 +27,7 @@ interface Lobbyiste {
   budgetAnnuel: number | null;
   nbLobbyistes: number | null;
   actionsCount: number;
+  secteursList?: SecteurRef[];
 }
 
 interface LobbyistesResponse {
@@ -42,6 +49,7 @@ interface ActionRecente {
   dateDebut: string | null;
   texteVise: string | null;
   texteViseNom: string | null;
+  secteursList?: SecteurRef[];
   lobbyiste: {
     id: string;
     nom: string;
@@ -68,7 +76,6 @@ const typeLabels: Record<string, { label: string; icon: typeof Building2 }> = {
 
 const cibleLabels: Record<string, string> = {
   parlementaire: 'Parlement',
-  depute: 'Parlement',
   ministre: 'Gouvernement',
   presidence: 'Présidence',
   collectivite: 'Collectivités',
@@ -129,15 +136,16 @@ function LobbyingPageContent() {
   const [filters, setFilter, setFilters, clearAll] = useUrlFilters<{
     search: string;
     type: string;
-    secteur: string;
+    secteurs: string;
     sort: string;
     order: string;
-  }>(['search', 'type', 'secteur', 'sort', 'order'], {
+  }>(['search', 'type', 'secteurs', 'sort', 'order'], {
     defaults: { sort: 'nom', order: 'asc' },
   });
 
   const sort = (filters.sort || 'nom') as 'nom' | 'budget' | 'actions';
   const order = (filters.order || 'asc') as 'asc' | 'desc';
+  const selectedSecteurs = filters.secteurs ? filters.secteurs.split(',').filter(Boolean) : [];
 
   // Fetch lobbyistes avec infinite scroll
   const {
@@ -154,7 +162,7 @@ function LobbyingPageContent() {
         params: {
           search: filters.search || undefined,
           type: filters.type || undefined,
-          secteur: filters.secteur || undefined,
+          secteurs: filters.secteurs || undefined,
           page: pageParam,
           limit: 20,
           sort,
@@ -198,11 +206,11 @@ function LobbyingPageContent() {
   const activeFilterCount = useMemo(() => {
     let count = 0;
     if (filters.type) count++;
-    if (filters.secteur) count++;
+    if (filters.secteurs) count++;
     if (filters.sort && filters.sort !== 'nom') count++;
     if (filters.order && filters.order !== 'asc' && filters.sort === 'nom') count++;
     return count;
-  }, [filters.type, filters.secteur, filters.sort, filters.order]);
+  }, [filters.type, filters.secteurs, filters.sort, filters.order]);
 
   const handleClearFilters = () => {
     clearAll();
@@ -401,22 +409,19 @@ function LobbyingPageContent() {
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>
 
-        {/* Filtre par secteur */}
-        <div className="relative md:w-auto md:min-w-[200px] md:flex-1 md:max-w-[300px]">
-          <select
-            value={filters.secteur}
-            onChange={(e) => setFilter('secteur', e.target.value)}
-            className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
-          >
-            <option value="">Tous les secteurs</option>
-            {secteursData?.slice(0, 20).map((s: { name: string; count: number }) => (
-              <option key={s.name} value={s.name}>
-                {s.name} ({s.count.toLocaleString('fr-FR')})
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-        </div>
+        {/* Filtre par secteur (multi-select) */}
+        <MultiSelectFilter
+          options={(secteursData || [])
+            .filter((s: { count: number }) => s.count > 0)
+            .map((s: { slug: string; name: string; count: number }) => ({
+              value: s.slug,
+              label: s.name,
+              count: s.count,
+            }))}
+          selected={selectedSecteurs}
+          onChange={(sel) => setFilter('secteurs', sel.join(','))}
+          placeholder="Tous les secteurs"
+        />
 
         {/* Tri */}
         <div className="relative md:w-auto">
@@ -478,27 +483,29 @@ function LobbyingPageContent() {
                   href={`/lobbying/${lobbyiste.id}`}
                   className="block rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
                 >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3">
+                    {/* Logo */}
+                    <LobbyisteLogo siteWeb={lobbyiste.siteWeb} nom={lobbyiste.nom} size="md" />
+
                     {/* Infos principales */}
-                    <div className="flex items-start gap-3">
-                      <LobbyisteLogo siteWeb={lobbyiste.siteWeb} nom={lobbyiste.nom} size="md" />
-                      <div>
-                        <h3 className="font-semibold">{lobbyiste.nom}</h3>
-                        <div className="flex flex-wrap items-center gap-2 mt-1 text-sm text-muted-foreground">
-                          {typeConfig && (
-                            <span className="px-2 py-0.5 bg-muted rounded text-xs">
-                              {typeConfig.label}
-                            </span>
-                          )}
-                          {lobbyiste.secteur && (
-                            <span>{lobbyiste.secteur}</span>
-                          )}
-                        </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-semibold truncate">{lobbyiste.nom}</h3>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5 text-sm text-muted-foreground">
+                        {typeConfig && (
+                          <span className="px-2 py-0.5 bg-muted rounded text-xs shrink-0">
+                            {typeConfig.label}
+                          </span>
+                        )}
+                        <span className="truncate">
+                          {lobbyiste.secteursList && lobbyiste.secteursList.length > 0
+                            ? lobbyiste.secteursList.map((s) => s.label).join(', ')
+                            : lobbyiste.secteur || ''}
+                        </span>
                       </div>
                     </div>
 
                     {/* Stats */}
-                    <div className="flex items-center gap-4 text-sm">
+                    <div className="flex items-center gap-3 sm:gap-4 text-sm shrink-0">
                       <div className="text-center">
                         <p className={`font-semibold ${lobbyiste.budgetAnnuel ? 'text-primary' : 'text-muted-foreground'}`}>
                           {lobbyiste.budgetAnnuel ? formatBudget(lobbyiste.budgetAnnuel) : 'N.D.'}
@@ -510,7 +517,7 @@ function LobbyingPageContent() {
                         <p className="text-xs text-muted-foreground">Actions</p>
                       </div>
                       {lobbyiste.nbLobbyistes && lobbyiste.nbLobbyistes > 0 && (
-                        <div className="text-center">
+                        <div className="text-center hidden sm:block">
                           <p className="font-semibold">{lobbyiste.nbLobbyistes.toLocaleString('fr-FR')}</p>
                           <p className="text-xs text-muted-foreground">Lobbyistes</p>
                         </div>
