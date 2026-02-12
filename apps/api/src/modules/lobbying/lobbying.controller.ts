@@ -16,6 +16,7 @@ const lobbyistesListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   type: z.enum(['entreprise', 'association', 'cabinet', 'syndicat', 'organisation_pro']).optional(),
   secteur: z.string().optional(),
+  secteurs: z.string().optional(), // comma-separated secteur slugs
   search: z.string().optional(),
   sort: z.enum(['nom', 'budget', 'actions']).default('nom'),
   order: z.enum(['asc', 'desc']).default('asc'),
@@ -40,7 +41,8 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           page: { type: 'integer', minimum: 1, default: 1 },
           limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
           type: { type: 'string', enum: ['entreprise', 'association', 'cabinet', 'syndicat', 'organisation_pro'] },
-          secteur: { type: 'string', description: 'Secteur d\'activité' },
+          secteur: { type: 'string', description: 'Secteur d\'activité (legacy, string contains)' },
+          secteurs: { type: 'string', description: 'Secteur slugs séparés par virgule (intersection AND)' },
           search: { type: 'string', description: 'Recherche par nom' },
           sort: { type: 'string', enum: ['nom', 'budget', 'actions'], default: 'nom' },
           order: { type: 'string', enum: ['asc', 'desc'], default: 'asc' },
@@ -49,7 +51,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, _reply) => {
       const query = lobbyistesListQuerySchema.parse(request.query);
-      const { page, limit, type, secteur, search, sort, order } = query;
+      const { page, limit, type, secteur, secteurs, search, sort, order } = query;
 
       // Cache key based on query params
       const cacheKey = `lobbying:list:${JSON.stringify(query)}`;
@@ -62,19 +64,26 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
 
       const skip = (page - 1) * limit;
 
-      const where = {
+      // Parse secteurs param (comma-separated slugs) for intersection filter
+      const secteurSlugs = secteurs
+        ? secteurs.split(',').map((s) => s.trim()).filter(Boolean)
+        : [];
+
+      const where: any = {
         ...(type && { type }),
         ...(secteur && { secteur: { contains: secteur, mode: 'insensitive' as const } }),
         ...(search && buildTextSearchCondition('nom', search)),
+        ...(secteurSlugs.length > 0 && {
+          AND: secteurSlugs.map((slug) => ({
+            secteurs: { some: { secteurId: slug } },
+          })),
+        }),
       };
 
       // Build orderBy based on sort field
-      // Note: For budget sorting, we need to handle nulls properly
-      // In PostgreSQL, nulls sort first in DESC order by default, which is not what we want
       let orderBy: any;
       switch (sort) {
         case 'budget':
-          // nulls: 'last' for desc (big budgets first), 'first' for asc (no budget first)
           orderBy = { budgetAnnuel: { sort: order, nulls: order === 'desc' ? 'last' : 'first' } };
           break;
         case 'actions':
@@ -89,6 +98,9 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           where,
           include: {
             _count: { select: { actions: true } },
+            secteurs: {
+              include: { secteur: true },
+            },
           },
           orderBy,
           skip,
@@ -103,7 +115,12 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         data: lobbyistes.map((l) => ({
           ...l,
           actionsCount: l._count.actions,
+          secteursList: l.secteurs.map((ls) => ({
+            slug: ls.secteur.id,
+            label: ls.secteur.label,
+          })),
           _count: undefined,
+          secteurs: undefined,
         })),
         meta: {
           total,
@@ -115,7 +132,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         },
       };
 
-      // Cache for 1 hour
+      // Cache for 12 hours
       await fastify.redis.setex(cacheKey, CACHE_TTL_12H, JSON.stringify(result));
 
       return result;
@@ -123,13 +140,13 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ===========================================================================
-  // GET /api/v1/lobbying/secteurs - Liste des secteurs
+  // GET /api/v1/lobbying/secteurs - Liste des secteurs (normalized)
   // ===========================================================================
   fastify.get('/secteurs', {
     schema: {
       tags: ['Lobbying'],
       summary: 'Liste des secteurs',
-      description: 'Retourne tous les secteurs d\'activité avec leur count',
+      description: 'Retourne tous les secteurs normalisés avec counts lobbyistes et actions',
     },
     handler: async (_request, _reply) => {
       const cacheKey = 'lobbying:secteurs';
@@ -140,21 +157,27 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         return JSON.parse(cached);
       }
 
-      const lobbyistes = await fastify.prisma.lobbyiste.groupBy({
-        by: ['secteur'],
-        _count: { secteur: true },
-        where: { secteur: { not: null } },
-        orderBy: { _count: { secteur: 'desc' } },
+      const secteurs = await fastify.prisma.secteur.findMany({
+        include: {
+          _count: {
+            select: {
+              lobbyistes: true,
+              actions: true,
+            },
+          },
+        },
+        orderBy: { lobbyistes: { _count: 'desc' } },
       });
 
-      const secteurs = lobbyistes
-        .filter((l) => l.secteur)
-        .map((l) => ({
-          name: l.secteur,
-          count: l._count.secteur,
-        }));
-
-      const result = { data: secteurs };
+      const result = {
+        data: secteurs.map((s) => ({
+          slug: s.id,
+          name: s.label,
+          lobbyistesCount: s._count.lobbyistes,
+          actionsCount: s._count.actions,
+          count: s._count.lobbyistes, // backward compat with old frontend
+        })),
+      };
 
       // Cache for 12 hours
       await fastify.redis.setex(cacheKey, CACHE_TTL_12H, JSON.stringify(result));
@@ -182,7 +205,6 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       // Exécuter les requêtes SÉQUENTIELLEMENT pour éviter de saturer le pool
-      // de connexions Prisma et provoquer des OOM sur cold start
       const totalLobbyistes = await fastify.prisma.lobbyiste.count();
       const totalActions = await fastify.prisma.actionLobby.count();
 
@@ -195,24 +217,16 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         _count: { type: true },
       });
 
-      const topSecteurs = await fastify.prisma.lobbyiste.groupBy({
-        by: ['secteur'],
-        _count: { secteur: true },
-        where: { secteur: { not: null } },
-        orderBy: { _count: { secteur: 'desc' } },
+      // Use normalized secteurs table
+      const topSecteursRaw = await fastify.prisma.secteur.findMany({
+        include: {
+          _count: { select: { lobbyistes: true } },
+        },
+        orderBy: { lobbyistes: { _count: 'desc' } },
         take: 10,
       });
 
-      // Count distinct base secteurs (split by ", " since HATVP stores combinations)
-      const totalSecteursResult = await fastify.prisma.$queryRaw<[{ count: bigint }]>`
-        SELECT COUNT(*) as count FROM (
-          SELECT DISTINCT LOWER(TRIM(s.secteur_split)) as secteur
-          FROM lobbyistes l,
-               LATERAL unnest(string_to_array(l.secteur, ', ')) AS s(secteur_split)
-          WHERE l.secteur IS NOT NULL
-        ) sub
-      `;
-      const totalSecteurs = Number(totalSecteursResult[0]?.count || 0);
+      const totalSecteurs = await fastify.prisma.secteur.count();
 
       const response = {
         data: {
@@ -221,7 +235,11 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           budgetTotal: budgetTotal._sum.budgetAnnuel || 0,
           totalSecteurs,
           byType: byType.map((t) => ({ type: t.type, count: t._count.type })),
-          topSecteurs: topSecteurs.map((s) => ({ secteur: s.secteur, count: s._count.secteur })),
+          topSecteurs: topSecteursRaw.map((s) => ({
+            secteur: s.label,
+            slug: s.id,
+            count: s._count.lobbyistes,
+          })),
         },
       };
 
@@ -254,6 +272,9 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
       const lobbyiste = await fastify.prisma.lobbyiste.findUnique({
         where: { id },
         include: {
+          secteurs: {
+            include: { secteur: true },
+          },
           actions: {
             include: {
               parlementaire: {
@@ -268,6 +289,9 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
                   },
                 },
               },
+              secteurs: {
+                include: { secteur: true },
+              },
             },
             orderBy: { dateDebut: 'desc' },
             take: 50,
@@ -279,7 +303,24 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         throw new ApiError(404, 'Lobbyiste non trouvé');
       }
 
-      return { data: lobbyiste };
+      return {
+        data: {
+          ...lobbyiste,
+          secteursList: lobbyiste.secteurs.map((ls) => ({
+            slug: ls.secteur.id,
+            label: ls.secteur.label,
+          })),
+          actions: lobbyiste.actions.map((a) => ({
+            ...a,
+            secteursList: a.secteurs.map((as) => ({
+              slug: as.secteur.id,
+              label: as.secteur.label,
+            })),
+            secteurs: undefined,
+          })),
+          secteurs: undefined,
+        },
+      };
     },
   });
 
@@ -339,6 +380,9 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
                 groupe: { select: { nom: true, couleur: true } },
               },
             },
+            secteurs: {
+              include: { secteur: true },
+            },
           },
           orderBy: { dateDebut: 'desc' },
           skip,
@@ -350,7 +394,14 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
       const totalPages = Math.ceil(total / limit);
 
       return {
-        data: actions,
+        data: actions.map((a) => ({
+          ...a,
+          secteursList: a.secteurs.map((as) => ({
+            slug: as.secteur.id,
+            label: as.secteur.label,
+          })),
+          secteurs: undefined,
+        })),
         meta: {
           total,
           page,
@@ -377,7 +428,9 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           page: { type: 'integer', minimum: 1, default: 1 },
           limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
           cible: { type: 'string' },
+          texteVise: { type: 'string', description: 'Filtre par texte visé (contains)' },
           secteur: { type: 'string' },
+          secteurs: { type: 'string', description: 'Secteur slugs séparés par virgule (filtre par domaines action)' },
           search: { type: 'string' },
           dateFrom: { type: 'string', format: 'date' },
           dateTo: { type: 'string', format: 'date' },
@@ -391,7 +444,9 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         page = 1,
         limit = 20,
         cible,
+        texteVise,
         secteur,
+        secteurs,
         search,
         dateFrom,
         dateTo,
@@ -401,7 +456,9 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         page?: number;
         limit?: number;
         cible?: string;
+        texteVise?: string;
         secteur?: string;
+        secteurs?: string;
         search?: string;
         dateFrom?: string;
         dateTo?: string;
@@ -411,16 +468,33 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
 
       const skip = (page - 1) * limit;
 
+      // Parse secteurs param for action domaines intersection filter
+      const secteurSlugs = secteurs
+        ? secteurs.split(',').map((s) => s.trim()).filter(Boolean)
+        : [];
+
       const where: any = {};
 
       if (cible) {
         where.cible = cible;
       }
 
+      if (texteVise) {
+        where.texteViseNom = { contains: texteVise, mode: 'insensitive' };
+      }
+
+      // Legacy single secteur filter (via lobbyiste)
       if (secteur) {
         where.lobbyiste = {
           secteur: { contains: secteur, mode: 'insensitive' },
         };
+      }
+
+      // New multi-secteur filter (via action's own domaines)
+      if (secteurSlugs.length > 0) {
+        where.AND = secteurSlugs.map((slug) => ({
+          secteurs: { some: { secteurId: slug } },
+        }));
       }
 
       if (search) {
@@ -438,7 +512,6 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           where.dateDebut.gte = new Date(dateFrom);
         }
         if (dateTo) {
-          // Ajouter un jour pour inclure la date de fin complète
           const endDate = new Date(dateTo);
           endDate.setDate(endDate.getDate() + 1);
           where.dateDebut.lt = endDate;
@@ -466,6 +539,9 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
                 groupe: { select: { nom: true, couleur: true } },
               },
             },
+            secteurs: {
+              include: { secteur: true },
+            },
           },
           orderBy,
           skip,
@@ -477,7 +553,14 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
       const totalPages = Math.ceil(total / limit);
 
       return {
-        data: actions,
+        data: actions.map((a) => ({
+          ...a,
+          secteursList: a.secteurs.map((as) => ({
+            slug: as.secteur.id,
+            label: as.secteur.label,
+          })),
+          secteurs: undefined,
+        })),
         meta: {
           total,
           page,
@@ -503,16 +586,33 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         properties: {
           limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
           secteur: { type: 'string' },
+          secteurs: { type: 'string', description: 'Secteur slugs séparés par virgule' },
         },
       },
     },
     handler: async (request, _reply) => {
-      const { limit = 20, secteur } = request.query as { limit?: number; secteur?: string };
+      const { limit = 20, secteur, secteurs } = request.query as {
+        limit?: number;
+        secteur?: string;
+        secteurs?: string;
+      };
+
+      const secteurSlugs = secteurs
+        ? secteurs.split(',').map((s) => s.trim()).filter(Boolean)
+        : [];
+
+      const where: any = {};
+      if (secteur) {
+        where.lobbyiste = { secteur: { contains: secteur, mode: 'insensitive' } };
+      }
+      if (secteurSlugs.length > 0) {
+        where.AND = secteurSlugs.map((slug) => ({
+          secteurs: { some: { secteurId: slug } },
+        }));
+      }
 
       const actions = await fastify.prisma.actionLobby.findMany({
-        where: {
-          ...(secteur && { lobbyiste: { secteur: { contains: secteur, mode: 'insensitive' } } }),
-        },
+        where,
         include: {
           lobbyiste: {
             select: { id: true, nom: true, type: true, secteur: true, siteWeb: true },
@@ -527,12 +627,24 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
               groupe: { select: { nom: true, couleur: true } },
             },
           },
+          secteurs: {
+            include: { secteur: true },
+          },
         },
         orderBy: { dateDebut: 'desc' },
         take: limit,
       });
 
-      return { data: actions };
+      return {
+        data: actions.map((a) => ({
+          ...a,
+          secteursList: a.secteurs.map((as) => ({
+            slug: as.secteur.id,
+            label: as.secteur.label,
+          })),
+          secteurs: undefined,
+        })),
+      };
     },
   });
 };
