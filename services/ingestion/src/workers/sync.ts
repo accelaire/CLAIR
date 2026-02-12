@@ -1630,6 +1630,25 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     }
   }
 
+  // VACUUM ANALYZE les tables principales après le sync pour éviter le bloat
+  // (les UPSERTs massifs créent des dead tuples → les Index Only Scans dégénèrent en heap fetches)
+  if (results.sourcesChanged.length > 0) {
+    logger.info('Running VACUUM ANALYZE on main tables...');
+    try {
+      const vacuumStart = Date.now();
+      const tables = [
+        'scrutins', 'amendements', 'dossiers_legislatifs',
+        'parlementaires', 'votes', 'interventions',
+      ];
+      for (const table of tables) {
+        await prisma.$executeRawUnsafe(`VACUUM ANALYZE ${table}`);
+      }
+      logger.info({ duration: `${((Date.now() - vacuumStart) / 1000).toFixed(1)}s` }, 'VACUUM ANALYZE completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'VACUUM ANALYZE failed (non-blocking)');
+    }
+  }
+
   results.duration = `${((Date.now() - startTime) / 1000).toFixed(2)}s`;
 
   logger.info({
