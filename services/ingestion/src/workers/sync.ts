@@ -3675,6 +3675,32 @@ export async function enrichScrutinsSenatAmendements(
 // SYNC LOBBYISTES (HATVP)
 // =============================================================================
 
+// Map short action-domain labels to their canonical lobbyiste-secteur equivalents
+// The HATVP data uses two vocabularies: lobbyiste "secteurs d'activité" (broader)
+// and action "domaines d'intervention" (sometimes shorter/truncated variants).
+const SECTEUR_NORMALIZATION: Record<string, string> = {
+  'Agriculture': 'Agriculture, agroalimentaire',
+  'Banques, assurances, secteur financier': 'Banques, assurances, secteur financier et extra financier',
+  'Construction': 'Construction, logement, aménagement du territoire',
+  'Education': 'Education, enseignement, formation',
+  'Enseignement supérieur': 'Enseignement supérieur, recherche, innovation',
+  'Sports': 'Sports, loisirs, tourisme',
+};
+
+function normalizeSecteurLabel(label: string): string {
+  const trimmed = label.trim();
+  return SECTEUR_NORMALIZATION[trimmed] || trimmed;
+}
+
+function slugifySecteur(label: string): string {
+  return label
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remove diacritics
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
 export async function syncLobbyistes(
   options: { limit?: number; includeActions?: boolean } = {}
 ): Promise<{ lobbyistes: { created: number; updated: number }; actions: number }> {
@@ -3686,6 +3712,31 @@ export async function syncLobbyistes(
   const hatvpClient = new HATVPClient();
   const { lobbyistes: csvLobbyistes, activites: csvActivites, exercices, actionDetails } =
     await hatvpClient.getDataFromCSV(options.limit);
+
+  // Pre-upsert all unique secteurs from lobbyistes + actions (normalized)
+  const allSecteurLabels = new Set<string>();
+  for (const l of csvLobbyistes) {
+    for (const s of l.secteurs) {
+      if (s.trim()) allSecteurLabels.add(normalizeSecteurLabel(s));
+    }
+  }
+  for (const a of csvActivites) {
+    for (const d of a.domaines) {
+      if (d.trim()) allSecteurLabels.add(normalizeSecteurLabel(d));
+    }
+  }
+
+  logger.info({ count: allSecteurLabels.size }, 'Upserting secteurs...');
+  for (const label of allSecteurLabels) {
+    const slug = slugifySecteur(label);
+    if (!slug) continue;
+    await prisma.secteur.upsert({
+      where: { id: slug },
+      create: { id: slug, label },
+      update: { label },
+    });
+  }
+  logger.info({ count: allSecteurLabels.size }, 'Secteurs upserted');
 
   let lobbyistesCreated = 0;
   let lobbyistesUpdated = 0;
@@ -3773,6 +3824,23 @@ export async function syncLobbyistes(
       }
 
       lobbyisteIdMap.set(csvLobbyiste.id, lobbyisteId);
+
+      // Sync secteur pivots (all secteurs, no limit)
+      if (csvLobbyiste.secteurs.length > 0) {
+        const secteurSlugs = csvLobbyiste.secteurs
+          .map((s: string) => slugifySecteur(normalizeSecteurLabel(s)))
+          .filter((s: string) => s);
+        if (secteurSlugs.length > 0) {
+          await prisma.lobbyisteSecteur.deleteMany({ where: { lobbyisteId } });
+          await prisma.lobbyisteSecteur.createMany({
+            data: secteurSlugs.map((slug: string) => ({
+              lobbyisteId,
+              secteurId: slug,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
     } catch (error: any) {
       logger.warn({ lobbyiste: csvLobbyiste.denomination, error: error.message }, 'Error syncing lobbyiste');
     }
@@ -3865,6 +3933,7 @@ export async function syncLobbyistes(
             },
           });
 
+          let actionId: string;
           if (existingAction) {
             await prisma.actionLobby.update({
               where: { id: existingAction.id },
@@ -3876,9 +3945,10 @@ export async function syncLobbyistes(
                 texteViseNom,
               },
             });
+            actionId = existingAction.id;
             actionsUpdated++;
           } else {
-            await prisma.actionLobby.create({
+            const created = await prisma.actionLobby.create({
               data: {
                 lobbyisteId,
                 description: description.substring(0, 2000),
@@ -3889,7 +3959,25 @@ export async function syncLobbyistes(
                 texteViseNom,
               },
             });
+            actionId = created.id;
             actionsCreated++;
+          }
+
+          // Sync action domaine pivots (all domaines, no limit)
+          if (act.domaines.length > 0) {
+            const domaineSlugs = act.domaines
+              .map((d: string) => slugifySecteur(normalizeSecteurLabel(d)))
+              .filter((s: string) => s);
+            if (domaineSlugs.length > 0) {
+              await prisma.actionSecteur.deleteMany({ where: { actionId } });
+              await prisma.actionSecteur.createMany({
+                data: domaineSlugs.map((slug: string) => ({
+                  actionId,
+                  secteurId: slug,
+                })),
+                skipDuplicates: true,
+              });
+            }
           }
         } catch (error: any) {
           logger.warn({ activite: act.activiteId, error: error.message }, 'Error syncing action');

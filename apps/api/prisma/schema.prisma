@@ -446,7 +446,8 @@ model Lobbyiste {
   nbLobbyistes Int?   @map("nb_lobbyistes")
   siteWeb      String? @map("site_web")
 
-  actions ActionLobby[]
+  actions  ActionLobby[]
+  secteurs LobbyisteSecteur[]
 
   // Métadonnées source
   sourceId   String? @map("source_id")
@@ -484,6 +485,8 @@ model ActionLobby {
   texteVise     String? @map("texte_vise")
   texteViseNom  String? @map("texte_vise_nom")
 
+  secteurs ActionSecteur[]
+
   sourceUrl String?  @map("source_url")
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -491,6 +494,42 @@ model ActionLobby {
   @@index([parlementaireId])
   @@index([dateDebut])
   @@map("actions_lobby")
+}
+
+model Secteur {
+  id         String   @id // slug: "agriculture-agroalimentaire"
+  label      String   @unique // "Agriculture, agroalimentaire"
+  lobbyistes LobbyisteSecteur[]
+  actions    ActionSecteur[]
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("secteurs")
+}
+
+model LobbyisteSecteur {
+  id          String    @id @default(uuid())
+  lobbyisteId String    @map("lobbyiste_id")
+  lobbyiste   Lobbyiste @relation(fields: [lobbyisteId], references: [id], onDelete: Cascade)
+  secteurId   String    @map("secteur_id")
+  secteur     Secteur   @relation(fields: [secteurId], references: [id], onDelete: Cascade)
+
+  @@unique([lobbyisteId, secteurId])
+  @@index([lobbyisteId])
+  @@index([secteurId])
+  @@map("lobbyistes_secteurs")
+}
+
+model ActionSecteur {
+  id        String      @id @default(uuid())
+  actionId  String      @map("action_id")
+  action    ActionLobby @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  secteurId String      @map("secteur_id")
+  secteur   Secteur     @relation(fields: [secteurId], references: [id], onDelete: Cascade)
+
+  @@unique([actionId, secteurId])
+  @@index([actionId])
+  @@index([secteurId])
+  @@map("actions_secteurs")
 }
 
 // =============================================================================
