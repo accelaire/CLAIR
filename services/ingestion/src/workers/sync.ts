@@ -2479,6 +2479,8 @@ export async function linkScrutinsToAmendements(
             s.dossier_id,
             SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero,
             (s.titre ILIKE '%rectifi%' OR s.titre ILIKE '%(rect.)%') as is_rectifie,
+            LOWER(SUBSTRING(s.titre FROM '(?:après l''article|à l''article|article)\s+(premier|\d+)')) as article_numero,
+            s.titre ILIKE '%après l''article%' as is_apres,
             COALESCE(
               SUBSTRING(s.source_data->'objet'->>'referenceLegislative' FROM 'B(?:TC)?([0-9]{3,5})'),
               SUBSTRING(s.titre FROM '(?:projet|proposition|texte)[^0-9]*n[°º]?\s*([0-9]{3,5})')
@@ -2495,6 +2497,8 @@ export async function linkScrutinsToAmendements(
             a.numero,
             SPLIT_PART(a.numero, ' ', 1) as numero_clean,
             a.numero LIKE '% (Rect%' as is_rect,
+            LOWER(SUBSTRING(a.article_vise FROM 'ART\.\s+(PREMIER|\d+)')) as article_num,
+            a.article_vise ILIKE 'APRÈS%' as amdt_is_apres,
             SUBSTRING(a.texte_ref FROM 'B(?:TC)?([0-9]+)') as amendement_texte_numero
           FROM amendements a
           WHERE a.chambre = 'assemblee'
@@ -2506,6 +2510,8 @@ export async function linkScrutinsToAmendements(
             awt.numero_clean = swn.amendement_numero
             AND (swn.texte_numero IS NULL OR awt.amendement_texte_numero = swn.texte_numero)
             AND (swn.dossier_id IS NULL OR awt.dossier_id = swn.dossier_id)
+            AND (swn.article_numero IS NULL OR awt.article_num = swn.article_numero)
+            AND (swn.article_numero IS NULL OR awt.amdt_is_apres = swn.is_apres)
           WHERE swn.amendement_numero IS NOT NULL
         )
         SELECT
@@ -2519,6 +2525,8 @@ export async function linkScrutinsToAmendements(
       // INSERT into join table for AN
       // numero_clean strips suffixes like " (Rect)" from amendement numbers.
       // is_rectifie detects "rectifié" or "(rect.)" in scrutin title.
+      // article_numero extracts the article number from the scrutin title to disambiguate
+      //   same-numbered amendements on different articles of the same dossier.
       // ORDER BY prefers matching rectified↔rectified and plain↔plain.
       // dossier_id constraint avoids cross-dossier false positives when texte_numero is NULL.
       const resultAN = await prisma.$executeRaw`
@@ -2528,6 +2536,8 @@ export async function linkScrutinsToAmendements(
             s.dossier_id,
             SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero,
             (s.titre ILIKE '%rectifi%' OR s.titre ILIKE '%(rect.)%') as is_rectifie,
+            LOWER(SUBSTRING(s.titre FROM '(?:après l''article|à l''article|article)\s+(premier|\d+)')) as article_numero,
+            s.titre ILIKE '%après l''article%' as is_apres,
             COALESCE(
               SUBSTRING(s.source_data->'objet'->>'referenceLegislative' FROM 'B(?:TC)?([0-9]{3,5})'),
               SUBSTRING(s.titre FROM '(?:projet|proposition|texte)[^0-9]*n[°º]?\s*([0-9]{3,5})')
@@ -2544,6 +2554,8 @@ export async function linkScrutinsToAmendements(
             a.numero,
             SPLIT_PART(a.numero, ' ', 1) as numero_clean,
             a.numero LIKE '% (Rect%' as is_rect,
+            LOWER(SUBSTRING(a.article_vise FROM 'ART\.\s+(PREMIER|\d+)')) as article_num,
+            a.article_vise ILIKE 'APRÈS%' as amdt_is_apres,
             SUBSTRING(a.texte_ref FROM 'B(?:TC)?([0-9]+)') as amendement_texte_numero
           FROM amendements a
           WHERE a.chambre = 'assemblee'
@@ -2555,8 +2567,11 @@ export async function linkScrutinsToAmendements(
             awt.numero_clean = swn.amendement_numero
             AND (swn.texte_numero IS NULL OR awt.amendement_texte_numero = swn.texte_numero)
             AND (swn.dossier_id IS NULL OR awt.dossier_id = swn.dossier_id)
+            AND (swn.article_numero IS NULL OR awt.article_num = swn.article_numero)
+            AND (swn.article_numero IS NULL OR awt.amdt_is_apres = swn.is_apres)
           WHERE swn.amendement_numero IS NOT NULL
           ORDER BY swn.id,
+            CASE WHEN swn.article_numero IS NOT NULL AND awt.article_num = swn.article_numero THEN 0 ELSE 1 END,
             CASE WHEN swn.texte_numero IS NOT NULL AND awt.amendement_texte_numero = swn.texte_numero THEN 0 ELSE 1 END,
             CASE WHEN swn.is_rectifie = awt.is_rect THEN 0 ELSE 1 END,
             awt.id
@@ -2585,22 +2600,58 @@ export async function linkScrutinsToAmendements(
   if (!chambre || chambre === 'senat') {
     const linkedBeforeSenat = totalLinked;
 
+    // Propagate dossier_id to Sénat amendments via texte_ref:
+    // Many Sénat amendments lack dossier_id but share texte_ref with ones that have it.
+    // Only propagate when one texte_ref maps to exactly one dossier (safety check).
+    if (!dryRun) {
+      const propagated = await prisma.$executeRaw`
+        UPDATE amendements a
+        SET dossier_id = sub.dossier_id
+        FROM (
+          SELECT DISTINCT a2.texte_ref, a2.dossier_id
+          FROM amendements a2
+          WHERE a2.chambre = 'senat'
+            AND a2.dossier_id IS NOT NULL
+            AND a2.texte_ref IS NOT NULL
+        ) sub
+        WHERE a.texte_ref = sub.texte_ref
+          AND a.chambre = 'senat'
+          AND a.dossier_id IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM amendements a3
+            WHERE a3.texte_ref = sub.texte_ref
+              AND a3.dossier_id IS NOT NULL
+              AND a3.dossier_id != sub.dossier_id
+          )
+      `;
+      if (propagated > 0) {
+        logger.info({ propagated }, 'Propagated dossierId to Sénat amendments via texte_ref');
+      }
+    }
+
     if (dryRun) {
+      // Sénat dry-run: extract ALL amendment numbers from title using regexp_matches
+      // Titles like "amendements identiques n°4, n°9 et n°12" yield 3 rows per scrutin
       const countSenat = await prisma.$queryRaw<{ linked: bigint; not_found: bigint }[]>`
         WITH scrutins_senat AS (
           SELECT
             s.id,
             s.dossier_id,
-            SUBSTRING(s.titre FROM '[°º\u0092[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero,
+            m[1] as amendement_numero,
             (s.titre ILIKE '%rectifi%' OR s.titre ILIKE '%(rect.)%') as is_rectifie
-          FROM scrutins s
+          FROM scrutins s,
+            LATERAL regexp_matches(s.titre, 'n[°º]\\s*([A-Z]*-?\\d+)', 'g') AS m
           WHERE s.titre ILIKE '%amendement%'
             AND NOT EXISTS (SELECT 1 FROM "_AmendementToScrutin" WHERE "B" = s.id)
             AND s.chambre = 'senat'
             AND s.dossier_id IS NOT NULL
         ),
-        matched AS (
-          SELECT ss.id, a.id as amendement_id
+        ranked AS (
+          SELECT ss.id, ss.amendement_numero, a.id as amendement_id,
+            ROW_NUMBER() OVER (
+              PARTITION BY ss.id, ss.amendement_numero
+              ORDER BY CASE WHEN ss.is_rectifie = (a.numero LIKE '% (Rect%') THEN 0 ELSE 1 END, a.id
+            ) as rn
           FROM scrutins_senat ss
           LEFT JOIN amendements a ON
             SPLIT_PART(a.numero, ' ', 1) = ss.amendement_numero
@@ -2611,7 +2662,7 @@ export async function linkScrutinsToAmendements(
         SELECT
           COUNT(CASE WHEN amendement_id IS NOT NULL THEN 1 END)::bigint as linked,
           COUNT(CASE WHEN amendement_id IS NULL THEN 1 END)::bigint as not_found
-        FROM matched
+        FROM ranked WHERE rn = 1
       `;
       totalLinked += Number(countSenat[0]?.linked || 0);
       totalNotFound += Number(countSenat[0]?.not_found || 0);
@@ -2621,30 +2672,38 @@ export async function linkScrutinsToAmendements(
       // scrutin has a dossier_id (gives us context to identify the right text).
       // Without dossier_id, matching just by numero produces massive false positives
       // (e.g. "amendement n° 3" appears in 20+ different scrutins on different texts).
+      //
+      // Uses regexp_matches with 'g' flag to extract ALL amendment numbers from titles
+      // like "amendements identiques n°4, n°9 et n°12" → creates M:N links.
+      // ROW_NUMBER instead of DISTINCT ON: keeps best match per (scrutin, numero) pair.
       const resultSenat = await prisma.$executeRaw`
         WITH scrutins_senat AS (
           SELECT
             s.id,
             s.dossier_id,
-            SUBSTRING(s.titre FROM '[°º\u0092[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero,
+            m[1] as amendement_numero,
             (s.titre ILIKE '%rectifi%' OR s.titre ILIKE '%(rect.)%') as is_rectifie
-          FROM scrutins s
+          FROM scrutins s,
+            LATERAL regexp_matches(s.titre, 'n[°º]\\s*([A-Z]*-?\\d+)', 'g') AS m
           WHERE s.titre ILIKE '%amendement%'
             AND NOT EXISTS (SELECT 1 FROM "_AmendementToScrutin" WHERE "B" = s.id)
             AND s.chambre = 'senat'
             AND s.dossier_id IS NOT NULL
         ),
         best_match AS (
-          SELECT DISTINCT ON (ss.id) ss.id as scrutin_id, a.id as amendement_id
-          FROM scrutins_senat ss
-          INNER JOIN amendements a ON
-            SPLIT_PART(a.numero, ' ', 1) = ss.amendement_numero
-            AND a.chambre = 'senat'
-            AND a.dossier_id = ss.dossier_id
-          WHERE ss.amendement_numero IS NOT NULL
-          ORDER BY ss.id,
-            CASE WHEN ss.is_rectifie = (a.numero LIKE '% (Rect%') THEN 0 ELSE 1 END,
-            a.id
+          SELECT scrutin_id, amendement_id FROM (
+            SELECT ss.id as scrutin_id, a.id as amendement_id,
+              ROW_NUMBER() OVER (
+                PARTITION BY ss.id, ss.amendement_numero
+                ORDER BY CASE WHEN ss.is_rectifie = (a.numero LIKE '% (Rect%') THEN 0 ELSE 1 END, a.id
+              ) as rn
+            FROM scrutins_senat ss
+            INNER JOIN amendements a ON
+              SPLIT_PART(a.numero, ' ', 1) = ss.amendement_numero
+              AND a.chambre = 'senat'
+              AND a.dossier_id = ss.dossier_id
+            WHERE ss.amendement_numero IS NOT NULL
+          ) ranked WHERE rn = 1
         )
         INSERT INTO "_AmendementToScrutin" ("A", "B")
         SELECT amendement_id, scrutin_id FROM best_match
@@ -2653,12 +2712,12 @@ export async function linkScrutinsToAmendements(
       totalLinked += resultSenat;
 
       const notFoundSenat = await prisma.$queryRaw<{ count: bigint }[]>`
-        SELECT COUNT(*) as count
+        SELECT COUNT(DISTINCT s.id) as count
         FROM scrutins s
         WHERE s.titre ILIKE '%amendement%'
           AND NOT EXISTS (SELECT 1 FROM "_AmendementToScrutin" WHERE "B" = s.id)
           AND s.chambre = 'senat'
-          AND SUBSTRING(s.titre FROM '[°º\u0092[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') IS NOT NULL
+          AND s.dossier_id IS NOT NULL
       `;
       totalNotFound += Number(notFoundSenat[0]?.count || 0);
     }
@@ -2953,6 +3012,7 @@ export async function enrichScrutinsSenatAmendements(
       sourceUrl: true,
       session: true,
       date: true,
+      dossierId: true,
     },
     take: limitCount,
     orderBy: { numero: 'desc' },
@@ -3093,10 +3153,6 @@ export async function enrichScrutinsSenatAmendements(
           }
 
           // Traiter TOUS les liens amendements trouvés (relation M:N)
-          const scrutinDate = scrutin.date;
-          const minDate = new Date(scrutinDate);
-          minDate.setDate(minDate.getDate() - 60);
-
           const foundAmendementIds: string[] = [];
 
           for (const match of allMatches) {
@@ -3112,30 +3168,40 @@ export async function enrichScrutinsSenatAmendements(
               targetTexteRefs = internalIds.map(id => `SENAT-TXT-${id}`);
             }
 
-            let candidates;
+            // Build where clause: require texteRef match OR dossier match
+            // NEVER fall back to date-based matching — better no link than a wrong link
+            const where: any = {
+              chambre: 'senat' as const,
+              numero: baseNumero,
+            };
+
             if (targetTexteRefs.length > 0) {
-              candidates = await prisma.amendement.findMany({
-                where: {
-                  chambre: 'senat',
-                  numero: baseNumero,
-                  texteRef: { in: targetTexteRefs },
-                },
-                select: { id: true },
-                orderBy: { dateDepot: 'desc' },
-                take: 1,
-              });
+              // Primary: match by texteRef from AMELI mapping
+              if (scrutin.dossierId) {
+                // Double safety: texteRef + dossier constraint
+                where.texteRef = { in: targetTexteRefs };
+                where.dossierId = scrutin.dossierId;
+              } else {
+                where.texteRef = { in: targetTexteRefs };
+              }
+            } else if (scrutin.dossierId) {
+              // No texteRef available but we have dossier — match within same dossier
+              where.dossierId = scrutin.dossierId;
             } else {
-              candidates = await prisma.amendement.findMany({
-                where: {
-                  chambre: 'senat',
-                  numero: baseNumero,
-                  dateDepot: { gte: minDate, lte: scrutinDate },
-                },
-                select: { id: true },
-                orderBy: { dateDepot: 'desc' },
-                take: 1,
-              });
+              // No texteRef AND no dossier — skip entirely to avoid false positives
+              logger.debug({
+                scrutinNumero: scrutin.numero,
+                amendementNumero: baseNumero,
+              }, 'Skipping: no texteRef and no dossierId — cannot safely match');
+              continue;
             }
+
+            const candidates = await prisma.amendement.findMany({
+              where,
+              select: { id: true },
+              orderBy: { dateDepot: 'desc' },
+              take: 1,
+            });
 
             if (candidates[0] && !foundAmendementIds.includes(candidates[0].id)) {
               foundAmendementIds.push(candidates[0].id);
@@ -3146,7 +3212,7 @@ export async function enrichScrutinsSenatAmendements(
             logger.debug({
               scrutinNumero: scrutin.numero,
               matchCount: allMatches.length,
-              scrutinDate: scrutinDate.toISOString(),
+              scrutinDate: scrutin.date.toISOString(),
             }, 'No matching amendments found');
             return { status: 'notFound' as const };
           }
