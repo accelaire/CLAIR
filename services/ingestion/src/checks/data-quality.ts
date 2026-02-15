@@ -98,6 +98,13 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     max: 0,
     query: `SELECT COUNT(*)::int AS value FROM parlementaires WHERE actif = true AND groupe_id IS NULL`,
   },
+  cross_chamber_links: {
+    type: 'invariant',
+    label: 'Liens scrutin-dossier inter-chambres',
+    min: 0,
+    max: 0,
+    query: `SELECT COUNT(*)::int AS value FROM scrutins s JOIN dossiers_legislatifs d ON s.dossier_id = d.id WHERE (s.chambre = 'assemblee' AND d.uid LIKE 'SENAT%') OR (s.chambre = 'senat' AND d.uid NOT LIKE 'SENAT%')`,
+  },
 
   // ---- Seuils quantitatifs (minimums) ----
   parlementaires_count: {
@@ -175,7 +182,7 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
   scrutin_dossier_link_rate: {
     type: 'threshold',
     label: 'Taux de liaison scrutins-dossiers (%)',
-    min: 50,
+    min: 95,
     query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (linked * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE dossier_id IS NOT NULL) AS linked FROM scrutins) sub`,
   },
   amendement_dossier_link_rate: {

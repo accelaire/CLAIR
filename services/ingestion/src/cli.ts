@@ -28,6 +28,7 @@ import {
   enrichScrutinsSenatAmendements,
   syncLobbyistes,
   linkANScrutinsByTitle,
+  linkOrphanScrutinsByTFIDF,
   linkAmendementsToDossiers,
   linkAmendementsToDossiersByTexteRef,
   propagateDossierIdBySiblingTexteRef,
@@ -406,6 +407,26 @@ program
       process.exit(0);
     } catch (error: any) {
       logger.error({ error: error.message }, 'link-scrutins-dossiers failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: link-scrutins-tfidf
+// =============================================================================
+program
+  .command('link-scrutins-tfidf')
+  .description('Lier les scrutins orphelins aux dossiers par TF-IDF (cosine similarity sur titres)')
+  .action(async () => {
+    try {
+      logger.info('Starting TF-IDF scrutin-dossier linking...');
+      const result = await linkOrphanScrutinsByTFIDF();
+      console.log(`\n📊 TF-IDF scrutin-dossier linking:`);
+      console.log(`   Liés: ${result.linked}`);
+      console.log(`   Ignorés (score trop bas): ${result.skipped}`);
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'link-scrutins-tfidf failed');
       process.exit(1);
     }
   });
