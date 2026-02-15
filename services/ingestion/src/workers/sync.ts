@@ -1264,6 +1264,9 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
 
   logger.info({ options }, 'Starting smart sync...');
 
+  // Cache AMELI texte mapping across sync steps to avoid double download
+  let cachedTexteMapping: Map<number, { num: string; session: string }> | undefined;
+
   // Déterminer quelles sources vérifier (ordre important pour les relations)
   let sourcesToCheck: string[];
 
@@ -1387,8 +1390,12 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
           }
 
           case 'senat:amendements': {
-            const senatAmendementsResult = await syncAmendementsSenat({ maxAmendements: options.amendementsLimit });
+            const senatAmendementsResult = await syncAmendementsSenatCsv();
             syncResult = { created: senatAmendementsResult.created, updated: senatAmendementsResult.updated };
+            // Cache texte mapping to avoid re-downloading AMELI in enrichScrutinsSenatAmendements
+            if (senatAmendementsResult.texteMapping) {
+              cachedTexteMapping = senatAmendementsResult.texteMapping;
+            }
             break;
           }
 
@@ -1512,6 +1519,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.info('Enriching Sénat scrutins with HTML scraping...');
       const enrichSenatResult = await enrichScrutinsSenatAmendements({
         concurrency: 5,
+        texteMapping: cachedTexteMapping,
       });
       logger.info({
         enriched: enrichSenatResult.enriched,
@@ -1523,22 +1531,9 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     }
   }
 
-  if (hasAmendementsChanged || hasScrutinsChanged || hasDossiersChanged) {
-    // Link scrutins ↔ amendements via title matching + numero_clean
-    // Must run AFTER enrich (HTML scraping) and BEFORE dossier propagation
-    logger.info('Linking scrutins to amendements (M:N join table)...');
-    try {
-      const linkAmResult = await linkScrutinsToAmendements();
-      logger.info({
-        linked: linkAmResult.linked,
-        notFound: linkAmResult.notFound,
-      }, 'Scrutins-amendements linking completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Scrutins-amendements linking failed (non-blocking)');
-    }
-  }
-
   if (hasDossiersChanged || hasScrutinsChanged) {
+    // Scrutin→dossier linking MUST run BEFORE scrutin→amendement linking
+    // because the CTE requires dossier_id to avoid cross-dossier false positives.
     logger.info('Linking Sénat scrutins to dossiers...');
     try {
       const linkResult = await linkSenatScrutinsToDossiers();
@@ -1558,6 +1553,21 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       }, 'AN scrutins-dossiers title linking completed');
     } catch (error: any) {
       logger.error({ error: error.message }, 'AN scrutins-dossiers title linking failed (non-blocking)');
+    }
+  }
+
+  if (hasAmendementsChanged || hasScrutinsChanged || hasDossiersChanged) {
+    // Link scrutins ↔ amendements via numero matching + dossier constraint
+    // Must run AFTER dossier linking (needs dossier_id) and AFTER enrich (HTML scraping)
+    logger.info('Linking scrutins to amendements (M:N join table)...');
+    try {
+      const linkAmResult = await linkScrutinsToAmendements();
+      logger.info({
+        linked: linkAmResult.linked,
+        notFound: linkAmResult.notFound,
+      }, 'Scrutins-amendements linking completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Scrutins-amendements linking failed (non-blocking)');
     }
 
     // Propagate dossier_id from scrutins to amendements (only fills NULL, never resets)
@@ -1580,6 +1590,17 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     } catch (error: any) {
       logger.error({ error: error.message }, 'Amendements-dossiers linking via texteRef failed (non-blocking)');
     }
+
+    // Propagate dossier_id between sibling amendments on same texte_ref (safe: unanimous only)
+    try {
+      const siblingResult = await propagateDossierIdBySiblingTexteRef();
+      logger.info({
+        linked: siblingResult.linked,
+      }, 'Sibling texte_ref dossier propagation completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Sibling texte_ref dossier propagation failed (non-blocking)');
+    }
+
   }
 
   // Recalculer les stats si des sources ont changé (sauf si skip demandé)
@@ -1917,6 +1938,230 @@ export async function syncAmendementsSenat(
 
   logger.info({ created, updated, linked, total: rawAmendements.length }, 'Amendements Sénat sync completed');
   return { created, updated, linked };
+}
+
+// =============================================================================
+// SYNC AMENDEMENTS SÉNAT (CSV - source complète commission + séance)
+// =============================================================================
+
+export async function syncAmendementsSenatCsv(
+  options: { minYear?: number; texteIds?: number[]; } = {}
+): Promise<{ created: number; updated: number; linked: number; texteMapping?: Map<number, { num: string; session: string }> }> {
+  const { SenatAmendementsClient } = await import('../sources/senat/amendements-client.js');
+
+  logger.info({ options }, 'Starting amendements Sénat CSV sync...');
+
+  const client = new SenatAmendementsClient();
+
+  // 1. Get texte mapping from AMELI (texteId → { num, session })
+  logger.info('Fetching AMELI texte mapping...');
+  const texteMapping = await client.getTexteMapping();
+  logger.info({ textes: texteMapping.size }, 'Texte mapping loaded');
+
+  // 2. Determine which textes to fetch
+  let texteIds: number[];
+
+  if (options.texteIds && options.texteIds.length > 0) {
+    texteIds = options.texteIds;
+  } else {
+    // Only fetch recent sessions (current + previous) — historical textes rarely change
+    // For a full re-sync of all textes, use --texte-ids or a dedicated backfill command
+    const minYear = options.minYear ?? new Date().getFullYear() - 1;
+    const recentIds = new Set<number>();
+    for (const [texteId, { session }] of texteMapping) {
+      const sessionYear = parseInt(session.split('-')[0] ?? '0', 10);
+      if (sessionYear >= minYear) {
+        recentIds.add(texteId);
+      }
+    }
+
+    texteIds = Array.from(recentIds);
+    logger.info({ texteIds: texteIds.length, minYear }, 'Scoped to recent sessions only');
+  }
+
+  // Resolve texteIds to { texteId, texteNum, session } via mapping
+  // Deduplicate by (session, texteNum) — multiple texteIds can map to the same CSV
+  // (different lectures/stages of the same bill). Pick the largest texteId as canonical.
+  const textes: Array<{ texteId: number; texteNum: string; session: string }> = [];
+  const unmapped: number[] = [];
+  const csvDedup = new Map<string, { texteId: number; texteNum: string; session: string }>();
+
+  for (const texteId of texteIds) {
+    const mapping = texteMapping.get(texteId);
+    if (mapping) {
+      const csvKey = `${mapping.session}/${mapping.num}`;
+      const existing = csvDedup.get(csvKey);
+      // Keep the largest texteId (most recent lecture) as canonical
+      if (!existing || texteId > existing.texteId) {
+        csvDedup.set(csvKey, { texteId, texteNum: mapping.num, session: mapping.session });
+      }
+    } else {
+      unmapped.push(texteId);
+    }
+  }
+
+  textes.push(...csvDedup.values());
+
+  if (unmapped.length > 0) {
+    logger.warn({ count: unmapped.length, sample: unmapped.slice(0, 5) }, 'Texte IDs not found in AMELI mapping');
+  }
+
+  logger.info({ textes: textes.length, deduped: texteIds.length - unmapped.length - textes.length }, 'Fetching CSV amendements (deduplicated by session/texteNum)...');
+
+  // 3. Load sénateurs for author matching (once, kept in memory — ~350 entries)
+  const parlementaires = await prisma.parlementaire.findMany({
+    where: { chambre: 'senat' },
+    select: { id: true, sourceId: true, nom: true, prenom: true }
+  });
+
+  const normalize = (s: string) => s.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/-/g, ' ').replace(/'/g, ' ').trim();
+
+  const parlementaireByMatricule = new Map<string, string>();
+  const parlementaireByName = new Map<string, string>();
+  for (const p of parlementaires) {
+    if (p.sourceId) parlementaireByMatricule.set(p.sourceId, p.id);
+    parlementaireByName.set(normalize(p.nom), p.id);
+    const parts = p.nom.trim().split(/\s+/);
+    if (parts.length > 1) {
+      const lastName = parts[parts.length - 1];
+      if (lastName && lastName.length > 3) {
+        parlementaireByName.set(normalize(lastName), p.id);
+      }
+    }
+  }
+
+  let created = 0;
+  let updated = 0;
+  let linked = 0;
+  let totalAmendements = 0;
+  const chambre = 'senat';
+
+  // 4. Process each texte: fetch CSV → batch upsert → release memory
+  // Uses batch queries per texte instead of individual findFirst+update/create per amendment
+  // Reduces from 2*N queries per texte to 3 queries (1 findMany + 1 createMany + 1 batch update)
+  type CsvAmendement = Awaited<ReturnType<typeof client.fetchCsvForTexte>>[number];
+
+  // Helper: resolve parlementaire for an amendment
+  const resolveParlementaire = (amd: CsvAmendement): string | null => {
+    let parlementaireId: string | null = null;
+    if (amd.auteurMatricule) {
+      parlementaireId = parlementaireByMatricule.get(amd.auteurMatricule) || null;
+    }
+    if (!parlementaireId && amd.auteurNom) {
+      const nomNorm = normalize(amd.auteurNom);
+      parlementaireId = parlementaireByName.get(nomNorm) || null;
+      if (!parlementaireId) {
+        for (const [name, id] of parlementaireByName) {
+          if (nomNorm.includes(name) || name.includes(nomNorm)) {
+            parlementaireId = id;
+            break;
+          }
+        }
+      }
+    }
+    return parlementaireId;
+  };
+
+  let amendments: CsvAmendement[] = [];
+
+  for (let ti = 0; ti < textes.length; ti++) {
+    const texte = textes[ti]!;
+
+    try {
+      amendments = await client.fetchCsvForTexte(texte.texteId, texte.texteNum, texte.session);
+
+      if (amendments.length === 0) continue;
+
+      const texteRef = `SENAT-TXT-${texte.texteId}`;
+
+      // 1. Fetch ALL existing amendments for this texte in ONE query
+      const existingAmds = await prisma.amendement.findMany({
+        where: { chambre, texteRef },
+        select: { id: true, numero: true },
+      });
+      const existingByNumero = new Map(existingAmds.map(a => [a.numero, a.id]));
+
+      // 2. Partition into creates and updates
+      const toCreate: Array<{
+        uid: string; numero: string; legislature: number; chambre: string;
+        parlementaireId: string | null; auteurRef: string | null; groupeRef: string | null;
+        auteurLibelle: string | null; texteRef: string; articleVise: string | null;
+        dispositif: string | null; exposeSommaire: string | null; sort: string | null;
+        dateDepot: Date | null; dateSort: Date | null; sourceUrl: string | null;
+      }> = [];
+      const toUpdate: Array<{ id: string; data: Record<string, unknown> }> = [];
+
+      for (const amd of amendments) {
+        const parlementaireId = resolveParlementaire(amd);
+        if (parlementaireId) linked++;
+
+        const data = {
+          numero: amd.numero,
+          legislature: 0,
+          chambre,
+          parlementaireId,
+          auteurRef: amd.auteurMatricule,
+          groupeRef: null as string | null,
+          auteurLibelle: amd.auteurLibelle,
+          texteRef,
+          articleVise: amd.articleVise || null,
+          dispositif: amd.dispositif,
+          exposeSommaire: amd.exposeSommaire,
+          sort: amd.sort,
+          dateDepot: amd.dateDepot,
+          dateSort: null as Date | null,
+          sourceUrl: amd.sourceUrl,
+        };
+
+        const existingId = existingByNumero.get(amd.numero);
+        if (existingId) {
+          toUpdate.push({ id: existingId, data });
+        } else {
+          toCreate.push({ uid: amd.uid, ...data });
+        }
+      }
+
+      // 3. Batch create new amendments (single query)
+      if (toCreate.length > 0) {
+        await prisma.amendement.createMany({
+          data: toCreate,
+          skipDuplicates: true, // safety: skip if uid already exists
+        });
+        created += toCreate.length;
+      }
+
+      // 4. Batch update existing amendments in transaction chunks
+      if (toUpdate.length > 0) {
+        const CHUNK_SIZE = 200;
+        for (let i = 0; i < toUpdate.length; i += CHUNK_SIZE) {
+          const chunk = toUpdate.slice(i, i + CHUNK_SIZE);
+          await prisma.$transaction(
+            chunk.map(u => prisma.amendement.update({
+              where: { id: u.id },
+              data: u.data,
+            }))
+          );
+        }
+        updated += toUpdate.length;
+      }
+
+      totalAmendements += amendments.length;
+    } catch (error: any) {
+      logger.warn({ texteId: texte.texteId, error: error.message }, 'Error processing texte CSV');
+    }
+
+    // Release references for GC
+    amendments = [];
+
+    if ((ti + 1) % 20 === 0 || ti === textes.length - 1) {
+      logger.info({ texte: ti + 1, total: textes.length, created, updated, linked, totalAmendements }, 'CSV sync progress');
+    }
+  }
+
+  logger.info({ created, updated, linked, totalAmendements }, 'Amendements Sénat CSV sync completed');
+  return { created, updated, linked, texteMapping };
 }
 
 // =============================================================================
@@ -2300,6 +2545,32 @@ export async function linkAmendementsToDossiersByTexteRef(): Promise<{ linked: n
   return { linked: totalLinked };
 }
 
+/**
+ * Propage dossier_id entre amendements sur le même texte_ref.
+ * SAFETY: ne propage que si TOUS les amendements avec dossier_id sur ce texte_ref
+ * sont unanimes (même dossier). Si conflit → skip.
+ */
+export async function propagateDossierIdBySiblingTexteRef(): Promise<{ linked: number }> {
+  logger.info('Propagating dossier_id between sibling amendments on same texte_ref (safe mode)...');
+
+  const linked = await prisma.$executeRaw`
+    UPDATE amendements a
+    SET dossier_id = sibling.dossier_id
+    FROM (
+      SELECT texte_ref, MIN(dossier_id) as dossier_id
+      FROM amendements
+      WHERE dossier_id IS NOT NULL AND texte_ref IS NOT NULL
+      GROUP BY texte_ref
+      HAVING COUNT(DISTINCT dossier_id) = 1
+    ) sibling
+    WHERE a.texte_ref = sibling.texte_ref
+      AND a.dossier_id IS NULL
+  `;
+
+  logger.info({ linked }, 'Sibling texte_ref dossier propagation completed (safe mode)');
+  return { linked };
+}
+
 /** Extrait récursivement tous les texteRefs du sourceData brut d'un dossier AN */
 function extractTexteRefsFromSourceData(sourceData: unknown): string[] {
   if (!sourceData || typeof sourceData !== 'object') return [];
@@ -2508,8 +2779,11 @@ export async function linkScrutinsToAmendements(
           FROM scrutins_with_info swn
           LEFT JOIN amendements_with_texte awt ON
             awt.numero_clean = swn.amendement_numero
-            AND (swn.texte_numero IS NULL OR awt.amendement_texte_numero = swn.texte_numero)
-            AND (swn.dossier_id IS NULL OR awt.dossier_id = swn.dossier_id)
+            -- REQUIRE at least texte_numero OR dossier_id to avoid cross-dossier false positives
+            AND (
+              (swn.texte_numero IS NOT NULL AND awt.amendement_texte_numero = swn.texte_numero)
+              OR (swn.dossier_id IS NOT NULL AND awt.dossier_id = swn.dossier_id)
+            )
             AND (swn.article_numero IS NULL OR awt.article_num = swn.article_numero)
             AND (swn.article_numero IS NULL OR awt.amdt_is_apres = swn.is_apres)
           WHERE swn.amendement_numero IS NOT NULL
@@ -2565,8 +2839,11 @@ export async function linkScrutinsToAmendements(
           FROM scrutins_with_info swn
           INNER JOIN amendements_with_texte awt ON
             awt.numero_clean = swn.amendement_numero
-            AND (swn.texte_numero IS NULL OR awt.amendement_texte_numero = swn.texte_numero)
-            AND (swn.dossier_id IS NULL OR awt.dossier_id = swn.dossier_id)
+            -- REQUIRE at least texte_numero OR dossier_id to avoid cross-dossier false positives
+            AND (
+              (swn.texte_numero IS NOT NULL AND awt.amendement_texte_numero = swn.texte_numero)
+              OR (swn.dossier_id IS NOT NULL AND awt.dossier_id = swn.dossier_id)
+            )
             AND (swn.article_numero IS NULL OR awt.article_num = swn.article_numero)
             AND (swn.article_numero IS NULL OR awt.amdt_is_apres = swn.is_apres)
           WHERE swn.amendement_numero IS NOT NULL
@@ -2724,23 +3001,33 @@ export async function linkScrutinsToAmendements(
     logger.info({ chambre: 'senat', linked: totalLinked - linkedBeforeSenat }, 'Sénat linking done');
   }
 
-  // === PROPAGATION: dossierId from amendement → scrutin ===
+  // === PROPAGATION: dossierId from amendement → scrutin (Sénat only) ===
   // When a scrutin votes on an amendement that belongs to a dossier,
   // the scrutin should also be linked to that dossier.
-  // This covers cases where voteRefs in dossier source_data only reference
-  // the "vote d'ensemble" but not the individual amendement votes.
+  // NOTE: AN scrutins get dossier_id exclusively from linkANScrutinsByTitle (title matching).
+  // Reverse-propagating from amendments for AN would cause contamination if the CTE
+  // ever matched a wrong amendment (the wrong dossier_id would stick across runs).
+  // SAFETY: For Sénat scrutins with sourceData.dossierRef, only propagate if
+  // the amendment's dossier matches the expected ref (prevents cross-dossier contamination).
   if (!dryRun) {
-    const propagated = await prisma.$executeRaw`
+    // Sénat scrutins: validate dossierRef matches before propagating
+    const propagatedSenat = await prisma.$executeRaw`
       UPDATE scrutins s
       SET dossier_id = a.dossier_id
       FROM "_AmendementToScrutin" ats
       JOIN amendements a ON a.id = ats."A"
+      JOIN dossiers_legislatifs d ON d.id = a.dossier_id
       WHERE s.id = ats."B"
+        AND s.chambre = 'senat'
         AND s.dossier_id IS NULL
         AND a.dossier_id IS NOT NULL
+        AND (
+          s.source_data->>'dossierRef' IS NULL
+          OR d.uid = 'SENAT-' || LOWER(s.source_data->>'dossierRef')
+        )
     `;
-    if (propagated > 0) {
-      logger.info({ propagated }, 'Propagated dossierId from amendements to scrutins');
+    if (propagatedSenat > 0) {
+      logger.info({ propagatedSenat }, 'Propagated dossierId from amendements to Sénat scrutins');
     }
   }
 
@@ -2842,6 +3129,15 @@ export async function enrichScrutinsANAmendements(
         const texteNumero = texteMatch[1];
         const key = `${texteNumero}-${a.numero}`.toUpperCase();
         amendementMap.set(key, a.id);
+        // Also map base number without "(Rect)" suffix for rectified amendments
+        // HTML links use bare number "4" but DB stores "4 (Rect)"
+        const baseNumero = a.numero.replace(/\s*\(Rect[^)]*\)/i, '').trim();
+        if (baseNumero !== a.numero) {
+          const baseKey = `${texteNumero}-${baseNumero}`.toUpperCase();
+          if (!amendementMap.has(baseKey)) {
+            amendementMap.set(baseKey, a.id);
+          }
+        }
       }
     }
   }
@@ -2956,7 +3252,7 @@ export async function enrichScrutinsANAmendements(
  * - Date du scrutin (pour matcher avec date_depot proche)
  */
 export async function enrichScrutinsSenatAmendements(
-  options: { limit?: number; dryRun?: boolean; concurrency?: number; reset?: boolean } = {}
+  options: { limit?: number; dryRun?: boolean; concurrency?: number; reset?: boolean; texteMapping?: Map<number, { num: string; session: string }> } = {}
 ): Promise<{ enriched: number; notFound: number; errors: number; resetCount?: number }> {
   const dryRun = options.dryRun ?? false;
   const concurrency = options.concurrency ?? 3;
@@ -3031,92 +3327,34 @@ export async function enrichScrutinsSenatAmendements(
   const axios = (await import('axios')).default;
 
   // =========================================================================
-  // Télécharger et parser le mapping txt_ameli pour convertir texteNumero externe -> texte_ref interne
+  // Build texteNumero externe → texte_ref interne mapping
+  // Reuse pre-built mapping if passed (from syncAmendementsSenatCsv), else download AMELI
   // =========================================================================
-  logger.info('Downloading AMELI dump to build texte number mapping...');
   const texteNumToInternalId = new Map<string, number[]>(); // "298" -> [106889, ...]
 
-  try {
-    const fs = await import('fs');
-    const os = await import('os');
-    const path = await import('path');
-    const { pipeline } = await import('stream/promises');
-    const { createWriteStream, createReadStream } = await import('fs');
-    const readline = await import('readline');
-
-    const tempDir = path.join(os.tmpdir(), 'clair-ameli-mapping');
-    const zipPath = path.join(tempDir, 'ameli.zip');
-    const extractDir = path.join(tempDir, 'extracted');
-
-    await fs.promises.rm(tempDir, { recursive: true, force: true });
-    await fs.promises.mkdir(tempDir, { recursive: true });
-
-    // Download AMELI
-    const ameliUrl = 'https://data.senat.fr/data/ameli/ameli.zip';
-    const response = await axios({
-      method: 'GET',
-      url: ameliUrl,
-      responseType: 'stream',
-      timeout: 300000,
-      headers: { 'User-Agent': 'CLAIR-Bot/1.0' },
-    });
-    const writer = createWriteStream(zipPath);
-    await pipeline(response.data, writer);
-
-    // Extract
-    const { exec } = await import('child_process');
-    const { promisify } = await import('util');
-    const execAsync = promisify(exec);
-    await fs.promises.mkdir(extractDir, { recursive: true });
-    await execAsync(`unzip -o "${zipPath}" -d "${extractDir}"`, { maxBuffer: 1024 * 1024 * 100 });
-
-    // Find SQL file
-    const files = await fs.promises.readdir(extractDir, { recursive: true });
-    const sqlFile = files.find(f => f.toString().endsWith('.sql'));
-    if (!sqlFile) throw new Error('No SQL file found');
-    const sqlPath = path.join(extractDir, sqlFile.toString());
-
-    // Parse txt_ameli table only
-    const rl = readline.createInterface({
-      input: createReadStream(sqlPath, { encoding: 'latin1' }),
-      crlfDelay: Infinity,
-    });
-
-    let currentTable: string | null = null;
-    let txtCount = 0;
-
-    for await (const line of rl) {
-      if (line.startsWith('COPY ')) {
-        const match = line.match(/COPY (\w+)/);
-        currentTable = match ? match[1] : null;
-        continue;
-      }
-      if (line === '\\.' || line === '\\.') {
-        currentTable = null;
-        continue;
-      }
-
-      // Parse txt_ameli: id(0), natid(1), lecid(2), sesinsid(3), sesdepid(4), fbuid(5), num(6), ...
-      if (currentTable === 'txt_ameli') {
-        const fields = line.split('\t');
-        if (fields.length < 7) continue;
-        const id = parseInt(fields[0] ?? '0', 10);
-        const num = (fields[6] ?? '').trim();
-        if (id && num) {
-          const existing = texteNumToInternalId.get(num) || [];
-          existing.push(id);
-          texteNumToInternalId.set(num, existing);
-          txtCount++;
-        }
-      }
+  if (options.texteMapping && options.texteMapping.size > 0) {
+    // Reuse pre-built mapping — invert from texteId→{num,session} to num→texteId[]
+    for (const [texteId, { num }] of options.texteMapping) {
+      const existing = texteNumToInternalId.get(num) || [];
+      existing.push(texteId);
+      texteNumToInternalId.set(num, existing);
     }
-
-    logger.info({ txtCount, uniqueNums: texteNumToInternalId.size }, 'Texte number mapping loaded');
-
-    // Cleanup
-    await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-  } catch (error: any) {
-    logger.warn({ error: error.message }, 'Failed to load texte mapping - will fallback to date-based matching');
+    logger.info({ uniqueNums: texteNumToInternalId.size }, 'Texte number mapping reused from CSV sync (no AMELI re-download)');
+  } else {
+    logger.info('Downloading AMELI dump to build texte number mapping...');
+    try {
+      const { SenatAmendementsClient } = await import('../sources/senat/amendements-client.js');
+      const client = new SenatAmendementsClient();
+      const mapping = await client.getTexteMapping();
+      for (const [texteId, { num }] of mapping) {
+        const existing = texteNumToInternalId.get(num) || [];
+        existing.push(texteId);
+        texteNumToInternalId.set(num, existing);
+      }
+      logger.info({ uniqueNums: texteNumToInternalId.size }, 'Texte number mapping loaded from AMELI');
+    } catch (error: any) {
+      logger.warn({ error: error.message }, 'Failed to load texte mapping - will fallback to dossier-based matching only');
+    }
   }
 
   // =========================================================================
@@ -3177,12 +3415,14 @@ export async function enrichScrutinsSenatAmendements(
 
             if (targetTexteRefs.length > 0) {
               // Primary: match by texteRef from AMELI mapping
+              where.texteRef = { in: targetTexteRefs };
               if (scrutin.dossierId) {
-                // Double safety: texteRef + dossier constraint
-                where.texteRef = { in: targetTexteRefs };
-                where.dossierId = scrutin.dossierId;
-              } else {
-                where.texteRef = { in: targetTexteRefs };
+                // Allow matching amendments with correct dossier OR NULL dossier
+                // (CSV-synced amendments may not have dossierId yet)
+                where.OR = [
+                  { dossierId: scrutin.dossierId },
+                  { dossierId: null },
+                ];
               }
             } else if (scrutin.dossierId) {
               // No texteRef available but we have dossier — match within same dossier
