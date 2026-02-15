@@ -431,4 +431,30 @@ program
     }
   });
 
+// =============================================================================
+// COMMANDE: check-quality
+// =============================================================================
+program
+  .command('check-quality')
+  .description('Vérifier la qualité des données en base')
+  .action(async () => {
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+
+      try {
+        console.log('\n🔍 Vérification de la qualité des données...\n');
+        const { runDataQualityChecks, printReport } = await import('./checks/data-quality.js');
+        const report = await runDataQualityChecks(prisma);
+        printReport(report);
+        process.exit(report.passed ? 0 : 1);
+      } finally {
+        await prisma.$disconnect();
+      }
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Quality check failed');
+      process.exit(1);
+    }
+  });
+
 program.parse();
