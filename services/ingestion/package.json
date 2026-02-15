@@ -13,6 +13,7 @@
     "schedule": "tsx src/cli.ts schedule",
     "backfill": "tsx src/cli.ts backfill",
     "calculate-stats": "tsx src/cli.ts calculate-stats",
+    "check-quality": "tsx src/cli.ts check-quality",
     "lint": "eslint src --ext .ts",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
