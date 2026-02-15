@@ -1544,7 +1544,19 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.error({ error: error.message }, 'Sénat scrutins-dossiers linking failed (non-blocking)');
     }
 
-    // AN scrutins-dossiers title matching
+    // TF-IDF matching for ALL orphan scrutins (AN + Sénat) — high recall
+    logger.info('Linking orphan scrutins to dossiers by TF-IDF...');
+    try {
+      const tfidfResult = await linkOrphanScrutinsByTFIDF();
+      logger.info({
+        linked: tfidfResult.linked,
+        skipped: tfidfResult.skipped,
+      }, 'TF-IDF scrutin-dossier linking completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'TF-IDF scrutin-dossier linking failed (non-blocking)');
+    }
+
+    // AN scrutins-dossiers title matching — safety net for remaining orphans
     logger.info('Linking AN scrutins to dossiers by title matching...');
     try {
       const anLinkResult = await linkANScrutinsByTitle();
@@ -2480,6 +2492,149 @@ export async function linkANScrutinsByTitle(): Promise<{ linked: number }> {
   const linked = uniqueMatches + dateMatches;
   logger.info({ linked }, 'AN scrutins-dossiers title linking completed');
   return { linked };
+}
+
+// =============================================================================
+// LINK ORPHAN SCRUTINS TO DOSSIERS VIA TF-IDF
+// =============================================================================
+
+/** Minimum cosine similarity to accept a TF-IDF match.
+ *  Benchmark: scores < 0.25 are clearly false positives,
+ *  0.25-0.30 are borderline, 0.30+ are reliable matches. */
+const MIN_TFIDF_SIMILARITY = 0.30;
+
+/**
+ * Lie les scrutins orphelins (dossier_id IS NULL) aux dossiers législatifs
+ * via TF-IDF + cosine similarity sur les titres preprocessés.
+ *
+ * Matching par chambre séparé pour éviter le cross-chamber linking.
+ * Les dossiers existent souvent en doublon AN/Sénat (même loi, deux UIDs).
+ */
+export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; skipped: number }> {
+  const { preprocessTitle } = await import('../utils/preprocess-scrutin.js');
+  const { TfidfVectorizer, bestMatch } = await import('../utils/tfidf.js');
+
+  let totalLinked = 0;
+  let totalSkipped = 0;
+
+  for (const chambre of ['assemblee', 'senat'] as const) {
+    // 1. Load dossiers for this chamber
+    const dossierFilter = chambre === 'senat'
+      ? Prisma.sql`d.uid LIKE 'SENAT%'`
+      : Prisma.sql`d.uid NOT LIKE 'SENAT%'`;
+
+    const dossiers = await prisma.$queryRaw<{ id: string; titre: string }[]>`
+      SELECT id,
+        CASE
+          WHEN titre ~ '^[a-zàâäéèêëïîôùûüÿçœæ]' AND procedure_libelle IS NOT NULL
+          THEN procedure_libelle || ' ' || titre
+          ELSE titre
+        END AS titre
+      FROM dossiers_legislatifs d
+      WHERE ${dossierFilter}
+        AND titre IS NOT NULL AND LENGTH(titre) > 5
+    `;
+
+    if (dossiers.length === 0) {
+      logger.info({ chambre }, 'No dossiers found for TF-IDF matching, skipping');
+      continue;
+    }
+
+    // 2. Load orphan scrutins for this chamber
+    const orphans = await prisma.$queryRaw<{ id: string; titre: string }[]>`
+      SELECT id, titre FROM scrutins
+      WHERE chambre = ${chambre}
+        AND dossier_id IS NULL
+        AND titre IS NOT NULL AND LENGTH(titre) > 5
+    `;
+
+    if (orphans.length === 0) {
+      logger.info({ chambre }, 'No orphan scrutins found for TF-IDF matching, skipping');
+      continue;
+    }
+
+    logger.info({ chambre, dossiers: dossiers.length, orphans: orphans.length }, 'Starting TF-IDF matching');
+
+    // 3. Preprocess titles
+    const dossierTexts = dossiers.map(d => preprocessTitle(d.titre));
+    const scrutinTexts = orphans.map(s => preprocessTitle(s.titre));
+
+    // 4. TF-IDF: fit on dossiers (corpus), transform both
+    const vectorizer = new TfidfVectorizer();
+    const dossierVectors = vectorizer.fitTransform(dossierTexts);
+    const scrutinVectors = vectorizer.transform(scrutinTexts);
+
+    logger.info({ chambre, vocabularySize: vectorizer.vocabularySize }, 'TF-IDF vectors computed');
+
+    // 5. For each orphan scrutin, find best matching dossier
+    const updates: { scrutinId: string; dossierId: string; score: number }[] = [];
+
+    for (let i = 0; i < orphans.length; i++) {
+      const match = bestMatch(scrutinVectors[i], dossierVectors);
+      if (match.index >= 0 && match.score >= MIN_TFIDF_SIMILARITY) {
+        updates.push({
+          scrutinId: orphans[i].id,
+          dossierId: dossiers[match.index].id,
+          score: match.score,
+        });
+      }
+    }
+
+    // Log score distribution for monitoring
+    if (updates.length > 0) {
+      const scores = updates.map(u => u.score).sort((a, b) => a - b);
+      const p10 = scores[Math.floor(scores.length * 0.1)] || 0;
+      const p50 = scores[Math.floor(scores.length * 0.5)] || 0;
+      const p90 = scores[Math.floor(scores.length * 0.9)] || 0;
+      const min = scores[0];
+      const max = scores[scores.length - 1];
+      logger.info({
+        chambre, count: updates.length,
+        min: min.toFixed(3), p10: p10.toFixed(3),
+        p50: p50.toFixed(3), p90: p90.toFixed(3), max: max.toFixed(3),
+      }, 'TF-IDF score distribution');
+    }
+
+    // 6. Batch UPDATE via single SQL with VALUES — avoids N round-trips
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+    let chambreLinked = 0;
+    if (updates.length > 0) {
+      for (let batch = 0; batch < updates.length; batch += 500) {
+        const chunk = updates.slice(batch, batch + 500);
+        // Safety: validate UUIDs before raw SQL interpolation
+        for (const u of chunk) {
+          if (!UUID_RE.test(u.scrutinId) || !UUID_RE.test(u.dossierId)) {
+            throw new Error(`Invalid UUID in TF-IDF update: ${u.scrutinId} / ${u.dossierId}`);
+          }
+        }
+        // Build VALUES clause: ('scrutin_id', 'dossier_id'), ...
+        const valuesList = chunk
+          .map(u => `('${u.scrutinId}','${u.dossierId}')`)
+          .join(',');
+        const result = await prisma.$executeRawUnsafe(`
+          UPDATE scrutins s
+          SET dossier_id = v.dossier_id
+          FROM (VALUES ${valuesList}) AS v(scrutin_id, dossier_id)
+          WHERE s.id = v.scrutin_id AND s.dossier_id IS NULL
+        `);
+        chambreLinked += result;
+      }
+    }
+
+    const chambreSkipped = orphans.length - chambreLinked;
+    totalLinked += chambreLinked;
+    totalSkipped += chambreSkipped;
+
+    logger.info({
+      chambre,
+      linked: chambreLinked,
+      skipped: chambreSkipped,
+      total: orphans.length,
+    }, 'TF-IDF matching completed for chamber');
+  }
+
+  logger.info({ linked: totalLinked, skipped: totalSkipped }, 'TF-IDF scrutin-dossier linking completed');
+  return { linked: totalLinked, skipped: totalSkipped };
 }
 
 // =============================================================================
