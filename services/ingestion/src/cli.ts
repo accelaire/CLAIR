@@ -19,6 +19,7 @@ import {
   syncInterventionsSenat,
   syncAmendements,
   syncAmendementsSenat,
+  syncAmendementsSenatCsv,
   syncDossiers,
   syncDossiersSenat,
   linkInterventionsToScrutins,
@@ -29,6 +30,7 @@ import {
   linkANScrutinsByTitle,
   linkAmendementsToDossiers,
   linkAmendementsToDossiersByTexteRef,
+  propagateDossierIdBySiblingTexteRef,
 } from './workers/sync.js';
 import {
   calculateAllStats,
@@ -61,7 +63,9 @@ program
   .option('-i, --interventions', 'Synchroniser uniquement les interventions AN')
   .option('--interventions-senat', 'Synchroniser uniquement les interventions Sénat (data.senat.fr)')
   .option('-a, --amendements', 'Synchroniser uniquement les amendements (AN Open Data)')
-  .option('--amendements-senat', 'Synchroniser uniquement les amendements Sénat (data.senat.fr AMELI)')
+  .option('--amendements-senat', 'Synchroniser uniquement les amendements Sénat (CSV senat.fr)')
+  .option('--amendements-senat-ameli', 'Synchroniser les amendements Sénat via AMELI (ancien mode, commission uniquement)')
+  .option('--texte-ids <ids>', 'IDs texte AMELI à cibler (séparés par des virgules, avec --amendements-senat)')
   .option('-D, --dossiers', 'Synchroniser uniquement les dossiers législatifs (AN Open Data)')
   .option('--dossiers-senat', 'Synchroniser uniquement les dossiers législatifs Sénat (data.senat.fr DOSLEG)')
   .option('--link-interventions', 'Lier les interventions aux scrutins (par seanceRef ou date)')
@@ -99,6 +103,11 @@ program
       } else if (options.amendements) {
         await syncAmendements({ limit: options.limit });
       } else if (options.amendementsSenat) {
+        const texteIds = options.texteIds
+          ? options.texteIds.split(',').map((s: string) => parseInt(s.trim(), 10)).filter((n: number) => !isNaN(n))
+          : undefined;
+        await syncAmendementsSenatCsv({ texteIds });
+      } else if (options.amendementsSenatAmeli) {
         await syncAmendementsSenat({ maxAmendements: options.limit });
       } else if (options.dossiers) {
         await syncDossiers({ limit: options.limit });
@@ -413,6 +422,8 @@ program
       console.log(`\nAmendements liés via scrutins: ${result.linked}`);
       const result2 = await linkAmendementsToDossiersByTexteRef();
       console.log(`Amendements liés via texteRef: ${result2.linked}`);
+      const result3 = await propagateDossierIdBySiblingTexteRef();
+      console.log(`Amendements liés via sibling texteRef (safe): ${result3.linked}`);
       process.exit(0);
     } catch (error: any) {
       logger.error({ error: error.message }, 'link-amendements-dossiers failed');

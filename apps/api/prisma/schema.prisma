@@ -407,6 +407,9 @@ model Amendement {
   dateDepot DateTime?  @map("date_depot")
   dateSort  DateTime? @map("date_sort")
 
+  // URL source de l'amendement (ex: page senat.fr)
+  sourceUrl String? @map("source_url")
+
   // Scrutins portant sur cet amendement
   scrutins  Scrutin[]
 
@@ -420,6 +423,7 @@ model Amendement {
   @@index([auteurRef])
   @@index([dossierId])
   @@index([numero, chambre, texteRef])
+  @@index([chambre, texteRef, numero])
   @@map("amendements")
 }
 
