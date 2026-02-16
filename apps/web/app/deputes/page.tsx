@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useMemo } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -15,6 +15,7 @@ import {
   ComparisonSelectionBar,
   SelectedParlementaire,
 } from '@/components/comparison';
+import { FilterBar } from '@/components/FilterBar';
 
 interface Depute {
   id: string;
@@ -51,7 +52,7 @@ function DeputesPageContent() {
   const router = useRouter();
 
   // Sync filters with URL for back button preservation
-  const [filters, setFilter] = useUrlFilters<{
+  const [filters, setFilter, , clearAll] = useUrlFilters<{
     search: string;
     groupe: string;
   }>(['search', 'groupe']);
@@ -142,6 +143,17 @@ function DeputesPageContent() {
   const deputes = data?.pages.flatMap((page) => page.data) ?? [];
   const total = data?.pages[0]?.meta.total ?? 0;
 
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.groupe) count++;
+    return count;
+  }, [filters.groupe]);
+
+  const handleClearFilters = () => {
+    clearAll();
+    setSearchInput('');
+  };
+
   // Gérer la présélection depuis une fiche profil
   useEffect(() => {
     if (compareSlug && deputes.length > 0 && !preselectionHandled) {
@@ -200,24 +212,27 @@ function DeputesPageContent() {
       )}
 
       {/* Filtres */}
-      <div className="mb-8 flex flex-col gap-4 sm:flex-row">
-        {/* Recherche avec debounce */}
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Rechercher un député..."
-            value={searchInput}
-            onChange={(e) => {
-              setSearchInput(e.target.value);
-              debouncedSetSearch(e.target.value);
-            }}
-            className="w-full rounded-lg border bg-background px-10 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-        </div>
-
+      <FilterBar
+        activeFilterCount={activeFilterCount}
+        onClear={handleClearFilters}
+        search={
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Rechercher un député..."
+              value={searchInput}
+              onChange={(e) => {
+                setSearchInput(e.target.value);
+                debouncedSetSearch(e.target.value);
+              }}
+              className="w-full rounded-lg border bg-background px-10 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+        }
+      >
         {/* Filtre par groupe */}
-        <div className="relative w-full sm:w-auto">
+        <div className="relative md:w-auto">
           <select
             value={filters.groupe}
             onChange={(e) => setFilter('groupe', e.target.value)}
@@ -232,7 +247,7 @@ function DeputesPageContent() {
           </select>
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>
-      </div>
+      </FilterBar>
 
       {/* Loading initial */}
       {isLoading && (

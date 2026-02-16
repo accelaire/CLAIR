@@ -261,7 +261,7 @@ export function DateRangePicker({
 
       {/* Dropdown */}
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 z-50 rounded-lg border bg-background shadow-lg overflow-hidden">
+        <div data-date-dropdown className="absolute top-full right-0 mt-2 z-50 rounded-lg border bg-background shadow-lg overflow-hidden">
           <div className="flex">
             {/* Presets */}
             {showPresets && (
