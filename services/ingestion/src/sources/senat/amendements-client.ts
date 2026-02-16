@@ -52,6 +52,7 @@ export interface TransformedAmendementSenat {
   auteurLibelle: string | null;
   texteRef: string | null;
   sourceUrl: string | null;
+  articleVise?: string | null;
 }
 
 // =============================================================================
@@ -129,6 +130,35 @@ const SORT_MAP: Record<string, string> = {
   '5': 'satisfait',
   '6': 'non_examine',
 };
+
+// CSV sort labels (French) → code
+const CSV_SORT_MAP: Record<string, string> = {
+  'Adopté': 'adopte',
+  'Adopté avec modification': 'adopte_modifie',
+  'Rejeté': 'rejete',
+  'Retiré': 'retire',
+  'Retiré avant discussion': 'retire',
+  'Tombé': 'tombe',
+  'Non soutenu': 'non_soutenu',
+  'Irrecevable': 'irrecevable',
+  'Irrecevable art. 40': 'irrecevable',
+  'Irrecevable art. 41': 'irrecevable',
+  'Irrecevable art. 44 bis': 'irrecevable',
+  'Irrecevable art. 45': 'irrecevable',
+  'Satisfait ou sans objet': 'satisfait',
+};
+
+function mapCsvSort(sort: string | null): string | null {
+  if (!sort || sort === '\\N') return null;
+  const trimmed = sort.trim();
+  // Exact match first
+  if (CSV_SORT_MAP[trimmed]) return CSV_SORT_MAP[trimmed];
+  // Prefix match for variations like "Retiré avant séance"
+  for (const [key, value] of Object.entries(CSV_SORT_MAP)) {
+    if (trimmed.startsWith(key)) return value;
+  }
+  return trimmed.toLowerCase().replace(/\s+/g, '_');
+}
 
 // =============================================================================
 // CLIENT
@@ -412,6 +442,245 @@ export class SenatAmendementsClient {
 
     } finally {
       await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  // ===========================================================================
+  // TEXTE MAPPING (AMELI lightweight parse)
+  // ===========================================================================
+
+  /**
+   * Parse AMELI dump to extract texteId → { num (externe), session } mapping.
+   * Only reads `ses` and `txt_ameli` tables — much lighter than full parse.
+   */
+  async getTexteMapping(): Promise<Map<number, { num: string; session: string }>> {
+    const tempDir = path.join(os.tmpdir(), 'clair-ameli-mapping');
+    const zipPath = path.join(tempDir, 'ameli.zip');
+    const extractDir = path.join(tempDir, 'extracted');
+
+    try {
+      await fs.promises.rm(tempDir, { recursive: true, force: true });
+      await fs.promises.mkdir(tempDir, { recursive: true });
+
+      await this.downloadFile(this.dataUrl, zipPath);
+      const sqlPath = await this.extractZip(zipPath, extractDir);
+
+      // Parse only ses + txt_ameli tables
+      const sesMap = new Map<number, string>(); // sesId → session label (e.g. "2025-2026")
+      const texteMap = new Map<number, { num: string; session: string }>();
+
+      const rl = readline.createInterface({
+        input: createReadStream(sqlPath, { encoding: 'latin1' }),
+        crlfDelay: Infinity,
+      });
+
+      let currentTable: string | null = null;
+
+      for await (const line of rl) {
+        if (line.startsWith('COPY ')) {
+          const match = line.match(/COPY (\w+)/);
+          if (match) currentTable = match[1] ?? null;
+          continue;
+        }
+        if (line === '\\.' || line === '\\.') {
+          currentTable = null;
+          continue;
+        }
+        if (!currentTable) continue;
+
+        const fields = line.split('\t');
+
+        try {
+          // ses table: id, typid, ann, lil
+          if (currentTable === 'ses') {
+            if (fields.length < 4) continue;
+            const id = parseInt(fields[0] ?? '0', 10);
+            const lil = (fields[3] ?? '').trim();
+            if (id && lil && lil !== '\\N') {
+              sesMap.set(id, lil);
+            }
+          }
+
+          // txt_ameli table: id(0), ..., sesinsid(3), ..., num(6), ...
+          if (currentTable === 'txt_ameli') {
+            if (fields.length < 7) continue;
+            const id = parseInt(fields[0] ?? '0', 10);
+            const sesinsid = parseInt(fields[3] ?? '0', 10);
+            const num = (fields[6] ?? '').trim();
+            if (id && num && num !== '\\N') {
+              const session = sesMap.get(sesinsid);
+              if (session) {
+                texteMap.set(id, { num, session });
+              }
+            }
+          }
+        } catch {
+          // Skip malformed lines
+        }
+      }
+
+      logger.info({ sessions: sesMap.size, textes: texteMap.size }, 'AMELI texte mapping extracted');
+      return texteMap;
+
+    } finally {
+      await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  // ===========================================================================
+  // FETCH AMENDEMENTS FROM CSV
+  // ===========================================================================
+
+  /**
+   * Fetch amendements for a single texte from its CSV on senat.fr.
+   * Returns all amendments (commission + séance) for that texte.
+   */
+  async fetchCsvForTexte(
+    texteId: number,
+    texteNum: string,
+    session: string
+  ): Promise<TransformedAmendementSenat[]> {
+    const url = `https://www.senat.fr/amendements/${session}/${texteNum}/jeu_complet_${session}_${texteNum}.csv`;
+
+    try {
+      const response = await axios({
+        method: 'GET',
+        url,
+        responseType: 'arraybuffer',
+        timeout: 15000,
+        headers: {
+          'User-Agent': 'CLAIR-Bot/1.0 (https://github.com/clair)',
+        },
+        validateStatus: (status) => status < 500,
+      });
+
+      if (response.status === 404) {
+        logger.debug({ texteId, texteNum, session }, 'No CSV for texte (404)');
+        return [];
+      }
+
+      if (response.status !== 200) {
+        logger.warn({ texteId, texteNum, session, status: response.status }, 'Unexpected HTTP status for CSV');
+        return [];
+      }
+
+      // Decode latin1
+      const decoder = new TextDecoder('latin1');
+      const raw = decoder.decode(response.data);
+      const lines = raw.split(/\r?\n/);
+
+      // Line 1: "sep=" directive → skip
+      // Line 2: headers
+      // Lines 3+: data
+      if (lines.length < 3) return [];
+
+      // Skip "sep=" line if present
+      let headerIdx = 0;
+      if (lines[0]?.startsWith('sep=')) {
+        headerIdx = 1;
+      }
+
+      const headers = lines[headerIdx]!.split('\t').map(h => h.trim());
+      const colIdx = {
+        nature: headers.indexOf('Nature'),
+        numero: headers.indexOf('Numéro'),
+        subdivision: headers.indexOf('Subdivision'),
+        alinea: headers.indexOf('Alinéa'),
+        auteur: headers.indexOf('Auteur'),
+        auNomDe: headers.indexOf('Au nom de'),
+        dateDepot: headers.indexOf('Date de dépôt'),
+        dispositif: headers.indexOf('Dispositif'),
+        objet: headers.indexOf('Objet'),
+        sort: headers.indexOf('Sort'),
+        dateSort: headers.indexOf('Date de saisie du sort'),
+        urlAmendement: headers.indexOf('Url amendement'),
+        ficheSenateur: headers.indexOf('Fiche Sénateur'),
+      };
+
+      if (colIdx.numero === -1) {
+        logger.warn({ texteId, texteNum, headers: headers.join('|') }, 'Missing "Numéro" column in CSV');
+        return [];
+      }
+
+      const results: TransformedAmendementSenat[] = [];
+
+      for (let li = headerIdx + 1; li < lines.length; li++) {
+        const line = lines[li]!;
+        if (!line.trim()) continue;
+        const cols = line.split('\t');
+
+        const numero = (colIdx.numero >= 0 ? cols[colIdx.numero] : '')?.trim() || '';
+        if (!numero) continue;
+
+        const urlAmendement = (colIdx.urlAmendement >= 0 ? cols[colIdx.urlAmendement] : '')?.trim() || '';
+        const auteur = (colIdx.auteur >= 0 ? cols[colIdx.auteur] : '')?.trim() || '';
+        const auNomDe = (colIdx.auNomDe >= 0 ? cols[colIdx.auNomDe] : '')?.trim() || '';
+        const dateDepotStr = (colIdx.dateDepot >= 0 ? cols[colIdx.dateDepot] : '')?.trim() || '';
+        const dispositif = colIdx.dispositif >= 0 ? cols[colIdx.dispositif] || null : null;
+        const objet = colIdx.objet >= 0 ? cols[colIdx.objet] || null : null;
+        const sortStr = (colIdx.sort >= 0 ? cols[colIdx.sort] : '')?.trim() || null;
+        const subdivision = (colIdx.subdivision >= 0 ? cols[colIdx.subdivision] : '')?.trim() || null;
+
+        // Build UID from URL if available
+        let uid: string;
+        if (urlAmendement) {
+          // URL format: //www.senat.fr/amendements/2025-2026/298/Amdt_4.html
+          uid = `SENAT-AMD-S${session}-${texteNum}-${numero.replace(/\s+/g, '_')}`;
+        } else {
+          uid = `SENAT-AMD-T${texteId}-${numero.replace(/\s+/g, '_')}`;
+        }
+
+        // Parse auteur: "M. JADOT" → nom=JADOT
+        let auteurNom: string | null = null;
+        let auteurPrenom: string | null = null;
+        const auteurMatch = auteur.match(/^(?:M\.|Mme|Mlle)\s+(.+)$/i);
+        if (auteurMatch) {
+          auteurNom = auteurMatch[1]!.trim();
+        } else if (auteur) {
+          auteurNom = auteur;
+        }
+
+        // Build auteurLibelle
+        let auteurLibelle: string | null = auteur || null;
+        if (auNomDe && auteurLibelle) {
+          auteurLibelle += ` au nom de ${auNomDe}`;
+        }
+
+        // Parse dateDepot
+        const dateDepot = parseDate(dateDepotStr || null);
+
+        // Build sourceUrl
+        const sourceUrl = urlAmendement
+          ? (urlAmendement.startsWith('//') ? `https:${urlAmendement}` : urlAmendement)
+          : null;
+
+        results.push({
+          uid,
+          numero,
+          dispositif: stripHtml(dispositif)?.substring(0, 5000) || null,
+          exposeSommaire: stripHtml(objet)?.substring(0, 5000) || null,
+          dateDepot,
+          sort: mapCsvSort(sortStr),
+          auteurNom,
+          auteurPrenom,
+          auteurMatricule: null, // CSV doesn't include matricule
+          auteurLibelle,
+          texteRef: `SENAT-TXT-${texteId}`,
+          sourceUrl,
+          articleVise: subdivision,
+        });
+      }
+
+      logger.debug({ texteId, texteNum, session, count: results.length }, 'CSV parsed');
+      return results;
+
+    } catch (error: any) {
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        logger.warn({ texteId, texteNum, session }, 'CSV fetch timeout');
+      } else {
+        logger.warn({ texteId, texteNum, session, error: error.message }, 'CSV fetch error');
+      }
+      return [];
     }
   }
 }

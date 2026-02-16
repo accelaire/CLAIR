@@ -26,6 +26,7 @@ import { candidatsAdminRoutes } from './modules/ingestion/admin.controller';
 import { analyticsRoutes } from './modules/analytics/analytics.controller';
 import { groupesRoutes } from './modules/groupes/groupes.controller';
 import { homepageRoutes } from './modules/homepage/homepage.controller';
+import { dossiersRoutes } from './modules/dossiers/dossiers.controller';
 
 import { errorHandler } from './utils/errors';
 import { logger } from './utils/logger';
@@ -110,6 +111,7 @@ async function buildApp() {
           { name: 'Simulateur', description: 'Simulateur électoral 2027' },
           { name: 'Admin', description: 'Administration des candidats et ingestion' },
           { name: 'Analytics', description: 'Statistiques et analyses pour l\'explorateur' },
+          { name: 'Dossiers', description: 'Dossiers législatifs' },
         ],
         components: {
           securitySchemes: {
@@ -163,6 +165,7 @@ async function buildApp() {
       await api.register(candidatsAdminRoutes, { prefix: '/admin' });
       await api.register(analyticsRoutes, { prefix: '/analytics' });
       await api.register(homepageRoutes, { prefix: '/homepage' });
+      await api.register(dossiersRoutes, { prefix: '/dossiers' });
     },
     { prefix: '/api/v1' }
   );

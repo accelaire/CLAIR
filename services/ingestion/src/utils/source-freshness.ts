@@ -75,7 +75,9 @@ export const SOURCES: Record<string, SourceConfig> = {
   'senat:amendements': {
     source: 'senat',
     dataType: 'amendements',
-    // Base AMELI complète (~140MB)
+    // AMELI zip sert à la fois de signal de fraîcheur et de source pour le mapping texteId→{num,session}.
+    // Les amendements eux-mêmes viennent des CSV senat.fr (commission + séance), mais AMELI change
+    // quand de nouveaux textes/amendements existent, ce qui est un bon proxy.
     url: 'https://data.senat.fr/data/ameli/ameli.zip',
   },
   'senat:interventions': {

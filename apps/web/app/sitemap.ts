@@ -1,11 +1,15 @@
 import { MetadataRoute } from 'next';
 
+// Force dynamic rendering — the API is not available at Vercel build time
+export const dynamic = 'force-dynamic';
+export const revalidate = 86400; // Revalidate every 24 hours
+
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface PaginatedResponse<T> {
   data: T[];
-  meta: {
+  meta?: {
     total: number;
     page: number;
     limit: number;
@@ -39,6 +43,11 @@ interface GroupeItem {
   updatedAt?: string;
 }
 
+interface DossierItem {
+  uid: string;
+  dateDepot?: string;
+}
+
 async function fetchAllPages<T>(endpoint: string): Promise<T[]> {
   const items: T[] = [];
   let page = 1;
@@ -46,16 +55,15 @@ async function fetchAllPages<T>(endpoint: string): Promise<T[]> {
 
   try {
     while (true) {
-      const response = await fetch(`${API_URL}/api/v1${endpoint}?page=${page}&limit=${limit}`, {
-        next: { revalidate: 86400 }, // Revalidate every 24 hours
-      });
+      const response = await fetch(`${API_URL}/api/v1${endpoint}?page=${page}&limit=${limit}`);
 
       if (!response.ok) break;
 
       const data: PaginatedResponse<T> = await response.json();
+      if (!data.data || !Array.isArray(data.data)) break;
       items.push(...data.data);
 
-      if (page >= data.meta.totalPages) break;
+      if (!data.meta || page >= data.meta.totalPages) break;
       page++;
     }
   } catch (error) {
@@ -148,15 +156,22 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'weekly',
       priority: 0.6,
     },
+    {
+      url: `${BASE_URL}/dossiers`,
+      lastModified: now,
+      changeFrequency: 'daily',
+      priority: 0.9,
+    },
   ];
 
   // Fetch dynamic content
-  const [deputes, senateurs, scrutins, lobbyistes, groupes] = await Promise.all([
+  const [deputes, senateurs, scrutins, lobbyistes, groupes, dossiers] = await Promise.all([
     fetchAllPages<DeputeItem>('/deputes'),
     fetchAllPages<SenateurItem>('/senateurs'),
     fetchAllPages<ScrutinItem>('/scrutins'),
     fetchAllPages<LobbyisteItem>('/lobbying'),
     fetchAllPages<GroupeItem>('/groupes'),
+    fetchAllPages<DossierItem>('/dossiers'),
   ]);
 
   // Deputes pages
@@ -199,6 +214,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.7,
   }));
 
+  // Dossiers pages
+  const dossierPages: MetadataRoute.Sitemap = dossiers.map((dossier) => ({
+    url: `${BASE_URL}/dossiers/${dossier.uid}`,
+    lastModified: dossier.dateDepot || now,
+    changeFrequency: 'weekly' as const,
+    priority: 0.7,
+  }));
+
   return [
     ...staticPages,
     ...deputePages,
@@ -206,5 +229,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...scrutinPages,
     ...lobbyistePages,
     ...groupePages,
+    ...dossierPages,
   ];
 }

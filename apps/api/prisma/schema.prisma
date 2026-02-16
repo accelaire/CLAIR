@@ -231,6 +231,7 @@ model DossierLegislatif {
   loiNumero    String?  @map("loi_numero")     // Ex: "2024-1177"
   loiTitre     String?  @map("loi_titre")
   loiDateJO    DateTime? @map("loi_date_jo")   // Date publication JO
+  urlLegifrance String?  @map("url_legifrance") // URL Légifrance pour les lois promulguées
 
   // Relations
   scrutins     Scrutin[]
@@ -406,6 +407,9 @@ model Amendement {
   dateDepot DateTime?  @map("date_depot")
   dateSort  DateTime? @map("date_sort")
 
+  // URL source de l'amendement (ex: page senat.fr)
+  sourceUrl String? @map("source_url")
+
   // Scrutins portant sur cet amendement
   scrutins  Scrutin[]
 
@@ -419,6 +423,7 @@ model Amendement {
   @@index([auteurRef])
   @@index([dossierId])
   @@index([numero, chambre, texteRef])
+  @@index([chambre, texteRef, numero])
   @@map("amendements")
 }
 

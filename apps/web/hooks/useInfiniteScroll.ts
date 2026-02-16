@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 
 interface UseInfiniteScrollOptions {
   hasNextPage: boolean | undefined;
@@ -13,34 +13,37 @@ export function useInfiniteScroll({
   fetchNextPage,
   threshold = 200,
 }: UseInfiniteScrollOptions) {
-  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
 
-  const handleObserver = useCallback(
-    (entries: IntersectionObserverEntry[]) => {
-      const [entry] = entries;
-      if (entry?.isIntersecting && hasNextPage && !isFetchingNextPage) {
-        fetchNextPage();
+  // Callback ref: React calls this when the element mounts/unmounts
+  // AND when the callback reference changes (deps change).
+  const loadMoreRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
       }
+
+      if (!node) return;
+
+      observerRef.current = new IntersectionObserver(
+        (entries) => {
+          const [entry] = entries;
+          if (entry?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+            fetchNextPage();
+          }
+        },
+        {
+          root: null,
+          rootMargin: `${threshold}px`,
+          threshold: 0,
+        },
+      );
+
+      observerRef.current.observe(node);
     },
-    [hasNextPage, isFetchingNextPage, fetchNextPage]
+    [hasNextPage, isFetchingNextPage, fetchNextPage, threshold],
   );
-
-  useEffect(() => {
-    const element = loadMoreRef.current;
-    if (!element) return;
-
-    const observer = new IntersectionObserver(handleObserver, {
-      root: null,
-      rootMargin: `${threshold}px`,
-      threshold: 0,
-    });
-
-    observer.observe(element);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [handleObserver, threshold]);
 
   return { loadMoreRef };
 }

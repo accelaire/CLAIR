@@ -19,6 +19,7 @@ import {
   syncInterventionsSenat,
   syncAmendements,
   syncAmendementsSenat,
+  syncAmendementsSenatCsv,
   syncDossiers,
   syncDossiersSenat,
   linkInterventionsToScrutins,
@@ -26,6 +27,11 @@ import {
   enrichScrutinsANAmendements,
   enrichScrutinsSenatAmendements,
   syncLobbyistes,
+  linkANScrutinsByTitle,
+  linkOrphanScrutinsByTFIDF,
+  linkAmendementsToDossiers,
+  linkAmendementsToDossiersByTexteRef,
+  propagateDossierIdBySiblingTexteRef,
 } from './workers/sync.js';
 import {
   calculateAllStats,
@@ -58,7 +64,9 @@ program
   .option('-i, --interventions', 'Synchroniser uniquement les interventions AN')
   .option('--interventions-senat', 'Synchroniser uniquement les interventions Sénat (data.senat.fr)')
   .option('-a, --amendements', 'Synchroniser uniquement les amendements (AN Open Data)')
-  .option('--amendements-senat', 'Synchroniser uniquement les amendements Sénat (data.senat.fr AMELI)')
+  .option('--amendements-senat', 'Synchroniser uniquement les amendements Sénat (CSV senat.fr)')
+  .option('--amendements-senat-ameli', 'Synchroniser les amendements Sénat via AMELI (ancien mode, commission uniquement)')
+  .option('--texte-ids <ids>', 'IDs texte AMELI à cibler (séparés par des virgules, avec --amendements-senat)')
   .option('-D, --dossiers', 'Synchroniser uniquement les dossiers législatifs (AN Open Data)')
   .option('--dossiers-senat', 'Synchroniser uniquement les dossiers législatifs Sénat (data.senat.fr DOSLEG)')
   .option('--link-interventions', 'Lier les interventions aux scrutins (par seanceRef ou date)')
@@ -96,6 +104,11 @@ program
       } else if (options.amendements) {
         await syncAmendements({ limit: options.limit });
       } else if (options.amendementsSenat) {
+        const texteIds = options.texteIds
+          ? options.texteIds.split(',').map((s: string) => parseInt(s.trim(), 10)).filter((n: number) => !isNaN(n))
+          : undefined;
+        await syncAmendementsSenatCsv({ texteIds });
+      } else if (options.amendementsSenatAmeli) {
         await syncAmendementsSenat({ maxAmendements: options.limit });
       } else if (options.dossiers) {
         await syncDossiers({ limit: options.limit });
@@ -376,6 +389,91 @@ program
 
     } catch (error: any) {
       logger.error({ error: error.message }, 'Scheduler failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: link-scrutins-dossiers
+// =============================================================================
+program
+  .command('link-scrutins-dossiers')
+  .description('Lier les scrutins AN orphelins aux dossiers législatifs par matching de titre')
+  .action(async () => {
+    try {
+      logger.info('Starting AN scrutins-dossiers title linking...');
+      const result = await linkANScrutinsByTitle();
+      console.log(`\nScrutins liés aux dossiers: ${result.linked}`);
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'link-scrutins-dossiers failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: link-scrutins-tfidf
+// =============================================================================
+program
+  .command('link-scrutins-tfidf')
+  .description('Lier les scrutins orphelins aux dossiers par TF-IDF (cosine similarity sur titres)')
+  .action(async () => {
+    try {
+      logger.info('Starting TF-IDF scrutin-dossier linking...');
+      const result = await linkOrphanScrutinsByTFIDF();
+      console.log(`\n📊 TF-IDF scrutin-dossier linking:`);
+      console.log(`   Liés: ${result.linked}`);
+      console.log(`   Ignorés (score trop bas): ${result.skipped}`);
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'link-scrutins-tfidf failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: link-amendements-dossiers
+// =============================================================================
+program
+  .command('link-amendements-dossiers')
+  .description('Propager dossier_id des scrutins vers les amendements')
+  .action(async () => {
+    try {
+      const result = await linkAmendementsToDossiers();
+      console.log(`\nAmendements liés via scrutins: ${result.linked}`);
+      const result2 = await linkAmendementsToDossiersByTexteRef();
+      console.log(`Amendements liés via texteRef: ${result2.linked}`);
+      const result3 = await propagateDossierIdBySiblingTexteRef();
+      console.log(`Amendements liés via sibling texteRef (safe): ${result3.linked}`);
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'link-amendements-dossiers failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: check-quality
+// =============================================================================
+program
+  .command('check-quality')
+  .description('Vérifier la qualité des données en base')
+  .action(async () => {
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+
+      try {
+        console.log('\n🔍 Vérification de la qualité des données...\n');
+        const { runDataQualityChecks, printReport } = await import('./checks/data-quality.js');
+        const report = await runDataQualityChecks(prisma);
+        printReport(report);
+        process.exit(report.passed ? 0 : 1);
+      } finally {
+        await prisma.$disconnect();
+      }
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Quality check failed');
       process.exit(1);
     }
   });

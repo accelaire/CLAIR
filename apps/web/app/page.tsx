@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, Users, Vote, Building2, ArrowRight, CheckCircle, XCircle, Calendar, BarChart3, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Users, Vote, Building2, ArrowRight, Calendar, BarChart3, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useCountUp } from '@/hooks/useCountUp';
 import { LobbyisteLogo } from '@/components/lobbying';
@@ -50,24 +50,51 @@ interface Stats {
   deputes: number;
   senateurs: number;
   scrutins: number;
+  dossiers: number;
   lobbyistes: number;
   actionsLobby: number;
   interventions: number;
   amendements: number;
 }
 
-interface RecentScrutin {
-  id: string;
+interface TrendingDossierScrutin {
   numero: number;
   chambre: string;
-  session?: string;
+  session: string;
   date: string;
   titre: string;
   sort: string;
   nombrePour: number;
   nombreContre: number;
-  importance: number;
 }
+
+interface TrendingDossier {
+  id: string;
+  uid: string;
+  titre: string;
+  titreCourt: string | null;
+  chambre: string;
+  etat: string | null;
+  procedureLibelle: string | null;
+  scrutinsCount: number;
+  lastScrutinDate: string | null;
+  scrutins: TrendingDossierScrutin[];
+}
+
+const formatDossierTitre = (titre: string, procedureLibelle?: string | null): string => {
+  const firstChar = titre.charAt(0);
+  if (firstChar !== firstChar.toUpperCase() && procedureLibelle) {
+    return `${procedureLibelle} ${titre}`;
+  }
+  return titre;
+};
+
+const dossierEtatLabels: Record<string, { label: string; color: string }> = {
+  en_cours: { label: 'En cours', color: 'bg-amber-100 text-amber-700' },
+  adopte: { label: 'Adopté', color: 'bg-blue-100 text-blue-700' },
+  rejete: { label: 'Rejeté', color: 'bg-red-100 text-red-700' },
+  promulgue: { label: 'Promulgué', color: 'bg-green-100 text-green-700' },
+};
 
 interface RecentAction {
   id: string;
@@ -87,8 +114,8 @@ export default function HomePage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Fetch homepage data (stats + recent scrutins + recent actions in ONE call)
-  const { data: homepageData } = useQuery<{ stats: Stats; recentScrutins: RecentScrutin[]; recentActions: RecentAction[]; lastUpdate: string | null }>({
+  // Fetch homepage data (stats + recent scrutins + recent actions + trending dossiers in ONE call)
+  const { data: homepageData } = useQuery<{ stats: Stats; recentActions: RecentAction[]; trendingDossiers: TrendingDossier[]; lastUpdate: string | null }>({
     queryKey: ['homepage'],
     queryFn: () => api.get('/homepage').then(res => res.data),
     staleTime: 30000, // Refresh every 30 seconds
@@ -96,13 +123,14 @@ export default function HomePage() {
   });
 
   const stats = homepageData?.stats;
-  const recentScrutins = homepageData?.recentScrutins;
   const recentActions = homepageData?.recentActions;
+  const trendingDossiers = homepageData?.trendingDossiers;
 
   // Animated counters
   const deputesCount = useCountUp(stats?.deputes);
   const senateursCount = useCountUp(stats?.senateurs);
   const scrutinsCount = useCountUp(stats?.scrutins);
+  const dossiersCount = useCountUp(stats?.dossiers);
   const lobbyistesCount = useCountUp(stats?.lobbyistes);
   const actionsCount = useCountUp(stats?.actionsLobby);
   const interventionsCount = useCountUp(stats?.interventions);
@@ -187,6 +215,15 @@ export default function HomePage() {
                 <div className="text-xs text-muted-foreground">Scrutins</div>
               </Link>
               <Link
+                href="/dossiers"
+                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
+              >
+                <div className="text-xl font-bold text-primary tabular-nums">
+                  {stats?.dossiers ? dossiersCount.toLocaleString('fr-FR') : '—'}
+                </div>
+                <div className="text-xs text-muted-foreground">Dossiers</div>
+              </Link>
+              <Link
                 href="/deputes"
                 className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
               >
@@ -241,29 +278,27 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Recent Important Votes */}
-      {recentScrutins && recentScrutins.length > 0 && (
+      {/* Trending Dossiers Législatifs - enriched with mini-scrutins */}
+      {trendingDossiers && trendingDossiers.length > 0 && (
         <section className="py-16 overflow-hidden">
           <div className="container mx-auto px-4">
             <div className="flex items-center justify-between mb-8">
-              <h2 className="text-2xl font-bold">Scrutins importants récents</h2>
+              <h2 className="text-2xl font-bold">Dossiers législatifs récents</h2>
               <Link
-                href="/scrutins"
+                href="/dossiers"
                 className="flex items-center text-sm font-medium text-primary hover:underline"
               >
-                Voir tous les scrutins
+                Voir tous les dossiers
                 <ArrowRight className="ml-1 h-4 w-4" />
               </Link>
             </div>
           </div>
 
-          {/* Carrousel avec auto-scroll */}
           <div className="relative group">
-            {/* Boutons de navigation */}
             <button
               onClick={() => {
-                const container = document.getElementById('scrutins-carousel');
-                if (container) container.scrollBy({ left: -376, behavior: 'smooth' });
+                const container = document.getElementById('dossiers-carousel');
+                if (container) container.scrollBy({ left: -416, behavior: 'smooth' });
               }}
               className="absolute left-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-10 h-10 rounded-full bg-background/90 border shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-background"
               aria-label="Précédent"
@@ -272,8 +307,8 @@ export default function HomePage() {
             </button>
             <button
               onClick={() => {
-                const container = document.getElementById('scrutins-carousel');
-                if (container) container.scrollBy({ left: 376, behavior: 'smooth' });
+                const container = document.getElementById('dossiers-carousel');
+                if (container) container.scrollBy({ left: 416, behavior: 'smooth' });
               }}
               className="absolute right-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-10 h-10 rounded-full bg-background/90 border shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-background"
               aria-label="Suivant"
@@ -281,49 +316,71 @@ export default function HomePage() {
               <ChevronRight className="h-5 w-5" />
             </button>
 
-            {/* Container scrollable */}
             <div
-              id="scrutins-carousel"
+              id="dossiers-carousel"
               className="overflow-x-auto pb-4 px-4 md:px-[max(1rem,calc((100%-768px)/2+1rem))] lg:px-[max(1rem,calc((100%-1024px)/2+1rem))] xl:px-[max(1rem,calc((100%-1280px)/2+1rem))] [&::-webkit-scrollbar]:hidden"
               style={{ scrollbarWidth: 'none' }}
             >
               <div className="flex gap-4 w-max animate-carousel-scroll group-hover:[animation-play-state:paused]">
-                {/* Cartes dupliquées pour effet de boucle infinie */}
-                {[...recentScrutins.slice(0, 6), ...recentScrutins.slice(0, 6)].map((scrutin, index) => (
+                {[...trendingDossiers, ...trendingDossiers].map((dossier, index) => (
                   <Link
-                    key={`${scrutin.id}-${index}`}
-                    href={`/scrutins/${scrutin.numero}?chambre=${scrutin.chambre || 'assemblee'}${scrutin.chambre === 'senat' && scrutin.session ? `&session=${scrutin.session}` : ''}`}
-                    className="w-[360px] flex-shrink-0 rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
+                    key={`${dossier.id}-${index}`}
+                    href={`/dossiers/${dossier.uid}`}
+                    className="w-[400px] flex-shrink-0 rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
                   >
-                    <div className="flex items-center gap-2 mb-2 text-sm text-muted-foreground">
-                      <Calendar className="h-4 w-4" />
-                      {formatDate(scrutin.date)}
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                        scrutin.chambre === 'senat'
-                          ? 'bg-blue-100 text-blue-700'
-                          : 'bg-purple-100 text-purple-700'
-                      }`}>
-                        {scrutin.chambre === 'senat' ? 'Sénat' : 'AN'}
+                    {/* Header: chambre + etat + procedure + scrutin count */}
+                    <div className="flex items-center gap-2 mb-2 text-sm">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${dossier.chambre === 'senat' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                        {dossier.chambre === 'senat' ? 'Sénat' : 'AN'}
                       </span>
-                      <span className={`ml-auto px-2 py-0.5 rounded text-xs font-medium ${
-                        scrutin.sort === 'adopte'
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-red-100 text-red-700'
-                      }`}>
-                        {scrutin.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
-                      </span>
-                    </div>
-                    <h3 className="font-medium line-clamp-3 mb-2">{scrutin.titre}</h3>
-                    <div className="flex items-center gap-3 text-sm">
-                      <span className="flex items-center gap-1 text-green-600">
-                        <CheckCircle className="h-4 w-4" />
-                        {scrutin.nombrePour}
-                      </span>
-                      <span className="flex items-center gap-1 text-red-600">
-                        <XCircle className="h-4 w-4" />
-                        {scrutin.nombreContre}
+                      {dossier.etat && (
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${dossierEtatLabels[dossier.etat]?.color || 'bg-muted text-muted-foreground'}`}>
+                          {dossierEtatLabels[dossier.etat]?.label || dossier.etat}
+                        </span>
+                      )}
+                      {dossier.procedureLibelle && (
+                        <span className="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600">
+                          {dossier.procedureLibelle.length > 20 ? dossier.procedureLibelle.slice(0, 20) + '...' : dossier.procedureLibelle}
+                        </span>
+                      )}
+                      <span className="flex items-center gap-1 text-muted-foreground text-xs ml-auto">
+                        <Vote className="h-3 w-3" />
+                        {dossier.scrutinsCount} scrutin{dossier.scrutinsCount > 1 ? 's' : ''}
                       </span>
                     </div>
+
+                    {/* Title */}
+                    <h3 className="font-medium line-clamp-2 mb-3">{formatDossierTitre(dossier.titre, dossier.procedureLibelle)}</h3>
+
+                    {/* Mini-scrutins list */}
+                    {dossier.scrutins && dossier.scrutins.length > 0 && (
+                      <div className="border-t pt-2 space-y-1.5">
+                        {dossier.scrutins.map((s) => (
+                          <div key={`${s.numero}-${s.chambre}`} className="flex items-center gap-2 text-xs">
+                            <span className="text-muted-foreground w-[3.5rem] flex-shrink-0">
+                              {formatDate(s.date)}
+                            </span>
+                            <span className="flex-1 min-w-0 truncate text-gray-700">{s.titre}</span>
+                            <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                              s.sort === 'adopte' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                            }`}>
+                              {s.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
+                            </span>
+                            <span className="flex-shrink-0 text-[10px] text-muted-foreground tabular-nums">
+                              {s.nombrePour}/{s.nombreContre}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Footer: last vote date */}
+                    {dossier.lastScrutinDate && (
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground mt-2 pt-2 border-t">
+                        <Calendar className="h-3 w-3" />
+                        Dernier vote : {formatDate(dossier.lastScrutinDate)}
+                      </div>
+                    )}
                   </Link>
                 ))}
               </div>

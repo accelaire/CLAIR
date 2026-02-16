@@ -99,6 +99,7 @@ export interface TransformedDossier {
   loiNumero: string | null;
   loiTitre: string | null;
   loiDateJO: Date | null;
+  urlLegifrance: string | null;
   // Références extraites pour le matching
   voteRefs: string[];      // UIDs des scrutins (ex: VTANR5L17V451)
   texteRefs: string[];     // Références des textes (pour matcher les amendements)
@@ -285,7 +286,9 @@ export class DossiersLegislatifsClient {
       const procedureLibelle = raw.procedureParlementaire?.libelle || null;
 
       // URLs
-      const urlAN = `https://www.assemblee-nationale.fr/dyn/${legislature}/dossiers/${titreCourt || uid}`;
+      const urlAN = titreCourt
+        ? `https://www.assemblee-nationale.fr/dyn/${legislature}/dossiers/${titreCourt}`
+        : null;
       const urlSenat = raw.titreDossier?.senatChemin || null;
 
       // Extract dates, votes, and state from actes législatifs
@@ -307,6 +310,7 @@ export class DossiersLegislatifsClient {
         loiNumero: loiInfo.numero,
         loiTitre: loiInfo.titre,
         loiDateJO: loiInfo.dateJO,
+        urlLegifrance: loiInfo.urlLegifrance,
         voteRefs,
         texteRefs,
         sourceData: raw,
@@ -340,14 +344,14 @@ export class DossiersLegislatifsClient {
     voteRefs: string[];
     texteRefs: string[];
     etat: string | null;
-    loiInfo: { numero: string | null; titre: string | null; dateJO: Date | null };
+    loiInfo: { numero: string | null; titre: string | null; dateJO: Date | null; urlLegifrance: string | null };
   } {
     const voteRefs: string[] = [];
     const texteRefs: string[] = [];
     let dateDepot: Date | null = null;
     let dateAdoption: Date | null = null;
     let etat: string | null = 'en_cours';
-    const loiInfo = { numero: null as string | null, titre: null as string | null, dateJO: null as Date | null };
+    const loiInfo = { numero: null as string | null, titre: null as string | null, dateJO: null as Date | null, urlLegifrance: null as string | null };
 
     if (!actes) {
       return { dateDepot, dateAdoption, voteRefs, texteRefs, etat, loiInfo };
@@ -403,6 +407,9 @@ export class DossiersLegislatifsClient {
         if (acte.titreLoi) loiInfo.titre = acte.titreLoi;
         if (acte.infoJO?.dateJO) {
           loiInfo.dateJO = this.parseDate(acte.infoJO.dateJO);
+        }
+        if (acte.infoJO?.urlLegifrance) {
+          loiInfo.urlLegifrance = acte.infoJO.urlLegifrance;
         }
       }
 

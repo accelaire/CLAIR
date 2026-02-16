@@ -288,6 +288,25 @@ interface AmendementItem {
     date: string;
     sort: string;
   }>;
+  dossier: {
+    uid: string;
+    titre: string;
+    titreCourt: string | null;
+  } | null;
+}
+
+/** Formate un titreCourt slug-like en texte lisible, sinon fallback sur titre */
+function formatDossierLabel(dossier: { titre: string; titreCourt: string | null }): string {
+  const short = dossier.titreCourt;
+  if (!short) return dossier.titre;
+  // UID technique → fallback titre
+  if (/^[A-Z0-9]{5,}/.test(short)) return dossier.titre;
+  // Slug avec underscores → humanize
+  if (short.includes('_')) {
+    const humanized = short.replace(/_/g, ' ').replace(/\d+e?$/, '').trim();
+    return humanized.charAt(0).toUpperCase() + humanized.slice(1);
+  }
+  return short;
 }
 
 function AmendementSortBadge({ sort }: { sort: string | null }) {
@@ -370,21 +389,32 @@ function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }
             )}
           </div>
 
-          {/* Lien vers le scrutin si l'amendement a été voté */}
-          {amendement.scrutins && amendement.scrutins.length > 0 && (
-            <div className="mt-3 pt-3 border-t">
-              <Link
-                href={`/scrutins/${amendement.scrutins[0].numero}`}
-                className="inline-flex items-center gap-2 text-xs text-indigo-600 hover:text-indigo-800 hover:underline bg-indigo-50 px-3 py-1.5 rounded-md transition-colors"
-              >
-                <Vote className="h-3.5 w-3.5" />
-                <span>Voir le vote sur cet amendement</span>
-                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                  amendement.scrutins[0].sort === 'adopte' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                }`}>
-                  {amendement.scrutins[0].sort === 'adopte' ? 'Adopté' : 'Rejeté'}
-                </span>
-              </Link>
+          {/* Liens vers le dossier et/ou le scrutin */}
+          {(amendement.dossier || (amendement.scrutins && amendement.scrutins.length > 0)) && (
+            <div className="mt-3 pt-3 border-t flex flex-wrap gap-2">
+              {amendement.dossier && (
+                <Link
+                  href={`/dossiers/${amendement.dossier.uid}`}
+                  className="inline-flex items-center gap-2 text-xs text-blue-600 hover:text-blue-800 hover:underline bg-blue-50 px-3 py-1.5 rounded-md transition-colors"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  <span className="line-clamp-1">{formatDossierLabel(amendement.dossier)}</span>
+                </Link>
+              )}
+              {amendement.scrutins && amendement.scrutins.length > 0 && (
+                <Link
+                  href={`/scrutins/${amendement.scrutins[0].numero}`}
+                  className="inline-flex items-center gap-2 text-xs text-indigo-600 hover:text-indigo-800 hover:underline bg-indigo-50 px-3 py-1.5 rounded-md transition-colors"
+                >
+                  <Vote className="h-3.5 w-3.5" />
+                  <span>Vote n°{amendement.scrutins[0].numero}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                    amendement.scrutins[0].sort === 'adopte' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                  }`}>
+                    {amendement.scrutins[0].sort === 'adopte' ? 'Adopté' : 'Rejeté'}
+                  </span>
+                </Link>
+              )}
             </div>
           )}
         </div>
