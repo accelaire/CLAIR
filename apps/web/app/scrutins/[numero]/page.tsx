@@ -8,7 +8,7 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft, Calendar, CheckCircle, XCircle, MinusCircle, Users,
   Tag, ExternalLink, FileText, Info, MessageSquare,
-  ArrowUp, ArrowDown, Loader2
+  ArrowUp, ArrowDown, Loader2, ChevronDown
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
@@ -218,6 +218,73 @@ function ExpandableText({ text, className = '' }: { text: string; className?: st
           {isExpanded ? 'Voir moins' : 'Voir plus'}
         </button>
       )}
+    </div>
+  );
+}
+
+function AmendementAccordions({ amendements }: { amendements: AmendementDetail[] }) {
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+
+  const toggle = (id: string) => {
+    setOpenIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  return (
+    <div className="space-y-2 mb-4">
+      <div className="flex items-center gap-2 mb-1">
+        <FileText className="h-4 w-4 text-amber-600" />
+        <span className="text-sm font-medium text-amber-700">
+          {amendements.length} amendement{amendements.length > 1 ? 's' : ''} voté{amendements.length > 1 ? 's' : ''}
+        </span>
+      </div>
+      {amendements.map((a) => {
+        const isOpen = openIds.has(a.id);
+        return (
+          <div key={a.id} className="rounded-lg border border-amber-200 bg-amber-50/50 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => toggle(a.id)}
+              className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-amber-100/50 transition-colors"
+            >
+              <FileText className="h-4 w-4 text-amber-600 flex-shrink-0" />
+              <span className={`flex-1 min-w-0 text-sm font-medium text-amber-900 ${isOpen ? '' : 'truncate'}`}>
+                Amendement n°{a.numero}
+                {a.articleVise && <span className="text-amber-700 font-normal"> {a.articleVise}</span>}
+                {a.auteurLibelle && <span className="text-amber-600 font-normal"> par {a.auteurLibelle}</span>}
+              </span>
+              <ChevronDown className={`h-4 w-4 text-amber-600 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isOpen && (
+              <div className="px-4 pb-4 space-y-3 border-t border-amber-200">
+                {a.dispositif && (
+                  <div className="mt-3">
+                    <h4 className="text-xs font-semibold text-amber-800 mb-1">Texte de l&apos;amendement :</h4>
+                    <div className="text-sm text-gray-800 bg-white/60 rounded p-3 border border-amber-200">
+                      <div dangerouslySetInnerHTML={{ __html: a.dispositif.replace(/\n/g, '<br/>') }} />
+                    </div>
+                  </div>
+                )}
+                {a.exposeSommaire && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-amber-800 mb-1">Exposé des motifs :</h4>
+                    <div className="text-sm text-gray-700 bg-white/40 rounded p-3 border border-amber-100">
+                      <div dangerouslySetInnerHTML={{ __html: a.exposeSommaire.replace(/\n/g, '<br/>') }} />
+                    </div>
+                  </div>
+                )}
+                {!a.dispositif && !a.exposeSommaire && (
+                  <p className="mt-3 text-sm text-amber-600 italic">Contenu non disponible</p>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -728,64 +795,9 @@ export default function ScrutinDetailPage() {
           </div>
         )}
 
-        {/* Amendements votés - affiche le contenu des amendements si disponibles */}
+        {/* Amendements votés — accordéons */}
         {scrutin.amendements && scrutin.amendements.length > 0 && (
-          <div className="space-y-3 mb-4">
-            {scrutin.amendements.length > 1 && (
-              <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-amber-600" />
-                <span className="text-sm font-medium text-amber-700">
-                  {scrutin.amendements.length} amendements votés
-                </span>
-              </div>
-            )}
-            {scrutin.amendements.map((amendement) => (
-              <div key={amendement.id} className="p-4 rounded-lg border border-amber-200 bg-amber-50/50">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 rounded-lg bg-amber-100">
-                    <FileText className="h-5 w-5 text-amber-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xs font-medium text-amber-700 uppercase tracking-wide">
-                        Amendement n°{amendement.numero}
-                      </span>
-                      {amendement.articleVise && (
-                        <span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded">
-                          {amendement.articleVise}
-                        </span>
-                      )}
-                      {amendement.auteurLibelle && (
-                        <span className="text-xs text-amber-600">
-                          par {amendement.auteurLibelle}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Dispositif (texte de l'amendement) */}
-                    {amendement.dispositif && (
-                      <div className="mb-3">
-                        <h4 className="text-xs font-semibold text-amber-800 mb-1">Texte de l&apos;amendement :</h4>
-                        <div className="text-sm text-gray-800 bg-white/60 rounded p-3 border border-amber-200">
-                          <div dangerouslySetInnerHTML={{ __html: amendement.dispositif.replace(/\n/g, '<br/>') }} />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Exposé sommaire */}
-                    {amendement.exposeSommaire && (
-                      <div>
-                        <h4 className="text-xs font-semibold text-amber-800 mb-1">Exposé des motifs :</h4>
-                        <div className="text-sm text-gray-700 bg-white/40 rounded p-3 border border-amber-100">
-                          <div dangerouslySetInnerHTML={{ __html: amendement.exposeSommaire.replace(/\n/g, '<br/>') }} />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <AmendementAccordions amendements={scrutin.amendements} />
         )}
 
         {/* Interventions / Débats liés */}
