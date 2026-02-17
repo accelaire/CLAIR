@@ -85,7 +85,7 @@ async function withRetry<T>(
 
 const searchQuerySchema = z.object({
   q: z.string().min(2, 'La recherche doit contenir au moins 2 caractères'),
-  type: z.enum(['all', 'deputes', 'senateurs', 'scrutins', 'lobbyistes']).default('all'),
+  type: z.enum(['all', 'deputes', 'senateurs', 'scrutins', 'lobbyistes', 'dossiers']).default('all'),
   limit: z.coerce.number().int().min(1).max(50).default(10),
 });
 
@@ -103,7 +103,7 @@ export const searchRoutes: FastifyPluginAsync = async (fastify) => {
         required: ['q'],
         properties: {
           q: { type: 'string', minLength: 2, description: 'Terme de recherche' },
-          type: { type: 'string', enum: ['all', 'deputes', 'senateurs', 'scrutins', 'lobbyistes'], default: 'all' },
+          type: { type: 'string', enum: ['all', 'deputes', 'senateurs', 'scrutins', 'lobbyistes', 'dossiers'], default: 'all' },
           limit: { type: 'integer', minimum: 1, maximum: 50, default: 10 },
         },
       },
@@ -249,11 +249,13 @@ async function searchWithMeilisearch(
     senateurs: any[];
     scrutins: any[];
     lobbyistes: any[];
+    dossiers: any[];
   } = {
     deputes: [],
     senateurs: [],
     scrutins: [],
     lobbyistes: [],
+    dossiers: [],
   };
 
   const promises: Promise<void>[] = [];
@@ -310,8 +312,37 @@ async function searchWithMeilisearch(
     );
   }
 
-  // Attendre toutes les promesses avec timeout
+  // Attendre toutes les promesses Meilisearch avec timeout
   await withTimeout(Promise.all(promises), MEILISEARCH_TIMEOUT_MS);
+
+  // Dossiers : pas d'index Meilisearch, recherche DB directe (hors du Promise.all
+  // Meilisearch pour ne pas risquer de timeout les résultats Meilisearch déjà prêts)
+  if (type === 'all' || type === 'dossiers') {
+    const searchTerm = q.toLowerCase().trim();
+    const dossiers: any[] = await withTimeout(
+      fastify.prisma.dossierLegislatif.findMany({
+        where: {
+          OR: [
+            { titre: { contains: searchTerm, mode: 'insensitive' } },
+            { loiNumero: { contains: searchTerm, mode: 'insensitive' } },
+          ],
+          scrutins: { some: {} },
+        },
+        select: {
+          id: true, uid: true, titre: true,
+          legislature: true, etat: true, procedureLibelle: true, loiNumero: true,
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: limit,
+      }),
+      DATABASE_TIMEOUT_MS
+    );
+    results.dossiers = dossiers.map((d: any) => ({
+      ...d,
+      _type: 'dossier',
+      chambre: d.legislature === 0 ? 'senat' : 'assemblee',
+    }));
+  }
 
   if (type === 'all') {
     const allResults = [
@@ -319,6 +350,7 @@ async function searchWithMeilisearch(
       ...results.senateurs,
       ...results.scrutins,
       ...results.lobbyistes,
+      ...results.dossiers,
     ];
 
     return {
@@ -331,6 +363,7 @@ async function searchWithMeilisearch(
           senateurs: results.senateurs.length,
           scrutins: results.scrutins.length,
           lobbyistes: results.lobbyistes.length,
+          dossiers: results.dossiers.length,
           total: allResults.length,
         },
       },
@@ -364,11 +397,13 @@ async function searchWithDatabase(
     senateurs: any[];
     scrutins: any[];
     lobbyistes: any[];
+    dossiers: any[];
   } = {
     deputes: [],
     senateurs: [],
     scrutins: [],
     lobbyistes: [],
+    dossiers: [],
   };
 
   // Helper pour transformer les parlementaires
@@ -484,12 +519,37 @@ async function searchWithDatabase(
     }));
   }
 
+  // Recherche dossiers législatifs
+  if (type === 'all' || type === 'dossiers') {
+    const dossiers = await fastify.prisma.dossierLegislatif.findMany({
+      where: {
+        OR: [
+          { titre: { contains: searchTerm, mode: 'insensitive' } },
+          { loiNumero: { contains: searchTerm, mode: 'insensitive' } },
+        ],
+        scrutins: { some: {} },
+      },
+      select: {
+        id: true, uid: true, titre: true,
+        legislature: true, etat: true, procedureLibelle: true, loiNumero: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: limit,
+    });
+    results.dossiers = dossiers.map((d: any) => ({
+      ...d,
+      _type: 'dossier',
+      chambre: d.legislature === 0 ? 'senat' : 'assemblee',
+    }));
+  }
+
   if (type === 'all') {
     const allResults = [
       ...results.deputes,
       ...results.senateurs,
       ...results.scrutins,
       ...results.lobbyistes,
+      ...results.dossiers,
     ];
 
     return {
@@ -502,6 +562,7 @@ async function searchWithDatabase(
           senateurs: results.senateurs.length,
           scrutins: results.scrutins.length,
           lobbyistes: results.lobbyistes.length,
+          dossiers: results.dossiers.length,
           total: allResults.length,
         },
       },
