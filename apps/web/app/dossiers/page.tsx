@@ -20,6 +20,7 @@ interface Dossier {
   procedureLibelle: string | null;
   etat: string | null;
   dateDepot: string | null;
+  lastScrutinDate: string | null;
   loiNumero: string | null;
   _count: {
     scrutins: number;
@@ -271,10 +272,10 @@ function DossiersPageContent() {
 
                     {/* Meta */}
                     <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                      {dossier.dateDepot && (
+                      {dossier.lastScrutinDate && (
                         <span className="flex items-center gap-1">
                           <Calendar className="h-4 w-4" />
-                          {formatDate(dossier.dateDepot)}
+                          Dernier vote : {formatDate(dossier.lastScrutinDate)}
                         </span>
                       )}
                       <span className="flex items-center gap-1">
