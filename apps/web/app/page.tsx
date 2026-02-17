@@ -57,17 +57,6 @@ interface Stats {
   amendements: number;
 }
 
-interface TrendingDossierScrutin {
-  numero: number;
-  chambre: string;
-  session: string;
-  date: string;
-  titre: string;
-  sort: string;
-  nombrePour: number;
-  nombreContre: number;
-}
-
 interface TrendingDossier {
   id: string;
   uid: string;
@@ -78,7 +67,7 @@ interface TrendingDossier {
   procedureLibelle: string | null;
   scrutinsCount: number;
   lastScrutinDate: string | null;
-  scrutins: TrendingDossierScrutin[];
+  voteStats: { adopte: number; rejete: number };
 }
 
 const formatDossierTitre = (titre: string, procedureLibelle?: string | null): string => {
@@ -326,10 +315,10 @@ export default function HomePage() {
                   <Link
                     key={`${dossier.id}-${index}`}
                     href={`/dossiers/${dossier.uid}`}
-                    className="w-[400px] flex-shrink-0 rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
+                    className="w-[340px] flex-shrink-0 rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md flex flex-col"
                   >
-                    {/* Header: chambre + etat + procedure + scrutin count */}
-                    <div className="flex items-center gap-2 mb-2 text-sm">
+                    {/* Header: chambre + etat + procedure */}
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${dossier.chambre === 'senat' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
                         {dossier.chambre === 'senat' ? 'Sénat' : 'AN'}
                       </span>
@@ -339,48 +328,38 @@ export default function HomePage() {
                         </span>
                       )}
                       {dossier.procedureLibelle && (
-                        <span className="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600">
-                          {dossier.procedureLibelle.length > 20 ? dossier.procedureLibelle.slice(0, 20) + '...' : dossier.procedureLibelle}
+                        <span className="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600 truncate max-w-[160px]">
+                          {dossier.procedureLibelle}
                         </span>
                       )}
-                      <span className="flex items-center gap-1 text-muted-foreground text-xs ml-auto">
-                        <Vote className="h-3 w-3" />
-                        {dossier.scrutinsCount} scrutin{dossier.scrutinsCount > 1 ? 's' : ''}
-                      </span>
                     </div>
 
-                    {/* Title */}
-                    <h3 className="font-medium line-clamp-2 mb-3">{formatDossierTitre(dossier.titre, dossier.procedureLibelle)}</h3>
+                    {/* Title — fixed 2 lines */}
+                    <h3 className="font-medium line-clamp-2 mb-auto">{formatDossierTitre(dossier.titre, dossier.procedureLibelle)}</h3>
 
-                    {/* Mini-scrutins list */}
-                    {dossier.scrutins && dossier.scrutins.length > 0 && (
-                      <div className="border-t pt-2 space-y-1.5">
-                        {dossier.scrutins.map((s) => (
-                          <div key={`${s.numero}-${s.chambre}`} className="flex items-center gap-2 text-xs">
-                            <span className="text-muted-foreground w-[3.5rem] flex-shrink-0">
-                              {formatDate(s.date)}
-                            </span>
-                            <span className="flex-1 min-w-0 truncate text-gray-700">{s.titre}</span>
-                            <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                              s.sort === 'adopte' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                            }`}>
-                              {s.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
-                            </span>
-                            <span className="flex-shrink-0 text-[10px] text-muted-foreground tabular-nums">
-                              {s.nombrePour}/{s.nombreContre}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Footer: last vote date */}
-                    {dossier.lastScrutinDate && (
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground mt-2 pt-2 border-t">
-                        <Calendar className="h-3 w-3" />
-                        Dernier vote : {formatDate(dossier.lastScrutinDate)}
-                      </div>
-                    )}
+                    {/* Vote stats + last vote date */}
+                    <div className="border-t mt-3 pt-3 flex items-center gap-3 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Vote className="h-3.5 w-3.5" />
+                        {dossier.scrutinsCount} vote{dossier.scrutinsCount > 1 ? 's' : ''}
+                      </span>
+                      {dossier.voteStats.adopte > 0 && (
+                        <span className="px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">
+                          {dossier.voteStats.adopte} adopté{dossier.voteStats.adopte > 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {dossier.voteStats.rejete > 0 && (
+                        <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-medium">
+                          {dossier.voteStats.rejete} rejeté{dossier.voteStats.rejete > 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {dossier.lastScrutinDate && (
+                        <span className="flex items-center gap-1 ml-auto">
+                          <Calendar className="h-3 w-3" />
+                          {formatDate(dossier.lastScrutinDate)}
+                        </span>
+                      )}
+                    </div>
                   </Link>
                 ))}
               </div>

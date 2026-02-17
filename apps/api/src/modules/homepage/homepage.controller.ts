@@ -110,49 +110,75 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         take: 6,
       });
 
-      // Trending dossiers (6 dossiers avec le plus de scrutins récents)
-      const threeMonthsAgo = new Date();
-      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+      // Trending dossiers: recently voted + 1-2 "big" dossiers from last 2 months
+      const twoMonthsAgo = new Date();
+      twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
 
-      const trendingDossiers = await fastify.prisma.dossierLegislatif.findMany({
+      const dossierSelect = {
+        id: true,
+        uid: true,
+        titre: true,
+        titreCourt: true,
+        legislature: true,
+        etat: true,
+        procedureLibelle: true,
+        _count: { select: { scrutins: true } },
+        scrutins: {
+          orderBy: { date: 'desc' as const },
+          take: 1,
+          select: { date: true },
+        },
+      };
+
+      // 1) Dossiers with most scrutins in last 2 months (big/hot dossiers) — max 2
+      const bigDossiers = await fastify.prisma.dossierLegislatif.findMany({
         where: {
-          scrutins: {
-            some: {
-              date: { gte: threeMonthsAgo },
-            },
-          },
+          scrutins: { some: { date: { gte: twoMonthsAgo } } },
         },
-        select: {
-          id: true,
-          uid: true,
-          titre: true,
-          titreCourt: true,
-          legislature: true,
-          etat: true,
-          procedureLibelle: true,
-          _count: {
-            select: { scrutins: true },
-          },
-          scrutins: {
-            orderBy: { date: 'desc' },
-            take: 3,
-            select: {
-              numero: true,
-              chambre: true,
-              session: true,
-              date: true,
-              titre: true,
-              sort: true,
-              nombrePour: true,
-              nombreContre: true,
-            },
-          },
-        },
-        orderBy: {
-          scrutins: { _count: 'desc' },
-        },
-        take: 6,
+        select: dossierSelect,
+        orderBy: { scrutins: { _count: 'desc' } },
+        take: 2,
       });
+
+      // 2) Most recently voted dossiers — fill the rest up to 8 total
+      const bigIds = bigDossiers.map(d => d.id);
+      const recentlyVotedDossiers = await fastify.prisma.dossierLegislatif.findMany({
+        where: {
+          id: { notIn: bigIds },
+          scrutins: { some: {} },
+        },
+        select: dossierSelect,
+      });
+
+      // Sort by latest scrutin date desc
+      recentlyVotedDossiers.sort((a, b) => {
+        const da = a.scrutins[0]?.date;
+        const db = b.scrutins[0]?.date;
+        if (!da && !db) return 0;
+        if (!da) return 1;
+        if (!db) return -1;
+        return db.getTime() - da.getTime();
+      });
+
+      const fillCount = 8 - bigDossiers.length;
+      const trendingDossiers = [...bigDossiers, ...recentlyVotedDossiers.slice(0, fillCount)];
+
+      // Fetch vote stats (adopté/rejeté) per dossier
+      const dossierIds = trendingDossiers.map(d => d.id);
+      const voteStats = await fastify.prisma.scrutin.groupBy({
+        by: ['dossierId', 'sort'],
+        where: { dossierId: { in: dossierIds } },
+        _count: true,
+      });
+
+      const statsMap = new Map<string, { adopte: number; rejete: number }>();
+      for (const row of voteStats) {
+        if (!row.dossierId) continue;
+        const entry = statsMap.get(row.dossierId) || { adopte: 0, rejete: 0 };
+        if (row.sort === 'adopte') entry.adopte = row._count;
+        else if (row.sort === 'rejete') entry.rejete = row._count;
+        statsMap.set(row.dossierId, entry);
+      }
 
       const stats: HomepageStats = {
         deputes: deputesCount,
@@ -169,18 +195,21 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         stats,
         recentScrutins,
         recentActions,
-        trendingDossiers: trendingDossiers.map((d: typeof trendingDossiers[number]) => ({
-          id: d.id,
-          uid: d.uid,
-          titre: d.titre,
-          titreCourt: d.titreCourt,
-          chambre: dossierChambre(d.legislature),
-          etat: d.etat,
-          procedureLibelle: d.procedureLibelle,
-          scrutinsCount: d._count.scrutins,
-          lastScrutinDate: d.scrutins[0]?.date || null,
-          scrutins: d.scrutins,
-        })),
+        trendingDossiers: trendingDossiers.map((d) => {
+          const vs = statsMap.get(d.id) || { adopte: 0, rejete: 0 };
+          return {
+            id: d.id,
+            uid: d.uid,
+            titre: d.titre,
+            titreCourt: d.titreCourt,
+            chambre: dossierChambre(d.legislature),
+            etat: d.etat,
+            procedureLibelle: d.procedureLibelle,
+            scrutinsCount: d._count.scrutins,
+            lastScrutinDate: d.scrutins[0]?.date || null,
+            voteStats: vs,
+          };
+        }),
         lastUpdate: lastSync?.completedAt || null,
       };
 
