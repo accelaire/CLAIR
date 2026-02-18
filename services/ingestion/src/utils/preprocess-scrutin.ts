@@ -120,7 +120,8 @@ const AMENDMENT_PREFIXES = [
 const SUBJECT_ANCHORS = /(?:projet de loi|proposition de loi|proposition de r[eé]solution|d[eé]claration du gouvernement)/i;
 
 // Special case patterns that are self-contained subjects
-const SPECIAL_CASES: Array<{ pattern: RegExp; extract: (m: RegExpMatchArray) => string }> = [
+// extract(match, fullText) → string (use as subject) | null (fall through to normal pipeline)
+const SPECIAL_CASES: Array<{ pattern: RegExp; extract: (m: RegExpMatchArray, fullText: string) => string | null }> = [
   {
     pattern: /motion de censure/i,
     extract: () => 'motion de censure',
@@ -131,7 +132,12 @@ const SPECIAL_CASES: Array<{ pattern: RegExp; extract: (m: RegExpMatchArray) => 
   },
   {
     pattern: /motion de rejet pr[eé]alable/i,
-    extract: () => 'motion de rejet prealable',
+    extract: (_m, fullText) => {
+      // MRP titles follow: "la motion de rejet préalable, déposée par X, du projet de loi relatif à Y"
+      // If the bill name anchor exists, fall through to normal pipeline to extract "Y"
+      if (SUBJECT_ANCHORS.test(fullText)) return null;
+      return 'motion de rejet prealable';
+    },
   },
   {
     pattern: /motion r[eé]f[eé]rendaire/i,
@@ -157,7 +163,11 @@ export function extractSubject(titre: string): string {
   // Check special cases first
   for (const { pattern, extract } of SPECIAL_CASES) {
     const m = text.match(pattern);
-    if (m) return extract(m);
+    if (m) {
+      const result = extract(m, text);
+      if (result !== null) return result;
+      break; // null → fall through to normal pipeline
+    }
   }
 
   // PRIMARY strategy: find subject anchor in the raw text.
@@ -282,4 +292,20 @@ export function preprocessTitle(titre: string): string {
   const subject = extractSubject(titre);
   const tokens = tokenize(subject);
   return tokens.join(' ');
+}
+
+/**
+ * Jaccard similarity between two token sets: |A ∩ B| / |A ∪ B|.
+ * Returns 0 if both sets are empty.
+ */
+export function jaccardSimilarity(tokensA: string[], tokensB: string[]): number {
+  const setA = new Set(tokensA);
+  const setB = new Set(tokensB);
+  if (setA.size === 0 && setB.size === 0) return 0;
+  let intersection = 0;
+  for (const t of setA) {
+    if (setB.has(t)) intersection++;
+  }
+  const union = setA.size + setB.size - intersection;
+  return intersection / union;
 }

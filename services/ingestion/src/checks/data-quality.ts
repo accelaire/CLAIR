@@ -182,7 +182,7 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
   scrutin_dossier_link_rate: {
     type: 'threshold',
     label: 'Taux de liaison scrutins-dossiers (%)',
-    min: 95,
+    min: 90,
     query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (linked * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE dossier_id IS NOT NULL) AS linked FROM scrutins) sub`,
   },
   amendement_dossier_link_rate: {

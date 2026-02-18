@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractSubject, tokenize, preprocessTitle, FRENCH_STOPWORDS, DOMAIN_STOPWORDS } from './preprocess-scrutin';
+import { extractSubject, tokenize, preprocessTitle, jaccardSimilarity, FRENCH_STOPWORDS, DOMAIN_STOPWORDS } from './preprocess-scrutin';
 
 describe('extractSubject', () => {
   it('should extract subject from proposition de loi', () => {
@@ -39,8 +39,23 @@ describe('extractSubject', () => {
     expect(result).toBe('declaration de politique generale');
   });
 
-  it('should handle motion de rejet préalable', () => {
+  it('should extract bill subject from motion de rejet préalable when anchor exists', () => {
     const result = extractSubject("la motion de rejet préalable au projet de loi finances");
+    // Should fall through to normal pipeline and extract the bill subject, not "motion de rejet prealable"
+    expect(result).not.toBe('motion de rejet prealable');
+    expect(result.toLowerCase()).toContain('finances');
+  });
+
+  it('should extract bill subject from MRP with "déposée par" clause', () => {
+    const result = extractSubject("la motion de rejet préalable, déposée par M. Dupont, du projet de loi relatif à la simplification de la vie économique");
+    expect(result).not.toBe('motion de rejet prealable');
+    expect(result.toLowerCase()).toContain('simplification');
+    // extractSubject preserves accents; accent stripping happens in tokenize
+    expect(result.toLowerCase()).toMatch(/[eé]conomique/);
+  });
+
+  it('should fallback to "motion de rejet prealable" when no bill anchor', () => {
+    const result = extractSubject("la motion de rejet préalable déposée par le groupe LFI");
     expect(result).toBe('motion de rejet prealable');
   });
 
@@ -179,6 +194,46 @@ describe('preprocessTitle', () => {
     const intersection = [...dossierTokens].filter(t => scrutinTokens.has(t));
     expect(intersection.length).toBeGreaterThan(0);
     expect(intersection).toContain('immigration');
+  });
+});
+
+describe('jaccardSimilarity', () => {
+  it('should return 1 for identical sets', () => {
+    expect(jaccardSimilarity(['a', 'b', 'c'], ['a', 'b', 'c'])).toBe(1);
+  });
+
+  it('should return 0 for disjoint sets', () => {
+    expect(jaccardSimilarity(['a', 'b'], ['c', 'd'])).toBe(0);
+  });
+
+  it('should return correct value for partial overlap', () => {
+    // {a, b, c} ∩ {b, c, d} = {b, c}, union = {a, b, c, d} → 2/4 = 0.5
+    expect(jaccardSimilarity(['a', 'b', 'c'], ['b', 'c', 'd'])).toBe(0.5);
+  });
+
+  it('should return 0 for two empty sets', () => {
+    expect(jaccardSimilarity([], [])).toBe(0);
+  });
+
+  it('should return 0 when one set is empty', () => {
+    expect(jaccardSimilarity(['a', 'b'], [])).toBe(0);
+    expect(jaccardSimilarity([], ['a', 'b'])).toBe(0);
+  });
+
+  it('should handle duplicate tokens (treated as set)', () => {
+    // Duplicates in input are collapsed: {a, b} ∩ {a, b} = {a, b} → 1.0
+    expect(jaccardSimilarity(['a', 'a', 'b'], ['a', 'b', 'b'])).toBe(1);
+  });
+
+  it('should reject false positive: "simplification vie économique" vs "énergie" dossier', () => {
+    const scrutinTokens = tokenize(extractSubject(
+      "la motion de rejet préalable, déposée par M. Dupont, du projet de loi relatif à la simplification de la vie économique"
+    ));
+    const dossierTokens = tokenize(extractSubject(
+      "Projet de loi relatif à la souveraineté énergétique"
+    ));
+    const jaccard = jaccardSimilarity(scrutinTokens, dossierTokens);
+    expect(jaccard).toBeLessThan(0.30);
   });
 });
 

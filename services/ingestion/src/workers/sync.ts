@@ -2503,6 +2503,13 @@ export async function linkANScrutinsByTitle(): Promise<{ linked: number }> {
  *  0.25-0.30 are borderline, 0.30+ are reliable matches. */
 const MIN_TFIDF_SIMILARITY = 0.30;
 
+/** TF-IDF score above which we skip Jaccard validation (rare tokens = high confidence). */
+const HIGH_CONFIDENCE_TFIDF = 0.60;
+
+/** Minimum Jaccard similarity (token-set overlap) for mid-confidence matches.
+ *  Catches false positives where TF-IDF scores 0.30-0.60 on shared generic tokens. */
+const MIN_JACCARD_SIMILARITY = 0.30;
+
 /**
  * Lie les scrutins orphelins (dossier_id IS NULL) aux dossiers législatifs
  * via TF-IDF + cosine similarity sur les titres preprocessés.
@@ -2511,7 +2518,7 @@ const MIN_TFIDF_SIMILARITY = 0.30;
  * Les dossiers existent souvent en doublon AN/Sénat (même loi, deux UIDs).
  */
 export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; skipped: number }> {
-  const { preprocessTitle } = await import('../utils/preprocess-scrutin.js');
+  const { preprocessTitle, tokenize, extractSubject, jaccardSimilarity } = await import('../utils/preprocess-scrutin.js');
   const { TfidfVectorizer, bestMatch } = await import('../utils/tfidf.js');
 
   let totalLinked = 0;
@@ -2569,15 +2576,34 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
     // 5. For each orphan scrutin, find best matching dossier
     const updates: { scrutinId: string; dossierId: string; score: number }[] = [];
 
+    // Pre-compute token sets for Jaccard validation
+    const dossierTokenSets = dossiers.map(d => tokenize(extractSubject(d.titre)));
+    const scrutinTokenSets = orphans.map(s => tokenize(extractSubject(s.titre)));
+
+    let jaccardRejected = 0;
+
     for (let i = 0; i < orphans.length; i++) {
       const match = bestMatch(scrutinVectors[i], dossierVectors);
       if (match.index >= 0 && match.score >= MIN_TFIDF_SIMILARITY) {
+        // Jaccard post-validation: skip for high-confidence TF-IDF matches
+        if (match.score < HIGH_CONFIDENCE_TFIDF) {
+          const jaccard = jaccardSimilarity(scrutinTokenSets[i], dossierTokenSets[match.index]);
+          if (jaccard < MIN_JACCARD_SIMILARITY) {
+            jaccardRejected++;
+            continue;
+          }
+        }
+
         updates.push({
           scrutinId: orphans[i].id,
           dossierId: dossiers[match.index].id,
           score: match.score,
         });
       }
+    }
+
+    if (jaccardRejected > 0) {
+      logger.info({ chambre, jaccardRejected }, 'TF-IDF matches rejected by Jaccard validation');
     }
 
     // Log score distribution for monitoring
