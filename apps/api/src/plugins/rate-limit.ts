@@ -150,7 +150,6 @@ const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
   // ===========================================================================
   await fastify.register(rateLimit, {
     max: (request: FastifyRequest) => {
-      if (isExcludedPath(request.url)) return 0; // 0 = no limit
       if (isTrustedFrontend(request)) return FRONTEND_MAX;
       return DIRECT_API_MAX;
     },
@@ -158,7 +157,12 @@ const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
     redis: fastify.redis,
     keyGenerator: (request: FastifyRequest) => request.ip,
     skipOnError: true, // If Redis is down, don't block
+    allowList: (request: FastifyRequest) => {
+      // Health checks (Railway healthcheck) and cache warming (lightMyRequest) bypass rate limiting
+      return isExcludedPath(request.url) || request.ip === '127.0.0.1';
+    },
     errorResponseBuilder: (_request: FastifyRequest, context) => ({
+      statusCode: 429,
       error: 'Too Many Requests',
       code: 'RATE_LIMITED',
       message: RATE_LIMIT_MESSAGE,
