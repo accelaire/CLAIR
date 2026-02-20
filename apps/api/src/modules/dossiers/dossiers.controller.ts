@@ -51,57 +51,91 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
 
       const skip = (page - 1) * limit;
 
-      let orderBy: any;
-      if (sort === 'scrutins') {
-        orderBy = { scrutins: { _count: order } };
-      } else {
-        orderBy = { dateDepot: order };
-      }
-
-      const [dossiers, total] = await Promise.all([
-        fastify.prisma.dossierLegislatif.findMany({
-          where,
-          orderBy,
-          skip,
-          take: limit,
+      const baseSelect = {
+        id: true,
+        uid: true,
+        titre: true,
+        titreCourt: true,
+        legislature: true,
+        procedureCode: true,
+        procedureLibelle: true,
+        etat: true,
+        dateDepot: true,
+        loiNumero: true,
+        _count: {
           select: {
-            id: true,
-            uid: true,
-            titre: true,
-            titreCourt: true,
-            legislature: true,
-            procedureCode: true,
-            procedureLibelle: true,
-            etat: true,
-            dateDepot: true,
-            loiNumero: true,
-            _count: {
-              select: {
-                scrutins: true,
-                amendements: true,
+            scrutins: true,
+            amendements: true,
+          },
+        },
+      } as const;
+
+      let result;
+
+      if (sort === 'scrutins') {
+        // Sort by scrutin count — Prisma handles natively
+        const [dossiers, total] = await Promise.all([
+          fastify.prisma.dossierLegislatif.findMany({
+            where,
+            orderBy: { scrutins: { _count: order } },
+            skip,
+            take: limit,
+            select: {
+              ...baseSelect,
+              scrutins: { orderBy: { date: 'desc' as const }, take: 1, select: { date: true } },
+            },
+          }),
+          fastify.prisma.dossierLegislatif.count({ where }),
+        ]);
+
+        const totalPages = Math.ceil(total / limit);
+        result = {
+          data: dossiers.map(({ scrutins, ...d }) => ({
+            ...d,
+            chambre: dossierChambre(d.legislature),
+            lastScrutinDate: scrutins[0]?.date || null,
+          })),
+          meta: { total, page, limit, totalPages, hasNext: page < totalPages, hasPrev: page > 1 },
+        };
+      } else {
+        // Default: sort by most recent scrutin date (nulls last)
+        const [allDossiers, total] = await Promise.all([
+          fastify.prisma.dossierLegislatif.findMany({
+            where,
+            select: {
+              ...baseSelect,
+              scrutins: {
+                orderBy: { date: 'desc' },
+                take: 1,
+                select: { date: true },
               },
             },
-          },
-        }),
-        fastify.prisma.dossierLegislatif.count({ where }),
-      ]);
+          }),
+          fastify.prisma.dossierLegislatif.count({ where }),
+        ]);
 
-      const totalPages = Math.ceil(total / limit);
+        // Sort by latest scrutin date
+        allDossiers.sort((a, b) => {
+          const dateA = a.scrutins[0]?.date;
+          const dateB = b.scrutins[0]?.date;
+          if (!dateA && !dateB) return 0;
+          if (!dateA) return 1;
+          if (!dateB) return -1;
+          const diff = dateB.getTime() - dateA.getTime();
+          return order === 'asc' ? -diff : diff;
+        });
 
-      const result = {
-        data: dossiers.map(d => ({
-          ...d,
-          chambre: dossierChambre(d.legislature),
-        })),
-        meta: {
-          total,
-          page,
-          limit,
-          totalPages,
-          hasNext: page < totalPages,
-          hasPrev: page > 1,
-        },
-      };
+        const paginated = allDossiers.slice(skip, skip + limit);
+        const totalPages = Math.ceil(total / limit);
+        result = {
+          data: paginated.map(({ scrutins, ...d }) => ({
+            ...d,
+            chambre: dossierChambre(d.legislature),
+            lastScrutinDate: scrutins[0]?.date || null,
+          })),
+          meta: { total, page, limit, totalPages, hasNext: page < totalPages, hasPrev: page > 1 },
+        };
+      }
 
       await fastify.redis.setex(cacheKey, CACHE_TTL_1H, JSON.stringify(result));
       return result;

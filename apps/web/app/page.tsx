@@ -57,17 +57,6 @@ interface Stats {
   amendements: number;
 }
 
-interface TrendingDossierScrutin {
-  numero: number;
-  chambre: string;
-  session: string;
-  date: string;
-  titre: string;
-  sort: string;
-  nombrePour: number;
-  nombreContre: number;
-}
-
 interface TrendingDossier {
   id: string;
   uid: string;
@@ -78,7 +67,7 @@ interface TrendingDossier {
   procedureLibelle: string | null;
   scrutinsCount: number;
   lastScrutinDate: string | null;
-  scrutins: TrendingDossierScrutin[];
+  voteStats: { adopte: number; rejete: number };
 }
 
 const formatDossierTitre = (titre: string, procedureLibelle?: string | null): string => {
@@ -278,19 +267,25 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Trending Dossiers Législatifs - enriched with mini-scrutins */}
+      {/* Derniers dossiers législatifs discutés */}
       {trendingDossiers && trendingDossiers.length > 0 && (
         <section className="py-16 overflow-hidden">
           <div className="container mx-auto px-4">
-            <div className="flex items-center justify-between mb-8">
-              <h2 className="text-2xl font-bold">Dossiers législatifs récents</h2>
-              <Link
-                href="/dossiers"
-                className="flex items-center text-sm font-medium text-primary hover:underline"
-              >
-                Voir tous les dossiers
-                <ArrowRight className="ml-1 h-4 w-4" />
-              </Link>
+            <div className="mb-8">
+              <span className="text-sm font-medium text-primary">Actualités</span>
+              <div className="flex items-center justify-between mt-1">
+                <div>
+                  <h2 className="text-2xl font-bold">Derniers dossiers législatifs discutés</h2>
+                  <p className="text-muted-foreground mt-1">Quelques-uns des derniers dossiers abordés au Parlement</p>
+                </div>
+                <Link
+                  href="/dossiers"
+                  className="flex items-center text-sm font-medium text-primary hover:underline"
+                >
+                  Voir tous les dossiers
+                  <ArrowRight className="ml-1 h-4 w-4" />
+                </Link>
+              </div>
             </div>
           </div>
 
@@ -326,61 +321,41 @@ export default function HomePage() {
                   <Link
                     key={`${dossier.id}-${index}`}
                     href={`/dossiers/${dossier.uid}`}
-                    className="w-[400px] flex-shrink-0 rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
+                    className="w-[400px] flex-shrink-0 rounded-xl border bg-card p-5 transition-all hover:border-primary hover:shadow-md flex flex-col"
                   >
-                    {/* Header: chambre + etat + procedure + scrutin count */}
-                    <div className="flex items-center gap-2 mb-2 text-sm">
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${dossier.chambre === 'senat' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
-                        {dossier.chambre === 'senat' ? 'Sénat' : 'AN'}
+                    {/* Header: chambre + etat */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className={`px-2.5 py-1 rounded-md border text-xs font-medium ${dossier.chambre === 'senat' ? 'border-blue-200 text-blue-700' : 'border-purple-200 text-purple-700'}`}>
+                        {dossier.chambre === 'senat' ? 'Sénat' : 'Assemblée'}
                       </span>
                       {dossier.etat && (
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${dossierEtatLabels[dossier.etat]?.color || 'bg-muted text-muted-foreground'}`}>
+                        <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium">
+                          <span className={`h-2 w-2 rounded-full ${
+                            dossier.etat === 'promulgue' || dossier.etat === 'adopte' ? 'bg-green-500' :
+                            dossier.etat === 'rejete' ? 'bg-red-500' :
+                            dossier.etat === 'en_cours' ? 'bg-amber-500' : 'bg-gray-400'
+                          }`} />
                           {dossierEtatLabels[dossier.etat]?.label || dossier.etat}
                         </span>
                       )}
-                      {dossier.procedureLibelle && (
-                        <span className="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600">
-                          {dossier.procedureLibelle.length > 20 ? dossier.procedureLibelle.slice(0, 20) + '...' : dossier.procedureLibelle}
-                        </span>
-                      )}
-                      <span className="flex items-center gap-1 text-muted-foreground text-xs ml-auto">
-                        <Vote className="h-3 w-3" />
-                        {dossier.scrutinsCount} scrutin{dossier.scrutinsCount > 1 ? 's' : ''}
-                      </span>
                     </div>
 
                     {/* Title */}
-                    <h3 className="font-medium line-clamp-2 mb-3">{formatDossierTitre(dossier.titre, dossier.procedureLibelle)}</h3>
+                    <h3 className="font-semibold text-base line-clamp-2 mb-auto">{formatDossierTitre(dossier.titre, dossier.procedureLibelle)}</h3>
 
-                    {/* Mini-scrutins list */}
-                    {dossier.scrutins && dossier.scrutins.length > 0 && (
-                      <div className="border-t pt-2 space-y-1.5">
-                        {dossier.scrutins.map((s) => (
-                          <div key={`${s.numero}-${s.chambre}`} className="flex items-center gap-2 text-xs">
-                            <span className="text-muted-foreground w-[3.5rem] flex-shrink-0">
-                              {formatDate(s.date)}
-                            </span>
-                            <span className="flex-1 min-w-0 truncate text-gray-700">{s.titre}</span>
-                            <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                              s.sort === 'adopte' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                            }`}>
-                              {s.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
-                            </span>
-                            <span className="flex-shrink-0 text-[10px] text-muted-foreground tabular-nums">
-                              {s.nombrePour}/{s.nombreContre}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Footer: last vote date */}
-                    {dossier.lastScrutinDate && (
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground mt-2 pt-2 border-t">
-                        <Calendar className="h-3 w-3" />
-                        Dernier vote : {formatDate(dossier.lastScrutinDate)}
-                      </div>
-                    )}
+                    {/* Footer: last vote date + scrutins count */}
+                    <div className="mt-4 pt-3 flex items-center gap-4 text-sm text-muted-foreground">
+                      {dossier.lastScrutinDate && (
+                        <span className="flex items-center gap-1.5">
+                          <Calendar className="h-4 w-4" />
+                          Dernier vote : {formatDate(dossier.lastScrutinDate)}
+                        </span>
+                      )}
+                      <span className="flex items-center gap-1">
+                        <span className="font-medium text-muted-foreground">#</span>
+                        {dossier.scrutinsCount} scrutin{dossier.scrutinsCount > 1 ? 's' : ''}
+                      </span>
+                    </div>
                   </Link>
                 ))}
               </div>
@@ -393,15 +368,21 @@ export default function HomePage() {
       {recentActions && recentActions.length > 0 && (
         <section className="py-16 border-b overflow-hidden">
           <div className="container mx-auto px-4">
-            <div className="flex items-center justify-between mb-8">
-              <h2 className="text-2xl font-bold">Dernières actions lobby déclarées</h2>
-              <Link
-                href="/lobbying/actions"
-                className="flex items-center text-sm font-medium text-primary hover:underline"
-              >
-                Voir toutes les actions
-                <ArrowRight className="ml-1 h-4 w-4" />
-              </Link>
+            <div className="mb-8">
+              <span className="text-sm font-medium text-primary">Transparence</span>
+              <div className="flex items-center justify-between mt-1">
+                <div>
+                  <h2 className="text-2xl font-bold">Dernières actions lobby déclarées</h2>
+                  <p className="text-muted-foreground mt-1">Les activités de lobbying les plus récentes déclarées à la HATVP</p>
+                </div>
+                <Link
+                  href="/lobbying/actions"
+                  className="flex items-center text-sm font-medium text-primary hover:underline"
+                >
+                  Voir toutes les actions
+                  <ArrowRight className="ml-1 h-4 w-4" />
+                </Link>
+              </div>
             </div>
           </div>
 
@@ -411,7 +392,7 @@ export default function HomePage() {
             <button
               onClick={() => {
                 const container = document.getElementById('actions-carousel');
-                if (container) container.scrollBy({ left: -376, behavior: 'smooth' });
+                if (container) container.scrollBy({ left: -416, behavior: 'smooth' });
               }}
               className="absolute left-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-10 h-10 rounded-full bg-background/90 border shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-background"
               aria-label="Précédent"
@@ -421,7 +402,7 @@ export default function HomePage() {
             <button
               onClick={() => {
                 const container = document.getElementById('actions-carousel');
-                if (container) container.scrollBy({ left: 376, behavior: 'smooth' });
+                if (container) container.scrollBy({ left: 416, behavior: 'smooth' });
               }}
               className="absolute right-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-10 h-10 rounded-full bg-background/90 border shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-background"
               aria-label="Suivant"
@@ -443,22 +424,22 @@ export default function HomePage() {
                     <Link
                       key={`${action.id}-${index}`}
                       href={`/lobbying/${action.lobbyiste.id}`}
-                      className="w-[360px] flex-shrink-0 rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
+                      className="w-[400px] flex-shrink-0 rounded-xl border bg-card p-5 transition-all hover:border-primary hover:shadow-md"
                     >
                       {/* Tags: Secteur + Cible + Date */}
-                      <div className="flex flex-wrap items-center gap-2 text-sm mb-3">
+                      <div className="flex items-center gap-2 text-sm mb-3">
                         {secteur && (
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${getSecteurColor(secteur)}`}>
+                          <span className={`px-2.5 py-1 rounded-md border text-xs font-medium truncate max-w-[180px] ${getSecteurColor(secteur)}`}>
                             {secteur}
                           </span>
                         )}
                         {action.cible && (
-                          <span className="px-2 py-0.5 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded text-xs">
+                          <span className="px-2.5 py-1 rounded-md border border-blue-200 text-blue-800 dark:border-blue-800 dark:text-blue-400 text-xs font-medium whitespace-nowrap">
                             {cibleLabels[action.cible] || action.cible}
                           </span>
                         )}
-                        <span className="flex items-center gap-1 text-muted-foreground text-xs ml-auto">
-                          <Calendar className="h-3 w-3" />
+                        <span className="flex items-center gap-1.5 text-muted-foreground text-xs ml-auto whitespace-nowrap">
+                          <Calendar className="h-3.5 w-3.5" />
                           {new Date(action.dateDebut).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
                         </span>
                       </div>

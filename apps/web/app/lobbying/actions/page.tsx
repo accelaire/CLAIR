@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useMemo } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -10,6 +10,7 @@ import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useUrlFilters, useUrlDateRange } from '@/hooks/useUrlFilters';
 import { DateRangePicker } from '@/components/DateRangePicker';
 import { LobbyisteLogo } from '@/components/lobbying';
+import { FilterBar } from '@/components/FilterBar';
 
 interface ActionLobby {
   id: string;
@@ -108,7 +109,7 @@ const getSecteurColor = (secteur: string): string => {
 };
 
 function ActionsPageContent() {
-  const [filters, setFilter, setFilters] = useUrlFilters<{
+  const [filters, setFilter, setFilters, clearAll] = useUrlFilters<{
     search: string;
     cible: string;
     secteur: string;
@@ -173,6 +174,20 @@ function ActionsPageContent() {
   const actions = data?.pages.flatMap((page) => page.data) ?? [];
   const total = data?.pages[0]?.meta.total ?? 0;
 
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.cible) count++;
+    if (filters.secteur) count++;
+    if (dateRange.from || dateRange.to) count++;
+    if (filters.sort && filters.sort !== 'dateDebut') count++;
+    if (filters.order && filters.order !== 'desc' && filters.sort === 'dateDebut') count++;
+    return count;
+  }, [filters.cible, filters.secteur, filters.sort, filters.order, dateRange.from, dateRange.to]);
+
+  const handleClearFilters = () => {
+    clearAll(['dateFrom', 'dateTo']);
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       {/* Header avec retour */}
@@ -190,22 +205,25 @@ function ActionsPageContent() {
         </p>
       </div>
 
-      {/* Filtres - Responsive */}
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center">
-        {/* Recherche */}
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Rechercher une action, un lobbyiste..."
-            value={filters.search}
-            onChange={(e) => setFilter('search', e.target.value)}
-            className="w-full rounded-lg border bg-background pl-10 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-        </div>
-
+      {/* Filtres */}
+      <FilterBar
+        activeFilterCount={activeFilterCount}
+        onClear={handleClearFilters}
+        search={
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Rechercher une action, un lobbyiste..."
+              value={filters.search}
+              onChange={(e) => setFilter('search', e.target.value)}
+              className="w-full rounded-lg border bg-background pl-10 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+        }
+      >
         {/* Filtre par cible */}
-        <div className="relative w-full sm:w-auto">
+        <div className="relative md:w-auto">
           <select
             value={filters.cible}
             onChange={(e) => setFilter('cible', e.target.value)}
@@ -220,7 +238,7 @@ function ActionsPageContent() {
         </div>
 
         {/* Filtre par secteur */}
-        <div className="relative w-full sm:w-auto sm:min-w-[200px] sm:flex-1 sm:max-w-[300px]">
+        <div className="relative md:w-auto md:min-w-[200px] md:flex-1 md:max-w-[300px]">
           <select
             value={filters.secteur}
             onChange={(e) => setFilter('secteur', e.target.value)}
@@ -236,17 +254,8 @@ function ActionsPageContent() {
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>
 
-        {/* Filtre par période */}
-        <div className="w-full sm:w-auto">
-          <DateRangePicker
-            value={dateRange}
-            onChange={setDateRange}
-            placeholder="Filtrer par période"
-          />
-        </div>
-
         {/* Tri */}
-        <div className="relative w-full sm:w-auto">
+        <div className="relative md:w-auto">
           <select
             value={`${sort}-${order}`}
             onChange={(e) => {
@@ -265,7 +274,14 @@ function ActionsPageContent() {
           </select>
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>
-      </div>
+
+        {/* Filtre par période */}
+        <DateRangePicker
+          value={dateRange}
+          onChange={setDateRange}
+          placeholder="Filtrer par période"
+        />
+      </FilterBar>
 
       {/* Loading initial */}
       {isLoading && (

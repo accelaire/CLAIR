@@ -5,12 +5,12 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Search, Users, Vote, Building2, Loader2, X } from 'lucide-react';
+import { Search, Users, Vote, Building2, FileText, Loader2, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useDebouncedCallback } from 'use-debounce';
 
 interface SearchResult {
-  _type: 'depute' | 'senateur' | 'scrutin' | 'lobbyiste';
+  _type: 'depute' | 'senateur' | 'scrutin' | 'lobbyiste' | 'dossier';
   _score: number;
   // Parlementaire fields (député ou sénateur)
   id?: string;
@@ -35,6 +35,11 @@ interface SearchResult {
   // Lobbyiste fields
   type?: string;
   secteur?: string;
+  // Dossier fields
+  uid?: string;
+  etat?: string;
+  procedureLibelle?: string;
+  loiNumero?: string;
 }
 
 interface SearchResponse {
@@ -45,6 +50,7 @@ interface SearchResponse {
       deputes: number;
       scrutins: number;
       lobbyistes: number;
+      dossiers: number;
       total: number;
     };
   };
@@ -55,6 +61,16 @@ const typeConfig = {
   senateur: { label: 'Sénateur', icon: Users, color: 'bg-red-100 text-red-700' },
   scrutin: { label: 'Scrutin', icon: Vote, color: 'bg-purple-100 text-purple-700' },
   lobbyiste: { label: 'Lobbyiste', icon: Building2, color: 'bg-amber-100 text-amber-700' },
+  dossier: { label: 'Dossier', icon: FileText, color: 'bg-green-100 text-green-700' },
+};
+
+/** Construit un titre lisible : préfixe procedure si le titre commence en minuscule */
+const formatDossierTitre = (titre: string, procedureLibelle?: string | null): string => {
+  const firstChar = titre.charAt(0);
+  if (firstChar !== firstChar.toUpperCase() && procedureLibelle) {
+    return `${procedureLibelle} ${titre}`;
+  }
+  return titre;
 };
 
 export default function RecherchePage() {
@@ -64,7 +80,7 @@ export default function RecherchePage() {
 
   const [query, setQuery] = useState(initialQuery);
   const [debouncedQuery, setDebouncedQuery] = useState(initialQuery);
-  const [filter, setFilter] = useState<'all' | 'deputes' | 'senateurs' | 'scrutins' | 'lobbyistes'>('all');
+  const [filter, setFilter] = useState<'all' | 'deputes' | 'senateurs' | 'scrutins' | 'lobbyistes' | 'dossiers'>('all');
 
   // Debounced search
   const debouncedSetQuery = useDebouncedCallback((value: string) => {
@@ -108,13 +124,15 @@ export default function RecherchePage() {
         return `/scrutins/${result.numero}?chambre=${chambre}${sessionParam}`;
       case 'lobbyiste':
         return `/lobbying/${result.id}`;
+      case 'dossier':
+        return `/dossiers/${result.uid}`;
       default:
         return '#';
     }
   };
 
   // Détermine le type réel basé sur la chambre
-  const getDisplayType = (result: SearchResult): 'depute' | 'senateur' | 'scrutin' | 'lobbyiste' => {
+  const getDisplayType = (result: SearchResult): 'depute' | 'senateur' | 'scrutin' | 'lobbyiste' | 'dossier' => {
     if (result._type === 'depute' || result._type === 'senateur') {
       return result.chambre === 'senat' ? 'senateur' : 'depute';
     }
@@ -204,6 +222,31 @@ export default function RecherchePage() {
                 </div>
               </>
             )}
+
+            {result._type === 'dossier' && (
+              <>
+                <h3 className="font-semibold line-clamp-2">{formatDossierTitre(result.titre || '', result.procedureLibelle)}</h3>
+                <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+                  {result.etat && (
+                    <span className={
+                      result.etat === 'promulgue' ? 'text-green-600' :
+                      result.etat === 'rejete' ? 'text-red-600' : ''
+                    }>
+                      {result.etat === 'promulgue' ? 'Promulgué' :
+                       result.etat === 'adopte' ? 'Adopté' :
+                       result.etat === 'rejete' ? 'Rejeté' :
+                       result.etat === 'en_cours' ? 'En cours' : result.etat}
+                    </span>
+                  )}
+                  {result.loiNumero && (
+                    <>
+                      <span>•</span>
+                      <span className="text-green-700 font-medium">Loi n&deg;{result.loiNumero}</span>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </Link>
@@ -216,7 +259,7 @@ export default function RecherchePage() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold">Recherche</h1>
         <p className="mt-2 text-muted-foreground">
-          Trouvez des députés, sénateurs, scrutins et lobbyistes
+          Trouvez des députés, sénateurs, scrutins, lobbyistes et dossiers législatifs
         </p>
       </div>
 
@@ -254,6 +297,7 @@ export default function RecherchePage() {
           { value: 'senateurs', label: 'Sénateurs' },
           { value: 'scrutins', label: 'Scrutins' },
           { value: 'lobbyistes', label: 'Lobbyistes' },
+          { value: 'dossiers', label: 'Dossiers' },
         ].map((f) => (
           <button
             key={f.value}

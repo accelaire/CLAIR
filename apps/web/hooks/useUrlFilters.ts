@@ -17,7 +17,7 @@ interface UseUrlFiltersOptions<T extends Record<string, FilterValue>> {
 export function useUrlFilters<T extends Record<string, FilterValue>>(
   keys: (keyof T)[],
   options: UseUrlFiltersOptions<T> = {}
-): [T, (key: keyof T, value: FilterValue) => void, (updates: Partial<T>) => void] {
+): [T, (key: keyof T, value: FilterValue) => void, (updates: Partial<T>) => void, (extraKeys?: string[]) => void] {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -67,7 +67,22 @@ export function useUrlFilters<T extends Record<string, FilterValue>>(
     [searchParams, router, pathname]
   );
 
-  return [values, setFilter, setFilters];
+  // Clear all registered keys + optional extra keys (e.g. 'dateFrom', 'dateTo') in one atomic replace
+  const clearAll = useCallback(
+    (extraKeys: string[] = []) => {
+      const params = new URLSearchParams(searchParams.toString());
+      for (const key of keys) {
+        params.delete(key as string);
+      }
+      for (const key of extraKeys) {
+        params.delete(key);
+      }
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [searchParams, router, pathname, keys]
+  );
+
+  return [values, setFilter, setFilters, clearAll];
 }
 
 /**

@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useMemo } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Search, ChevronDown, Building2, Briefcase, TrendingUp, Users, Loader2, Calendar, ArrowRight } from 'lucide-react';
@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
 import { LobbyisteLogo } from '@/components/lobbying';
+import { FilterBar } from '@/components/FilterBar';
 
 interface Lobbyiste {
   id: string;
@@ -124,7 +125,7 @@ const getSecteurColor = (secteur: string): string => {
 
 function LobbyingPageContent() {
   // Sync filters with URL for back button preservation
-  const [filters, setFilter, setFilters] = useUrlFilters<{
+  const [filters, setFilter, setFilters, clearAll] = useUrlFilters<{
     search: string;
     type: string;
     secteur: string;
@@ -192,6 +193,19 @@ function LobbyingPageContent() {
   // Flatten all pages data
   const lobbyistes = data?.pages.flatMap((page) => page.data) ?? [];
   const total = data?.pages[0]?.meta.total ?? 0;
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.type) count++;
+    if (filters.secteur) count++;
+    if (filters.sort && filters.sort !== 'nom') count++;
+    if (filters.order && filters.order !== 'asc' && filters.sort === 'nom') count++;
+    return count;
+  }, [filters.type, filters.secteur, filters.sort, filters.order]);
+
+  const handleClearFilters = () => {
+    clearAll();
+  };
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -336,22 +350,25 @@ function LobbyingPageContent() {
         Représentants d&apos;intérêts
       </h2>
 
-      {/* Filtres - Responsive */}
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center">
-        {/* Recherche */}
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Rechercher un lobbyiste..."
-            value={filters.search}
-            onChange={(e) => setFilter('search', e.target.value)}
-            className="w-full rounded-lg border bg-background pl-10 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-        </div>
-
+      {/* Filtres */}
+      <FilterBar
+        activeFilterCount={activeFilterCount}
+        onClear={handleClearFilters}
+        search={
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Rechercher un lobbyiste..."
+              value={filters.search}
+              onChange={(e) => setFilter('search', e.target.value)}
+              className="w-full rounded-lg border bg-background pl-10 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+        }
+      >
         {/* Filtre par type */}
-        <div className="relative w-full sm:w-auto">
+        <div className="relative md:w-auto">
           <select
             value={filters.type}
             onChange={(e) => setFilter('type', e.target.value)}
@@ -366,7 +383,7 @@ function LobbyingPageContent() {
         </div>
 
         {/* Filtre par secteur */}
-        <div className="relative w-full sm:w-auto sm:min-w-[200px] sm:flex-1 sm:max-w-[300px]">
+        <div className="relative md:w-auto md:min-w-[200px] md:flex-1 md:max-w-[300px]">
           <select
             value={filters.secteur}
             onChange={(e) => setFilter('secteur', e.target.value)}
@@ -383,7 +400,7 @@ function LobbyingPageContent() {
         </div>
 
         {/* Tri */}
-        <div className="relative w-full sm:w-auto">
+        <div className="relative md:w-auto">
           <select
             value={`${sort}-${order}`}
             onChange={(e) => {
@@ -404,7 +421,7 @@ function LobbyingPageContent() {
           </select>
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>
-      </div>
+      </FilterBar>
 
       {/* Loading initial */}
       {isLoading && (

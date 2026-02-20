@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useMemo } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Search, ChevronDown, Calendar, FileText, Vote, Loader2, ArrowRight } from 'lucide-react';
@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
 import { useUrlFilters, useUrlDateRange } from '@/hooks/useUrlFilters';
+import { FilterBar } from '@/components/FilterBar';
 
 interface Dossier {
   id: string;
@@ -19,6 +20,7 @@ interface Dossier {
   procedureLibelle: string | null;
   etat: string | null;
   dateDepot: string | null;
+  lastScrutinDate: string | null;
   loiNumero: string | null;
   _count: {
     scrutins: number;
@@ -62,7 +64,7 @@ const formatDate = (dateStr: string) => {
 };
 
 function DossiersPageContent() {
-  const [filters, setFilter] = useUrlFilters<{
+  const [filters, setFilter, , clearAll] = useUrlFilters<{
     search: string;
     etat: string;
     chambre: string;
@@ -115,6 +117,19 @@ function DossiersPageContent() {
   const dossiers = data?.pages.flatMap((page) => page.data) ?? [];
   const total = data?.pages[0]?.meta.total ?? 0;
 
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.chambre) count++;
+    if (filters.etat) count++;
+    if (filters.procedureLibelle) count++;
+    if (dateRange.from || dateRange.to) count++;
+    return count;
+  }, [filters.chambre, filters.etat, filters.procedureLibelle, dateRange.from, dateRange.to]);
+
+  const handleClearFilters = () => {
+    clearAll(['dateFrom', 'dateTo']);
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       {/* Header */}
@@ -129,21 +144,24 @@ function DossiersPageContent() {
       </div>
 
       {/* Filtres */}
-      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start">
-        {/* Recherche */}
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Rechercher un dossier..."
-            value={filters.search}
-            onChange={(e) => setFilter('search', e.target.value)}
-            className="w-full rounded-lg border bg-background px-10 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-        </div>
-
+      <FilterBar
+        activeFilterCount={activeFilterCount}
+        onClear={handleClearFilters}
+        search={
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Rechercher un dossier..."
+              value={filters.search}
+              onChange={(e) => setFilter('search', e.target.value)}
+              className="w-full rounded-lg border bg-background px-10 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+        }
+      >
         {/* Filtre par chambre */}
-        <div className="relative w-full sm:w-auto">
+        <div className="relative md:w-auto">
           <select
             value={filters.chambre}
             onChange={(e) => setFilter('chambre', e.target.value)}
@@ -157,7 +175,7 @@ function DossiersPageContent() {
         </div>
 
         {/* Filtre par état */}
-        <div className="relative w-full sm:w-auto">
+        <div className="relative md:w-auto">
           <select
             value={filters.etat}
             onChange={(e) => setFilter('etat', e.target.value)}
@@ -174,11 +192,11 @@ function DossiersPageContent() {
 
         {/* Filtre par procédure */}
         {filtersData?.procedures && filtersData.procedures.length > 0 && (
-          <div className="relative w-full sm:w-auto">
+          <div className="relative md:w-auto md:max-w-[220px]">
             <select
               value={filters.procedureLibelle}
               onChange={(e) => setFilter('procedureLibelle', e.target.value)}
-              className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full appearance-none truncate rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">Toutes les procédures</option>
               {filtersData.procedures.map((p) => (
@@ -190,16 +208,14 @@ function DossiersPageContent() {
             <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           </div>
         )}
-      </div>
 
-      {/* Filtre par periode */}
-      <div className="mb-6">
+        {/* Filtre par période */}
         <DateRangePicker
           value={dateRange}
           onChange={setDateRange}
           placeholder="Période"
         />
-      </div>
+      </FilterBar>
 
       {/* Loading */}
       {isLoading && (
@@ -256,10 +272,10 @@ function DossiersPageContent() {
 
                     {/* Meta */}
                     <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                      {dossier.dateDepot && (
+                      {dossier.lastScrutinDate && (
                         <span className="flex items-center gap-1">
                           <Calendar className="h-4 w-4" />
-                          {formatDate(dossier.dateDepot)}
+                          Dernier vote : {formatDate(dossier.lastScrutinDate)}
                         </span>
                       )}
                       <span className="flex items-center gap-1">
