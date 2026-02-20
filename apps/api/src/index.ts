@@ -6,12 +6,12 @@ import 'dotenv/config';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
-import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 
 import { prismaPlugin } from './plugins/prisma';
 import { redisPlugin } from './plugins/redis';
+import { rateLimitPlugin } from './plugins/rate-limit';
 import { authPlugin } from './plugins/auth';
 import { meilisearchPlugin } from './plugins/meilisearch';
 
@@ -73,16 +73,6 @@ async function buildApp() {
     credentials: true,
   });
 
-  await app.register(rateLimit, {
-    max: 100,
-    timeWindow: '1 minute',
-    keyGenerator: (request) => {
-      return request.headers['x-forwarded-for']?.toString() || 
-             request.ip || 
-             'unknown';
-    },
-  });
-
   // Documentation API - Désactivée en production pour des raisons de sécurité
   if (process.env.NODE_ENV !== 'production') {
     await app.register(swagger, {
@@ -140,6 +130,7 @@ async function buildApp() {
 
   await app.register(prismaPlugin);
   await app.register(redisPlugin);
+  await app.register(rateLimitPlugin); // Depends on redis — must come after
   await app.register(meilisearchPlugin);
   await app.register(authPlugin);
 
