@@ -237,6 +237,43 @@ describe('jaccardSimilarity', () => {
   });
 });
 
+describe('dossier validation for amendment-scrutin linking', () => {
+  // Tests the filtering logic used in enrichScrutinsANAmendements:
+  // Skip if both dossier_ids are non-null and differ (cross-dossier false positive).
+  // This is a pure logic test — no Prisma/HTTP mocking needed.
+
+  function shouldLink(
+    scrutinDossierId: string | null,
+    amendementDossierId: string | null,
+  ): boolean {
+    // Exact same condition as in enrichScrutinsANAmendements
+    if (scrutinDossierId && amendementDossierId && scrutinDossierId !== amendementDossierId) {
+      return false;
+    }
+    return true;
+  }
+
+  it('should link when both have the same dossier_id', () => {
+    expect(shouldLink('dossier-123', 'dossier-123')).toBe(true);
+  });
+
+  it('should skip when dossier_ids differ (cross-dossier false positive)', () => {
+    expect(shouldLink('dossier-123', 'dossier-456')).toBe(false);
+  });
+
+  it('should link when scrutin has no dossier_id', () => {
+    expect(shouldLink(null, 'dossier-456')).toBe(true);
+  });
+
+  it('should link when amendement has no dossier_id', () => {
+    expect(shouldLink('dossier-123', null)).toBe(true);
+  });
+
+  it('should link when both have no dossier_id', () => {
+    expect(shouldLink(null, null)).toBe(true);
+  });
+});
+
 describe('stopwords', () => {
   it('should have FRENCH_STOPWORDS loaded', () => {
     expect(FRENCH_STOPWORDS.size).toBeGreaterThan(100);

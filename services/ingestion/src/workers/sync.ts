@@ -1566,6 +1566,28 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     } catch (error: any) {
       logger.error({ error: error.message }, 'AN scrutins-dossiers title linking failed (non-blocking)');
     }
+
+    // Texte_numero linking — structural match via shared texte reference
+    logger.info('Linking orphan scrutins by shared texte_numero...');
+    try {
+      const texteNumResult = await linkOrphanScrutinsByTexteNumero();
+      logger.info({
+        linked: texteNumResult.linked,
+      }, 'Texte_numero orphan linking completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Texte_numero orphan linking failed (non-blocking)');
+    }
+
+    // Loi_titre matching — last resort matching against promulgated law title
+    logger.info('Linking orphan scrutins by loi_titre...');
+    try {
+      const loiTitreResult = await linkOrphansByLoiTitre();
+      logger.info({
+        linked: loiTitreResult.linked,
+      }, 'Loi_titre orphan linking completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Loi_titre orphan linking failed (non-blocking)');
+    }
   }
 
   if (hasAmendementsChanged || hasScrutinsChanged || hasDossiersChanged) {
@@ -3283,6 +3305,7 @@ export async function enrichScrutinsANAmendements(
       titre: true,
       sourceUrl: true,
       session: true,
+      dossierId: true,
     },
     take: limitCount,
     orderBy: { numero: 'desc' }, // Plus récents d'abord
@@ -3295,13 +3318,13 @@ export async function enrichScrutinsANAmendements(
   }
 
   // Charger tous les amendements AN pour le matching rapide
-  // Clé: "{texteNumero}-{amendementNumero}" -> amendementId
+  // Clé: "{texteNumero}-{amendementNumero}" -> { id, dossierId }
   const amendementsAN = await prisma.amendement.findMany({
     where: { chambre: 'assemblee' },
-    select: { id: true, numero: true, texteRef: true },
+    select: { id: true, numero: true, texteRef: true, dossierId: true },
   });
 
-  const amendementMap = new Map<string, string>();
+  const amendementMap = new Map<string, { id: string; dossierId: string | null }>();
   for (const a of amendementsAN) {
     if (a.texteRef && a.numero) {
       // Extraire le numéro de texte depuis texte_ref (format: PIONANR5L17B2364 ou PRJLANR5L17BTC2364)
@@ -3309,14 +3332,14 @@ export async function enrichScrutinsANAmendements(
       if (texteMatch) {
         const texteNumero = texteMatch[1];
         const key = `${texteNumero}-${a.numero}`.toUpperCase();
-        amendementMap.set(key, a.id);
+        amendementMap.set(key, { id: a.id, dossierId: a.dossierId });
         // Also map base number without "(Rect)" suffix for rectified amendments
         // HTML links use bare number "4" but DB stores "4 (Rect)"
         const baseNumero = a.numero.replace(/\s*\(Rect[^)]*\)/i, '').trim();
         if (baseNumero !== a.numero) {
           const baseKey = `${texteNumero}-${baseNumero}`.toUpperCase();
           if (!amendementMap.has(baseKey)) {
-            amendementMap.set(baseKey, a.id);
+            amendementMap.set(baseKey, { id: a.id, dossierId: a.dossierId });
           }
         }
       }
@@ -3365,14 +3388,23 @@ export async function enrichScrutinsANAmendements(
             return { status: 'notFound' as const };
           }
 
-          // Collecter tous les amendements trouvés
+          // Collecter tous les amendements trouvés (avec validation dossier)
           const foundAmendementIds: string[] = [];
+          let dossierFiltered = 0;
           for (const match of allMatches) {
             const [, texteNumero, , amendementNumero] = match;
             const key = `${texteNumero}-${amendementNumero}`.toUpperCase();
-            const amendementId = amendementMap.get(key);
-            if (amendementId && !foundAmendementIds.includes(amendementId)) {
-              foundAmendementIds.push(amendementId);
+            const amendement = amendementMap.get(key);
+            if (amendement) {
+              // Skip if both scrutin and amendement have dossier_id but they differ
+              // This prevents cross-dossier false links when BTC texte references are shared
+              if (scrutin.dossierId && amendement.dossierId && scrutin.dossierId !== amendement.dossierId) {
+                dossierFiltered++;
+                continue;
+              }
+              if (!foundAmendementIds.includes(amendement.id)) {
+                foundAmendementIds.push(amendement.id);
+              }
             }
           }
 
@@ -3393,6 +3425,9 @@ export async function enrichScrutinsANAmendements(
             });
           }
 
+          if (dossierFiltered > 0) {
+            logger.debug({ scrutinNumero: scrutin.numero, dossierFiltered }, 'Skipped cross-dossier amendment matches');
+          }
           logger.debug({ scrutinNumero: scrutin.numero, amendementCount: foundAmendementIds.length, dryRun }, 'Amendments linked');
           return { status: 'enriched' as const };
         } catch (error: any) {
@@ -3619,13 +3654,20 @@ export async function enrichScrutinsSenatAmendements(
 
             const candidates = await prisma.amendement.findMany({
               where,
-              select: { id: true },
+              select: { id: true, dossierId: true },
               orderBy: { dateDepot: 'desc' },
               take: 1,
             });
 
-            if (candidates[0] && !foundAmendementIds.includes(candidates[0].id)) {
-              foundAmendementIds.push(candidates[0].id);
+            if (candidates[0]) {
+              // Skip if both scrutin and amendement have dossier_id but they differ
+              // (prevents cross-dossier false links from texte_ref shared across dossiers)
+              if (scrutin.dossierId && candidates[0].dossierId && scrutin.dossierId !== candidates[0].dossierId) {
+                continue;
+              }
+              if (!foundAmendementIds.includes(candidates[0].id)) {
+                foundAmendementIds.push(candidates[0].id);
+              }
             }
           }
 
@@ -3916,6 +3958,150 @@ export async function syncLobbyistes(
     lobbyistes: { created: lobbyistesCreated, updated: lobbyistesUpdated },
     actions: actionsCreated + actionsUpdated,
   };
+}
+
+// =============================================================================
+// LINK ORPHAN SCRUTINS BY TEXTE_NUMERO
+// =============================================================================
+
+/**
+ * Lie les scrutins orphelins aux dossiers via le numéro de texte partagé.
+ *
+ * Si un scrutin orphelin a le même texte_numero qu'un ou plusieurs scrutins
+ * déjà liés à un dossier UNIQUE, on peut le lier au même dossier en confiance.
+ *
+ * Cas typique: "aide à mourir" scrutins partageant texte_numero avec des scrutins
+ * "Fin de vie" déjà liés — même texte législatif, titres différents.
+ */
+export async function linkOrphanScrutinsByTexteNumero(): Promise<{ linked: number }> {
+  logger.info('Linking orphan scrutins to dossiers by shared texte_numero...');
+
+  let totalLinked = 0;
+
+  for (const chambre of ['assemblee', 'senat'] as const) {
+    const result = await prisma.$executeRaw`
+      WITH texte_dossier_map AS (
+        SELECT texte_numero, MIN(dossier_id) as dossier_id
+        FROM scrutins
+        WHERE chambre = ${chambre}
+          AND dossier_id IS NOT NULL
+          AND texte_numero IS NOT NULL
+        GROUP BY texte_numero
+        HAVING COUNT(DISTINCT dossier_id) = 1
+      )
+      UPDATE scrutins s
+      SET dossier_id = tdm.dossier_id
+      FROM texte_dossier_map tdm
+      WHERE s.chambre = ${chambre}
+        AND s.dossier_id IS NULL
+        AND s.texte_numero IS NOT NULL
+        AND s.texte_numero = tdm.texte_numero
+    `;
+
+    if (result > 0) {
+      logger.info({ chambre, linked: result }, 'Orphan scrutins linked by texte_numero');
+    }
+    totalLinked += result;
+  }
+
+  logger.info({ linked: totalLinked }, 'Texte_numero orphan linking completed');
+  return { linked: totalLinked };
+}
+
+// =============================================================================
+// LINK ORPHANS BY LOI_TITRE + PEER MATCHING
+// =============================================================================
+
+/**
+ * Lie les scrutins orphelins aux dossiers en deux passes:
+ *
+ * Pass 1 — loi_titre: si le dossier a un titre de loi promulguée (loi_titre)
+ * et que ce titre est une sous-chaîne du titre du scrutin, on lie.
+ *
+ * Pass 2 — peer matching: extrait la phrase "proposition/projet de loi ..."
+ * depuis le titre du scrutin orphelin, et cherche des scrutins déjà liés
+ * avec la même phrase. Si tous pointent vers un seul dossier, on lie.
+ * Résout les cas où le titre du dossier diffère du titre de la loi
+ * (ex: dossier "Fin de vie" ↔ scrutins "aide à mourir").
+ *
+ * Dernière étape du pipeline de matching — filet de sécurité final.
+ */
+export async function linkOrphansByLoiTitre(): Promise<{ linked: number }> {
+  logger.info('Linking orphan scrutins to dossiers by loi_titre + peer matching...');
+
+  let totalLinked = 0;
+
+  for (const chambre of ['assemblee', 'senat'] as const) {
+    const dossierFilter = chambre === 'senat'
+      ? Prisma.sql`d.uid LIKE 'SENAT%'`
+      : Prisma.sql`d.uid NOT LIKE 'SENAT%'`;
+
+    // Pass 1: loi_titre substring match
+    const loiTitreResult = await prisma.$executeRaw`
+      UPDATE scrutins s
+      SET dossier_id = d.id
+      FROM dossiers_legislatifs d
+      WHERE s.chambre = ${chambre}
+        AND s.dossier_id IS NULL
+        AND d.loi_titre IS NOT NULL AND LENGTH(d.loi_titre) > 15
+        AND ${dossierFilter}
+        AND LOWER(s.titre) LIKE '%' || LOWER(d.loi_titre) || '%'
+        -- Only use unambiguous matches (exactly 1 dossier matches)
+        AND (
+          SELECT COUNT(DISTINCT d2.id)
+          FROM dossiers_legislatifs d2
+          WHERE d2.loi_titre IS NOT NULL AND LENGTH(d2.loi_titre) > 15
+            AND ${dossierFilter}
+            AND LOWER(s.titre) LIKE '%' || LOWER(d2.loi_titre) || '%'
+        ) = 1
+    `;
+
+    if (loiTitreResult > 0) {
+      logger.info({ chambre, linked: loiTitreResult }, 'Orphan scrutins linked by loi_titre');
+    }
+    totalLinked += loiTitreResult;
+
+    // Pass 2: peer matching — extract "proposition/projet de loi ..." phrase
+    // from orphan titles and match against already-linked scrutins with same phrase.
+    // Covers cases like "aide à mourir (deuxième lecture)" where dossier title is "Fin de vie"
+    // but existing scrutins on the same law are already linked.
+    const peerResult = await prisma.$executeRaw`
+      WITH orphan_phrases AS (
+        SELECT s.id,
+          LOWER(SUBSTRING(s.titre FROM '((?:proposition|projet) de (?:loi|résolution)[^(.]+)')) as loi_phrase
+        FROM scrutins s
+        WHERE s.chambre = ${chambre}
+          AND s.dossier_id IS NULL
+          AND s.titre ~* '(proposition|projet) de (loi|résolution)'
+      ),
+      peer_dossier_map AS (
+        SELECT
+          LOWER(SUBSTRING(s2.titre FROM '((?:proposition|projet) de (?:loi|résolution)[^(.]+)')) as loi_phrase,
+          MIN(s2.dossier_id) as dossier_id
+        FROM scrutins s2
+        WHERE s2.chambre = ${chambre}
+          AND s2.dossier_id IS NOT NULL
+          AND s2.titre ~* '(proposition|projet) de (loi|résolution)'
+        GROUP BY 1
+        HAVING COUNT(DISTINCT s2.dossier_id) = 1
+      )
+      UPDATE scrutins s
+      SET dossier_id = pdm.dossier_id
+      FROM orphan_phrases op
+      JOIN peer_dossier_map pdm ON op.loi_phrase = pdm.loi_phrase
+      WHERE s.id = op.id
+        AND op.loi_phrase IS NOT NULL
+        AND LENGTH(op.loi_phrase) > 20
+    `;
+
+    if (peerResult > 0) {
+      logger.info({ chambre, linked: peerResult }, 'Orphan scrutins linked by peer loi phrase');
+    }
+    totalLinked += peerResult;
+  }
+
+  logger.info({ linked: totalLinked }, 'Loi_titre + peer matching orphan linking completed');
+  return { linked: totalLinked };
 }
 
 // Export des helpers pour réutilisation
