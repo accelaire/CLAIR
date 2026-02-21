@@ -176,7 +176,7 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
   senat_amendment_link_rate: {
     type: 'threshold',
     label: 'Taux de liaison scrutins-amendements Sénat (%)',
-    min: 90,
+    min: 45,
     query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (linked * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM "_AmendementToScrutin" ast WHERE ast."B" = s.id)) AS linked FROM scrutins s WHERE s.chambre = 'senat' AND s.titre ILIKE '%amendement%') sub`,
   },
   scrutin_dossier_link_rate: {

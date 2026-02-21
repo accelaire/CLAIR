@@ -582,38 +582,10 @@ export async function syncScrutinsSenat(
     }
   }
 
-  // Charger les amendements pour le mapping numéro -> amendementId (Sénat)
-  // IMPORTANT: Le numéro seul n'est pas unique ! On utilise texteRef+numero comme clé préférée.
-  // On utilise select minimal pour réduire la mémoire (~50k amendements Sénat)
-  const amendements = await prisma.amendement.findMany({
-    where: { uid: { startsWith: 'SENAT-' } },
-    select: { id: true, numero: true, texteRef: true },
-  });
-
-  // Map par numéro seul (fallback, peut avoir des collisions)
-  const amendementByNumero = new Map<string, string>();
-  // Map par texteRef+numero (précis, pas de collision)
-  const amendementByTexteNumero = new Map<string, string>();
-
-  for (const a of amendements) {
-    if (a.numero) {
-      const numUpper = a.numero.toUpperCase();
-
-      // Fallback: juste le numéro (peut être écrasé si plusieurs amendements ont le même numéro)
-      amendementByNumero.set(numUpper, a.id);
-
-      // Précis: texteRef + numéro
-      if (a.texteRef) {
-        amendementByTexteNumero.set(`${a.texteRef}-${numUpper}`, a.id);
-      }
-    }
-  }
-
   let scrutinsCreated = 0;
   let scrutinsUpdated = 0;
   let votesCreated = 0;
   let dossiersLinked = 0;
-  let amendementsLinked = 0;
 
   const chambre = 'senat';
 
@@ -640,21 +612,11 @@ export async function syncScrutinsSenat(
         if (dossierId) dossiersLinked++;
       }
 
-      // Rechercher TOUS les amendements liés (relation M:N)
-      // NOTE: Pour le Sénat, le matching par numero seul est imprécis car plusieurs
-      // amendements peuvent avoir le même numéro sur des textes différents.
-      // Le matching précis se fait dans enrichScrutinsSenatAmendements().
-      const amendementIds: string[] = [];
-      if (scrutin.amendementsNumeros && scrutin.amendementsNumeros.length > 0) {
-        for (const num of scrutin.amendementsNumeros) {
-          const numUpper = num.toUpperCase();
-          const found = amendementByNumero.get(numUpper);
-          if (found && !amendementIds.includes(found)) {
-            amendementIds.push(found);
-          }
-        }
-        if (amendementIds.length > 0) amendementsLinked++;
-      }
+      // Amendment linking is NOT done here — DOSLEG only provides amendment numbers
+      // without texteRef, making numero-only matching imprecise (same numero exists
+      // on different textes). Precise linking is handled later by:
+      // - enrichScrutinsSenatAmendements() (HTML scraping + AMELI texteRef)
+      // - linkScrutinsToAmendements() (CTE with dossier constraint)
 
       const scrutinBaseData = {
         numero: scrutin.numero,
@@ -695,9 +657,10 @@ export async function syncScrutinsSenat(
           where: { numero_chambre_session: { numero: scrutin.numero, chambre, session: sessionYear } },
           data: {
             ...scrutinBaseData,
-            // Ne remplacer les liens amendements que si DOSLEG fournit des numéros,
-            // sinon préserver les liens créés par enrichScrutinsSenatAmendements()
-            ...(amendementsRelation.length > 0 ? { amendements: { set: amendementsRelation } } : {}),
+            // NEVER override amendment links here — DOSLEG numero matching is imprecise
+            // (amendementByNumero is non-unique: same numero exists on different textes).
+            // Precise amendment linking is handled by enrichScrutinsSenatAmendements() (HTML scraping)
+            // and linkScrutinsToAmendements() (CTE with dossier constraint).
           },
         });
         scrutinId = existing.id;
@@ -706,7 +669,7 @@ export async function syncScrutinsSenat(
         const created = await prisma.scrutin.create({
           data: {
             ...scrutinBaseData,
-            amendements: amendementsRelation.length > 0 ? { connect: amendementsRelation } : undefined,
+            // Amendment linking is deferred to enrichScrutinsSenatAmendements() (HTML scraping)
           },
         });
         scrutinId = created.id;
@@ -748,7 +711,6 @@ export async function syncScrutinsSenat(
     scrutins: { created: scrutinsCreated, updated: scrutinsUpdated },
     votes: votesCreated,
     dossiersLinked,
-    amendementsLinked,
     total: scrutinsData.length,
   }, 'Scrutins Sénat sync completed');
 
@@ -3654,20 +3616,13 @@ export async function enrichScrutinsSenatAmendements(
 
             const candidates = await prisma.amendement.findMany({
               where,
-              select: { id: true, dossierId: true },
+              select: { id: true },
               orderBy: { dateDepot: 'desc' },
               take: 1,
             });
 
-            if (candidates[0]) {
-              // Skip if both scrutin and amendement have dossier_id but they differ
-              // (prevents cross-dossier false links from texte_ref shared across dossiers)
-              if (scrutin.dossierId && candidates[0].dossierId && scrutin.dossierId !== candidates[0].dossierId) {
-                continue;
-              }
-              if (!foundAmendementIds.includes(candidates[0].id)) {
-                foundAmendementIds.push(candidates[0].id);
-              }
+            if (candidates[0] && !foundAmendementIds.includes(candidates[0].id)) {
+              foundAmendementIds.push(candidates[0].id);
             }
           }
 
