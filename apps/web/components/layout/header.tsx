@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Menu, X, Search, Heart } from 'lucide-react';
+import { Menu, X, Search } from 'lucide-react';
 
 const navigation = [
   { name: 'Députés', href: '/deputes' },
@@ -42,20 +42,19 @@ export function Header() {
           </div>
 
           {/* Actions */}
-          <div className="flex items-center space-x-4">
-            <Link
-              href="/soutenir"
-              className="hidden sm:inline-flex items-center gap-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 text-sm font-medium transition-colors"
-            >
-              <Heart className="h-4 w-4" />
-              Soutenir
-            </Link>
+          <div className="flex items-center space-x-3">
             <Link
               href="/recherche"
               className="rounded-lg p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
               aria-label="Rechercher"
             >
               <Search className="h-5 w-5" />
+            </Link>
+            <Link
+              href="/soutenir"
+              className="hidden sm:inline-flex items-center rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-1.5 text-sm font-medium transition-colors"
+            >
+              Nous soutenir
             </Link>
 
             {/* TODO: Activer quand l'auth sera implémentée
@@ -100,11 +99,10 @@ export function Header() {
               ))}
               <Link
                 href="/soutenir"
-                className="inline-flex items-center gap-2 text-base font-medium text-red-500 transition-colors hover:text-red-600"
+                className="inline-flex items-center text-base font-medium text-primary transition-colors hover:text-primary/80"
                 onClick={() => setMobileMenuOpen(false)}
               >
-                <Heart className="h-4 w-4" />
-                Soutenir CLAIR
+                Nous soutenir
               </Link>
             </div>
           </div>
