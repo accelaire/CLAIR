@@ -1,19 +1,43 @@
 import { Metadata } from 'next';
 import Image from 'next/image';
-import { Heart, Shield, Eye, Users, Clock, Code, Server, Megaphone, Linkedin, ExternalLink } from 'lucide-react';
+import { Heart, Shield, Eye, Users, Clock, Code, Server, Megaphone, Linkedin } from 'lucide-react';
 import { HelloAssoWidget } from '@/components/donations/HelloAssoWidget';
+import { FAQAccordion } from '@/components/ui/faq-accordion';
 
 export const metadata: Metadata = {
   title: 'Soutenir CLAIR - Transparence Politique',
   description: 'Soutenez CLAIR, la plateforme citoyenne de transparence politique. Un projet 100% indépendant.',
 };
 
-// Configuration HelloAsso - À remplacer par les vrais slugs
+// Configuration HelloAsso
 const HELLOASSO_ORG_SLUG = process.env.NEXT_PUBLIC_HELLOASSO_ORG_SLUG || 'clair-transparence';
 const HELLOASSO_FORM_SLUG = process.env.NEXT_PUBLIC_HELLOASSO_FORM_SLUG || 'soutenir-clair';
 
 // Flag pour activer les mentions de défiscalisation (après obtention du rescrit)
 const DEFISCALISATION_ACTIVE = false;
+
+const faqItems = [
+  {
+    question: 'Les dons sont-ils défiscalisables ?',
+    answer: 'Nous sommes en cours d\'obtention du statut d\'association d\'intérêt général. Une fois ce statut obtenu, vos dons seront déductibles à 66% de votre impôt sur le revenu. Les donateurs seront informés dès que la défiscalisation sera active.',
+  },
+  {
+    question: 'À quoi servent les dons ?',
+    answer: 'Les dons financent l\'hébergement des serveurs, le développement de nouvelles fonctionnalités, et permettent de maintenir le projet sur le long terme. Notre budget est transparent et sera publié régulièrement.',
+  },
+  {
+    question: 'CLAIR est-il vraiment indépendant ?',
+    answer: 'Oui. CLAIR n\'accepte aucun financement de partis politiques, d\'entreprises ou de lobbies. Seuls les dons citoyens nous financent. Le code est open source et vérifiable sur GitHub.',
+  },
+  {
+    question: 'Puis-je faire un don récurrent ?',
+    answer: 'Oui ! Vous pouvez mettre en place un don récurrent directement via le formulaire HelloAsso. Les dons mensuels nous aident à planifier sur le long terme.',
+  },
+  {
+    question: 'HelloAsso prend-il des frais ?',
+    answer: 'HelloAsso ne prélève aucun frais sur les dons. Seule une contribution volontaire au fonctionnement de HelloAsso vous est proposée (que vous pouvez mettre à 0€). 100% de votre don revient à CLAIR.',
+  },
+];
 
 export default function SoutenirPage() {
   return (
@@ -38,197 +62,197 @@ export default function SoutenirPage() {
         </div>
       </section>
 
-      {/* CTA Cagnotte */}
-      <section className="py-4 md:py-6 px-4">
-        <div className="container mx-auto max-w-2xl text-center">
-          {/* Titre avec coeur */}
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <Heart className="h-6 w-6 md:h-8 md:w-8 text-red-500" />
-            <h2 className="text-lg md:text-2xl font-bold">
-              Chaque don compte
-            </h2>
-          </div>
+      {/* HelloAsso + Pourquoi soutenir — two columns */}
+      <section className="py-10 px-4">
+        <div className="container mx-auto max-w-5xl">
+          <div className="grid gap-8 lg:grid-cols-2 items-start">
+            {/* Colonne gauche — Pourquoi soutenir */}
+            <div>
+              <h2 className="text-xl md:text-2xl font-bold mb-6">
+                Pourquoi soutenir CLAIR ?
+              </h2>
 
-          {/* Bouton CTA */}
-          <a
-            href="https://www.leetchi.com/fr/c/lancement-de-clair--transparence-politique-citoyenne-1807149"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-lg font-semibold hover:bg-primary/90 transition-colors"
-          >
-            Participer à la cagnotte de lancement
-            <ExternalLink className="h-4 w-4" />
-          </a>
+              {!DEFISCALISATION_ACTIVE && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+                  <p className="text-blue-800 text-sm">
+                    <strong>Bonne nouvelle !</strong> CLAIR est en cours d&apos;obtention du statut d&apos;association
+                    d&apos;intérêt général. Une fois obtenu, vos dons seront déductibles à 66% de vos impôts.
+                  </p>
+                </div>
+              )}
 
-          {/* Texte explicatif */}
-          <div className="mt-4">
-            <p className="text-sm md:text-base text-muted-foreground">
-              Même un petit don nous aide à maintenir CLAIR gratuit et accessible à tous.
-            </p>
-            <p className="text-xs italic text-muted-foreground mt-2">
-              La totalité des dons sur la cagnotte de lancement sera intégralement reversée sur le compte de l&apos;association quand celle-ci sera active.
-            </p>
+              {DEFISCALISATION_ACTIVE && (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
+                  <p className="text-green-800 text-sm">
+                    <strong>66% déductible de vos impôts !</strong> Un don de 30€ ne vous coûte que 10,20€ après réduction.
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-5 mb-6">
+                <Advantage
+                  icon={Shield}
+                  title="Indépendance totale"
+                  description="Aucun financement politique ou publicitaire. Seuls les citoyens financent CLAIR."
+                />
+                <Advantage
+                  icon={Eye}
+                  title="Transparence des données"
+                  description="Toutes nos sources sont publiques et vérifiables. Notre code est open source."
+                />
+                <Advantage
+                  icon={Users}
+                  title="Outil citoyen"
+                  description="CLAIR appartient à tous. Chaque don renforce notre démocratie."
+                />
+                <Advantage
+                  icon={Code}
+                  title="Open source"
+                  description="Le code est disponible sur GitHub. Vous pouvez contribuer ou vérifier notre travail."
+                />
+              </div>
+
+              {/* À quoi servent les dons */}
+              <div className="border rounded-xl p-5 bg-muted/30">
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <Megaphone className="h-5 w-5 text-primary" />
+                  À quoi servent vos dons ?
+                </h3>
+                <ul className="space-y-2.5 text-sm text-muted-foreground">
+                  <li className="flex items-start gap-2">
+                    <Server className="h-4 w-4 mt-0.5 text-primary" />
+                    <span><strong>Hébergement</strong> : Serveurs, base de données, infrastructure</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Code className="h-4 w-4 mt-0.5 text-primary" />
+                    <span><strong>Développement</strong> : Nouvelles fonctionnalités, maintenance</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Eye className="h-4 w-4 mt-0.5 text-primary" />
+                    <span><strong>Données</strong> : Ingestion et traitement des données publiques</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Colonne droite — HelloAsso */}
+            <div>
+              <div className="flex items-center gap-2 mb-6">
+                <Heart className="h-6 w-6 text-red-500" />
+                <h2 className="text-xl md:text-2xl font-bold">Faire un don</h2>
+              </div>
+
+              <div className="rounded-2xl border bg-card overflow-hidden">
+                <HelloAssoWidget
+                  organizationSlug={HELLOASSO_ORG_SLUG}
+                  campaignSlug={HELLOASSO_FORM_SLUG}
+                />
+              </div>
+
+              <p className="text-sm text-muted-foreground mt-4">
+                Même un petit don nous aide à maintenir CLAIR gratuit et accessible à tous.
+              </p>
+            </div>
           </div>
         </div>
       </section>
 
       {/* Derrière le projet */}
-      <section className="py-16 px-4">
-        <div className="container mx-auto max-w-3xl">
+      <section className="py-16 px-4 bg-muted/30">
+        <div className="container mx-auto max-w-5xl">
           <h2 className="text-2xl font-bold mb-8 text-center">
             Derrière le projet
           </h2>
-          <div className="bg-card border rounded-2xl p-8 flex flex-col md:flex-row gap-8 items-center">
-            <div className="flex-shrink-0">
+          <div className="grid gap-6 md:grid-cols-3">
+            {/* Axel */}
+            <div className="bg-card border rounded-2xl p-6 flex flex-col items-center text-center">
               <Image
                 src="/images/axel.jpg"
                 alt="Axel, créateur de CLAIR"
-                width={160}
-                height={160}
-                className="rounded-full object-cover"
+                width={120}
+                height={120}
+                className="rounded-full object-cover mb-4"
                 unoptimized
               />
-            </div>
-            <div className="text-center md:text-left">
-              <h3 className="text-xl font-semibold mb-2">Axel</h3>
-              <p className="text-muted-foreground mb-4">
+              <h3 className="text-lg font-semibold mb-1">Axel</h3>
+              <p className="text-sm text-muted-foreground mb-3">
                 Ingénieur et passionné de data
               </p>
               <p className="text-sm leading-relaxed mb-4">
                 J&apos;ai créé CLAIR pour donner vie aux données publiques et rendre la vie politique
-                française claire et accessible à tous. L&apos;objectif : une plateforme citoyenne qui
-                agrège le maximum de sources publiques, sans limitation, pour éclairer le débat
-                démocratique.
+                française claire et accessible à tous.
               </p>
               <a
                 href="https://www.linkedin.com/in/axel-robaldo-ensea/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
+                className="inline-flex items-center gap-2 text-sm text-primary hover:underline mt-auto"
               >
                 <Linkedin className="h-4 w-4" />
-                Retrouvez-moi sur LinkedIn
+                LinkedIn
               </a>
             </div>
-          </div>
-        </div>
-      </section>
 
-      {/* Avantages */}
-      <section className="py-12 px-4 bg-muted/30">
-        <div className="container mx-auto max-w-3xl">
-          <h2 className="text-2xl font-bold mb-8 text-center">
-            Pourquoi soutenir CLAIR ?
-          </h2>
+            {/* Ruben */}
+            <div className="bg-card border rounded-2xl p-6 flex flex-col items-center text-center">
+              <Image
+                src="/images/ruben.jpg"
+                alt="Ruben, ingénieur-chercheur en IA"
+                width={120}
+                height={120}
+                className="rounded-full object-cover mb-4"
+                unoptimized
+              />
+              <h3 className="text-lg font-semibold mb-1">Ruben</h3>
+              <p className="text-sm text-muted-foreground mb-3">
+                Ingénieur-chercheur en IA
+              </p>
+              <p className="text-sm leading-relaxed mb-4">
+                J&apos;ai rejoint CLAIR pour aider nos institutions dans leur devoir de transparence
+                à notre égard. Je souhaite proposer une plateforme neutre et intuitive comme
+                support au débat entre citoyens.
+              </p>
+              <a
+                href="https://www.linkedin.com/in/rubenwleon/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-sm text-primary hover:underline mt-auto"
+              >
+                <Linkedin className="h-4 w-4" />
+                LinkedIn
+              </a>
+            </div>
 
-          <div className="text-center text-muted-foreground mb-8">
-            {/* Info défiscalisation à venir */}
-          {!DEFISCALISATION_ACTIVE && (
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 max-w-xl mx-auto mb-8">
-              <p className="text-blue-800 text-sm">
-                <strong>Bonne nouvelle !</strong> CLAIR est en cours d&apos;obtention du statut d&apos;association
-                d&apos;intérêt général. Une fois obtenu, vos dons seront déductibles à 66% de vos impôts.
+            {/* Paul — placeholder */}
+            <div className="bg-card border rounded-2xl p-6 flex flex-col items-center text-center">
+              <div className="w-[120px] h-[120px] rounded-full bg-muted flex items-center justify-center mb-4">
+                <Users className="h-10 w-10 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-semibold mb-1">Paul</h3>
+              <p className="text-sm text-muted-foreground mb-3">
+                Description à venir
               </p>
             </div>
-          )}
-
-          {/* Info défiscalisation active */}
-          {DEFISCALISATION_ACTIVE && (
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4 max-w-xl mx-auto mb-8">
-              <p className="text-green-800 text-sm">
-                <strong>66% déductible de vos impôts !</strong> Un don de 30€ ne vous coûte que 10,20€ après réduction.
-              </p>
-            </div>
-          )}
           </div>
-
-          <div className="space-y-6 mb-8">
-            <Advantage
-              icon={Shield}
-              title="Indépendance totale"
-              description="Aucun financement politique ou publicitaire. Seuls les citoyens financent CLAIR."
-            />
-            <Advantage
-              icon={Eye}
-              title="Transparence des données"
-              description="Toutes nos sources sont publiques et vérifiables. Notre code est open source."
-            />
-            <Advantage
-              icon={Users}
-              title="Outil citoyen"
-              description="CLAIR appartient à tous. Chaque don renforce notre démocratie."
-            />
-            <Advantage
-              icon={Code}
-              title="Open source"
-              description="Le code est disponible sur GitHub. Vous pouvez contribuer ou vérifier notre travail."
-            />
-          </div>
-
-          {/* À quoi servent les dons */}
-          <div className="border rounded-xl p-6 bg-card">
-            <h3 className="font-semibold mb-4 flex items-center gap-2">
-              <Megaphone className="h-5 w-5 text-primary" />
-              À quoi servent vos dons ?
-            </h3>
-            <ul className="space-y-3 text-sm text-muted-foreground">
-              <li className="flex items-start gap-2">
-                <Server className="h-4 w-4 mt-0.5 text-primary" />
-                <span><strong>Hébergement</strong> : Serveurs, base de données, infrastructure</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <Code className="h-4 w-4 mt-0.5 text-primary" />
-                <span><strong>Développement</strong> : Nouvelles fonctionnalités, maintenance</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <Eye className="h-4 w-4 mt-0.5 text-primary" />
-                <span><strong>Données</strong> : Ingestion et traitement des données publiques</span>
-              </li>
-            </ul>
-          </div>
-
-          {/* Widget HelloAsso - Désactivé en attendant le statut d'association */}
-          {/* <div className="bg-card rounded-2xl p-6 shadow-lg border mt-8">
-            <HelloAssoWidget
-              organizationSlug={HELLOASSO_ORG_SLUG}
-              campaignSlug={HELLOASSO_FORM_SLUG}
-            />
-          </div> */}
         </div>
       </section>
 
       {/* FAQ */}
       <section className="py-16 px-4">
         <div className="container mx-auto max-w-3xl">
-          <h2 className="text-2xl font-bold mb-8 text-center">
+          <div className="border-t border-border mb-12" />
+          <h2 className="text-2xl md:text-3xl font-bold mb-3 text-center">
             Questions fréquentes
           </h2>
-          <div className="space-y-4">
-            <FAQ
-              question="Les dons sont-ils défiscalisables ?"
-              answer="Les dons sur la cagnotte de lancement ne sont pas encore défiscalisables. 
-              Nous sommes en cours d'obtention du statut d'association d'intérêt général. Une fois ce statut obtenu (prévu début 2026), vos dons seront déductibles à 66% de votre impôt sur le revenu. Les donateurs actuels seront informés dès que la défiscalisation sera active."
-            />
-            <FAQ
-              question="À quoi servent les dons ?"
-              answer="Les dons financent l'hébergement des serveurs, le développement de nouvelles fonctionnalités, et permettent de maintenir le projet sur le long terme. Notre budget est transparent et sera publié régulièrement."
-            />
-            <FAQ
-              question="CLAIR est-il vraiment indépendant ?"
-              answer="Oui. CLAIR n'accepte aucun financement de partis politiques, d'entreprises ou de lobbies. Seuls les dons citoyens nous financent. Le code est open source et vérifiable sur GitHub."
-            />
-            <FAQ
-              question="Puis-je faire un don récurrent ?"
-              answer="Oui ! Quand l'association sera créée, vous pourrez mettre en place un don récurrent directement via le formulaire HelloAsso. Les dons mensuels nous aident à planifier sur le long terme."
-            />
-            {/* <FAQ
-              question="HelloAsso prend-il des frais ?"
-              answer="HelloAsso ne prélève aucun frais sur les dons. Seule une contribution volontaire au fonctionnement de HelloAsso vous est proposée (que vous pouvez mettre à 0€)."
-            /> */}
-          </div>
+          <p className="text-muted-foreground text-center mb-10">
+            Une question ? Écrivez-nous à{' '}
+            <a href="mailto:contact@clair.vote" className="text-primary hover:underline">
+              contact@clair.vote
+            </a>
+          </p>
+          <FAQAccordion items={faqItems} defaultOpenIndex={0} />
         </div>
       </section>
-
     </main>
   );
 }
@@ -248,19 +272,5 @@ function Advantage({ icon: Icon, title, description }: {
         <p className="text-muted-foreground text-sm">{description}</p>
       </div>
     </div>
-  );
-}
-
-function FAQ({ question, answer }: { question: string; answer: string }) {
-  return (
-    <details className="group bg-card border rounded-lg">
-      <summary className="flex items-center justify-between p-4 cursor-pointer font-medium">
-        {question}
-        <span className="text-muted-foreground group-open:rotate-180 transition-transform">
-          ▼
-        </span>
-      </summary>
-      <p className="px-4 pb-4 text-muted-foreground text-sm">{answer}</p>
-    </details>
   );
 }
