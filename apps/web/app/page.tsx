@@ -106,6 +106,11 @@ export default function HomePage() {
   const interventionsCount = useCountUp(stats?.interventions);
   const amendementsCount = useCountUp(stats?.amendements);
 
+  const formatStat = (n: number) => {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace('.', ',')}M`;
+    return n.toLocaleString('fr-FR');
+  };
+
   const counters: Record<string, number> = {
     deputes: deputesCount,
     senateurs: senateursCount,
@@ -182,7 +187,7 @@ export default function HomePage() {
                     className="w-[150px] rounded-xl bg-primary-accent px-5 py-4 text-white transition-all hover:scale-105 hover:shadow-lg flex flex-col items-center text-center flex-shrink-0"
                   >
                     <span className="text-2xl font-bold tabular-nums">
-                      {stats?.[item.key] ? counters[item.key].toLocaleString('fr-FR') : '—'}
+                      {stats?.[item.key] ? formatStat(counters[item.key]) : '—'}
                     </span>
                     <span className="text-sm text-white/80 mt-0.5">{item.label}</span>
                   </Link>
