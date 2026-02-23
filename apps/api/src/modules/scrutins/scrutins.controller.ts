@@ -395,26 +395,23 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       };
 
-      // Charger les votes par position (limité à 100 chacun) + agrégation par groupe EN PARALLÈLE
+      // Charger les votes par position + agrégation par groupe EN PARALLÈLE
+      // ~600 votes max par scrutin (577 AN / 348 Sénat) — pas de cap nécessaire
       const [votesPour, votesContre, votesAbstention, votesAbsent, votesByGroupeRaw] = await Promise.all([
         fastify.prisma.vote.findMany({
           where: { scrutinId: scrutin.id, position: 'pour' },
-          take: 100,
           select: voteSelect,
         }),
         fastify.prisma.vote.findMany({
           where: { scrutinId: scrutin.id, position: 'contre' },
-          take: 100,
           select: voteSelect,
         }),
         fastify.prisma.vote.findMany({
           where: { scrutinId: scrutin.id, position: 'abstention' },
-          take: 100,
           select: voteSelect,
         }),
         fastify.prisma.vote.findMany({
           where: { scrutinId: scrutin.id, position: 'absent' },
-          take: 100,
           select: voteSelect,
         }),
         // Requête SQL groupée pour votesByGroupe (évite de charger tous les votes en mémoire)
@@ -484,12 +481,13 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           chambre: { type: 'string', enum: ['assemblee', 'senat'], default: 'assemblee' },
           session: { type: 'string', description: 'Session parlementaire (ex: 2024 pour Sénat)' },
           sort: { type: 'string', enum: ['asc', 'desc'], default: 'asc' },
+          search: { type: 'string', description: 'Recherche dans le contenu ou le nom du parlementaire', maxLength: 200 },
         },
       },
     },
     handler: async (request, _reply) => {
       const { numero } = z.object({ numero: z.coerce.number().int().positive() }).parse(request.params);
-      const { page = 1, limit = 10, chambre = 'assemblee', session, sort = 'asc' } = request.query as any;
+      const { page = 1, limit = 10, chambre = 'assemblee', session, sort = 'asc', search } = request.query as any;
       const skip = (page - 1) * limit;
 
       // Build where clause with optional session
@@ -507,9 +505,20 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         throw new ApiError(404, 'Scrutin non trouvé');
       }
 
+      // Build intervention where clause with optional search
+      const searchTerm = search?.trim();
+      const interventionWhere: any = { scrutinId: scrutin.id };
+      if (searchTerm) {
+        interventionWhere.OR = [
+          { contenu: { contains: searchTerm, mode: 'insensitive' } },
+          { parlementaire: { nom: { contains: searchTerm, mode: 'insensitive' } } },
+          { parlementaire: { prenom: { contains: searchTerm, mode: 'insensitive' } } },
+        ];
+      }
+
       const [interventions, total] = await Promise.all([
         fastify.prisma.intervention.findMany({
-          where: { scrutinId: scrutin.id },
+          where: interventionWhere,
           orderBy: [{ date: sort }, { ordre: sort }],
           skip,
           take: limit,
@@ -537,7 +546,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
             },
           },
         }),
-        fastify.prisma.intervention.count({ where: { scrutinId: scrutin.id } }),
+        fastify.prisma.intervention.count({ where: interventionWhere }),
       ]);
 
       const totalPages = Math.ceil(total / limit);
