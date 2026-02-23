@@ -403,15 +403,22 @@ export default function GroupeDetailPage() {
   return (
     <div className="container mx-auto px-4 py-8 overflow-x-hidden">
       {/* Breadcrumb */}
-      <div className="mb-6">
+      <nav className="flex items-center gap-2 text-sm text-muted-foreground mb-6 min-w-0">
         <button
           onClick={() => router.back()}
-          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="inline-flex items-center justify-center rounded-lg p-1.5 hover:bg-muted transition-colors flex-shrink-0"
+          aria-label="Retour"
         >
           <ArrowLeft className="h-4 w-4" />
-          Retour
         </button>
-      </div>
+        <Link href="/groupes" className="hover:text-foreground transition-colors flex-shrink-0">Groupes</Link>
+        <span className="flex-shrink-0">/</span>
+        <Link href={`/groupes?chambre=${groupe.chambre}`} className="hover:text-foreground transition-colors flex-shrink-0">
+          {groupe.chambre === 'senat' ? 'Sénat' : 'AN'}
+        </Link>
+        <span className="flex-shrink-0">/</span>
+        <span className="text-foreground font-medium truncate">{groupe.nomComplet || groupe.nom}</span>
+      </nav>
 
       {/* Header */}
       <div className="mb-8 flex flex-col gap-4 sm:gap-6">
