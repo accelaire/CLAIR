@@ -54,12 +54,16 @@ const faqItems = [
     answer: 'La transparence politique est un pilier de la démocratie. Pourtant, les données sur l\'activité de nos élus sont dispersées, difficiles d\'accès et souvent incompréhensibles pour le citoyen lambda.\n\nCLAIR rassemble ces informations publiques en un seul endroit, les structure, et les présente de manière claire et accessible. Notre objectif : permettre à chaque citoyen de comprendre ce que font ses représentants, comment ils votent, et qui cherche à les influencer.',
   },
   {
+    question: 'Pourquoi CLAIR plutôt que les sites de l\'Assemblée nationale ou du Sénat ?',
+    answer: 'Les sites institutionnels sont des références indispensables, et CLAIR s\'en inspire. Mais chacun se concentre sur sa propre chambre : il faut naviguer entre assemblee-nationale.fr et senat.fr pour suivre un même texte de loi.\n\nCLAIR réunit les données des deux chambres en un seul endroit, et y ajoute les données de lobbying (HATVP). Vous pouvez comparer les votes entre députés et sénateurs, croiser les amendements avec les scrutins, et suivre l\'ensemble du parcours législatif sur une même page.',
+  },
+  {
     question: 'Ai-je besoin de connaissances poussées sur le parlement pour comprendre ?',
-    answer: 'Non, CLAIR est conçu pour être compréhensible par tous. Nous simplifions les données parlementaires complexes en une interface claire et intuitive. Pas de jargon technique : chaque scrutin, chaque vote, chaque action de lobbying est présenté de manière accessible.',
+    answer: 'CLAIR a pour vocation de rendre les données parlementaires accessibles au plus grand nombre. Certains contenus (textes d\'amendements, intitulés de scrutins) restent techniques car ils proviennent directement des sources officielles. Notre rôle est de les structurer, les croiser et les présenter dans une interface intuitive pour vous faire gagner du temps.',
   },
   {
     question: 'D\'où viennent les données qui figurent sur CLAIR ?',
-    answer: 'Toutes nos données proviennent de sources officielles et publiques : l\'Assemblée nationale (open data), le Sénat, la Haute Autorité pour la Transparence de la Vie Publique (HATVP) et la Direction de l\'Information Légale et Administrative (DILA). Ces données sont disponibles sous Licence Ouverte.',
+    answer: (<>Toutes nos données proviennent de sources officielles et publiques : l&apos;Assemblée nationale (open data), le Sénat, la Haute Autorité pour la Transparence de la Vie Publique (HATVP) et la Direction de l&apos;Information Légale et Administrative (DILA). Ces données sont disponibles sous Licence Ouverte. Pour en savoir plus, consultez notre page <Link href="/methodologie" className="text-primary hover:underline">Méthodologie</Link>.</>),
   },
   {
     question: 'À quelle fréquence les données sont-elles mises à jour ?',
@@ -89,8 +93,10 @@ export default function HomePage() {
   const { data: homepageData } = useQuery<{ stats: Stats; trendingDossiers: TrendingDossier[]; lastUpdate: string | null }>({
     queryKey: ['homepage'],
     queryFn: () => api.get('/homepage').then(res => res.data),
-    staleTime: 30000,
-    refetchOnWindowFocus: true,
+    staleTime: 5 * 60 * 1000,   // 5min — données quasi-statiques (cache API = 1h)
+    gcTime: 30 * 60 * 1000,     // 30min — garde en mémoire pour éviter une page vide
+    refetchOnWindowFocus: false, // pas de refetch au focus (évite les requêtes inutiles)
+    retry: 2,                    // retente 2 fois en cas de timeout
   });
 
   const stats = homepageData?.stats;
@@ -173,18 +179,18 @@ export default function HomePage() {
 
             {/* Stats Cards — auto-scroll + swipeable carousel with edge blur */}
             <div
-              className="mt-12 overflow-x-auto scrollbar-none"
+              className="mt-12 overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x"
               style={{
                 maskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)',
                 WebkitMaskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)',
               }}
             >
-              <div className="flex gap-4 w-max animate-stats-scroll hover:[animation-play-state:paused]">
+              <div className="flex gap-4 w-max animate-stats-scroll hover:[animation-play-state:paused] py-1">
                 {[...statItems, ...statItems].map((item, index) => (
                   <Link
                     key={`${item.key}-${index}`}
                     href={item.href}
-                    className="w-[150px] rounded-xl bg-primary-accent px-5 py-4 text-white transition-all hover:scale-105 hover:shadow-lg flex flex-col items-center text-center flex-shrink-0"
+                    className="w-[150px] rounded-xl bg-primary-accent px-5 py-4 text-white transition-colors hover:bg-primary-deep flex flex-col items-center text-center flex-shrink-0"
                   >
                     <span className="text-2xl font-bold tabular-nums">
                       {stats?.[item.key] ? formatStat(counters[item.key]) : '—'}
