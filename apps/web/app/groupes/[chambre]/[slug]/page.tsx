@@ -64,6 +64,7 @@ interface GroupeDetail {
   membresCount: number;
   membresActifsCount: number;
   rang: number | null;
+  totalGroupes: number | null;
   totauxAmendements: number;
   membres: Membre[];
   stats: {
@@ -188,13 +189,13 @@ function StatCard({
         <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
         <span className="text-xs sm:text-sm truncate">{label}</span>
       </div>
-      <div className="mt-1.5 sm:mt-2 flex items-baseline gap-1 sm:gap-2 flex-wrap">
+      <div className="mt-1.5 sm:mt-2 sm:flex sm:items-baseline sm:gap-2 sm:flex-wrap">
         <span className="text-xl sm:text-2xl font-bold">
           {typeof value === 'number' ? value.toLocaleString('fr-FR') : value}
           {suffix}
         </span>
         {subtitle && (
-          <span className="text-xs sm:text-sm text-muted-foreground">{subtitle}</span>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 sm:mt-0">{subtitle}</p>
         )}
       </div>
     </div>
@@ -484,7 +485,7 @@ export default function GroupeDetailPage() {
         <StatCard
           label="Membres actifs"
           value={groupe.membresActifsCount}
-          subtitle={groupe.rang ? `${groupe.rang}${groupe.rang === 1 ? 'er' : 'e'} groupe` : undefined}
+          subtitle={groupe.rang ? `${groupe.rang}${groupe.rang === 1 ? 'er' : 'e'} groupe sur ${groupe.totalGroupes}` : undefined}
           icon={Users}
         />
         <StatCard
