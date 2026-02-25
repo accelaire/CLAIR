@@ -29,6 +29,8 @@ import {
   syncLobbyistes,
   linkANScrutinsByTitle,
   linkOrphanScrutinsByTFIDF,
+  linkOrphanScrutinsByTexteNumero,
+  linkOrphansByLoiTitre,
   linkAmendementsToDossiers,
   linkAmendementsToDossiersByTexteRef,
   propagateDossierIdBySiblingTexteRef,
@@ -427,6 +429,42 @@ program
       process.exit(0);
     } catch (error: any) {
       logger.error({ error: error.message }, 'link-scrutins-tfidf failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: link-by-texte-numero
+// =============================================================================
+program
+  .command('link-by-texte-numero')
+  .description('Lier les scrutins orphelins aux dossiers par texte_numero partagé')
+  .action(async () => {
+    try {
+      logger.info('Starting texte_numero orphan linking...');
+      const result = await linkOrphanScrutinsByTexteNumero();
+      console.log(`\nScrutins liés par texte_numero: ${result.linked}`);
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'link-by-texte-numero failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: link-by-loi-titre
+// =============================================================================
+program
+  .command('link-by-loi-titre')
+  .description('Lier les scrutins orphelins aux dossiers par loi_titre (titre de la loi promulguée)')
+  .action(async () => {
+    try {
+      logger.info('Starting loi_titre orphan linking...');
+      const result = await linkOrphansByLoiTitre();
+      console.log(`\nScrutins liés par loi_titre: ${result.linked}`);
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'link-by-loi-titre failed');
       process.exit(1);
     }
   });
