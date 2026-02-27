@@ -59,7 +59,7 @@ const faqItems = [
   },
   {
     question: 'Ai-je besoin de connaissances poussées sur le parlement pour comprendre ?',
-    answer: 'CLAIR a pour vocation de rendre les données parlementaires accessibles au plus grand nombre. Certains contenus (textes d\'amendements, intitulés de scrutins) restent techniques car ils proviennent directement des sources officielles. Notre rôle est de les structurer, les croiser et les présenter dans une interface intuitive pour vous faire gagner du temps.',
+    answer: (<>Pas du tout ! CLAIR a pour vocation de rendre les données parlementaires accessibles au plus grand nombre. Si un terme vous échappe, consultez notre section <Link href="/comprendre" className="text-primary hover:underline">Comprendre</Link> qui explique simplement le fonctionnement des institutions. Et pour apprendre à utiliser la plateforme, suivez notre <Link href="/guide" className="text-primary hover:underline">Guide pratique</Link> pas à pas.</>),
   },
   {
     question: 'D\'où viennent les données qui figurent sur CLAIR ?',

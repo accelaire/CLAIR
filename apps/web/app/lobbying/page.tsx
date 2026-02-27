@@ -4,6 +4,7 @@ import { Suspense, useMemo } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Search, ChevronDown, Building2, Briefcase, TrendingUp, Users, Loader2, Calendar, ArrowRight } from 'lucide-react';
+import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
@@ -228,6 +229,10 @@ function LobbyingPageContent() {
             <div className="flex items-center gap-2 text-muted-foreground mb-1">
               <Building2 className="h-4 w-4" />
               <span className="text-sm">Lobbyistes</span>
+              <DidacticielTooltip
+                content="Représentants d'intérêts enregistrés auprès de la HATVP."
+                learnMoreHref="/comprendre/lobbying"
+              />
             </div>
             <p className="text-2xl font-bold">{statsData.totalLobbyistes.toLocaleString('fr-FR')}</p>
           </div>
@@ -235,6 +240,10 @@ function LobbyingPageContent() {
             <div className="flex items-center gap-2 text-muted-foreground mb-1">
               <Briefcase className="h-4 w-4" />
               <span className="text-sm">Actions déclarées</span>
+              <DidacticielTooltip
+                content="Chaque rencontre ou communication déclarée, comptée par exercice fiscal."
+                learnMoreHref="/comprendre/lobbying"
+              />
             </div>
             <p className="text-2xl font-bold">{statsData.totalActions.toLocaleString('fr-FR')}</p>
           </div>
@@ -242,6 +251,10 @@ function LobbyingPageContent() {
             <div className="flex items-center gap-2 text-muted-foreground mb-1">
               <TrendingUp className="h-4 w-4" />
               <span className="text-sm">Budget total déclaré</span>
+              <DidacticielTooltip
+                content="Somme des budgets annuels déclarés. Montants déclaratifs par tranches."
+                learnMoreHref="/comprendre/lobbying"
+              />
             </div>
             <p className="text-2xl font-bold">{formatBudget(statsData.budgetTotal)}</p>
           </div>
@@ -249,6 +262,10 @@ function LobbyingPageContent() {
             <div className="flex items-center gap-2 text-muted-foreground mb-1">
               <Users className="h-4 w-4" />
               <span className="text-sm">Secteurs d&apos;activité</span>
+              <DidacticielTooltip
+                content="Secteurs distincts déclarés par les représentants d'intérêts."
+                learnMoreHref="/comprendre/lobbying"
+              />
             </div>
             <p className="text-2xl font-bold">{statsData.totalSecteurs?.toLocaleString('fr-FR') || 0}</p>
           </div>

@@ -28,6 +28,7 @@ import {
   GitCompareArrows,
   AlertTriangle,
 } from 'lucide-react';
+import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
 import { api } from '@/lib/api';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
@@ -91,18 +92,25 @@ function StatCard({
   icon: Icon,
   suffix = '',
   subtitle,
+  tooltip,
+  tooltipHref,
 }: {
   label: string;
   value: number | string | null;
   icon: any;
   suffix?: string;
   subtitle?: string;
+  tooltip?: string;
+  tooltipHref?: string;
 }) {
   return (
     <div className="rounded-lg border bg-card p-4">
       <div className="flex items-center gap-2 text-muted-foreground">
         <Icon className="h-4 w-4" />
         <span className="text-sm">{label}</span>
+        {tooltip && (
+          <DidacticielTooltip content={tooltip} learnMoreHref={tooltipHref} />
+        )}
       </div>
       <div className="mt-2 flex items-baseline gap-2 flex-wrap">
         <span className="text-2xl font-bold">
@@ -881,22 +889,30 @@ export default function DeputeDetailPage() {
               suffix="%"
               subtitle={`${depute.stats.presence}% tous scrutins`}
               icon={TrendingUp}
+              tooltip="Pourcentage de scrutins solennels auxquels ce parlementaire a participé (voté pour, contre ou abstention)."
+              tooltipHref="/comprendre/parlementaire"
             />
             <StatCard
               label="Loyauté au groupe"
               value={depute.stats.loyaute}
               suffix="%"
               icon={Users}
+              tooltip="Pourcentage de votes alignés avec la position majoritaire du groupe politique."
+              tooltipHref="/comprendre/parlementaire"
             />
             <StatCard
               label="Votes"
               value={depute.stats.participation}
               icon={Vote}
+              tooltip="Nombre total de scrutins publics auxquels ce parlementaire a pris part."
+              tooltipHref="/comprendre/parlementaire"
             />
             <StatCard
               label="Interventions"
               value={depute.stats.interventions}
               icon={MessageSquare}
+              tooltip="Nombre de prises de parole en séance publique."
+              tooltipHref="/comprendre/parlementaire"
             />
           </div>
         </div>

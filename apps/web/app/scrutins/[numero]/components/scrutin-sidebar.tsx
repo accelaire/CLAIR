@@ -4,6 +4,7 @@ import Link from 'next/link';
 import {
   Calendar, CheckCircle, XCircle, ExternalLink,
 } from 'lucide-react';
+import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
 
 interface DossierLegislatif {
   id: string;
@@ -107,7 +108,13 @@ export function ScrutinSidebar({
 
       {/* Type de vote */}
       <div>
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Type de vote</h3>
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+          Type de vote
+          <DidacticielTooltip
+            content="Vote solennel : sur l'ensemble d'un texte. Ordinaire : sur un article ou amendement. Motion : procédure spécifique (censure, rejet...)."
+            learnMoreHref="/comprendre/scrutin"
+          />
+        </h3>
         <div className="flex items-center gap-2">
           <span className="text-sm">{typeVoteLabels[typeVote] || typeVote}</span>
           {importance >= 4 && (
@@ -120,7 +127,13 @@ export function ScrutinSidebar({
 
       {/* Résultat du vote */}
       <div>
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Résultat du vote</h3>
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+          Résultat du vote
+          <DidacticielTooltip
+            content="Adopté si les « pour » dépassent les « contre ». Abstentions et absences ne comptent pas dans les suffrages exprimés."
+            learnMoreHref="/comprendre/scrutin"
+          />
+        </h3>
         <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${
           isAdopted ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
         }`}>
