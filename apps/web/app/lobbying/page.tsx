@@ -218,7 +218,9 @@ function LobbyingPageContent() {
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
           Source : <a href="https://www.hatvp.fr/le-repertoire/" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">hatvp.fr</a>
-          {' · '}<a href="/methodologie#hatvp" className="underline hover:text-foreground">Voir notre méthodologie</a>
+          {' · '}<a href="/methodologie#hatvp" className="underline hover:text-foreground">Méthodologie</a>
+          {' · '}<Link href="/comprendre/lobbying" className="underline hover:text-foreground">Comprendre le lobbying</Link>
+          {' · '}<Link href="/guide/comprendre-le-lobbying" className="underline hover:text-foreground">Guide</Link>
         </p>
       </div>
 

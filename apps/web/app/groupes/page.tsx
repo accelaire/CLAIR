@@ -178,6 +178,9 @@ function GroupesPageContent() {
         <p className="mt-2 text-muted-foreground">
           Explorez les groupes politiques de l&apos;Assemblée nationale et du Sénat
         </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          <Link href="/comprendre/groupes-politiques" className="underline hover:text-foreground">Comprendre les groupes politiques</Link>
+        </p>
       </div>
 
       {/* Filtres */}

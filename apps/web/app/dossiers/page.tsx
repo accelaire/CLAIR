@@ -140,6 +140,7 @@ function DossiersPageContent() {
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
           Sources : <a href="https://data.assemblee-nationale.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.assemblee-nationale.fr</a>, <a href="https://data.senat.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.senat.fr</a>
+          {' · '}<Link href="/comprendre/dossier-legislatif" className="underline hover:text-foreground">Comment fonctionne un dossier législatif ?</Link>
         </p>
       </div>
 

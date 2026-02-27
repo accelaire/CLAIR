@@ -178,6 +178,8 @@ function DeputesPageContent() {
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Source : <a href="https://data.assemblee-nationale.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.assemblee-nationale.fr</a>
+            {' · '}<Link href="/comprendre/parlementaire" className="underline hover:text-foreground">Comprendre les stats</Link>
+            {' · '}<Link href="/guide/decouvrir-mon-depute" className="underline hover:text-foreground">Guide</Link>
           </p>
         </div>
 
