@@ -280,6 +280,20 @@ program
 
       console.log(`\n⏱️  Durée: ${result.duration}`);
 
+      // Recharger le cache homepage de l'API après le sync
+      const apiUrl = process.env.API_INTERNAL_URL || 'http://localhost:3001';
+      try {
+        console.log('\n🔄 Rechargement du cache homepage...');
+        const resp = await fetch(`${apiUrl}/api/v1/homepage/warm`, { method: 'POST' });
+        if (resp.ok) {
+          console.log('  ✅ Cache homepage rechargé');
+        } else {
+          console.log(`  ⚠️  Cache warm: status ${resp.status}`);
+        }
+      } catch (e: any) {
+        console.log(`  ⚠️  Cache warm indisponible: ${e.message}`);
+      }
+
       process.exit(0);
     } catch (error: any) {
       logger.error({ error: error.message }, 'Smart sync failed');

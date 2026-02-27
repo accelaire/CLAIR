@@ -5,8 +5,9 @@
 
 import { FastifyPluginAsync } from 'fastify';
 
-// Cache 1 heure - route optimisée
-const CACHE_TTL = 3600;
+// Cache 27h — survit au sync (CRON 5h, durée max ~2h) + marge
+// Le cache est renouvelé activement par l'ingestion après chaque sync
+const CACHE_TTL = 97200;
 
 const dossierChambre = (legislature: number) => legislature === 0 ? 'senat' : 'assemblee';
 
@@ -198,10 +199,44 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         lastUpdate: lastSync?.completedAt || null,
       };
 
-      // Mettre en cache (1 heure)
+      // Mettre en cache (27h)
       await fastify.redis.setex(cacheKey, CACHE_TTL, JSON.stringify(result));
 
       return result;
+    },
+  });
+
+  // ===========================================================================
+  // POST /api/v1/homepage/warm - Invalide et recharge le cache
+  // Appelé par l'ingestion après chaque smart-sync
+  // ===========================================================================
+  fastify.post('/warm', {
+    schema: {
+      tags: ['Homepage'],
+      summary: 'Invalider et recharger le cache homepage',
+      description: 'Appelé par le service d\'ingestion après la synchronisation quotidienne',
+    },
+    handler: async (request, reply) => {
+      // Accessible uniquement depuis le réseau interne Railway
+      // Les appels publics passent par le proxy qui ajoute x-forwarded-for
+      if (request.headers['x-forwarded-for']) {
+        return reply.status(403).send({ error: 'Forbidden' });
+      }
+
+      // Supprimer le cache existant
+      await fastify.redis.del('homepage:data');
+
+      // Recharger en appelant le GET handler via injection interne
+      const response = await fastify.inject({
+        method: 'GET',
+        url: '/api/v1/homepage',
+      });
+
+      return {
+        ok: true,
+        status: response.statusCode,
+        message: 'Homepage cache warmed',
+      };
     },
   });
 };
