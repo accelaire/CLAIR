@@ -1,7 +1,6 @@
 import { Metadata } from 'next';
 import Image from 'next/image';
-import { Heart, Shield, Eye, Users, Clock, Code, Server, Megaphone, Linkedin } from 'lucide-react';
-import { HelloAssoWidget } from '@/components/donations/HelloAssoWidget';
+import { Heart, Shield, Eye, Users, Clock, Code, Server, Megaphone, Linkedin, ExternalLink } from 'lucide-react';
 import { FAQAccordion } from '@/components/ui/faq-accordion';
 
 export const metadata: Metadata = {
@@ -9,9 +8,7 @@ export const metadata: Metadata = {
   description: 'Soutenez CLAIR, la plateforme citoyenne de transparence politique. Un projet 100% indépendant.',
 };
 
-// Configuration HelloAsso
-const HELLOASSO_ORG_SLUG = process.env.NEXT_PUBLIC_HELLOASSO_ORG_SLUG || 'clair-transparence';
-const HELLOASSO_FORM_SLUG = process.env.NEXT_PUBLIC_HELLOASSO_FORM_SLUG || 'soutenir-clair';
+const LEETCHI_URL = 'https://www.leetchi.com/fr/c/lancement-de-clair--transparence-politique-citoyenne-1807149';
 
 // Flag pour activer les mentions de défiscalisation (après obtention du rescrit)
 const DEFISCALISATION_ACTIVE = false;
@@ -30,12 +27,8 @@ const faqItems = [
     answer: 'Oui. CLAIR n\'accepte aucun financement de partis politiques, d\'entreprises ou de lobbies. Seuls les dons citoyens nous financent. Le code est open source et vérifiable sur GitHub.',
   },
   {
-    question: 'Puis-je faire un don récurrent ?',
-    answer: 'Oui ! Vous pouvez mettre en place un don récurrent directement via le formulaire HelloAsso. Les dons mensuels nous aident à planifier sur le long terme.',
-  },
-  {
-    question: 'HelloAsso prend-il des frais ?',
-    answer: 'HelloAsso ne prélève aucun frais sur les dons. Seule une contribution volontaire au fonctionnement de HelloAsso vous est proposée (que vous pouvez mettre à 0€). 100% de votre don revient à CLAIR.',
+    question: 'Comment contribuer financièrement ?',
+    answer: 'Vous pouvez faire un don via notre cagnotte Leetchi. Le lien est disponible sur cette page. Nous mettrons en place d\'autres moyens de don dès que possible.',
   },
 ];
 
@@ -62,7 +55,7 @@ export default function SoutenirPage() {
         </div>
       </section>
 
-      {/* HelloAsso + Pourquoi soutenir — two columns */}
+      {/* Don + Pourquoi soutenir — two columns */}
       <section className="py-10 px-4">
         <div className="container mx-auto max-w-5xl">
           <div className="grid gap-8 lg:grid-cols-2 items-start">
@@ -135,18 +128,29 @@ export default function SoutenirPage() {
               </div>
             </div>
 
-            {/* Colonne droite — HelloAsso */}
+            {/* Colonne droite — Cagnotte */}
             <div>
               <div className="flex items-center gap-2 mb-6">
                 <Heart className="h-6 w-6 text-red-500" />
                 <h2 className="text-xl md:text-2xl font-bold">Faire un don</h2>
               </div>
 
-              <div className="rounded-2xl border bg-card overflow-hidden">
-                <HelloAssoWidget
-                  organizationSlug={HELLOASSO_ORG_SLUG}
-                  campaignSlug={HELLOASSO_FORM_SLUG}
-                />
+              <div className="rounded-2xl border bg-card p-8 text-center">
+                <p className="text-lg font-semibold mb-2">Cagnotte de lancement</p>
+                <p className="text-sm text-muted-foreground mb-6">
+                  Participez au financement de CLAIR via notre cagnotte Leetchi.
+                  Chaque contribution compte !
+                </p>
+                <a
+                  href={LEETCHI_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-xl font-medium hover:bg-primary/90 transition-colors"
+                >
+                  <Heart className="h-5 w-5" />
+                  Contribuer sur Leetchi
+                  <ExternalLink className="h-4 w-4" />
+                </a>
               </div>
 
               <p className="text-sm text-muted-foreground mt-4">
@@ -166,14 +170,16 @@ export default function SoutenirPage() {
           <div className="grid gap-6 md:grid-cols-3">
             {/* Axel */}
             <div className="bg-card border rounded-2xl p-6 flex flex-col items-center text-center">
-              <Image
-                src="/images/axel.jpg"
-                alt="Axel, créateur de CLAIR"
-                width={120}
-                height={120}
-                className="rounded-full object-cover mb-4"
-                unoptimized
-              />
+              <div className="w-[120px] h-[120px] rounded-full overflow-hidden mb-4 flex-shrink-0">
+                <Image
+                  src="/images/axel.jpg"
+                  alt="Axel, créateur de CLAIR"
+                  width={120}
+                  height={120}
+                  className="w-full h-full object-cover"
+                  unoptimized
+                />
+              </div>
               <h3 className="text-lg font-semibold mb-1">Axel</h3>
               <p className="text-sm text-muted-foreground mb-3">
                 Ingénieur et passionné de data
@@ -195,14 +201,16 @@ export default function SoutenirPage() {
 
             {/* Ruben */}
             <div className="bg-card border rounded-2xl p-6 flex flex-col items-center text-center">
-              <Image
-                src="/images/ruben.jpg"
-                alt="Ruben, ingénieur-chercheur en IA"
-                width={120}
-                height={120}
-                className="rounded-full object-cover mb-4"
-                unoptimized
-              />
+              <div className="w-[120px] h-[120px] rounded-full overflow-hidden mb-4 flex-shrink-0">
+                <Image
+                  src="/images/ruben.jpg"
+                  alt="Ruben, ingénieur-chercheur en IA"
+                  width={120}
+                  height={120}
+                  className="w-full h-full object-cover"
+                  unoptimized
+                />
+              </div>
               <h3 className="text-lg font-semibold mb-1">Ruben</h3>
               <p className="text-sm text-muted-foreground mb-3">
                 Ingénieur-chercheur en IA
@@ -223,15 +231,34 @@ export default function SoutenirPage() {
               </a>
             </div>
 
-            {/* Paul — placeholder */}
+            {/* Paul */}
             <div className="bg-card border rounded-2xl p-6 flex flex-col items-center text-center">
-              <div className="w-[120px] h-[120px] rounded-full bg-muted flex items-center justify-center mb-4">
-                <Users className="h-10 w-10 text-muted-foreground" />
+              <div className="w-[120px] h-[120px] rounded-full overflow-hidden mb-4 flex-shrink-0">
+                <Image
+                  src="/images/paul.jpg"
+                  alt="Paul, contributeur CLAIR"
+                  width={120}
+                  height={120}
+                  className="w-full h-full object-cover"
+                  unoptimized
+                />
               </div>
               <h3 className="text-lg font-semibold mb-1">Paul</h3>
               <p className="text-sm text-muted-foreground mb-3">
-                Description à venir
+                Designer UX/UI
               </p>
+              <p className="text-sm leading-relaxed mb-4">
+                Avec CLAIR, je souhaite rendre la politique institutionnelle lisible au plus grand nombre.
+              </p>
+              <a
+                href="https://www.linkedin.com/in/paul-albagli"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-sm text-primary hover:underline mt-auto"
+              >
+                <Linkedin className="h-4 w-4" />
+                LinkedIn
+              </a>
             </div>
           </div>
         </div>

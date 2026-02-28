@@ -217,26 +217,18 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
       description: 'Appelé par le service d\'ingestion après la synchronisation quotidienne',
     },
     handler: async (request, reply) => {
-      // Accessible uniquement depuis le réseau interne Railway
-      // Les appels publics passent par le proxy qui ajoute x-forwarded-for
-      if (request.headers['x-forwarded-for']) {
+      // Protégé par un token partagé entre l'API et le scheduler
+      const token = process.env.CACHE_WARM_TOKEN?.trim();
+      const provided = (request.headers['x-warm-token'] as string)?.trim();
+      if (!token || provided !== token) {
+        fastify.log.warn({ hasToken: !!token, hasProvided: !!provided }, 'Cache warm 403');
         return reply.status(403).send({ error: 'Forbidden' });
       }
 
-      // Supprimer le cache existant
+      // Supprimer le cache existant — le rebuild sera fait par le scheduler via GET
       await fastify.redis.del('homepage:data');
 
-      // Recharger en appelant le GET handler via injection interne
-      const response = await fastify.inject({
-        method: 'GET',
-        url: '/api/v1/homepage',
-      });
-
-      return {
-        ok: true,
-        status: response.statusCode,
-        message: 'Homepage cache warmed',
-      };
+      return { ok: true, message: 'Cache invalidated' };
     },
   });
 };

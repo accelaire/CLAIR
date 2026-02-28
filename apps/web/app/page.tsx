@@ -103,7 +103,7 @@ export default function HomePage() {
   const trendingDossiers = homepageData?.trendingDossiers;
 
   // Animated counters
-  const deputesCount = useCountUp(stats?.deputes);
+  const deputesCount = useCountUp(Math.min(stats?.deputes ?? 0, 577));
   const senateursCount = useCountUp(stats?.senateurs);
   const scrutinsCount = useCountUp(stats?.scrutins);
   const dossiersCount = useCountUp(stats?.dossiers);

@@ -280,18 +280,44 @@ program
 
       console.log(`\n⏱️  Durée: ${result.duration}`);
 
-      // Recharger le cache homepage de l'API après le sync
-      const apiUrl = process.env.API_INTERNAL_URL || 'http://localhost:3001';
-      try {
-        console.log('\n🔄 Rechargement du cache homepage...');
-        const resp = await fetch(`${apiUrl}/api/v1/homepage/warm`, { method: 'POST' });
-        if (resp.ok) {
-          console.log('  ✅ Cache homepage rechargé');
-        } else {
-          console.log(`  ⚠️  Cache warm: status ${resp.status}`);
+      // Recharger le cache homepage via l'URL publique de l'API
+      // Cooldown 120s pour laisser Postgres souffler après le sync
+      // Étape 1 : invalider le cache (POST /warm)
+      // Étape 2 : reconstruire via GET /homepage (comme un user normal)
+      console.log('\n⏳ Attente 120s avant rechargement du cache (stabilisation DB)...');
+      await new Promise(r => setTimeout(r, 120_000));
+      const apiUrl = process.env.API_URL || 'http://localhost:3001';
+      const warmToken = process.env.CACHE_WARM_TOKEN?.trim();
+      if (warmToken) {
+        try {
+          // Invalidation
+          console.log('\n🔄 Invalidation du cache homepage...');
+          const invalidate = await fetch(`${apiUrl}/api/v1/homepage/warm`, {
+            method: 'POST',
+            headers: {
+              'x-warm-token': warmToken,
+              'user-agent': 'clair-ingestion/1.0',
+            },
+          });
+          if (!invalidate.ok) {
+            console.log(`  ⚠️  Invalidation échouée: status ${invalidate.status}`);
+          } else {
+            // Rebuild — identique à un user qui arrive sur la homepage
+            console.log('  ✅ Cache invalidé, reconstruction...');
+            const rebuild = await fetch(`${apiUrl}/api/v1/homepage`, {
+              headers: { 'user-agent': 'clair-ingestion/1.0' },
+            });
+            if (rebuild.ok) {
+              console.log('  ✅ Cache homepage rechargé');
+            } else {
+              console.log(`  ⚠️  Rebuild échoué: status ${rebuild.status}`);
+            }
+          }
+        } catch (e: any) {
+          console.log(`  ⚠️  Cache warm indisponible: ${e.message}`);
         }
-      } catch (e: any) {
-        console.log(`  ⚠️  Cache warm indisponible: ${e.message}`);
+      } else {
+        console.log('\n⚠️  CACHE_WARM_TOKEN non configuré — cache homepage non rechargé');
       }
 
       process.exit(0);

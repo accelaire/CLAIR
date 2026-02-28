@@ -138,6 +138,13 @@ async function buildApp() {
   // ROUTES
   // ==========================================================================
 
+  // robots.txt — block all crawlers on the API domain
+  app.get('/robots.txt', async (_request, reply) => {
+    return reply
+      .type('text/plain')
+      .send('User-agent: *\nDisallow: /\n');
+  });
+
   // Health check (pas de préfixe)
   await app.register(healthRoutes);
 

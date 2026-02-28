@@ -502,9 +502,9 @@ export default function ScrutinDetailPage() {
         </aside>
 
         {/* Main content */}
-        <div>
+        <div className="min-w-0">
           {/* Tab bar */}
-          <div className="border-b mb-6">
+          <div className="border-b mb-6 overflow-x-auto">
             <div className="flex gap-0">
               {tabConfig.map((tab) => {
                 const Icon = tab.icon;
