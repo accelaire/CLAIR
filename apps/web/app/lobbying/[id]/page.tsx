@@ -171,14 +171,19 @@ export default function LobbyisteDetailPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      {/* Back button */}
-      <button
-        onClick={() => router.back()}
-        className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Retour
-      </button>
+      {/* Breadcrumb */}
+      <nav className="flex items-center gap-2 text-sm text-muted-foreground mb-6 min-w-0">
+        <button
+          onClick={() => router.back()}
+          className="inline-flex items-center justify-center rounded-lg p-1.5 hover:bg-muted transition-colors flex-shrink-0"
+          aria-label="Retour"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <Link href="/lobbying" className="hover:text-foreground transition-colors flex-shrink-0">Lobbying</Link>
+        <span className="flex-shrink-0">/</span>
+        <span className="text-foreground font-medium truncate">{lobbyiste.nom}</span>
+      </nav>
 
       {/* Header */}
       <div className="mb-8">

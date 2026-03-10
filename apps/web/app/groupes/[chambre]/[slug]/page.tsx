@@ -64,6 +64,7 @@ interface GroupeDetail {
   membresCount: number;
   membresActifsCount: number;
   rang: number | null;
+  totalGroupes: number | null;
   totauxAmendements: number;
   membres: Membre[];
   stats: {
@@ -188,13 +189,13 @@ function StatCard({
         <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
         <span className="text-xs sm:text-sm truncate">{label}</span>
       </div>
-      <div className="mt-1.5 sm:mt-2 flex items-baseline gap-1 sm:gap-2 flex-wrap">
+      <div className="mt-1.5 sm:mt-2 sm:flex sm:items-baseline sm:gap-2 sm:flex-wrap">
         <span className="text-xl sm:text-2xl font-bold">
           {typeof value === 'number' ? value.toLocaleString('fr-FR') : value}
           {suffix}
         </span>
         {subtitle && (
-          <span className="text-xs sm:text-sm text-muted-foreground">{subtitle}</span>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 sm:mt-0">{subtitle}</p>
         )}
       </div>
     </div>
@@ -403,15 +404,22 @@ export default function GroupeDetailPage() {
   return (
     <div className="container mx-auto px-4 py-8 overflow-x-hidden">
       {/* Breadcrumb */}
-      <div className="mb-6">
+      <nav className="flex items-center gap-2 text-sm text-muted-foreground mb-6 min-w-0">
         <button
           onClick={() => router.back()}
-          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="inline-flex items-center justify-center rounded-lg p-1.5 hover:bg-muted transition-colors flex-shrink-0"
+          aria-label="Retour"
         >
           <ArrowLeft className="h-4 w-4" />
-          Retour
         </button>
-      </div>
+        <Link href="/groupes" className="hover:text-foreground transition-colors flex-shrink-0">Groupes</Link>
+        <span className="flex-shrink-0">/</span>
+        <Link href={`/groupes?chambre=${groupe.chambre}`} className="hover:text-foreground transition-colors flex-shrink-0">
+          {groupe.chambre === 'senat' ? 'Sénat' : 'AN'}
+        </Link>
+        <span className="flex-shrink-0">/</span>
+        <span className="text-foreground font-medium truncate">{groupe.nomComplet || groupe.nom}</span>
+      </nav>
 
       {/* Header */}
       <div className="mb-8 flex flex-col gap-4 sm:gap-6">
@@ -477,7 +485,7 @@ export default function GroupeDetailPage() {
         <StatCard
           label="Membres actifs"
           value={groupe.membresActifsCount}
-          subtitle={groupe.rang ? `${groupe.rang}${groupe.rang === 1 ? 'er' : 'e'} groupe` : undefined}
+          subtitle={groupe.rang ? `${groupe.rang}${groupe.rang === 1 ? 'er' : 'e'} groupe sur ${groupe.totalGroupes}` : undefined}
           icon={Users}
         />
         <StatCard

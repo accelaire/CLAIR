@@ -194,6 +194,8 @@ function ScrutinsPageContent() {
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
           Sources : <a href="https://data.assemblee-nationale.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.assemblee-nationale.fr</a>, <a href="https://data.senat.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.senat.fr</a>
+          {' · '}<Link href="/comprendre/scrutin" className="underline hover:text-foreground">Qu&apos;est-ce qu&apos;un scrutin ?</Link>
+          {' · '}<Link href="/guide/decrypter-un-scrutin" className="underline hover:text-foreground">Guide</Link>
         </p>
       </div>
 

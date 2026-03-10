@@ -30,6 +30,7 @@ export interface GroupeWithStats {
 
 export interface GroupeDetail extends GroupeWithStats {
   rang: number | null; // Rang par nombre de membres dans la chambre (hors NI)
+  totalGroupes: number | null; // Nombre total de groupes dans la chambre (hors NI)
   totauxAmendements: number; // Total des amendements déposés par le groupe
   membres: {
     id: string;
@@ -171,6 +172,7 @@ export class GroupesService {
 
     // Calculer le rang par nombre de membres (hors NI)
     let rang: number | null = null;
+    let totalGroupes: number | null = null;
     if (slug !== 'ni') {
       const allGroupes = await this.prisma.groupePolitique.findMany({
         where: {
@@ -184,8 +186,13 @@ export class GroupesService {
         },
         orderBy: { statsMembresActifs: 'desc' },
       });
-      rang = allGroupes.findIndex((g) => g.slug === slug) + 1;
-      if (rang === 0) rang = null;
+      const current = allGroupes.find((g) => g.slug === slug);
+      if (current) {
+        // Rang = nombre de groupes ayant strictement plus de membres + 1
+        // Ex aequo: deux groupes à 17 membres partagent le même rang
+        rang = allGroupes.filter((g) => (g.statsMembresActifs ?? 0) > (current.statsMembresActifs ?? 0)).length + 1;
+      }
+      totalGroupes = allGroupes.length;
     }
 
     // Calculer le total des amendements
@@ -214,6 +221,7 @@ export class GroupesService {
       membresCount: groupe._count.parlementaires,
       membresActifsCount: groupe.statsMembresActifs ?? membres.length,
       rang,
+      totalGroupes,
       totauxAmendements,
       // Stats pré-calculées
       statsPresenceMoyenne: groupe.statsPresenceMoyenne,

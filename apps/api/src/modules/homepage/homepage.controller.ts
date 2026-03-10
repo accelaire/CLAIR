@@ -5,8 +5,9 @@
 
 import { FastifyPluginAsync } from 'fastify';
 
-// Cache 1 heure - route optimisée
-const CACHE_TTL = 3600;
+// Cache 27h — survit au sync (CRON 5h, durée max ~2h) + marge
+// Le cache est renouvelé activement par l'ingestion après chaque sync
+const CACHE_TTL = 97200;
 
 const dossierChambre = (legislature: number) => legislature === 0 ? 'senat' : 'assemblee';
 
@@ -40,77 +41,28 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         return JSON.parse(cached);
       }
 
-      // Exécuter les requêtes SÉQUENTIELLEMENT pour éviter de saturer le pool
-      // de connexions Prisma (max 15) et provoquer des timeouts
-      const deputesCount = await fastify.prisma.parlementaire.count({
-        where: { chambre: 'assemblee', actif: true },
-      });
+      // Batch 1 — counts parallèles (requêtes légères, ~2ms chacune)
+      const [
+        deputesCount,
+        senateursCount,
+        scrutinsCount,
+        lobbyistesCount,
+        actionsCount,
+        interventionsCount,
+        amendementsCount,
+        dossiersCount,
+      ] = await Promise.all([
+        fastify.prisma.parlementaire.count({ where: { chambre: 'assemblee', actif: true } }),
+        fastify.prisma.parlementaire.count({ where: { chambre: 'senat', actif: true } }),
+        fastify.prisma.scrutin.count(),
+        fastify.prisma.lobbyiste.count(),
+        fastify.prisma.actionLobby.count(),
+        fastify.prisma.intervention.count(),
+        fastify.prisma.amendement.count(),
+        fastify.prisma.dossierLegislatif.count({ where: { scrutins: { some: {} } } }),
+      ]);
 
-      const senateursCount = await fastify.prisma.parlementaire.count({
-        where: { chambre: 'senat', actif: true },
-      });
-
-      const scrutinsCount = await fastify.prisma.scrutin.count();
-
-      const lobbyistesCount = await fastify.prisma.lobbyiste.count();
-      const actionsCount = await fastify.prisma.actionLobby.count();
-
-      const interventionsCount = await fastify.prisma.intervention.count();
-      const amendementsCount = await fastify.prisma.amendement.count();
-
-      const dossiersCount = await fastify.prisma.dossierLegislatif.count({
-        where: { scrutins: { some: {} } },
-      });
-
-      // Dernière mise à jour (dernier sync réussi)
-      const lastSync = await fastify.prisma.syncLog.findFirst({
-        where: { statut: 'completed' },
-        orderBy: { completedAt: 'desc' },
-        select: { completedAt: true },
-      });
-
-      const recentScrutins = await fastify.prisma.scrutin.findMany({
-        where: {
-          importance: { gte: 3 },
-        },
-        select: {
-          id: true,
-          numero: true,
-          chambre: true,
-          session: true,
-          date: true,
-          titre: true,
-          sort: true,
-          nombrePour: true,
-          nombreContre: true,
-          importance: true,
-        },
-        orderBy: [{ date: 'desc' }, { numero: 'desc' }],
-        take: 6,
-      });
-
-      // Dernières actions de lobbying déclarées
-      const recentActions = await fastify.prisma.actionLobby.findMany({
-        select: {
-          id: true,
-          description: true,
-          cible: true,
-          dateDebut: true,
-          lobbyiste: {
-            select: {
-              id: true,
-              nom: true,
-              type: true,
-              secteur: true,
-              siteWeb: true,
-            },
-          },
-        },
-        orderBy: { dateDebut: 'desc' },
-        take: 6,
-      });
-
-      // Trending dossiers: recently voted + 1-2 "big" dossiers from last 2 months
+      // Batch 2 — requêtes avec joins/filtres
       const twoMonthsAgo = new Date();
       twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
 
@@ -130,24 +82,58 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         },
       };
 
-      // 1) Dossiers with most scrutins in last 2 months (big/hot dossiers) — max 2
-      const bigDossiers = await fastify.prisma.dossierLegislatif.findMany({
-        where: {
-          scrutins: { some: { date: { gte: twoMonthsAgo } } },
-        },
-        select: dossierSelect,
-        orderBy: { scrutins: { _count: 'desc' } },
-        take: 2,
-      });
+      const [lastSync, recentScrutins, recentActions, bigDossiers] = await Promise.all([
+        fastify.prisma.syncLog.findFirst({
+          where: { statut: 'completed' },
+          orderBy: { completedAt: 'desc' },
+          select: { completedAt: true },
+        }),
+        fastify.prisma.scrutin.findMany({
+          where: { importance: { gte: 3 } },
+          select: {
+            id: true, numero: true, chambre: true, session: true,
+            date: true, titre: true, sort: true,
+            nombrePour: true, nombreContre: true, importance: true,
+          },
+          orderBy: [{ date: 'desc' }, { numero: 'desc' }],
+          take: 6,
+        }),
+        fastify.prisma.actionLobby.findMany({
+          select: {
+            id: true, description: true, cible: true, dateDebut: true,
+            lobbyiste: {
+              select: { id: true, nom: true, type: true, secteur: true, siteWeb: true },
+            },
+          },
+          orderBy: { dateDebut: 'desc' },
+          take: 6,
+        }),
+        fastify.prisma.dossierLegislatif.findMany({
+          where: { scrutins: { some: { date: { gte: twoMonthsAgo } } } },
+          select: dossierSelect,
+          orderBy: { scrutins: { _count: 'desc' } },
+          take: 2,
+        }),
+      ]);
 
-      // 2) Most recently voted dossiers — fill the rest up to 8 total
+      // Batch 3 — dossiers récents (avec take pour éviter de charger toute la table)
       const bigIds = bigDossiers.map(d => d.id);
       const recentlyVotedDossiers = await fastify.prisma.dossierLegislatif.findMany({
         where: {
           id: { notIn: bigIds },
           scrutins: { some: {} },
         },
-        select: dossierSelect,
+        select: {
+          ...dossierSelect,
+          // Utiliser le dernier scrutin pour le tri côté DB
+          scrutins: {
+            orderBy: { date: 'desc' as const },
+            take: 1,
+            select: { date: true },
+          },
+        },
+        orderBy: { scrutins: { _count: 'desc' } },
+        take: 20,
       });
 
       // Sort by latest scrutin date desc
@@ -213,10 +199,36 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         lastUpdate: lastSync?.completedAt || null,
       };
 
-      // Mettre en cache (1 heure)
+      // Mettre en cache (27h)
       await fastify.redis.setex(cacheKey, CACHE_TTL, JSON.stringify(result));
 
       return result;
+    },
+  });
+
+  // ===========================================================================
+  // POST /api/v1/homepage/warm - Invalide et recharge le cache
+  // Appelé par l'ingestion après chaque smart-sync
+  // ===========================================================================
+  fastify.post('/warm', {
+    schema: {
+      tags: ['Homepage'],
+      summary: 'Invalider et recharger le cache homepage',
+      description: 'Appelé par le service d\'ingestion après la synchronisation quotidienne',
+    },
+    handler: async (request, reply) => {
+      // Protégé par un token partagé entre l'API et le scheduler
+      const token = process.env.CACHE_WARM_TOKEN?.trim();
+      const provided = (request.headers['x-warm-token'] as string)?.trim();
+      if (!token || provided !== token) {
+        fastify.log.warn({ hasToken: !!token, hasProvided: !!provided }, 'Cache warm 403');
+        return reply.status(403).send({ error: 'Forbidden' });
+      }
+
+      // Supprimer le cache existant — le rebuild sera fait par le scheduler via GET
+      await fastify.redis.del('homepage:data');
+
+      return { ok: true, message: 'Cache invalidated' };
     },
   });
 };

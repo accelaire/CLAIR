@@ -28,6 +28,7 @@ import {
   GitCompareArrows,
   AlertTriangle,
 } from 'lucide-react';
+import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
 import { api } from '@/lib/api';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
@@ -91,18 +92,25 @@ function StatCard({
   icon: Icon,
   suffix = '',
   subtitle,
+  tooltip,
+  tooltipHref,
 }: {
   label: string;
   value: number | string | null;
   icon: any;
   suffix?: string;
   subtitle?: string;
+  tooltip?: string;
+  tooltipHref?: string;
 }) {
   return (
     <div className="rounded-lg border bg-card p-4">
       <div className="flex items-center gap-2 text-muted-foreground">
         <Icon className="h-4 w-4" />
         <span className="text-sm">{label}</span>
+        {tooltip && (
+          <DidacticielTooltip content={tooltip} learnMoreHref={tooltipHref} />
+        )}
       </div>
       <div className="mt-2 flex items-baseline gap-2 flex-wrap">
         <span className="text-2xl font-bold">
@@ -736,19 +744,24 @@ export default function DeputeDetailPage() {
   return (
     <div className="container mx-auto px-4 py-8">
       {/* Breadcrumb + Action */}
-      <div className="mb-6 flex items-center justify-between">
-        <button
-          onClick={() => router.back()}
-          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Retour
-        </button>
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <nav className="flex items-center gap-2 text-sm text-muted-foreground min-w-0">
+          <button
+            onClick={() => router.back()}
+            className="inline-flex items-center justify-center rounded-lg p-1.5 hover:bg-muted transition-colors flex-shrink-0"
+            aria-label="Retour"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <Link href="/deputes" className="hover:text-foreground transition-colors flex-shrink-0">Députés</Link>
+          <span className="flex-shrink-0">/</span>
+          <span className="text-foreground font-medium truncate">{depute.prenom} {depute.nom}</span>
+        </nav>
 
-        {/* Bouton Comparer - bien visible */}
+        {/* Bouton Comparer */}
         <Link
           href={`/deputes?compare=${depute.slug}`}
-          className="inline-flex items-center gap-2 rounded-lg border-2 border-primary/20 bg-primary/5 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/10 hover:border-primary/40 transition-colors"
+          className="inline-flex items-center gap-2 rounded-lg border-2 border-primary/20 bg-primary/5 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/10 hover:border-primary/40 transition-colors flex-shrink-0 self-start sm:self-auto"
         >
           <GitCompareArrows className="h-4 w-4" />
           <span>Comparer avec un autre député</span>
@@ -876,22 +889,30 @@ export default function DeputeDetailPage() {
               suffix="%"
               subtitle={`${depute.stats.presence}% tous scrutins`}
               icon={TrendingUp}
+              tooltip="Pourcentage de scrutins solennels auxquels ce parlementaire a participé (voté pour, contre ou abstention)."
+              tooltipHref="/comprendre/parlementaire"
             />
             <StatCard
               label="Loyauté au groupe"
               value={depute.stats.loyaute}
               suffix="%"
               icon={Users}
+              tooltip="Pourcentage de votes alignés avec la position majoritaire du groupe politique."
+              tooltipHref="/comprendre/parlementaire"
             />
             <StatCard
               label="Votes"
               value={depute.stats.participation}
               icon={Vote}
+              tooltip="Nombre total de scrutins publics auxquels ce parlementaire a pris part."
+              tooltipHref="/comprendre/parlementaire"
             />
             <StatCard
               label="Interventions"
               value={depute.stats.interventions}
               icon={MessageSquare}
+              tooltip="Nombre de prises de parole en séance publique."
+              tooltipHref="/comprendre/parlementaire"
             />
           </div>
         </div>

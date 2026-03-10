@@ -141,7 +141,7 @@ function DeputesPageContent() {
 
   // Flatten all pages data
   const deputes = data?.pages.flatMap((page) => page.data) ?? [];
-  const total = data?.pages[0]?.meta.total ?? 0;
+  const total = Math.min(data?.pages[0]?.meta.total ?? 0, 577);
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
@@ -178,6 +178,8 @@ function DeputesPageContent() {
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Source : <a href="https://data.assemblee-nationale.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.assemblee-nationale.fr</a>
+            {' · '}<Link href="/comprendre/parlementaire" className="underline hover:text-foreground">Comprendre les stats</Link>
+            {' · '}<Link href="/guide/decouvrir-mon-depute" className="underline hover:text-foreground">Guide</Link>
           </p>
         </div>
 

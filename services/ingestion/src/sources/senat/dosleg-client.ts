@@ -392,9 +392,9 @@ export class DoslegClient {
         const scrintNums = extractAmendementNumbers(scr.scrint);
         const amendementsNumeros = [...new Set([...amescrNums, ...scrintNums])];
 
-        // Determine sort
+        // Determine sort from vote counts (soslib is always NULL in DOSLEG dump)
         const sort: 'adopte' | 'rejete' =
-          scr.soslib?.toLowerCase().includes('adopt') ? 'adopte' : 'rejete';
+          scr.scrpou > scr.scrcon ? 'adopte' : 'rejete';
 
         // Calculate abstentions
         const nombreAbstention = Math.max(0, scr.scrvot - scr.scrpou - scr.scrcon);

@@ -4,47 +4,10 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, Users, Vote, Building2, ArrowRight, Calendar, BarChart3, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, ArrowRight, Calendar, ChevronLeft, ChevronRight, Landmark, Building2, Users } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useCountUp } from '@/hooks/useCountUp';
-import { LobbyisteLogo } from '@/components/lobbying';
-
-// Labels pour les cibles de lobbying
-const cibleLabels: Record<string, string> = {
-  parlementaire: 'Parlement',
-  depute: 'Parlement',
-  ministre: 'Gouvernement',
-  presidence: 'Présidence',
-  collectivite: 'Collectivités',
-  autorite: 'AAI/API',
-  administration: 'Administration',
-};
-
-// Extraire le secteur entre crochets de la description
-const extractSecteur = (description: string): { secteur: string | null; cleanDescription: string } => {
-  const match = description.match(/^\[([^\]]+)\]\s*/);
-  if (match) {
-    return { secteur: match[1], cleanDescription: description.replace(match[0], '') };
-  }
-  return { secteur: null, cleanDescription: description };
-};
-
-// Couleurs pour les secteurs
-const secteurColorClasses = [
-  'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400',
-  'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
-  'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400',
-  'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400',
-  'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
-];
-
-const getSecteurColor = (secteur: string): string => {
-  let hash = 0;
-  for (let i = 0; i < secteur.length; i++) {
-    hash = secteur.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return secteurColorClasses[Math.abs(hash) % secteurColorClasses.length];
-};
+import { FAQAccordion } from '@/components/ui/faq-accordion';
 
 interface Stats {
   deputes: number;
@@ -85,38 +48,62 @@ const dossierEtatLabels: Record<string, { label: string; color: string }> = {
   promulgue: { label: 'Promulgué', color: 'bg-green-100 text-green-700' },
 };
 
-interface RecentAction {
-  id: string;
-  description: string;
-  cible: string | null;
-  dateDebut: string;
-  lobbyiste: {
-    id: string;
-    nom: string;
-    type: string | null;
-    secteur: string | null;
-    siteWeb: string | null;
-  };
-}
+const faqItems = [
+  {
+    question: 'Quel est l\'objectif de CLAIR ?',
+    answer: 'La transparence politique est un pilier de la démocratie. Pourtant, les données sur l\'activité de nos élus sont dispersées, difficiles d\'accès et souvent incompréhensibles pour le citoyen lambda.\n\nCLAIR rassemble ces informations publiques en un seul endroit, les structure, et les présente de manière claire et accessible. Notre objectif : permettre à chaque citoyen de comprendre ce que font ses représentants, comment ils votent, et qui cherche à les influencer.',
+  },
+  {
+    question: 'Pourquoi CLAIR plutôt que les sites de l\'Assemblée nationale ou du Sénat ?',
+    answer: 'Les sites institutionnels sont des références indispensables, et CLAIR s\'en inspire. Mais chacun se concentre sur sa propre chambre : il faut naviguer entre assemblee-nationale.fr et senat.fr pour suivre un même texte de loi.\n\nCLAIR réunit les données des deux chambres en un seul endroit, et y ajoute les données de lobbying (HATVP). Vous pouvez comparer les votes entre députés et sénateurs, croiser les amendements avec les scrutins, et suivre l\'ensemble du parcours législatif sur une même page.',
+  },
+  {
+    question: 'Ai-je besoin de connaissances poussées sur le parlement pour comprendre ?',
+    answer: (<>Pas du tout ! CLAIR a pour vocation de rendre les données parlementaires accessibles au plus grand nombre. Si un terme vous échappe, consultez notre section <Link href="/comprendre" className="text-primary hover:underline">Comprendre</Link> qui explique simplement le fonctionnement des institutions. Et pour apprendre à utiliser la plateforme, suivez notre <Link href="/guide" className="text-primary hover:underline">Guide pratique</Link> pas à pas.</>),
+  },
+  {
+    question: 'D\'où viennent les données qui figurent sur CLAIR ?',
+    answer: (<>Toutes nos données proviennent de sources officielles et publiques : l&apos;Assemblée nationale (open data), le Sénat, la Haute Autorité pour la Transparence de la Vie Publique (HATVP) et la Direction de l&apos;Information Légale et Administrative (DILA). Ces données sont disponibles sous Licence Ouverte. Pour en savoir plus, consultez notre page <Link href="/methodologie" className="text-primary hover:underline">Méthodologie</Link>.</>),
+  },
+  {
+    question: 'À quelle fréquence les données sont-elles mises à jour ?',
+    answer: 'Les votes, interventions et amendements sont synchronisés quotidiennement. Les données de lobbying (HATVP) sont mises à jour de façon hebdomadaire. Un léger délai de 24 à 48h peut exister entre la publication des données par les sources officielles et leur apparition sur CLAIR.',
+  },
+  {
+    question: 'Qui est derrière le projet CLAIR ?',
+    answer: 'CLAIR est un projet citoyen indépendant, entièrement open-source. Il n\'est financé par aucun parti politique, syndicat ou entreprise. Le code source est disponible sur GitHub et les contributions sont les bienvenues.',
+  },
+];
+
+const statItems = [
+  { key: 'deputes', label: 'Députés', href: '/deputes' },
+  { key: 'senateurs', label: 'Sénateurs', href: '/senateurs' },
+  { key: 'scrutins', label: 'Scrutins', href: '/scrutins' },
+  { key: 'dossiers', label: 'Dossiers', href: '/dossiers' },
+  { key: 'interventions', label: 'Interventions', href: '/deputes' },
+  { key: 'amendements', label: 'Amendements', href: '/scrutins' },
+  { key: 'lobbyistes', label: 'Lobbyistes', href: '/lobbying' },
+  { key: 'actionsLobby', label: 'Actions lobby', href: '/lobbying' },
+] as const;
 
 export default function HomePage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Fetch homepage data (stats + recent scrutins + recent actions + trending dossiers in ONE call)
-  const { data: homepageData } = useQuery<{ stats: Stats; recentActions: RecentAction[]; trendingDossiers: TrendingDossier[]; lastUpdate: string | null }>({
+  const { data: homepageData } = useQuery<{ stats: Stats; trendingDossiers: TrendingDossier[]; lastUpdate: string | null }>({
     queryKey: ['homepage'],
     queryFn: () => api.get('/homepage').then(res => res.data),
-    staleTime: 30000, // Refresh every 30 seconds
-    refetchOnWindowFocus: true,
+    staleTime: 5 * 60 * 1000,   // 5min — données quasi-statiques (cache API = 1h)
+    gcTime: 30 * 60 * 1000,     // 30min — garde en mémoire pour éviter une page vide
+    refetchOnWindowFocus: false, // pas de refetch au focus (évite les requêtes inutiles)
+    retry: 2,                    // retente 2 fois en cas de timeout
   });
 
   const stats = homepageData?.stats;
-  const recentActions = homepageData?.recentActions;
   const trendingDossiers = homepageData?.trendingDossiers;
 
   // Animated counters
-  const deputesCount = useCountUp(stats?.deputes);
+  const deputesCount = useCountUp(Math.min(stats?.deputes ?? 0, 577));
   const senateursCount = useCountUp(stats?.senateurs);
   const scrutinsCount = useCountUp(stats?.scrutins);
   const dossiersCount = useCountUp(stats?.dossiers);
@@ -124,6 +111,22 @@ export default function HomePage() {
   const actionsCount = useCountUp(stats?.actionsLobby);
   const interventionsCount = useCountUp(stats?.interventions);
   const amendementsCount = useCountUp(stats?.amendements);
+
+  const formatStat = (n: number) => {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace('.', ',')}M`;
+    return n.toLocaleString('fr-FR');
+  };
+
+  const counters: Record<string, number> = {
+    deputes: deputesCount,
+    senateurs: senateursCount,
+    scrutins: scrutinsCount,
+    dossiers: dossiersCount,
+    interventions: interventionsCount,
+    amendements: amendementsCount,
+    lobbyistes: lobbyistesCount,
+    actionsLobby: actionsCount,
+  };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,7 +145,7 @@ export default function HomePage() {
   return (
     <div className="flex flex-col">
       {/* Hero Section */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-primary/5 to-background py-20 md:py-32">
+      <section className="py-20 md:py-32">
         <div className="container mx-auto px-4">
           <div className="mx-auto max-w-3xl text-center">
             <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl">
@@ -150,7 +153,7 @@ export default function HomePage() {
               <span className="text-primary">en clair</span>
             </h1>
             <p className="mt-6 text-lg text-muted-foreground md:text-xl">
-              Analysez les votes des députés et sénateurs, suivez le lobbying et vérifiez les promesses.
+              Consultez les votes des députés et sénateurs, suivez le lobbying et explorez les dossiers législatifs.
               Toutes les données publiques, enfin accessibles.
             </p>
 
@@ -162,97 +165,45 @@ export default function HomePage() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Rechercher un député, un sénateur, un scrutin..."
-                  className="w-full rounded-xl border bg-background px-12 py-4 text-base focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Rechercher un député, un scrutin..."
+                  className="w-full rounded-xl border bg-background pl-12 pr-32 py-3.5 text-base focus:outline-none focus:ring-2 focus:ring-primary"
                 />
                 <button
                   type="submit"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                 >
                   Rechercher
                 </button>
               </div>
             </form>
 
-            {/* Quick Stats - Clickable with animation */}
-            <div className="mt-12 flex flex-wrap justify-center gap-3">
-              <Link
-                href="/deputes"
-                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
-              >
-                <div className="text-xl font-bold text-primary tabular-nums">
-                  {stats?.deputes ? deputesCount.toLocaleString('fr-FR') : '—'}
-                </div>
-                <div className="text-xs text-muted-foreground">Députés</div>
-              </Link>
-              <Link
-                href="/senateurs"
-                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
-              >
-                <div className="text-xl font-bold text-primary tabular-nums">
-                  {stats?.senateurs ? senateursCount.toLocaleString('fr-FR') : '—'}
-                </div>
-                <div className="text-xs text-muted-foreground">Sénateurs</div>
-              </Link>
-              <Link
-                href="/scrutins"
-                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
-              >
-                <div className="text-xl font-bold text-primary tabular-nums">
-                  {stats?.scrutins ? scrutinsCount.toLocaleString('fr-FR') : '—'}
-                </div>
-                <div className="text-xs text-muted-foreground">Scrutins</div>
-              </Link>
-              <Link
-                href="/dossiers"
-                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
-              >
-                <div className="text-xl font-bold text-primary tabular-nums">
-                  {stats?.dossiers ? dossiersCount.toLocaleString('fr-FR') : '—'}
-                </div>
-                <div className="text-xs text-muted-foreground">Dossiers</div>
-              </Link>
-              <Link
-                href="/deputes"
-                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
-              >
-                <div className="text-xl font-bold text-primary tabular-nums">
-                  {stats?.interventions ? interventionsCount.toLocaleString('fr-FR') : '—'}
-                </div>
-                <div className="text-xs text-muted-foreground">Interventions</div>
-              </Link>
-              <Link
-                href="/deputes"
-                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
-              >
-                <div className="text-xl font-bold text-primary tabular-nums">
-                  {stats?.amendements ? amendementsCount.toLocaleString('fr-FR') : '—'}
-                </div>
-                <div className="text-xs text-muted-foreground">Amendements</div>
-              </Link>
-              <Link
-                href="/lobbying"
-                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
-              >
-                <div className="text-xl font-bold text-primary tabular-nums">
-                  {stats?.lobbyistes ? lobbyistesCount.toLocaleString('fr-FR') : '—'}
-                </div>
-                <div className="text-xs text-muted-foreground">Lobbyistes</div>
-              </Link>
-              <Link
-                href="/lobbying"
-                className="w-[calc(50%-6px)] sm:w-[150px] rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-md hover:scale-105"
-              >
-                <div className="text-xl font-bold text-primary tabular-nums">
-                  {stats?.actionsLobby ? actionsCount.toLocaleString('fr-FR') : '—'}
-                </div>
-                <div className="text-xs text-muted-foreground">Actions lobby</div>
-              </Link>
+            {/* Stats Cards — auto-scroll + swipeable carousel with edge blur */}
+            <div
+              className="mt-12 overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x"
+              style={{
+                maskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)',
+                WebkitMaskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)',
+              }}
+            >
+              <div className="flex gap-4 w-max animate-stats-scroll hover:[animation-play-state:paused] py-1">
+                {[...statItems, ...statItems].map((item, index) => (
+                  <Link
+                    key={`${item.key}-${index}`}
+                    href={item.href}
+                    className="w-[150px] rounded-xl bg-primary-accent px-5 py-4 text-white transition-colors hover:bg-primary-deep flex flex-col items-center text-center flex-shrink-0"
+                  >
+                    <span className="text-2xl font-bold tabular-nums">
+                      {stats?.[item.key] ? formatStat(counters[item.key]) : '—'}
+                    </span>
+                    <span className="text-sm text-white/80 mt-0.5">{item.label}</span>
+                  </Link>
+                ))}
+              </div>
             </div>
 
             {/* Dernière mise à jour */}
             {homepageData?.lastUpdate && (
-              <p className="mt-4 text-right text-xs italic text-muted-foreground">
+              <p className="mt-4 text-center text-xs italic text-muted-foreground">
                 Données mises à jour le {new Date(homepageData.lastUpdate).toLocaleDateString('fr-FR', {
                   day: 'numeric',
                   month: 'long',
@@ -280,10 +231,10 @@ export default function HomePage() {
                 </div>
                 <Link
                   href="/dossiers"
-                  className="flex items-center text-sm font-medium text-primary hover:underline"
+                  className="hidden sm:inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
                 >
                   Voir tous les dossiers
-                  <ArrowRight className="ml-1 h-4 w-4" />
+                  <ArrowRight className="h-4 w-4" />
                 </Link>
               </div>
             </div>
@@ -313,8 +264,7 @@ export default function HomePage() {
 
             <div
               id="dossiers-carousel"
-              className="overflow-x-auto pb-4 px-4 md:px-[max(1rem,calc((100%-768px)/2+1rem))] lg:px-[max(1rem,calc((100%-1024px)/2+1rem))] xl:px-[max(1rem,calc((100%-1280px)/2+1rem))] [&::-webkit-scrollbar]:hidden"
-              style={{ scrollbarWidth: 'none' }}
+              className="overflow-x-auto pb-4 px-4 md:px-[max(1rem,calc((100%-768px)/2+1rem))] lg:px-[max(1rem,calc((100%-1024px)/2+1rem))] xl:px-[max(1rem,calc((100%-1280px)/2+1rem))] scrollbar-none"
             >
               <div className="flex gap-4 w-max animate-carousel-scroll group-hover:[animation-play-state:paused]">
                 {[...trendingDossiers, ...trendingDossiers].map((dossier, index) => (
@@ -341,7 +291,12 @@ export default function HomePage() {
                     </div>
 
                     {/* Title */}
-                    <h3 className="font-semibold text-base line-clamp-2 mb-auto">{formatDossierTitre(dossier.titre, dossier.procedureLibelle)}</h3>
+                    <h3 className="font-semibold text-base line-clamp-2 mb-1">{formatDossierTitre(dossier.titre, dossier.procedureLibelle)}</h3>
+
+                    {/* Description — truncated titre for extra context */}
+                    <p className="text-sm text-muted-foreground line-clamp-2 mb-auto">
+                      {dossier.procedureLibelle || dossier.titre}
+                    </p>
 
                     {/* Footer: last vote date + scrutins count */}
                     <div className="mt-4 pt-3 flex items-center gap-4 text-sm text-muted-foreground">
@@ -361,139 +316,85 @@ export default function HomePage() {
               </div>
             </div>
           </div>
-        </section>
-      )}
 
-      {/* Recent Lobbying Actions */}
-      {recentActions && recentActions.length > 0 && (
-        <section className="py-16 border-b overflow-hidden">
-          <div className="container mx-auto px-4">
-            <div className="mb-8">
-              <span className="text-sm font-medium text-primary">Transparence</span>
-              <div className="flex items-center justify-between mt-1">
-                <div>
-                  <h2 className="text-2xl font-bold">Dernières actions lobby déclarées</h2>
-                  <p className="text-muted-foreground mt-1">Les activités de lobbying les plus récentes déclarées à la HATVP</p>
-                </div>
-                <Link
-                  href="/lobbying/actions"
-                  className="flex items-center text-sm font-medium text-primary hover:underline"
-                >
-                  Voir toutes les actions
-                  <ArrowRight className="ml-1 h-4 w-4" />
-                </Link>
-              </div>
-            </div>
-          </div>
-
-          {/* Carrousel avec auto-scroll */}
-          <div className="relative group">
-            {/* Boutons de navigation */}
-            <button
-              onClick={() => {
-                const container = document.getElementById('actions-carousel');
-                if (container) container.scrollBy({ left: -416, behavior: 'smooth' });
-              }}
-              className="absolute left-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-10 h-10 rounded-full bg-background/90 border shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-background"
-              aria-label="Précédent"
+          {/* Mobile CTA — visible only on small screens */}
+          <div className="container mx-auto px-4 mt-4 sm:hidden">
+            <Link
+              href="/dossiers"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
             >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <button
-              onClick={() => {
-                const container = document.getElementById('actions-carousel');
-                if (container) container.scrollBy({ left: 416, behavior: 'smooth' });
-              }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-10 h-10 rounded-full bg-background/90 border shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-background"
-              aria-label="Suivant"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
-
-            {/* Container scrollable */}
-            <div
-              id="actions-carousel"
-              className="overflow-x-auto pb-4 px-4 md:px-[max(1rem,calc((100%-768px)/2+1rem))] lg:px-[max(1rem,calc((100%-1024px)/2+1rem))] xl:px-[max(1rem,calc((100%-1280px)/2+1rem))] [&::-webkit-scrollbar]:hidden"
-              style={{ scrollbarWidth: 'none' }}
-            >
-              <div className="flex gap-4 w-max animate-carousel-scroll group-hover:[animation-play-state:paused]">
-                {/* Cartes dupliquées pour effet de boucle infinie */}
-                {[...recentActions, ...recentActions].map((action, index) => {
-                  const { secteur, cleanDescription } = extractSecteur(action.description || '');
-                  return (
-                    <Link
-                      key={`${action.id}-${index}`}
-                      href={`/lobbying/${action.lobbyiste.id}`}
-                      className="w-[400px] flex-shrink-0 rounded-xl border bg-card p-5 transition-all hover:border-primary hover:shadow-md"
-                    >
-                      {/* Tags: Secteur + Cible + Date */}
-                      <div className="flex items-center gap-2 text-sm mb-3">
-                        {secteur && (
-                          <span className={`px-2.5 py-1 rounded-md border text-xs font-medium truncate max-w-[180px] ${getSecteurColor(secteur)}`}>
-                            {secteur}
-                          </span>
-                        )}
-                        {action.cible && (
-                          <span className="px-2.5 py-1 rounded-md border border-blue-200 text-blue-800 dark:border-blue-800 dark:text-blue-400 text-xs font-medium whitespace-nowrap">
-                            {cibleLabels[action.cible] || action.cible}
-                          </span>
-                        )}
-                        <span className="flex items-center gap-1.5 text-muted-foreground text-xs ml-auto whitespace-nowrap">
-                          <Calendar className="h-3.5 w-3.5" />
-                          {new Date(action.dateDebut).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
-                        </span>
-                      </div>
-
-                      {/* Description */}
-                      <p className="font-medium line-clamp-3 mb-3 min-h-[4.5rem]">
-                        {cleanDescription || 'Objet non précisé'}
-                      </p>
-
-                      {/* Lobbyiste */}
-                      <div className="flex items-center gap-3 pt-3 border-t">
-                        <LobbyisteLogo siteWeb={action.lobbyiste.siteWeb} nom={action.lobbyiste.nom} size="sm" />
-                        <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-sm truncate">{action.lobbyiste.nom}</p>
-                          {action.lobbyiste.secteur && (
-                            <p className="text-xs text-muted-foreground truncate">{action.lobbyiste.secteur}</p>
-                          )}
-                        </div>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
+              Voir tous les dossiers
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
         </section>
       )}
+
+      {/* Open Source Banner — edge-to-edge */}
+      <section className="bg-primary-deep py-12 md:py-16 text-white">
+        <div className="container mx-auto px-4">
+          <div className="flex flex-col md:flex-row md:items-center gap-8">
+            <div className="flex-1">
+              <h3 className="text-2xl md:text-3xl font-bold">
+                CLAIR est un projet 100% open-source
+              </h3>
+              <p className="mt-3 text-white/80">
+                Le code est disponible sur GitHub et les contributions sont les bienvenues. Que
+                vous soyez développeur, designer, data analyst ou simplement citoyen engagé,
+                vous pouvez participer.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row items-start gap-3 md:flex-shrink-0">
+              <Link
+                href="/methodologie"
+                className="inline-flex items-center gap-2 rounded-lg bg-white px-5 py-2.5 text-sm font-medium transition-colors hover:bg-white/90"
+                style={{ color: '#414651' }}
+              >
+                Voir la méthodologie
+              </Link>
+              <a
+                href="https://github.com/accelaire/CLAIR"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white hover:bg-primary/90 transition-colors"
+              >
+                Voir sur Github
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Features Section */}
       <section className="py-20">
         <div className="container mx-auto px-4">
-          <h2 className="text-center text-3xl font-bold">
-            Comprendre la politique en 30 secondes
-          </h2>
-          <p className="mx-auto mt-4 max-w-2xl text-center text-muted-foreground">
-            Fini les données dispersées et les interfaces illisibles.
-            CLAIR agrège et simplifie l&apos;information politique pour vous.
-          </p>
+          <div>
+            <span className="text-sm font-medium text-primary">À quoi sert CLAIR ?</span>
+            <h2 className="mt-2 text-3xl font-bold">
+              Consultez les votes, facilement
+            </h2>
+            <p className="mt-4 max-w-2xl text-muted-foreground">
+              Fini les données dispersées et les interfaces illisibles.
+              CLAIR agrège et simplifie l&apos;information politique pour vous.
+            </p>
+          </div>
 
-          <div className="mt-16 grid gap-8 md:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-16 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {/* Feature 1: Députés */}
             <Link
               href="/deputes"
-              className="group rounded-xl border bg-card p-8 transition-all hover:border-primary hover:shadow-lg"
+              className="group rounded-2xl p-8 transition-all"
+              style={{ backgroundColor: '#fafafa' }}
             >
-              <div className="mb-4 inline-flex rounded-lg bg-primary/10 p-3">
-                <Users className="h-6 w-6 text-primary" />
+              <div className="mb-4 inline-flex rounded-xl bg-primary p-3">
+                <Landmark className="h-6 w-6 text-white" />
               </div>
               <h3 className="text-xl font-semibold">Députés</h3>
               <p className="mt-2 text-muted-foreground">
                 Votes, présence, loyauté au groupe... Tout savoir sur votre député.
               </p>
               <div className="mt-4 flex items-center text-sm font-medium text-primary">
-                Voir les députés
+                Trouver un député
                 <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
               </div>
             </Link>
@@ -501,53 +402,37 @@ export default function HomePage() {
             {/* Feature 2: Sénateurs */}
             <Link
               href="/senateurs"
-              className="group rounded-xl border bg-card p-8 transition-all hover:border-primary hover:shadow-lg"
+              className="group rounded-2xl p-8 transition-all"
+              style={{ backgroundColor: '#fafafa' }}
             >
-              <div className="mb-4 inline-flex rounded-lg bg-blue-500/10 p-3">
-                <Users className="h-6 w-6 text-blue-600" />
+              <div className="mb-4 inline-flex rounded-xl bg-primary p-3">
+                <Building2 className="h-6 w-6 text-white" />
               </div>
               <h3 className="text-xl font-semibold">Sénateurs</h3>
               <p className="mt-2 text-muted-foreground">
                 Découvrez l&apos;activité des 348 sénateurs de la République.
               </p>
-              <div className="mt-4 flex items-center text-sm font-medium text-blue-600">
-                Voir les sénateurs
+              <div className="mt-4 flex items-center text-sm font-medium text-primary">
+                Trouver un sénateur
                 <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
               </div>
             </Link>
 
-            {/* Feature 3: Scrutins */}
+            {/* Feature 3: Groupes parlementaires */}
             <Link
-              href="/scrutins"
-              className="group rounded-xl border bg-card p-8 transition-all hover:border-primary hover:shadow-lg"
+              href="/groupes"
+              className="group rounded-2xl p-8 transition-all"
+              style={{ backgroundColor: '#fafafa' }}
             >
-              <div className="mb-4 inline-flex rounded-lg bg-primary/10 p-3">
-                <Vote className="h-6 w-6 text-primary" />
+              <div className="mb-4 inline-flex rounded-xl bg-primary p-3">
+                <Users className="h-6 w-6 text-white" />
               </div>
-              <h3 className="text-xl font-semibold">Scrutins</h3>
+              <h3 className="text-xl font-semibold">Groupes parlementaires</h3>
               <p className="mt-2 text-muted-foreground">
-                Tous les votes de l&apos;Assemblée et du Sénat, par thème.
+                Explorez les groupes politiques de l&apos;Assemblée et du Sénat.
               </p>
               <div className="mt-4 flex items-center text-sm font-medium text-primary">
-                Voir les scrutins
-                <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-              </div>
-            </Link>
-
-            {/* Feature 4: Lobbying */}
-            <Link
-              href="/lobbying"
-              className="group rounded-xl border bg-card p-8 transition-all hover:border-primary hover:shadow-lg"
-            >
-              <div className="mb-4 inline-flex rounded-lg bg-primary/10 p-3">
-                <Building2 className="h-6 w-6 text-primary" />
-              </div>
-              <h3 className="text-xl font-semibold">Lobbying</h3>
-              <p className="mt-2 text-muted-foreground">
-                Qui influence qui ? Les actions déclarées à la HATVP.
-              </p>
-              <div className="mt-4 flex items-center text-sm font-medium text-primary">
-                Explorer le lobbying
+                Trouver un groupe
                 <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
               </div>
             </Link>
@@ -555,61 +440,47 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Explorer CTA */}
-      <section className="py-16 border-t">
+      {/* FAQ Section */}
+      <section className="py-20">
         <div className="container mx-auto px-4">
-          <div
-            className="block rounded-2xl bg-gradient-to-r from-primary/10 via-purple-500/10 to-pink-500/10 p-8 md:p-12 border border-primary/20 opacity-75"
-          >
-            <div className="flex flex-col md:flex-row md:items-center gap-6">
-              <div className="flex-shrink-0">
-                <div className="inline-flex rounded-xl bg-primary/20 p-4">
-                  <BarChart3 className="h-8 w-8 text-primary" />
-                </div>
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <h3 className="text-2xl font-bold">Explorateur de données</h3>
-                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-primary text-primary-foreground flex items-center gap-1">
-                    <Sparkles className="h-3 w-3" />
-                    Beta
-                  </span>
-                </div>
-                <p className="text-muted-foreground text-lg">
-                  Analysez les données comme un pro ! Visualisez les tendances de vote,
-                  découvrez les députés dissidents, explorez le lobbying par secteur...
-                </p>
-              </div>
-              <div className="flex-shrink-0">
-                <span className="inline-flex items-center gap-2 text-muted-foreground font-medium">
-                  Arrive prochainement
-                </span>
-              </div>
+          <hr className="border-border mb-20" />
+          <div className="mx-auto max-w-3xl">
+            <h2 className="text-center text-3xl font-bold">Questions fréquentes</h2>
+            <p className="mt-4 text-center text-muted-foreground">
+              Si la vôtre n&apos;y figure pas, contactez-nous directement à{' '}
+              <a href="mailto:contact@clair.vote" className="text-foreground underline hover:text-primary">
+                contact@clair.vote
+              </a>
+            </p>
+            <div className="mt-10">
+              <FAQAccordion items={faqItems} defaultOpenIndex={0} />
             </div>
           </div>
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className="border-t bg-muted/30 py-20">
-        <div className="container mx-auto px-4 text-center">
-          <h2 className="text-3xl font-bold">Prêt à y voir plus clair ?</h2>
-          <p className="mx-auto mt-4 max-w-xl text-muted-foreground">
-            Commencez maintenant et découvrez comment CLAIR peut transformer votre compréhension de la politique française.
-          </p>
-          <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <Link
-              href="/deputes"
-              className="inline-flex items-center justify-center rounded-lg bg-primary px-6 py-3 font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              Commencer maintenant
-            </Link>
-            <Link
-              href="/a-propos"
-              className="inline-flex items-center justify-center rounded-lg border px-6 py-3 font-medium transition-colors hover:bg-accent"
-            >
-              En savoir plus
-            </Link>
+      {/* CTA Donation */}
+      <section className="py-16">
+        <div className="container mx-auto px-4">
+          <div className="rounded-2xl bg-primary-deep p-8 md:p-12 text-white">
+            <div className="flex flex-col md:flex-row md:items-center gap-6">
+              <div className="flex-1">
+                <h2 className="text-2xl md:text-3xl font-bold">Soutenez l&apos;indépendance de CLAIR</h2>
+                <p className="mt-3 text-white/80">
+                  CLAIR est un projet 100% citoyen, sans publicité ni financement politique. Votre
+                  don nous permet de rester indépendants.
+                </p>
+              </div>
+              <div className="md:flex-shrink-0">
+                <Link
+                  href="/soutenir"
+                  className="inline-flex items-center justify-center rounded-lg bg-white px-6 py-2.5 text-sm font-medium transition-colors hover:bg-white/90"
+                  style={{ color: '#414651' }}
+                >
+                  Faire un don
+                </Link>
+              </div>
+            </div>
           </div>
         </div>
       </section>

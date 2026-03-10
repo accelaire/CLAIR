@@ -165,6 +165,7 @@ function SenateursPageContent() {
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Source : <a href="https://data.senat.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.senat.fr</a>
+            {' · '}<Link href="/comprendre/parlementaire" className="underline hover:text-foreground">Comprendre les stats</Link>
           </p>
         </div>
 
