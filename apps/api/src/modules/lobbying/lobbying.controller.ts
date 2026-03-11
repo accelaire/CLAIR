@@ -277,6 +277,8 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           },
           actions: {
             include: {
+              cibleType: true,
+              actionDescription: true,
               parlementaire: {
                 select: {
                   id: true,
@@ -312,10 +314,16 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           })),
           actions: lobbyiste.actions.map((a) => ({
             ...a,
+            description: a.actionDescription.texte,
+            cibleNom: a.cibleType?.label ?? null,
             secteursList: a.secteurs.map((as) => ({
               slug: as.secteur.id,
               label: as.secteur.label,
             })),
+            actionDescription: undefined,
+            cibleType: undefined,
+            descriptionId: undefined,
+            cibleTypeId: undefined,
             secteurs: undefined,
           })),
           secteurs: undefined,
@@ -371,6 +379,8 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         fastify.prisma.actionLobby.findMany({
           where,
           include: {
+            cibleType: true,
+            actionDescription: true,
             parlementaire: {
               select: {
                 id: true,
@@ -396,10 +406,16 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
       return {
         data: actions.map((a) => ({
           ...a,
+          description: a.actionDescription.texte,
+          cibleNom: a.cibleType?.label ?? null,
           secteursList: a.secteurs.map((as) => ({
             slug: as.secteur.id,
             label: as.secteur.label,
           })),
+          actionDescription: undefined,
+          cibleType: undefined,
+          descriptionId: undefined,
+          cibleTypeId: undefined,
           secteurs: undefined,
         })),
         meta: {
@@ -499,7 +515,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
 
       if (search) {
         where.OR = [
-          { description: { contains: search, mode: 'insensitive' } },
+          { actionDescription: { texte: { contains: search, mode: 'insensitive' } } },
           { lobbyiste: { nom: { contains: search, mode: 'insensitive' } } },
           { texteViseNom: { contains: search, mode: 'insensitive' } },
         ];
@@ -526,6 +542,8 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         fastify.prisma.actionLobby.findMany({
           where,
           include: {
+            cibleType: true,
+            actionDescription: true,
             lobbyiste: {
               select: { id: true, nom: true, type: true, secteur: true, siteWeb: true },
             },
@@ -555,10 +573,16 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
       return {
         data: actions.map((a) => ({
           ...a,
+          description: a.actionDescription.texte,
+          cibleNom: a.cibleType?.label ?? null,
           secteursList: a.secteurs.map((as) => ({
             slug: as.secteur.id,
             label: as.secteur.label,
           })),
+          actionDescription: undefined,
+          cibleType: undefined,
+          descriptionId: undefined,
+          cibleTypeId: undefined,
           secteurs: undefined,
         })),
         meta: {
@@ -614,6 +638,8 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
       const actions = await fastify.prisma.actionLobby.findMany({
         where,
         include: {
+          cibleType: true,
+          actionDescription: true,
           lobbyiste: {
             select: { id: true, nom: true, type: true, secteur: true, siteWeb: true },
           },
@@ -638,10 +664,16 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
       return {
         data: actions.map((a) => ({
           ...a,
+          description: a.actionDescription.texte,
+          cibleNom: a.cibleType?.label ?? null,
           secteursList: a.secteurs.map((as) => ({
             slug: as.secteur.id,
             label: as.secteur.label,
           })),
+          actionDescription: undefined,
+          cibleType: undefined,
+          descriptionId: undefined,
+          cibleTypeId: undefined,
           secteurs: undefined,
         })),
       };

@@ -3876,6 +3876,58 @@ export async function syncLobbyistes(
   if (includeActions && csvActivites.length > 0) {
     logger.info({ total: csvActivites.length }, 'Syncing activites...');
 
+    // Pre-compute all unique descriptions and cibleNom values for batch upsert
+    const uniqueDescriptions = new Set<string>();
+    const uniqueCibleNoms = new Set<string>();
+
+    for (const act of csvActivites) {
+      if (!act.objet) continue;
+
+      let description = act.objet;
+      if (act.domaines.length > 0) {
+        description = `[${act.domaines.slice(0, 2).join(', ')}] ${description}`;
+      }
+      uniqueDescriptions.add(description.substring(0, 2000));
+
+      const details = actionDetailsByActivite.get(act.activiteId);
+      if (details && details.cibles && details.cibles.length > 0) {
+        const firstCible = details.cibles[0];
+        if (firstCible) {
+          const nom = firstCible.nom || firstCible.type?.substring(0, 200) || null;
+          if (nom) uniqueCibleNoms.add(nom);
+        }
+      }
+    }
+
+    // Batch upsert cible types
+    logger.info({ count: uniqueCibleNoms.size }, 'Upserting cible types...');
+    if (uniqueCibleNoms.size > 0) {
+      await prisma.cibleType.createMany({
+        data: [...uniqueCibleNoms].map((label) => ({ label })),
+        skipDuplicates: true,
+      });
+    }
+    const allCibleTypes = await prisma.cibleType.findMany();
+    const cibleTypeMap = new Map(allCibleTypes.map((ct) => [ct.label, ct.id]));
+    logger.info({ count: allCibleTypes.length }, 'Cible types ready');
+
+    // Batch upsert descriptions
+    logger.info({ count: uniqueDescriptions.size }, 'Upserting action descriptions...');
+    if (uniqueDescriptions.size > 0) {
+      // Batch in chunks of 1000 to avoid query size limits
+      const descArray = [...uniqueDescriptions];
+      for (let i = 0; i < descArray.length; i += 1000) {
+        const chunk = descArray.slice(i, i + 1000);
+        await prisma.actionDescription.createMany({
+          data: chunk.map((texte) => ({ texte })),
+          skipDuplicates: true,
+        });
+      }
+    }
+    const allDescriptions = await prisma.actionDescription.findMany();
+    const descriptionMap = new Map(allDescriptions.map((d) => [d.texte, d.id]));
+    logger.info({ count: allDescriptions.length }, 'Action descriptions ready');
+
     const activitesByLobbyiste = new Map<string, typeof csvActivites>();
     for (const act of csvActivites) {
       const list = activitesByLobbyiste.get(act.lobbyisteId) || [];
@@ -3915,6 +3967,15 @@ export async function syncLobbyistes(
           if (act.domaines.length > 0) {
             description = `[${act.domaines.slice(0, 2).join(', ')}] ${description}`;
           }
+          description = description.substring(0, 2000);
+
+          const descriptionId = descriptionMap.get(description);
+          if (!descriptionId) {
+            logger.warn({ description: description.substring(0, 50) }, 'Description not found in lookup map, skipping action');
+            continue;
+          }
+
+          const cibleTypeId = cibleNom ? cibleTypeMap.get(cibleNom) ?? null : null;
 
           let texteVise: string | null = null;
           let texteViseNom: string | null = null;
@@ -3929,7 +3990,7 @@ export async function syncLobbyistes(
           const existingAction = await prisma.actionLobby.findFirst({
             where: {
               lobbyisteId,
-              description: { contains: act.objet.substring(0, 50) },
+              actionDescription: { texte: { contains: act.objet.substring(0, 50) } },
             },
           });
 
@@ -3938,9 +3999,9 @@ export async function syncLobbyistes(
             await prisma.actionLobby.update({
               where: { id: existingAction.id },
               data: {
-                description: description.substring(0, 2000),
+                descriptionId,
                 cible,
-                cibleNom,
+                cibleTypeId,
                 texteVise,
                 texteViseNom,
               },
@@ -3951,10 +4012,10 @@ export async function syncLobbyistes(
             const created = await prisma.actionLobby.create({
               data: {
                 lobbyisteId,
-                description: description.substring(0, 2000),
+                descriptionId,
                 dateDebut,
                 cible,
-                cibleNom,
+                cibleTypeId,
                 texteVise,
                 texteViseNom,
               },

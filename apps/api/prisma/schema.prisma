@@ -472,9 +472,15 @@ model ActionLobby {
   parlementaireId String? @map("parlementaire_id")
   parlementaire   Parlementaire? @relation(fields: [parlementaireId], references: [id])
   cible    String? // 'parlementaire', 'ministre', 'administration', 'autre'
-  cibleNom String? @map("cible_nom")
 
-  description String
+  // Cible nom normalisé (lookup table)
+  cibleTypeId Int?       @map("cible_type_id")
+  cibleType   CibleType? @relation(fields: [cibleTypeId], references: [id])
+
+  // Description normalisée (lookup table)
+  descriptionId Int                @map("description_id")
+  actionDescription ActionDescription @relation(fields: [descriptionId], references: [id])
+
   dateDebut   DateTime  @map("date_debut")
   dateFin     DateTime? @map("date_fin")
 
@@ -492,7 +498,8 @@ model ActionLobby {
 
   @@index([lobbyisteId])
   @@index([parlementaireId])
-  @@index([dateDebut])
+  @@index([cibleTypeId])
+  @@index([descriptionId])
   @@map("actions_lobby")
 }
 
@@ -530,6 +537,26 @@ model ActionSecteur {
   @@index([actionId])
   @@index([secteurId])
   @@map("actions_secteurs")
+}
+
+// =============================================================================
+// NORMALISATION ACTIONS LOBBY (lookup tables)
+// =============================================================================
+
+model CibleType {
+  id      Int           @id @default(autoincrement())
+  label   String        @unique
+  actions ActionLobby[]
+
+  @@map("cible_types")
+}
+
+model ActionDescription {
+  id      Int           @id @default(autoincrement())
+  texte   String        @unique
+  actions ActionLobby[]
+
+  @@map("action_descriptions")
 }
 
 // =============================================================================
