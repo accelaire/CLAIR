@@ -65,48 +65,44 @@ export function MultiSelectFilter({
     : options;
 
   return (
-    <div ref={containerRef} className={`relative w-full sm:w-auto sm:min-w-[200px] sm:flex-1 sm:max-w-[350px] ${className}`}>
-      {/* Trigger button */}
+    <div ref={containerRef} className={`relative md:w-auto ${className}`}>
+      {/* Trigger button — matches native <select> styling */}
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center justify-between gap-2 rounded-lg border bg-background px-4 py-2 text-left focus:outline-none focus:ring-2 focus:ring-primary"
+        className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 text-left focus:outline-none focus:ring-2 focus:ring-primary"
       >
-        <span className="truncate text-sm">
-          {selected.length === 0 ? (
-            <span className="text-muted-foreground">{placeholder}</span>
-          ) : (
-            <span className="flex items-center gap-1.5">
-              <span className="inline-flex items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-xs font-medium text-primary-foreground">
-                {selected.length}
-              </span>
-              <span className="truncate">
-                {selected.length === 1
-                  ? options.find((o) => o.value === selected[0])?.label || selected[0]
-                  : `${selected.length} secteurs`}
-              </span>
+        {selected.length === 0 ? (
+          placeholder
+        ) : (
+          <span className="flex items-center gap-1.5">
+            <span className="inline-flex items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-xs font-medium text-primary-foreground">
+              {selected.length}
             </span>
-          )}
-        </span>
-        <span className="flex items-center gap-1 shrink-0">
-          {selected.length > 0 && (
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={clear}
-              onKeyDown={(e) => { if (e.key === 'Enter') clear(e as any); }}
-              className="rounded-full p-0.5 hover:bg-muted"
-            >
-              <X className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="truncate">
+              {selected.length === 1
+                ? options.find((o) => o.value === selected[0])?.label || selected[0]
+                : `${selected.length} secteurs`}
             </span>
-          )}
-          <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
-        </span>
+          </span>
+        )}
       </button>
+      <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+      {selected.length > 0 && (
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={clear}
+          onKeyDown={(e) => { if (e.key === 'Enter') clear(e as any); }}
+          className="absolute right-8 top-1/2 -translate-y-1/2 rounded-full p-0.5 hover:bg-muted z-10"
+        >
+          <X className="h-3.5 w-3.5 text-muted-foreground" />
+        </span>
+      )}
 
       {/* Dropdown */}
       {open && (
-        <div className="absolute z-50 mt-1 w-full rounded-lg border bg-popover shadow-lg">
+        <div data-multiselect-dropdown className="absolute z-50 mt-1 w-full rounded-lg border bg-popover shadow-lg">
           {/* Search input */}
           {options.length > 8 && (
             <div className="border-b px-3 py-2">

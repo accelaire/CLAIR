@@ -99,7 +99,7 @@ export function FilterBar({ search, children, activeFilterCount = 0, onClear }: 
               </div>
 
               {/* Filter content — date dropdown rendered inline so the sheet can scroll */}
-              <div className="flex-1 space-y-4 overflow-y-auto p-6 pb-2 [&_[data-date-dropdown]]:static [&_[data-date-dropdown]]:shadow-none [&_[data-date-dropdown]]:border-0 [&_[data-date-dropdown]]:mt-2">
+              <div className="flex-1 space-y-4 overflow-y-auto p-6 pb-2 [&_[data-date-dropdown]]:static [&_[data-date-dropdown]]:shadow-none [&_[data-date-dropdown]]:border-0 [&_[data-date-dropdown]]:mt-2 [&_[data-multiselect-dropdown]]:static [&_[data-multiselect-dropdown]]:shadow-none [&_[data-multiselect-dropdown]]:border-0 [&_[data-multiselect-dropdown]]:mt-2">
                 {children}
               </div>
 
