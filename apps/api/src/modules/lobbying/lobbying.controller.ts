@@ -482,6 +482,13 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         order?: 'asc' | 'desc';
       };
 
+      // Cache — stable key from sorted query params
+      const cacheKey = `lobbying:actions:${JSON.stringify({ page, limit, cible, texteVise, secteur, secteurs, search, dateFrom, dateTo, sort, order })}`;
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+
       const skip = (page - 1) * limit;
 
       // Parse secteurs param for action domaines intersection filter
@@ -570,7 +577,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
 
       const totalPages = Math.ceil(total / limit);
 
-      return {
+      const result = {
         data: actions.map((a) => ({
           ...a,
           description: a.actionDescription.texte,
@@ -594,6 +601,11 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           hasPrev: page > 1,
         },
       };
+
+      // Cache for 12 hours
+      await fastify.redis.setex(cacheKey, CACHE_TTL_12H, JSON.stringify(result));
+
+      return result;
     },
   });
 

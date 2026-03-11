@@ -65,12 +65,12 @@ export function MultiSelectFilter({
     : options;
 
   return (
-    <div ref={containerRef} className={`relative md:w-auto ${className}`}>
+    <div ref={containerRef} className={`relative md:w-[200px] ${className}`}>
       {/* Trigger button — matches native <select> styling */}
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 text-left focus:outline-none focus:ring-2 focus:ring-primary"
+        className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 text-left truncate focus:outline-none focus:ring-2 focus:ring-primary"
       >
         {selected.length === 0 ? (
           placeholder
@@ -102,7 +102,7 @@ export function MultiSelectFilter({
 
       {/* Dropdown */}
       {open && (
-        <div data-multiselect-dropdown className="absolute z-50 mt-1 w-full rounded-lg border bg-popover shadow-lg">
+        <div data-multiselect-dropdown className="absolute z-50 mt-1 min-w-[280px] rounded-lg border bg-popover shadow-lg">
           {/* Search input */}
           {options.length > 8 && (
             <div className="border-b px-3 py-2">
