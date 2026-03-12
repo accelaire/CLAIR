@@ -14,6 +14,9 @@ interface InterventionScrutin {
   date: string;
   ordre: number | null;
   sourceUrl: string | null;
+  orateurNom: string | null;
+  orateurPrenom: string | null;
+  orateurQualite: string | null;
   parlementaire: {
     id: string;
     slug: string;
@@ -24,7 +27,7 @@ interface InterventionScrutin {
       nom: string;
       couleur: string | null;
     } | null;
-  };
+  } | null;
 }
 
 interface ScrutinDebatsTabProps {
@@ -120,50 +123,72 @@ export function ScrutinDebatsTab({
               : 'Aucune intervention'}
           </p>
         ) : (
-          interventions.map((intervention) => (
-            <div key={intervention.id} className="flex items-start gap-3">
-              {/* Avatar */}
-              <Link
-                href={chambre === 'senat' ? `/senateurs/${intervention.parlementaire.slug}` : `/deputes/${intervention.parlementaire.slug}`}
-                className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-muted"
-              >
-                {intervention.parlementaire.photoUrl ? (
-                  <Image
-                    src={intervention.parlementaire.photoUrl}
-                    alt=""
-                    fill
-                    className="object-cover"
-                    unoptimized
-                  />
-                ) : (
-                  <Users className="absolute inset-0 m-auto h-5 w-5 text-muted-foreground" />
-                )}
-              </Link>
+          interventions.map((intervention) => {
+            const p = intervention.parlementaire;
+            const displayNom = p ? `${p.prenom} ${p.nom}` : `${intervention.orateurPrenom || ''} ${intervention.orateurNom || ''}`.trim();
+            const profileHref = p ? (chambre === 'senat' ? `/senateurs/${p.slug}` : `/deputes/${p.slug}`) : null;
 
-              {/* Content */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+            return (
+              <div key={intervention.id} className="flex items-start gap-3">
+                {/* Avatar */}
+                {profileHref ? (
                   <Link
-                    href={chambre === 'senat' ? `/senateurs/${intervention.parlementaire.slug}` : `/deputes/${intervention.parlementaire.slug}`}
-                    className="font-medium text-foreground hover:text-primary hover:underline"
+                    href={profileHref}
+                    className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-muted"
                   >
-                    {intervention.parlementaire.prenom} {intervention.parlementaire.nom}
+                    {p?.photoUrl ? (
+                      <Image
+                        src={p.photoUrl}
+                        alt=""
+                        fill
+                        className="object-cover"
+                        unoptimized
+                      />
+                    ) : (
+                      <Users className="absolute inset-0 m-auto h-5 w-5 text-muted-foreground" />
+                    )}
                   </Link>
-                  {intervention.parlementaire.groupe && (
-                    <span
-                      className="px-2 py-0.5 text-xs rounded-full text-white font-medium"
-                      style={{ backgroundColor: intervention.parlementaire.groupe.couleur || '#888' }}
-                    >
-                      {intervention.parlementaire.groupe.nom}
-                    </span>
-                  )}
-                </div>
-                <div className="rounded-lg p-3" style={{ backgroundColor: '#f9fafb' }}>
-                  <ExpandableText text={intervention.contenu} />
+                ) : (
+                  <div className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-muted">
+                    <Users className="absolute inset-0 m-auto h-5 w-5 text-muted-foreground" />
+                  </div>
+                )}
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                    {profileHref ? (
+                      <Link
+                        href={profileHref}
+                        className="font-medium text-foreground hover:text-primary hover:underline"
+                      >
+                        {displayNom}
+                      </Link>
+                    ) : (
+                      <span className="font-medium text-foreground">
+                        {displayNom}
+                      </span>
+                    )}
+                    {p?.groupe ? (
+                      <span
+                        className="px-2 py-0.5 text-xs rounded-full text-white font-medium"
+                        style={{ backgroundColor: p.groupe.couleur || '#888' }}
+                      >
+                        {p.groupe.nom}
+                      </span>
+                    ) : intervention.orateurQualite ? (
+                      <span className="px-2 py-0.5 text-xs rounded-full bg-slate-500 text-white font-medium">
+                        {intervention.orateurQualite}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="rounded-lg p-3" style={{ backgroundColor: '#f9fafb' }}>
+                    <ExpandableText text={intervention.contenu} />
+                  </div>
                 </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
 
         {/* Infinite scroll trigger */}

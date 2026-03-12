@@ -332,44 +332,52 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
               dateDepot: true,
             },
           },
-          interventions: {
-            take: 5, // Premières interventions seulement, le reste via endpoint paginé
-            orderBy: [{ date: 'asc' }, { ordre: 'asc' }],
-            select: {
-              id: true,
-              type: true,
-              contenu: true,
-              date: true,
-              ordre: true,
-              sourceUrl: true,
-              parlementaire: {
-                select: {
-                  id: true,
-                  slug: true,
-                  nom: true,
-                  prenom: true,
-                  photoUrl: true,
-                  groupe: {
-                    select: {
-                      nom: true,
-                      couleur: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
-          _count: {
-            select: {
-              interventions: true,
-            },
-          },
         },
       });
 
       if (!scrutin) {
         throw new ApiError(404, 'Scrutin non trouvé');
       }
+
+      // Interventions de la séance (même date + chambre) — pas juste celles liées au scrutin
+      const seanceInterventionSelect = {
+        id: true,
+        type: true,
+        contenu: true,
+        date: true,
+        ordre: true,
+        sourceUrl: true,
+        orateurNom: true,
+        orateurPrenom: true,
+        orateurQualite: true,
+        parlementaire: {
+          select: {
+            id: true,
+            slug: true,
+            nom: true,
+            prenom: true,
+            photoUrl: true,
+            groupe: {
+              select: {
+                nom: true,
+                couleur: true,
+              },
+            },
+          },
+        },
+      };
+
+      const seanceWhere = { date: scrutin.date, chambre: scrutin.chambre };
+
+      const [seanceInterventions, totalSeanceInterventions] = await Promise.all([
+        fastify.prisma.intervention.findMany({
+          where: seanceWhere,
+          take: 5,
+          orderBy: [{ date: 'asc' }, { ordre: 'asc' }],
+          select: seanceInterventionSelect,
+        }),
+        fastify.prisma.intervention.count({ where: seanceWhere }),
+      ]);
 
       // Sélection des champs votes communs
       const voteSelect = {
@@ -442,17 +450,15 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         absent: votesAbsent,
       };
 
-      // Extraire _count et le reste du scrutin
-      const { _count, ...scrutinData } = scrutin;
-
       return {
         data: {
-          ...scrutinData,
-          sourceUrl: fixSourceUrl(scrutinData.sourceUrl, scrutinData.chambre, scrutinData.numero),
+          ...scrutin,
+          interventions: seanceInterventions,
+          sourceUrl: fixSourceUrl(scrutin.sourceUrl, scrutin.chambre, scrutin.numero),
           votesByPosition,
           votesByGroupe,
-          totalVotes: scrutinData.nombrePour + scrutinData.nombreContre + scrutinData.nombreAbstention,
-          totalInterventions: _count?.interventions || 0,
+          totalVotes: scrutin.nombrePour + scrutin.nombreContre + scrutin.nombreAbstention,
+          totalInterventions: totalSeanceInterventions,
         },
       };
     },
@@ -498,21 +504,23 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
 
       const scrutin = await fastify.prisma.scrutin.findFirst({
         where: whereClause,
-        select: { id: true },
+        select: { id: true, date: true, chambre: true },
       });
 
       if (!scrutin) {
         throw new ApiError(404, 'Scrutin non trouvé');
       }
 
-      // Build intervention where clause with optional search
+      // Interventions de la séance (même date + chambre)
       const searchTerm = search?.trim();
-      const interventionWhere: any = { scrutinId: scrutin.id };
+      const interventionWhere: any = { date: scrutin.date, chambre: scrutin.chambre };
       if (searchTerm) {
         interventionWhere.OR = [
           { contenu: { contains: searchTerm, mode: 'insensitive' } },
           { parlementaire: { nom: { contains: searchTerm, mode: 'insensitive' } } },
           { parlementaire: { prenom: { contains: searchTerm, mode: 'insensitive' } } },
+          { orateurNom: { contains: searchTerm, mode: 'insensitive' } },
+          { orateurPrenom: { contains: searchTerm, mode: 'insensitive' } },
         ];
       }
 
@@ -529,6 +537,9 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
             date: true,
             ordre: true,
             sourceUrl: true,
+            orateurNom: true,
+            orateurPrenom: true,
+            orateurQualite: true,
             parlementaire: {
               select: {
                 id: true,

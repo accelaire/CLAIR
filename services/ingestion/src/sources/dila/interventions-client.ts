@@ -32,6 +32,7 @@ export interface TransformedIntervention {
   orateurNom: string;
   orateurPrenom?: string;
   orateurRef?: string; // PA123456 si disponible
+  orateurQualite?: string; // 'ministre', 'secrétaire d\'état', etc.
   contenu: string;
   type: string;
   sourceUrl?: string;
@@ -227,8 +228,45 @@ export class DILAInterventionsClient {
         }
       }
 
-      logger.info({ seances: processed, interventions: allInterventions.length }, 'Interventions extraction completed');
-      return allInterventions;
+      // Dédupliquer par seanceId + contenu (les archives .taz contiennent souvent
+      // plusieurs fichiers CRI qui couvrent la même séance avec des attributions
+      // d'orateurs différentes). On garde l'exemplaire le plus fiable :
+      // priorité à celui avec un orateurRef (PA ID extrait du href AN).
+      const seen = new Map<string, number>(); // clé -> index dans deduplicated
+      const deduplicated: TransformedIntervention[] = [];
+
+      for (const intervention of allInterventions) {
+        const key = `${intervention.seanceId}::${intervention.contenu.substring(0, 200)}`;
+        const existingIdx = seen.get(key);
+
+        if (existingIdx === undefined) {
+          seen.set(key, deduplicated.length);
+          deduplicated.push(intervention);
+        } else {
+          // Remplacer si le nouveau a un orateurRef et pas l'existant
+          if (!deduplicated[existingIdx].orateurRef && intervention.orateurRef) {
+            deduplicated[existingIdx] = intervention;
+          }
+        }
+      }
+
+      // Renuméroter les ordres séquentiellement par séance.
+      // Les fichiers CRI ont des ordres qui recommencent à 1, ce qui crée des
+      // chevauchements après dédup. On réassigne un ordre global par séance.
+      const seanceOrdre = new Map<string, number>();
+      for (const int of deduplicated) {
+        const current = (seanceOrdre.get(int.seanceId) || 0) + 1;
+        seanceOrdre.set(int.seanceId, current);
+        int.ordre = current;
+      }
+
+      logger.info({
+        seances: processed,
+        raw: allInterventions.length,
+        deduplicated: deduplicated.length,
+        removed: allInterventions.length - deduplicated.length,
+      }, 'Interventions extraction completed');
+      return deduplicated;
 
     } finally {
       await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -292,12 +330,27 @@ export class DILAInterventionsClient {
       const paragraphs = extractParagraphs(contenu);
       let ordre = 0; // Compteur d'ordre pour cette séance
 
+      // Patterns de qualités non-parlementaires (Article 31 Constitution)
+      // Ordre important : tester les patterns les plus spécifiques d'abord
+      const QUALITE_PATTERNS: RegExp[] = [
+        /premi[eè]re?\s+ministre/i,
+        /ministre\s+d['']état/i,
+        /garde\s+des\s+sceaux/i,
+        /ministre\s+délégué/i,
+        /ministre\s+déléguée/i,
+        /secrétaire\s+d['']état/i,
+        /secrétaire\s+d['']etat/i,
+        /haut[\s-]commissaire/i,
+        /commissaire\s+du\s+gouvernement/i,
+        /ministre/i, // pattern générique en dernier
+      ];
+
       for (const para of paragraphs) {
         const orateur = para.Orateur;
         if (!orateur) continue;
 
         const nom = typeof orateur.Nom === 'string' ? orateur.Nom : orateur.Nom?._ || orateur.Nom?.$text || '';
-        const href = orateur.href;
+        const href = orateur.Nom?.href || orateur.href;
 
         // Extraire le texte du paragraphe
         let texte = '';
@@ -337,18 +390,61 @@ export class DILAInterventionsClient {
           if (match) orateurRef = match[1];
         }
 
+        // Détecter la qualité depuis le texte brut du <Nom>
+        // Ex: "M. Philippe Tabarot, ministre chargé des transports,"
+        let orateurQualite: string | undefined;
+        const nomLower = nom.toLowerCase();
+        for (const pattern of QUALITE_PATTERNS) {
+          if (pattern.test(nomLower)) {
+            // Extraire la qualité complète : tout après la première virgule
+            const commaIdx = nom.indexOf(',');
+            if (commaIdx !== -1) {
+              orateurQualite = nom.substring(commaIdx + 1).replace(/[,.]$/g, '').trim();
+            }
+            // Si pas de virgule, la qualité est le match du pattern
+            if (!orateurQualite) {
+              const m = nom.match(pattern);
+              orateurQualite = m ? m[0] : undefined;
+            }
+            // Normaliser : retirer le point final, capitaliser
+            if (orateurQualite) {
+              orateurQualite = orateurQualite.replace(/\.\s*$/, '').trim();
+              orateurQualite = orateurQualite.charAt(0).toUpperCase() + orateurQualite.slice(1);
+            }
+            break;
+          }
+        }
+
         // Déterminer le type d'intervention
         let type = 'intervention';
         const texteLower = texte.toLowerCase();
-        if (texteLower.includes('question') || nom.toLowerCase().includes('présidente') && texteLower.includes('question')) {
+        if (texteLower.includes('question') || nomLower.includes('présidente') && texteLower.includes('question')) {
           type = 'question';
         } else if (texteLower.includes('explication de vote') || texteLower.includes('explications de vote')) {
           type = 'explication_vote';
         }
 
-        // Parser le nom de l'orateur (ex: "M. François Bayrou," -> prenom: François, nom: Bayrou)
-        const cleanName = nom.replace(/^(M\.|Mme|Mme\.)\s*/, '').replace(/,$/, '').trim();
-        const [prenom, ...nomParts] = cleanName.split(' ');
+        // Parser le nom de l'orateur
+        // Retirer le titre (M., Mme.), la qualité après virgule, et le groupe entre parenthèses
+        // Ex: "M. Philippe Tabarot, ministre chargé des transports," -> "Philippe Tabarot"
+        // Ex: "Mme Marine Le Pen (RN)," -> "Marine Le Pen"
+        let cleanName = nom
+          .replace(/^(M\.|Mme|Mme\.)\s*/, '')
+          .replace(/[,.]$/g, '')
+          .trim();
+
+        // Retirer le groupe politique entre parenthèses (ex: "(RN)", "(LFI-NFP)", "(SOC)")
+        cleanName = cleanName.replace(/\s*\([A-ZÀ-Ü][A-ZÀ-Üa-zà-ü\s/-]*\)\s*$/, '').trim();
+
+        // Retirer la qualité après virgule dans le nom
+        const commaIdx = cleanName.indexOf(',');
+        if (commaIdx !== -1) {
+          cleanName = cleanName.substring(0, commaIdx).trim();
+        }
+
+        const nameParts = cleanName.split(' ');
+        const prenom = nameParts.length > 1 ? nameParts[0] : undefined;
+        const nomFamille = nameParts.length > 1 ? nameParts.slice(1).join(' ') : cleanName;
 
         ordre++; // Incrémenter l'ordre chronologique
 
@@ -356,9 +452,10 @@ export class DILAInterventionsClient {
           seanceId,
           date: dateSeance,
           ordre,
-          orateurNom: nomParts.join(' ') || cleanName,
-          orateurPrenom: nomParts.length > 0 ? prenom : undefined,
+          orateurNom: nomFamille,
+          orateurPrenom: prenom,
           orateurRef,
+          orateurQualite,
           contenu: texte.substring(0, 5000), // Limiter la taille
           type,
           sourceUrl: generateSeanceUrl(dateSeance),

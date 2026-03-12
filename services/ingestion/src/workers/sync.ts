@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { PrismaClient, Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import pLimit from 'p-limit';
 import { AssembleeNationaleDeputesClient, TransformedParlementaire } from '../sources/assemblee-nationale/deputes-client';
 import { AssembleeNationaleScrutinsClient } from '../sources/assemblee-nationale/scrutins-client';
@@ -735,108 +736,97 @@ export async function syncInterventions(
     select: { id: true, sourceId: true, nom: true, prenom: true },
   });
 
-  // Créer un map avec plusieurs clés pour matcher les orateurs
-  const parlementaireMap = new Map<string, string>();
+  // Créer un map avec des clés fiables uniquement
+  const parlementaireByRef = new Map<string, string>(); // PA ID -> parlementaire.id
+  const parlementaireByFullName = new Map<string, string>(); // "prenom nom" normalisé -> parlementaire.id
+  // nom seul -> { id, prenom } OU null si ambigu (2+ parlementaires avec le même nom)
+  const parlementaireByNom = new Map<string, { id: string; prenom: string } | null>();
+
   const normalize = (s: string) => s.toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/-/g, ' ').replace(/'/g, ' ').trim();
 
   for (const p of parlementaires) {
-    // Par sourceId (PA123456)
-    if (p.sourceId) parlementaireMap.set(p.sourceId, p.id);
+    // Par sourceId (PA123456) — toujours fiable
+    if (p.sourceId) parlementaireByRef.set(p.sourceId, p.id);
 
-    // Par nom complet normalisé (plusieurs variantes)
-    parlementaireMap.set(normalize(`${p.prenom} ${p.nom}`), p.id);
-    parlementaireMap.set(normalize(`${p.nom} ${p.prenom}`), p.id);
-    parlementaireMap.set(normalize(p.nom), p.id);
+    // Par nom complet normalisé (prenom + nom, nom + prenom)
+    parlementaireByFullName.set(normalize(`${p.prenom} ${p.nom}`), p.id);
+    parlementaireByFullName.set(normalize(`${p.nom} ${p.prenom}`), p.id);
 
-    // Ajouter chaque partie du nom composé séparément
-    const nomParts = p.nom.split(/[\s-]+/);
-    if (nomParts.length > 1) {
-      for (const part of nomParts) {
-        if (part.length > 3) {
-          parlementaireMap.set(normalize(part), p.id);
-        }
-      }
+    // Par nom seul — marquer comme ambigu si plusieurs parlementaires partagent le même nom
+    const nomNorm = normalize(p.nom);
+    if (parlementaireByNom.has(nomNorm)) {
+      // Collision : marquer comme ambigu (null)
+      parlementaireByNom.set(nomNorm, null);
+    } else {
+      parlementaireByNom.set(nomNorm, { id: p.id, prenom: p.prenom });
     }
   }
 
   let created = 0;
-  let skippedNonParlementaire = 0;
-  let skippedNoMatch = 0;
+  let createdNonParlementaire = 0;
+  let skippedPresident = 0;
 
   const chambre = 'assemblee';
 
-  // Liste des titres à exclure (non-parlementaires)
-  const titresExclus = ['président', 'présidente', 'ministre', 'secrétaire', 'garde des sceaux', 'premier ministre'];
-
   for (const intervention of interventionsData) {
     try {
-      // Vérifier si c'est clairement un non-parlementaire (titre)
-      const orateurLower = (intervention.orateurNom || '').toLowerCase();
-      const isNonParlementaire = titresExclus.some(titre => orateurLower.includes(titre));
+      const orateurNom = intervention.orateurNom || '';
+      const orateurLower = orateurNom.toLowerCase();
 
-      if (isNonParlementaire) {
-        skippedNonParlementaire++;
+      // Ignorer les interventions du président/présidente de séance (pas informatif)
+      if (orateurLower.includes('président') || orateurLower.includes('présidente') ||
+          orateurLower === 'le président' || orateurLower === 'la présidente') {
+        skippedPresident++;
         continue;
       }
 
-      // Chercher le parlementaire
+      // Chercher le parlementaire — matching sécurisé, ordre de fiabilité décroissant
       let parlementaireId: string | null = null;
 
-      // D'abord par orateurRef (PA ID)
+      // 1. Par orateurRef (PA ID) — le plus fiable
       if (intervention.orateurRef) {
-        parlementaireId = parlementaireMap.get(intervention.orateurRef) || null;
+        parlementaireId = parlementaireByRef.get(intervention.orateurRef) || null;
       }
 
-      // Sinon par nom
-      if (!parlementaireId && intervention.orateurNom) {
-        const searchName = normalize(
-          intervention.orateurPrenom
-            ? `${intervention.orateurPrenom} ${intervention.orateurNom}`
-            : intervention.orateurNom
-        );
-        parlementaireId = parlementaireMap.get(searchName) || null;
+      // 2. Par nom complet (prénom + nom)
+      if (!parlementaireId && intervention.orateurPrenom && intervention.orateurNom) {
+        const fullName = normalize(`${intervention.orateurPrenom} ${intervention.orateurNom}`);
+        parlementaireId = parlementaireByFullName.get(fullName) || null;
+      }
 
-        // Essayer avec le nom seul
-        if (!parlementaireId) {
-          parlementaireId = parlementaireMap.get(normalize(intervention.orateurNom)) || null;
-        }
-
-        // Essayer en cherchant si le nom contient un des noms du map (recherche partielle)
-        if (!parlementaireId) {
-          for (const [key, id] of parlementaireMap.entries()) {
-            if (key.length > 4 && (searchName.includes(key) || key.includes(searchName.split(' ').pop() || ''))) {
-              parlementaireId = id;
-              break;
+      // 3. Par nom seul — SEULEMENT si :
+      //    - non ambigu (un seul parlementaire avec ce nom)
+      //    - pas un non-parlementaire connu (qualité détectée)
+      //    - prénom cohérent : si l'orateur a un prénom, il DOIT matcher celui du parlementaire
+      //      (ex: "Philippe Tabarot" ≠ "Michèle Tabarot" → pas de fausse attribution)
+      if (!parlementaireId && intervention.orateurNom && !intervention.orateurQualite) {
+        const nomNorm = normalize(intervention.orateurNom);
+        const candidate = parlementaireByNom.get(nomNorm);
+        if (candidate) {
+          if (intervention.orateurPrenom) {
+            // Prénom disponible → vérifier la correspondance
+            if (normalize(intervention.orateurPrenom) === normalize(candidate.prenom)) {
+              parlementaireId = candidate.id;
             }
+            // Prénom différent → ne pas matcher (homonyme ou non-parlementaire)
+          } else {
+            // Pas de prénom → matcher par nom seul (best effort)
+            parlementaireId = candidate.id;
           }
         }
       }
 
-      if (!parlementaireId) {
-        skippedNoMatch++;
-        // Log quelques exemples pour diagnostic
-        if (skippedNoMatch <= 10) {
-          logger.debug({
-            orateurNom: intervention.orateurNom,
-            orateurPrenom: intervention.orateurPrenom,
-            orateurRef: intervention.orateurRef,
-          }, 'No parlementaire match found');
-        }
-        continue;
-      }
-
-      // Vérifier si l'intervention existe déjà (basé sur parlementaireId + seanceId + début du contenu)
-      const contentHash = intervention.contenu.substring(0, 100);
+      // Vérifier si l'intervention existe déjà (basé sur seanceId + contenu seul)
+      // Pas de filtre par orateur : évite les doublons quand plusieurs CRI couvrent la même séance
+      const contentHash = intervention.contenu.substring(0, 200);
       const existing = await prisma.intervention.findFirst({
         where: {
-          parlementaireId,
           seanceId: intervention.seanceId,
           contenu: { startsWith: contentHash },
         },
       });
-
       if (existing) continue;
 
       // Extraire les mots-clés
@@ -845,6 +835,9 @@ export async function syncInterventions(
       await prisma.intervention.create({
         data: {
           parlementaireId,
+          orateurNom: intervention.orateurNom,
+          orateurPrenom: intervention.orateurPrenom || null,
+          orateurQualite: intervention.orateurQualite || null,
           chambre,
           seanceId: intervention.seanceId,
           date: intervention.date,
@@ -856,7 +849,11 @@ export async function syncInterventions(
         },
       });
 
-      created++;
+      if (parlementaireId) {
+        created++;
+      } else {
+        createdNonParlementaire++;
+      }
 
     } catch (error: any) {
       logger.warn({ seance: intervention.seanceId, error: error.message }, 'Error syncing intervention');
@@ -865,13 +862,13 @@ export async function syncInterventions(
 
   logger.info({
     created,
+    createdNonParlementaire,
     total: interventionsData.length,
-    skippedNonParlementaire,
-    skippedNoMatch,
-    matchRate: `${((created / (interventionsData.length || 1)) * 100).toFixed(1)}%`,
+    skippedPresident,
+    matchRate: `${(((created + createdNonParlementaire) / (interventionsData.length || 1)) * 100).toFixed(1)}%`,
   }, 'Interventions AN sync completed');
 
-  return { interventions: created };
+  return { interventions: created + createdNonParlementaire };
 }
 
 // =============================================================================
@@ -892,107 +889,88 @@ export async function syncInterventionsSenat(
     select: { id: true, sourceId: true, nom: true, prenom: true },
   });
 
-  // Créer un map avec plusieurs clés pour matcher les orateurs
-  const parlementaireMap = new Map<string, string>();
+  // Créer un map avec des clés fiables uniquement
+  const parlementaireByRef = new Map<string, string>(); // matricule -> parlementaire.id
+  const parlementaireByFullName = new Map<string, string>(); // "prenom nom" normalisé -> parlementaire.id
+  // nom seul -> { id, prenom } OU null si ambigu
+  const parlementaireByNom = new Map<string, { id: string; prenom: string } | null>();
+
   const normalize = (s: string) => s.toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/-/g, ' ').replace(/'/g, ' ').trim();
 
   for (const p of parlementaires) {
     // Par sourceId (matricule)
-    if (p.sourceId) parlementaireMap.set(p.sourceId, p.id);
+    if (p.sourceId) parlementaireByRef.set(p.sourceId, p.id);
 
-    // Par nom complet normalisé (plusieurs variantes)
-    parlementaireMap.set(normalize(`${p.prenom} ${p.nom}`), p.id);
-    parlementaireMap.set(normalize(`${p.nom} ${p.prenom}`), p.id);
-    parlementaireMap.set(normalize(p.nom), p.id);
+    // Par nom complet normalisé (prenom + nom, nom + prenom)
+    parlementaireByFullName.set(normalize(`${p.prenom} ${p.nom}`), p.id);
+    parlementaireByFullName.set(normalize(`${p.nom} ${p.prenom}`), p.id);
 
-    // Ajouter chaque partie du nom composé séparément
-    const nomParts = p.nom.split(/[\s-]+/);
-    if (nomParts.length > 1) {
-      for (const part of nomParts) {
-        if (part.length > 3) {
-          parlementaireMap.set(normalize(part), p.id);
-        }
-      }
+    // Par nom seul — marquer comme ambigu si collision
+    const nomNorm = normalize(p.nom);
+    if (parlementaireByNom.has(nomNorm)) {
+      parlementaireByNom.set(nomNorm, null);
+    } else {
+      parlementaireByNom.set(nomNorm, { id: p.id, prenom: p.prenom });
     }
   }
 
   let created = 0;
-  let skippedNonParlementaire = 0;
-  let skippedNoMatch = 0;
+  let createdNonParlementaire = 0;
+  let skippedPresident = 0;
 
   const chambre = 'senat';
 
-  // Liste des titres à exclure (non-sénateurs)
-  const titresExclus = ['président', 'présidente', 'ministre', 'secrétaire', 'garde des sceaux', 'premier ministre'];
-
   for (const intervention of interventionsData) {
     try {
-      // Vérifier si c'est clairement un non-sénateur (titre)
-      const orateurLower = (intervention.orateurNom || '').toLowerCase();
-      const isNonParlementaire = titresExclus.some(titre => orateurLower.includes(titre));
+      const orateurNom = intervention.orateurNom || '';
+      const orateurLower = orateurNom.toLowerCase();
 
-      if (isNonParlementaire) {
-        skippedNonParlementaire++;
+      // Ignorer les interventions du président/présidente de séance
+      if (orateurLower.includes('président') || orateurLower.includes('présidente') ||
+          orateurLower === 'le président' || orateurLower === 'la présidente') {
+        skippedPresident++;
         continue;
       }
 
-      // Chercher le sénateur
+      // Chercher le parlementaire — matching sécurisé
       let parlementaireId: string | null = null;
 
-      // D'abord par orateurRef (matricule)
+      // 1. Par orateurRef (matricule sénateur)
       if (intervention.orateurRef) {
-        parlementaireId = parlementaireMap.get(intervention.orateurRef) || null;
+        parlementaireId = parlementaireByRef.get(intervention.orateurRef) || null;
       }
 
-      // Sinon par nom
-      if (!parlementaireId && intervention.orateurNom) {
-        const searchName = normalize(
-          intervention.orateurPrenom
-            ? `${intervention.orateurPrenom} ${intervention.orateurNom}`
-            : intervention.orateurNom
-        );
-        parlementaireId = parlementaireMap.get(searchName) || null;
+      // 2. Par nom complet (prénom + nom)
+      if (!parlementaireId && intervention.orateurPrenom && intervention.orateurNom) {
+        const fullName = normalize(`${intervention.orateurPrenom} ${intervention.orateurNom}`);
+        parlementaireId = parlementaireByFullName.get(fullName) || null;
+      }
 
-        // Essayer avec le nom seul
-        if (!parlementaireId) {
-          parlementaireId = parlementaireMap.get(normalize(intervention.orateurNom)) || null;
-        }
-
-        // Essayer en cherchant si le nom contient un des noms du map
-        if (!parlementaireId) {
-          for (const [key, id] of parlementaireMap.entries()) {
-            if (key.length > 4 && (searchName.includes(key) || key.includes(searchName.split(' ').pop() || ''))) {
-              parlementaireId = id;
-              break;
+      // 3. Par nom seul — même garde-fou que pour l'AN : vérifier le prénom si disponible
+      if (!parlementaireId && intervention.orateurNom && !intervention.orateurQualite) {
+        const nomNorm = normalize(intervention.orateurNom);
+        const candidate = parlementaireByNom.get(nomNorm);
+        if (candidate) {
+          if (intervention.orateurPrenom) {
+            if (normalize(intervention.orateurPrenom) === normalize(candidate.prenom)) {
+              parlementaireId = candidate.id;
             }
+          } else {
+            parlementaireId = candidate.id;
           }
         }
       }
 
-      if (!parlementaireId) {
-        skippedNoMatch++;
-        if (skippedNoMatch <= 10) {
-          logger.debug({
-            orateurNom: intervention.orateurNom,
-            orateurPrenom: intervention.orateurPrenom,
-            orateurRef: intervention.orateurRef,
-          }, 'No sénateur match found');
-        }
-        continue;
-      }
-
-      // Vérifier si l'intervention existe déjà
-      const contentHash = intervention.contenu.substring(0, 100);
+      // Vérifier si l'intervention existe déjà (basé sur seanceId + contenu seul)
+      const contentHash = intervention.contenu.substring(0, 200);
       const existing = await prisma.intervention.findFirst({
         where: {
-          parlementaireId,
           seanceId: intervention.seanceId,
           contenu: { startsWith: contentHash },
         },
       });
-
       if (existing) continue;
 
       // Extraire les mots-clés
@@ -1001,6 +979,9 @@ export async function syncInterventionsSenat(
       await prisma.intervention.create({
         data: {
           parlementaireId,
+          orateurNom: intervention.orateurNom,
+          orateurPrenom: intervention.orateurPrenom || null,
+          orateurQualite: intervention.orateurQualite || null,
           chambre,
           seanceId: intervention.seanceId,
           date: intervention.date,
@@ -1012,7 +993,11 @@ export async function syncInterventionsSenat(
         },
       });
 
-      created++;
+      if (parlementaireId) {
+        created++;
+      } else {
+        createdNonParlementaire++;
+      }
 
     } catch (error: any) {
       logger.warn({ seance: intervention.seanceId, error: error.message }, 'Error syncing intervention Sénat');
@@ -1021,13 +1006,13 @@ export async function syncInterventionsSenat(
 
   logger.info({
     created,
+    createdNonParlementaire,
     total: interventionsData.length,
-    skippedNonParlementaire,
-    skippedNoMatch,
-    matchRate: `${((created / (interventionsData.length || 1)) * 100).toFixed(1)}%`,
+    skippedPresident,
+    matchRate: `${(((created + createdNonParlementaire) / (interventionsData.length || 1)) * 100).toFixed(1)}%`,
   }, 'Interventions Sénat sync completed');
 
-  return { interventions: created };
+  return { interventions: created + createdNonParlementaire };
 }
 
 // =============================================================================
@@ -3928,128 +3913,162 @@ export async function syncLobbyistes(
     const descriptionMap = new Map(allDescriptions.map((d) => [d.texte, d.id]));
     logger.info({ count: allDescriptions.length }, 'Action descriptions ready');
 
-    const activitesByLobbyiste = new Map<string, typeof csvActivites>();
-    for (const act of csvActivites) {
-      const list = activitesByLobbyiste.get(act.lobbyisteId) || [];
-      list.push(act);
-      activitesByLobbyiste.set(act.lobbyisteId, list);
-    }
+    // -----------------------------------------------------------------------
+    // BATCH UPSERT: pre-load existing → in-memory diff → batch SQL
+    // Replaces ~380K sequential queries with ~50 batched operations
+    // -----------------------------------------------------------------------
 
-    for (const [csvLobbyisteId, acts] of activitesByLobbyiste) {
-      const lobbyisteId = lobbyisteIdMap.get(csvLobbyisteId);
+    // 1. Pre-load existing actions for O(1) in-memory lookup (~45MB for 95K)
+    logger.info('Pre-loading existing actions for batch upsert...');
+    const existingActions = await prisma.actionLobby.findMany({
+      select: { id: true, lobbyisteId: true, descriptionId: true, cible: true, cibleTypeId: true, texteVise: true, texteViseNom: true },
+    });
+    const existingActionMap = new Map<string, { id: string; cible: string | null; cibleTypeId: string | null; texteVise: string | null; texteViseNom: string | null }>();
+    for (const ea of existingActions) {
+      if (ea.descriptionId) {
+        existingActionMap.set(`${ea.lobbyisteId}::${ea.descriptionId}`, ea);
+      }
+    }
+    existingActions.length = 0; // Free raw array
+    logger.info({ count: existingActionMap.size }, 'Existing actions loaded');
+
+    // 2. Single pass: collect batch operations (zero DB queries)
+    const toCreate: Array<{ id: string; lobbyisteId: string; descriptionId: string; dateDebut: Date; cible: string | null; cibleTypeId: string | null; texteVise: string | null; texteViseNom: string | null }> = [];
+    const toUpdate: Array<{ id: string; descriptionId: string; cible: string | null; cibleTypeId: string | null; texteVise: string | null; texteViseNom: string | null }> = [];
+    const pivotActionIds: string[] = [];
+    const pivotPairs: Array<{ actionId: string; secteurId: string }> = [];
+
+    for (const act of csvActivites) {
+      if (!act.objet) continue;
+      const lobbyisteId = lobbyisteIdMap.get(act.lobbyisteId);
       if (!lobbyisteId) continue;
 
-      for (const act of acts) {
-        if (!act.objet) continue;
+      let dateDebut = new Date();
+      if (act.datePublication) {
+        const parsed = new Date(act.datePublication);
+        if (!isNaN(parsed.getTime())) dateDebut = parsed;
+      }
 
-        try {
-          let dateDebut = new Date();
-          if (act.datePublication) {
-            const parsed = new Date(act.datePublication);
-            if (!isNaN(parsed.getTime())) {
-              dateDebut = parsed;
-            }
-          }
+      const details = actionDetailsByActivite.get(act.activiteId);
 
-          const details = actionDetailsByActivite.get(act.activiteId);
+      let cible: string | null = null;
+      let cibleNom: string | null = null;
+      if (details?.cibles?.[0]) {
+        cible = determineCibleType(details.cibles[0].type);
+        cibleNom = details.cibles[0].nom || details.cibles[0].type?.substring(0, 200) || null;
+      }
 
-          let cible: string | null = null;
-          let cibleNom: string | null = null;
-          if (details && details.cibles && details.cibles.length > 0) {
-            const firstCible = details.cibles[0];
-            if (firstCible) {
-              cible = determineCibleType(firstCible.type);
-              cibleNom = firstCible.nom || firstCible.type?.substring(0, 200) || null;
-            }
-          }
+      let description = act.objet;
+      if (act.domaines.length > 0) {
+        description = `[${act.domaines.slice(0, 2).join(', ')}] ${description}`;
+      }
+      description = description.substring(0, 2000);
 
-          let description = act.objet;
-          if (act.domaines.length > 0) {
-            description = `[${act.domaines.slice(0, 2).join(', ')}] ${description}`;
-          }
-          description = description.substring(0, 2000);
+      const descriptionId = descriptionMap.get(description);
+      if (!descriptionId) continue;
 
-          const descriptionId = descriptionMap.get(description);
-          if (!descriptionId) {
-            logger.warn({ description: description.substring(0, 50) }, 'Description not found in lookup map, skipping action');
-            continue;
-          }
+      const cibleTypeId = cibleNom ? cibleTypeMap.get(cibleNom) ?? null : null;
 
-          const cibleTypeId = cibleNom ? cibleTypeMap.get(cibleNom) ?? null : null;
+      let texteVise: string | null = null;
+      let texteViseNom: string | null = null;
+      if (details?.decisions?.[0]) {
+        texteViseNom = details.decisions.slice(0, 2).join(', ').substring(0, 200);
+        texteVise = details.decisions[0].substring(0, 500);
+      }
 
-          let texteVise: string | null = null;
-          let texteViseNom: string | null = null;
-          if (details && details.decisions && details.decisions.length > 0) {
-            texteViseNom = details.decisions.slice(0, 2).join(', ').substring(0, 200);
-            const firstDecision = details.decisions[0];
-            if (firstDecision) {
-              texteVise = firstDecision.substring(0, 500);
-            }
-          }
+      const key = `${lobbyisteId}::${descriptionId}`;
+      const existing = existingActionMap.get(key);
 
-          const existingAction = await prisma.actionLobby.findFirst({
-            where: {
-              lobbyisteId,
-              actionDescription: { texte: { contains: act.objet.substring(0, 50) } },
-            },
-          });
-
-          let actionId: string;
-          if (existingAction) {
-            await prisma.actionLobby.update({
-              where: { id: existingAction.id },
-              data: {
-                descriptionId,
-                cible,
-                cibleTypeId,
-                texteVise,
-                texteViseNom,
-              },
-            });
-            actionId = existingAction.id;
-            actionsUpdated++;
-          } else {
-            const created = await prisma.actionLobby.create({
-              data: {
-                lobbyisteId,
-                descriptionId,
-                dateDebut,
-                cible,
-                cibleTypeId,
-                texteVise,
-                texteViseNom,
-              },
-            });
-            actionId = created.id;
-            actionsCreated++;
-          }
-
-          // Sync action domaine pivots (all domaines, no limit)
-          if (act.domaines.length > 0) {
-            const domaineSlugs = act.domaines
-              .map((d: string) => slugifySecteur(normalizeSecteurLabel(d)))
-              .filter((s: string) => s);
-            if (domaineSlugs.length > 0) {
-              await prisma.actionSecteur.deleteMany({ where: { actionId } });
-              await prisma.actionSecteur.createMany({
-                data: domaineSlugs.map((slug: string) => ({
-                  actionId,
-                  secteurId: slug,
-                })),
-                skipDuplicates: true,
-              });
-            }
-          }
-        } catch (error: any) {
-          logger.warn({ activite: act.activiteId, error: error.message }, 'Error syncing action');
+      let actionId: string;
+      if (existing) {
+        actionId = existing.id;
+        // Only batch-update if data actually changed
+        if (existing.cible !== cible || existing.cibleTypeId !== cibleTypeId ||
+            existing.texteVise !== texteVise || existing.texteViseNom !== texteViseNom) {
+          toUpdate.push({ id: existing.id, descriptionId, cible, cibleTypeId, texteVise, texteViseNom });
         }
+        actionsUpdated++;
+      } else {
+        actionId = randomUUID();
+        toCreate.push({ id: actionId, lobbyisteId, descriptionId, dateDebut, cible, cibleTypeId, texteVise, texteViseNom });
+        // Track to avoid duplicate creates for same key
+        existingActionMap.set(key, { id: actionId, cible, cibleTypeId, texteVise, texteViseNom });
+        actionsCreated++;
+      }
 
-        // Pause tous les 500 actions pour laisser le GC respirer
-        if ((actionsCreated + actionsUpdated) % 500 === 0) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+      // Collect pivot pairs
+      if (act.domaines.length > 0) {
+        const domaineSlugs = act.domaines
+          .map((d: string) => slugifySecteur(normalizeSecteurLabel(d)))
+          .filter((s: string) => s);
+        if (domaineSlugs.length > 0) {
+          pivotActionIds.push(actionId);
+          for (const slug of domaineSlugs) {
+            pivotPairs.push({ actionId, secteurId: slug });
+          }
         }
       }
     }
+
+    logger.info({ toCreate: toCreate.length, toUpdate: toUpdate.length, pivotPairs: pivotPairs.length }, 'Batch operations prepared');
+
+    // 3. Batch creates (createMany, chunks of 1000)
+    if (toCreate.length > 0) {
+      logger.info({ count: toCreate.length }, 'Batch creating new actions...');
+      for (let i = 0; i < toCreate.length; i += 1000) {
+        await prisma.actionLobby.createMany({ data: toCreate.slice(i, i + 1000) });
+      }
+    }
+
+    // 4. Batch updates via raw SQL UNNEST (single query per chunk of 500)
+    if (toUpdate.length > 0) {
+      logger.info({ count: toUpdate.length }, 'Batch updating changed actions...');
+      for (let i = 0; i < toUpdate.length; i += 500) {
+        const chunk = toUpdate.slice(i, i + 500);
+        await prisma.$executeRawUnsafe(
+          `UPDATE actions_lobby SET
+            description_id = t.description_id,
+            cible = t.cible,
+            cible_type_id = t.cible_type_id,
+            texte_vise = t.texte_vise,
+            texte_vise_nom = t.texte_vise_nom
+          FROM UNNEST($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[])
+            AS t(id, description_id, cible, cible_type_id, texte_vise, texte_vise_nom)
+          WHERE actions_lobby.id = t.id`,
+          chunk.map(u => u.id),
+          chunk.map(u => u.descriptionId),
+          chunk.map(u => u.cible),
+          chunk.map(u => u.cibleTypeId),
+          chunk.map(u => u.texteVise),
+          chunk.map(u => u.texteViseNom),
+        );
+      }
+    }
+
+    // 5. Batch pivots: single deleteMany + batched createMany
+    if (pivotActionIds.length > 0) {
+      logger.info({ actions: pivotActionIds.length, pairs: pivotPairs.length }, 'Batch syncing action-secteur pivots...');
+      // Delete existing pivots for all affected actions
+      for (let i = 0; i < pivotActionIds.length; i += 5000) {
+        await prisma.actionSecteur.deleteMany({
+          where: { actionId: { in: pivotActionIds.slice(i, i + 5000) } },
+        });
+      }
+      // Create all new pivots
+      for (let i = 0; i < pivotPairs.length; i += 5000) {
+        await prisma.actionSecteur.createMany({
+          data: pivotPairs.slice(i, i + 5000),
+          skipDuplicates: true,
+        });
+      }
+    }
+
+    // Free batch arrays
+    toCreate.length = 0;
+    toUpdate.length = 0;
+    pivotActionIds.length = 0;
+    pivotPairs.length = 0;
+    existingActionMap.clear();
   }
 
   logger.info({

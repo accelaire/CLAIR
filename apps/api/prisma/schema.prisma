@@ -343,8 +343,14 @@ model Vote {
 model Intervention {
   id String @id @default(uuid())
 
-  parlementaireId String @map("parlementaire_id")
-  parlementaire   Parlementaire @relation(fields: [parlementaireId], references: [id], onDelete: Cascade)
+  // Parlementaire (optionnel — null pour les non-parlementaires : ministres, etc.)
+  parlementaireId String? @map("parlementaire_id")
+  parlementaire   Parlementaire? @relation(fields: [parlementaireId], references: [id], onDelete: Cascade)
+
+  // Infos orateur (toujours renseignées, indispensables quand parlementaire est null)
+  orateurNom     String?  @map("orateur_nom")
+  orateurPrenom  String?  @map("orateur_prenom")
+  orateurQualite String?  @map("orateur_qualite") // 'ministre', 'secrétaire d\'état', etc.
 
   // Chambre (pour cohérence, même si lié au parlementaire)
   chambre  String   @default("assemblee") // 'assemblee' | 'senat'

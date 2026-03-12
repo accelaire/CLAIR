@@ -45,6 +45,7 @@ export interface TransformedInterventionSenat {
   orateurNom: string;
   orateurPrenom?: string;
   orateurRef?: string; // Matricule sénateur si disponible
+  orateurQualite?: string; // 'ministre...', 'secrétaire d\'état...', etc.
   contenu: string;
   type: string;
   sourceUrl?: string;
@@ -262,12 +263,22 @@ export class SenatInterventionsClient {
           continue;
         }
 
-        // Ignorer les ministres (on veut seulement les sénateurs)
-        const qualiteMatch = paragraphContent.match(/<cri:orateurqualite>([^<]+)<\/cri:orateurqualite>/);
-        if (qualiteMatch) {
-          const qualite = qualiteMatch[1].toLowerCase();
-          if (qualite.includes('ministre') || qualite.includes('secrétaire d') || qualite.includes('garde des sceaux')) {
-            continue;
+        // Extraire la qualité si présente (ministre, secrétaire d'État, etc.)
+        // Le XML Sénat splite la qualité en PLUSIEURS tags <cri:orateurqualite>
+        // à chaque apostrophe typographique (&#8217;), il faut tous les concaténer.
+        let orateurQualite: string | undefined;
+        const qualiteRegex = /<cri:orateurqualite>([^<]*)<\/cri:orateurqualite>/g;
+        const qualiteParts: string[] = [];
+        let qualiteMatch;
+        while ((qualiteMatch = qualiteRegex.exec(paragraphContent)) !== null) {
+          qualiteParts.push(qualiteMatch[1]);
+        }
+        if (qualiteParts.length > 0) {
+          let qualiteRaw = decodeHtmlEntities(qualiteParts.join('')).trim();
+          // Normaliser : retirer le point final, capitaliser
+          qualiteRaw = qualiteRaw.replace(/\.\s*$/, '').trim();
+          if (qualiteRaw) {
+            orateurQualite = qualiteRaw.charAt(0).toUpperCase() + qualiteRaw.slice(1);
           }
         }
 
@@ -318,6 +329,7 @@ export class SenatInterventionsClient {
           orateurNom: nom,
           orateurPrenom: prenom || undefined,
           orateurRef: orateurRef || undefined,
+          orateurQualite,
           contenu: contenuNettoye.substring(0, 5000),
           type,
           sourceUrl: generateSeanceUrl(seanceId, seanceDate),
