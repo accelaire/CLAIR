@@ -10,6 +10,21 @@ import { buildTextSearchCondition } from '../../utils/search';
 // Cache TTL
 const CACHE_TTL_1H = 3600;
 
+// Longueur max du preview d'intervention (le reste est chargé à la demande)
+const CONTENU_PREVIEW_LENGTH = 500;
+
+/** Tronque le contenu et ajoute hasMore si nécessaire */
+function truncateContenu(intervention: { contenu: string; [key: string]: any }) {
+  const { contenu, ...rest } = intervention;
+  return {
+    ...rest,
+    contenu: contenu.length > CONTENU_PREVIEW_LENGTH
+      ? contenu.substring(0, CONTENU_PREVIEW_LENGTH)
+      : contenu,
+    hasMore: contenu.length > CONTENU_PREVIEW_LENGTH,
+  };
+}
+
 // Fix AN sourceUrl format: VTANR5L17V4946 -> 4946
 const fixSourceUrl = (sourceUrl: string | null, chambre: string, numero: number): string | null => {
   if (!sourceUrl) return null;
@@ -453,7 +468,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       return {
         data: {
           ...scrutin,
-          interventions: seanceInterventions,
+          interventions: seanceInterventions.map(truncateContenu),
           sourceUrl: fixSourceUrl(scrutin.sourceUrl, scrutin.chambre, scrutin.numero),
           votesByPosition,
           votesByGroupe,
@@ -563,7 +578,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       const totalPages = Math.ceil(total / limit);
 
       return {
-        data: interventions,
+        data: interventions.map(truncateContenu),
         meta: {
           total,
           page,
@@ -573,6 +588,38 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           hasPrev: page > 1,
         },
       };
+    },
+  });
+
+  // ===========================================================================
+  // GET /api/v1/scrutins/interventions/:id - Contenu complet d'une intervention
+  // ===========================================================================
+  fastify.get('/interventions/:id', {
+    schema: {
+      tags: ['Scrutins'],
+      summary: 'Contenu complet d\'une intervention',
+      description: 'Retourne le texte intégral d\'une intervention par son ID',
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+        },
+      },
+    },
+    handler: async (request, _reply) => {
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+
+      const intervention = await fastify.prisma.intervention.findUnique({
+        where: { id },
+        select: { id: true, contenu: true, sourceUrl: true },
+      });
+
+      if (!intervention) {
+        throw new ApiError(404, 'Intervention non trouvée');
+      }
+
+      return { data: intervention };
     },
   });
 

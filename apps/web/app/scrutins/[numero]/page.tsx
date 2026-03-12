@@ -66,6 +66,7 @@ interface InterventionScrutin {
   id: string;
   type: string;
   contenu: string;
+  hasMore?: boolean;
   date: string;
   ordre: number | null;
   sourceUrl: string | null;

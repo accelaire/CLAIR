@@ -1,16 +1,18 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
   Users, ExternalLink, ArrowDown, Loader2, Search,
 } from 'lucide-react';
+import { api } from '@/lib/api';
 
 interface InterventionScrutin {
   id: string;
   type: string;
   contenu: string;
+  hasMore?: boolean;
   date: string;
   ordre: number | null;
   sourceUrl: string | null;
@@ -42,39 +44,102 @@ interface ScrutinDebatsTabProps {
   onSearchChange: (query: string) => void;
 }
 
-// Composant pour texte extensible avec détection d'overflow
-function ExpandableText({ text, className = '' }: { text: string; className?: string }) {
+// Composant pour texte extensible avec chargement du texte complet à la demande
+function ExpandableText({
+  text,
+  hasMore,
+  interventionId,
+  sourceUrl,
+}: {
+  text: string;
+  hasMore?: boolean;
+  interventionId: string;
+  sourceUrl: string | null;
+}) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [fullText, setFullText] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [isTruncated, setIsTruncated] = useState(false);
   const textRef = useRef<HTMLParagraphElement>(null);
 
+  // Détecter si le texte court est lui-même tronqué visuellement (line-clamp)
   useEffect(() => {
     const checkTruncation = () => {
       if (textRef.current) {
         setIsTruncated(textRef.current.scrollHeight > textRef.current.clientHeight);
       }
     };
-
     checkTruncation();
     window.addEventListener('resize', checkTruncation);
     return () => window.removeEventListener('resize', checkTruncation);
   }, [text]);
 
+  const handleExpand = useCallback(async () => {
+    if (isExpanded) {
+      setIsExpanded(false);
+      return;
+    }
+
+    // Si le texte complet est déjà chargé ou pas de contenu supplémentaire côté serveur
+    if (fullText || !hasMore) {
+      setIsExpanded(true);
+      return;
+    }
+
+    // Charger le texte complet depuis l'API
+    setIsLoading(true);
+    try {
+      const res = await api.get(`/scrutins/interventions/${interventionId}`);
+      setFullText(res.data.data.contenu);
+      setIsExpanded(true);
+    } catch {
+      // Fallback : afficher le texte tronqué
+      setIsExpanded(true);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isExpanded, fullText, hasMore, interventionId]);
+
+  const displayText = isExpanded && fullText ? fullText : text;
+  const showButton = hasMore || isTruncated || isExpanded;
+
   return (
     <div>
       <p
         ref={textRef}
-        className={`text-sm text-muted-foreground leading-relaxed ${isExpanded ? '' : 'line-clamp-5'} ${className}`}
+        className={`text-sm text-muted-foreground leading-relaxed whitespace-pre-line ${isExpanded ? '' : 'line-clamp-5'}`}
       >
-        {text}
+        {displayText}
+        {!isExpanded && hasMore && '…'}
       </p>
-      {(isTruncated || isExpanded) && (
+      {showButton && (
         <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="text-xs text-primary hover:underline mt-1"
+          onClick={handleExpand}
+          disabled={isLoading}
+          className="text-xs text-primary hover:underline mt-1 inline-flex items-center gap-1"
         >
-          {isExpanded ? 'Voir moins' : 'Voir plus'}
+          {isLoading ? (
+            <>
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Chargement…
+            </>
+          ) : isExpanded ? (
+            'Voir moins'
+          ) : (
+            'Voir plus'
+          )}
         </button>
+      )}
+      {isExpanded && sourceUrl && (
+        <a
+          href={sourceUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-primary/70 hover:text-primary hover:underline mt-1 ml-3 inline-flex items-center gap-1"
+        >
+          Voir sur {sourceUrl.includes('senat.fr') ? 'senat.fr' : 'assemblee-nationale.fr'}
+          <ExternalLink className="h-3 w-3" />
+        </a>
       )}
     </div>
   );
@@ -183,7 +248,12 @@ export function ScrutinDebatsTab({
                     ) : null}
                   </div>
                   <div className="rounded-lg p-3" style={{ backgroundColor: '#f9fafb' }}>
-                    <ExpandableText text={intervention.contenu} />
+                    <ExpandableText
+                      text={intervention.contenu}
+                      hasMore={intervention.hasMore}
+                      interventionId={intervention.id}
+                      sourceUrl={intervention.sourceUrl}
+                    />
                   </div>
                 </div>
               </div>
@@ -207,11 +277,15 @@ export function ScrutinDebatsTab({
         </div>
       </div>
 
-      {/* Source link */}
+      {/* Source link global */}
       {interventions.some(i => i.sourceUrl) && (
         <div className="mt-4 pt-4 flex justify-start">
           <a
-            href={interventions.find(i => i.sourceUrl)?.sourceUrl || ''}
+            href={(() => {
+              const url = interventions.find(i => i.sourceUrl)?.sourceUrl || '';
+              // Retirer l'ancre #par_N pour le lien global
+              return url.replace(/#par_\d+$/, '');
+            })()}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
