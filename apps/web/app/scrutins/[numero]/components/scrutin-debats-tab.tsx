@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
   Users, ExternalLink, ArrowDown, Loader2, Search,
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { ExpandableText } from '@/components/ui/expandable-text';
 
 interface InterventionScrutin {
   id: string;
@@ -42,107 +42,6 @@ interface ScrutinDebatsTabProps {
   loadMoreRef: (node: HTMLDivElement | null) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
-}
-
-// Composant pour texte extensible avec chargement du texte complet à la demande
-function ExpandableText({
-  text,
-  hasMore,
-  interventionId,
-  sourceUrl,
-}: {
-  text: string;
-  hasMore?: boolean;
-  interventionId: string;
-  sourceUrl: string | null;
-}) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [fullText, setFullText] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isTruncated, setIsTruncated] = useState(false);
-  const textRef = useRef<HTMLParagraphElement>(null);
-
-  // Détecter si le texte court est lui-même tronqué visuellement (line-clamp)
-  useEffect(() => {
-    const checkTruncation = () => {
-      if (textRef.current) {
-        setIsTruncated(textRef.current.scrollHeight > textRef.current.clientHeight);
-      }
-    };
-    checkTruncation();
-    window.addEventListener('resize', checkTruncation);
-    return () => window.removeEventListener('resize', checkTruncation);
-  }, [text]);
-
-  const handleExpand = useCallback(async () => {
-    if (isExpanded) {
-      setIsExpanded(false);
-      return;
-    }
-
-    // Si le texte complet est déjà chargé ou pas de contenu supplémentaire côté serveur
-    if (fullText || !hasMore) {
-      setIsExpanded(true);
-      return;
-    }
-
-    // Charger le texte complet depuis l'API
-    setIsLoading(true);
-    try {
-      const res = await api.get(`/scrutins/interventions/${interventionId}`);
-      setFullText(res.data.data.contenu);
-      setIsExpanded(true);
-    } catch {
-      // Fallback : afficher le texte tronqué
-      setIsExpanded(true);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isExpanded, fullText, hasMore, interventionId]);
-
-  const displayText = isExpanded && fullText ? fullText : text;
-  const showButton = hasMore || isTruncated || isExpanded;
-
-  return (
-    <div>
-      <p
-        ref={textRef}
-        className={`text-sm text-muted-foreground leading-relaxed whitespace-pre-line ${isExpanded ? '' : 'line-clamp-5'}`}
-      >
-        {displayText}
-        {!isExpanded && hasMore && '…'}
-      </p>
-      {showButton && (
-        <button
-          onClick={handleExpand}
-          disabled={isLoading}
-          className="text-xs text-primary hover:underline mt-1 inline-flex items-center gap-1"
-        >
-          {isLoading ? (
-            <>
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Chargement…
-            </>
-          ) : isExpanded ? (
-            'Voir moins'
-          ) : (
-            'Voir plus'
-          )}
-        </button>
-      )}
-      {isExpanded && sourceUrl && (
-        <a
-          href={sourceUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs text-primary/70 hover:text-primary hover:underline mt-1 ml-3 inline-flex items-center gap-1"
-        >
-          Voir sur {sourceUrl.includes('senat.fr') ? 'senat.fr' : 'assemblee-nationale.fr'}
-          <ExternalLink className="h-3 w-3" />
-        </a>
-      )}
-    </div>
-  );
 }
 
 export function ScrutinDebatsTab({

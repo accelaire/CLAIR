@@ -175,7 +175,7 @@ export class SenatInterventionsClient {
           }
           return null;
         })
-        .filter((f): f is { path: string; date: Date; year: number } => f !== null && f.year >= minYear)
+        .filter((f): f is { path: string; date: Date; year: number } => f !== null && f.year >= minYear && f.date <= new Date())
         .sort((a, b) => b.date.getTime() - a.date.getTime())
         .slice(0, maxSeances);
 

@@ -368,13 +368,13 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
     });
 
     // ===========================================================================
-    // GET /:slug/interventions - Interventions d'un parlementaire
+    // GET /:slug/interventions - Interventions d'un parlementaire groupées par séance
     // ===========================================================================
     fastify.get('/:slug/interventions', {
       schema: {
         tags: [chambreLabel],
-        summary: `Interventions d'un ${chambreLabel.toLowerCase().slice(0, -1)}`,
-        description: `Retourne les interventions d'un ${chambreLabel.toLowerCase().slice(0, -1)}`,
+        summary: `Interventions d'un ${chambreLabel.toLowerCase().slice(0, -1)} groupées par séance`,
+        description: `Retourne les interventions groupées par séance avec scrutins liés`,
         params: {
           type: 'object',
           required: ['slug'],
@@ -386,7 +386,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           type: 'object',
           properties: {
             page: { type: 'integer', minimum: 1, default: 1 },
-            limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+            limit: { type: 'integer', minimum: 1, maximum: 20, default: 10 },
             type: { type: 'string', enum: ['question', 'intervention', 'explication_vote'] },
             dateFrom: { type: 'string', format: 'date' },
             dateTo: { type: 'string', format: 'date' },
@@ -395,7 +395,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
       },
       handler: async (request, _reply) => {
         const { slug } = parlementaireParamsSchema.parse(request.params);
-        const { page = 1, limit = 20, type, dateFrom, dateTo } = request.query as any;
+        const { page = 1, limit = 10, type, dateFrom, dateTo } = request.query as any;
 
         const parlementaire = await fastify.prisma.parlementaire.findUnique({
           where: { slug },
@@ -412,7 +412,6 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
 
         const skip = (page - 1) * limit;
 
-        // Build date filter
         const dateFilter = (dateFrom || dateTo) ? {
           date: {
             ...(dateFrom && { gte: new Date(dateFrom) }),
@@ -420,49 +419,135 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           },
         } : {};
 
-        const [interventions, total] = await Promise.all([
-          fastify.prisma.intervention.findMany({
-            where: {
-              parlementaireId: parlementaire.id,
-              ...(type && { type }),
-              ...dateFilter,
-            },
-            orderBy: { date: 'desc' },
-            skip,
-            take: limit,
-            select: {
-              id: true,
-              date: true,
-              type: true,
-              contenu: true,
-              motsCles: true,
-              sourceUrl: true,
-              ordre: true,
-              // Inclure le scrutin lié s'il existe
-              scrutin: {
-                select: {
-                  id: true,
-                  numero: true,
-                  titre: true,
-                  date: true,
-                  sort: true,
-                },
-              },
-            },
-          }),
-          fastify.prisma.intervention.count({
-            where: {
-              parlementaireId: parlementaire.id,
-              ...(type && { type }),
-              ...dateFilter,
-            },
-          }),
-        ]);
+        const baseWhere = {
+          parlementaireId: parlementaire.id,
+          seanceId: { not: null },
+          ...(type && { type }),
+          ...dateFilter,
+        };
 
+        // 1. Get distinct seance pages (paginated)
+        const seanceRows = await fastify.prisma.intervention.findMany({
+          where: baseWhere,
+          distinct: ['seanceId'],
+          orderBy: { date: 'desc' },
+          skip,
+          take: limit,
+          select: { seanceId: true, date: true },
+        });
+
+        const seanceIds = seanceRows.map(s => s.seanceId).filter(Boolean) as string[];
+
+        if (seanceIds.length === 0) {
+          return {
+            data: [],
+            meta: { total: 0, page, limit, totalPages: 0, hasNext: false, hasPrev: page > 1 },
+          };
+        }
+
+        // 2. Get all interventions for these seances by this parlementaire
+        const interventions = await fastify.prisma.intervention.findMany({
+          where: {
+            parlementaireId: parlementaire.id,
+            seanceId: { in: seanceIds },
+            ...(type && { type }),
+          },
+          orderBy: [{ date: 'asc' }, { ordre: 'asc' }],
+          select: {
+            id: true,
+            seanceId: true,
+            date: true,
+            type: true,
+            contenu: true,
+            motsCles: true,
+            sourceUrl: true,
+            ordre: true,
+          },
+        });
+
+        // 3. Get scrutins linked to these seances
+        const CONTENU_PREVIEW_LENGTH = 500;
+        const scrutins = await fastify.prisma.scrutin.findMany({
+          where: {
+            chambre: parlementaire.chambre,
+            OR: [
+              { seanceRef: { in: seanceIds } },
+              {
+                date: { in: seanceRows.map(s => s.date) },
+              },
+            ],
+          },
+          select: {
+            id: true,
+            numero: true,
+            titre: true,
+            date: true,
+            sort: true,
+            chambre: true,
+            seanceRef: true,
+          },
+        });
+
+        // 4. Group by seanceId
+        const seanceMap = new Map<string, {
+          seanceId: string;
+          date: string;
+          interventions: any[];
+          scrutins: any[];
+        }>();
+
+        // Init with seance order from pagination
+        for (const s of seanceRows) {
+          if (s.seanceId) {
+            seanceMap.set(s.seanceId, {
+              seanceId: s.seanceId,
+              date: s.date.toISOString(),
+              interventions: [],
+              scrutins: [],
+            });
+          }
+        }
+
+        // Assign interventions with truncation
+        for (const i of interventions) {
+          const group = i.seanceId ? seanceMap.get(i.seanceId) : null;
+          if (!group) continue;
+          const { contenu, seanceId: _s, ...rest } = i;
+          group.interventions.push({
+            ...rest,
+            contenu: contenu.length > CONTENU_PREVIEW_LENGTH
+              ? contenu.substring(0, CONTENU_PREVIEW_LENGTH)
+              : contenu,
+            hasMore: contenu.length > CONTENU_PREVIEW_LENGTH,
+          });
+        }
+
+        // Assign scrutins to seances by seanceRef or date match
+        for (const s of scrutins) {
+          for (const [seanceId, group] of seanceMap) {
+            const matchByRef = s.seanceRef === seanceId;
+            const matchByDate = new Date(s.date).toDateString() === new Date(group.date).toDateString();
+            if (matchByRef || matchByDate) {
+              // Avoid duplicate scrutins in same group
+              if (!group.scrutins.some((gs: any) => gs.id === s.id)) {
+                const { seanceRef: _r, ...scrutinData } = s;
+                group.scrutins.push(scrutinData);
+              }
+            }
+          }
+        }
+
+        // 5. Count total distinct seances for pagination
+        const totalSeances = await fastify.prisma.intervention.groupBy({
+          by: ['seanceId'],
+          where: baseWhere,
+          _count: true,
+        });
+        const total = totalSeances.length;
         const totalPages = Math.ceil(total / limit);
 
         return {
-          data: interventions,
+          data: Array.from(seanceMap.values()),
           meta: {
             total,
             page,

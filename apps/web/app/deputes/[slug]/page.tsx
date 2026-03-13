@@ -32,6 +32,7 @@ import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
 import { api } from '@/lib/api';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
+import { InterventionsList } from '@/components/parlementaire/interventions-list';
 
 interface DeputeDetail {
   id: string;
@@ -139,140 +140,6 @@ function VotePositionBadge({ position }: { position: string }) {
       <Icon className="h-3 w-3" />
       {config.label}
     </span>
-  );
-}
-
-interface InterventionItem {
-  id: string;
-  date: string;
-  type: string;
-  contenu: string;
-  motsCles: string[];
-  sourceUrl: string | null;
-  ordre: number | null;
-  scrutin: {
-    id: string;
-    numero: number;
-    titre: string;
-    date: string;
-    sort: string;
-  } | null;
-}
-
-function InterventionsList({ slug }: { slug: string }) {
-  const [dateRange, setDateRange] = useUrlDateRange();
-  const dateParams = dateRangeToParams(dateRange);
-
-  const {
-    data,
-    isLoading,
-    error,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = useInfiniteQuery({
-    queryKey: ['depute-interventions', slug, dateParams],
-    queryFn: ({ pageParam = 1 }) =>
-      api.get(`/deputes/${slug}/interventions`, {
-        params: {
-          page: pageParam,
-          limit: 20,
-          ...dateParams,
-        },
-      }).then((res) => res.data),
-    getNextPageParam: (lastPage) =>
-      lastPage.meta?.hasNext ? lastPage.meta.page + 1 : undefined,
-    initialPageParam: 1,
-    enabled: !!slug,
-  });
-
-  const { loadMoreRef } = useInfiniteScroll({
-    hasNextPage: !!hasNextPage,
-    isFetchingNextPage,
-    fetchNextPage,
-  });
-
-  const interventions = data?.pages.flatMap((page) => page.data) ?? [];
-
-  return (
-    <div className="space-y-4">
-      <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Filtrer par période" />
-
-      {isLoading ? (
-        <div className="space-y-4">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="animate-pulse rounded-lg border p-4">
-              <div className="h-4 w-1/4 rounded bg-muted" />
-              <div className="mt-2 h-20 w-full rounded bg-muted" />
-            </div>
-          ))}
-        </div>
-      ) : error || interventions.length === 0 ? (
-        <p className="text-center text-muted-foreground py-8">
-          Aucune intervention trouvée pour cette période.
-        </p>
-      ) : (
-        <div className="space-y-4">
-          {interventions.map((intervention: InterventionItem) => (
-        <div
-          key={intervention.id}
-          className="rounded-lg border bg-card p-4"
-        >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-muted-foreground">
-              {new Date(intervention.date).toLocaleDateString('fr-FR', {
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric',
-              })}
-            </span>
-            <span className="rounded bg-muted px-2 py-0.5 text-xs capitalize">
-              {intervention.type.replace('_', ' ')}
-            </span>
-          </div>
-          <p className="text-sm leading-relaxed line-clamp-4">
-            {intervention.contenu}
-          </p>
-          {intervention.motsCles.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {intervention.motsCles.map((tag) => (
-                <span key={tag} className="rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary">
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
-          {/* Lien vers le scrutin associé */}
-          {intervention.scrutin && (
-            <div className="mt-2">
-              <Link
-                href={`/scrutins/${intervention.scrutin.numero}`}
-                className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 hover:underline bg-indigo-50 px-2 py-1 rounded"
-              >
-                <Vote className="h-3 w-3" />
-                Scrutin n°{intervention.scrutin.numero}
-                <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                  intervention.scrutin.sort === 'adopte' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                }`}>
-                  {intervention.scrutin.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
-                </span>
-              </Link>
-            </div>
-          )}
-        </div>
-          ))}
-
-          {/* Sentinel pour le scroll infini */}
-          <div ref={loadMoreRef} className="h-4" />
-
-          {isFetchingNextPage && (
-            <div className="flex justify-center py-4">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          )}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -945,7 +812,7 @@ export default function DeputeDetailPage() {
       {/* Contenu */}
       <div className="mt-8">
         {activeTab === 'votes' && <VotesList slug={depute.slug} />}
-        {activeTab === 'interventions' && <InterventionsList slug={depute.slug} />}
+        {activeTab === 'interventions' && <InterventionsList slug={depute.slug} chambre="assemblee" />}
         {activeTab === 'amendements' && <AmendementsList slug={depute.slug} />}
       </div>
     </div>
