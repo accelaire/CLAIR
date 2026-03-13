@@ -531,6 +531,38 @@ program
   });
 
 // =============================================================================
+// COMMANDE: generate-sujets
+// =============================================================================
+program
+  .command('generate-sujets')
+  .description('Générer les sujets parlementaires par cross-référence déterministe AN ↔ Sénat')
+  .option('--reset', 'Vider les sujet_id existants avant de regénérer')
+  .option('--dry-run', 'Afficher les stats sans modifier la DB')
+  .action(async (options) => {
+    try {
+      logger.info({ options }, 'Starting sujet generation...');
+      const { generateSujets } = await import('./workers/sujet-generator.js');
+      const result = await generateSujets({
+        reset: options.reset,
+        dryRun: options.dryRun,
+      });
+
+      console.log(`\n📊 Sujets parlementaires${options.dryRun ? ' (DRY RUN)' : ''}:`);
+      console.log(`   Créés: ${result.created}`);
+      console.log(`   Mis à jour: ${result.updated}`);
+      console.log(`   Cross-chambre: ${result.crossRef}`);
+      console.log(`   Solo: ${result.solo}`);
+      console.log(`   Dossiers couverts: ${result.totalDossiers}`);
+      console.log(`   Scrutins couverts: ${result.totalScrutins}`);
+
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Sujet generation failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
 // COMMANDE: check-quality
 // =============================================================================
 program
