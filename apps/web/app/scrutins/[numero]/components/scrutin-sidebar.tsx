@@ -5,6 +5,7 @@ import {
   Calendar, CheckCircle, XCircle, ExternalLink,
 } from 'lucide-react';
 import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
+import { getDossierEtat } from '@/lib/dossiers';
 
 interface DossierLegislatif {
   id: string;
@@ -171,18 +172,14 @@ export function ScrutinSidebar({
             >
               {formatDossierTitre(dossier.titre, dossier.procedureLibelle)}
             </Link>
-            {dossier.etat && (
-              <span className={`inline-flex px-2 py-0.5 text-xs rounded-full ${
-                dossier.etat === 'promulgue' ? 'bg-green-100 text-green-700' :
-                dossier.etat === 'adopte' ? 'bg-blue-100 text-blue-700' :
-                dossier.etat === 'rejete' ? 'bg-red-100 text-red-700' :
-                'bg-amber-100 text-amber-700'
-              }`}>
-                {dossier.etat === 'promulgue' ? 'Promulgué' :
-                 dossier.etat === 'adopte' ? 'Adopté' :
-                 dossier.etat === 'rejete' ? 'Rejeté' : 'En cours'}
-              </span>
-            )}
+            {(() => {
+              const etatInfo = getDossierEtat(dossier.etat);
+              return etatInfo ? (
+                <span className={`inline-flex px-2 py-0.5 text-xs rounded-full ${etatInfo.color}`}>
+                  {etatInfo.label}
+                </span>
+              ) : null;
+            })()}
             {dossier.loiNumero && (
               <p className="text-xs text-green-700 font-medium">
                 Loi n°{dossier.loiNumero}

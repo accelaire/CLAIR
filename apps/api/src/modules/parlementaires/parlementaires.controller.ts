@@ -537,6 +537,11 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           }
         }
 
+        // Sort scrutins by numero within each seance
+        for (const group of seanceMap.values()) {
+          group.scrutins.sort((a: any, b: any) => a.numero - b.numero);
+        }
+
         // 5. Count total distinct seances for pagination
         const totalSeances = await fastify.prisma.intervention.groupBy({
           by: ['seanceId'],

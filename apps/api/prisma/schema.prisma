@@ -223,7 +223,7 @@ model DossierLegislatif {
   urlSenat     String?  @map("url_senat")   // URL sur senat.fr
 
   // État du dossier
-  etat         String?  // 'en_cours', 'adopte', 'rejete', 'promulgue'
+  etat         String?  // 'en_cours', 'adopte', 'rejete', 'promulgue', 'caduc', 'fusionne', 'retire'
   dateDepot    DateTime? @map("date_depot")
   dateAdoption DateTime? @map("date_adoption")
 

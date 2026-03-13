@@ -57,7 +57,7 @@ function getSessionName(date: Date): string {
 
 function generateSeanceUrl(date: Date): string {
   const jour = JOURS_FR[date.getDay()];
-  const dateNum = date.getDate();
+  const dateNum = String(date.getDate()).padStart(2, '0');
   const mois = MOIS_FR[date.getMonth()];
   const annee = date.getFullYear();
   const session = getSessionName(date);

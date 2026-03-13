@@ -29,12 +29,9 @@ const formatDossierTitre = (titre: string, procedureLibelle?: string | null): st
   return titre;
 };
 
-const etatLabels: Record<string, { label: string; color: string }> = {
-  en_cours: { label: 'En cours', color: 'bg-amber-100 text-amber-700' },
-  adopte: { label: 'Adopté', color: 'bg-blue-100 text-blue-700' },
-  rejete: { label: 'Rejeté', color: 'bg-red-100 text-red-700' },
-  promulgue: { label: 'Promulgué', color: 'bg-green-100 text-green-700' },
-};
+import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
+
+const etatLabels = DOSSIER_ETAT_CONFIG;
 
 interface Scrutin {
   id: string;

@@ -41,12 +41,9 @@ const formatDossierTitre = (titre: string, procedureLibelle?: string | null): st
   return titre;
 };
 
-const dossierEtatLabels: Record<string, { label: string; color: string }> = {
-  en_cours: { label: 'En cours', color: 'bg-amber-100 text-amber-700' },
-  adopte: { label: 'Adopté', color: 'bg-blue-100 text-blue-700' },
-  rejete: { label: 'Rejeté', color: 'bg-red-100 text-red-700' },
-  promulgue: { label: 'Promulgué', color: 'bg-green-100 text-green-700' },
-};
+import { DOSSIER_ETAT_CONFIG, getDossierEtat } from '@/lib/dossiers';
+
+const dossierEtatLabels = DOSSIER_ETAT_CONFIG;
 
 const faqItems = [
   {
@@ -280,11 +277,7 @@ export default function HomePage() {
                       </span>
                       {dossier.etat && (
                         <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium">
-                          <span className={`h-2 w-2 rounded-full ${
-                            dossier.etat === 'promulgue' || dossier.etat === 'adopte' ? 'bg-green-500' :
-                            dossier.etat === 'rejete' ? 'bg-red-500' :
-                            dossier.etat === 'en_cours' ? 'bg-amber-500' : 'bg-gray-400'
-                          }`} />
+                          <span className={`h-2 w-2 rounded-full ${getDossierEtat(dossier.etat)?.dotColor ?? 'bg-gray-400'}`} />
                           {dossierEtatLabels[dossier.etat]?.label || dossier.etat}
                         </span>
                       )}

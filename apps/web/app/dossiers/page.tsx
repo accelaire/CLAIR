@@ -39,12 +39,9 @@ interface DossiersResponse {
   };
 }
 
-const etatLabels: Record<string, { label: string; color: string }> = {
-  en_cours: { label: 'En cours', color: 'bg-amber-100 text-amber-700' },
-  adopte: { label: 'Adopté', color: 'bg-blue-100 text-blue-700' },
-  rejete: { label: 'Rejeté', color: 'bg-red-100 text-red-700' },
-  promulgue: { label: 'Promulgué', color: 'bg-green-100 text-green-700' },
-};
+import { DOSSIER_ETAT_CONFIG, getDossierEtat } from '@/lib/dossiers';
+
+const etatLabels = DOSSIER_ETAT_CONFIG;
 
 /** Construit un titre lisible : préfixe procedure si le titre commence en minuscule */
 const formatDossierTitre = (titre: string, procedureLibelle?: string | null): string => {
@@ -187,6 +184,9 @@ function DossiersPageContent() {
             <option value="adopte">Adopté</option>
             <option value="rejete">Rejeté</option>
             <option value="promulgue">Promulgué</option>
+            <option value="caduc">Caduc</option>
+            <option value="fusionne">Fusionné</option>
+            <option value="retire">Retiré</option>
           </select>
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>
