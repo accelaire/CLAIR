@@ -28,6 +28,7 @@ interface DoslegLoi {
   urlJo: string | null;     // URL Journal Officiel
   loidatjo: Date | null;    // Date publication JO
   dateLoi: Date | null;     // Date de la loi
+  urlAN: string | null;     // URL Assemblée Nationale (champ index 32)
 }
 
 interface DoslegTexte {
@@ -53,6 +54,7 @@ export interface TransformedDossierSenat {
   procedureCode: string | null;
   procedureLibelle: string | null;
   urlSenat: string;
+  urlAN: string | null;     // URL Assemblée Nationale (cross-ref Sénat→AN)
   etat: 'en_cours' | 'adopte' | 'rejete' | 'promulgue' | 'caduc' | 'fusionne' | 'retire' | null;
   loiNumero: string | null;
   loiDateJO: Date | null;
@@ -231,6 +233,7 @@ export class SenatDossiersClient {
               urlJo: cleanString(fields[11]), // index 11, not 12
               loidatjo: parseDate(fields[13]),
               dateLoi: parseDate(fields[14]),
+              urlAN: fields.length > 32 ? cleanString(fields[32]) : null,
             });
             loiCount++;
           }
@@ -302,6 +305,7 @@ export class SenatDossiersClient {
           procedureCode: procedure.code,
           procedureLibelle: procedure.libelle,
           urlSenat: `https://www.senat.fr/dossier-legislatif/${ref}.html`,
+          urlAN: loi.urlAN,
           etat: mapEtat(loi.etaloicod),
           loiNumero: loi.numero,
           loiDateJO: loi.loidatjo,

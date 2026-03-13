@@ -2301,6 +2301,7 @@ export async function syncDossiersSenat(
         procedureCode: dossier.procedureCode,
         procedureLibelle: dossier.procedureLibelle,
         urlSenat: dossier.urlSenat,
+        urlAN: dossier.urlAN,
         etat: dossier.etat,
         loiNumero: dossier.loiNumero,
         loiDateJO: dossier.loiDateJO,
