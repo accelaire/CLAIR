@@ -9,6 +9,7 @@ const navigation = [
   { name: 'Sénateurs', href: '/senateurs' },
   { name: 'Groupes', href: '/groupes' },
   { name: 'Scrutins', href: '/scrutins' },
+  { name: 'Sujets', href: '/sujets' },
   { name: 'Lobbying', href: '/lobbying' },
   // { name: 'Explorateur', href: '/explorateur', badge: 'Beta' }, // TODO: Réactiver quand la fonctionnalité sera prête
   // { name: 'Simulateur 2027', href: '/simulateur' }, // TODO: Activer quand les programmes seront sortis
