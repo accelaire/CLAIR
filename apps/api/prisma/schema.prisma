@@ -233,6 +233,10 @@ model DossierLegislatif {
   loiDateJO    DateTime? @map("loi_date_jo")   // Date publication JO
   urlLegifrance String?  @map("url_legifrance") // URL Légifrance pour les lois promulguées
 
+  // Sujet parlementaire (regroupement cross-chambre)
+  sujetId      String?  @map("sujet_id")
+  sujet        Sujet?   @relation(fields: [sujetId], references: [id])
+
   // Relations
   scrutins     Scrutin[]
   amendements  Amendement[]
@@ -245,7 +249,42 @@ model DossierLegislatif {
   @@index([legislature])
   @@index([etat])
   @@index([dateDepot])
+  @@index([sujetId])
   @@map("dossiers_legislatifs")
+}
+
+// =============================================================================
+// SUJETS PARLEMENTAIRES (regroupement cross-chambre des dossiers)
+// =============================================================================
+
+model Sujet {
+  id            String    @id @default(uuid())
+  slug          String    @unique
+  label         String
+  description   String?
+  category      String?
+
+  dossierCount  Int       @default(0) @map("dossier_count")
+  scrutinCount  Int       @default(0) @map("scrutin_count")
+
+  dateDebut     DateTime? @map("date_debut")
+  dateFin       DateTime? @map("date_fin")
+
+  actif         Boolean   @default(true)
+  featured      Boolean   @default(false)
+  featuredOrder Int       @default(0) @map("featured_order")
+
+  matchMethod   String?   @map("match_method")  // 'cross_ref' | 'loi_numero' | 'solo'
+
+  dossiers      DossierLegislatif[]
+
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([actif])
+  @@index([category])
+  @@index([featured, featuredOrder])
+  @@map("sujets")
 }
 
 // =============================================================================
