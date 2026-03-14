@@ -1,15 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   FileText, Calendar, Vote, CheckCircle, XCircle, ExternalLink,
-  ArrowLeft, Loader2, Scale, ChevronDown, ChevronUp,
+  ArrowLeft, Loader2, Scale, ChevronDown, ChevronUp, X, Users, Layers,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
+import { AmendementSortBadge } from '@/components/AmendementSortBadge';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -77,11 +78,22 @@ interface DossierDetail {
   loiTitre: string | null;
   loiDateJO: string | null;
   urlLegifrance: string | null;
+  sujet: {
+    slug: string;
+    label: string;
+    status: string;
+  } | null;
   scrutins: DossierScrutin[];
   amendements: DossierAmendement[];
   scrutinsCount: number;
   amendementsCount: number;
   votedAmendementsCount: number;
+  amendementsGroupes: Array<{
+    slug: string;
+    nom: string;
+    couleur: string;
+    count: number;
+  }>;
   stats: {
     totalAdopte: number;
     totalRejete: number;
@@ -128,29 +140,6 @@ const stripHtml = (html: string): string =>
 // ---------------------------------------------------------------------------
 // Sub-components (same pattern as parlementaire page)
 // ---------------------------------------------------------------------------
-
-function AmendementSortBadge({ sort }: { sort: string | null }) {
-  if (!sort) return null;
-
-  const sortLower = sort.toLowerCase();
-  let className = 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100';
-
-  if (sortLower.includes('adopt')) {
-    className = 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100';
-  } else if (sortLower.includes('rejet')) {
-    className = 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100';
-  } else if (sortLower.includes('retir')) {
-    className = 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100';
-  } else if (sortLower.includes('tomb') || sortLower.includes('entonnoir')) {
-    className = 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-100';
-  }
-
-  return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${className}`}>
-      {sort}
-    </span>
-  );
-}
 
 function ExpandableAmendementCard({ amendement }: { amendement: DossierAmendement }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -259,9 +248,23 @@ function ExpandableAmendementCard({ amendement }: { amendement: DossierAmendemen
 export default function DossierDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const uid = params.uid as string;
   const [showVotedOnly, setShowVotedOnly] = useState(false);
-  const [activeTab, setActiveTab] = useState<'amendements' | 'scrutins'>('amendements');
+  const [activeTab, setActiveTab] = useState<'amendements' | 'scrutins'>(
+    searchParams.get('tab') === 'scrutins' ? 'scrutins' : 'amendements',
+  );
+
+  // Groupe filter from URL (set when coming from sujet stats page)
+  const groupeFilter = searchParams.get('groupe') || '';
+  const hasAmendementFilter = showVotedOnly || !!groupeFilter;
+
+  const setGroupeFilter = (slug: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (slug) params.set('groupe', slug);
+    else params.delete('groupe');
+    router.replace(`/dossiers/${uid}?${params.toString()}`, { scroll: false });
+  };
 
   const { data: dossier, isLoading, error } = useQuery<DossierDetail>({
     queryKey: ['dossier', uid],
@@ -292,7 +295,7 @@ export default function DossierDetailPage() {
     fetchNextPage: fetchNextScrutins,
   });
 
-  // Infinite query for all amendements (page 2+, detail endpoint gives first 20)
+  // Infinite query for unfiltered amendements (page 2+, detail gives first 20)
   const {
     data: moreAmendements,
     fetchNextPage: fetchNextAmendements,
@@ -307,7 +310,7 @@ export default function DossierDetailPage() {
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
     initialPageParam: 2,
-    enabled: !!dossier && !showVotedOnly && dossier.amendementsCount > 20,
+    enabled: !!dossier && !hasAmendementFilter && dossier.amendementsCount > 20,
   });
 
   const { loadMoreRef: loadMoreAmendementsRef } = useInfiniteScroll({
@@ -316,29 +319,34 @@ export default function DossierDetailPage() {
     fetchNextPage: fetchNextAmendements,
   });
 
-  // Infinite query for voted-only amendements (fully server-side, page 1+)
+  // Infinite query for filtered amendements (voted and/or groupe, page 1+)
   const {
-    data: votedAmendementsData,
-    fetchNextPage: fetchNextVoted,
-    hasNextPage: hasNextVoted,
-    isFetchingNextPage: isFetchingNextVoted,
-    isLoading: isLoadingVoted,
+    data: filteredAmendementsData,
+    fetchNextPage: fetchNextFiltered,
+    hasNextPage: hasNextFiltered,
+    isFetchingNextPage: isFetchingNextFiltered,
+    isLoading: isLoadingFiltered,
   } = useInfiniteQuery<PaginatedResponse<DossierAmendement>>({
-    queryKey: ['dossier-amendements-voted', uid],
+    queryKey: ['dossier-amendements-filtered', uid, showVotedOnly, groupeFilter],
     queryFn: ({ pageParam = 1 }) =>
       api.get(`/dossiers/${uid}/amendements`, {
-        params: { page: pageParam, limit: 20, voted: true },
+        params: {
+          page: pageParam,
+          limit: 20,
+          ...(showVotedOnly && { voted: true }),
+          ...(groupeFilter && { groupe: groupeFilter }),
+        },
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
     initialPageParam: 1,
-    enabled: !!dossier && showVotedOnly && dossier.votedAmendementsCount > 0,
+    enabled: !!dossier && hasAmendementFilter,
   });
 
-  const { loadMoreRef: loadMoreVotedRef } = useInfiniteScroll({
-    hasNextPage: hasNextVoted,
-    isFetchingNextPage: isFetchingNextVoted,
-    fetchNextPage: fetchNextVoted,
+  const { loadMoreRef: loadMoreFilteredRef } = useInfiniteScroll({
+    hasNextPage: hasNextFiltered,
+    isFetchingNextPage: isFetchingNextFiltered,
+    fetchNextPage: fetchNextFiltered,
   });
 
   // Loading
@@ -376,13 +384,14 @@ export default function DossierDetailPage() {
   ];
   const totalVotes = dossier.stats.totalAdopte + dossier.stats.totalRejete;
 
-  // Amendements: merge initial batch + paginated extras
-  const allAmendements = [
-    ...(dossier.amendements || []),
-    ...(moreAmendements?.pages.flatMap((p) => p.data) ?? []),
-  ];
-  const votedAmendements = votedAmendementsData?.pages.flatMap((p) => p.data) ?? [];
-  const displayedAmendements = showVotedOnly ? votedAmendements : allAmendements;
+  // Amendements: filtered → use filtered query; unfiltered → detail batch + extras
+  const displayedAmendements = hasAmendementFilter
+    ? (filteredAmendementsData?.pages.flatMap((p) => p.data) ?? [])
+    : [
+        ...(dossier.amendements || []),
+        ...(moreAmendements?.pages.flatMap((p) => p.data) ?? []),
+      ];
+  const filteredTotal = filteredAmendementsData?.pages[0]?.meta.total;
 
   // Auto-switch to scrutins tab if no amendements
   const hasAmendements = dossier.amendementsCount > 0;
@@ -444,6 +453,15 @@ export default function DossierDetailPage() {
               className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 hover:underline">
               <ExternalLink className="h-3 w-3" /> Sénat
             </a>
+          )}
+          {dossier.sujet && (
+            <Link
+              href={`/sujets/${dossier.sujet.slug}`}
+              className="inline-flex items-center gap-1 text-amber-600 hover:text-amber-800 hover:underline"
+            >
+              <Layers className="h-3.5 w-3.5" />
+              Voir le sujet complet
+            </Link>
           )}
         </div>
       </div>
@@ -546,8 +564,9 @@ export default function DossierDetailPage() {
       {effectiveTab === 'amendements' && (
         <div className="space-y-4">
           {/* Filter bar */}
-          {dossier.votedAmendementsCount > 0 && (
-            <div className="flex items-center">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Voted toggle */}
+            {dossier.votedAmendementsCount > 0 && (
               <button
                 onClick={() => setShowVotedOnly(!showVotedOnly)}
                 className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
@@ -564,11 +583,53 @@ export default function DossierDetailPage() {
                   {dossier.votedAmendementsCount}
                 </span>
               </button>
-            </div>
-          )}
+            )}
 
-          {/* Loading state for voted filter */}
-          {showVotedOnly && isLoadingVoted && (
+            {/* Groupe filter */}
+            {dossier.amendementsGroupes && dossier.amendementsGroupes.length > 0 && (
+              <div className="relative">
+                <Users className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <select
+                  value={groupeFilter}
+                  onChange={(e) => setGroupeFilter(e.target.value)}
+                  className={`appearance-none rounded-lg border pl-9 pr-8 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
+                    groupeFilter
+                      ? 'bg-purple-100 border-purple-300 text-purple-700'
+                      : 'bg-background border-input hover:bg-accent'
+                  }`}
+                >
+                  <option value="">Tous les groupes</option>
+                  {dossier.amendementsGroupes.map((g) => (
+                    <option key={g.slug} value={g.slug}>
+                      {g.nom} ({g.count})
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              </div>
+            )}
+
+            {/* Active filter badge */}
+            {groupeFilter && (
+              <button
+                onClick={() => setGroupeFilter('')}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-100 text-purple-700 text-sm font-medium hover:bg-purple-200 transition-colors"
+              >
+                <span
+                  className="h-2.5 w-2.5 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: dossier.amendementsGroupes?.find(g => g.slug === groupeFilter)?.couleur }}
+                />
+                {dossier.amendementsGroupes?.find(g => g.slug === groupeFilter)?.nom ?? groupeFilter}
+                {filteredTotal !== undefined && (
+                  <span className="text-xs text-purple-500">({filteredTotal})</span>
+                )}
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Loading state for filtered query */}
+          {hasAmendementFilter && isLoadingFiltered && (
             <div className="flex justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
@@ -582,8 +643,22 @@ export default function DossierDetailPage() {
                 ))}
               </div>
 
-              {/* Infinite scroll sentinel: all amendements */}
-              {!showVotedOnly && dossier.amendementsCount > 20 && (
+              {/* Infinite scroll sentinel: filtered */}
+              {hasAmendementFilter && (
+                <div ref={loadMoreFilteredRef} className="mt-8 flex justify-center py-4">
+                  {isFetchingNextFiltered && (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="h-5 w-5 animate-spin" /> <span>Chargement...</span>
+                    </div>
+                  )}
+                  {!hasNextFiltered && !isFetchingNextFiltered && displayedAmendements.length > 0 && (
+                    <p className="text-sm text-muted-foreground">Tous les amendements ont été chargés</p>
+                  )}
+                </div>
+              )}
+
+              {/* Infinite scroll sentinel: unfiltered */}
+              {!hasAmendementFilter && dossier.amendementsCount > 20 && (
                 <div ref={loadMoreAmendementsRef} className="mt-8 flex justify-center py-4">
                   {isFetchingNextAmendements && (
                     <div className="flex items-center gap-2 text-muted-foreground">
@@ -595,26 +670,12 @@ export default function DossierDetailPage() {
                   )}
                 </div>
               )}
-
-              {/* Infinite scroll sentinel: voted only */}
-              {showVotedOnly && dossier.votedAmendementsCount > 20 && (
-                <div ref={loadMoreVotedRef} className="mt-8 flex justify-center py-4">
-                  {isFetchingNextVoted && (
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Loader2 className="h-5 w-5 animate-spin" /> <span>Chargement...</span>
-                    </div>
-                  )}
-                  {!hasNextVoted && !isFetchingNextVoted && (
-                    <p className="text-sm text-muted-foreground">Tous les amendements votés ont été chargés</p>
-                  )}
-                </div>
-              )}
             </>
           ) : (
-            !isLoadingVoted && (
+            !isLoadingFiltered && (
               <p className="text-center text-muted-foreground py-8">
-                {showVotedOnly
-                  ? 'Aucun amendement ayant fait l\'objet d\'un vote.'
+                {hasAmendementFilter
+                  ? 'Aucun amendement correspondant aux filtres.'
                   : 'Aucun amendement associé à ce dossier.'}
               </p>
             )
