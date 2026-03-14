@@ -2,10 +2,9 @@
 
 import { useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { FileText, ChevronDown, ChevronUp, Loader2, Calendar, CheckCircle, XCircle, MinusCircle } from 'lucide-react';
+import { FileText, ChevronDown, ChevronUp, Loader2, Calendar } from 'lucide-react';
 import { api } from '@/lib/api';
-
-type AmendementSort = 'Adopté' | 'Rejeté' | 'Retiré' | 'Non soutenu' | 'Tombé';
+import { AmendementSortBadge } from '@/components/AmendementSortBadge';
 
 interface Amendement {
   id: string;
@@ -14,7 +13,7 @@ interface Amendement {
   articleVise: string | null;
   exposeSommaire: string | null;
   dispositif: string | null;
-  sort: AmendementSort | null;
+  sort: string | null;
   dateDepot: string | null;
   dateSort: string | null;
 }
@@ -42,14 +41,6 @@ interface ComparisonAmendementsProps {
   parlementaires: ParlementaireWithStats[];
   chambre: 'deputes' | 'senateurs';
 }
-
-const SORT_STYLES: Record<AmendementSort, { icon: React.ReactNode; color: string }> = {
-  'Adopté': { icon: <CheckCircle className="h-4 w-4" />, color: 'text-green-600 dark:text-green-400' },
-  'Rejeté': { icon: <XCircle className="h-4 w-4" />, color: 'text-red-600 dark:text-red-400' },
-  'Retiré': { icon: <MinusCircle className="h-4 w-4" />, color: 'text-yellow-600 dark:text-yellow-400' },
-  'Non soutenu': { icon: <MinusCircle className="h-4 w-4" />, color: 'text-gray-500' },
-  'Tombé': { icon: <MinusCircle className="h-4 w-4" />, color: 'text-gray-500' },
-};
 
 function ParlementaireAmendements({
   parlementaire,
@@ -150,16 +141,7 @@ function ParlementaireAmendements({
                       </div>
 
                       {/* Sort status */}
-                      {amendement.sort && (
-                        <div
-                          className={`flex items-center gap-1 text-sm font-medium ${
-                            SORT_STYLES[amendement.sort]?.color || 'text-muted-foreground'
-                          }`}
-                        >
-                          {SORT_STYLES[amendement.sort]?.icon}
-                          <span>{amendement.sort}</span>
-                        </div>
-                      )}
+                      <AmendementSortBadge sort={amendement.sort} />
                     </div>
                   </div>
                 ))}
