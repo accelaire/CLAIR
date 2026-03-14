@@ -26,6 +26,10 @@ interface DossierRow {
   urlAN: string | null;
   urlSenat: string | null;
   loiNumero: string | null;
+  etat: string | null;
+  dateDepot: Date | null;
+  dateAdoption: Date | null;
+  loiDateJO: Date | null;
   scrutinCount: number;
 }
 
@@ -174,6 +178,10 @@ export async function generateSujets(options: {
         d.url_an as "urlAN",
         d.url_senat as "urlSenat",
         d.loi_numero as "loiNumero",
+        d.etat,
+        d.date_depot as "dateDepot",
+        d.date_adoption as "dateAdoption",
+        d.loi_date_jo as "loiDateJO",
         (SELECT COUNT(*)::int FROM scrutins s WHERE s.dossier_id = d.id) as "scrutinCount"
       FROM dossiers_legislatifs d
     `;
@@ -355,20 +363,25 @@ export async function generateSujets(options: {
       usedSlugs.add(slug);
 
       const totalScrutins = members.reduce((sum, d) => sum + d.scrutinCount, 0);
+      const status = computeStatus(members);
+      const { dateDebut, dateFin } = computeDates(members);
 
       // Use raw SQL for all DB operations to avoid schema drift issues
       const sujetId = crypto.randomUUID();
 
       await prisma.$executeRawUnsafe(
-        `INSERT INTO sujets (id, slug, label, dossier_count, scrutin_count, match_method, actif, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, true, NOW(), NOW())
+        `INSERT INTO sujets (id, slug, label, dossier_count, scrutin_count, match_method, status, date_debut, date_fin, actif, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, NOW(), NOW())
          ON CONFLICT (slug) DO UPDATE SET
            label = EXCLUDED.label,
            dossier_count = EXCLUDED.dossier_count,
            scrutin_count = EXCLUDED.scrutin_count,
            match_method = EXCLUDED.match_method,
+           status = EXCLUDED.status,
+           date_debut = EXCLUDED.date_debut,
+           date_fin = EXCLUDED.date_fin,
            updated_at = NOW()`,
-        sujetId, slug, label, members.length, totalScrutins, matchMethod,
+        sujetId, slug, label, members.length, totalScrutins, matchMethod, status, dateDebut, dateFin,
       );
       created++;
 
@@ -387,12 +400,18 @@ export async function generateSujets(options: {
       0
     );
 
-    // Update dossierCount / scrutinCount for all sujets (recalc from reality)
+    // Update dossierCount / scrutinCount / dateDernierVote for all sujets (recalc from reality)
     await prisma.$executeRaw`
       UPDATE sujets s SET
         dossier_count = (SELECT COUNT(*) FROM dossiers_legislatifs d WHERE d.sujet_id = s.id),
         scrutin_count = (
           SELECT COUNT(*)
+          FROM scrutins sc
+          JOIN dossiers_legislatifs d ON sc.dossier_id = d.id
+          WHERE d.sujet_id = s.id
+        ),
+        date_dernier_vote = (
+          SELECT MAX(sc.date)
           FROM scrutins sc
           JOIN dossiers_legislatifs d ON sc.dossier_id = d.id
           WHERE d.sujet_id = s.id
@@ -423,6 +442,55 @@ export async function generateSujets(options: {
 }
 
 // =============================================================================
+// STATUS COMPUTATION
+// =============================================================================
+
+/**
+ * Compute the global status of a sujet from its dossiers' etats.
+ * Priority: promulgue > adopte > en_cours > rejete > caduc > retire
+ */
+function computeStatus(members: DossierRow[]): string {
+  const etats = members.map(d => d.etat).filter(Boolean) as string[];
+  if (etats.length === 0) return 'en_cours';
+
+  if (etats.includes('promulgue')) return 'promulgue';
+  if (etats.includes('adopte')) return 'adopte';
+  if (etats.includes('en_cours')) return 'en_cours';
+  if (etats.every(e => e === 'rejete')) return 'rejete';
+  if (etats.every(e => e === 'caduc')) return 'caduc';
+  if (etats.every(e => e === 'retire')) return 'retire';
+
+  return 'en_cours';
+}
+
+/**
+ * Compute dateDebut (earliest date) and dateFin (latest date) from dossiers.
+ */
+function computeDates(members: DossierRow[]): { dateDebut: Date | null; dateFin: Date | null } {
+  const allDates: Date[] = [];
+
+  for (const d of members) {
+    if (d.dateDepot) allDates.push(new Date(d.dateDepot));
+  }
+
+  const endDates: Date[] = [];
+  for (const d of members) {
+    if (d.loiDateJO) endDates.push(new Date(d.loiDateJO));
+    else if (d.dateAdoption) endDates.push(new Date(d.dateAdoption));
+  }
+
+  const dateDebut = allDates.length > 0
+    ? allDates.sort((a, b) => a.getTime() - b.getTime())[0]
+    : null;
+
+  const dateFin = endDates.length > 0
+    ? endDates.sort((a, b) => b.getTime() - a.getTime())[0]
+    : null;
+
+  return { dateDebut, dateFin };
+}
+
+// =============================================================================
 // LABEL PICKER
 // =============================================================================
 
@@ -433,7 +501,7 @@ function pickBestLabel(members: DossierRow[]): string {
     .filter((t): t is string => t !== null && t.length > 0);
 
   if (titresCourts.length > 0) {
-    return titresCourts.sort((a, b) => a.length - b.length)[0];
+    return cleanLabel(titresCourts.sort((a, b) => a.length - b.length)[0]);
   }
 
   // Fallback to shortest titre
@@ -442,8 +510,18 @@ function pickBestLabel(members: DossierRow[]): string {
     .filter((t): t is string => t !== null && t.length > 0);
 
   if (titres.length > 0) {
-    return titres.sort((a, b) => a.length - b.length)[0];
+    return cleanLabel(titres.sort((a, b) => a.length - b.length)[0]);
   }
 
   return members[0].uid;
+}
+
+/**
+ * Clean up labels: replace underscores with spaces, normalize whitespace.
+ */
+function cleanLabel(label: string): string {
+  return label
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
