@@ -55,8 +55,10 @@ export class SujetsService {
           dossierCount: true,
           scrutinCount: true,
           matchMethod: true,
+          status: true,
           dateDebut: true,
           dateFin: true,
+          dateDernierVote: true,
           featured: true,
           featuredOrder: true,
           createdAt: true,
@@ -95,8 +97,12 @@ export class SujetsService {
         dossierCount: true,
         scrutinCount: true,
         matchMethod: true,
+        status: true,
         dateDebut: true,
         dateFin: true,
+        dateDernierVote: true,
+        resume: true,
+        enjeux: true,
         featured: true,
         featuredOrder: true,
         actif: true,
@@ -124,6 +130,7 @@ export class SujetsService {
         category: true,
         dossierCount: true,
         scrutinCount: true,
+        status: true,
         dateDebut: true,
         dateFin: true,
       },
@@ -164,7 +171,12 @@ export class SujetsService {
           urlAN: true,
           urlSenat: true,
           etat: true,
+          dateDepot: true,
+          dateAdoption: true,
           loiNumero: true,
+          loiTitre: true,
+          loiDateJO: true,
+          urlLegifrance: true,
           _count: { select: { scrutins: true } },
         },
       }),
@@ -286,6 +298,31 @@ export class SujetsService {
       GROUP BY gp.nom, gp.slug, gp.couleur, gp.chambre, v.position
     `;
 
+    // Amendements par groupe (parallel query)
+    const amendementStats = await this.prisma.$queryRaw<Array<{
+      groupe_slug: string;
+      groupe_chambre: string;
+      amendement_count: bigint;
+    }>>`
+      SELECT
+        gp.slug as groupe_slug,
+        gp.chambre as groupe_chambre,
+        COUNT(*) as amendement_count
+      FROM amendements a
+      JOIN dossiers_legislatifs dl ON a.dossier_id = dl.id
+      JOIN parlementaires p ON a.parlementaire_id = p.id
+      JOIN groupes_politiques gp ON p.groupe_id = gp.id
+      WHERE dl.sujet_id = ${sujet.id}
+      GROUP BY gp.slug, gp.chambre
+    `;
+
+    // Index amendement counts by groupe key
+    const amendementsByGroupe = new Map<string, number>();
+    for (const row of amendementStats) {
+      const key = `${row.groupe_slug}-${row.groupe_chambre}`;
+      amendementsByGroupe.set(key, Number(row.amendement_count));
+    }
+
     // Transformer en structure par groupe
     const byGroupe: Record<string, {
       nom: string;
@@ -293,6 +330,7 @@ export class SujetsService {
       couleur: string;
       chambre: string;
       votes: { pour: number; contre: number; abstention: number; absent: number };
+      amendements: number;
     }> = {};
 
     for (const row of stats) {
@@ -307,6 +345,7 @@ export class SujetsService {
           couleur: row.groupe_couleur || '#808080',
           chambre: row.groupe_chambre || 'assemblee',
           votes: { pour: 0, contre: 0, abstention: 0, absent: 0 },
+          amendements: amendementsByGroupe.get(groupeKey) ?? 0,
         };
       }
 
