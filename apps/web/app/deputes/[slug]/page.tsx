@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
+import { AmendementSortBadge } from '@/components/AmendementSortBadge';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -182,29 +183,6 @@ function formatDossierLabel(dossier: { titre: string; titreCourt: string | null 
     return humanized.charAt(0).toUpperCase() + humanized.slice(1);
   }
   return short;
-}
-
-function AmendementSortBadge({ sort }: { sort: string | null }) {
-  if (!sort) return null;
-
-  const sortLower = sort.toLowerCase();
-  let className = 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100';
-
-  if (sortLower.includes('adopt')) {
-    className = 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100';
-  } else if (sortLower.includes('rejet')) {
-    className = 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100';
-  } else if (sortLower.includes('retir')) {
-    className = 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100';
-  } else if (sortLower.includes('tomb') || sortLower.includes('entonnoir')) {
-    className = 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-100';
-  }
-
-  return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${className}`}>
-      {sort}
-    </span>
-  );
 }
 
 function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }) {
