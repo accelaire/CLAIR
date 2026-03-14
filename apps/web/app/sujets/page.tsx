@@ -3,7 +3,7 @@
 import { Suspense, useMemo } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Search, ChevronDown, Vote, FileText, Loader2, ArrowRight, Layers } from 'lucide-react';
+import { Search, ChevronDown, Vote, Loader2, Layers, Calendar } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
@@ -18,8 +18,10 @@ interface Sujet {
   dossierCount: number;
   scrutinCount: number;
   matchMethod: string | null;
+  status: string;
   dateDebut: string | null;
   dateFin: string | null;
+  dateDernierVote: string | null;
   featured: boolean;
   featuredOrder: number;
   createdAt: string;
@@ -42,6 +44,18 @@ const MATCH_METHOD_LABELS: Record<string, { label: string; color: string }> = {
   solo: { label: 'Mono-chambre', color: 'bg-slate-100 text-slate-600' },
 };
 
+const STATUS_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
+  en_cours:  { label: 'En cours',   color: 'text-amber-700',  dot: 'bg-amber-500' },
+  adopte:    { label: 'Adopté',     color: 'text-blue-700',   dot: 'bg-blue-500' },
+  rejete:    { label: 'Rejeté',     color: 'text-red-700',    dot: 'bg-red-500' },
+  promulgue: { label: 'Promulgué',  color: 'text-green-700',  dot: 'bg-green-500' },
+  caduc:     { label: 'Caduc',      color: 'text-gray-500',   dot: 'bg-gray-400' },
+  retire:    { label: 'Retiré',     color: 'text-orange-700', dot: 'bg-orange-500' },
+};
+
+const formatDateShort = (dateStr: string) =>
+  new Date(dateStr).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
+
 function SujetsPageContent() {
   const [filters, setFilter, , clearAll] = useUrlFilters<{
     search: string;
@@ -62,7 +76,7 @@ function SujetsPageContent() {
         params: {
           search: filters.search || undefined,
           page: pageParam,
-          limit: 20,
+          limit: 24,
         },
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
@@ -79,7 +93,6 @@ function SujetsPageContent() {
   const sujets = data?.pages.flatMap((page) => page.data) ?? [];
   const total = data?.pages[0]?.meta.total ?? 0;
 
-  // Client-side filter by matchMethod (API doesn't have this filter yet)
   const filteredSujets = useMemo(() => {
     if (!filters.matchMethod) return sujets;
     return sujets.filter(s => s.matchMethod === filters.matchMethod);
@@ -98,9 +111,6 @@ function SujetsPageContent() {
         <h1 className="text-3xl font-bold">Sujets parlementaires</h1>
         <p className="mt-2 text-muted-foreground">
           {total > 0 ? total.toLocaleString('fr-FR') : '\u2014'} sujets regroupant les dossiers AN et S&eacute;nat sur un m&ecirc;me texte
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Les sujets cross-chambre regroupent les dossiers de l&apos;Assembl&eacute;e nationale et du S&eacute;nat portant sur le m&ecirc;me texte de loi (navette parlementaire).
         </p>
       </div>
 
@@ -121,7 +131,6 @@ function SujetsPageContent() {
           </div>
         }
       >
-        {/* Filtre par type de match */}
         <div className="relative md:w-auto">
           <select
             value={filters.matchMethod}
@@ -136,13 +145,15 @@ function SujetsPageContent() {
         </div>
       </FilterBar>
 
-      {/* Loading */}
+      {/* Loading skeleton */}
       {isLoading && (
-        <div className="space-y-4">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="animate-pulse rounded-lg border bg-card p-4">
-              <div className="h-5 w-3/4 rounded bg-muted mb-2" />
-              <div className="h-4 w-1/2 rounded bg-muted" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="animate-pulse rounded-lg border bg-card p-5">
+              <div className="h-4 w-20 rounded bg-muted mb-3" />
+              <div className="h-5 w-full rounded bg-muted mb-2" />
+              <div className="h-5 w-3/4 rounded bg-muted mb-4" />
+              <div className="h-4 w-1/3 rounded bg-muted" />
             </div>
           ))}
         </div>
@@ -155,69 +166,61 @@ function SujetsPageContent() {
         </div>
       )}
 
-      {/* Liste */}
+      {/* Card grid */}
       {filteredSujets.length > 0 && (
         <>
-          <div className="space-y-4">
-            {filteredSujets.map((sujet) => (
-              <Link
-                key={sujet.id}
-                href={`/sujets/${sujet.slug}`}
-                className="block rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex-1 min-w-0">
-                    {/* Badges */}
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      {sujet.matchMethod && MATCH_METHOD_LABELS[sujet.matchMethod] && (
-                        <span className={`px-2 py-0.5 text-xs font-medium rounded ${MATCH_METHOD_LABELS[sujet.matchMethod].color}`}>
-                          {MATCH_METHOD_LABELS[sujet.matchMethod].label}
-                        </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredSujets.map((sujet) => {
+              const statusCfg = STATUS_CONFIG[sujet.status] ?? STATUS_CONFIG.en_cours;
+
+              return (
+                <Link
+                  key={sujet.id}
+                  href={`/sujets/${sujet.slug}`}
+                  className="group rounded-lg border bg-card p-5 transition-all hover:border-primary hover:shadow-md flex flex-col"
+                >
+                  {/* Status badge */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${statusCfg.color}`}>
+                      <span className={`h-2 w-2 rounded-full ${statusCfg.dot}`} />
+                      {statusCfg.label}
+                    </span>
+                  </div>
+
+                  {/* Title */}
+                  <h3 className="font-semibold leading-tight mb-auto line-clamp-3 group-hover:text-primary transition-colors">
+                    {sujet.label}
+                  </h3>
+
+                  {/* Footer: key dates */}
+                  <div className="flex flex-col gap-1.5 mt-4 pt-3 border-t text-[11px] text-muted-foreground">
+                    <div className="flex items-center justify-between">
+                      {sujet.dateDebut ? (
+                        <span>D&eacute;p&ocirc;t : {formatDateShort(sujet.dateDebut)}</span>
+                      ) : (
+                        <span />
                       )}
-                      {sujet.category && (
-                        <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded">
-                          {sujet.category}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Titre */}
-                    <h3 className="font-semibold text-lg leading-tight mb-2 line-clamp-2">
-                      {sujet.label}
-                    </h3>
-
-                    {/* Description */}
-                    {sujet.description && (
-                      <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
-                        {sujet.description}
-                      </p>
-                    )}
-
-                    {/* Meta */}
-                    <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                       <span className="flex items-center gap-1">
-                        <FileText className="h-4 w-4" />
-                        {sujet.dossierCount} dossier{sujet.dossierCount > 1 ? 's' : ''}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Vote className="h-4 w-4" />
+                        <Vote className="h-3 w-3" />
                         {sujet.scrutinCount} scrutin{sujet.scrutinCount > 1 ? 's' : ''}
                       </span>
-                      {sujet.matchMethod === 'cross_ref' && (
-                        <span className="flex items-center gap-1 text-indigo-600">
-                          <Layers className="h-4 w-4" />
-                          AN + S&eacute;nat
-                        </span>
-                      )}
                     </div>
+                    {(sujet.dateDernierVote || sujet.dateFin) && (
+                      <div className="flex items-center justify-between">
+                        {sujet.dateDernierVote && (
+                          <span>Dernier vote : {formatDateShort(sujet.dateDernierVote)}</span>
+                        )}
+                        {sujet.status === 'promulgue' && sujet.dateFin && (
+                          <span className="text-green-700 font-medium">
+                            Promulgu&eacute; {formatDateShort(sujet.dateFin)}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
-
-                  <div className="flex items-center">
-                    <ArrowRight className="h-5 w-5 text-muted-foreground" />
-                  </div>
-                </div>
-              </Link>
-            ))}
+                </Link>
+              );
+            })}
           </div>
 
           {/* Infinite scroll trigger */}
@@ -253,11 +256,13 @@ export default function SujetsPage() {
   return (
     <Suspense fallback={
       <div className="container mx-auto px-4 py-8">
-        <div className="space-y-4">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="animate-pulse rounded-lg border bg-card p-4">
-              <div className="h-5 w-3/4 rounded bg-muted mb-2" />
-              <div className="h-4 w-1/2 rounded bg-muted" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="animate-pulse rounded-lg border bg-card p-5">
+              <div className="h-4 w-20 rounded bg-muted mb-3" />
+              <div className="h-5 w-full rounded bg-muted mb-2" />
+              <div className="h-5 w-3/4 rounded bg-muted mb-4" />
+              <div className="h-4 w-1/3 rounded bg-muted" />
             </div>
           ))}
         </div>
