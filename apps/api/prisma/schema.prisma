@@ -267,14 +267,20 @@ model Sujet {
   dossierCount  Int       @default(0) @map("dossier_count")
   scrutinCount  Int       @default(0) @map("scrutin_count")
 
-  dateDebut     DateTime? @map("date_debut")
-  dateFin       DateTime? @map("date_fin")
+  dateDebut       DateTime? @map("date_debut")
+  dateFin         DateTime? @map("date_fin")
+  dateDernierVote DateTime? @map("date_dernier_vote")
 
   actif         Boolean   @default(true)
   featured      Boolean   @default(false)
   featuredOrder Int       @default(0) @map("featured_order")
 
   matchMethod   String?   @map("match_method")  // 'cross_ref' | 'loi_numero' | 'solo'
+  status        String    @default("en_cours")  // 'en_cours' | 'adopte' | 'rejete' | 'promulgue' | 'caduc' | 'retire'
+
+  // Contenu enrichi (généré par LLM)
+  resume        String?   // Résumé du sujet en langage accessible
+  enjeux        String?   // Enjeux et implications du texte
 
   dossiers      DossierLegislatif[]
 
