@@ -241,6 +241,11 @@ model DossierLegislatif {
   scrutins     Scrutin[]
   amendements  Amendement[]
 
+  // Contenu enrichi par IA
+  resumeIA       String?   @map("resume_ia")
+  iaContentHash  String?   @map("ia_content_hash")
+  iaGeneratedAt  DateTime? @map("ia_generated_at")
+
   // Métadonnées source
   sourceData   Json?    @map("source_data")
   createdAt    DateTime @default(now()) @map("created_at")
@@ -281,6 +286,9 @@ model Sujet {
   // Contenu enrichi (généré par LLM)
   resume        String?   // Résumé du sujet en langage accessible
   enjeux        String?   // Enjeux et implications du texte
+
+  iaContentHash  String?   @map("ia_content_hash")
+  iaGeneratedAt  DateTime? @map("ia_generated_at")
 
   dossiers      DossierLegislatif[]
 
@@ -339,6 +347,11 @@ model Scrutin {
 
   votes         Vote[]
   interventions Intervention[]  // Interventions liées (explications de vote, débats)
+
+  // Contenu enrichi par IA
+  resumeIA       String?   @map("resume_ia")
+  iaContentHash  String?   @map("ia_content_hash")
+  iaGeneratedAt  DateTime? @map("ia_generated_at")
 
   // Métadonnées source
   sourceUrl  String? @map("source_url")
