@@ -290,6 +290,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
           loiTitre: true,
           loiDateJO: true,
           urlLegifrance: true,
+          resumeIA: true,
           sujet: {
             select: {
               slug: true,

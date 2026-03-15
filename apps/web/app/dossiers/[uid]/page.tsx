@@ -6,7 +6,7 @@ import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   FileText, Calendar, Vote, CheckCircle, XCircle, ExternalLink,
-  ArrowLeft, Loader2, Scale, ChevronDown, ChevronUp, X, Users, Layers,
+  ArrowLeft, Loader2, Scale, ChevronDown, ChevronUp, X, Users, Layers, BookOpen,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
@@ -78,6 +78,7 @@ interface DossierDetail {
   loiTitre: string | null;
   loiDateJO: string | null;
   urlLegifrance: string | null;
+  resumeIA: string | null;
   sujet: {
     slug: string;
     label: string;
@@ -465,6 +466,22 @@ export default function DossierDetailPage() {
           )}
         </div>
       </div>
+
+      {/* En clair — IA summary */}
+      {dossier.resumeIA && (
+        <div className="rounded-lg border bg-card p-5 mb-8">
+          <h2 className="text-sm font-semibold flex items-center gap-2 mb-2">
+            <BookOpen className="h-4 w-4" />
+            En clair
+          </h2>
+          <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+            {dossier.resumeIA}
+          </p>
+          <p className="text-xs text-muted-foreground/60 mt-2">
+            Résumé généré par IA
+          </p>
+        </div>
+      )}
 
       {/* Stats row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">

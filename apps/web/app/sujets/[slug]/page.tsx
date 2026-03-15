@@ -54,6 +54,15 @@ interface SujetDossier {
   scrutinCount: number;
 }
 
+/** Préfixe le type de procédure si le titre commence par une minuscule */
+const formatDossierTitre = (titre: string, procedureLibelle?: string | null): string => {
+  const firstChar = titre.charAt(0);
+  if (firstChar !== firstChar.toUpperCase() && procedureLibelle) {
+    return `${procedureLibelle} ${titre}`;
+  }
+  return titre;
+};
+
 interface SujetScrutin {
   id: string;
   numero: number;
@@ -371,6 +380,9 @@ function ContextSection({ sujet, dossiers }: { sujet: SujetDetail; dossiers: Suj
             <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">{sujet.enjeux}</p>
           </div>
         )}
+        <p className="text-xs text-muted-foreground/60">
+          Résumé généré par IA
+        </p>
       </div>,
     );
   }
@@ -601,7 +613,7 @@ function DossiersPanel({ dossiers }: { dossiers: SujetDossier[] }) {
                 )}
               </div>
               <p className="text-sm font-medium leading-tight line-clamp-2">
-                {dossier.titreCourt || dossier.titre}
+                {formatDossierTitre(dossier.titre, dossier.procedureLibelle)}
               </p>
             </div>
             <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
