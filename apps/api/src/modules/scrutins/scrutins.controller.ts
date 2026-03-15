@@ -10,6 +10,21 @@ import { buildTextSearchCondition } from '../../utils/search';
 // Cache TTL
 const CACHE_TTL_1H = 3600;
 
+// Longueur max du preview d'intervention (le reste est chargé à la demande)
+const CONTENU_PREVIEW_LENGTH = 500;
+
+/** Tronque le contenu et ajoute hasMore si nécessaire */
+function truncateContenu(intervention: { contenu: string; [key: string]: any }) {
+  const { contenu, ...rest } = intervention;
+  return {
+    ...rest,
+    contenu: contenu.length > CONTENU_PREVIEW_LENGTH
+      ? contenu.substring(0, CONTENU_PREVIEW_LENGTH)
+      : contenu,
+    hasMore: contenu.length > CONTENU_PREVIEW_LENGTH,
+  };
+}
+
 // Fix AN sourceUrl format: VTANR5L17V4946 -> 4946
 const fixSourceUrl = (sourceUrl: string | null, chambre: string, numero: number): string | null => {
   if (!sourceUrl) return null;
@@ -332,44 +347,52 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
               dateDepot: true,
             },
           },
-          interventions: {
-            take: 5, // Premières interventions seulement, le reste via endpoint paginé
-            orderBy: [{ date: 'asc' }, { ordre: 'asc' }],
-            select: {
-              id: true,
-              type: true,
-              contenu: true,
-              date: true,
-              ordre: true,
-              sourceUrl: true,
-              parlementaire: {
-                select: {
-                  id: true,
-                  slug: true,
-                  nom: true,
-                  prenom: true,
-                  photoUrl: true,
-                  groupe: {
-                    select: {
-                      nom: true,
-                      couleur: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
-          _count: {
-            select: {
-              interventions: true,
-            },
-          },
         },
       });
 
       if (!scrutin) {
         throw new ApiError(404, 'Scrutin non trouvé');
       }
+
+      // Interventions de la séance (même date + chambre) — pas juste celles liées au scrutin
+      const seanceInterventionSelect = {
+        id: true,
+        type: true,
+        contenu: true,
+        date: true,
+        ordre: true,
+        sourceUrl: true,
+        orateurNom: true,
+        orateurPrenom: true,
+        orateurQualite: true,
+        parlementaire: {
+          select: {
+            id: true,
+            slug: true,
+            nom: true,
+            prenom: true,
+            photoUrl: true,
+            groupe: {
+              select: {
+                nom: true,
+                couleur: true,
+              },
+            },
+          },
+        },
+      };
+
+      const seanceWhere = { date: scrutin.date, chambre: scrutin.chambre };
+
+      const [seanceInterventions, totalSeanceInterventions] = await Promise.all([
+        fastify.prisma.intervention.findMany({
+          where: seanceWhere,
+          take: 5,
+          orderBy: [{ date: 'asc' }, { ordre: 'asc' }],
+          select: seanceInterventionSelect,
+        }),
+        fastify.prisma.intervention.count({ where: seanceWhere }),
+      ]);
 
       // Sélection des champs votes communs
       const voteSelect = {
@@ -442,17 +465,15 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         absent: votesAbsent,
       };
 
-      // Extraire _count et le reste du scrutin
-      const { _count, ...scrutinData } = scrutin;
-
       return {
         data: {
-          ...scrutinData,
-          sourceUrl: fixSourceUrl(scrutinData.sourceUrl, scrutinData.chambre, scrutinData.numero),
+          ...scrutin,
+          interventions: seanceInterventions.map(truncateContenu),
+          sourceUrl: fixSourceUrl(scrutin.sourceUrl, scrutin.chambre, scrutin.numero),
           votesByPosition,
           votesByGroupe,
-          totalVotes: scrutinData.nombrePour + scrutinData.nombreContre + scrutinData.nombreAbstention,
-          totalInterventions: _count?.interventions || 0,
+          totalVotes: scrutin.nombrePour + scrutin.nombreContre + scrutin.nombreAbstention,
+          totalInterventions: totalSeanceInterventions,
         },
       };
     },
@@ -498,21 +519,23 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
 
       const scrutin = await fastify.prisma.scrutin.findFirst({
         where: whereClause,
-        select: { id: true },
+        select: { id: true, date: true, chambre: true },
       });
 
       if (!scrutin) {
         throw new ApiError(404, 'Scrutin non trouvé');
       }
 
-      // Build intervention where clause with optional search
+      // Interventions de la séance (même date + chambre)
       const searchTerm = search?.trim();
-      const interventionWhere: any = { scrutinId: scrutin.id };
+      const interventionWhere: any = { date: scrutin.date, chambre: scrutin.chambre };
       if (searchTerm) {
         interventionWhere.OR = [
           { contenu: { contains: searchTerm, mode: 'insensitive' } },
           { parlementaire: { nom: { contains: searchTerm, mode: 'insensitive' } } },
           { parlementaire: { prenom: { contains: searchTerm, mode: 'insensitive' } } },
+          { orateurNom: { contains: searchTerm, mode: 'insensitive' } },
+          { orateurPrenom: { contains: searchTerm, mode: 'insensitive' } },
         ];
       }
 
@@ -529,6 +552,9 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
             date: true,
             ordre: true,
             sourceUrl: true,
+            orateurNom: true,
+            orateurPrenom: true,
+            orateurQualite: true,
             parlementaire: {
               select: {
                 id: true,
@@ -552,7 +578,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       const totalPages = Math.ceil(total / limit);
 
       return {
-        data: interventions,
+        data: interventions.map(truncateContenu),
         meta: {
           total,
           page,
@@ -562,6 +588,38 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           hasPrev: page > 1,
         },
       };
+    },
+  });
+
+  // ===========================================================================
+  // GET /api/v1/scrutins/interventions/:id - Contenu complet d'une intervention
+  // ===========================================================================
+  fastify.get('/interventions/:id', {
+    schema: {
+      tags: ['Scrutins'],
+      summary: 'Contenu complet d\'une intervention',
+      description: 'Retourne le texte intégral d\'une intervention par son ID',
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+        },
+      },
+    },
+    handler: async (request, _reply) => {
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+
+      const intervention = await fastify.prisma.intervention.findUnique({
+        where: { id },
+        select: { id: true, contenu: true, sourceUrl: true },
+      });
+
+      if (!intervention) {
+        throw new ApiError(404, 'Intervention non trouvée');
+      }
+
+      return { data: intervention };
     },
   });
 

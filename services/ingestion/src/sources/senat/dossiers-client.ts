@@ -53,7 +53,7 @@ export interface TransformedDossierSenat {
   procedureCode: string | null;
   procedureLibelle: string | null;
   urlSenat: string;
-  etat: 'en_cours' | 'adopte' | 'rejete' | 'promulgue' | null;
+  etat: 'en_cours' | 'adopte' | 'rejete' | 'promulgue' | 'caduc' | 'fusionne' | 'retire' | null;
   loiNumero: string | null;
   loiDateJO: Date | null;
   urgence: boolean;
@@ -74,15 +74,29 @@ function cleanString(s: string | null): string | null {
   return s.trim() || null;
 }
 
+/**
+ * Mappe le code etaloicod DOSLEG vers un état normalisé.
+ * Table de référence DOSLEG (etaloi):
+ *   01 = en cours de discussion
+ *   02 = fusionné
+ *   03 = rejeté
+ *   04 = promulgué ou adopté (ppr)
+ *   05 = caduc
+ *   06 = retiré
+ */
 function mapEtat(etaloicod: string | null): TransformedDossierSenat['etat'] {
   if (!etaloicod) return null;
-  const code = etaloicod.trim().toUpperCase();
+  const code = etaloicod.trim();
   switch (code) {
-    case 'AD': return 'adopte';
-    case 'PR': return 'promulgue';
-    case 'RE': return 'rejete';
-    case 'EC': return 'en_cours';
-    default: return 'en_cours';
+    case '01': return 'en_cours';
+    case '02': return 'fusionne';
+    case '03': return 'rejete';
+    case '04': return 'promulgue';
+    case '05': return 'caduc';
+    case '06': return 'retire';
+    default:
+      logger.warn({ etaloicod: code }, 'Unknown DOSLEG etaloicod, defaulting to en_cours');
+      return 'en_cours';
   }
 }
 

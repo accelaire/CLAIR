@@ -11,6 +11,7 @@ import { useUrlFilters, useUrlDateRange } from '@/hooks/useUrlFilters';
 import { DateRangePicker } from '@/components/DateRangePicker';
 import { LobbyisteLogo } from '@/components/lobbying';
 import { FilterBar } from '@/components/FilterBar';
+import { MultiSelectFilter } from '@/components/MultiSelectFilter';
 
 interface ActionLobby {
   id: string;
@@ -59,7 +60,6 @@ const typeLabels: Record<string, { label: string; icon: typeof Building2 }> = {
 
 const cibleLabels: Record<string, string> = {
   parlementaire: 'Parlement',
-  depute: 'Parlement',
   ministre: 'Gouvernement',
   presidence: 'Présidence',
   collectivite: 'Collectivités',
@@ -112,10 +112,11 @@ function ActionsPageContent() {
   const [filters, setFilter, setFilters, clearAll] = useUrlFilters<{
     search: string;
     cible: string;
-    secteur: string;
+    texteVise: string;
+    secteurs: string;
     sort: string;
     order: string;
-  }>(['search', 'cible', 'secteur', 'sort', 'order'], {
+  }>(['search', 'cible', 'texteVise', 'secteurs', 'sort', 'order'], {
     defaults: { sort: 'dateDebut', order: 'desc' },
   });
 
@@ -123,6 +124,7 @@ function ActionsPageContent() {
 
   const sort = (filters.sort || 'dateDebut') as 'dateDebut' | 'lobbyiste';
   const order = (filters.order || 'desc') as 'asc' | 'desc';
+  const selectedSecteurs = filters.secteurs ? filters.secteurs.split(',').filter(Boolean) : [];
 
   // Formater les dates pour l'API
   const dateFrom = dateRange.from?.toISOString().split('T')[0];
@@ -143,7 +145,8 @@ function ActionsPageContent() {
         params: {
           search: filters.search || undefined,
           cible: filters.cible || undefined,
-          secteur: filters.secteur || undefined,
+          texteVise: filters.texteVise || undefined,
+          secteurs: filters.secteurs || undefined,
           dateFrom: dateFrom || undefined,
           dateTo: dateTo || undefined,
           page: pageParam,
@@ -177,12 +180,13 @@ function ActionsPageContent() {
   const activeFilterCount = useMemo(() => {
     let count = 0;
     if (filters.cible) count++;
-    if (filters.secteur) count++;
+    if (filters.texteVise) count++;
+    if (filters.secteurs) count++;
     if (dateRange.from || dateRange.to) count++;
     if (filters.sort && filters.sort !== 'dateDebut') count++;
     if (filters.order && filters.order !== 'desc' && filters.sort === 'dateDebut') count++;
     return count;
-  }, [filters.cible, filters.secteur, filters.sort, filters.order, dateRange.from, dateRange.to]);
+  }, [filters.cible, filters.texteVise, filters.secteurs, filters.sort, filters.order, dateRange.from, dateRange.to]);
 
   const handleClearFilters = () => {
     clearAll(['dateFrom', 'dateTo']);
@@ -237,23 +241,37 @@ function ActionsPageContent() {
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>
 
-        {/* Filtre par secteur */}
-        <div className="relative md:w-auto md:min-w-[200px] md:flex-1 md:max-w-[300px]">
+        {/* Filtre par texte visé */}
+        <div className="relative md:w-auto">
           <select
-            value={filters.secteur}
-            onChange={(e) => setFilter('secteur', e.target.value)}
+            value={filters.texteVise}
+            onChange={(e) => setFilter('texteVise', e.target.value)}
             className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
-            <option value="">Tous les secteurs</option>
-            {secteursData?.slice(0, 20).map((s: { name: string; count: number }) => (
-              <option key={s.name} value={s.name}>
-                {s.name} ({s.count})
-              </option>
-            ))}
+            <option value="">Tous les textes visés</option>
+            <option value="Lois, y compris constitutionnelles">Lois</option>
+            <option value="Actes réglementaires">Actes réglementaires</option>
+            <option value="Autres décisions publiques">Autres décisions publiques</option>
+            <option value="Décisions d'espèce">Décisions d&apos;espèce</option>
+            <option value="Ordonnances de l'article 38 de la Constitution">Ordonnances (art. 38)</option>
+            <option value="Marchés publics d'une valeur supérieure aux seuils européens">Marchés publics</option>
           </select>
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>
 
+        {/* Filtre par secteur (multi-select) */}
+        <MultiSelectFilter
+          options={(secteursData || [])
+            .filter((s: { actionsCount: number }) => s.actionsCount > 0)
+            .map((s: { slug: string; name: string; actionsCount: number }) => ({
+              value: s.slug,
+              label: s.name,
+              count: s.actionsCount,
+            }))}
+          selected={selectedSecteurs}
+          onChange={(sel) => setFilter('secteurs', sel.join(','))}
+          placeholder="Tous les secteurs"
+        />
         {/* Tri */}
         <div className="relative md:w-auto">
           <select
@@ -449,9 +467,9 @@ function ActionsPageContent() {
         <div className="text-center py-12">
           <Briefcase className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
           <p className="text-muted-foreground">Aucune action trouvée</p>
-          {(filters.search || filters.cible || filters.secteur) && (
+          {(filters.search || filters.cible || filters.texteVise || filters.secteurs) && (
             <button
-              onClick={() => setFilters({ search: '', cible: '', secteur: '' })}
+              onClick={() => setFilters({ search: '', cible: '', texteVise: '', secteurs: '' })}
               className="mt-2 text-sm text-primary hover:underline"
             >
               Effacer les filtres

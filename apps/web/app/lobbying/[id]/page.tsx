@@ -33,6 +33,11 @@ interface Action {
   } | null;
 }
 
+interface SecteurRef {
+  slug: string;
+  label: string;
+}
+
 interface LobbyisteDetail {
   id: string;
   siren: string | null;
@@ -44,7 +49,8 @@ interface LobbyisteDetail {
   adresse: string | null;
   ville: string | null;
   siteWeb: string | null;
-  actions: Action[];
+  actions: (Action & { secteursList?: SecteurRef[] })[];
+  secteursList?: SecteurRef[];
 }
 
 const typeLabels: Record<string, string> = {
@@ -105,7 +111,6 @@ const getSecteurColor = (secteur: string): string => {
 
 const cibleLabels: Record<string, string> = {
   parlementaire: 'Parlement',
-  depute: 'Parlement',
   ministre: 'Gouvernement',
   presidence: 'Présidence',
   collectivite: 'Collectivités',
@@ -191,15 +196,21 @@ export default function LobbyisteDetailPage() {
           <LobbyisteLogo siteWeb={lobbyiste.siteWeb} nom={lobbyiste.nom} size="lg" />
           <div>
             <h1 className="text-2xl md:text-3xl font-bold mb-2">{lobbyiste.nom}</h1>
-            <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
               {lobbyiste.type && (
                 <span className="px-2 py-0.5 bg-primary/10 text-primary rounded text-sm">
                   {typeLabels[lobbyiste.type] || lobbyiste.type}
                 </span>
               )}
-              {lobbyiste.secteur && (
-                <span className="text-sm">{lobbyiste.secteur}</span>
-              )}
+              {lobbyiste.secteursList && lobbyiste.secteursList.length > 0
+                ? lobbyiste.secteursList.map((s) => (
+                    <span key={s.slug} className="px-2 py-0.5 rounded text-sm bg-muted text-muted-foreground">
+                      {s.label}
+                    </span>
+                  ))
+                : lobbyiste.secteur && (
+                    <span className="px-2 py-0.5 rounded text-sm bg-muted text-muted-foreground">{lobbyiste.secteur}</span>
+                  )}
               {lobbyiste.siren && (
                 <span className="text-sm font-mono">SIREN: {lobbyiste.siren}</span>
               )}
@@ -303,11 +314,17 @@ export default function LobbyisteDetailPage() {
                 <div className="flex flex-col gap-3">
                   {/* Tags: Secteur + Cible type + Date */}
                   <div className="flex flex-wrap items-center gap-2 text-sm">
-                    {secteur && (
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${getSecteurColor(secteur)}`}>
-                        {secteur}
-                      </span>
-                    )}
+                    {action.secteursList && action.secteursList.length > 0
+                      ? action.secteursList.map((s) => (
+                          <span key={s.slug} className={`px-2 py-0.5 rounded text-xs font-medium ${getSecteurColor(s.label)}`}>
+                            {s.label}
+                          </span>
+                        ))
+                      : secteur && (
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${getSecteurColor(secteur)}`}>
+                            {secteur}
+                          </span>
+                        )}
                     {action.cible && (
                       <span className="px-2 py-0.5 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded text-xs">
                         {cibleLabels[action.cible] || action.cible}

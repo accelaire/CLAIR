@@ -100,7 +100,8 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         }),
         fastify.prisma.actionLobby.findMany({
           select: {
-            id: true, description: true, cible: true, dateDebut: true,
+            id: true, cible: true, dateDebut: true,
+            actionDescription: { select: { texte: true } },
             lobbyiste: {
               select: { id: true, nom: true, type: true, secteur: true, siteWeb: true },
             },
@@ -180,7 +181,11 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
       const result = {
         stats,
         recentScrutins,
-        recentActions,
+        recentActions: recentActions.map((a) => ({
+          ...a,
+          description: a.actionDescription.texte,
+          actionDescription: undefined,
+        })),
         trendingDossiers: trendingDossiers.map((d) => {
           const vs = statsMap.get(d.id) || { adopte: 0, rejete: 0 };
           return {

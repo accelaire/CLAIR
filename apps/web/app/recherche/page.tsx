@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Search, Users, Vote, Building2, FileText, Loader2, X } from 'lucide-react';
 import { api } from '@/lib/api';
+import { getDossierEtat } from '@/lib/dossiers';
 import { useDebouncedCallback } from 'use-debounce';
 
 interface SearchResult {
@@ -227,17 +228,14 @@ export default function RecherchePage() {
               <>
                 <h3 className="font-semibold line-clamp-2">{formatDossierTitre(result.titre || '', result.procedureLibelle)}</h3>
                 <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-                  {result.etat && (
-                    <span className={
-                      result.etat === 'promulgue' ? 'text-green-600' :
-                      result.etat === 'rejete' ? 'text-red-600' : ''
-                    }>
-                      {result.etat === 'promulgue' ? 'Promulgué' :
-                       result.etat === 'adopte' ? 'Adopté' :
-                       result.etat === 'rejete' ? 'Rejeté' :
-                       result.etat === 'en_cours' ? 'En cours' : result.etat}
-                    </span>
-                  )}
+                  {(() => {
+                    const etatInfo = getDossierEtat(result.etat);
+                    return etatInfo ? (
+                      <span className={etatInfo.color}>
+                        {etatInfo.label}
+                      </span>
+                    ) : null;
+                  })()}
                   {result.loiNumero && (
                     <>
                       <span>•</span>

@@ -66,9 +66,13 @@ interface InterventionScrutin {
   id: string;
   type: string;
   contenu: string;
+  hasMore?: boolean;
   date: string;
   ordre: number | null;
   sourceUrl: string | null;
+  orateurNom: string | null;
+  orateurPrenom: string | null;
+  orateurQualite: string | null;
   parlementaire: {
     id: string;
     slug: string;
@@ -79,7 +83,7 @@ interface InterventionScrutin {
       nom: string;
       couleur: string | null;
     } | null;
-  };
+  } | null;
 }
 
 interface ScrutinDetail {
@@ -278,6 +282,7 @@ export default function ScrutinDetailPage() {
     const interventionsToCheck = [...(data?.data.interventions || []), ...allInterventions];
     interventionsToCheck.forEach(intervention => {
       const p = intervention.parlementaire;
+      if (!p) return; // Non-parlementaire (ministre, etc.) — pas de page profil
       const key = normalizeString(`${p.prenom} ${p.nom}`);
       if (!parlementaires.has(key)) {
         parlementaires.set(key, {
@@ -457,7 +462,7 @@ export default function ScrutinDetailPage() {
       ? [{ key: 'amendements' as const, label: 'Amendements', icon: FileText, count: amendementsCount }]
       : []),
     ...(totalInterventions > 0
-      ? [{ key: 'debats' as const, label: 'Débats', icon: MessageSquare, count: totalInterventions }]
+      ? [{ key: 'debats' as const, label: 'Débats de la séance', icon: MessageSquare, count: totalInterventions }]
       : []),
     { key: 'vote' as const, label: 'Vote', icon: Vote, count: scrutin.totalVotes },
   ];

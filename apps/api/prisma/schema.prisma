@@ -223,7 +223,7 @@ model DossierLegislatif {
   urlSenat     String?  @map("url_senat")   // URL sur senat.fr
 
   // État du dossier
-  etat         String?  // 'en_cours', 'adopte', 'rejete', 'promulgue'
+  etat         String?  // 'en_cours', 'adopte', 'rejete', 'promulgue', 'caduc', 'fusionne', 'retire'
   dateDepot    DateTime? @map("date_depot")
   dateAdoption DateTime? @map("date_adoption")
 
@@ -343,8 +343,14 @@ model Vote {
 model Intervention {
   id String @id @default(uuid())
 
-  parlementaireId String @map("parlementaire_id")
-  parlementaire   Parlementaire @relation(fields: [parlementaireId], references: [id], onDelete: Cascade)
+  // Parlementaire (optionnel — null pour les non-parlementaires : ministres, etc.)
+  parlementaireId String? @map("parlementaire_id")
+  parlementaire   Parlementaire? @relation(fields: [parlementaireId], references: [id], onDelete: Cascade)
+
+  // Infos orateur (toujours renseignées, indispensables quand parlementaire est null)
+  orateurNom     String?  @map("orateur_nom")
+  orateurPrenom  String?  @map("orateur_prenom")
+  orateurQualite String?  @map("orateur_qualite") // 'ministre', 'secrétaire d\'état', etc.
 
   // Chambre (pour cohérence, même si lié au parlementaire)
   chambre  String   @default("assemblee") // 'assemblee' | 'senat'
@@ -446,7 +452,8 @@ model Lobbyiste {
   nbLobbyistes Int?   @map("nb_lobbyistes")
   siteWeb      String? @map("site_web")
 
-  actions ActionLobby[]
+  actions  ActionLobby[]
+  secteurs LobbyisteSecteur[]
 
   // Métadonnées source
   sourceId   String? @map("source_id")
@@ -471,9 +478,15 @@ model ActionLobby {
   parlementaireId String? @map("parlementaire_id")
   parlementaire   Parlementaire? @relation(fields: [parlementaireId], references: [id])
   cible    String? // 'parlementaire', 'ministre', 'administration', 'autre'
-  cibleNom String? @map("cible_nom")
 
-  description String
+  // Cible nom normalisé (lookup table)
+  cibleTypeId Int?       @map("cible_type_id")
+  cibleType   CibleType? @relation(fields: [cibleTypeId], references: [id])
+
+  // Description normalisée (lookup table)
+  descriptionId Int                @map("description_id")
+  actionDescription ActionDescription @relation(fields: [descriptionId], references: [id])
+
   dateDebut   DateTime  @map("date_debut")
   dateFin     DateTime? @map("date_fin")
 
@@ -484,13 +497,73 @@ model ActionLobby {
   texteVise     String? @map("texte_vise")
   texteViseNom  String? @map("texte_vise_nom")
 
+  secteurs ActionSecteur[]
+
   sourceUrl String?  @map("source_url")
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([lobbyisteId])
   @@index([parlementaireId])
+  @@index([cibleTypeId])
+  @@index([descriptionId])
   @@index([dateDebut])
   @@map("actions_lobby")
+}
+
+model Secteur {
+  id         String   @id // slug: "agriculture-agroalimentaire"
+  label      String   @unique // "Agriculture, agroalimentaire"
+  lobbyistes LobbyisteSecteur[]
+  actions    ActionSecteur[]
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("secteurs")
+}
+
+model LobbyisteSecteur {
+  id          String    @id @default(uuid())
+  lobbyisteId String    @map("lobbyiste_id")
+  lobbyiste   Lobbyiste @relation(fields: [lobbyisteId], references: [id], onDelete: Cascade)
+  secteurId   String    @map("secteur_id")
+  secteur     Secteur   @relation(fields: [secteurId], references: [id], onDelete: Cascade)
+
+  @@unique([lobbyisteId, secteurId])
+  @@index([lobbyisteId])
+  @@index([secteurId])
+  @@map("lobbyistes_secteurs")
+}
+
+model ActionSecteur {
+  id        String      @id @default(uuid())
+  actionId  String      @map("action_id")
+  action    ActionLobby @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  secteurId String      @map("secteur_id")
+  secteur   Secteur     @relation(fields: [secteurId], references: [id], onDelete: Cascade)
+
+  @@unique([actionId, secteurId])
+  @@index([actionId])
+  @@index([secteurId])
+  @@map("actions_secteurs")
+}
+
+// =============================================================================
+// NORMALISATION ACTIONS LOBBY (lookup tables)
+// =============================================================================
+
+model CibleType {
+  id      Int           @id @default(autoincrement())
+  label   String        @unique
+  actions ActionLobby[]
+
+  @@map("cible_types")
+}
+
+model ActionDescription {
+  id      Int           @id @default(autoincrement())
+  texte   String        @unique
+  actions ActionLobby[]
+
+  @@map("action_descriptions")
 }
 
 // =============================================================================

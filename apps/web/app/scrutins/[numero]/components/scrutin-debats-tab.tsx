@@ -1,19 +1,24 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
   Users, ExternalLink, ArrowDown, Loader2, Search,
 } from 'lucide-react';
+import { ExpandableText } from '@/components/ui/expandable-text';
 
 interface InterventionScrutin {
   id: string;
   type: string;
   contenu: string;
+  hasMore?: boolean;
   date: string;
   ordre: number | null;
   sourceUrl: string | null;
+  orateurNom: string | null;
+  orateurPrenom: string | null;
+  orateurQualite: string | null;
   parlementaire: {
     id: string;
     slug: string;
@@ -24,7 +29,7 @@ interface InterventionScrutin {
       nom: string;
       couleur: string | null;
     } | null;
-  };
+  } | null;
 }
 
 interface ScrutinDebatsTabProps {
@@ -37,44 +42,6 @@ interface ScrutinDebatsTabProps {
   loadMoreRef: (node: HTMLDivElement | null) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
-}
-
-// Composant pour texte extensible avec détection d'overflow
-function ExpandableText({ text, className = '' }: { text: string; className?: string }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isTruncated, setIsTruncated] = useState(false);
-  const textRef = useRef<HTMLParagraphElement>(null);
-
-  useEffect(() => {
-    const checkTruncation = () => {
-      if (textRef.current) {
-        setIsTruncated(textRef.current.scrollHeight > textRef.current.clientHeight);
-      }
-    };
-
-    checkTruncation();
-    window.addEventListener('resize', checkTruncation);
-    return () => window.removeEventListener('resize', checkTruncation);
-  }, [text]);
-
-  return (
-    <div>
-      <p
-        ref={textRef}
-        className={`text-sm text-muted-foreground leading-relaxed ${isExpanded ? '' : 'line-clamp-5'} ${className}`}
-      >
-        {text}
-      </p>
-      {(isTruncated || isExpanded) && (
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="text-xs text-primary hover:underline mt-1"
-        >
-          {isExpanded ? 'Voir moins' : 'Voir plus'}
-        </button>
-      )}
-    </div>
-  );
 }
 
 export function ScrutinDebatsTab({
@@ -120,50 +87,77 @@ export function ScrutinDebatsTab({
               : 'Aucune intervention'}
           </p>
         ) : (
-          interventions.map((intervention) => (
-            <div key={intervention.id} className="flex items-start gap-3">
-              {/* Avatar */}
-              <Link
-                href={chambre === 'senat' ? `/senateurs/${intervention.parlementaire.slug}` : `/deputes/${intervention.parlementaire.slug}`}
-                className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-muted"
-              >
-                {intervention.parlementaire.photoUrl ? (
-                  <Image
-                    src={intervention.parlementaire.photoUrl}
-                    alt=""
-                    fill
-                    className="object-cover"
-                    unoptimized
-                  />
-                ) : (
-                  <Users className="absolute inset-0 m-auto h-5 w-5 text-muted-foreground" />
-                )}
-              </Link>
+          interventions.map((intervention) => {
+            const p = intervention.parlementaire;
+            const displayNom = p ? `${p.prenom} ${p.nom}` : `${intervention.orateurPrenom || ''} ${intervention.orateurNom || ''}`.trim();
+            const profileHref = p ? (chambre === 'senat' ? `/senateurs/${p.slug}` : `/deputes/${p.slug}`) : null;
 
-              {/* Content */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+            return (
+              <div key={intervention.id} className="flex items-start gap-3">
+                {/* Avatar */}
+                {profileHref ? (
                   <Link
-                    href={chambre === 'senat' ? `/senateurs/${intervention.parlementaire.slug}` : `/deputes/${intervention.parlementaire.slug}`}
-                    className="font-medium text-foreground hover:text-primary hover:underline"
+                    href={profileHref}
+                    className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-muted"
                   >
-                    {intervention.parlementaire.prenom} {intervention.parlementaire.nom}
+                    {p?.photoUrl ? (
+                      <Image
+                        src={p.photoUrl}
+                        alt=""
+                        fill
+                        className="object-cover"
+                        unoptimized
+                      />
+                    ) : (
+                      <Users className="absolute inset-0 m-auto h-5 w-5 text-muted-foreground" />
+                    )}
                   </Link>
-                  {intervention.parlementaire.groupe && (
-                    <span
-                      className="px-2 py-0.5 text-xs rounded-full text-white font-medium"
-                      style={{ backgroundColor: intervention.parlementaire.groupe.couleur || '#888' }}
-                    >
-                      {intervention.parlementaire.groupe.nom}
-                    </span>
-                  )}
-                </div>
-                <div className="rounded-lg p-3" style={{ backgroundColor: '#f9fafb' }}>
-                  <ExpandableText text={intervention.contenu} />
+                ) : (
+                  <div className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-muted">
+                    <Users className="absolute inset-0 m-auto h-5 w-5 text-muted-foreground" />
+                  </div>
+                )}
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                    {profileHref ? (
+                      <Link
+                        href={profileHref}
+                        className="font-medium text-foreground hover:text-primary hover:underline"
+                      >
+                        {displayNom}
+                      </Link>
+                    ) : (
+                      <span className="font-medium text-foreground">
+                        {displayNom}
+                      </span>
+                    )}
+                    {p?.groupe ? (
+                      <span
+                        className="px-2 py-0.5 text-xs rounded-full text-white font-medium"
+                        style={{ backgroundColor: p.groupe.couleur || '#888' }}
+                      >
+                        {p.groupe.nom}
+                      </span>
+                    ) : intervention.orateurQualite ? (
+                      <span className="px-2 py-0.5 text-xs rounded-full bg-slate-500 text-white font-medium">
+                        {intervention.orateurQualite}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="rounded-lg p-3" style={{ backgroundColor: '#f9fafb' }}>
+                    <ExpandableText
+                      text={intervention.contenu}
+                      hasMore={intervention.hasMore}
+                      interventionId={intervention.id}
+                      sourceUrl={intervention.sourceUrl}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
 
         {/* Infinite scroll trigger */}
@@ -182,11 +176,15 @@ export function ScrutinDebatsTab({
         </div>
       </div>
 
-      {/* Source link */}
+      {/* Source link global */}
       {interventions.some(i => i.sourceUrl) && (
         <div className="mt-4 pt-4 flex justify-start">
           <a
-            href={interventions.find(i => i.sourceUrl)?.sourceUrl || ''}
+            href={(() => {
+              const url = interventions.find(i => i.sourceUrl)?.sourceUrl || '';
+              // Retirer l'ancre #par_N pour le lien global
+              return url.replace(/#par_\d+$/, '');
+            })()}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"

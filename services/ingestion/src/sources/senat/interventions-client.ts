@@ -45,6 +45,7 @@ export interface TransformedInterventionSenat {
   orateurNom: string;
   orateurPrenom?: string;
   orateurRef?: string; // Matricule sénateur si disponible
+  orateurQualite?: string; // 'ministre...', 'secrétaire d\'état...', etc.
   contenu: string;
   type: string;
   sourceUrl?: string;
@@ -55,11 +56,13 @@ export interface TransformedInterventionSenat {
 // =============================================================================
 
 function generateSeanceUrl(seanceRef: string, date: Date): string {
-  // Format URL Sénat pour les comptes rendus
+  // Format URL Sénat pour les comptes rendus analytiques
+  // Ex: https://www.senat.fr/cra/s20250217/s20250217.html
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
-  return `https://www.senat.fr/seances/${year}${month}${day}.html`;
+  const dateStr = `${year}${month}${day}`;
+  return `https://www.senat.fr/cra/s${dateStr}/s${dateStr}_mono.html`;
 }
 
 // =============================================================================
@@ -172,7 +175,7 @@ export class SenatInterventionsClient {
           }
           return null;
         })
-        .filter((f): f is { path: string; date: Date; year: number } => f !== null && f.year >= minYear)
+        .filter((f): f is { path: string; date: Date; year: number } => f !== null && f.year >= minYear && f.date <= new Date())
         .sort((a, b) => b.date.getTime() - a.date.getTime())
         .slice(0, maxSeances);
 
@@ -214,121 +217,171 @@ export class SenatInterventionsClient {
     try {
       const content = await fs.promises.readFile(xmlPath, 'utf-8');
       const seanceId = path.basename(xmlPath, '.xml');
+      const baseUrl = generateSeanceUrl(seanceId, seanceDate);
 
-      // La structure est HTML avec namespace cri:
-      // Les interventions sont dans <p id="par_N"> avec <cri:orateurnom>
-      // Format: <p id="par_N"><span class="orateur_nom"><cri:orateurnom><a class="lien_senfic" href="/senateur/nom_prenom_code.html">...</a></cri:orateurnom></span> Texte...</p>
+      // Structure du CRI Sénat :
+      // - <p id="par_N"> avec <cri:orateurnom> = début d'une prise de parole
+      // - <p id="par_N"> sans <cri:orateurnom> = suite de la même prise de parole
+      // On agrège les paragraphes consécutifs d'un même orateur.
 
-      // Regex pour trouver les paragraphes avec orateur
-      const paragraphRegex = /<p\s+id="par_\d+"[^>]*>([\s\S]*?)<\/p>/g;
+      // 1. Collecter TOUS les paragraphes dans l'ordre
+      const paragraphRegex = /<p\s+id="(par_\d+)"[^>]*>([\s\S]*?)<\/p>/g;
+      const allParagraphs: { parId: string; content: string; hasOrateur: boolean }[] = [];
 
       let match;
-      let ordre = 0; // Compteur d'ordre pour cette séance
       while ((match = paragraphRegex.exec(content)) !== null) {
-        const paragraphContent = match[1];
+        allParagraphs.push({
+          parId: match[1],
+          content: match[2],
+          hasOrateur: match[2].includes('cri:orateurnom'),
+        });
+      }
 
-        // Vérifier s'il y a un orateur
-        if (!paragraphContent.includes('cri:orateurnom')) continue;
+      // 2. Agréger en interventions (une par prise de parole)
+      let currentSpeaker: {
+        parId: string; // par_N du premier paragraphe (pour l'ancre)
+        nom: string;
+        prenom: string;
+        orateurRef?: string;
+        orateurQualite?: string;
+        paragraphs: string[];
+        isPresident: boolean;
+      } | null = null;
+      let ordre = 0;
 
-        // Extraire le lien sénateur si disponible
-        // Format: href="/senateur/nom_prenom_code.html"
-        const senateurLinkMatch = paragraphContent.match(/href="\/senateur\/([^"]+)\.html"/);
-        let orateurRef = '';
-        if (senateurLinkMatch) {
-          orateurRef = senateurLinkMatch[1]; // ex: "larcher_gerard86034e"
-        }
+      const finalizeSpeaker = () => {
+        if (!currentSpeaker || currentSpeaker.isPresident || currentSpeaker.paragraphs.length === 0) return;
 
-        // Extraire le nom de l'orateur
-        // Chercher le contenu dans les spans orateur_nom
-        const orateurSpans = paragraphContent.match(/<span class="orateur_nom">([^<]*)<\/span>/g);
-        let nomComplet = '';
-        if (orateurSpans) {
-          nomComplet = orateurSpans
-            .map(s => decodeHtmlEntities(s.replace(/<[^>]+>/g, '')))
-            .join('')
-            .trim();
-        }
+        const fullText = currentSpeaker.paragraphs.join('\n\n');
+        if (fullText.length < 20) return;
 
-        // Nettoyer le nom (enlever M., Mme, "le président", etc.)
-        let nom = nomComplet
-          .replace(/^(M\.|Mme|Mme\.|MM\.|Mmes)\s*/i, '')
-          .replace(/\s*\.\s*$/, '')
-          .replace(/,\s*$/, '')
-          .trim();
-
-        // Ignorer les interventions du président de séance
-        const nomLower = nom.toLowerCase();
-        if (nomLower.includes('président') || nomLower.includes('présidente') || nomLower === 'le président' || nomLower === 'la présidente') {
-          continue;
-        }
-
-        // Ignorer les ministres (on veut seulement les sénateurs)
-        const qualiteMatch = paragraphContent.match(/<cri:orateurqualite>([^<]+)<\/cri:orateurqualite>/);
-        if (qualiteMatch) {
-          const qualite = qualiteMatch[1].toLowerCase();
-          if (qualite.includes('ministre') || qualite.includes('secrétaire d') || qualite.includes('garde des sceaux')) {
-            continue;
-          }
-        }
-
-        if (!nom || nom.length < 2) continue;
-
-        // Extraire le texte de l'intervention (tout après </cri:orateurnom> ou </cri:orateurqualite>)
-        let texte = paragraphContent
-          // Supprimer tout jusqu'à la fin du tag orateur
-          .replace(/^[\s\S]*?<\/cri:orateurnom><\/span><\/span>/, '')
-          .replace(/^[\s\S]*?<\/cri:orateurqualite><\/span>/, '')
-          // Supprimer les tags HTML restants
-          .replace(/<[^>]+>/g, ' ')
-          // Nettoyer les espaces
-          .replace(/\s+/g, ' ')
-          .trim();
-        // Décoder les entités HTML
-        texte = decodeHtmlEntities(texte);
-
-        if (!texte || texte.length < 20) continue;
-
-        // Extraire prénom/nom depuis le nom complet
-        let prenom = '';
-        const parts = nom.split(/\s+/);
-        if (parts.length >= 2) {
-          // Le dernier mot est souvent le nom de famille
-          prenom = parts.slice(0, -1).join(' ');
-          nom = parts[parts.length - 1];
-        }
+        const contenuNettoye = removeOrateurPrefix(fullText, currentSpeaker.prenom, currentSpeaker.nom);
 
         // Déterminer le type d'intervention
         let type = 'intervention';
-        const texteLower = texte.toLowerCase();
+        const texteLower = contenuNettoye.toLowerCase();
         if (texteLower.includes('question')) {
           type = 'question';
         } else if (texteLower.includes('explication de vote')) {
           type = 'explication_vote';
         }
 
-        ordre++; // Incrémenter l'ordre chronologique
-
-        // Nettoyer le préfixe redondant "M./Mme Nom." si présent
-        const contenuNettoye = removeOrateurPrefix(texte, prenom, nom);
+        ordre++;
 
         interventions.push({
           seanceId,
           date: seanceDate,
           ordre,
-          orateurNom: nom,
-          orateurPrenom: prenom || undefined,
-          orateurRef: orateurRef || undefined,
-          contenu: contenuNettoye.substring(0, 5000),
+          orateurNom: currentSpeaker.nom,
+          orateurPrenom: currentSpeaker.prenom || undefined,
+          orateurRef: currentSpeaker.orateurRef,
+          orateurQualite: currentSpeaker.orateurQualite,
+          contenu: contenuNettoye,
           type,
-          sourceUrl: generateSeanceUrl(seanceId, seanceDate),
+          sourceUrl: `${baseUrl}#${currentSpeaker.parId}`,
         });
+      };
+
+      for (const para of allParagraphs) {
+        if (para.hasOrateur) {
+          // Nouveau locuteur → finaliser le précédent
+          finalizeSpeaker();
+
+          // Extraire les infos du locuteur
+          const senateurLinkMatch = para.content.match(/href="\/senateur\/([^"]+)\.html"/);
+          const orateurRef = senateurLinkMatch ? senateurLinkMatch[1] : undefined;
+
+          const orateurSpans = para.content.match(/<span class="orateur_nom">([^<]*)<\/span>/g);
+          let nomComplet = '';
+          if (orateurSpans) {
+            nomComplet = orateurSpans
+              .map(s => decodeHtmlEntities(s.replace(/<[^>]+>/g, '')))
+              .join('')
+              .trim();
+          }
+
+          let nom = nomComplet
+            .replace(/^(M\.|Mme|Mme\.|MM\.|Mmes)\s*/i, '')
+            .replace(/\s*\.\s*$/, '')
+            .replace(/,\s*$/, '')
+            .trim();
+
+          const nomLower = nom.toLowerCase();
+          const isPresident = nomLower.includes('président') || nomLower.includes('présidente')
+            || nomLower === 'le président' || nomLower === 'la présidente';
+
+          // Extraire la qualité — concaténer tous les fragments <cri:orateurqualite>
+          let orateurQualite: string | undefined;
+          const qualiteRegex = /<cri:orateurqualite>([^<]*)<\/cri:orateurqualite>/g;
+          const qualiteParts: string[] = [];
+          let qualiteMatch;
+          while ((qualiteMatch = qualiteRegex.exec(para.content)) !== null) {
+            qualiteParts.push(qualiteMatch[1]);
+          }
+          if (qualiteParts.length > 0) {
+            let qualiteRaw = decodeHtmlEntities(qualiteParts.join('')).trim();
+            qualiteRaw = qualiteRaw.replace(/\.\s*$/, '').trim();
+            if (qualiteRaw) {
+              orateurQualite = qualiteRaw.charAt(0).toUpperCase() + qualiteRaw.slice(1);
+            }
+          }
+
+          // Extraire prénom/nom
+          let prenom = '';
+          const parts = nom.split(/\s+/);
+          if (parts.length >= 2) {
+            prenom = parts.slice(0, -1).join(' ');
+            nom = parts[parts.length - 1];
+          }
+
+          if (!nom || nom.length < 2) {
+            currentSpeaker = null;
+            continue;
+          }
+
+          currentSpeaker = {
+            parId: para.parId,
+            nom,
+            prenom,
+            orateurRef,
+            orateurQualite,
+            paragraphs: [],
+            isPresident,
+          };
+
+          // Extraire le texte de CE paragraphe (après les tags orateur/qualité)
+          const texte = this.extractParagraphText(para.content);
+          if (texte) currentSpeaker.paragraphs.push(texte);
+
+        } else if (currentSpeaker) {
+          // Paragraphe de suite → ajouter au locuteur en cours
+          const texte = this.extractParagraphText(para.content);
+          if (texte) currentSpeaker.paragraphs.push(texte);
+        }
       }
+
+      // Finaliser le dernier locuteur
+      finalizeSpeaker();
 
     } catch (error: any) {
       logger.warn({ file: xmlPath, error: error.message }, 'Error parsing XML');
     }
 
     return interventions;
+  }
+
+  /** Extrait le texte brut d'un paragraphe HTML, en supprimant les tags orateur/qualité. */
+  private extractParagraphText(html: string): string {
+    let texte = html
+      // Supprimer les blocs orateur + qualité (greedy pour le dernier fragment qualité)
+      .replace(/^[\s\S]*<\/cri:orateurqualite><\/span>/, '')
+      .replace(/^[\s\S]*?<\/cri:orateurnom><\/span>/, '')
+      // Supprimer les tags HTML restants
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    texte = decodeHtmlEntities(texte);
+    return texte;
   }
 }
 
