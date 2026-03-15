@@ -563,6 +563,70 @@ program
   });
 
 // =============================================================================
+// COMMANDE: enrich-ia
+// =============================================================================
+program
+  .command('enrich-ia')
+  .description('Enrichir les entités parlementaires via IA (Mistral) — résumés accessibles')
+  .option('--scrutins', 'Enrichir uniquement les scrutins')
+  .option('--dossiers', 'Enrichir uniquement les dossiers')
+  .option('--sujets', 'Enrichir uniquement les sujets')
+  .option('-l, --limit <number>', 'Nombre max d\'entités à traiter', parseInt)
+  .option('--dry-run', 'Mode simulation (calcule mais n\'écrit pas)')
+  .option('--force', 'Ignorer le hash, regénérer tout')
+  .option('-c, --concurrency <number>', 'Nombre d\'appels LLM en parallèle (défaut: 3)', parseInt)
+  .action(async (options) => {
+    try {
+      logger.info({ options }, 'Starting IA enrichment command');
+
+      const enrichOptions = {
+        limit: options.limit,
+        dryRun: options.dryRun,
+        force: options.force,
+        concurrency: options.concurrency,
+      };
+
+      // Sans flag spécifique → cascade complète : scrutins → dossiers → sujets
+      const enrichAll = !options.scrutins && !options.dossiers && !options.sujets;
+
+      if (options.scrutins || enrichAll) {
+        const { enrichScrutinsIA } = await import('./workers/ia-enrichment.js');
+        const result = await enrichScrutinsIA(enrichOptions);
+        console.log(`\n📊 Enrichissement IA des scrutins${options.dryRun ? ' (DRY RUN)' : ''}:`);
+        console.log(`   Enrichis: ${result.enriched}`);
+        console.log(`   Inchangés (skip): ${result.skipped}`);
+        console.log(`   Erreurs: ${result.errors}`);
+        console.log(`   Tokens IN: ${result.totalTokensIn} | OUT: ${result.totalTokensOut}`);
+      }
+
+      if (options.dossiers || enrichAll) {
+        const { enrichDossiersIA } = await import('./workers/ia-enrichment.js');
+        const result = await enrichDossiersIA(enrichOptions);
+        console.log(`\n📊 Enrichissement IA des dossiers${options.dryRun ? ' (DRY RUN)' : ''}:`);
+        console.log(`   Enrichis: ${result.enriched}`);
+        console.log(`   Inchangés (skip): ${result.skipped}`);
+        console.log(`   Erreurs: ${result.errors}`);
+        console.log(`   Tokens IN: ${result.totalTokensIn} | OUT: ${result.totalTokensOut}`);
+      }
+
+      if (options.sujets || enrichAll) {
+        const { enrichSujetsIA } = await import('./workers/ia-enrichment.js');
+        const result = await enrichSujetsIA(enrichOptions);
+        console.log(`\n📊 Enrichissement IA des sujets${options.dryRun ? ' (DRY RUN)' : ''}:`);
+        console.log(`   Enrichis: ${result.enriched}`);
+        console.log(`   Inchangés (skip): ${result.skipped}`);
+        console.log(`   Erreurs: ${result.errors}`);
+        console.log(`   Tokens IN: ${result.totalTokensIn} | OUT: ${result.totalTokensOut}`);
+      }
+
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'IA enrichment failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
 // COMMANDE: check-quality
 // =============================================================================
 program
