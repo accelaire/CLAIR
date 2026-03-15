@@ -268,53 +268,55 @@ function ParliamentaryTimeline({ dossiers, sujet }: { dossiers: SujetDossier[]; 
         Parcours parlementaire
       </h2>
 
-      <div className="flex items-start">
-        {steps.map((step, i) => {
-          const nextStep = steps[i + 1];
-          const lineColor = !nextStep ? '' :
-            nextStep.status === 'done' ? 'bg-green-400' :
-            nextStep.status === 'active' ? 'bg-amber-400' : '';
+      <div className="overflow-x-auto pt-1 pb-2 -mx-1 px-1">
+        <div className="flex items-start" style={{ minWidth: `${steps.length * 120}px` }}>
+          {steps.map((step, i) => {
+            const nextStep = steps[i + 1];
+            const lineColor = !nextStep ? '' :
+              nextStep.status === 'done' ? 'bg-green-400' :
+              nextStep.status === 'active' ? 'bg-amber-400' : '';
 
-          return (
-            <div key={i} className="flex items-start min-w-0 flex-1 last:flex-none">
-              {/* Step column */}
-              <div className="flex flex-col items-center w-fit flex-shrink-0">
-                <div className={`h-4 w-4 rounded-full ring-4 ${dotColor(step.status)}`} />
-                <span className={`mt-2.5 text-xs font-semibold text-center leading-tight whitespace-nowrap ${
-                  step.status === 'pending' ? 'text-muted-foreground/40' : 'text-foreground'
-                }`}>
-                  {step.label}
-                </span>
-                {step.date && (
-                  <span className="mt-0.5 text-[11px] text-muted-foreground font-medium">
-                    {step.date}
+            return (
+              <div key={i} className="flex items-start flex-1 last:flex-none">
+                {/* Step column */}
+                <div className="flex flex-col items-center flex-shrink-0" style={{ minWidth: '80px' }}>
+                  <div className={`h-4 w-4 rounded-full ring-4 ${dotColor(step.status)}`} />
+                  <span className={`mt-2.5 text-[11px] font-semibold text-center leading-tight whitespace-nowrap ${
+                    step.status === 'pending' ? 'text-muted-foreground/40' : 'text-foreground'
+                  }`}>
+                    {step.label}
                   </span>
-                )}
-                <span className={`mt-1.5 px-1.5 py-0.5 text-[10px] font-medium rounded border ${chambreColor(step.chambre)} ${
-                  step.status === 'pending' ? 'opacity-30' : ''
-                }`}>
-                  {chambreLabel(step.chambre)}
-                </span>
-                {step.detail && (
-                  <span className="mt-1 text-[10px] text-muted-foreground text-center">
-                    {step.detail}
+                  {step.date && (
+                    <span className="mt-0.5 text-[10px] text-muted-foreground font-medium">
+                      {step.date}
+                    </span>
+                  )}
+                  <span className={`mt-1.5 px-1.5 py-0.5 text-[10px] font-medium rounded border ${chambreColor(step.chambre)} ${
+                    step.status === 'pending' ? 'opacity-30' : ''
+                  }`}>
+                    {chambreLabel(step.chambre)}
                   </span>
-                )}
-              </div>
-
-              {/* Connector line — equal spacing, style varies */}
-              {nextStep && (
-                <div className="flex items-center self-start pt-[7px] mx-1.5 flex-1 min-w-[24px]">
-                  {nextStep.status === 'pending' ? (
-                    <div className="h-0.5 w-full border-t-2 border-dashed border-gray-300" />
-                  ) : (
-                    <div className={`h-0.5 w-full rounded-full ${lineColor}`} />
+                  {step.detail && (
+                    <span className="mt-1 text-[10px] text-muted-foreground text-center">
+                      {step.detail}
+                    </span>
                   )}
                 </div>
-              )}
-            </div>
-          );
-        })}
+
+                {/* Connector line */}
+                {nextStep && (
+                  <div className="flex items-center self-start pt-[7px] mx-1 flex-1 min-w-[20px]">
+                    {nextStep.status === 'pending' ? (
+                      <div className="h-0.5 w-full border-t-2 border-dashed border-gray-300" />
+                    ) : (
+                      <div className={`h-0.5 w-full rounded-full ${lineColor}`} />
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
