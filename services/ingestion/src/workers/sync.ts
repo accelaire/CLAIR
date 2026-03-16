@@ -1652,7 +1652,21 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     }
   }
 
-  // IA Enrichment (cascade : scrutins → dossiers → sujets)
+  // Sync déclarations HATVP (avant l'enrichissement IA pour que les données soient disponibles)
+  if (results.sourcesChanged.length > 0) {
+    try {
+      const { syncDeclarationsHATVP } = await import('./declarations-sync.js');
+      const declResult = await syncDeclarationsHATVP();
+      logger.info({
+        matched: declResult.matched, created: declResult.created,
+        unmatched: declResult.unmatched, errors: declResult.errors,
+      }, 'HATVP declarations sync completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'HATVP declarations sync failed (non-blocking)');
+    }
+  }
+
+  // IA Enrichment (cascade : scrutins → dossiers → sujets → parlementaires)
   if (results.sourcesChanged.length > 0 && !options.skipIAEnrichment) {
     try {
       const { enrichScrutinsIA, enrichDossiersIA, enrichSujetsIA } = await import('./ia-enrichment.js');
@@ -1674,6 +1688,14 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         enriched: iaSujets.enriched, skipped: iaSujets.skipped, errors: iaSujets.errors,
         tokensIn: iaSujets.totalTokensIn, tokensOut: iaSujets.totalTokensOut,
       }, 'Sujets IA enrichment completed');
+
+      // Fiches parlementaires enrichies (Wikipedia + Tavily + Mistral)
+      const { enrichParlementairesIA } = await import('./parlementaire-enrichment.js');
+      const iaParl = await enrichParlementairesIA({ concurrency: 2 });
+      logger.info({
+        enriched: iaParl.enriched, skipped: iaParl.skipped, errors: iaParl.errors,
+        tokensIn: iaParl.totalTokensIn, tokensOut: iaParl.totalTokensOut,
+      }, 'Parlementaires IA enrichment completed');
     } catch (error: any) {
       logger.error({ error: error.message }, 'IA enrichment failed (non-blocking)');
     }

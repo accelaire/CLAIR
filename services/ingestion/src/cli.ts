@@ -77,6 +77,7 @@ program
   .option('--enrich-amendements-senat', 'Enrichir les scrutins Sénat en scrappant la page HTML pour extraire le lien amendement')
   .option('--reset', 'Avec --link-amendements: réinitialiser les liens existants avant de re-lier')
   .option('-L, --lobbying', 'Synchroniser uniquement les lobbyistes (HATVP)')
+  .option('--declarations', 'Synchroniser les déclarations HATVP (intérêts & patrimoine des parlementaires)')
   .option('-l, --limit <number>', 'Limiter le nombre de scrutins/séances/amendements/lobbyistes', parseInt)
   .option('--no-actions', 'Ne pas synchroniser les actions de lobbying (avec -L)')
   .option('--dry-run', 'Mode simulation (affiche ce qui serait fait sans modifier)')
@@ -159,6 +160,15 @@ program
         console.log(`   - Erreurs: ${result.errors}`);
       } else if (options.lobbying) {
         await syncLobbyistes({ limit: options.limit, includeActions: options.actions !== false });
+      } else if (options.declarations) {
+        const { syncDeclarationsHATVP } = await import('./workers/declarations-sync.js');
+        const result = await syncDeclarationsHATVP();
+        console.log(`\n📊 Déclarations HATVP:`);
+        console.log(`   Total CSV: ${result.total}`);
+        console.log(`   Matchés: ${result.matched}`);
+        console.log(`   Créés/mis à jour: ${result.created}`);
+        console.log(`   Non matchés: ${result.unmatched}`);
+        console.log(`   Erreurs: ${result.errors}`);
       } else {
         // Par défaut: sync incrémental
         await incrementalSync();
@@ -571,6 +581,7 @@ program
   .option('--scrutins', 'Enrichir uniquement les scrutins')
   .option('--dossiers', 'Enrichir uniquement les dossiers')
   .option('--sujets', 'Enrichir uniquement les sujets')
+  .option('--parlementaires', 'Enrichir uniquement les fiches parlementaires (Wikipedia + Tavily + Mistral)')
   .option('-l, --limit <number>', 'Nombre max d\'entités à traiter', parseInt)
   .option('--dry-run', 'Mode simulation (calcule mais n\'écrit pas)')
   .option('--force', 'Ignorer le hash, regénérer tout')
@@ -586,8 +597,8 @@ program
         concurrency: options.concurrency,
       };
 
-      // Sans flag spécifique → cascade complète : scrutins → dossiers → sujets
-      const enrichAll = !options.scrutins && !options.dossiers && !options.sujets;
+      // Sans flag spécifique → cascade complète : scrutins → dossiers → sujets → parlementaires
+      const enrichAll = !options.scrutins && !options.dossiers && !options.sujets && !options.parlementaires;
 
       if (options.scrutins || enrichAll) {
         const { enrichScrutinsIA } = await import('./workers/ia-enrichment.js');
@@ -613,6 +624,16 @@ program
         const { enrichSujetsIA } = await import('./workers/ia-enrichment.js');
         const result = await enrichSujetsIA(enrichOptions);
         console.log(`\n📊 Enrichissement IA des sujets${options.dryRun ? ' (DRY RUN)' : ''}:`);
+        console.log(`   Enrichis: ${result.enriched}`);
+        console.log(`   Inchangés (skip): ${result.skipped}`);
+        console.log(`   Erreurs: ${result.errors}`);
+        console.log(`   Tokens IN: ${result.totalTokensIn} | OUT: ${result.totalTokensOut}`);
+      }
+
+      if (options.parlementaires || enrichAll) {
+        const { enrichParlementairesIA } = await import('./workers/parlementaire-enrichment.js');
+        const result = await enrichParlementairesIA(enrichOptions);
+        console.log(`\n📊 Enrichissement IA des parlementaires${options.dryRun ? ' (DRY RUN)' : ''}:`);
         console.log(`   Enrichis: ${result.enriched}`);
         console.log(`   Inchangés (skip): ${result.skipped}`);
         console.log(`   Erreurs: ${result.errors}`);
