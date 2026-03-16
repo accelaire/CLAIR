@@ -7,6 +7,7 @@ import { PrismaClient } from '@prisma/client';
 import pLimit from 'p-limit';
 import { CLAIRMistralClient } from '../llm/mistral-client.js';
 import { computeContentHash } from '../llm/content-hash.js';
+import { cleanLLMOutput } from '../llm/clean-output.js';
 import {
   SYSTEM_PROMPT,
   SYSTEM_PROMPT_DOSSIER,
@@ -117,7 +118,7 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
             amendements: scrutin.amendements,
           });
 
-          const resumeIA = await mistral.complete(SYSTEM_PROMPT, userPrompt);
+          const resumeIA = cleanLLMOutput(await mistral.complete(SYSTEM_PROMPT, userPrompt));
 
           await prisma.scrutin.update({
             where: { id: scrutin.id },
@@ -205,6 +206,27 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             take: 10,
           });
 
+          // Votes solennels par groupe (position officielle sur l'ensemble du texte)
+          const positionsSolennelles = await prisma.$queryRaw<
+            { nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint }[]
+          >`
+            SELECT gp.nom, gp.slug,
+              SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END)::bigint AS pour,
+              SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
+              SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
+            FROM votes v
+            JOIN parlementaires p ON p.id = v.parlementaire_id
+            JOIN groupes_politiques gp ON gp.id = p.groupe_id
+            JOIN scrutins s ON s.id = v.scrutin_id
+            WHERE s.dossier_id = ${dossier.id}
+              AND s.type_vote = 'solennel'
+              AND v.position != 'absent'
+            GROUP BY gp.nom, gp.slug
+            ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
+                      SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) DESC
+          `;
+
+          // Agrégat tous scrutins (fallback si pas de solennel)
           const positionsGroupes = await prisma.$queryRaw<
             { nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint }[]
           >`
@@ -223,18 +245,20 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
                       SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) DESC
           `;
 
+          // Amendements clés : adoptés en priorité, puis rejetés, avec exposé sommaire
           const amendementsClefs = await prisma.amendement.findMany({
             where: { dossierId: dossier.id, exposeSommaire: { not: null } },
             select: { numero: true, exposeSommaire: true, auteurLibelle: true, sort: true },
-            orderBy: { dateDepot: 'desc' },
-            take: 5,
+            orderBy: [{ sort: 'asc' }, { dateDepot: 'desc' }],
+            take: 8,
           });
 
+          const solennellesForHash = positionsSolennelles.map(g => `sol:${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|');
           const hashParts = [
             dossier.titre,
             dossier.etat,
             scrutinsClefs.map(s => `${s.sort}:${s.resumeIA ?? s.titre}`).join('|'),
-            positionsGroupes.map(g => `${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|'),
+            solennellesForHash || positionsGroupes.map(g => `${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|'),
           ];
           const contentHash = computeContentHash(...hashParts);
 
@@ -248,6 +272,11 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             return;
           }
 
+          const toGroupeArray = (rows: typeof positionsSolennelles) => rows.map(g => ({
+            nom: g.nom, slug: g.slug,
+            pour: Number(g.pour), contre: Number(g.contre), abstention: Number(g.abstention),
+          }));
+
           const userPrompt = buildDossierResumePrompt({
             titre: dossier.titre,
             titreCourt: dossier.titreCourt,
@@ -256,10 +285,8 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             scrutinsResumes: scrutinsClefs.map(s => ({
               titre: s.titre, sort: s.sort, typeVote: s.typeVote, resumeIA: s.resumeIA,
             })),
-            positionsGroupes: positionsGroupes.map(g => ({
-              nom: g.nom, slug: g.slug,
-              pour: Number(g.pour), contre: Number(g.contre), abstention: Number(g.abstention),
-            })),
+            positionsSolennelles: toGroupeArray(positionsSolennelles),
+            positionsGroupes: toGroupeArray(positionsGroupes),
             amendementsClefs: amendementsClefs.map(a => ({
               numero: a.numero, exposeSommaire: a.exposeSommaire,
               auteurLibelle: a.auteurLibelle, sort: a.sort,
@@ -267,7 +294,7 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
           });
 
           const response = await mistral.complete(SYSTEM_PROMPT_DOSSIER, userPrompt, { maxTokens: 1024 });
-          const resumeIA = response.replace(/\n*---POSITIONS---\n*/g, '\n\n');
+          const resumeIA = cleanLLMOutput(response.replace(/\n*---POSITIONS---\n*/g, '\n\n'));
 
           await prisma.dossierLegislatif.update({
             where: { id: dossier.id },
@@ -355,6 +382,29 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
 
           const dossierIds = dossiers.map(d => d.id);
 
+          // Votes solennels par groupe (position officielle cross-chambre)
+          const positionsSolennelles = dossierIds.length > 0
+            ? await prisma.$queryRaw<
+                { nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint }[]
+              >`
+                SELECT gp.nom, gp.slug,
+                  SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END)::bigint AS pour,
+                  SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
+                  SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
+                FROM votes v
+                JOIN parlementaires p ON p.id = v.parlementaire_id
+                JOIN groupes_politiques gp ON gp.id = p.groupe_id
+                JOIN scrutins s ON s.id = v.scrutin_id
+                WHERE s.dossier_id = ANY(${dossierIds})
+                  AND s.type_vote = 'solennel'
+                  AND v.position != 'absent'
+                GROUP BY gp.nom, gp.slug
+                ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
+                          SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) DESC
+              `
+            : [];
+
+          // Agrégat tous scrutins (fallback si pas de solennel)
           const positionsGroupes = dossierIds.length > 0
             ? await prisma.$queryRaw<
                 { nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint }[]
@@ -375,12 +425,13 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
               `
             : [];
 
+          const solennellesForHash = positionsSolennelles.map(g => `sol:${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|');
           const hashParts = [
             sujet.label,
             sujet.status,
             sujet.description,
             dossiers.map(d => `${d.titre}:${d.resumeIA ?? ''}`).join('|'),
-            positionsGroupes.map(g => `${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|'),
+            solennellesForHash || positionsGroupes.map(g => `${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|'),
           ];
           const contentHash = computeContentHash(...hashParts);
 
@@ -394,6 +445,11 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
             return;
           }
 
+          const toGroupeArray = (rows: typeof positionsSolennelles) => rows.map(g => ({
+            nom: g.nom, slug: g.slug,
+            pour: Number(g.pour), contre: Number(g.contre), abstention: Number(g.abstention),
+          }));
+
           const userPrompt = buildSujetResumePrompt({
             label: sujet.label,
             description: sujet.description,
@@ -405,10 +461,8 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
               etat: d.etat,
               resumeIA: d.resumeIA,
             })),
-            positionsGroupes: positionsGroupes.map(g => ({
-              nom: g.nom, slug: g.slug,
-              pour: Number(g.pour), contre: Number(g.contre), abstention: Number(g.abstention),
-            })),
+            positionsSolennelles: toGroupeArray(positionsSolennelles),
+            positionsGroupes: toGroupeArray(positionsGroupes),
           });
 
           const response = await mistral.complete(SYSTEM_PROMPT_SUJET, userPrompt, { maxTokens: 1024 });
@@ -424,13 +478,13 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
 
           if (resumeSepIdx !== -1 && enjeuxSepIdx !== -1) {
             labelIA = response.slice(0, resumeSepIdx).trim();
-            resume = response.slice(resumeSepIdx + resumeSep.length, enjeuxSepIdx).trim();
-            enjeux = response.slice(enjeuxSepIdx + enjeuxSep.length).trim();
+            resume = cleanLLMOutput(response.slice(resumeSepIdx + resumeSep.length, enjeuxSepIdx));
+            enjeux = cleanLLMOutput(response.slice(enjeuxSepIdx + enjeuxSep.length));
           } else if (enjeuxSepIdx !== -1) {
-            resume = response.slice(0, enjeuxSepIdx).trim();
-            enjeux = response.slice(enjeuxSepIdx + enjeuxSep.length).trim();
+            resume = cleanLLMOutput(response.slice(0, enjeuxSepIdx));
+            enjeux = cleanLLMOutput(response.slice(enjeuxSepIdx + enjeuxSep.length));
           } else {
-            resume = response;
+            resume = cleanLLMOutput(response);
             logger.warn({ sujetId: sujet.id }, 'Sujet response missing separators');
           }
 

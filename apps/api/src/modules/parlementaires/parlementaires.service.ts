@@ -136,6 +136,14 @@ export class ParlementairesService {
       include: {
         groupe: true,
         circonscription: true,
+        mandats: {
+          orderBy: { dateDebut: 'desc' },
+          take: 20,
+        },
+        declarations: {
+          orderBy: { datePublication: 'desc' },
+          take: 20,
+        },
         ...(include?.includes('votes') && {
           votes: {
             include: {

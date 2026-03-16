@@ -7,6 +7,7 @@ import { PrismaClient } from '@prisma/client';
 import pLimit from 'p-limit';
 import { CLAIRMistralClient } from '../llm/mistral-client.js';
 import { computeContentHash } from '../llm/content-hash.js';
+import { cleanLLMOutput } from '../llm/clean-output.js';
 import {
   SYSTEM_PROMPT_PARLEMENTAIRE,
   buildParlementaireResumePrompt,
@@ -154,10 +155,11 @@ export async function enrichParlementairesIA(
     : { actif: true, resumeIA: null };
 
   let remaining = limit ?? Infinity;
-  let cursor: string | undefined;
 
   while (remaining > 0) {
     const take = Math.min(BATCH_SIZE, remaining);
+    // No cursor pagination: enriched items drop out of the where filter (resumeIA: null → not null),
+    // so we always take from the top. With --force, use offset-based pagination.
     const parlementaires = await prisma.parlementaire.findMany({
       where,
       select: {
@@ -183,12 +185,10 @@ export async function enrichParlementairesIA(
         circonscription: { select: { departement: true, numero: true, nom: true } },
       },
       orderBy: [{ chambre: 'asc' }, { nom: 'asc' }],
-      take: take + (cursor ? 1 : 0),
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      take,
     });
 
     if (parlementaires.length === 0) break;
-    cursor = parlementaires[parlementaires.length - 1].id;
 
     const tasks = parlementaires.map(parl =>
       limiter(async () => {
@@ -326,14 +326,14 @@ export async function enrichParlementairesIA(
           let faitsNotablesIA: string | null = null;
 
           if (parcoursIdx !== -1 && positionsIdx !== -1 && faitsIdx !== -1) {
-            resumeIA = response.slice(0, parcoursIdx).trim();
-            parcoursIA = response.slice(parcoursIdx + parcoursSep.length, positionsIdx).trim();
-            positionsClesIA = response.slice(positionsIdx + positionsSep.length, faitsIdx).trim();
-            faitsNotablesIA = response.slice(faitsIdx + faitsSep.length).trim();
+            resumeIA = cleanLLMOutput(response.slice(0, parcoursIdx));
+            parcoursIA = cleanLLMOutput(response.slice(parcoursIdx + parcoursSep.length, positionsIdx));
+            positionsClesIA = cleanLLMOutput(response.slice(positionsIdx + positionsSep.length, faitsIdx));
+            faitsNotablesIA = cleanLLMOutput(response.slice(faitsIdx + faitsSep.length));
           } else if (parcoursIdx !== -1 && positionsIdx !== -1) {
-            resumeIA = response.slice(0, parcoursIdx).trim();
-            parcoursIA = response.slice(parcoursIdx + parcoursSep.length, positionsIdx).trim();
-            positionsClesIA = response.slice(positionsIdx + positionsSep.length).trim();
+            resumeIA = cleanLLMOutput(response.slice(0, parcoursIdx));
+            parcoursIA = cleanLLMOutput(response.slice(parcoursIdx + parcoursSep.length, positionsIdx));
+            positionsClesIA = cleanLLMOutput(response.slice(positionsIdx + positionsSep.length));
             logger.warn({ parlId: parl.id }, 'Parlementaire response missing ---FAITS--- separator');
           } else {
             // Fallback: entire response as resumeIA

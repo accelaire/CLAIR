@@ -1,11 +1,14 @@
 'use client';
 
-import { Suspense, useMemo } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Search, Vote, Loader2, Layers, Sparkles } from 'lucide-react';
+import { Search, Vote, Loader2, Layers, Sparkles, ChevronDown } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
+
+const INITIAL_VISIBLE = 12;
+const LOAD_MORE_STEP = 12;
 
 interface Sujet {
   id: string;
@@ -138,6 +141,78 @@ function FeaturedSujetCard({ sujet }: { sujet: Sujet }) {
   );
 }
 
+// ── Collapsible Section ──
+
+function CollapsibleSection({
+  title,
+  count,
+  sujets,
+  defaultOpen = true,
+}: {
+  title: string;
+  count: number;
+  sujets: Sujet[];
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
+
+  const visibleSujets = sujets.slice(0, visibleCount);
+  const hasMore = visibleCount < sujets.length;
+  const remaining = sujets.length - visibleCount;
+
+  return (
+    <section>
+      <button
+        onClick={() => setOpen(prev => !prev)}
+        className="flex w-full items-center gap-2 text-left group mb-4"
+      >
+        <ChevronDown
+          className={`h-5 w-5 text-muted-foreground transition-transform duration-200 ${open ? '' : '-rotate-90'}`}
+        />
+        <h2 className="text-lg font-semibold group-hover:text-primary transition-colors">
+          {title}
+        </h2>
+        <span className="text-sm font-normal text-muted-foreground">
+          {count}
+        </span>
+      </button>
+
+      {open && (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {visibleSujets.map((sujet) => (
+              <SujetCard key={sujet.id} sujet={sujet} />
+            ))}
+          </div>
+
+          {hasMore && (
+            <div className="mt-6 flex justify-center">
+              <button
+                onClick={() => setVisibleCount(prev => prev + LOAD_MORE_STEP)}
+                className="rounded-lg border bg-card px-6 py-2 text-sm font-medium text-muted-foreground hover:border-primary hover:text-foreground transition-colors"
+              >
+                Voir plus ({remaining > LOAD_MORE_STEP ? LOAD_MORE_STEP : remaining} sur {remaining} restants)
+              </button>
+            </div>
+          )}
+
+          {!hasMore && sujets.length > INITIAL_VISIBLE && (
+            <div className="mt-6 flex justify-center">
+              <button
+                onClick={() => setVisibleCount(INITIAL_VISIBLE)}
+                className="rounded-lg border bg-card px-6 py-2 text-sm font-medium text-muted-foreground hover:border-primary hover:text-foreground transition-colors"
+              >
+                Réduire
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 // ── Main Page ──
 
 function SujetsPageContent() {
@@ -182,13 +257,13 @@ function SujetsPageContent() {
         return db - da;
       });
 
-    // Pick a random en_cours sujet for "À la une"
-    // Criteria: min 5 scrutins + dernier vote < 30 jours
-    const thirtyDaysAgo = Date.now() - 30 * 86400000;
+    // Pick a daily-rotating en_cours sujet for "À la une"
+    // Criteria: min 5 scrutins + dernier vote < 90 jours (couvre les pauses inter-sessions)
+    const ninetyDaysAgo = Date.now() - 90 * 86400000;
     const featuredCandidates = enCoursAll.filter(s =>
       s.scrutinCount >= 5 &&
       s.dateDernierVote &&
-      new Date(s.dateDernierVote).getTime() > thirtyDaysAgo
+      new Date(s.dateDernierVote).getTime() > ninetyDaysAgo
     );
     let featured: Sujet | null = null;
     if (featuredCandidates.length > 0 && !filters.search) {
@@ -252,36 +327,22 @@ function SujetsPageContent() {
 
           {/* 2. En cours */}
           {enCours.length > 0 && (
-            <section>
-              <h2 className="text-lg font-semibold mb-4">
-                En cours
-                <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  {enCours.length}
-                </span>
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {enCours.map((sujet) => (
-                  <SujetCard key={sujet.id} sujet={sujet} />
-                ))}
-              </div>
-            </section>
+            <CollapsibleSection
+              title="En cours"
+              count={enCours.length}
+              sujets={enCours}
+              defaultOpen
+            />
           )}
 
           {/* 3. Promulgués */}
           {promulgues.length > 0 && (
-            <section>
-              <h2 className="text-lg font-semibold mb-4">
-                Promulgués
-                <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  {promulgues.length}
-                </span>
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {promulgues.map((sujet) => (
-                  <SujetCard key={sujet.id} sujet={sujet} />
-                ))}
-              </div>
-            </section>
+            <CollapsibleSection
+              title="Promulgués"
+              count={promulgues.length}
+              sujets={promulgues}
+              defaultOpen={false}
+            />
           )}
         </div>
       )}

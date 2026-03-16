@@ -106,6 +106,7 @@ interface DossierPromptData {
   procedureLibelle?: string | null;
   etat?: string | null;
   scrutinsResumes: { titre: string; sort: string; typeVote: string; resumeIA?: string | null }[];
+  positionsSolennelles: GroupePosition[];
   positionsGroupes: GroupePosition[];
   amendementsClefs: { numero: string; exposeSommaire?: string | null; auteurLibelle?: string | null; sort?: string | null }[];
 }
@@ -155,17 +156,23 @@ export function buildDossierResumePrompt(data: DossierPromptData): string {
     }
   }
 
-  // Positions des groupes
-  if (data.positionsGroupes.length > 0) {
-    parts.push('\n--- Positions des groupes politiques (agrégées sur tous les scrutins) ---');
+  // Positions des groupes — votes solennels (ensemble du texte) = signal fiable
+  if (data.positionsSolennelles.length > 0) {
+    parts.push('\n--- Positions des groupes sur l\'ensemble du texte (votes solennels — position officielle fiable) ---');
+    for (const g of data.positionsSolennelles) {
+      parts.push(formatGroupePosition(g));
+    }
+  } else if (data.positionsGroupes.length > 0) {
+    // Fallback : pas de vote solennel, on utilise l'agrégat avec un avertissement
+    parts.push('\n--- Positions des groupes politiques (agrégées — aucun vote solennel disponible, à interpréter avec prudence) ---');
     for (const g of data.positionsGroupes) {
       parts.push(formatGroupePosition(g));
     }
   }
 
-  // Amendements clés
+  // Amendements clés — contexte qualitatif sur les enjeux du débat
   if (data.amendementsClefs.length > 0) {
-    parts.push('\n--- Amendements significatifs ---');
+    parts.push('\n--- Amendements significatifs (contexte sur les points de débat) ---');
     for (const a of data.amendementsClefs) {
       const sortStr = a.sort ? ` (${a.sort})` : '';
       const auteur = a.auteurLibelle ? ` — ${a.auteurLibelle}` : '';
@@ -180,7 +187,7 @@ export function buildDossierResumePrompt(data: DossierPromptData): string {
     '',
     'Génère un résumé structuré en deux parties séparées par la ligne exacte "---POSITIONS---" :',
     '1. RÉSUMÉ (3 à 5 phrases) : Explique de quoi traite ce dossier, ce qui a été décidé, et l\'impact pour les citoyens.',
-    '2. POSITIONS (3 à 6 phrases) : Analyse les positions de chaque groupe politique majeur en t\'appuyant sur leurs votes et amendements. Explique pourquoi chaque camp soutient ou s\'oppose au texte.',
+    '2. POSITIONS (3 à 6 phrases) : Analyse les positions de chaque groupe politique majeur. IMPORTANT : base-toi UNIQUEMENT sur les votes solennels (ensemble du texte) pour déterminer qui est pour ou contre le texte. Les votes sur les amendements individuels peuvent donner une image INVERSE de la position réelle (un groupe opposé au texte vote "pour" ses propres amendements restrictifs). Utilise les amendements uniquement pour expliquer les points de débat, PAS pour déterminer les positions.',
   );
 
   return parts.join('\n');
@@ -196,6 +203,7 @@ interface SujetPromptData {
   category?: string | null;
   status: string;
   dossiersResumes: { titre: string; chambre: string; etat?: string | null; resumeIA?: string | null }[];
+  positionsSolennelles: GroupePosition[];
   positionsGroupes: GroupePosition[];
 }
 
@@ -226,9 +234,15 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
     }
   }
 
-  // Positions des groupes (agrégées cross-dossiers)
-  if (data.positionsGroupes.length > 0) {
-    parts.push('\n--- Positions des groupes politiques (agrégées cross-chambre) ---');
+  // Positions des groupes — votes solennels (ensemble du texte) = signal fiable
+  if (data.positionsSolennelles.length > 0) {
+    parts.push('\n--- Positions des groupes sur l\'ensemble du texte (votes solennels — position officielle fiable) ---');
+    for (const g of data.positionsSolennelles) {
+      parts.push(formatGroupePosition(g));
+    }
+  } else if (data.positionsGroupes.length > 0) {
+    // Fallback : pas de vote solennel, on utilise l'agrégat avec un avertissement
+    parts.push('\n--- Positions des groupes politiques (agrégées — aucun vote solennel disponible, à interpréter avec prudence) ---');
     for (const g of data.positionsGroupes) {
       parts.push(formatGroupePosition(g));
     }
@@ -241,7 +255,7 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
     '---RESUME---',
     '2. RÉSUMÉ (3 à 5 phrases) : Synthèse accessible de ce sujet pour un citoyen. De quoi s\'agit-il, où en est-on, qu\'est-ce qui a été voté à l\'Assemblée et au Sénat.',
     '---ENJEUX---',
-    '3. ENJEUX (3 à 6 phrases) : Quels sont les enjeux concrets pour les citoyens et quelles sont les positions des principaux groupes politiques. Pourquoi ce sujet est important ou controversé.',
+    '3. ENJEUX (3 à 6 phrases) : Quels sont les enjeux concrets pour les citoyens et quelles sont les positions des principaux groupes politiques. IMPORTANT : base-toi UNIQUEMENT sur les votes solennels (ensemble du texte) pour déterminer qui est pour ou contre. Les votes sur amendements individuels peuvent donner une image INVERSE de la position réelle. Pourquoi ce sujet est important ou controversé.',
   );
 
   return parts.join('\n');
