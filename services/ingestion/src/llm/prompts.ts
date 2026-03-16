@@ -246,3 +246,172 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
 
   return parts.join('\n');
 }
+
+// =============================================================================
+// PARLEMENTAIRES (fiches enrichies)
+// =============================================================================
+
+export const SYSTEM_PROMPT_PARLEMENTAIRE = `Tu es un biographe parlementaire expert. Tu rédiges des fiches de synthèse sur les parlementaires français (députés et sénateurs) destinées aux citoyens.
+
+Règles :
+- Sois factuel, neutre et informatif.
+- Ne prends jamais parti politiquement.
+- Cite les faits vérifiables : mandats, votes notables, prises de position publiques.
+- Si des informations manquent, n'invente rien.
+- Réponds en texte brut, sans markdown.
+- Utilise un ton accessible et engageant, comme un journaliste politique de qualité.`;
+
+interface MandatInfo {
+  typeOrgane: string;
+  institution: string;
+  qualite: string;
+  dateDebut: string;
+  dateFin?: string | null;
+}
+
+interface VoteStats {
+  presence: number | null;
+  loyaute: number | null;
+  participation: number | null;
+  interventions: number | null;
+  amendements: number | null;
+  amendementsAdoptes: number | null;
+}
+
+interface LobbyingTarget {
+  lobbyiste: string;
+  type: string;
+  description: string;
+  secteurs: string[];
+}
+
+export interface ParlementairePromptData {
+  prenom: string;
+  nom: string;
+  chambre: string;
+  groupe?: string | null;
+  profession?: string | null;
+  dateNaissance?: string | null;
+  circonscription?: string | null;
+  commissionPermanente?: string | null;
+  actif: boolean;
+
+  // Stats pré-calculées
+  stats: VoteStats;
+
+  // Mandats extraits du sourceData
+  mandats: MandatInfo[];
+
+  // Lobbying ciblant ce parlementaire
+  lobbyingActions: LobbyingTarget[];
+
+  // Déclarations HATVP
+  declarations: { type: string; label: string; datePublication?: string | null; urlDossier?: string | null }[];
+
+  // Sources web
+  wikipediaBio?: string | null;
+  tavilyResults?: { title: string; content: string }[];
+}
+
+export function buildParlementaireResumePrompt(data: ParlementairePromptData): string {
+  const chambreLabel = data.chambre === 'senat' ? 'Sénateur' : 'Député';
+  const parts: string[] = [
+    `${data.prenom} ${data.nom} — ${chambreLabel}${data.actif ? '' : ' (ancien)'}`,
+  ];
+
+  if (data.groupe) {
+    parts.push(`Groupe politique : ${data.groupe}`);
+  }
+  if (data.profession) {
+    parts.push(`Profession : ${data.profession}`);
+  }
+  if (data.dateNaissance) {
+    parts.push(`Date de naissance : ${data.dateNaissance}`);
+  }
+  if (data.circonscription) {
+    parts.push(`Circonscription : ${data.circonscription}`);
+  }
+  if (data.commissionPermanente) {
+    parts.push(`Commission permanente : ${data.commissionPermanente}`);
+  }
+
+  // Stats d'activité
+  const statsLines: string[] = [];
+  if (data.stats.presence != null) statsLines.push(`Présence aux scrutins : ${data.stats.presence}%`);
+  if (data.stats.loyaute != null) statsLines.push(`Loyauté au groupe : ${data.stats.loyaute}%`);
+  if (data.stats.participation != null) statsLines.push(`Votes exprimés : ${data.stats.participation}`);
+  if (data.stats.interventions != null) statsLines.push(`Interventions : ${data.stats.interventions}`);
+  if (data.stats.amendements != null) {
+    const adoptStr = data.stats.amendementsAdoptes != null
+      ? ` (${data.stats.amendementsAdoptes} adoptés)` : '';
+    statsLines.push(`Amendements déposés : ${data.stats.amendements}${adoptStr}`);
+  }
+  if (statsLines.length > 0) {
+    parts.push('\n--- Activité parlementaire ---');
+    parts.push(...statsLines);
+  }
+
+  // Mandats et fonctions
+  if (data.mandats.length > 0) {
+    parts.push('\n--- Mandats et fonctions ---');
+    for (const m of data.mandats.slice(0, 15)) {
+      const finStr = m.dateFin ? ` → ${m.dateFin}` : ' → en cours';
+      parts.push(`${m.dateDebut}${finStr} : ${m.qualite} — ${m.institution} (${m.typeOrgane})`);
+    }
+  }
+
+  // Actions de lobbying ciblant ce parlementaire
+  if (data.lobbyingActions.length > 0) {
+    parts.push('\n--- Actions de lobbying le ciblant ---');
+    for (const a of data.lobbyingActions.slice(0, 5)) {
+      const secteurs = a.secteurs.length > 0 ? ` [${a.secteurs.join(', ')}]` : '';
+      parts.push(`${a.lobbyiste} (${a.type})${secteurs} : ${a.description}`);
+    }
+  }
+
+  // Déclarations HATVP (transparence)
+  if (data.declarations.length > 0) {
+    parts.push('\n--- Déclarations HATVP (transparence) ---');
+    for (const d of data.declarations) {
+      const dateStr = d.datePublication ? ` (publiée le ${d.datePublication})` : '';
+      parts.push(`${d.label}${dateStr}`);
+    }
+  } else {
+    parts.push('\n--- Déclarations HATVP ---');
+    parts.push('Aucune déclaration publiée trouvée sur le site de la HATVP.');
+  }
+
+  // Bio Wikipedia
+  if (data.wikipediaBio) {
+    const bio = data.wikipediaBio.length > 2000
+      ? data.wikipediaBio.slice(0, 2000) + '...'
+      : data.wikipediaBio;
+    parts.push('\n--- Biographie Wikipedia ---');
+    parts.push(bio);
+  }
+
+  // Résultats Tavily (presse / actualités)
+  if (data.tavilyResults && data.tavilyResults.length > 0) {
+    parts.push('\n--- Actualités et articles de presse ---');
+    for (const r of data.tavilyResults.slice(0, 3)) {
+      const content = r.content.length > 500
+        ? r.content.slice(0, 500) + '...'
+        : r.content;
+      parts.push(`[${r.title}] ${content}`);
+    }
+  }
+
+  parts.push(
+    '',
+    'Génère une fiche de synthèse structurée en trois parties séparées par les lignes exactes "---PARCOURS---" et "---POSITIONS---" et "---FAITS---" :',
+    '1. RÉSUMÉ (3 à 5 phrases) : Qui est ce parlementaire ? Son parcours politique en quelques mots, son rôle actuel, ce qui le distingue. Accessible et engageant.',
+    '---PARCOURS---',
+    '2. PARCOURS (3 à 8 phrases) : Détaille sa carrière politique, ses mandats importants, ses responsabilités passées et actuelles. Mentionne sa formation ou profession d\'origine si pertinent.',
+    '---POSITIONS---',
+    '3. POSITIONS CLÉS (3 à 6 phrases) : Ses prises de position notables, ses combats politiques, les sujets sur lesquels il s\'est distingué. Appuie-toi sur ses votes, amendements et interventions.',
+    '---FAITS---',
+    '4. FAITS NOTABLES (2 à 4 phrases) : Faits marquants, controverses, réalisations spécifiques ou anecdotes pertinentes. Uniquement des faits vérifiables.',
+  );
+
+  return parts.join('\n');
+}
