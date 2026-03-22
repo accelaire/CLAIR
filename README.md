@@ -212,22 +212,24 @@ pnpm docker:logs      # Suivre les logs
 pnpm ingestion:smart-sync -- --all          # Toutes les sources
 pnpm ingestion:smart-sync -- --force        # Forcer même si source inchangée
 
-# Sync manuel granulaire
-pnpm ingestion:sync -- -d                   # Députés uniquement
-pnpm ingestion:sync -- -S                   # Sénateurs uniquement
-pnpm ingestion:sync -- -s                   # Scrutins AN
-pnpm ingestion:sync -- --scrutins-senat     # Scrutins Sénat
-pnpm ingestion:sync -- -a                   # Amendements AN
-pnpm ingestion:sync -- -i                   # Interventions AN (DILA)
-pnpm ingestion:sync -- -D                   # Dossiers législatifs
-pnpm ingestion:sync -- -L                   # Lobbyistes + actions (HATVP)
-pnpm ingestion:sync -- -L --no-actions      # Lobbyistes sans actions
-pnpm ingestion:sync -- -s -l 50            # Limiter à 50 scrutins
+# Sync manuel (filtres de chambre : --an pour AN, --se pour Sénat)
+pnpm ingestion:sync -- -p                   # Parlementaires (députés + sénateurs)
+pnpm ingestion:sync -- --an -p              # Députés uniquement
+pnpm ingestion:sync -- --se -p              # Sénateurs uniquement
+pnpm ingestion:sync -- -s                   # Scrutins AN + Sénat
+pnpm ingestion:sync -- --an -s              # Scrutins AN uniquement
+pnpm ingestion:sync -- --in                 # Interventions AN + Sénat
+pnpm ingestion:sync -- --am                 # Amendements AN + Sénat
+pnpm ingestion:sync -- --an --am            # Amendements AN uniquement
+pnpm ingestion:sync -- --do                 # Dossiers législatifs AN + Sénat
+pnpm ingestion:sync -- --lo                 # Lobbyistes + actions (HATVP)
+pnpm ingestion:sync -- --lo --no-actions    # Lobbyistes sans actions
+pnpm ingestion:sync -- -s -l 50             # Limiter à 50 scrutins
 
 # Enrichissement et linking
-pnpm ingestion:sync -- --enrich-amendements-an     # Enrichir amendements AN (HTML)
-pnpm ingestion:sync -- --enrich-amendements-senat  # Enrichir amendements Sénat
-pnpm ingestion:sync -- --link-amendements          # Lier amendements aux scrutins
+pnpm ingestion:sync -- --am --enrich             # Enrichir amendements par scraping HTML
+pnpm ingestion:sync -- --am --link               # Lier amendements aux scrutins
+pnpm ingestion:sync -- --in --link               # Lier interventions aux scrutins
 
 # Backfill complet (historique)
 pnpm ingestion:backfill

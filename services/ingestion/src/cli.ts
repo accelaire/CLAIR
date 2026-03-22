@@ -56,73 +56,45 @@ program
 program
   .command('sync')
   .description('Synchroniser les données depuis les sources')
+  // Filtres de chambre
+  .option('--an, --assemblee-nationale', 'Filtrer sur l\'Assemblée Nationale uniquement')
+  .option('--se, --senat', 'Filtrer sur le Sénat uniquement')
+  // Types de données
   .option('-f, --full', 'Synchronisation complète (backfill)')
-  .option('-g, --groupes', 'Synchroniser uniquement les groupes')
-  .option('-d, --deputes', 'Synchroniser uniquement les députés')
-  .option('-S, --senateurs', 'Synchroniser uniquement les sénateurs')
-  .option('-s, --scrutins', 'Synchroniser uniquement les scrutins AN')
-  .option('--scrutins-senat', 'Synchroniser uniquement les scrutins Sénat')
-  .option('-c, --circonscriptions', 'Synchroniser uniquement les circonscriptions')
-  .option('-i, --interventions', 'Synchroniser uniquement les interventions AN')
-  .option('--interventions-senat', 'Synchroniser uniquement les interventions Sénat (data.senat.fr)')
-  .option('-a, --amendements', 'Synchroniser uniquement les amendements (AN Open Data)')
-  .option('--amendements-senat', 'Synchroniser uniquement les amendements Sénat (CSV senat.fr)')
-  .option('--amendements-senat-ameli', 'Synchroniser les amendements Sénat via AMELI (ancien mode, commission uniquement)')
-  .option('--texte-ids <ids>', 'IDs texte AMELI à cibler (séparés par des virgules, avec --amendements-senat)')
-  .option('-D, --dossiers', 'Synchroniser uniquement les dossiers législatifs (AN Open Data)')
-  .option('--dossiers-senat', 'Synchroniser uniquement les dossiers législatifs Sénat (data.senat.fr DOSLEG)')
-  .option('--link-interventions', 'Lier les interventions aux scrutins (par seanceRef ou date)')
-  .option('--link-amendements', 'Lier les scrutins aux amendements (par parsing du titre)')
-  .option('--enrich-amendements-an', 'Enrichir les scrutins AN en scrappant la page HTML pour extraire le lien amendement')
-  .option('--enrich-amendements-senat', 'Enrichir les scrutins Sénat en scrappant la page HTML pour extraire le lien amendement')
-  .option('--reset', 'Avec --link-amendements: réinitialiser les liens existants avant de re-lier')
-  .option('-L, --lobbying', 'Synchroniser uniquement les lobbyistes (HATVP)')
+  .option('-p, --parlementaires', 'Synchroniser les parlementaires (députés + sénateurs, ou filtrer avec --an/--se)')
+  .option('-g, --groupes', 'Synchroniser les groupes politiques')
+  .option('-s, --scrutins', 'Synchroniser les scrutins (--an ou --se pour filtrer)')
+  .option('--in, --interventions', 'Synchroniser les interventions (--an ou --se pour filtrer)')
+  .option('--am, --amendements', 'Synchroniser les amendements (--an ou --se pour filtrer)')
+  .option('--do, --dossiers', 'Synchroniser les dossiers législatifs (--an ou --se pour filtrer)')
+  .option('--lo, --lobbyistes', 'Synchroniser les lobbyistes et actions (HATVP)')
   .option('--declarations', 'Synchroniser les déclarations HATVP (intérêts & patrimoine des parlementaires)')
-  .option('-l, --limit <number>', 'Limiter le nombre de scrutins/séances/amendements/lobbyistes', parseInt)
-  .option('--no-actions', 'Ne pas synchroniser les actions de lobbying (avec -L)')
+  // Modificateurs
+  .option('-c, --circonscriptions', 'Inclure les circonscriptions (avec -p --an)')
+  .option('--ameli', 'Utiliser le mode AMELI legacy (avec --se -a)')
+  .option('--texte-ids <ids>', 'IDs texte AMELI à cibler (séparés par des virgules, avec --se -a)')
+  .option('--no-actions', 'Ne pas synchroniser les actions de lobbying (avec --lo)')
+  .option('-l, --limit <number>', 'Limiter le nombre d\'éléments à synchroniser', parseInt)
   .option('--dry-run', 'Mode simulation (affiche ce qui serait fait sans modifier)')
+  // Opérations de liaison (combiner avec --in ou --am)
+  .option('--link', 'Lier les scrutins aux interventions (--in) ou amendements (--am)')
+  .option('--enrich', 'Enrichir les scrutins par scraping HTML (avec --am, filtrer avec --an/--se)')
+  .option('--reset', 'Réinitialiser les liens existants avant de re-lier')
   .action(async (options) => {
     try {
       logger.info({ options }, 'Starting sync command');
 
+      const chambre: 'an' | 'se' | null =
+        options.assembleeNationale ? 'an' : options.senat ? 'se' : null;
+
       if (options.full) {
         await fullSync();
-      } else if (options.groupes) {
-        await syncGroupes();
-      } else if (options.deputes) {
-        await syncDeputes(false);
-      } else if (options.senateurs) {
-        await syncSenateurs(false);
-      } else if (options.scrutins) {
-        await syncScrutins({ limit: options.limit });
-      } else if (options.scrutinsSenat) {
-        await syncScrutinsSenat({ limit: options.limit });
-      } else if (options.circonscriptions) {
-        // Les circonscriptions sont créées automatiquement avec les députés
-        await syncDeputes(true);
-      } else if (options.interventions) {
-        await syncInterventions({ maxSeances: options.limit }); // Utilise le défaut du client (100) si pas de --limit
-      } else if (options.interventionsSenat) {
-        await syncInterventionsSenat({ maxSeances: options.limit });
-      } else if (options.amendements) {
-        await syncAmendements({ limit: options.limit });
-      } else if (options.amendementsSenat) {
-        const texteIds = options.texteIds
-          ? options.texteIds.split(',').map((s: string) => parseInt(s.trim(), 10)).filter((n: number) => !isNaN(n))
-          : undefined;
-        await syncAmendementsSenatCsv({ texteIds });
-      } else if (options.amendementsSenatAmeli) {
-        await syncAmendementsSenat({ maxAmendements: options.limit });
-      } else if (options.dossiers) {
-        await syncDossiers({ limit: options.limit });
-      } else if (options.dossiersSenat) {
-        await syncDossiersSenat({ limit: options.limit });
-      } else if (options.linkInterventions) {
+      } else if (options.link && options.interventions) {
         const result = await linkInterventionsToScrutins({ dryRun: options.dryRun });
         console.log(`\n📊 Interventions liées: ${result.linked}`);
         console.log(`   - Par seanceRef: ${result.bySeanceRef}`);
         console.log(`   - Par date: ${result.byDate}`);
-      } else if (options.linkAmendements) {
+      } else if (options.link && options.amendements) {
         const result = await linkScrutinsToAmendements({
           dryRun: options.dryRun,
           reset: options.reset,
@@ -132,33 +104,115 @@ program
         if (options.reset && !options.dryRun) {
           console.log(`   ⚠️  Les liens existants ont été réinitialisés avant re-linkage`);
         }
-      } else if (options.enrichAmendementsAn) {
-        const result = await enrichScrutinsANAmendements({
-          limit: options.limit,
-          dryRun: options.dryRun,
-          reset: options.reset,
-        });
-        console.log(`\n📊 Enrichissement scrutins AN (scraping HTML):`);
-        if (options.reset && result.resetCount) {
-          console.log(`   - Liens réinitialisés: ${result.resetCount}`);
+      } else if (options.enrich && options.amendements) {
+        if (chambre === 'se') {
+          const result = await enrichScrutinsSenatAmendements({
+            limit: options.limit,
+            dryRun: options.dryRun,
+            reset: options.reset,
+          });
+          console.log(`\n📊 Enrichissement scrutins Sénat (scraping HTML):`);
+          if (options.reset && result.resetCount) {
+            console.log(`   - Liens réinitialisés: ${result.resetCount}`);
+          }
+          console.log(`   - Enrichis: ${result.enriched}`);
+          console.log(`   - Non trouvés: ${result.notFound}`);
+          console.log(`   - Erreurs: ${result.errors}`);
+        } else if (chambre === 'an') {
+          const result = await enrichScrutinsANAmendements({
+            limit: options.limit,
+            dryRun: options.dryRun,
+            reset: options.reset,
+          });
+          console.log(`\n📊 Enrichissement scrutins AN (scraping HTML):`);
+          if (options.reset && result.resetCount) {
+            console.log(`   - Liens réinitialisés: ${result.resetCount}`);
+          }
+          console.log(`   - Enrichis: ${result.enriched}`);
+          console.log(`   - Non trouvés: ${result.notFound}`);
+          console.log(`   - Erreurs: ${result.errors}`);
+        } else {
+          const resultAN = await enrichScrutinsANAmendements({
+            limit: options.limit,
+            dryRun: options.dryRun,
+            reset: options.reset,
+          });
+          console.log(`\n📊 Enrichissement scrutins AN (scraping HTML):`);
+          if (options.reset && resultAN.resetCount) {
+            console.log(`   - Liens réinitialisés: ${resultAN.resetCount}`);
+          }
+          console.log(`   - Enrichis: ${resultAN.enriched}`);
+          console.log(`   - Non trouvés: ${resultAN.notFound}`);
+          console.log(`   - Erreurs: ${resultAN.errors}`);
+
+          const resultSE = await enrichScrutinsSenatAmendements({
+            limit: options.limit,
+            dryRun: options.dryRun,
+            reset: options.reset,
+          });
+          console.log(`\n📊 Enrichissement scrutins Sénat (scraping HTML):`);
+          if (options.reset && resultSE.resetCount) {
+            console.log(`   - Liens réinitialisés: ${resultSE.resetCount}`);
+          }
+          console.log(`   - Enrichis: ${resultSE.enriched}`);
+          console.log(`   - Non trouvés: ${resultSE.notFound}`);
+          console.log(`   - Erreurs: ${resultSE.errors}`);
         }
-        console.log(`   - Enrichis: ${result.enriched}`);
-        console.log(`   - Non trouvés: ${result.notFound}`);
-        console.log(`   - Erreurs: ${result.errors}`);
-      } else if (options.enrichAmendementsSenat) {
-        const result = await enrichScrutinsSenatAmendements({
-          limit: options.limit,
-          dryRun: options.dryRun,
-          reset: options.reset,
-        });
-        console.log(`\n📊 Enrichissement scrutins Sénat (scraping HTML):`);
-        if (options.reset && result.resetCount) {
-          console.log(`   - Liens réinitialisés: ${result.resetCount}`);
+      } else if (options.groupes) {
+        await syncGroupes();
+      } else if (options.parlementaires) {
+        if (chambre === 'an') {
+          await syncDeputes(options.circonscriptions || false);
+        } else if (chambre === 'se') {
+          await syncSenateurs(false);
+        } else {
+          await syncDeputes(options.circonscriptions || false);
+          await syncSenateurs(false);
         }
-        console.log(`   - Enrichis: ${result.enriched}`);
-        console.log(`   - Non trouvés: ${result.notFound}`);
-        console.log(`   - Erreurs: ${result.errors}`);
-      } else if (options.lobbying) {
+      } else if (options.scrutins) {
+        if (chambre === 'se') {
+          await syncScrutinsSenat({ limit: options.limit });
+        } else if (chambre === 'an') {
+          await syncScrutins({ limit: options.limit });
+        } else {
+          await syncScrutins({ limit: options.limit });
+          await syncScrutinsSenat({ limit: options.limit });
+        }
+      } else if (options.interventions) {
+        if (chambre === 'se') {
+          await syncInterventionsSenat({ maxSeances: options.limit });
+        } else if (chambre === 'an') {
+          await syncInterventions({ maxSeances: options.limit });
+        } else {
+          await syncInterventions({ maxSeances: options.limit });
+          await syncInterventionsSenat({ maxSeances: options.limit });
+        }
+      } else if (options.amendements) {
+        if (chambre === 'se') {
+          if (options.ameli) {
+            await syncAmendementsSenat({ maxAmendements: options.limit });
+          } else {
+            const texteIds = options.texteIds
+              ? options.texteIds.split(',').map((s: string) => parseInt(s.trim(), 10)).filter((n: number) => !isNaN(n))
+              : undefined;
+            await syncAmendementsSenatCsv({ texteIds });
+          }
+        } else if (chambre === 'an') {
+          await syncAmendements({ limit: options.limit });
+        } else {
+          await syncAmendements({ limit: options.limit });
+          await syncAmendementsSenatCsv({});
+        }
+      } else if (options.dossiers) {
+        if (chambre === 'se') {
+          await syncDossiersSenat({ limit: options.limit });
+        } else if (chambre === 'an') {
+          await syncDossiers({ limit: options.limit });
+        } else {
+          await syncDossiers({ limit: options.limit });
+          await syncDossiersSenat({ limit: options.limit });
+        }
+      } else if (options.lobbyistes) {
         await syncLobbyistes({ limit: options.limit, includeActions: options.actions !== false });
       } else if (options.declarations) {
         const { syncDeclarationsHATVP } = await import('./workers/declarations-sync.js');
@@ -233,15 +287,11 @@ program
   .option('-a, --all', 'Synchroniser TOUT dans le bon ordre (parlementaires, scrutins, amendements, dossiers, interventions, lobbying)')
   .option('-f, --force', 'Forcer le sync même si pas de changement')
   .option('-s, --scrutins', 'Inclure les scrutins (AN + Sénat)')
-  .option('-A, --amendements', 'Inclure les amendements (AN + Sénat)')
-  .option('-D, --dossiers', 'Inclure les dossiers législatifs (AN)')
-  .option('-I, --interventions', 'Inclure les interventions (DILA + Sénat)')
-  .option('-L, --lobbying', 'Inclure les lobbyistes')
-  .option('--scrutins-limit <number>', 'Limite pour les scrutins (défaut: TOUT)', parseInt)
-  .option('--amendements-limit <number>', 'Limite pour les amendements (défaut: TOUT)', parseInt)
-  .option('--dossiers-limit <number>', 'Limite pour les dossiers législatifs (défaut: TOUT)', parseInt)
-  .option('--interventions-limit <number>', 'Limite pour les interventions (défaut: TOUT)', parseInt)
-  .option('--lobbying-limit <number>', 'Limite pour les lobbyistes (défaut: TOUT)', parseInt)
+  .option('--am, --amendements', 'Inclure les amendements (AN + Sénat)')
+  .option('--do, --dossiers', 'Inclure les dossiers législatifs (AN)')
+  .option('--in, --interventions', 'Inclure les interventions (DILA + Sénat)')
+  .option('--lo, --lobbying', 'Inclure les lobbyistes')
+  .option('-l, --limit <number>', 'Limite globale pour tous les types (défaut: TOUT)', parseInt)
   .option('--sources <sources>', 'Sources spécifiques à sync (séparées par des virgules)')
   .action(async (options) => {
     try {
@@ -255,11 +305,11 @@ program
         includeDossiers: options.dossiers,
         includeInterventions: options.interventions,
         includeLobbying: options.lobbying,
-        scrutinsLimit: options.scrutinsLimit,
-        amendementsLimit: options.amendementsLimit,
-        dossiersLimit: options.dossiersLimit,
-        interventionsLimit: options.interventionsLimit,
-        lobbyingLimit: options.lobbyingLimit,
+        scrutinsLimit: options.limit,
+        amendementsLimit: options.limit,
+        dossiersLimit: options.limit,
+        interventionsLimit: options.limit,
+        lobbyingLimit: options.limit,
         sources: options.sources?.split(',').map((s: string) => s.trim()),
       });
 
