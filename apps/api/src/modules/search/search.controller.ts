@@ -7,6 +7,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { indexAll, clearAllIndexes } from './indexing.service';
 import { buildParlementaireSearchCondition } from '../../utils/search';
+import { fuzzySearchCandidates, FuzzyCandidate } from '../../utils/fuzzy-search';
 
 // Timeout pour les requêtes (évite les blocages)
 const MEILISEARCH_TIMEOUT_MS = 1500; // Réduit de 3s à 1.5s
@@ -116,6 +117,41 @@ export const searchRoutes: FastifyPluginAsync = async (fastify) => {
         try {
           const result = await searchWithMeilisearch(fastify, q, type, limit);
           recordMeilisearchSuccess();
+
+          // If Meilisearch returned no parlementaire results, try fuzzy fallback
+          const counts = result.meta.counts as { deputes?: number; senateurs?: number; total?: number } | undefined;
+          const hasParlementaireResults = (counts?.deputes ?? 0) > 0
+            || (counts?.senateurs ?? 0) > 0
+            || (result.meta.count ?? 0) > 0;
+          if (!hasParlementaireResults && (type === 'all' || type === 'deputes' || type === 'senateurs')) {
+            const chambre = type === 'deputes' ? 'assemblee' : type === 'senateurs' ? 'senat' : undefined;
+            const fuzzySelect = {
+              id: true, slug: true, chambre: true, nom: true, prenom: true, photoUrl: true,
+              groupe: { select: { nom: true, couleur: true } },
+              circonscription: { select: { departement: true, nom: true } },
+            };
+            const fuzzyParlementaires = await fuzzySearchParlementairesDB(fastify, q, chambre, fuzzySelect, limit);
+            const transformHit = (d: any) => ({
+              id: d.id, slug: d.slug, chambre: d.chambre,
+              nom: d.nom, prenom: d.prenom, nomComplet: `${d.prenom} ${d.nom}`,
+              photoUrl: d.photoUrl, groupe: d.groupe?.nom, groupeCouleur: d.groupe?.couleur,
+              circonscription: d.circonscription?.nom, departement: d.circonscription?.departement,
+              _type: d.chambre === 'senat' ? 'senateur' : 'depute',
+            });
+
+            if (type === 'all' && counts) {
+              const deputes = fuzzyParlementaires.filter((p: any) => p.chambre === 'assemblee').map(transformHit);
+              const senateurs = fuzzyParlementaires.filter((p: any) => p.chambre === 'senat').map(transformHit);
+              result.data = [...deputes, ...senateurs, ...result.data].slice(0, limit);
+              counts.deputes = deputes.length;
+              counts.senateurs = senateurs.length;
+              counts.total = result.data.length;
+            } else {
+              result.data = fuzzyParlementaires.map(transformHit);
+              result.meta.count = result.data.length;
+            }
+          }
+
           return result;
         } catch (error) {
           recordMeilisearchFailure();
@@ -449,21 +485,29 @@ async function searchWithDatabase(
 
   // Recherche députés (chambre = assemblee)
   if (type === 'all' || type === 'deputes') {
-    const parlementaires = await fastify.prisma.parlementaire.findMany({
+    let parlementaires = await fastify.prisma.parlementaire.findMany({
       where: buildParlementaireWhere('assemblee'),
       select: parlementaireSelect,
       take: limit,
     });
+    // Fuzzy fallback if exact search found nothing
+    if (parlementaires.length === 0) {
+      parlementaires = await fuzzySearchParlementairesDB(fastify, searchTerm, 'assemblee', parlementaireSelect, limit);
+    }
     results.deputes = parlementaires.map(transformParlementaire);
   }
 
   // Recherche sénateurs (chambre = senat)
   if (type === 'all' || type === 'senateurs') {
-    const parlementaires = await fastify.prisma.parlementaire.findMany({
+    let parlementaires = await fastify.prisma.parlementaire.findMany({
       where: buildParlementaireWhere('senat'),
       select: parlementaireSelect,
       take: limit,
     });
+    // Fuzzy fallback if exact search found nothing
+    if (parlementaires.length === 0) {
+      parlementaires = await fuzzySearchParlementairesDB(fastify, searchTerm, 'senat', parlementaireSelect, limit);
+    }
     results.senateurs = parlementaires.map(transformParlementaire);
   }
 
@@ -590,7 +634,7 @@ async function suggestFromDatabase(fastify: any, q: string, limit: number) {
   };
 
   try {
-    const [parlementaires, scrutins] = await Promise.all([
+    let [parlementaires, scrutins] = await Promise.all([
       fastify.prisma.parlementaire.findMany({
         where: parlementaireWhere,
         select: {
@@ -617,6 +661,19 @@ async function suggestFromDatabase(fastify: any, q: string, limit: number) {
       }),
     ]);
 
+    // Fuzzy fallback if exact search found no parlementaires
+    if (parlementaires.length === 0) {
+      const fuzzySelect = {
+        id: true,
+        slug: true,
+        chambre: true,
+        nom: true,
+        prenom: true,
+        groupe: { select: { nom: true } },
+      };
+      parlementaires = await fuzzySearchParlementairesDB(fastify, searchTerm, undefined, fuzzySelect, limit);
+    }
+
     const suggestions = [
       ...parlementaires.map((d: any) => ({
         type: d.chambre === 'senat' ? 'senateur' : 'depute',
@@ -639,4 +696,41 @@ async function suggestFromDatabase(fastify: any, q: string, limit: number) {
     fastify.log.error({ err }, 'Suggest from database failed');
     return { data: [] };
   }
+}
+
+// =============================================================================
+// Fuzzy search fallback for parlementaires
+// =============================================================================
+
+async function fuzzySearchParlementairesDB(
+  fastify: any,
+  search: string,
+  chambre: string | undefined,
+  select: any,
+  limit: number
+) {
+  const candidates: FuzzyCandidate[] = await fastify.prisma.parlementaire.findMany({
+    where: {
+      actif: true,
+      ...(chambre && { chambre }),
+    },
+    select: { id: true, nom: true, prenom: true, slug: true },
+  });
+
+  const fuzzyResults = fuzzySearchCandidates(search, candidates, limit);
+
+  if (fuzzyResults.length === 0) return [];
+
+  const matchingIds = fuzzyResults.map((r) => r.id);
+
+  const parlementaires = await fastify.prisma.parlementaire.findMany({
+    where: { id: { in: matchingIds } },
+    select,
+  });
+
+  // Preserve fuzzy score ordering
+  const idOrder = new Map(matchingIds.map((id: string, idx: number) => [id, idx]));
+  parlementaires.sort((a: any, b: any) => (idOrder.get(a.id) ?? 0) - (idOrder.get(b.id) ?? 0));
+
+  return parlementaires;
 }
