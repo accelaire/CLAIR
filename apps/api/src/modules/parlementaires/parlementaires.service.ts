@@ -13,6 +13,7 @@ import {
   Chambre,
 } from './parlementaires.schema';
 import { buildParlementaireSearchCondition } from '../../utils/search';
+import { fuzzySearchCandidates, FuzzyCandidate } from '../../utils/fuzzy-search';
 
 export class ParlementairesService {
   private readonly CACHE_TTL = 3600; // 1 hour (data synced daily)
@@ -54,44 +55,60 @@ export class ParlementairesService {
 
     const orderBy = orderByMap[sort] || { nom: order };
 
-    const [parlementaires, total] = await Promise.all([
+    const parlementaireInclude = {
+      groupe: {
+        select: {
+          id: true,
+          slug: true,
+          chambre: true,
+          nom: true,
+          nomComplet: true,
+          couleur: true,
+          position: true,
+        },
+      },
+      circonscription: {
+        select: {
+          id: true,
+          departement: true,
+          numero: true,
+          nom: true,
+          type: true,
+        },
+      },
+      _count: {
+        select: {
+          votes: true,
+          interventions: true,
+          amendements: true,
+        },
+      },
+    };
+
+    let [parlementaires, total] = await Promise.all([
       this.prisma.parlementaire.findMany({
         where,
-        include: {
-          groupe: {
-            select: {
-              id: true,
-              slug: true,
-              chambre: true,
-              nom: true,
-              nomComplet: true,
-              couleur: true,
-              position: true,
-            },
-          },
-          circonscription: {
-            select: {
-              id: true,
-              departement: true,
-              numero: true,
-              nom: true,
-              type: true,
-            },
-          },
-          _count: {
-            select: {
-              votes: true,
-              interventions: true,
-              amendements: true,
-            },
-          },
-        },
+        include: parlementaireInclude,
         orderBy,
         skip,
         take: limit,
       }),
       this.prisma.parlementaire.count({ where }),
     ]);
+
+    // Fuzzy search fallback: if exact search returned no results and there's a search term
+    if (total === 0 && search) {
+      const fuzzyResult = await this.fuzzySearchParlementaires(search, {
+        chambre,
+        groupe,
+        departement,
+        actif,
+        limit,
+        skip,
+      }, parlementaireInclude, orderBy);
+      parlementaires = fuzzyResult.parlementaires;
+      total = fuzzyResult.total;
+    }
 
     const totalPages = Math.ceil(total / limit);
     const meta: PaginationMeta = {
@@ -692,6 +709,88 @@ export class ParlementairesService {
     await this.redis.setex(cacheKey, this.CACHE_TTL_LONG, JSON.stringify(result));
 
     return result;
+  }
+
+  // ===========================================================================
+  // INVALIDATION DU CACHE
+  // ===========================================================================
+
+  // ===========================================================================
+  // RECHERCHE FUZZY (fallback quand la recherche exacte ne donne rien)
+  // ===========================================================================
+
+  private async getFuzzyCandidates(filters: {
+    chambre?: string;
+    groupe?: string;
+    departement?: string;
+    actif?: boolean;
+  }): Promise<FuzzyCandidate[]> {
+    const cacheKey = `parlementaires:fuzzy-candidates:${JSON.stringify(filters)}`;
+
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    const where: Prisma.ParlementaireWhereInput = {
+      ...(filters.actif !== undefined && { actif: filters.actif }),
+      ...(filters.chambre && { chambre: filters.chambre }),
+      ...(filters.groupe && { groupe: { slug: filters.groupe } }),
+      ...(filters.departement && { circonscription: { departement: filters.departement } }),
+    };
+
+    const candidates = await this.prisma.parlementaire.findMany({
+      where,
+      select: { id: true, nom: true, prenom: true, slug: true },
+    });
+
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(candidates));
+
+    return candidates;
+  }
+
+  private async fuzzySearchParlementaires(
+    search: string,
+    filters: {
+      chambre?: string;
+      groupe?: string;
+      departement?: string;
+      actif?: boolean;
+      limit: number;
+      skip: number;
+    },
+    include: any,
+    orderBy: any
+  ) {
+    const candidates = await this.getFuzzyCandidates({
+      chambre: filters.chambre,
+      groupe: filters.groupe,
+      departement: filters.departement,
+      actif: filters.actif,
+    });
+
+    const fuzzyResults = fuzzySearchCandidates(search, candidates);
+
+    if (fuzzyResults.length === 0) {
+      return { parlementaires: [] as any[], total: 0 };
+    }
+
+    const matchingIds = fuzzyResults.map((r) => r.id);
+    const total = matchingIds.length;
+
+    // Apply pagination to the sorted fuzzy results
+    const pageIds = matchingIds.slice(filters.skip, filters.skip + filters.limit);
+
+    const parlementaires = await this.prisma.parlementaire.findMany({
+      where: { id: { in: pageIds } },
+      include,
+    });
+
+    // Preserve fuzzy score ordering
+    const idOrder = new Map(pageIds.map((id, idx) => [id, idx]));
+    parlementaires.sort((a, b) => (idOrder.get(a.id) ?? 0) - (idOrder.get(b.id) ?? 0));
+
+    return { parlementaires, total };
   }
 
   // ===========================================================================
