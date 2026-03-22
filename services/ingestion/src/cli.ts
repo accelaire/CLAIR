@@ -749,4 +749,12 @@ program
     }
   });
 
-program.parse();
+// pnpm forwards '--' from 'pnpm run script -- args' into the child process argv.
+// Commander treats '--' as end-of-options, so flags after it are ignored.
+// Strip the first '--' that appears after the subcommand name.
+const argv = process.argv.slice();
+const firstDoubleDash = argv.indexOf('--', 3);
+if (firstDoubleDash !== -1) {
+  argv.splice(firstDoubleDash, 1);
+}
+program.parse(argv);
