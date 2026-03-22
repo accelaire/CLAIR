@@ -673,4 +673,30 @@ program
     }
   });
 
+// =============================================================================
+// COMMANDE: check-ia-quality
+// =============================================================================
+program
+  .command('check-ia-quality')
+  .description('Vérifier la qualité des résumés IA (détection d\'inversions de positions)')
+  .action(async () => {
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+
+      try {
+        console.log('\n🤖 Vérification de la qualité des résumés IA...\n');
+        const { runIAQualityChecks, printIAQualityReport } = await import('./checks/ia-quality.js');
+        const report = await runIAQualityChecks(prisma);
+        printIAQualityReport(report);
+        process.exit(report.passed ? 0 : 1);
+      } finally {
+        await prisma.$disconnect();
+      }
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'IA quality check failed');
+      process.exit(1);
+    }
+  });
+
 program.parse();

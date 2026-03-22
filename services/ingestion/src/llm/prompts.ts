@@ -98,6 +98,13 @@ interface GroupePosition {
   pour: number;
   contre: number;
   abstention: number;
+  orientation?: string | null;
+}
+
+interface VoteArticle {
+  article: string;
+  sort: string;
+  groupes: GroupePosition[];
 }
 
 interface DossierPromptData {
@@ -106,26 +113,31 @@ interface DossierPromptData {
   procedureLibelle?: string | null;
   etat?: string | null;
   scrutinsResumes: { titre: string; sort: string; typeVote: string; resumeIA?: string | null }[];
-  positionsSolennelles: GroupePosition[];
-  positionsGroupes: GroupePosition[];
+  positionsEnsemble: GroupePosition[];
+  votesArticles: VoteArticle[];
   amendementsClefs: { numero: string; exposeSommaire?: string | null; auteurLibelle?: string | null; sort?: string | null }[];
 }
 
 function formatGroupePosition(g: GroupePosition): string {
   const total = g.pour + g.contre + g.abstention;
   if (total === 0) return `${g.nom} : aucun vote exprimé`;
-  const pctPour = Math.round((g.pour / total) * 100);
-  const pctContre = Math.round((g.contre / total) * 100);
-  const pctAbst = Math.round((g.abstention / total) * 100);
 
+  // Tendency sur votes exprimés uniquement (pour+contre), pas les abstentions
+  const expressed = g.pour + g.contre;
   let tendency: string;
-  if (pctPour >= 70) tendency = 'Très favorable';
-  else if (pctPour >= 55) tendency = 'Plutôt favorable';
-  else if (pctContre >= 70) tendency = 'Très opposé';
-  else if (pctContre >= 55) tendency = 'Plutôt opposé';
-  else tendency = 'Divisé';
+  if (expressed === 0) {
+    tendency = 'Abstention totale';
+  } else {
+    const pctPourExpr = (g.pour / expressed) * 100;
+    if (pctPourExpr >= 70) tendency = 'Très favorable';
+    else if (pctPourExpr >= 55) tendency = 'Plutôt favorable';
+    else if (pctPourExpr <= 30) tendency = 'Très opposé';
+    else if (pctPourExpr <= 45) tendency = 'Plutôt opposé';
+    else tendency = 'Divisé';
+  }
 
-  return `${g.nom} : ${pctPour}% pour, ${pctContre}% contre, ${pctAbst}% abstention → ${tendency}`;
+  const orientationLabel = g.orientation ? ` [${g.orientation.replace(/_/g, ' ')}]` : '';
+  return `${g.nom}${orientationLabel} : ${g.pour} pour, ${g.contre} contre, ${g.abstention} abstention → ${tendency}`;
 }
 
 export function buildDossierResumePrompt(data: DossierPromptData): string {
@@ -156,17 +168,23 @@ export function buildDossierResumePrompt(data: DossierPromptData): string {
     }
   }
 
-  // Positions des groupes — votes solennels (ensemble du texte) = signal fiable
-  if (data.positionsSolennelles.length > 0) {
-    parts.push('\n--- Positions des groupes sur l\'ensemble du texte (votes solennels — position officielle fiable) ---');
-    for (const g of data.positionsSolennelles) {
+  // Positions des groupes — votes sur l'ensemble du texte (solennel ou ordinaire)
+  if (data.positionsEnsemble.length > 0) {
+    parts.push('\n--- Positions des groupes sur l\'ensemble du texte (données fiables) ---');
+    for (const g of data.positionsEnsemble) {
       parts.push(formatGroupePosition(g));
     }
-  } else if (data.positionsGroupes.length > 0) {
-    // Fallback : pas de vote solennel, on utilise l'agrégat avec un avertissement
-    parts.push('\n--- Positions des groupes politiques (agrégées — aucun vote solennel disponible, à interpréter avec prudence) ---');
-    for (const g of data.positionsGroupes) {
-      parts.push(formatGroupePosition(g));
+  }
+
+  // Votes sur les articles clés — nuance qualitative
+  if (data.votesArticles.length > 0) {
+    parts.push('\n--- Votes sur les articles clés (positions nuancées par article) ---');
+    for (const va of data.votesArticles.slice(0, 5)) {
+      const résultat = va.sort === 'adopte' ? 'Adopté' : 'Rejeté';
+      parts.push(`${va.article} (${résultat}) :`);
+      for (const g of va.groupes.slice(0, 6)) {
+        parts.push(`  ${formatGroupePosition(g)}`);
+      }
     }
   }
 
@@ -187,7 +205,17 @@ export function buildDossierResumePrompt(data: DossierPromptData): string {
     '',
     'Génère un résumé structuré en deux parties séparées par la ligne exacte "---POSITIONS---" :',
     '1. RÉSUMÉ (3 à 5 phrases) : Explique de quoi traite ce dossier, ce qui a été décidé, et l\'impact pour les citoyens.',
-    '2. POSITIONS (3 à 6 phrases) : Analyse les positions de chaque groupe politique majeur. IMPORTANT : base-toi UNIQUEMENT sur les votes solennels (ensemble du texte) pour déterminer qui est pour ou contre le texte. Les votes sur les amendements individuels peuvent donner une image INVERSE de la position réelle (un groupe opposé au texte vote "pour" ses propres amendements restrictifs). Utilise les amendements uniquement pour expliquer les points de débat, PAS pour déterminer les positions.',
+    data.positionsEnsemble.length > 0 || data.votesArticles.length > 0
+      ? '2. POSITIONS (3 à 6 phrases) : Analyse les positions de chaque groupe politique majeur. RÈGLES STRICTES :'
+      : '2. POSITIONS (1 à 2 phrases) : Indique simplement que les votes disponibles ne portent que sur des amendements et ne permettent pas de déterminer la position globale des groupes. Ne décris AUCUNE position de groupe.',
+    ...(data.positionsEnsemble.length > 0 || data.votesArticles.length > 0 ? [
+    '- Base-toi UNIQUEMENT sur les votes sur l\'ensemble du texte et/ou sur les articles fournis ci-dessus.',
+    '- Si des votes par article sont disponibles, mentionne les positions nuancées (ex: "le groupe X s\'est opposé à l\'article 3 sur la clause de conscience").',
+    '- Utilise l\'orientation politique entre crochets [gauche/droite/etc.] pour classifier correctement les groupes. Ne JAMAIS inventer de classification (ex: le RN est extrême droite, PAS gauche radicale).',
+    '- Si un groupe n\'apparaît pas dans les données fournies, ne lui attribue AUCUNE position.',
+    '- Si un groupe traditionnellement de gauche vote avec la droite (ou inversement), mentionne-le explicitement.',
+    '- ATTENTION : ne regroupe JAMAIS des groupes de familles politiques opposées dans la même catégorie, même s\'ils ont voté de la même manière.',
+    ] : []),
   );
 
   return parts.join('\n');
@@ -203,8 +231,8 @@ interface SujetPromptData {
   category?: string | null;
   status: string;
   dossiersResumes: { titre: string; chambre: string; etat?: string | null; resumeIA?: string | null }[];
-  positionsSolennelles: GroupePosition[];
-  positionsGroupes: GroupePosition[];
+  positionsEnsemble: GroupePosition[];
+  votesArticles: VoteArticle[];
 }
 
 export function buildSujetResumePrompt(data: SujetPromptData): string {
@@ -234,17 +262,23 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
     }
   }
 
-  // Positions des groupes — votes solennels (ensemble du texte) = signal fiable
-  if (data.positionsSolennelles.length > 0) {
-    parts.push('\n--- Positions des groupes sur l\'ensemble du texte (votes solennels — position officielle fiable) ---');
-    for (const g of data.positionsSolennelles) {
+  // Positions des groupes — votes sur l'ensemble du texte
+  if (data.positionsEnsemble.length > 0) {
+    parts.push('\n--- Positions des groupes sur l\'ensemble du texte (données fiables) ---');
+    for (const g of data.positionsEnsemble) {
       parts.push(formatGroupePosition(g));
     }
-  } else if (data.positionsGroupes.length > 0) {
-    // Fallback : pas de vote solennel, on utilise l'agrégat avec un avertissement
-    parts.push('\n--- Positions des groupes politiques (agrégées — aucun vote solennel disponible, à interpréter avec prudence) ---');
-    for (const g of data.positionsGroupes) {
-      parts.push(formatGroupePosition(g));
+  }
+
+  // Votes sur les articles clés
+  if (data.votesArticles.length > 0) {
+    parts.push('\n--- Votes sur les articles clés (positions nuancées par article) ---');
+    for (const va of data.votesArticles.slice(0, 5)) {
+      const résultat = va.sort === 'adopte' ? 'Adopté' : 'Rejeté';
+      parts.push(`${va.article} (${résultat}) :`);
+      for (const g of va.groupes.slice(0, 6)) {
+        parts.push(`  ${formatGroupePosition(g)}`);
+      }
     }
   }
 
@@ -255,7 +289,18 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
     '---RESUME---',
     '2. RÉSUMÉ (3 à 5 phrases) : Synthèse accessible de ce sujet pour un citoyen. De quoi s\'agit-il, où en est-on, qu\'est-ce qui a été voté à l\'Assemblée et au Sénat.',
     '---ENJEUX---',
-    '3. ENJEUX (3 à 6 phrases) : Quels sont les enjeux concrets pour les citoyens et quelles sont les positions des principaux groupes politiques. IMPORTANT : base-toi UNIQUEMENT sur les votes solennels (ensemble du texte) pour déterminer qui est pour ou contre. Les votes sur amendements individuels peuvent donner une image INVERSE de la position réelle. Pourquoi ce sujet est important ou controversé.',
+    data.positionsEnsemble.length > 0 || data.votesArticles.length > 0
+      ? '3. ENJEUX (3 à 6 phrases) : Quels sont les enjeux concrets pour les citoyens et quelles sont les positions des principaux groupes politiques. RÈGLES STRICTES :'
+      : '3. ENJEUX (2 à 4 phrases) : Quels sont les enjeux concrets pour les citoyens. Ne décris AUCUNE position de groupe politique car les seuls votes disponibles portent sur des amendements et ne reflètent pas les positions globales.',
+    ...(data.positionsEnsemble.length > 0 || data.votesArticles.length > 0 ? [
+    '- Base-toi UNIQUEMENT sur les votes sur l\'ensemble du texte et/ou sur les articles fournis.',
+    '- Si des votes par article sont disponibles, mentionne les positions nuancées.',
+    '- Utilise l\'orientation politique entre crochets pour classifier les groupes. Ne JAMAIS inventer de classification.',
+    '- Si un groupe n\'apparaît pas dans les données, ne lui attribue AUCUNE position.',
+    '- Si un groupe vote contre son camp habituel, mentionne-le.',
+    '- Ne regroupe JAMAIS des groupes de familles opposées dans la même catégorie.',
+    ] : []),
+    '- Pourquoi ce sujet est important ou controversé.',
   );
 
   return parts.join('\n');

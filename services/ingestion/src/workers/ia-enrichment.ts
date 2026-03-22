@@ -206,11 +206,12 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             take: 10,
           });
 
-          // Votes solennels par groupe (position officielle sur l'ensemble du texte)
-          const positionsSolennelles = await prisma.$queryRaw<
-            { nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint }[]
-          >`
-            SELECT gp.nom, gp.slug,
+          type GroupeRow = { nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
+          type ArticleRow = { scrutin_id: string; article: string; sort: string; nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
+
+          // Votes sur l'ensemble du texte (solennel OU ordinaire avec "ensemble" dans le titre)
+          const positionsEnsemble = await prisma.$queryRaw<GroupeRow[]>`
+            SELECT gp.nom, gp.slug, gp.position as orientation,
               SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END)::bigint AS pour,
               SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
               SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
@@ -219,18 +220,17 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             JOIN groupes_politiques gp ON gp.id = p.groupe_id
             JOIN scrutins s ON s.id = v.scrutin_id
             WHERE s.dossier_id = ${dossier.id}
-              AND s.type_vote = 'solennel'
+              AND (s.type_vote = 'solennel' OR s.titre ILIKE '%ensemble%')
               AND v.position != 'absent'
-            GROUP BY gp.nom, gp.slug
+            GROUP BY gp.nom, gp.slug, gp.position
             ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                       SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) DESC
           `;
 
-          // Agrégat tous scrutins (fallback si pas de solennel)
-          const positionsGroupes = await prisma.$queryRaw<
-            { nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint }[]
-          >`
-            SELECT gp.nom, gp.slug,
+          // Votes sur les articles clés (top 5 articles les plus votés)
+          const votesArticlesRaw = await prisma.$queryRaw<ArticleRow[]>`
+            SELECT s.id as scrutin_id, s.titre as article, s.sort,
+              gp.nom, gp.slug, gp.position as orientation,
               SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END)::bigint AS pour,
               SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
               SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
@@ -239,11 +239,33 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             JOIN groupes_politiques gp ON gp.id = p.groupe_id
             JOIN scrutins s ON s.id = v.scrutin_id
             WHERE s.dossier_id = ${dossier.id}
+              AND s.titre ILIKE '%article%'
+              AND s.titre NOT ILIKE '%amendement%'
+              AND s.titre NOT ILIKE '%ensemble%'
               AND v.position != 'absent'
-            GROUP BY gp.nom, gp.slug
-            ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
-                      SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) DESC
+            GROUP BY s.id, s.titre, s.sort, gp.nom, gp.slug, gp.position
+            HAVING SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
+                   SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) > 5
+            ORDER BY s.id, (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
+                            SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) DESC
           `;
+
+          // Regrouper par scrutin pour les articles
+          const articlesMap = new Map<string, { article: string; sort: string; groupes: GroupeRow[] }>();
+          for (const row of votesArticlesRaw) {
+            if (!articlesMap.has(row.scrutin_id)) {
+              articlesMap.set(row.scrutin_id, { article: row.article, sort: row.sort, groupes: [] });
+            }
+            articlesMap.get(row.scrutin_id)!.groupes.push(row);
+          }
+          // Prendre les 5 articles les plus clivants (plus gros écarts pour/contre)
+          const votesArticles = [...articlesMap.values()]
+            .sort((a, b) => {
+              const clivageA = a.groupes.reduce((s, g) => s + Math.abs(Number(g.pour) - Number(g.contre)), 0);
+              const clivageB = b.groupes.reduce((s, g) => s + Math.abs(Number(g.pour) - Number(g.contre)), 0);
+              return clivageB - clivageA;
+            })
+            .slice(0, 5);
 
           // Amendements clés : adoptés en priorité, puis rejetés, avec exposé sommaire
           const amendementsClefs = await prisma.amendement.findMany({
@@ -253,12 +275,14 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             take: 8,
           });
 
-          const solennellesForHash = positionsSolennelles.map(g => `sol:${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|');
+          const ensembleForHash = positionsEnsemble.map(g => `ens:${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|');
+          const articlesForHash = votesArticles.map(a => `art:${a.article.slice(0, 30)}`).join('|');
           const hashParts = [
             dossier.titre,
             dossier.etat,
             scrutinsClefs.map(s => `${s.sort}:${s.resumeIA ?? s.titre}`).join('|'),
-            solennellesForHash || positionsGroupes.map(g => `${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|'),
+            ensembleForHash,
+            articlesForHash,
           ];
           const contentHash = computeContentHash(...hashParts);
 
@@ -272,9 +296,10 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             return;
           }
 
-          const toGroupeArray = (rows: typeof positionsSolennelles) => rows.map(g => ({
+          const toGroupeArray = (rows: GroupeRow[]) => rows.map(g => ({
             nom: g.nom, slug: g.slug,
             pour: Number(g.pour), contre: Number(g.contre), abstention: Number(g.abstention),
+            orientation: g.orientation,
           }));
 
           const userPrompt = buildDossierResumePrompt({
@@ -285,8 +310,12 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             scrutinsResumes: scrutinsClefs.map(s => ({
               titre: s.titre, sort: s.sort, typeVote: s.typeVote, resumeIA: s.resumeIA,
             })),
-            positionsSolennelles: toGroupeArray(positionsSolennelles),
-            positionsGroupes: toGroupeArray(positionsGroupes),
+            positionsEnsemble: toGroupeArray(positionsEnsemble),
+            votesArticles: votesArticles.map(va => ({
+              article: va.article,
+              sort: va.sort,
+              groupes: toGroupeArray(va.groupes),
+            })),
             amendementsClefs: amendementsClefs.map(a => ({
               numero: a.numero, exposeSommaire: a.exposeSommaire,
               auteurLibelle: a.auteurLibelle, sort: a.sort,
@@ -382,12 +411,13 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
 
           const dossierIds = dossiers.map(d => d.id);
 
-          // Votes solennels par groupe (position officielle cross-chambre)
-          const positionsSolennelles = dossierIds.length > 0
-            ? await prisma.$queryRaw<
-                { nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint }[]
-              >`
-                SELECT gp.nom, gp.slug,
+          type SujetGroupeRow = { nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
+          type SujetArticleRow = { scrutin_id: string; article: string; sort: string; nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
+
+          // Votes sur l'ensemble du texte (solennel OU ordinaire avec "ensemble" dans le titre)
+          const positionsEnsemble = dossierIds.length > 0
+            ? await prisma.$queryRaw<SujetGroupeRow[]>`
+                SELECT gp.nom, gp.slug, gp.position as orientation,
                   SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END)::bigint AS pour,
                   SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
                   SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
@@ -396,20 +426,19 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
                 JOIN groupes_politiques gp ON gp.id = p.groupe_id
                 JOIN scrutins s ON s.id = v.scrutin_id
                 WHERE s.dossier_id = ANY(${dossierIds})
-                  AND s.type_vote = 'solennel'
+                  AND (s.type_vote = 'solennel' OR s.titre ILIKE '%ensemble%')
                   AND v.position != 'absent'
-                GROUP BY gp.nom, gp.slug
+                GROUP BY gp.nom, gp.slug, gp.position
                 ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                           SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) DESC
               `
             : [];
 
-          // Agrégat tous scrutins (fallback si pas de solennel)
-          const positionsGroupes = dossierIds.length > 0
-            ? await prisma.$queryRaw<
-                { nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint }[]
-              >`
-                SELECT gp.nom, gp.slug,
+          // Votes sur les articles clés (top 5 les plus clivants)
+          const votesArticlesRaw = dossierIds.length > 0
+            ? await prisma.$queryRaw<SujetArticleRow[]>`
+                SELECT s.id as scrutin_id, s.titre as article, s.sort,
+                  gp.nom, gp.slug, gp.position as orientation,
                   SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END)::bigint AS pour,
                   SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
                   SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
@@ -418,20 +447,42 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
                 JOIN groupes_politiques gp ON gp.id = p.groupe_id
                 JOIN scrutins s ON s.id = v.scrutin_id
                 WHERE s.dossier_id = ANY(${dossierIds})
+                  AND s.titre ILIKE '%article%'
+                  AND s.titre NOT ILIKE '%amendement%'
+                  AND s.titre NOT ILIKE '%ensemble%'
                   AND v.position != 'absent'
-                GROUP BY gp.nom, gp.slug
-                ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
-                          SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) DESC
+                GROUP BY s.id, s.titre, s.sort, gp.nom, gp.slug, gp.position
+                HAVING SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
+                       SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) > 5
+                ORDER BY s.id, (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
+                                SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) DESC
               `
             : [];
 
-          const solennellesForHash = positionsSolennelles.map(g => `sol:${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|');
+          const articlesMap = new Map<string, { article: string; sort: string; groupes: SujetGroupeRow[] }>();
+          for (const row of votesArticlesRaw) {
+            if (!articlesMap.has(row.scrutin_id)) {
+              articlesMap.set(row.scrutin_id, { article: row.article, sort: row.sort, groupes: [] });
+            }
+            articlesMap.get(row.scrutin_id)!.groupes.push(row);
+          }
+          const votesArticles = [...articlesMap.values()]
+            .sort((a, b) => {
+              const clivageA = a.groupes.reduce((s, g) => s + Math.abs(Number(g.pour) - Number(g.contre)), 0);
+              const clivageB = b.groupes.reduce((s, g) => s + Math.abs(Number(g.pour) - Number(g.contre)), 0);
+              return clivageB - clivageA;
+            })
+            .slice(0, 5);
+
+          const ensembleForHash = positionsEnsemble.map(g => `ens:${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|');
+          const articlesForHash = votesArticles.map(a => `art:${a.article.slice(0, 30)}`).join('|');
           const hashParts = [
             sujet.label,
             sujet.status,
             sujet.description,
             dossiers.map(d => `${d.titre}:${d.resumeIA ?? ''}`).join('|'),
-            solennellesForHash || positionsGroupes.map(g => `${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|'),
+            ensembleForHash,
+            articlesForHash,
           ];
           const contentHash = computeContentHash(...hashParts);
 
@@ -445,9 +496,10 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
             return;
           }
 
-          const toGroupeArray = (rows: typeof positionsSolennelles) => rows.map(g => ({
+          const toGroupeArray = (rows: SujetGroupeRow[]) => rows.map(g => ({
             nom: g.nom, slug: g.slug,
             pour: Number(g.pour), contre: Number(g.contre), abstention: Number(g.abstention),
+            orientation: g.orientation,
           }));
 
           const userPrompt = buildSujetResumePrompt({
@@ -461,8 +513,12 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
               etat: d.etat,
               resumeIA: d.resumeIA,
             })),
-            positionsSolennelles: toGroupeArray(positionsSolennelles),
-            positionsGroupes: toGroupeArray(positionsGroupes),
+            positionsEnsemble: toGroupeArray(positionsEnsemble),
+            votesArticles: votesArticles.map(va => ({
+              article: va.article,
+              sort: va.sort,
+              groupes: toGroupeArray(va.groupes),
+            })),
           });
 
           const response = await mistral.complete(SYSTEM_PROMPT_SUJET, userPrompt, { maxTokens: 1024 });
