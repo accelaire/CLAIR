@@ -59,12 +59,22 @@ model Parlementaire {
   statsQuestions      Int?      @map("stats_questions")     // Nombre de questions posées
   statsCalculatedAt   DateTime? @map("stats_calculated_at") // Date du dernier calcul
 
+  // Enrichissement IA (fiches parlementaires enrichies)
+  resumeIA          String?   @map("resume_ia")
+  parcoursIA        String?   @map("parcours_ia")
+  positionsClesIA   String?   @map("positions_cles_ia")
+  faitsNotablesIA   String?   @map("faits_notables_ia")
+  iaContentHash     String?   @map("ia_content_hash")
+  iaGeneratedAt     DateTime? @map("ia_generated_at")
+
   // Relations
   votes         Vote[]
   interventions Intervention[]
   amendements   Amendement[]
   actionsLobby  ActionLobby[]
   candidat2027  Candidat2027?
+  mandats       Mandat[]
+  declarations  DeclarationHATVP[]
 
   // Métadonnées source
   sourceId   String? @map("source_id") // PA123456 (AN) ou 14133K (Sénat)
@@ -123,6 +133,69 @@ model GroupePolitique {
   @@unique([slug, chambre])
   @@index([chambre])
   @@map("groupes_politiques")
+}
+
+// =============================================================================
+// MANDATS (extraits du sourceData AN / Sénat)
+// Historique des fonctions et responsabilités des parlementaires
+// =============================================================================
+
+model Mandat {
+  id     String @id @default(uuid())
+
+  parlementaireId String        @map("parlementaire_id")
+  parlementaire   Parlementaire @relation(fields: [parlementaireId], references: [id], onDelete: Cascade)
+
+  // Type de mandat/organe (AN: COMPER, DELEG, ORGEXTPARL, CMP, GOUVERNEMENT... Sénat: COMMISSION, DELEGATION/OFFICE, ETUDE...)
+  typeOrgane   String  @map("type_organe")
+  institution  String? // Libellé de l'organe (ex: "Commission des finances", "Office parlementaire...")
+  qualite      String? // "Membre", "Président", "Vice-Président", "Rapporteur"...
+
+  dateDebut DateTime  @map("date_debut")
+  dateFin   DateTime? @map("date_fin")
+
+  // Identifiants source (pour dédoublonnage)
+  sourceUid String? @unique @map("source_uid") // PM847462 (AN) ou code organe (Sénat)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([parlementaireId])
+  @@index([typeOrgane])
+  @@index([dateDebut])
+  @@map("mandats")
+}
+
+// =============================================================================
+// DÉCLARATIONS HATVP (intérêts & patrimoine des parlementaires)
+// Source: https://www.hatvp.fr/livraison/opendata/liste.csv
+// =============================================================================
+
+model DeclarationHATVP {
+  id     String @id @default(uuid())
+
+  parlementaireId String        @map("parlementaire_id")
+  parlementaire   Parlementaire @relation(fields: [parlementaireId], references: [id], onDelete: Cascade)
+
+  // Type: di (intérêts), dia (intérêts initiale), diam (intérêts modif),
+  //        dsp (patrimoine), dspm (patrimoine modif), dspfm (patrimoine fin mandat)
+  typeDocument     String  @map("type_document")
+  datePublication  DateTime? @map("date_publication")
+  dateDepot        DateTime? @map("date_depot")
+
+  // Liens HATVP
+  urlDossier    String?  @map("url_dossier")   // /pages_nominatives/nom-prenom-XXX
+  nomFichier    String?  @map("nom_fichier")    // PDF
+  xmlFichier    String?  @map("xml_fichier")    // Open data XML (si disponible)
+
+  statut        String?  // 'Livrée', 'En cours', 'Déclaration déposée - publication à venir'
+  departement   String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([parlementaireId, typeDocument, dateDepot])
+  @@index([parlementaireId])
+  @@index([typeDocument])
+  @@map("declarations_hatvp")
 }
 
 // =============================================================================
@@ -233,9 +306,18 @@ model DossierLegislatif {
   loiDateJO    DateTime? @map("loi_date_jo")   // Date publication JO
   urlLegifrance String?  @map("url_legifrance") // URL Légifrance pour les lois promulguées
 
+  // Sujet parlementaire (regroupement cross-chambre)
+  sujetId      String?  @map("sujet_id")
+  sujet        Sujet?   @relation(fields: [sujetId], references: [id])
+
   // Relations
   scrutins     Scrutin[]
   amendements  Amendement[]
+
+  // Contenu enrichi par IA
+  resumeIA       String?   @map("resume_ia")
+  iaContentHash  String?   @map("ia_content_hash")
+  iaGeneratedAt  DateTime? @map("ia_generated_at")
 
   // Métadonnées source
   sourceData   Json?    @map("source_data")
@@ -245,7 +327,51 @@ model DossierLegislatif {
   @@index([legislature])
   @@index([etat])
   @@index([dateDepot])
+  @@index([sujetId])
   @@map("dossiers_legislatifs")
+}
+
+// =============================================================================
+// SUJETS PARLEMENTAIRES (regroupement cross-chambre des dossiers)
+// =============================================================================
+
+model Sujet {
+  id            String    @id @default(uuid())
+  slug          String    @unique
+  label         String
+  description   String?
+  category      String?
+
+  dossierCount  Int       @default(0) @map("dossier_count")
+  scrutinCount  Int       @default(0) @map("scrutin_count")
+
+  dateDebut       DateTime? @map("date_debut")
+  dateFin         DateTime? @map("date_fin")
+  dateDernierVote DateTime? @map("date_dernier_vote")
+
+  actif         Boolean   @default(true)
+  featured      Boolean   @default(false)
+  featuredOrder Int       @default(0) @map("featured_order")
+
+  matchMethod   String?   @map("match_method")  // 'cross_ref' | 'loi_numero' | 'solo'
+  status        String    @default("en_cours")  // 'en_cours' | 'adopte' | 'rejete' | 'promulgue' | 'caduc' | 'retire'
+
+  // Contenu enrichi (généré par LLM)
+  resume        String?   // Résumé du sujet en langage accessible
+  enjeux        String?   // Enjeux et implications du texte
+
+  iaContentHash  String?   @map("ia_content_hash")
+  iaGeneratedAt  DateTime? @map("ia_generated_at")
+
+  dossiers      DossierLegislatif[]
+
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([actif])
+  @@index([category])
+  @@index([featured, featuredOrder])
+  @@map("sujets")
 }
 
 // =============================================================================
@@ -294,6 +420,11 @@ model Scrutin {
 
   votes         Vote[]
   interventions Intervention[]  // Interventions liées (explications de vote, débats)
+
+  // Contenu enrichi par IA
+  resumeIA       String?   @map("resume_ia")
+  iaContentHash  String?   @map("ia_content_hash")
+  iaGeneratedAt  DateTime? @map("ia_generated_at")
 
   // Métadonnées source
   sourceUrl  String? @map("source_url")

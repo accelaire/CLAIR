@@ -1,18 +1,101 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
-import { Menu, X, Search } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Menu, X, Search, ChevronDown } from 'lucide-react';
 
-const navigation = [
-  { name: 'Députés', href: '/deputes' },
-  { name: 'Sénateurs', href: '/senateurs' },
-  { name: 'Groupes', href: '/groupes' },
-  { name: 'Scrutins', href: '/scrutins' },
+interface DropdownItem {
+  name: string;
+  href: string;
+  soon?: boolean;
+}
+
+interface NavItem {
+  name: string;
+  href?: string;
+  items?: DropdownItem[];
+}
+
+const navigation: NavItem[] = [
+  {
+    name: 'Parlementaires',
+    items: [
+      { name: 'Groupes politiques', href: '/groupes' },
+      { name: 'Députés', href: '/deputes' },
+      { name: 'Sénateurs', href: '/senateurs' },
+    ],
+  },
+  {
+    name: 'Activité',
+    items: [
+      { name: 'Sujets parlementaires', href: '/sujets' },
+      { name: 'Dossiers législatifs', href: '/dossiers' },
+      { name: 'Scrutins', href: '/scrutins' },
+    ],
+  },
   { name: 'Lobbying', href: '/lobbying' },
-  // { name: 'Explorateur', href: '/explorateur', badge: 'Beta' }, // TODO: Réactiver quand la fonctionnalité sera prête
-  // { name: 'Simulateur 2027', href: '/simulateur' }, // TODO: Activer quand les programmes seront sortis
+  {
+    name: 'Outils',
+    items: [
+      { name: 'Classements', href: '/classements', soon: true },
+      { name: 'Comparer des députés', href: '/deputes?compare=true' },
+      { name: 'Comparer des sénateurs', href: '/senateurs?compare=true' },
+    ],
+  },
 ];
+
+// ── Desktop Dropdown ──
+
+function NavDropdown({ item }: { item: NavItem & { items: DropdownItem[] } }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {item.name}
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full mt-2 min-w-[200px] rounded-lg border bg-popover p-1 shadow-lg">
+          {item.items.map((sub) => (
+            <Link
+              key={sub.href}
+              href={sub.href}
+              onClick={() => setOpen(false)}
+              className={`block rounded-md px-3 py-2 text-sm transition-colors ${
+                sub.soon
+                  ? 'text-muted-foreground/50 pointer-events-none'
+                  : 'text-foreground hover:bg-accent'
+              }`}
+            >
+              {sub.name}
+              {sub.soon && (
+                <span className="ml-2 text-[10px] font-medium text-muted-foreground/60 bg-muted px-1.5 py-0.5 rounded">
+                  bientôt
+                </span>
+              )}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Header ──
 
 export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -29,16 +112,20 @@ export function Header() {
           </div>
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex md:items-center md:space-x-8">
-            {navigation.map((item) => (
-              <Link
-                key={item.name}
-                href={item.href}
-                className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                {item.name}
-              </Link>
-            ))}
+          <div className="hidden md:flex md:items-center md:space-x-6">
+            {navigation.map((item) =>
+              item.items ? (
+                <NavDropdown key={item.name} item={item as NavItem & { items: DropdownItem[] }} />
+              ) : (
+                <Link
+                  key={item.name}
+                  href={item.href!}
+                  className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {item.name}
+                </Link>
+              )
+            )}
           </div>
 
           {/* Actions */}
@@ -56,16 +143,6 @@ export function Header() {
             >
               Nous soutenir
             </Link>
-
-            {/* TODO: Activer quand l'auth sera implémentée
-            <Link
-              href="/connexion"
-              className="hidden items-center space-x-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors hover:bg-accent sm:inline-flex"
-            >
-              <User className="h-4 w-4" />
-              <span>Connexion</span>
-            </Link>
-            */}
 
             {/* Mobile menu button */}
             <button
@@ -86,20 +163,45 @@ export function Header() {
         {/* Mobile Navigation */}
         {mobileMenuOpen && (
           <div className="border-t py-4 md:hidden">
-            <div className="flex flex-col space-y-4">
-              {navigation.map((item) => (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  className="text-base font-medium text-muted-foreground transition-colors hover:text-foreground"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  {item.name}
-                </Link>
-              ))}
+            <div className="flex flex-col space-y-1">
+              {navigation.map((item) =>
+                item.items ? (
+                  <div key={item.name}>
+                    <div className="px-2 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      {item.name}
+                    </div>
+                    {item.items.map((sub) => (
+                      <Link
+                        key={sub.href}
+                        href={sub.href}
+                        className={`block px-4 py-2 text-base font-medium transition-colors ${
+                          sub.soon
+                            ? 'text-muted-foreground/50'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                        onClick={() => !sub.soon && setMobileMenuOpen(false)}
+                      >
+                        {sub.name}
+                        {sub.soon && (
+                          <span className="ml-2 text-[10px] bg-muted px-1.5 py-0.5 rounded">bientôt</span>
+                        )}
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <Link
+                    key={item.name}
+                    href={item.href!}
+                    className="block px-2 py-2 text-base font-medium text-muted-foreground transition-colors hover:text-foreground"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    {item.name}
+                  </Link>
+                )
+              )}
               <Link
                 href="/soutenir"
-                className="inline-flex items-center text-base font-medium text-primary transition-colors hover:text-primary/80"
+                className="block px-2 py-2 text-base font-medium text-primary transition-colors hover:text-primary/80"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Nous soutenir

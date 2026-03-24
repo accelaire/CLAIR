@@ -290,6 +290,14 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
           loiTitre: true,
           loiDateJO: true,
           urlLegifrance: true,
+          resumeIA: true,
+          sujet: {
+            select: {
+              slug: true,
+              label: true,
+              status: true,
+            },
+          },
           scrutins: {
             orderBy: [{ date: 'desc' }, { numero: 'asc' }],
             take: 20,
@@ -354,8 +362,8 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
         throw new ApiError(404, 'Dossier législatif non trouvé');
       }
 
-      // Stats aggregation + voted amendements count
-      const [statsResult, votedAmendementsCount] = await Promise.all([
+      // Stats aggregation + voted amendements count + groupes with amendements
+      const [statsResult, votedAmendementsCount, amendementsGroupes] = await Promise.all([
         fastify.prisma.scrutin.groupBy({
           by: ['sort'],
           where: { dossierId: dossier.id },
@@ -367,6 +375,20 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
             scrutins: { some: {} },
           },
         }),
+        fastify.prisma.$queryRaw<Array<{
+          slug: string;
+          nom: string;
+          couleur: string;
+          count: bigint;
+        }>>`
+          SELECT gp.slug, gp.nom, gp.couleur, COUNT(*) as count
+          FROM amendements a
+          JOIN parlementaires p ON a.parlementaire_id = p.id
+          JOIN groupes_politiques gp ON p.groupe_id = gp.id
+          WHERE a.dossier_id = ${dossier.id}
+          GROUP BY gp.slug, gp.nom, gp.couleur
+          ORDER BY count DESC
+        `,
       ]);
 
       const stats = {
@@ -380,6 +402,12 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
         scrutinsCount: dossier._count.scrutins,
         amendementsCount: dossier._count.amendements,
         votedAmendementsCount,
+        amendementsGroupes: amendementsGroupes.map(g => ({
+          slug: g.slug,
+          nom: g.nom,
+          couleur: g.couleur,
+          count: Number(g.count),
+        })),
         stats,
       };
 
@@ -470,9 +498,9 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, _reply) => {
       const { uid } = z.object({ uid: z.string() }).parse(request.params);
-      const { page, limit, voted } = amendementsQuerySchema.parse(request.query);
+      const { page, limit, voted, groupe } = amendementsQuerySchema.parse(request.query);
 
-      const cacheKey = `dossiers:${uid}:amendements:${page}:${limit}:${voted ?? 'all'}`;
+      const cacheKey = `dossiers:${uid}:amendements:${page}:${limit}:${voted ?? 'all'}:${groupe ?? 'all'}`;
       const cached = await fastify.redis.get(cacheKey);
       if (cached) return JSON.parse(cached);
 
@@ -488,6 +516,9 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
       const where: any = { dossierId: dossier.id };
       if (voted) {
         where.scrutins = { some: {} };
+      }
+      if (groupe) {
+        where.parlementaire = { groupe: { slug: groupe } };
       }
 
       const skip = (page - 1) * limit;

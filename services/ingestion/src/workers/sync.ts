@@ -1185,6 +1185,7 @@ export interface SmartSyncOptions {
   dossiersLimit?: number;
   lobbyingLimit?: number;
   skipStatsCalculation?: boolean; // Ne pas recalculer les stats après le sync
+  skipIAEnrichment?: boolean; // Ne pas lancer l'enrichissement IA après le sync
 }
 
 export interface SmartSyncResult {
@@ -1648,6 +1649,55 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.info({ duration: `${((Date.now() - vacuumStart) / 1000).toFixed(1)}s` }, 'VACUUM ANALYZE completed');
     } catch (error: any) {
       logger.error({ error: error.message }, 'VACUUM ANALYZE failed (non-blocking)');
+    }
+  }
+
+  // Sync déclarations HATVP (avant l'enrichissement IA pour que les données soient disponibles)
+  if (results.sourcesChanged.length > 0) {
+    try {
+      const { syncDeclarationsHATVP } = await import('./declarations-sync.js');
+      const declResult = await syncDeclarationsHATVP();
+      logger.info({
+        matched: declResult.matched, created: declResult.created,
+        unmatched: declResult.unmatched, errors: declResult.errors,
+      }, 'HATVP declarations sync completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'HATVP declarations sync failed (non-blocking)');
+    }
+  }
+
+  // IA Enrichment (cascade : scrutins → dossiers → sujets → parlementaires)
+  if (results.sourcesChanged.length > 0 && !options.skipIAEnrichment) {
+    try {
+      const { enrichScrutinsIA, enrichDossiersIA, enrichSujetsIA } = await import('./ia-enrichment.js');
+
+      const iaScrutins = await enrichScrutinsIA({ concurrency: 3 });
+      logger.info({
+        enriched: iaScrutins.enriched, skipped: iaScrutins.skipped, errors: iaScrutins.errors,
+        tokensIn: iaScrutins.totalTokensIn, tokensOut: iaScrutins.totalTokensOut,
+      }, 'Scrutins IA enrichment completed');
+
+      const iaDossiers = await enrichDossiersIA({ concurrency: 2 });
+      logger.info({
+        enriched: iaDossiers.enriched, skipped: iaDossiers.skipped, errors: iaDossiers.errors,
+        tokensIn: iaDossiers.totalTokensIn, tokensOut: iaDossiers.totalTokensOut,
+      }, 'Dossiers IA enrichment completed');
+
+      const iaSujets = await enrichSujetsIA({ concurrency: 2 });
+      logger.info({
+        enriched: iaSujets.enriched, skipped: iaSujets.skipped, errors: iaSujets.errors,
+        tokensIn: iaSujets.totalTokensIn, tokensOut: iaSujets.totalTokensOut,
+      }, 'Sujets IA enrichment completed');
+
+      // Fiches parlementaires enrichies (Wikipedia + Tavily + Mistral)
+      const { enrichParlementairesIA } = await import('./parlementaire-enrichment.js');
+      const iaParl = await enrichParlementairesIA({ concurrency: 2 });
+      logger.info({
+        enriched: iaParl.enriched, skipped: iaParl.skipped, errors: iaParl.errors,
+        tokensIn: iaParl.totalTokensIn, tokensOut: iaParl.totalTokensOut,
+      }, 'Parlementaires IA enrichment completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'IA enrichment failed (non-blocking)');
     }
   }
 
@@ -2301,6 +2351,7 @@ export async function syncDossiersSenat(
         procedureCode: dossier.procedureCode,
         procedureLibelle: dossier.procedureLibelle,
         urlSenat: dossier.urlSenat,
+        urlAN: dossier.urlAN,
         etat: dossier.etat,
         loiNumero: dossier.loiNumero,
         loiDateJO: dossier.loiDateJO,

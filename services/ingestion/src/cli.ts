@@ -77,6 +77,7 @@ program
   .option('--enrich-amendements-senat', 'Enrichir les scrutins Sénat en scrappant la page HTML pour extraire le lien amendement')
   .option('--reset', 'Avec --link-amendements: réinitialiser les liens existants avant de re-lier')
   .option('-L, --lobbying', 'Synchroniser uniquement les lobbyistes (HATVP)')
+  .option('--declarations', 'Synchroniser les déclarations HATVP (intérêts & patrimoine des parlementaires)')
   .option('-l, --limit <number>', 'Limiter le nombre de scrutins/séances/amendements/lobbyistes', parseInt)
   .option('--no-actions', 'Ne pas synchroniser les actions de lobbying (avec -L)')
   .option('--dry-run', 'Mode simulation (affiche ce qui serait fait sans modifier)')
@@ -159,6 +160,15 @@ program
         console.log(`   - Erreurs: ${result.errors}`);
       } else if (options.lobbying) {
         await syncLobbyistes({ limit: options.limit, includeActions: options.actions !== false });
+      } else if (options.declarations) {
+        const { syncDeclarationsHATVP } = await import('./workers/declarations-sync.js');
+        const result = await syncDeclarationsHATVP();
+        console.log(`\n📊 Déclarations HATVP:`);
+        console.log(`   Total CSV: ${result.total}`);
+        console.log(`   Matchés: ${result.matched}`);
+        console.log(`   Créés/mis à jour: ${result.created}`);
+        console.log(`   Non matchés: ${result.unmatched}`);
+        console.log(`   Erreurs: ${result.errors}`);
       } else {
         // Par défaut: sync incrémental
         await incrementalSync();
@@ -531,6 +541,113 @@ program
   });
 
 // =============================================================================
+// COMMANDE: generate-sujets
+// =============================================================================
+program
+  .command('generate-sujets')
+  .description('Générer les sujets parlementaires par cross-référence déterministe AN ↔ Sénat')
+  .option('--reset', 'Vider les sujet_id existants avant de regénérer')
+  .option('--dry-run', 'Afficher les stats sans modifier la DB')
+  .action(async (options) => {
+    try {
+      logger.info({ options }, 'Starting sujet generation...');
+      const { generateSujets } = await import('./workers/sujet-generator.js');
+      const result = await generateSujets({
+        reset: options.reset,
+        dryRun: options.dryRun,
+      });
+
+      console.log(`\n📊 Sujets parlementaires${options.dryRun ? ' (DRY RUN)' : ''}:`);
+      console.log(`   Créés: ${result.created}`);
+      console.log(`   Mis à jour: ${result.updated}`);
+      console.log(`   Cross-chambre: ${result.crossRef}`);
+      console.log(`   Solo: ${result.solo}`);
+      console.log(`   Dossiers couverts: ${result.totalDossiers}`);
+      console.log(`   Scrutins couverts: ${result.totalScrutins}`);
+
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Sujet generation failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: enrich-ia
+// =============================================================================
+program
+  .command('enrich-ia')
+  .description('Enrichir les entités parlementaires via IA (Mistral) — résumés accessibles')
+  .option('--scrutins', 'Enrichir uniquement les scrutins')
+  .option('--dossiers', 'Enrichir uniquement les dossiers')
+  .option('--sujets', 'Enrichir uniquement les sujets')
+  .option('--parlementaires', 'Enrichir uniquement les fiches parlementaires (Wikipedia + Tavily + Mistral)')
+  .option('-l, --limit <number>', 'Nombre max d\'entités à traiter', parseInt)
+  .option('--dry-run', 'Mode simulation (calcule mais n\'écrit pas)')
+  .option('--force', 'Ignorer le hash, regénérer tout')
+  .option('-c, --concurrency <number>', 'Nombre d\'appels LLM en parallèle (défaut: 3)', parseInt)
+  .action(async (options) => {
+    try {
+      logger.info({ options }, 'Starting IA enrichment command');
+
+      const enrichOptions = {
+        limit: options.limit,
+        dryRun: options.dryRun,
+        force: options.force,
+        concurrency: options.concurrency,
+      };
+
+      // Sans flag spécifique → cascade complète : scrutins → dossiers → sujets → parlementaires
+      const enrichAll = !options.scrutins && !options.dossiers && !options.sujets && !options.parlementaires;
+
+      if (options.scrutins || enrichAll) {
+        const { enrichScrutinsIA } = await import('./workers/ia-enrichment.js');
+        const result = await enrichScrutinsIA(enrichOptions);
+        console.log(`\n📊 Enrichissement IA des scrutins${options.dryRun ? ' (DRY RUN)' : ''}:`);
+        console.log(`   Enrichis: ${result.enriched}`);
+        console.log(`   Inchangés (skip): ${result.skipped}`);
+        console.log(`   Erreurs: ${result.errors}`);
+        console.log(`   Tokens IN: ${result.totalTokensIn} | OUT: ${result.totalTokensOut}`);
+      }
+
+      if (options.dossiers || enrichAll) {
+        const { enrichDossiersIA } = await import('./workers/ia-enrichment.js');
+        const result = await enrichDossiersIA(enrichOptions);
+        console.log(`\n📊 Enrichissement IA des dossiers${options.dryRun ? ' (DRY RUN)' : ''}:`);
+        console.log(`   Enrichis: ${result.enriched}`);
+        console.log(`   Inchangés (skip): ${result.skipped}`);
+        console.log(`   Erreurs: ${result.errors}`);
+        console.log(`   Tokens IN: ${result.totalTokensIn} | OUT: ${result.totalTokensOut}`);
+      }
+
+      if (options.sujets || enrichAll) {
+        const { enrichSujetsIA } = await import('./workers/ia-enrichment.js');
+        const result = await enrichSujetsIA(enrichOptions);
+        console.log(`\n📊 Enrichissement IA des sujets${options.dryRun ? ' (DRY RUN)' : ''}:`);
+        console.log(`   Enrichis: ${result.enriched}`);
+        console.log(`   Inchangés (skip): ${result.skipped}`);
+        console.log(`   Erreurs: ${result.errors}`);
+        console.log(`   Tokens IN: ${result.totalTokensIn} | OUT: ${result.totalTokensOut}`);
+      }
+
+      if (options.parlementaires || enrichAll) {
+        const { enrichParlementairesIA } = await import('./workers/parlementaire-enrichment.js');
+        const result = await enrichParlementairesIA(enrichOptions);
+        console.log(`\n📊 Enrichissement IA des parlementaires${options.dryRun ? ' (DRY RUN)' : ''}:`);
+        console.log(`   Enrichis: ${result.enriched}`);
+        console.log(`   Inchangés (skip): ${result.skipped}`);
+        console.log(`   Erreurs: ${result.errors}`);
+        console.log(`   Tokens IN: ${result.totalTokensIn} | OUT: ${result.totalTokensOut}`);
+      }
+
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'IA enrichment failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
 // COMMANDE: check-quality
 // =============================================================================
 program
@@ -552,6 +669,32 @@ program
       }
     } catch (error: any) {
       logger.error({ error: error.message }, 'Quality check failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: check-ia-quality
+// =============================================================================
+program
+  .command('check-ia-quality')
+  .description('Vérifier la qualité des résumés IA (détection d\'inversions de positions)')
+  .action(async () => {
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+
+      try {
+        console.log('\n🤖 Vérification de la qualité des résumés IA...\n');
+        const { runIAQualityChecks, printIAQualityReport } = await import('./checks/ia-quality.js');
+        const report = await runIAQualityChecks(prisma);
+        printIAQualityReport(report);
+        process.exit(report.passed ? 0 : 1);
+      } finally {
+        await prisma.$disconnect();
+      }
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'IA quality check failed');
       process.exit(1);
     }
   });

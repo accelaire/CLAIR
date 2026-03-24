@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
+import { AmendementSortBadge } from '@/components/AmendementSortBadge';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -28,6 +29,10 @@ import {
   Loader2,
   GitCompareArrows,
   AlertTriangle,
+  Sparkles,
+  Shield,
+  ScrollText,
+  ExternalLink,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
@@ -69,6 +74,29 @@ interface SenateurDetail {
     amendements: { proposes: number; adoptes: number };
     questions: number;
   };
+  // Enrichissement IA
+  resumeIA?: string | null;
+  parcoursIA?: string | null;
+  positionsClesIA?: string | null;
+  faitsNotablesIA?: string | null;
+  iaGeneratedAt?: string | null;
+  // Mandats
+  mandats?: Array<{
+    id: string;
+    typeOrgane: string;
+    institution: string | null;
+    qualite: string | null;
+    dateDebut: string;
+    dateFin: string | null;
+  }>;
+  // Déclarations HATVP
+  declarations?: Array<{
+    id: string;
+    typeDocument: string;
+    datePublication: string | null;
+    urlDossier: string | null;
+    statut: string | null;
+  }>;
 }
 
 interface VoteItem {
@@ -180,29 +208,6 @@ function formatDossierLabel(dossier: { titre: string; titreCourt: string | null 
     return humanized.charAt(0).toUpperCase() + humanized.slice(1);
   }
   return short;
-}
-
-function AmendementSortBadge({ sort }: { sort: string | null }) {
-  if (!sort) return null;
-
-  const sortLower = sort.toLowerCase();
-  let className = 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100';
-
-  if (sortLower.includes('adopt')) {
-    className = 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100';
-  } else if (sortLower.includes('rejet')) {
-    className = 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100';
-  } else if (sortLower.includes('retir')) {
-    className = 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100';
-  } else if (sortLower.includes('tomb') || sortLower.includes('entonnoir')) {
-    className = 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-100';
-  }
-
-  return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${className}`}>
-      {sort}
-    </span>
-  );
 }
 
 function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }) {
@@ -786,6 +791,119 @@ export default function SenateurDetailPage() {
               tooltipHref="/comprendre/parlementaire"
             />
           </div>
+        </div>
+      )}
+
+      {/* Fiche enrichie par IA */}
+      {senateur.resumeIA && (
+        <div className="mb-8 space-y-4">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-amber-500" />
+            <h2 className="text-xl font-semibold">Fiche parlementaire</h2>
+            <span className="text-xs text-muted-foreground">
+              {senateur.iaGeneratedAt && `Mise à jour le ${new Date(senateur.iaGeneratedAt).toLocaleDateString('fr-FR')} - `}Généré par IA
+            </span>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-lg border bg-card p-5">
+              <h3 className="mb-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">En bref</h3>
+              <p className="text-sm leading-relaxed">{senateur.resumeIA}</p>
+            </div>
+
+            {senateur.parcoursIA && (
+              <div className="rounded-lg border bg-card p-5">
+                <h3 className="mb-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">Parcours</h3>
+                <p className="text-sm leading-relaxed">{senateur.parcoursIA}</p>
+              </div>
+            )}
+
+            {senateur.positionsClesIA && (
+              <div className="rounded-lg border bg-card p-5">
+                <h3 className="mb-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">Positions clés</h3>
+                <p className="text-sm leading-relaxed">{senateur.positionsClesIA}</p>
+              </div>
+            )}
+
+            {senateur.faitsNotablesIA && (
+              <div className="rounded-lg border bg-card p-5">
+                <h3 className="mb-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">Faits notables</h3>
+                <p className="text-sm leading-relaxed">{senateur.faitsNotablesIA}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Mandats & Déclarations HATVP */}
+      {((senateur.mandats && senateur.mandats.length > 0) || (senateur.declarations && senateur.declarations.length > 0)) && (
+        <div className="mb-8 grid gap-6 lg:grid-cols-2">
+          {senateur.mandats && senateur.mandats.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <ScrollText className="h-5 w-5 text-blue-500" />
+                <h2 className="text-xl font-semibold">Mandats et fonctions</h2>
+              </div>
+              <div className="space-y-2">
+                {senateur.mandats.map((m) => (
+                  <div key={m.id} className="flex items-start gap-3 rounded-lg border bg-card p-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{m.qualite || 'Membre'}</p>
+                      <p className="text-sm text-muted-foreground">{m.institution || m.typeOrgane}</p>
+                    </div>
+                    <div className="text-xs text-muted-foreground text-right flex-shrink-0">
+                      <p>{new Date(m.dateDebut).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}</p>
+                      <p>{m.dateFin ? new Date(m.dateFin).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' }) : 'en cours'}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {senateur.declarations && senateur.declarations.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <Shield className="h-5 w-5 text-emerald-500" />
+                <h2 className="text-xl font-semibold">Transparence HATVP</h2>
+              </div>
+              <div className="space-y-2">
+                {senateur.declarations.map((d) => {
+                  const labels: Record<string, string> = {
+                    di: "Déclaration d'intérêts",
+                    dia: "Déclaration d'intérêts et d'activités",
+                    diam: "Déclaration d'intérêts (modification)",
+                    dsp: 'Déclaration de patrimoine',
+                    dspm: 'Déclaration de patrimoine (modification)',
+                    dspfm: 'Déclaration de patrimoine (fin de mandat)',
+                  };
+                  return (
+                    <div key={d.id} className="flex items-center gap-3 rounded-lg border bg-card p-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium">{labels[d.typeDocument] || d.typeDocument}</p>
+                        {d.datePublication && (
+                          <p className="text-xs text-muted-foreground">
+                            Publiée le {new Date(d.datePublication).toLocaleDateString('fr-FR')}
+                          </p>
+                        )}
+                      </div>
+                      {d.urlDossier && (
+                        <a
+                          href={d.urlDossier}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-shrink-0 rounded-lg border p-2 hover:bg-accent transition-colors"
+                          title="Voir sur hatvp.fr"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
