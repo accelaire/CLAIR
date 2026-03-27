@@ -59,10 +59,7 @@ export function ScrutinAmendementsTab({ amendements }: ScrutinAmendementsTabProp
                 {a.dispositif && (
                   <div>
                     <h4 className="text-sm font-semibold mb-2">Texte de l&apos;amendement</h4>
-                    <div
-                      className="text-sm text-muted-foreground leading-relaxed rounded-lg p-4"
-                      style={{ backgroundColor: '#f9fafb' }}
-                    >
+                    <div className="bg-muted/50 text-sm text-muted-foreground leading-relaxed rounded-lg p-4">
                       <div dangerouslySetInnerHTML={{ __html: a.dispositif.replace(/\n/g, '<br/>') }} />
                     </div>
                   </div>
@@ -70,10 +67,7 @@ export function ScrutinAmendementsTab({ amendements }: ScrutinAmendementsTabProp
                 {a.exposeSommaire && (
                   <div>
                     <h4 className="text-sm font-semibold mb-2">Exposé des motifs</h4>
-                    <div
-                      className="text-sm text-muted-foreground leading-relaxed rounded-lg p-4"
-                      style={{ backgroundColor: '#f9fafb' }}
-                    >
+                    <div className="bg-muted/50 text-sm text-muted-foreground leading-relaxed rounded-lg p-4">
                       <div dangerouslySetInnerHTML={{ __html: a.exposeSommaire.replace(/\n/g, '<br/>') }} />
                     </div>
                   </div>

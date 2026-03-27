@@ -116,7 +116,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; dot: string 
   adopte:    { label: 'Adopté',     color: 'text-blue-700',   dot: 'bg-blue-500' },
   rejete:    { label: 'Rejeté',     color: 'text-red-700',    dot: 'bg-red-500' },
   promulgue: { label: 'Promulgué',  color: 'text-green-700',  dot: 'bg-green-500' },
-  caduc:     { label: 'Caduc',      color: 'text-gray-500',   dot: 'bg-gray-400' },
+  caduc:     { label: 'Caduc',      color: 'text-muted-foreground',   dot: 'bg-muted-foreground' },
   retire:    { label: 'Retiré',     color: 'text-orange-700', dot: 'bg-orange-500' },
 };
 
@@ -259,7 +259,7 @@ function ParliamentaryTimeline({ dossiers, sujet }: { dossiers: SujetDossier[]; 
   const dotColor = (status: string) => {
     if (status === 'done') return 'bg-green-500 ring-green-200';
     if (status === 'active') return 'bg-amber-500 ring-amber-200 animate-pulse';
-    return 'bg-gray-300 ring-gray-100';
+    return 'bg-muted ring-border';
   };
 
   return (
@@ -307,7 +307,7 @@ function ParliamentaryTimeline({ dossiers, sujet }: { dossiers: SujetDossier[]; 
                 {nextStep && (
                   <div className="flex items-center self-start pt-[7px] mx-1 flex-1 min-w-[20px]">
                     {nextStep.status === 'pending' ? (
-                      <div className="h-0.5 w-full border-t-2 border-dashed border-gray-300" />
+                      <div className="h-0.5 w-full border-t-2 border-dashed border-border" />
                     ) : (
                       <div className={`h-0.5 w-full rounded-full ${lineColor}`} />
                     )}

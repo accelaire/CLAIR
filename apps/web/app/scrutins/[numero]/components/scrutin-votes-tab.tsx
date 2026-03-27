@@ -73,7 +73,7 @@ export function ScrutinVotesTab({
     <div className="space-y-6">
       {/* Vote bar */}
       <div className="space-y-3">
-        <div className="relative h-8 rounded-full overflow-hidden bg-gray-200 flex">
+        <div className="relative h-8 rounded-full overflow-hidden bg-muted flex">
           <div
             className="bg-green-500 flex items-center justify-center text-white text-xs font-bold transition-all"
             style={{ width: `${pourPct}%` }}
@@ -102,7 +102,7 @@ export function ScrutinVotesTab({
           <button
             onClick={() => setExpandedPosition('pour')}
             className={`flex items-center gap-1.5 px-3 py-1 rounded-full transition-colors ${
-              expandedPosition === 'pour' ? 'bg-green-100' : 'hover:bg-muted'
+              expandedPosition === 'pour' ? 'bg-green-100 dark:bg-green-900/30' : 'hover:bg-muted'
             }`}
           >
             <CheckCircle className="h-4 w-4 text-green-600" />
@@ -113,7 +113,7 @@ export function ScrutinVotesTab({
           <button
             onClick={() => setExpandedPosition('abstention')}
             className={`flex items-center gap-1.5 px-3 py-1 rounded-full transition-colors ${
-              expandedPosition === 'abstention' ? 'bg-amber-100' : 'hover:bg-muted'
+              expandedPosition === 'abstention' ? 'bg-amber-100 dark:bg-amber-900/30' : 'hover:bg-muted'
             }`}
           >
             <MinusCircle className="h-4 w-4 text-amber-600" />
@@ -123,7 +123,7 @@ export function ScrutinVotesTab({
           <button
             onClick={() => setExpandedPosition('contre')}
             className={`flex items-center gap-1.5 px-3 py-1 rounded-full transition-colors ${
-              expandedPosition === 'contre' ? 'bg-red-100' : 'hover:bg-muted'
+              expandedPosition === 'contre' ? 'bg-red-100 dark:bg-red-900/30' : 'hover:bg-muted'
             }`}
           >
             <XCircle className="h-4 w-4 text-red-600" />
@@ -134,11 +134,11 @@ export function ScrutinVotesTab({
           <button
             onClick={() => setExpandedPosition('absent')}
             className={`flex items-center gap-1.5 px-3 py-1 rounded-full transition-colors ${
-              expandedPosition === 'absent' ? 'bg-gray-200' : 'hover:bg-muted'
+              expandedPosition === 'absent' ? 'bg-muted' : 'hover:bg-muted'
             }`}
           >
-            <Users className="h-4 w-4 text-gray-400" />
-            <span className="font-semibold text-gray-500">{votesByPosition.absent?.length || 0}</span>
+            <Users className="h-4 w-4 text-muted-foreground" />
+            <span className="font-semibold text-muted-foreground">{votesByPosition.absent?.length || 0}</span>
             <span className="text-muted-foreground">non-votants</span>
           </button>
         </div>
@@ -179,7 +179,7 @@ export function ScrutinVotesTab({
                         <span className="font-medium text-sm truncate pr-2">{groupeNom}</span>
                         <span className="text-xs text-muted-foreground">{total} votes</span>
                       </div>
-                      <div className="h-2 rounded-full overflow-hidden bg-gray-100 flex">
+                      <div className="h-2 rounded-full overflow-hidden bg-muted flex">
                         {total > 0 && (
                           <>
                             <div className="bg-green-500" style={{ width: `${(votes.pour / total) * 100}%` }} />
@@ -225,10 +225,10 @@ export function ScrutinVotesTab({
                 .filter((position) => getFilteredVotes(position).length > 0)
                 .map((position) => {
                   const config = {
-                    pour: { icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50', label: 'Pour' },
-                    contre: { icon: XCircle, color: 'text-red-600', bg: 'bg-red-50', label: 'Contre' },
-                    abstention: { icon: MinusCircle, color: 'text-amber-600', bg: 'bg-amber-50', label: 'Abstention' },
-                    absent: { icon: Users, color: 'text-gray-400', bg: 'bg-gray-50', label: 'Non-votant' },
+                    pour: { icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-100 dark:bg-green-900/30', label: 'Pour' },
+                    contre: { icon: XCircle, color: 'text-red-600', bg: 'bg-red-100 dark:bg-red-900/30', label: 'Contre' },
+                    abstention: { icon: MinusCircle, color: 'text-amber-600', bg: 'bg-amber-100 dark:bg-amber-900/30', label: 'Abstention' },
+                    absent: { icon: Users, color: 'text-muted-foreground', bg: 'bg-muted', label: 'Non-votant' },
                   }[position];
                   const Icon = config.icon;
                   const count = getFilteredVotes(position).length;

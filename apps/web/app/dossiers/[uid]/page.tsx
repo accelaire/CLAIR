@@ -426,7 +426,7 @@ export default function DossierDetailPage() {
             </span>
           )}
           {dossier.procedureLibelle && (
-            <span className="px-3 py-1 text-sm font-medium bg-slate-100 text-slate-600 rounded-full">
+            <span className="px-3 py-1 text-sm font-medium bg-muted text-muted-foreground rounded-full">
               {dossier.procedureLibelle}
             </span>
           )}
@@ -526,8 +526,8 @@ export default function DossierDetailPage() {
             </div>
             <div className="flex-1">
               <span className="text-xs font-medium text-green-600 uppercase tracking-wide">Loi promulguée</span>
-              <p className="font-semibold text-gray-900">Loi n&deg;{dossier.loiNumero}</p>
-              {dossier.loiTitre && <p className="text-sm text-gray-600">{dossier.loiTitre}</p>}
+              <p className="font-semibold text-foreground">Loi n&deg;{dossier.loiNumero}</p>
+              {dossier.loiTitre && <p className="text-sm text-muted-foreground">{dossier.loiTitre}</p>}
               {dossier.loiDateJO && (
                 <p className="text-xs text-muted-foreground mt-1">Publiée au JO le {formatDate(dossier.loiDateJO)}</p>
               )}

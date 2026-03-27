@@ -89,7 +89,7 @@ export default function ScrutinPage() {
                 <p className="mt-2 text-sm">Le parlementaire ne se prononce ni pour ni contre.</p>
               </div>
               <div className="rounded-lg border bg-card p-4">
-                <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800">
+                <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
                   Absent
                 </span>
                 <p className="mt-2 text-sm">Le parlementaire n&apos;a pas pris part au vote.</p>

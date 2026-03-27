@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useState, useRef, useEffect } from 'react';
-import { Menu, X, Search, ChevronDown } from 'lucide-react';
+import { Menu, X, Search, ChevronDown, Sun, Moon } from 'lucide-react';
+import { useTheme } from 'next-themes';
 
 interface DropdownItem {
   name: string;
@@ -97,6 +98,20 @@ function NavDropdown({ item }: { item: NavItem & { items: DropdownItem[] } }) {
 
 // ── Header ──
 
+function ThemeToggle() {
+  const { resolvedTheme, setTheme } = useTheme();
+  return (
+    <button
+      onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+      className="rounded-lg p-2 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+      aria-label="Basculer le mode sombre"
+    >
+      <Sun className="h-5 w-5 hidden dark:block" />
+      <Moon className="h-5 w-5 block dark:hidden" />
+    </button>
+  );
+}
+
 export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -137,6 +152,7 @@ export function Header() {
             >
               <Search className="h-5 w-5" />
             </Link>
+            <ThemeToggle />
             <Link
               href="/soutenir"
               className="hidden sm:inline-flex items-center rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-1.5 text-sm font-medium transition-colors"

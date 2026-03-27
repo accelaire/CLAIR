@@ -260,7 +260,7 @@ function DossiersPageContent() {
                         </span>
                       )}
                       {dossier.procedureLibelle && (
-                        <span className="px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-600 rounded">
+                        <span className="px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground rounded">
                           {dossier.procedureLibelle}
                         </span>
                       )}
