@@ -78,13 +78,12 @@ Next.js 14 avec App Router. Pages principales :
 | `/explorateur` | Explorateur de données |
 | `/comprendre` | Contenus pédagogiques |
 | `/guide` | Guides utilisateur |
-| `/simulateur` | Simulateur électoral 2027 |
 
 ### apps/api — Backend
 
 Fastify avec un module pattern : `src/modules/{feature}/` contenant controller, service et schema (Zod).
 
-Plugins : Prisma, Redis, Meilisearch, Auth (JWT), Rate limiting.
+Plugins : Prisma, Redis, Meilisearch, Rate limiting.
 
 ### services/ingestion — Pipeline de données
 
@@ -314,9 +313,6 @@ GET  /api/v1/analytics/heatmap            # Heatmap des votes
 
 # Homepage
 GET  /api/v1/homepage                     # Données agrégées pour la page d'accueil
-
-# Authentification
-POST /api/v1/auth/...                     # JWT (inscription, connexion, refresh)
 ```
 
 Documentation Swagger : http://localhost:3001/docs
@@ -341,7 +337,6 @@ Le schéma Prisma utilise un modèle `Parlementaire` unifié pour les deux chamb
 | `Intervention` | Interventions en séance (débats) |
 | `Lobbyiste` | Représentants d'intérêts (HATVP) |
 | `ActionLobby` | Actions de lobbying déclarées |
-| `User` / `Alerte` / `Favori` | Comptes utilisateurs, alertes et favoris |
 
 ### Stats pré-calculées
 
@@ -363,8 +358,6 @@ Copier `.env.example` en `.env` à la racine du projet. Les valeurs par défaut 
 | `MEILISEARCH_KEY` | Clé API Meilisearch | `clair_search_dev_key` |
 | `ASSEMBLEE_NATIONALE_LEGISLATURE` | Numéro de la législature | `17` |
 | `SENAT_SESSION_START` / `SENAT_SESSION_END` | Plage de sessions Sénat | `2024` / `2026` |
-| `JWT_SECRET` | Secret JWT (obligatoire en prod) | — |
-| `ENABLE_SIMULATEUR` | Activer le simulateur 2027 | `false` |
 | `NEXT_PUBLIC_PLAUSIBLE_DOMAIN` | Domaine Plausible Analytics | — |
 | `LOG_LEVEL` | Niveau de log (Pino) | `debug` |
 
@@ -378,7 +371,6 @@ Copier `.env.example` en `.env` à la racine du projet. Les valeurs par défaut 
 - **ORM** : Prisma 5
 - **Validation** : Zod
 - **Queue** : BullMQ + Redis
-- **Auth** : JWT avec refresh tokens
 
 ### Frontend
 - **Framework** : Next.js 14 (App Router)

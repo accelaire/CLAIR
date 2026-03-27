@@ -41,11 +41,11 @@
     "@clair/config": "workspace:*",
     "@clair/shared": "workspace:*",
     "@types/node": "^20.10.0",
-    "prisma": "^5.7.0",
+    "@vitest/coverage-v8": "^1.1.0",
+    "prisma": "^5.22.0",
     "tsup": "^8.0.1",
     "tsx": "^4.6.2",
     "typescript": "^5.3.0",
-    "vitest": "^1.1.0",
-    "@vitest/coverage-v8": "^1.1.0"
+    "vitest": "^1.1.0"
   }
 }

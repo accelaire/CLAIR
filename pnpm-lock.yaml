@@ -100,7 +100,7 @@ importers:
         specifier: ^1.1.0
         version: 1.6.1(vitest@1.6.1)
       prisma:
-        specifier: ^5.7.0
+        specifier: ^5.22.0
         version: 5.22.0
       tsup:
         specifier: ^8.0.1
