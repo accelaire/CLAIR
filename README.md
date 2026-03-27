@@ -112,7 +112,7 @@ pnpm install
 # Copier les variables d'environnement
 cp .env.example .env
 
-# Démarrer les services Docker (PostgreSQL, Redis, Meilisearch, MinIO)
+# Démarrer les services Docker (PostgreSQL, Redis)
 pnpm docker:up
 
 # Générer le client Prisma
@@ -149,8 +149,6 @@ pnpm ingestion:smart-sync -- --all
 | Frontend Web | http://localhost:3000 |
 | API | http://localhost:3001 |
 | API Docs (Swagger) | http://localhost:3001/docs |
-| Meilisearch | http://localhost:7700 |
-| MinIO Console | http://localhost:9001 |
 | Prisma Studio | `pnpm db:studio` |
 
 ---
@@ -199,7 +197,7 @@ pnpm db:studio        # Ouvrir Prisma Studio (interface visuelle)
 ### Docker
 
 ```bash
-pnpm docker:up        # Démarrer PostgreSQL, Redis, Meilisearch, MinIO
+pnpm docker:up        # Démarrer PostgreSQL, Redis
 pnpm docker:down      # Arrêter les services
 pnpm docker:logs      # Suivre les logs
 ```
@@ -354,8 +352,6 @@ Copier `.env.example` en `.env` à la racine du projet. Les valeurs par défaut 
 |----------|-------------|--------------|
 | `DATABASE_URL` | URL PostgreSQL | `postgresql://clair:clair_dev@localhost:5432/clair` |
 | `REDIS_URL` | URL Redis | `redis://localhost:6379` |
-| `MEILISEARCH_URL` | URL Meilisearch | `http://localhost:7700` |
-| `MEILISEARCH_KEY` | Clé API Meilisearch | `clair_search_dev_key` |
 | `ASSEMBLEE_NATIONALE_LEGISLATURE` | Numéro de la législature | `17` |
 | `SENAT_SESSION_START` / `SENAT_SESSION_END` | Plage de sessions Sénat | `2024` / `2026` |
 | `NEXT_PUBLIC_PLAUSIBLE_DOMAIN` | Domaine Plausible Analytics | — |
@@ -370,6 +366,7 @@ Copier `.env.example` en `.env` à la racine du projet. Les valeurs par défaut 
 - **Framework** : Fastify 4
 - **ORM** : Prisma 5
 - **Validation** : Zod
+- **Recherche** : PostgreSQL natif (ILIKE + fuzzy Jaro-Winkler)
 - **Queue** : BullMQ + Redis
 
 ### Frontend
@@ -382,8 +379,6 @@ Copier `.env.example` en `.env` à la racine du projet. Les valeurs par défaut 
 ### Infrastructure
 - **Base de données** : PostgreSQL 16
 - **Cache / Queues** : Redis 7
-- **Recherche full-text** : Meilisearch 1.6
-- **Stockage S3** : MinIO (dev) / compatible S3 (prod)
 - **Monorepo** : pnpm workspaces + Turborepo
 - **CI/CD** : GitHub Actions
 - **Hébergement** : Railway

@@ -727,44 +727,6 @@ model Promesse {
   @@map("promesses")
 }
 
-// =============================================================================
-// CONTENU GÉNÉRÉ (VIDÉOS, INFOGRAPHIES)
-// =============================================================================
-
-model Contenu {
-  id String @id @default(uuid())
-
-  type        String // 'video_short', 'infographie', 'thread', 'resume'
-  titre       String
-  description String?
-
-  // Données structurées pour génération
-  data Json
-
-  // Fichier généré
-  fichierUrl  String? @map("fichier_url")
-  thumbnailUrl String? @map("thumbnail_url")
-
-  statut String @default("draft") // 'draft', 'generating', 'generated', 'published', 'archived'
-
-  // Métriques
-  vues     Int @default(0)
-  partages Int @default(0)
-  likes    Int @default(0)
-
-  // Références
-  parlementaireId  String? @map("parlementaire_id")
-  scrutinId String? @map("scrutin_id")
-
-  publishedAt DateTime? @map("published_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-
-  @@index([type])
-  @@index([statut])
-  @@index([publishedAt])
-  @@map("contenus")
-}
 
 
 // =============================================================================

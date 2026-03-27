@@ -12,7 +12,6 @@ import swaggerUi from '@fastify/swagger-ui';
 import { prismaPlugin } from './plugins/prisma';
 import { redisPlugin } from './plugins/redis';
 import { rateLimitPlugin } from './plugins/rate-limit';
-import { meilisearchPlugin } from './plugins/meilisearch';
 
 import { deputesRoutes, senateursRoutes, parlementairesRoutes } from './modules/parlementaires/parlementaires.controller';
 import { scrutinsRoutes } from './modules/scrutins/scrutins.controller';
@@ -116,7 +115,6 @@ async function buildApp() {
   await app.register(prismaPlugin);
   await app.register(redisPlugin);
   await app.register(rateLimitPlugin); // Depends on redis — must come after
-  await app.register(meilisearchPlugin);
 
   // ==========================================================================
   // ROUTES

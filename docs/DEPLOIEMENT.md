@@ -122,39 +122,7 @@ CNAME   api     [target-railway].up.railway.app
 
 ---
 
-## 3. Recherche (Meilisearch)
-
-### MVP : Fallback PostgreSQL (recommandé)
-
-Pour le lancement, **Meilisearch n'est pas nécessaire**. Le code utilise automatiquement PostgreSQL comme fallback pour la recherche.
-
-- Coût : 0€
-- Performance : Suffisante pour ~1000 parlementaires
-- Limitation : Pas de tolérance aux fautes de frappe
-
-**Aucune variable à configurer** - le fallback s'active automatiquement si Meilisearch n'est pas disponible.
-
-### Évolution : Ajouter Meilisearch
-
-Si la recherche devient lente ou si vous voulez la tolérance aux typos :
-
-| Option | Coût | Complexité |
-|--------|------|------------|
-| Railway (self-hosted) | ~5-10€/mois | Moyenne |
-| Meilisearch Cloud | 29€/mois | Simple |
-
-Pour activer sur Railway :
-1. Ajouter un service Docker avec l'image `getmeili/meilisearch:latest`
-2. Ajouter les variables :
-   ```
-   MEILISEARCH_URL=${{Meilisearch.RAILWAY_PRIVATE_DOMAIN}}:7700
-   MEILISEARCH_KEY=votre-master-key
-   ```
-3. Appeler `POST /api/v1/search/reindex` pour indexer les données
-
----
-
-## 4. Migrations Base de Données
+## 3. Migrations Base de Données
 
 Après le premier déploiement :
 

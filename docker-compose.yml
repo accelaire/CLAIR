@@ -42,48 +42,11 @@ services:
     networks:
       - clair-network
 
-  # ==========================================================================
-  # Meilisearch - Moteur de recherche
-  # ==========================================================================
-  meilisearch:
-    image: getmeili/meilisearch:v1.6
-    container_name: clair-meilisearch
-    environment:
-      MEILI_MASTER_KEY: clair_search_dev_key
-      MEILI_ENV: development
-    volumes:
-      - meilisearch_data:/meili_data
-    ports:
-      - "7700:7700"
-    networks:
-      - clair-network
-
-  # ==========================================================================
-  # MinIO - Stockage S3-compatible (dev)
-  # ==========================================================================
-  minio:
-    image: minio/minio:latest
-    container_name: clair-minio
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: clair_minio
-      MINIO_ROOT_PASSWORD: clair_minio_secret
-    volumes:
-      - minio_data:/data
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    networks:
-      - clair-network
 
 volumes:
   postgres_data:
     driver: local
   redis_data:
-    driver: local
-  meilisearch_data:
-    driver: local
-  minio_data:
     driver: local
 
 networks:
