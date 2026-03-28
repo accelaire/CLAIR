@@ -141,12 +141,12 @@ export function ScrutinDebatsTab({
                         {p.groupe.nom}
                       </span>
                     ) : intervention.orateurQualite ? (
-                      <span className="px-2 py-0.5 text-xs rounded-full bg-slate-500 text-white font-medium">
+                      <span className="px-2 py-0.5 text-xs rounded-full bg-muted text-muted-foreground font-medium">
                         {intervention.orateurQualite}
                       </span>
                     ) : null}
                   </div>
-                  <div className="rounded-lg p-3" style={{ backgroundColor: '#f9fafb' }}>
+                  <div className="rounded-lg p-3 bg-muted/50">
                     <ExpandableText
                       text={intervention.contenu}
                       hasMore={intervention.hasMore}

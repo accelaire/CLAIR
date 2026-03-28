@@ -12,17 +12,12 @@ import swaggerUi from '@fastify/swagger-ui';
 import { prismaPlugin } from './plugins/prisma';
 import { redisPlugin } from './plugins/redis';
 import { rateLimitPlugin } from './plugins/rate-limit';
-import { authPlugin } from './plugins/auth';
-import { meilisearchPlugin } from './plugins/meilisearch';
 
 import { deputesRoutes, senateursRoutes, parlementairesRoutes } from './modules/parlementaires/parlementaires.controller';
 import { scrutinsRoutes } from './modules/scrutins/scrutins.controller';
 import { lobbyingRoutes } from './modules/lobbying/lobbying.controller';
-import { authRoutes } from './modules/auth/auth.controller';
 import { searchRoutes } from './modules/search/search.controller';
 import { healthRoutes } from './modules/health/health.controller';
-import { simulateurRoutes } from './modules/simulateur/simulateur.controller';
-import { candidatsAdminRoutes } from './modules/ingestion/admin.controller';
 import { analyticsRoutes } from './modules/analytics/analytics.controller';
 import { groupesRoutes } from './modules/groupes/groupes.controller';
 import { homepageRoutes } from './modules/homepage/homepage.controller';
@@ -91,7 +86,6 @@ async function buildApp() {
         ],
         tags: [
           { name: 'Health', description: 'Endpoints de santé' },
-          { name: 'Auth', description: 'Authentification' },
           { name: 'Parlementaires', description: 'Données sur tous les parlementaires (députés + sénateurs)' },
           { name: 'Députés', description: 'Données sur les députés de l\'Assemblée nationale' },
           { name: 'Sénateurs', description: 'Données sur les sénateurs' },
@@ -99,20 +93,9 @@ async function buildApp() {
           { name: 'Scrutins', description: 'Votes à l\'Assemblée nationale et au Sénat' },
           { name: 'Lobbying', description: 'Données HATVP sur le lobbying' },
           { name: 'Search', description: 'Recherche globale' },
-          { name: 'Simulateur', description: 'Simulateur électoral 2027' },
-          { name: 'Admin', description: 'Administration des candidats et ingestion' },
           { name: 'Analytics', description: 'Statistiques et analyses pour l\'explorateur' },
           { name: 'Dossiers', description: 'Dossiers législatifs' },
         ],
-        components: {
-          securitySchemes: {
-            bearerAuth: {
-              type: 'http',
-              scheme: 'bearer',
-              bearerFormat: 'JWT',
-            },
-          },
-        },
       },
     });
 
@@ -132,8 +115,6 @@ async function buildApp() {
   await app.register(prismaPlugin);
   await app.register(redisPlugin);
   await app.register(rateLimitPlugin); // Depends on redis — must come after
-  await app.register(meilisearchPlugin);
-  await app.register(authPlugin);
 
   // ==========================================================================
   // ROUTES
@@ -152,7 +133,6 @@ async function buildApp() {
   // API v1
   await app.register(
     async (api) => {
-      await api.register(authRoutes, { prefix: '/auth' });
       await api.register(parlementairesRoutes, { prefix: '/parlementaires' });
       await api.register(deputesRoutes, { prefix: '/deputes' });
       await api.register(senateursRoutes, { prefix: '/senateurs' });
@@ -160,8 +140,6 @@ async function buildApp() {
       await api.register(scrutinsRoutes, { prefix: '/scrutins' });
       await api.register(lobbyingRoutes, { prefix: '/lobbying' });
       await api.register(searchRoutes, { prefix: '/search' });
-      await api.register(simulateurRoutes, { prefix: '/simulateur' });
-      await api.register(candidatsAdminRoutes, { prefix: '/admin' });
       await api.register(analyticsRoutes, { prefix: '/analytics' });
       await api.register(homepageRoutes, { prefix: '/homepage' });
       await api.register(dossiersRoutes, { prefix: '/dossiers' });

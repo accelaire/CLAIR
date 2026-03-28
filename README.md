@@ -78,13 +78,12 @@ Next.js 14 avec App Router. Pages principales :
 | `/explorateur` | Explorateur de données |
 | `/comprendre` | Contenus pédagogiques |
 | `/guide` | Guides utilisateur |
-| `/simulateur` | Simulateur électoral 2027 |
 
 ### apps/api — Backend
 
 Fastify avec un module pattern : `src/modules/{feature}/` contenant controller, service et schema (Zod).
 
-Plugins : Prisma, Redis, Meilisearch, Auth (JWT), Rate limiting.
+Plugins : Prisma, Redis, Meilisearch, Rate limiting.
 
 ### services/ingestion — Pipeline de données
 
@@ -113,7 +112,7 @@ pnpm install
 # Copier les variables d'environnement
 cp .env.example .env
 
-# Démarrer les services Docker (PostgreSQL, Redis, Meilisearch, MinIO)
+# Démarrer les services Docker (PostgreSQL, Redis)
 pnpm docker:up
 
 # Générer le client Prisma
@@ -150,8 +149,6 @@ pnpm ingestion:smart-sync -- --all
 | Frontend Web | http://localhost:3000 |
 | API | http://localhost:3001 |
 | API Docs (Swagger) | http://localhost:3001/docs |
-| Meilisearch | http://localhost:7700 |
-| MinIO Console | http://localhost:9001 |
 | Prisma Studio | `pnpm db:studio` |
 
 ---
@@ -200,7 +197,7 @@ pnpm db:studio        # Ouvrir Prisma Studio (interface visuelle)
 ### Docker
 
 ```bash
-pnpm docker:up        # Démarrer PostgreSQL, Redis, Meilisearch, MinIO
+pnpm docker:up        # Démarrer PostgreSQL, Redis
 pnpm docker:down      # Arrêter les services
 pnpm docker:logs      # Suivre les logs
 ```
@@ -212,22 +209,24 @@ pnpm docker:logs      # Suivre les logs
 pnpm ingestion:smart-sync -- --all          # Toutes les sources
 pnpm ingestion:smart-sync -- --force        # Forcer même si source inchangée
 
-# Sync manuel granulaire
-pnpm ingestion:sync -- -d                   # Députés uniquement
-pnpm ingestion:sync -- -S                   # Sénateurs uniquement
-pnpm ingestion:sync -- -s                   # Scrutins AN
-pnpm ingestion:sync -- --scrutins-senat     # Scrutins Sénat
-pnpm ingestion:sync -- -a                   # Amendements AN
-pnpm ingestion:sync -- -i                   # Interventions AN (DILA)
-pnpm ingestion:sync -- -D                   # Dossiers législatifs
-pnpm ingestion:sync -- -L                   # Lobbyistes + actions (HATVP)
-pnpm ingestion:sync -- -L --no-actions      # Lobbyistes sans actions
-pnpm ingestion:sync -- -s -l 50            # Limiter à 50 scrutins
+# Sync manuel (filtres de chambre : --an pour AN, --se pour Sénat)
+pnpm ingestion:sync -- -p                   # Parlementaires (députés + sénateurs)
+pnpm ingestion:sync -- --an -p              # Députés uniquement
+pnpm ingestion:sync -- --se -p              # Sénateurs uniquement
+pnpm ingestion:sync -- -s                   # Scrutins AN + Sénat
+pnpm ingestion:sync -- --an -s              # Scrutins AN uniquement
+pnpm ingestion:sync -- --in                 # Interventions AN + Sénat
+pnpm ingestion:sync -- --am                 # Amendements AN + Sénat
+pnpm ingestion:sync -- --an --am            # Amendements AN uniquement
+pnpm ingestion:sync -- --do                 # Dossiers législatifs AN + Sénat
+pnpm ingestion:sync -- --lo                 # Lobbyistes + actions (HATVP)
+pnpm ingestion:sync -- --lo --no-actions    # Lobbyistes sans actions
+pnpm ingestion:sync -- -s -l 50             # Limiter à 50 scrutins
 
 # Enrichissement et linking
-pnpm ingestion:sync -- --enrich-amendements-an     # Enrichir amendements AN (HTML)
-pnpm ingestion:sync -- --enrich-amendements-senat  # Enrichir amendements Sénat
-pnpm ingestion:sync -- --link-amendements          # Lier amendements aux scrutins
+pnpm ingestion:sync -- --am --enrich             # Enrichir amendements par scraping HTML
+pnpm ingestion:sync -- --am --link               # Lier amendements aux scrutins
+pnpm ingestion:sync -- --in --link               # Lier interventions aux scrutins
 
 # Backfill complet (historique)
 pnpm ingestion:backfill
@@ -312,9 +311,6 @@ GET  /api/v1/analytics/heatmap            # Heatmap des votes
 
 # Homepage
 GET  /api/v1/homepage                     # Données agrégées pour la page d'accueil
-
-# Authentification
-POST /api/v1/auth/...                     # JWT (inscription, connexion, refresh)
 ```
 
 Documentation Swagger : http://localhost:3001/docs
@@ -339,7 +335,6 @@ Le schéma Prisma utilise un modèle `Parlementaire` unifié pour les deux chamb
 | `Intervention` | Interventions en séance (débats) |
 | `Lobbyiste` | Représentants d'intérêts (HATVP) |
 | `ActionLobby` | Actions de lobbying déclarées |
-| `User` / `Alerte` / `Favori` | Comptes utilisateurs, alertes et favoris |
 
 ### Stats pré-calculées
 
@@ -357,12 +352,8 @@ Copier `.env.example` en `.env` à la racine du projet. Les valeurs par défaut 
 |----------|-------------|--------------|
 | `DATABASE_URL` | URL PostgreSQL | `postgresql://clair:clair_dev@localhost:5432/clair` |
 | `REDIS_URL` | URL Redis | `redis://localhost:6379` |
-| `MEILISEARCH_URL` | URL Meilisearch | `http://localhost:7700` |
-| `MEILISEARCH_KEY` | Clé API Meilisearch | `clair_search_dev_key` |
 | `ASSEMBLEE_NATIONALE_LEGISLATURE` | Numéro de la législature | `17` |
 | `SENAT_SESSION_START` / `SENAT_SESSION_END` | Plage de sessions Sénat | `2024` / `2026` |
-| `JWT_SECRET` | Secret JWT (obligatoire en prod) | — |
-| `ENABLE_SIMULATEUR` | Activer le simulateur 2027 | `false` |
 | `NEXT_PUBLIC_PLAUSIBLE_DOMAIN` | Domaine Plausible Analytics | — |
 | `LOG_LEVEL` | Niveau de log (Pino) | `debug` |
 
@@ -375,8 +366,8 @@ Copier `.env.example` en `.env` à la racine du projet. Les valeurs par défaut 
 - **Framework** : Fastify 4
 - **ORM** : Prisma 5
 - **Validation** : Zod
+- **Recherche** : PostgreSQL natif (ILIKE + fuzzy Jaro-Winkler)
 - **Queue** : BullMQ + Redis
-- **Auth** : JWT avec refresh tokens
 
 ### Frontend
 - **Framework** : Next.js 14 (App Router)
@@ -388,8 +379,6 @@ Copier `.env.example` en `.env` à la racine du projet. Les valeurs par défaut 
 ### Infrastructure
 - **Base de données** : PostgreSQL 16
 - **Cache / Queues** : Redis 7
-- **Recherche full-text** : Meilisearch 1.6
-- **Stockage S3** : MinIO (dev) / compatible S3 (prod)
 - **Monorepo** : pnpm workspaces + Turborepo
 - **CI/CD** : GitHub Actions
 - **Hébergement** : Railway

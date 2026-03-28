@@ -35,24 +35,110 @@ pnpm db:migrate
 ### Syntaxe générale
 
 ```bash
-pnpm ingestion:sync [options]
+pnpm ingestion:sync -- [chambre] [type] [options]
 ```
 
-### Options disponibles
+Le CLI `sync` repose sur deux axes composables :
+
+1. **Chambre** (optionnel) : `--an` ou `--se` — sans filtre, les deux chambres sont synchronisées
+2. **Type de données** : `-p`, `-s`, `--in`, `--am`, `--do`, `--lo`, `-g`
+
+### `sync` — Options de synchronisation
+
+#### Filtres de chambre
+
+| Option | Alias long | Description |
+|--------|------------|-------------|
+| `--an` | `--assemblee-nationale` | Assemblée Nationale uniquement |
+| `--se` | `--senat` | Sénat uniquement |
+
+#### Types de données
+
+| Option | Alias long | Description |
+|--------|------------|-------------|
+| `-p` | `--parlementaires` | Députés + sénateurs |
+| `-g` | `--groupes` | Groupes politiques |
+| `-s` | `--scrutins` | Scrutins (votes) |
+| `--in` | `--interventions` | Interventions en séance |
+| `--am` | `--amendements` | Amendements |
+| `--do` | `--dossiers` | Dossiers législatifs |
+| `--lo` | `--lobbyistes` | Lobbyistes + actions (HATVP) |
+
+#### Modificateurs
 
 | Option | Description |
 |--------|-------------|
 | `-f, --full` | Synchronisation complète (backfill) |
-| `-g, --groupes` | Groupes politiques uniquement |
-| `-d, --deputes` | Députés AN uniquement |
-| `-S, --senateurs` | Sénateurs uniquement |
-| `-s, --scrutins` | Scrutins AN uniquement |
-| `--scrutins-senat` | Scrutins Sénat uniquement |
-| `-i, --interventions` | Interventions AN (DILA) |
-| `-a, --amendements` | Amendements AN |
-| `-L, --lobbying` | Lobbyistes HATVP |
-| `--no-actions` | Avec `-L`, ne pas sync les actions |
 | `-l, --limit <n>` | Limiter le nombre d'éléments |
+| `-c, --circonscriptions` | Inclure les circonscriptions (avec `-p --an`) |
+| `--no-actions` | Ne pas synchroniser les actions de lobbying (avec `--lo`) |
+| `--ameli` | Mode AMELI legacy pour amendements Sénat (avec `--se --am`) |
+| `--texte-ids <ids>` | IDs texte AMELI (séparés par des virgules, avec `--se --am`) |
+| `--dry-run` | Mode simulation |
+
+#### Opérations de liaison
+
+| Option | Description |
+|--------|-------------|
+| `--link --in` | Lier les interventions aux scrutins (par seanceRef ou date) |
+| `--link --am` | Lier les scrutins aux amendements (par parsing du titre) |
+| `--enrich --am` | Enrichir les scrutins par scraping HTML (filtrer avec `--an`/`--se`) |
+| `--reset` | Réinitialiser les liens existants avant de re-lier |
+
+### Tableau des combinaisons `sync`
+
+| Commande | Action |
+|----------|--------|
+| | Sync incrémental (députés + sénateurs) |
+| `-- -p` | Parlementaires (députés + sénateurs) |
+| `-- --an -p` | Députés uniquement |
+| `-- --se -p` | Sénateurs uniquement |
+| `-- --an -p -c` | Députés + circonscriptions |
+| `-- -s` | Scrutins AN + Sénat |
+| `-- --an -s` | Scrutins AN uniquement |
+| `-- --se -s` | Scrutins Sénat uniquement |
+| `-- --in` | Interventions AN + Sénat |
+| `-- --an --in` | Interventions AN uniquement (DILA) |
+| `-- --se --in` | Interventions Sénat uniquement |
+| `-- --am` | Amendements AN + Sénat |
+| `-- --an --am` | Amendements AN uniquement |
+| `-- --se --am` | Amendements Sénat (CSV senat.fr) |
+| `-- --se --am --ameli` | Amendements Sénat legacy (AMELI) |
+| `-- --do` | Dossiers législatifs AN + Sénat |
+| `-- --an --do` | Dossiers AN uniquement |
+| `-- --se --do` | Dossiers Sénat uniquement (DOSLEG) |
+| `-- --lo` | Lobbyistes + actions (HATVP) |
+| `-- --lo --no-actions` | Lobbyistes sans actions |
+| `-- --link --in` | Lier interventions ↔ scrutins |
+| `-- --link --am` | Lier scrutins ↔ amendements |
+| `-- --enrich --am` | Enrichir amendements (AN + Sénat) |
+| `-- --an --enrich --am` | Enrichir amendements AN uniquement |
+| `-- --se --enrich --am` | Enrichir amendements Sénat uniquement |
+
+> Tous les types acceptent `-l <n>` pour limiter le nombre d'éléments (ex : `-- -s -l 50`).
+
+### `smart-sync` — Synchronisation intelligente
+
+Ne synchronise que les sources ayant changé depuis la dernière exécution.
+
+| Option | Alias long | Description |
+|--------|------------|-------------|
+| `-a` | `--all` | Synchroniser tout dans le bon ordre |
+| `-f` | `--force` | Forcer même si pas de changement |
+| `-s` | `--scrutins` | Inclure les scrutins (AN + Sénat) |
+| `--am` | `--amendements` | Inclure les amendements (AN + Sénat) |
+| `--do` | `--dossiers` | Inclure les dossiers législatifs |
+| `--in` | `--interventions` | Inclure les interventions |
+| `--lo` | `--lobbying` | Inclure les lobbyistes |
+| `-l` | `--limit <n>` | Limite globale pour tous les types |
+| | `--sources <s>` | Sources spécifiques (séparées par virgules) |
+
+```bash
+pnpm ingestion:smart-sync -- -a            # Tout, delta uniquement
+pnpm ingestion:smart-sync -- -s --am       # Scrutins + amendements
+pnpm ingestion:smart-sync -- -a -l 100     # Tout, limité à 100 par type
+pnpm ingestion:smart-sync -- -a -f         # Tout, forcer le sync
+```
 
 ---
 
@@ -64,25 +150,25 @@ pnpm ingestion:sync [options]
 # Ordre recommandé pour une base vide :
 
 # 1. Députés (crée aussi les groupes et circonscriptions)
-pnpm ingestion:sync -- -d
+pnpm ingestion:sync -- --an -p -c
 
 # 2. Sénateurs (crée aussi les groupes Sénat)
-pnpm ingestion:sync -- -S
+pnpm ingestion:sync -- --se -p
 
 # 3. Scrutins AN (avec votes individuels)
-pnpm ingestion:sync -- -s -l 100
+pnpm ingestion:sync -- --an -s -l 100
 
 # 4. Scrutins Sénat
-pnpm ingestion:sync -- --scrutins-senat -l 50
+pnpm ingestion:sync -- --se -s -l 50
 
 # 5. Lobbyistes et actions
-pnpm ingestion:sync -- -L -l 500
+pnpm ingestion:sync -- --lo -l 500
 
 # 6. (Optionnel) Interventions
-pnpm ingestion:sync -- -i -l 50
+pnpm ingestion:sync -- --an --in -l 50
 
 # 7. (Optionnel) Amendements
-pnpm ingestion:sync -- -a -l 200
+pnpm ingestion:sync -- --an --am -l 200
 
 # 8. Réindexer Meilisearch
 curl -X POST http://localhost:3001/api/v1/search/reindex
@@ -99,20 +185,20 @@ pnpm ingestion:sync
 
 ```bash
 # Derniers scrutins AN
-pnpm ingestion:sync -- -s -l 20
+pnpm ingestion:sync -- --an -s -l 20
 
 # Derniers scrutins Sénat
-pnpm ingestion:sync -- --scrutins-senat -l 10
+pnpm ingestion:sync -- --se -s -l 10
 ```
 
 ### 4. Mise à jour du lobbying
 
 ```bash
 # Avec les actions
-pnpm ingestion:sync -- -L -l 100
+pnpm ingestion:sync -- --lo -l 100
 
 # Sans les actions (plus rapide)
-pnpm ingestion:sync -- -L --no-actions -l 100
+pnpm ingestion:sync -- --lo --no-actions -l 100
 ```
 
 ---
@@ -231,13 +317,13 @@ docker exec clair-postgres psql -U clair -d clair -c "
 # /etc/cron.d/clair-ingestion
 
 # Sync quotidien des parlementaires (6h00)
-0 6 * * * cd /path/to/clair && pnpm ingestion:sync >> /var/log/clair/sync.log 2>&1
+0 6 * * * cd /path/to/clair && pnpm ingestion:sync -- -p >> /var/log/clair/sync.log 2>&1
 
 # Sync des scrutins (toutes les 4h)
 0 */4 * * * cd /path/to/clair && pnpm ingestion:sync -- -s -l 10 >> /var/log/clair/scrutins.log 2>&1
 
 # Sync lobbying (hebdomadaire, dimanche 3h00)
-0 3 * * 0 cd /path/to/clair && pnpm ingestion:sync -- -L >> /var/log/clair/lobbying.log 2>&1
+0 3 * * 0 cd /path/to/clair && pnpm ingestion:sync -- --lo >> /var/log/clair/lobbying.log 2>&1
 
 # Réindexation Meilisearch (après chaque sync)
 30 6 * * * curl -X POST http://localhost:3001/api/v1/search/reindex
@@ -315,7 +401,7 @@ Error: Request failed with status code 503
 ```
 Error: timeout of 60000ms exceeded
 ```
-→ Réduire le nombre de scrutins avec `-l 10`
+→ Réduire le nombre avec `-l 10` (ex : `-- -s -l 10`)
 
 ### Doublons de parlementaires
 

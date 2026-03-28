@@ -159,7 +159,7 @@ function VotePositionBadge({ position }: { position: string }) {
     contre: { label: 'Contre', className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100', icon: ThumbsDown },
     abstention: { label: 'Abstention', className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100', icon: Minus },
     absent: { label: 'Absent', className: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100', icon: Minus },
-  }[position] || { label: position, className: 'bg-gray-100 text-gray-800', icon: Minus };
+  }[position] || { label: position, className: 'bg-muted text-muted-foreground', icon: Minus };
 
   const Icon = config.icon;
 

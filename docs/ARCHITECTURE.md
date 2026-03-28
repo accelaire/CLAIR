@@ -666,32 +666,6 @@ model Favori {
   @@map("favoris")
 }
 
-// ============== CONTENU ==============
-
-model Contenu {
-  id          String   @id @default(uuid())
-  
-  type        String   // 'video_short', 'infographie', 'thread'
-  titre       String
-  description String?
-  
-  data        Json     // Données structurées pour génération
-  fichierUrl  String?  @map("fichier_url")
-  
-  statut      String   @default("draft") // 'draft', 'generated', 'published'
-  
-  vues        Int      @default(0)
-  partages    Int      @default(0)
-  
-  publishedAt DateTime? @map("published_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-
-  @@map("contenus")
-  @@index([type])
-  @@index([statut])
-}
-
 // ============== SYNC ==============
 
 model SyncLog {
@@ -742,10 +716,10 @@ model SyncLog {
             ▼                  ▼                   ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                      DATA STORES                             │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-│  │  Raw Files  │  │  PostgreSQL │  │    Redis    │          │
-│  │   (S3)      │  │  (Cleaned)  │  │   (Cache)   │          │
-│  └─────────────┘  └─────────────┘  └─────────────┘          │
+│            ┌─────────────┐  ┌─────────────┐                 │
+│            │  PostgreSQL │  │    Redis    │                  │
+│            │  (Cleaned)  │  │   (Cache)   │                  │
+│            └─────────────┘  └─────────────┘                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -885,30 +859,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Meilisearch
-  meilisearch:
-    image: getmeili/meilisearch:v1.6
-    environment:
-      MEILI_MASTER_KEY: clair_search_dev_key
-      MEILI_ENV: development
-    volumes:
-      - meilisearch_data:/meili_data
-    ports:
-      - "7700:7700"
-
-  # MinIO (S3-compatible)
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: clair_minio
-      MINIO_ROOT_PASSWORD: clair_minio_secret
-    volumes:
-      - minio_data:/data
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-
   # API (dev mode)
   api:
     build:
@@ -918,11 +868,6 @@ services:
       NODE_ENV: development
       DATABASE_URL: postgresql://clair:clair_dev@postgres:5432/clair
       REDIS_URL: redis://redis:6379
-      MEILISEARCH_URL: http://meilisearch:7700
-      MEILISEARCH_KEY: clair_search_dev_key
-      S3_ENDPOINT: http://minio:9000
-      S3_ACCESS_KEY: clair_minio
-      S3_SECRET_KEY: clair_minio_secret
     volumes:
       - ./apps/api:/app/apps/api
       - ./packages:/app/packages
@@ -955,8 +900,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  meilisearch_data:
-  minio_data:
 ```
 
 ---
@@ -977,26 +920,8 @@ DATABASE_URL="postgresql://clair:clair_dev@localhost:5432/clair"
 REDIS_URL="redis://localhost:6379"
 
 # =============================================================================
-# SEARCH
+# AUTH (non utilisé — pas de comptes utilisateurs)
 # =============================================================================
-MEILISEARCH_URL="http://localhost:7700"
-MEILISEARCH_KEY="clair_search_dev_key"
-
-# =============================================================================
-# STORAGE
-# =============================================================================
-S3_ENDPOINT="http://localhost:9000"
-S3_BUCKET="clair-assets"
-S3_ACCESS_KEY="clair_minio"
-S3_SECRET_KEY="clair_minio_secret"
-S3_REGION="eu-west-1"
-
-# =============================================================================
-# AUTH
-# =============================================================================
-JWT_SECRET="your-super-secret-jwt-key-change-in-production"
-JWT_EXPIRES_IN="7d"
-REFRESH_TOKEN_EXPIRES_IN="30d"
 
 # OAuth (optionnel)
 GOOGLE_CLIENT_ID=""

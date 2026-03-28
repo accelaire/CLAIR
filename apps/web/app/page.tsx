@@ -277,7 +277,7 @@ export default function HomePage() {
                       </span>
                       {dossier.etat && (
                         <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium">
-                          <span className={`h-2 w-2 rounded-full ${getDossierEtat(dossier.etat)?.dotColor ?? 'bg-gray-400'}`} />
+                          <span className={`h-2 w-2 rounded-full ${getDossierEtat(dossier.etat)?.dotColor ?? 'bg-muted-foreground'}`} />
                           {dossierEtatLabels[dossier.etat]?.label || dossier.etat}
                         </span>
                       )}
@@ -376,8 +376,7 @@ export default function HomePage() {
             {/* Feature 1: Députés */}
             <Link
               href="/deputes"
-              className="group rounded-2xl p-8 transition-all"
-              style={{ backgroundColor: '#fafafa' }}
+              className="group rounded-2xl p-8 transition-all bg-muted/50"
             >
               <div className="mb-4 inline-flex rounded-xl bg-primary p-3">
                 <Landmark className="h-6 w-6 text-white" />
@@ -395,8 +394,7 @@ export default function HomePage() {
             {/* Feature 2: Sénateurs */}
             <Link
               href="/senateurs"
-              className="group rounded-2xl p-8 transition-all"
-              style={{ backgroundColor: '#fafafa' }}
+              className="group rounded-2xl p-8 transition-all bg-muted/50"
             >
               <div className="mb-4 inline-flex rounded-xl bg-primary p-3">
                 <Building2 className="h-6 w-6 text-white" />
@@ -414,8 +412,7 @@ export default function HomePage() {
             {/* Feature 3: Groupes parlementaires */}
             <Link
               href="/groupes"
-              className="group rounded-2xl p-8 transition-all"
-              style={{ backgroundColor: '#fafafa' }}
+              className="group rounded-2xl p-8 transition-all bg-muted/50"
             >
               <div className="mb-4 inline-flex rounded-xl bg-primary p-3">
                 <Users className="h-6 w-6 text-white" />

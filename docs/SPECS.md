@@ -110,19 +110,6 @@ Algorithme croisant :
 - **Fact-check intégré** : Vérification des claims de campagne
 - **Historique** : "Ce que ton candidat a voté ces 5 ans"
 
-### 3.4 Module 4 : Contenu viral
-
-#### 3.4.1 Génération automatique
-- **Shorts vidéo** : Incohérences flagrantes (discours vs vote)
-- **Infographies** : Stats hebdomadaires de l'Assemblée
-- **Threads** : Résumés des débats importants
-
-#### 3.4.2 Format
-- Durée : 15-60 secondes
-- Résolution : 1080x1920 (vertical)
-- Sous-titres intégrés
-- Sources affichées à l'écran
-
 ---
 
 ## 4. Architecture Technique
@@ -157,9 +144,7 @@ Algorithme croisant :
 │                      DATA LAYER                                  │
 ├─────────────────────────────────────────────────────────────────┤
 │  PostgreSQL (données structurées)                               │
-│  Redis (cache, sessions, rate limiting)                         │
-│  Meilisearch (recherche full-text)                              │
-│  S3/Minio (assets, vidéos générées)                             │
+│  Redis (cache, rate limiting)                                   │
 └─────────────────────────────────────────────────────────────────┘
          │
 ┌────────▼────────────────────────────────────────────────────────┐
@@ -197,8 +182,7 @@ Algorithme croisant :
 #### 4.2.4 Base de données
 - **Principal** : PostgreSQL 16
 - **Cache** : Redis 7
-- **Recherche** : Meilisearch (alternative légère à Elasticsearch)
-- **Files** : S3-compatible (Minio en dev, Cloudflare R2 en prod)
+- **Recherche** : PostgreSQL natif (ILIKE + fuzzy Jaro-Winkler)
 
 #### 4.2.5 Infrastructure
 - **Hébergement** : 
@@ -294,19 +278,6 @@ CREATE TABLE alertes (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
--- Contenu généré (vidéos, infographies)
-CREATE TABLE contenus (
-    id UUID PRIMARY KEY,
-    type VARCHAR(50), -- 'video_short', 'infographie', 'thread'
-    titre TEXT,
-    description TEXT,
-    data JSONB, -- Données structurées pour génération
-    fichier_url TEXT,
-    statut VARCHAR(50), -- 'draft', 'generated', 'published'
-    vues INTEGER DEFAULT 0,
-    partages INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT NOW()
-);
 ```
 
 ---

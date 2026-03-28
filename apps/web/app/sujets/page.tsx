@@ -44,7 +44,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; dot: string 
   adopte:    { label: 'Adopté',     color: 'text-blue-700',   dot: 'bg-blue-500' },
   rejete:    { label: 'Rejeté',     color: 'text-red-700',    dot: 'bg-red-500' },
   promulgue: { label: 'Promulgué',  color: 'text-green-700',  dot: 'bg-green-500' },
-  caduc:     { label: 'Caduc',      color: 'text-gray-500',   dot: 'bg-gray-400' },
+  caduc:     { label: 'Caduc',      color: 'text-muted-foreground',   dot: 'bg-muted-foreground' },
   retire:    { label: 'Retiré',     color: 'text-orange-700', dot: 'bg-orange-500' },
 };
 
