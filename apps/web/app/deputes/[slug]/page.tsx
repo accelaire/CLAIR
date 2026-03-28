@@ -155,10 +155,10 @@ function StatCard({
 
 function VotePositionBadge({ position }: { position: string }) {
   const config = {
-    pour: { label: 'Pour', className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100', icon: ThumbsUp },
-    contre: { label: 'Contre', className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100', icon: ThumbsDown },
-    abstention: { label: 'Abstention', className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100', icon: Minus },
-    absent: { label: 'Absent', className: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100', icon: Minus },
+    pour: { label: 'Pour', className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400', icon: ThumbsUp },
+    contre: { label: 'Contre', className: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400', icon: ThumbsDown },
+    abstention: { label: 'Abstention', className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400', icon: Minus },
+    absent: { label: 'Absent', className: 'bg-gray-100 text-gray-800 dark:bg-gray-800/30 dark:text-gray-400', icon: Minus },
   }[position] || { label: position, className: 'bg-muted text-muted-foreground', icon: Minus };
 
   const Icon = config.icon;
@@ -289,7 +289,7 @@ function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }
                   <Vote className="h-3.5 w-3.5" />
                   <span>Vote n°{amendement.scrutins[0].numero}</span>
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                    amendement.scrutins[0].sort === 'adopte' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                    amendement.scrutins[0].sort === 'adopte' ? 'badge-adopte' : 'badge-rejete'
                   }`}>
                     {amendement.scrutins[0].sort === 'adopte' ? 'Adopté' : 'Rejeté'}
                   </span>
@@ -470,7 +470,7 @@ function VotesList({ slug }: { slug: string }) {
           <AlertTriangle className={`h-4 w-4 ${dissidentOnly ? 'text-orange-600' : 'text-muted-foreground'}`} />
           Votes dissidents
           {dissidentOnly && total > 0 && (
-            <span className="px-1.5 py-0.5 rounded bg-orange-200 text-orange-800 text-xs">
+            <span className="px-1.5 py-0.5 rounded bg-orange-200 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 text-xs">
               {total.toLocaleString('fr-FR')}
             </span>
           )}
@@ -514,7 +514,7 @@ function VotesList({ slug }: { slug: string }) {
                     })}
                   </span>
                   <span>•</span>
-                  <span className={vote.scrutin.sort === 'adopte' ? 'text-green-600' : 'text-red-600'}>
+                  <span className={vote.scrutin.sort === 'adopte' ? 'text-adopte' : 'text-rejete'}>
                     {vote.scrutin.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
                   </span>
                   {vote.scrutin.tags.length > 0 && (

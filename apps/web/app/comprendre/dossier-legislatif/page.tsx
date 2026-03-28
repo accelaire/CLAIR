@@ -126,7 +126,7 @@ export default function DossierLegislatifPage() {
           </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div className="rounded-lg border bg-card p-4">
-              <span className="inline-flex px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700">
+              <span className="inline-flex px-2 py-0.5 text-xs rounded-full badge-en-cours">
                 En cours
               </span>
               <p className="mt-2 text-sm text-muted-foreground">
@@ -134,7 +134,7 @@ export default function DossierLegislatifPage() {
               </p>
             </div>
             <div className="rounded-lg border bg-card p-4">
-              <span className="inline-flex px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700">
+              <span className="inline-flex px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                 Adopté
               </span>
               <p className="mt-2 text-sm text-muted-foreground">
@@ -142,7 +142,7 @@ export default function DossierLegislatifPage() {
               </p>
             </div>
             <div className="rounded-lg border bg-card p-4">
-              <span className="inline-flex px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700">
+              <span className="inline-flex px-2 py-0.5 text-xs rounded-full badge-rejete">
                 Rejeté
               </span>
               <p className="mt-2 text-sm text-muted-foreground">
@@ -150,7 +150,7 @@ export default function DossierLegislatifPage() {
               </p>
             </div>
             <div className="rounded-lg border bg-card p-4">
-              <span className="inline-flex px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-700">
+              <span className="inline-flex px-2 py-0.5 text-xs rounded-full badge-promulgue">
                 Promulgué
               </span>
               <p className="mt-2 text-sm text-muted-foreground">

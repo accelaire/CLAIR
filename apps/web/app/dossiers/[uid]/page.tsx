@@ -207,7 +207,7 @@ function ExpandableAmendementCard({ amendement }: { amendement: DossierAmendemen
                   <Vote className="h-3.5 w-3.5" />
                   <span>Voir le vote n&deg;{s.numero}</span>
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                    s.sort === 'adopte' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                    s.sort === 'adopte' ? 'badge-adopte' : 'badge-rejete'
                   }`}>
                     {s.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
                   </span>
@@ -417,7 +417,7 @@ export default function DossierDetailPage() {
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-3 flex-wrap">
-          <span className={`px-3 py-1 text-sm font-medium rounded-full ${dossier.chambre === 'senat' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+          <span className={`px-3 py-1 text-sm font-medium rounded-full ${dossier.chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'}`}>
             {dossier.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale'}
           </span>
           {dossier.etat && (
@@ -507,8 +507,8 @@ export default function DossierDetailPage() {
       {totalVotes > 0 && (
         <div className="mb-8">
           <div className="flex justify-between text-sm mb-1">
-            <span className="text-green-600 font-medium">{dossier.stats.totalAdopte} adopté{dossier.stats.totalAdopte > 1 ? 's' : ''}</span>
-            <span className="text-red-600 font-medium">{dossier.stats.totalRejete} rejeté{dossier.stats.totalRejete > 1 ? 's' : ''}</span>
+            <span className="text-adopte font-medium">{dossier.stats.totalAdopte} adopté{dossier.stats.totalAdopte > 1 ? 's' : ''}</span>
+            <span className="text-rejete font-medium">{dossier.stats.totalRejete} rejeté{dossier.stats.totalRejete > 1 ? 's' : ''}</span>
           </div>
           <div className="h-2 rounded-full bg-muted overflow-hidden flex">
             <div className="bg-green-500 transition-all" style={{ width: `${(dossier.stats.totalAdopte / totalVotes) * 100}%` }} />
@@ -630,7 +630,7 @@ export default function DossierDetailPage() {
             {groupeFilter && (
               <button
                 onClick={() => setGroupeFilter('')}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-100 text-purple-700 text-sm font-medium hover:bg-purple-200 transition-colors"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 text-sm font-medium hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors"
               >
                 <span
                   className="h-2.5 w-2.5 rounded-full flex-shrink-0"
@@ -724,12 +724,12 @@ export default function DossierDetailPage() {
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="text-sm text-muted-foreground">{formatDateShort(scrutin.date)}</span>
                             <span className="text-sm font-medium text-muted-foreground">n&deg;{scrutin.numero}</span>
-                            <span className={`px-2 py-0.5 text-xs font-medium rounded ${scrutin.chambre === 'senat' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                            <span className={`px-2 py-0.5 text-xs font-medium rounded ${scrutin.chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'}`}>
                               {scrutin.chambre === 'senat' ? 'Sénat' : 'AN'}
                             </span>
                             {/* Amendements linked to this scrutin */}
                             {scrutin.amendements && scrutin.amendements.length > 0 && (
-                              <span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded">
+                              <span className="px-2 py-0.5 text-xs badge-important rounded">
                                 {scrutin.amendements.length} amdt{scrutin.amendements.length > 1 ? 's' : ''}
                               </span>
                             )}
@@ -751,7 +751,7 @@ export default function DossierDetailPage() {
                             </span>
                           </div>
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            scrutin.sort === 'adopte' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                            scrutin.sort === 'adopte' ? 'badge-adopte' : 'badge-rejete'
                           }`}>
                             {scrutin.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
                           </span>

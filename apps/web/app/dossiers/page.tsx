@@ -251,7 +251,7 @@ function DossiersPageContent() {
                   <div className="flex-1 min-w-0">
                     {/* Badges */}
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span className={`px-2 py-0.5 text-xs font-medium rounded ${dossier.chambre === 'senat' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded ${dossier.chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'}`}>
                         {dossier.chambre === 'senat' ? 'Sénat' : 'AN'}
                       </span>
                       {dossier.etat && (
