@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { Github, Twitter } from 'lucide-react';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
 export function Footer() {
   return (
     <footer className="border-t bg-muted/30">
@@ -95,6 +97,16 @@ export function Footer() {
                 <Link href="/guide" className="text-sm text-muted-foreground hover:text-foreground">
                   Guide pratique
                 </Link>
+              </li>
+              <li>
+                <a
+                  href={`${API_URL}/docs`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-muted-foreground hover:text-foreground"
+                >
+                  API Documentation
+                </a>
               </li>
             </ul>
           </div>

@@ -13,6 +13,7 @@ import { prismaPlugin } from './plugins/prisma';
 import { redisPlugin } from './plugins/redis';
 import { rateLimitPlugin } from './plugins/rate-limit';
 
+
 import { deputesRoutes, senateursRoutes, parlementairesRoutes } from './modules/parlementaires/parlementaires.controller';
 import { scrutinsRoutes } from './modules/scrutins/scrutins.controller';
 import { lobbyingRoutes } from './modules/lobbying/lobbying.controller';
@@ -47,19 +48,32 @@ async function buildApp() {
     trustProxy: true,
   });
 
+  const isProduction = process.env.NODE_ENV === 'production';
+  const serverUrl = isProduction
+    ? process.env.API_URL || 'https://api.clair.vote'
+    : process.env.API_URL || 'http://localhost:3001';
+
   // ==========================================================================
   // PLUGINS GLOBAUX
   // ==========================================================================
 
   // Sécurité
   await app.register(helmet, {
-    // CSP désactivé en dev pour Swagger UI, activé en production
-    contentSecurityPolicy: process.env.NODE_ENV === 'production',
+    contentSecurityPolicy: isProduction ? {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"],
+        imgSrc: ["'self'", "data:", "https:"],
+        fontSrc: ["'self'", "data:"],
+        connectSrc: ["'self'", "https://cdn.jsdelivr.net"],
+      },
+    } : false,
   });
 
   // Parse CORS origins from comma-separated string
   const getCorsOrigins = (): string[] | boolean => {
-    if (process.env.NODE_ENV !== 'production') return true;
+    if (!isProduction) return true;
     const origins = process.env.CORS_ORIGIN?.split(',').map(o => o.trim()).filter(Boolean) || [];
     return origins.length > 0 ? origins : false;
   };
@@ -69,44 +83,42 @@ async function buildApp() {
     credentials: true,
   });
 
-  // Documentation API - Désactivée en production pour des raisons de sécurité
-  if (process.env.NODE_ENV !== 'production') {
-    await app.register(swagger, {
-      openapi: {
-        info: {
-          title: 'CLAIR API',
-          description: 'API de la plateforme de transparence politique CLAIR',
-          version: '0.1.0',
+  // Documentation API
+  await app.register(swagger, {
+    openapi: {
+      info: {
+        title: 'CLAIR API',
+        description: 'API de la plateforme de transparence politique CLAIR',
+        version: '0.1.0',
+      },
+      servers: [
+        {
+          url: serverUrl,
+          description: isProduction ? 'Production' : 'Development',
         },
-        servers: [
-          {
-            url: process.env.API_URL || 'http://localhost:3001',
-            description: 'Development',
-          },
-        ],
-        tags: [
-          { name: 'Health', description: 'Endpoints de santé' },
-          { name: 'Parlementaires', description: 'Données sur tous les parlementaires (députés + sénateurs)' },
-          { name: 'Députés', description: 'Données sur les députés de l\'Assemblée nationale' },
-          { name: 'Sénateurs', description: 'Données sur les sénateurs' },
-          { name: 'Groupes politiques', description: 'Groupes parlementaires de l\'AN et du Sénat' },
-          { name: 'Scrutins', description: 'Votes à l\'Assemblée nationale et au Sénat' },
-          { name: 'Lobbying', description: 'Données HATVP sur le lobbying' },
-          { name: 'Search', description: 'Recherche globale' },
-          { name: 'Analytics', description: 'Statistiques et analyses pour l\'explorateur' },
-          { name: 'Dossiers', description: 'Dossiers législatifs' },
-        ],
-      },
-    });
+      ],
+      tags: [
+        { name: 'Health', description: 'Endpoints de santé' },
+        { name: 'Parlementaires', description: 'Données sur tous les parlementaires (députés + sénateurs)' },
+        { name: 'Députés', description: 'Données sur les députés de l\'Assemblée nationale' },
+        { name: 'Sénateurs', description: 'Données sur les sénateurs' },
+        { name: 'Groupes politiques', description: 'Groupes parlementaires de l\'AN et du Sénat' },
+        { name: 'Scrutins', description: 'Votes à l\'Assemblée nationale et au Sénat' },
+        { name: 'Lobbying', description: 'Données HATVP sur le lobbying' },
+        { name: 'Search', description: 'Recherche globale' },
+        { name: 'Analytics', description: 'Statistiques et analyses pour l\'explorateur' },
+        { name: 'Dossiers', description: 'Dossiers législatifs' },
+      ],
+    },
+  });
 
-    await app.register(swaggerUi, {
-      routePrefix: '/docs',
-      uiConfig: {
-        docExpansion: 'list',
-        deepLinking: true,
-      },
-    });
-  }
+  await app.register(swaggerUi, {
+    routePrefix: '/docs',
+    uiConfig: {
+      docExpansion: 'list',
+      deepLinking: true,
+    },
+  });
 
   // ==========================================================================
   // PLUGINS PERSONNALISÉS
@@ -247,19 +259,18 @@ async function start() {
 
   const port = parseInt(process.env.PORT || '3001', 10);
   const host = process.env.HOST || '0.0.0.0';
+  const isProduction = process.env.NODE_ENV === 'production';
 
   try {
     await app.listen({ port, host });
     logger.info(`🚀 Server running at http://${host}:${port}`);
-    if (process.env.NODE_ENV !== 'production') {
-      logger.info(`📚 Documentation at http://${host}:${port}/docs`);
-    }
+    logger.info(`📚 Documentation at http://${host}:${port}/docs`);
 
     // Log initial memory usage
     logMemoryUsage();
 
     // Warm cache in production to prevent cold start OOM
-    if (process.env.NODE_ENV === 'production') {
+    if (isProduction) {
       // Run cache warming in background (don't block server startup)
       warmCache(app).catch((err) => {
         logger.error({ err }, 'Cache warming failed');
