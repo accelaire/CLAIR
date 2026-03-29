@@ -37,27 +37,27 @@
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --background: 220 20% 5.9%;          /* #0c0e12 — Figma page bg */
+    --foreground: 0 0% 100%;             /* #ffffff */
+    --card: 221 20% 8.8%;                /* #12151b — Figma surface */
+    --card-foreground: 0 0% 100%;        /* #ffffff */
+    --popover: 221 20% 8.8%;             /* #12151b */
+    --popover-foreground: 0 0% 100%;     /* #ffffff */
+    --primary: 215 91% 51%;              /* same as light — brand blue */
+    --primary-foreground: 0 0% 100%;     /* #ffffff — CTA text white */
     --primary-accent: 218 78% 50%;
     --primary-deep: 220 76% 44%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --secondary: 221 16% 15.9%;          /* #22262f — Figma divider */
+    --secondary-foreground: 0 0% 100%;   /* #ffffff */
+    --muted: 221 16% 15.9%;              /* #22262f */
+    --muted-foreground: 225 4% 59.6%;    /* #94969c — Figma muted text */
+    --accent: 221 16% 15.9%;             /* #22262f */
+    --accent-foreground: 0 0% 100%;      /* #ffffff */
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --destructive-foreground: 0 0% 100%; /* #ffffff */
+    --border: 221 16% 15.9%;             /* #22262f — Figma border */
+    --input: 222 8% 23.5%;               /* #373a41 — Figma subtle border */
+    --ring: 215 91% 51%;                 /* brand blue */
   }
 }
 
@@ -79,19 +79,71 @@
 
   /* Badges de vote */
   .vote-pour {
-    @apply bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100;
+    @apply bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400;
   }
 
   .vote-contre {
-    @apply bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100;
+    @apply bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400;
   }
 
   .vote-abstention {
-    @apply bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100;
+    @apply bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400;
   }
 
   .vote-absent {
-    @apply bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100;
+    @apply bg-gray-100 text-gray-800 dark:bg-gray-800/30 dark:text-gray-400;
+  }
+
+  /* Badges chambre */
+  .badge-assemblee {
+    @apply bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400;
+  }
+
+  .badge-senat {
+    @apply bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400;
+  }
+
+  /* Badges résultat scrutin */
+  .badge-adopte {
+    @apply bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400;
+  }
+
+  .badge-rejete {
+    @apply bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400;
+  }
+
+  .badge-important {
+    @apply bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400;
+  }
+
+  /* Badges état dossier */
+  .badge-en-cours {
+    @apply bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400;
+  }
+
+  .badge-promulgue {
+    @apply bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400;
+  }
+
+  .badge-caduc {
+    @apply bg-gray-100 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400;
+  }
+
+  .badge-fusionne {
+    @apply bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400;
+  }
+
+  .badge-retire {
+    @apply bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400;
+  }
+
+  /* Couleurs texte résultat (compteurs, labels inline) */
+  .text-adopte {
+    @apply text-green-600 dark:text-green-400;
+  }
+
+  .text-rejete {
+    @apply text-red-600 dark:text-red-400;
   }
 
   /* Groupe politique badge */

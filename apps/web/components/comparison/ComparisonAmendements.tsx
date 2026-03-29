@@ -81,7 +81,7 @@ function ParlementaireAmendements({
             </h3>
             <div className="mt-1 flex items-center gap-4 text-sm text-muted-foreground">
               <span>{proposes} proposés</span>
-              <span className="text-green-600 dark:text-green-400">{adoptes} adoptés</span>
+              <span className="text-adopte">{adoptes} adoptés</span>
               <span className="font-medium">({tauxAdoption}% adoption)</span>
             </div>
           </div>

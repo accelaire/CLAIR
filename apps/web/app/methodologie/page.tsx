@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Database, RefreshCw, Server, FileJson, ExternalLink } from 'lucide-react';
+import { Database, RefreshCw, Server, FileJson, ExternalLink, Sparkles } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'Méthodologie',
@@ -213,7 +213,7 @@ export default function MethodologiePage() {
                 PostgreSQL avec traçabilité de la source.
               </li>
               <li>
-                <strong>Indexation</strong> : Les données sont indexées dans Meilisearch
+                <strong>Indexation</strong> : Les données sont indexées
                 pour permettre la recherche full-text.
               </li>
             </ol>
@@ -236,6 +236,82 @@ export default function MethodologiePage() {
               </li>
               <li>
                 <strong>Lobbying (HATVP)</strong> : Synchronisation hebdomadaire
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      {/* Enrichissement IA */}
+      <div className="mx-auto mt-16 max-w-4xl">
+        <h2 className="flex items-center gap-2 text-2xl font-bold">
+          <Sparkles className="h-6 w-6" />
+          Enrichissement par intelligence artificielle
+        </h2>
+        <p className="mt-4 text-muted-foreground">
+          Pour rendre les données parlementaires plus accessibles, CLAIR utilise
+          l&apos;intelligence artificielle pour générer des résumés et des analyses
+          complémentaires.
+        </p>
+
+        <div className="mt-8 space-y-6">
+          <div className="rounded-lg border p-6">
+            <h3 className="font-semibold">Technologie utilisée</h3>
+            <p className="mt-4 text-sm text-muted-foreground">
+              CLAIR s&apos;appuie sur les modèles de{' '}
+              <a
+                href="https://mistral.ai"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                Mistral AI
+              </a>
+              , une entreprise française spécialisée dans l&apos;IA générative.
+              Le modèle <strong>Mistral Small</strong> est utilisé pour sa capacité
+              à traiter du texte en français avec précision et sobriété.
+            </p>
+          </div>
+
+          <div className="rounded-lg border p-6">
+            <h3 className="font-semibold">Données enrichies</h3>
+            <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
+              <li>
+                <strong>Résumés de scrutins</strong> : Chaque scrutin public reçoit un résumé
+                en langage clair expliquant l&apos;objet du vote et son contexte.
+              </li>
+              <li>
+                <strong>Synthèses de dossiers législatifs</strong> : Les dossiers sont résumés
+                avec une analyse des positions des groupes politiques basée sur les votes
+                effectifs de leurs membres.
+              </li>
+              <li>
+                <strong>Résumés de sujets parlementaires</strong> : Les sujets transversaux
+                regroupant plusieurs dossiers bénéficient d&apos;une synthèse globale.
+              </li>
+            </ul>
+          </div>
+
+          <div className="rounded-lg border bg-blue-50 dark:bg-blue-950/30 p-6 border-blue-200 dark:border-blue-900">
+            <h3 className="font-semibold text-blue-800 dark:text-blue-400">Garanties de fiabilité</h3>
+            <ul className="mt-4 space-y-2 text-sm text-blue-700 dark:text-blue-500">
+              <li>
+                <strong>Données factuelles en entrée</strong> : L&apos;IA reçoit uniquement des données
+                officielles (titres, résultats de votes, positions des groupes) et non des opinions.
+              </li>
+              <li>
+                <strong>Positions calculées, pas générées</strong> : Les positions des groupes politiques
+                sont calculées à partir des votes individuels réels, puis transmises à l&apos;IA
+                comme contexte factuel.
+              </li>
+              <li>
+                <strong>Contrôle qualité automatisé</strong> : Un pipeline de vérification détecte
+                les inversions de position et les incohérences entre les résumés générés et les
+                données sources.
+              </li>
+              <li>
+                <strong>Aucune donnée inventée</strong> : L&apos;IA ne génère pas de statistiques
+                ou de chiffres. Tous les nombres affichés proviennent directement des sources officielles.
               </li>
             </ul>
           </div>
@@ -354,8 +430,7 @@ export default function MethodologiePage() {
           <div className="rounded-lg border p-4">
             <h3 className="font-semibold">Ingestion</h3>
             <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-              <li>BullMQ (jobs)</li>
-              <li>Meilisearch (recherche)</li>
+              <li>Mistral AI (enrichissement)</li>
               <li>Connecteurs sources</li>
             </ul>
           </div>

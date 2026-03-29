@@ -251,8 +251,8 @@ function ParliamentaryTimeline({ dossiers, sujet }: { dossiers: SujetDossier[]; 
   };
 
   const chambreColor = (chambre: string) => {
-    if (chambre === 'assemblee') return 'border-purple-300 bg-purple-50 text-purple-700';
-    if (chambre === 'senat') return 'border-blue-300 bg-blue-50 text-blue-700';
+    if (chambre === 'assemblee') return 'badge-assemblee border border-purple-300 dark:border-purple-800';
+    if (chambre === 'senat') return 'badge-senat border border-blue-300 dark:border-blue-800';
     return 'border-primary/30 bg-primary/5 text-primary';
   };
 
@@ -530,11 +530,11 @@ function ScrutinsPanel({ slug, totalScrutins }: { slug: string; totalScrutins: n
                 >
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs text-muted-foreground">{formatDateShort(scrutin.date)}</span>
-                    <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${scrutin.chambre === 'senat' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                    <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${scrutin.chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'}`}>
                       {scrutin.chambre === 'senat' ? 'Sénat' : 'AN'}
                     </span>
                     <span className={`ml-auto px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                      scrutin.sort === 'adopte' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                      scrutin.sort === 'adopte' ? 'badge-adopte' : 'badge-rejete'
                     }`}>
                       {scrutin.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
                     </span>
@@ -600,7 +600,7 @@ function DossiersPanel({ dossiers }: { dossiers: SujetDossier[] }) {
           >
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${dossier.chambre === 'senat' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${dossier.chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'}`}>
                   {dossier.chambre === 'senat' ? 'Sénat' : 'AN'}
                 </span>
                 {dossier.etat && etatLabels[dossier.etat] && (
@@ -684,7 +684,7 @@ function StatsPanel({ slug, dossiers }: { slug: string; dossiers: SujetDossier[]
                 />
                 <span className="text-sm font-medium truncate">{groupe.nom}</span>
                 <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded flex-shrink-0 ${
-                  groupe.chambre === 'senat' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                  groupe.chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'
                 }`}>
                   {groupe.chambre === 'senat' ? 'Sénat' : 'AN'}
                 </span>
@@ -806,7 +806,7 @@ export default function SujetDetailPage() {
             {statusCfg.label}
           </span>
           {sujet.category && (
-            <span className="px-3 py-1 text-sm font-medium bg-amber-100 text-amber-700 rounded-full">
+            <span className="px-3 py-1 text-sm font-medium badge-important rounded-full">
               {sujet.category}
             </span>
           )}

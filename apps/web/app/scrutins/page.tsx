@@ -63,8 +63,8 @@ interface ScrutinsResponse {
 }
 
 const sortLabels: Record<string, { label: string; color: string }> = {
-  adopte: { label: 'Adopté', color: 'text-green-600 bg-green-100' },
-  rejete: { label: 'Rejeté', color: 'text-red-600 bg-red-100' },
+  adopte: { label: 'Adopté', color: 'badge-adopte' },
+  rejete: { label: 'Rejeté', color: 'badge-rejete' },
 };
 
 const typeLabels: Record<string, string> = {
@@ -343,7 +343,7 @@ function ScrutinsPageContent() {
                       <span className="text-sm font-medium text-muted-foreground">
                         Scrutin n°{scrutin.numero}
                       </span>
-                      <span className={`px-2 py-0.5 text-xs font-medium rounded ${scrutin.chambre === 'senat' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded ${scrutin.chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'}`}>
                         {chambreLabels[scrutin.chambre] || 'Assemblée nationale'}
                       </span>
                       {scrutin.chambre === 'senat' && scrutin.session && (
@@ -352,7 +352,7 @@ function ScrutinsPageContent() {
                         </span>
                       )}
                       {scrutin.importance >= 4 && (
-                        <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded">
+                        <span className="px-2 py-0.5 text-xs font-medium badge-important rounded">
                           Important
                         </span>
                       )}
@@ -388,11 +388,11 @@ function ScrutinsPageContent() {
                   <div className="flex items-center gap-4">
                     {/* Votes */}
                     <div className="flex items-center gap-3 text-sm">
-                      <span className="flex items-center gap-1 text-green-600">
+                      <span className="flex items-center gap-1 text-adopte">
                         <CheckCircle className="h-4 w-4" />
                         {scrutin.nombrePour}
                       </span>
-                      <span className="flex items-center gap-1 text-red-600">
+                      <span className="flex items-center gap-1 text-rejete">
                         <XCircle className="h-4 w-4" />
                         {scrutin.nombreContre}
                       </span>

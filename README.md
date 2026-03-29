@@ -83,7 +83,7 @@ Next.js 14 avec App Router. Pages principales :
 
 Fastify avec un module pattern : `src/modules/{feature}/` contenant controller, service et schema (Zod).
 
-Plugins : Prisma, Redis, Meilisearch, Rate limiting.
+Plugins : Prisma, Redis, Rate limiting.
 
 ### services/ingestion — Pipeline de données
 
@@ -301,7 +301,7 @@ GET  /api/v1/lobbying                     # Liste des représentants d'intérêt
 GET  /api/v1/lobbying/stats               # Statistiques lobbying
 GET  /api/v1/lobbying/secteurs            # Secteurs d'activité
 
-# Recherche globale (Meilisearch)
+# Recherche globale
 GET  /api/v1/search                       # Recherche multi-entités
 
 # Analytics
@@ -367,7 +367,7 @@ Copier `.env.example` en `.env` à la racine du projet. Les valeurs par défaut 
 - **ORM** : Prisma 5
 - **Validation** : Zod
 - **Recherche** : PostgreSQL natif (ILIKE + fuzzy Jaro-Winkler)
-- **Queue** : BullMQ + Redis
+- **IA** : Mistral AI (enrichissement)
 
 ### Frontend
 - **Framework** : Next.js 14 (App Router)

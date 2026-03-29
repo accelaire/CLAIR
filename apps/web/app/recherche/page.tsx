@@ -58,11 +58,11 @@ interface SearchResponse {
 }
 
 const typeConfig = {
-  depute: { label: 'Député', icon: Users, color: 'bg-blue-100 text-blue-700' },
-  senateur: { label: 'Sénateur', icon: Users, color: 'bg-red-100 text-red-700' },
-  scrutin: { label: 'Scrutin', icon: Vote, color: 'bg-purple-100 text-purple-700' },
-  lobbyiste: { label: 'Lobbyiste', icon: Building2, color: 'bg-amber-100 text-amber-700' },
-  dossier: { label: 'Dossier', icon: FileText, color: 'bg-green-100 text-green-700' },
+  depute: { label: 'Député', icon: Users, color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+  senateur: { label: 'Sénateur', icon: Users, color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+  scrutin: { label: 'Scrutin', icon: Vote, color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
+  lobbyiste: { label: 'Lobbyiste', icon: Building2, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  dossier: { label: 'Dossier', icon: FileText, color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
 };
 
 /** Construit un titre lisible : préfixe procedure si le titre commence en minuscule */
@@ -202,7 +202,7 @@ export default function RecherchePage() {
                 <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
                   <span>Scrutin n°{result.numero}</span>
                   <span>•</span>
-                  <span className={result.sort === 'adopte' ? 'text-green-600' : 'text-red-600'}>
+                  <span className={result.sort === 'adopte' ? 'text-adopte' : 'text-rejete'}>
                     {result.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
                   </span>
                 </div>

@@ -46,7 +46,7 @@ const POSITION_STYLES: Record<VotePosition, { bg: string; text: string; label: s
   pour: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-400', label: 'Pour' },
   contre: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-400', label: 'Contre' },
   abstention: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-700 dark:text-yellow-400', label: 'Abstention' },
-  absent: { bg: 'bg-gray-100 dark:bg-gray-800', text: 'text-gray-500 dark:text-gray-400', label: 'Absent' },
+  absent: { bg: 'bg-gray-100 dark:bg-gray-800/30', text: 'text-gray-500 dark:text-gray-400', label: 'Absent' },
 };
 
 function PositionBadge({ position }: { position: VotePosition }) {
@@ -220,8 +220,8 @@ export function ComparisonVotesTable({ parlementaires, chambre }: ComparisonVote
                     <span
                       className={`rounded px-1.5 py-0.5 ${
                         vote.scrutin.sort === 'adopte'
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                          : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                          ? 'badge-adopte'
+                          : 'badge-rejete'
                       }`}
                     >
                       {vote.scrutin.sort === 'adopte' ? 'Adopté' : 'Rejeté'}

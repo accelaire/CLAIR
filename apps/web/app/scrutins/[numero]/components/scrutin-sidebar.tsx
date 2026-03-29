@@ -93,7 +93,7 @@ export function ScrutinSidebar({
       <div>
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Chambre</h3>
         <span className={`inline-flex px-2.5 py-1 text-xs font-medium rounded-md ${
-          chambre === 'senat' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+          chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'
         }`}>
           {chambreLabels[chambre]}
         </span>
@@ -119,7 +119,7 @@ export function ScrutinSidebar({
         <div className="flex items-center gap-2">
           <span className="text-sm">{typeVoteLabels[typeVote] || typeVote}</span>
           {importance >= 4 && (
-            <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded">
+            <span className="px-2 py-0.5 text-xs font-medium badge-important rounded">
               Important
             </span>
           )}
@@ -136,7 +136,7 @@ export function ScrutinSidebar({
           />
         </h3>
         <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${
-          isAdopted ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+          isAdopted ? 'badge-adopte' : 'badge-rejete'
         }`}>
           {isAdopted ? <CheckCircle className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
           {isAdopted ? 'Adopté' : 'Rejeté'}

@@ -448,8 +448,8 @@ export default function GroupeDetailPage() {
               <span
                 className={`text-xs sm:text-sm px-2 sm:px-3 py-0.5 sm:py-1 rounded-full shrink-0 ${
                   chambre === 'assemblee'
-                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
-                    : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                    ? 'badge-assemblee'
+                    : 'badge-senat'
                 }`}
               >
                 {chambre === 'assemblee' ? 'AN' : 'Sénat'}
@@ -634,10 +634,10 @@ export default function GroupeDetailPage() {
                       <div
                         className={`shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center ${
                           scrutin.positionMajoritaire === 'pour'
-                            ? 'bg-green-100 text-green-600'
+                            ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
                             : scrutin.positionMajoritaire === 'contre'
-                            ? 'bg-red-100 text-red-600'
-                            : 'bg-yellow-100 text-yellow-600'
+                            ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+                            : 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400'
                         }`}
                       >
                         {scrutin.positionMajoritaire === 'pour' ? (

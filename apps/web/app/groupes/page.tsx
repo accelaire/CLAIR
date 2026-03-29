@@ -108,8 +108,8 @@ function GroupeCard({ groupe }: { groupe: GroupePolitique }) {
       <div className="absolute top-3 right-3">
         <span className={`text-xs px-2 py-0.5 rounded-full ${
           groupe.chambre === 'assemblee'
-            ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
-            : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+            ? 'badge-assemblee'
+            : 'badge-senat'
         }`}>
           {groupe.chambre === 'assemblee' ? 'AN' : 'Sénat'}
         </span>

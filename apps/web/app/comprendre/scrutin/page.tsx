@@ -71,13 +71,13 @@ export default function ScrutinPage() {
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-lg border bg-card p-4">
-                <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
+                <span className="inline-flex items-center rounded-full bg-green-100 dark:bg-green-900/30 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:text-green-400">
                   Pour
                 </span>
                 <p className="mt-2 text-sm">Le parlementaire approuve le texte soumis au vote.</p>
               </div>
               <div className="rounded-lg border bg-card p-4">
-                <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800">
+                <span className="inline-flex items-center rounded-full bg-red-100 dark:bg-red-900/30 px-2.5 py-0.5 text-xs font-medium text-red-800 dark:text-red-400">
                   Contre
                 </span>
                 <p className="mt-2 text-sm">Le parlementaire s&apos;oppose au texte.</p>
