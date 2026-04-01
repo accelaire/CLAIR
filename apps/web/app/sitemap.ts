@@ -48,6 +48,11 @@ interface DossierItem {
   dateDepot?: string;
 }
 
+interface SujetItem {
+  slug: string;
+  updatedAt?: string;
+}
+
 async function fetchAllPages<T>(endpoint: string): Promise<T[]> {
   const items: T[] = [];
   let page = 1;
@@ -162,16 +167,23 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'daily',
       priority: 0.9,
     },
+    {
+      url: `${BASE_URL}/sujets`,
+      lastModified: now,
+      changeFrequency: 'weekly',
+      priority: 0.8,
+    },
   ];
 
   // Fetch dynamic content
-  const [deputes, senateurs, scrutins, lobbyistes, groupes, dossiers] = await Promise.all([
+  const [deputes, senateurs, scrutins, lobbyistes, groupes, dossiers, sujets] = await Promise.all([
     fetchAllPages<DeputeItem>('/deputes'),
     fetchAllPages<SenateurItem>('/senateurs'),
     fetchAllPages<ScrutinItem>('/scrutins'),
     fetchAllPages<LobbyisteItem>('/lobbying'),
     fetchAllPages<GroupeItem>('/groupes'),
     fetchAllPages<DossierItem>('/dossiers'),
+    fetchAllPages<SujetItem>('/sujets'),
   ]);
 
   // Deputes pages
@@ -222,6 +234,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.7,
   }));
 
+  // Sujets pages
+  const sujetPages: MetadataRoute.Sitemap = sujets.map((sujet) => ({
+    url: `${BASE_URL}/sujets/${sujet.slug}`,
+    lastModified: sujet.updatedAt || now,
+    changeFrequency: 'weekly' as const,
+    priority: 0.7,
+  }));
+
   return [
     ...staticPages,
     ...deputePages,
@@ -230,5 +250,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...lobbyistePages,
     ...groupePages,
     ...dossierPages,
+    ...sujetPages,
   ];
 }
