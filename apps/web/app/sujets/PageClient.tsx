@@ -3,7 +3,7 @@
 import { Suspense, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Search, Vote, Loader2, Layers, Sparkles, ChevronDown } from 'lucide-react';
+import { Search, Vote, Loader2, Layers, Sparkles, ChevronDown, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
 
@@ -239,15 +239,21 @@ function SujetsPageContent() {
 
   const sujets = data ?? [];
 
+  // Helper: tri par dateDernierVote desc (plus récent en premier)
+  const sortByLastVote = (a: Sujet, b: Sujet) => {
+    const da = a.dateDernierVote ? new Date(a.dateDernierVote).getTime() : 0;
+    const db = b.dateDernierVote ? new Date(b.dateDernierVote).getTime() : 0;
+    return db - da;
+  };
+
   // Split into sections
-  const { featured, enCours, promulgues } = useMemo(() => {
-    const enCoursAll = sujets
-      .filter(s => s.status === 'en_cours')
-      .sort((a, b) => {
-        const da = a.dateDernierVote ? new Date(a.dateDernierVote).getTime() : 0;
-        const db = b.dateDernierVote ? new Date(b.dateDernierVote).getTime() : 0;
-        return db - da;
-      });
+  // "en_cours" + "adopte" = encore dans le parcours législatif (pas encore promulgué)
+  // "promulgue" = signé en loi, terminé
+  const { featured, recentlyPromulgated, enDiscussion, promulgues, rejetes, autres } = useMemo(() => {
+    // En cours + Adopté = "En discussion" (parcours législatif non terminé)
+    const enDiscussionAll = sujets
+      .filter(s => s.status === 'en_cours' || s.status === 'adopte')
+      .sort(sortByLastVote);
 
     const promulguesAll = sujets
       .filter(s => s.status === 'promulgue')
@@ -257,24 +263,43 @@ function SujetsPageContent() {
         return db - da;
       });
 
-    // Pick a daily-rotating en_cours sujet for "À la une"
-    // Criteria: min 5 scrutins + dernier vote < 90 jours (couvre les pauses inter-sessions)
+    const rejetesAll = sujets
+      .filter(s => s.status === 'rejete')
+      .sort(sortByLastVote);
+
+    const autresAll = sujets
+      .filter(s => s.status === 'caduc' || s.status === 'retire')
+      .sort(sortByLastVote);
+
+    // "À la une" : sujets actifs (en_cours/adopté) avec activité récente
+    // Criteria: min 5 scrutins + dernier vote < 90 jours
     const ninetyDaysAgo = Date.now() - 90 * 86400000;
-    const featuredCandidates = enCoursAll.filter(s =>
-      s.scrutinCount >= 5 &&
-      s.dateDernierVote &&
-      new Date(s.dateDernierVote).getTime() > ninetyDaysAgo
-    );
+    const featuredCandidates = enDiscussionAll
+      .filter(s =>
+        s.scrutinCount >= 5 &&
+        s.dateDernierVote &&
+        new Date(s.dateDernierVote).getTime() > ninetyDaysAgo
+      );
+
     let featured: Sujet | null = null;
     if (featuredCandidates.length > 0 && !filters.search) {
       const dayIndex = Math.floor(Date.now() / 86400000) % featuredCandidates.length;
       featured = featuredCandidates[dayIndex];
     }
 
+    // Sujets promulgués récemment (< 6 mois) pour la section focus
+    const sixMonthsAgo = Date.now() - 180 * 86400000;
+    const recentlyPromulgated = promulguesAll.filter(s =>
+      s.dateFin && new Date(s.dateFin).getTime() > sixMonthsAgo
+    ).slice(0, 6);
+
     return {
       featured,
-      enCours: enCoursAll.filter(s => s.id !== featured?.id),
+      recentlyPromulgated,
+      enDiscussion: enDiscussionAll.filter(s => s.id !== featured?.id),
       promulgues: promulguesAll,
+      rejetes: rejetesAll,
+      autres: autresAll,
     };
   }, [sujets, filters.search]);
 
@@ -325,22 +350,89 @@ function SujetsPageContent() {
             </section>
           )}
 
-          {/* 2. En cours */}
-          {enCours.length > 0 && (
+          {/* 2. Récemment promulgués — focus horizontal */}
+          {recentlyPromulgated.length > 0 && !filters.search && (
+            <section>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                  <h2 className="text-lg font-semibold">Récemment promulgués</h2>
+                  <span className="text-sm text-muted-foreground">{recentlyPromulgated.length}</span>
+                </div>
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: 'none' }}>
+                {recentlyPromulgated.map((sujet) => (
+                  <Link
+                    key={sujet.id}
+                    href={`/sujets/${sujet.slug}`}
+                    className="min-w-[280px] max-w-[320px] flex-shrink-0 rounded-lg border border-green-200 dark:border-green-900/40 bg-green-50/50 dark:bg-green-950/20 p-4 transition-all hover:border-green-400 hover:shadow-md"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700 dark:text-green-400">
+                        <span className="h-2 w-2 rounded-full bg-green-500" />
+                        Promulgué
+                      </span>
+                      {sujet.dateFin && (
+                        <span className="text-xs text-muted-foreground ml-auto">
+                          {formatDateShort(sujet.dateFin)}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="font-medium text-sm leading-tight line-clamp-2 mb-2">
+                      {sujet.label}
+                    </h3>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Vote className="h-3 w-3" />
+                        {sujet.scrutinCount} scrutin{sujet.scrutinCount > 1 ? 's' : ''}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Layers className="h-3 w-3" />
+                        {sujet.dossierCount} dossier{sujet.dossierCount > 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* 3. En cours de discussion (en_cours + adopté) */}
+          {enDiscussion.length > 0 && (
             <CollapsibleSection
-              title="En cours"
-              count={enCours.length}
-              sujets={enCours}
+              title="En cours de discussion"
+              count={enDiscussion.length}
+              sujets={enDiscussion}
               defaultOpen
             />
           )}
 
-          {/* 3. Promulgués */}
+          {/* 4. Promulgués */}
           {promulgues.length > 0 && (
             <CollapsibleSection
               title="Promulgués"
               count={promulgues.length}
               sujets={promulgues}
+              defaultOpen={false}
+            />
+          )}
+
+          {/* 5. Rejetés */}
+          {rejetes.length > 0 && (
+            <CollapsibleSection
+              title="Rejetés"
+              count={rejetes.length}
+              sujets={rejetes}
+              defaultOpen={false}
+            />
+          )}
+
+          {/* 6. Caducs / Retirés */}
+          {autres.length > 0 && (
+            <CollapsibleSection
+              title="Caducs et retirés"
+              count={autres.length}
+              sujets={autres}
               defaultOpen={false}
             />
           )}
