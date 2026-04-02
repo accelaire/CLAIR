@@ -45,12 +45,9 @@ export async function generateMetadata({
       description,
       url,
       type: 'profile',
-      ...(data.photoUrl && {
-        images: [{ url: data.photoUrl, alt: fullName }],
-      }),
     },
     twitter: {
-      card: 'summary',
+      card: 'summary_large_image',
       title,
       description,
     },
