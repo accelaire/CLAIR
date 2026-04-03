@@ -74,7 +74,7 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         legislature: true,
         etat: true,
         procedureLibelle: true,
-        _count: { select: { scrutins: true } },
+        _count: { select: { scrutins: true, amendements: true } },
         scrutins: {
           orderBy: { date: 'desc' as const },
           take: 1,
@@ -117,27 +117,22 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         }),
       ]);
 
-      // Batch 3 — dossiers récents (avec take pour éviter de charger toute la table)
+      // Batch 3 — dossiers récents par date de dernier scrutin (pas par volume)
+      const threeMonthsAgo = new Date();
+      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
       const bigIds = bigDossiers.map(d => d.id);
+
       const recentlyVotedDossiers = await fastify.prisma.dossierLegislatif.findMany({
         where: {
           id: { notIn: bigIds },
-          scrutins: { some: {} },
+          scrutins: { some: { date: { gte: threeMonthsAgo } } },
         },
-        select: {
-          ...dossierSelect,
-          // Utiliser le dernier scrutin pour le tri côté DB
-          scrutins: {
-            orderBy: { date: 'desc' as const },
-            take: 1,
-            select: { date: true },
-          },
-        },
-        orderBy: { scrutins: { _count: 'desc' } },
-        take: 20,
+        select: dossierSelect,
+        // Prend un pool large pour trier par date côté JS
+        take: 30,
       });
 
-      // Sort by latest scrutin date desc
+      // Sort by latest scrutin date desc (fraîcheur prime)
       recentlyVotedDossiers.sort((a, b) => {
         const da = a.scrutins[0]?.date;
         const db = b.scrutins[0]?.date;
@@ -197,6 +192,7 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
             etat: d.etat,
             procedureLibelle: d.procedureLibelle,
             scrutinsCount: d._count.scrutins,
+            amendementsCount: d._count.amendements,
             lastScrutinDate: d.scrutins[0]?.date || null,
             voteStats: vs,
           };

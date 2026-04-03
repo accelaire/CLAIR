@@ -1633,6 +1633,43 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     }
   }
 
+  // Recalculer les stats dénormalisées des sujets (date_dernier_vote, scrutin_count, dossier_count)
+  // Nécessaire car les nouveaux scrutins sont liés aux dossiers mais pas propagés aux sujets
+  if (results.sourcesChanged.length > 0) {
+    logger.info('Refreshing sujets denormalized stats...');
+    try {
+      const refreshStart = Date.now();
+      const [sujetsResult] = await Promise.all([
+        prisma.$executeRaw`
+          UPDATE sujets s SET
+            dossier_count = sub.dossier_count,
+            scrutin_count = sub.scrutin_count,
+            date_dernier_vote = sub.max_date
+          FROM (
+            SELECT dl.sujet_id,
+                   COUNT(DISTINCT dl.id) AS dossier_count,
+                   COUNT(sc.id) AS scrutin_count,
+                   MAX(sc.date) AS max_date
+            FROM dossiers_legislatifs dl
+            LEFT JOIN scrutins sc ON sc.dossier_id = dl.id
+            WHERE dl.sujet_id IS NOT NULL
+            GROUP BY dl.sujet_id
+          ) sub
+          WHERE s.id = sub.sujet_id
+            AND (s.date_dernier_vote IS DISTINCT FROM sub.max_date
+                 OR s.scrutin_count IS DISTINCT FROM sub.scrutin_count
+                 OR s.dossier_count IS DISTINCT FROM sub.dossier_count)
+        `,
+      ]);
+      logger.info({
+        updated: sujetsResult,
+        duration: `${((Date.now() - refreshStart) / 1000).toFixed(1)}s`,
+      }, 'Sujets stats refresh completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Sujets stats refresh failed (non-blocking)');
+    }
+  }
+
   // VACUUM ANALYZE les tables principales après le sync pour éviter le bloat
   // (les UPSERTs massifs créent des dead tuples → les Index Only Scans dégénèrent en heap fetches)
   if (results.sourcesChanged.length > 0) {

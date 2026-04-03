@@ -199,41 +199,47 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
       const threeMonthsAgo = new Date();
       threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
 
-      const trending = await fastify.prisma.dossierLegislatif.findMany({
+      // Exclure les dossiers en état terminal pour le label "Dossiers en cours"
+      const terminalStates = ['promulgue', 'caduc', 'retire', 'fusionne'];
+
+      const trendingSelect = {
+        id: true,
+        uid: true,
+        titre: true,
+        titreCourt: true,
+        legislature: true,
+        etat: true,
+        procedureLibelle: true,
+        dateDepot: true,
+        _count: { select: { scrutins: true } },
+        scrutins: {
+          orderBy: { date: 'desc' as const },
+          take: 1,
+          select: { date: true },
+        },
+      };
+
+      // Pool large trié par date du dernier scrutin
+      const pool = await fastify.prisma.dossierLegislatif.findMany({
         where: {
-          scrutins: {
-            some: {
-              date: { gte: threeMonthsAgo },
-            },
-          },
+          etat: { notIn: terminalStates },
+          scrutins: { some: { date: { gte: threeMonthsAgo } } },
         },
-        select: {
-          id: true,
-          uid: true,
-          titre: true,
-          titreCourt: true,
-          legislature: true,
-          etat: true,
-          procedureLibelle: true,
-          dateDepot: true,
-          _count: {
-            select: {
-              scrutins: true,
-            },
-          },
-          scrutins: {
-            orderBy: { date: 'desc' },
-            take: 1,
-            select: {
-              date: true,
-            },
-          },
-        },
-        orderBy: {
-          scrutins: { _count: 'desc' },
-        },
-        take: limit,
+        select: trendingSelect,
+        take: 30,
       });
+
+      // Tri par date du dernier scrutin (fraîcheur prime)
+      pool.sort((a, b) => {
+        const da = a.scrutins[0]?.date;
+        const db = b.scrutins[0]?.date;
+        if (!da && !db) return 0;
+        if (!da) return 1;
+        if (!db) return -1;
+        return db.getTime() - da.getTime();
+      });
+
+      const trending = pool.slice(0, limit);
 
       const result = {
         data: trending.map(d => ({

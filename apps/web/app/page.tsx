@@ -29,6 +29,7 @@ interface TrendingDossier {
   etat: string | null;
   procedureLibelle: string | null;
   scrutinsCount: number;
+  amendementsCount: number;
   lastScrutinDate: string | null;
   voteStats: { adopte: number; rejete: number };
 }
