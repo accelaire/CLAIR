@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -8,7 +8,7 @@ import Image from 'next/image';
 import {
   ArrowLeft,
   Users,
-  TrendingUp,
+  ShieldCheck,
   Vote,
   MapPin,
   Loader2,
@@ -34,6 +34,7 @@ import {
 } from 'recharts';
 import { api } from '@/lib/api';
 import { getGroupColor } from '@/lib/colors';
+import { SortSelect, MEMBRE_SORT_OPTIONS } from '@/components/classements/SortSelect';
 
 interface Membre {
   id: string;
@@ -320,7 +321,7 @@ function MembreCard({ membre, chambre }: { membre: Membre; chambre: string }) {
             )}
             {membre.statsLoyaute !== null && (
               <span title="Loyauté" className="flex items-center gap-0.5">
-                <TrendingUp className="h-3 w-3" />
+                <ShieldCheck className="h-3 w-3" />
                 {membre.statsLoyaute}%
               </span>
             )}
@@ -328,6 +329,51 @@ function MembreCard({ membre, chambre }: { membre: Membre; chambre: string }) {
         </div>
       </div>
     </Link>
+  );
+}
+
+function MembresList({ membres, chambre }: { membres: Membre[]; chambre: string }) {
+  const [triMembres, setTriMembres] = useState('nom');
+
+  const sortedMembres = useMemo(() => {
+    const sorted = [...membres];
+    switch (triMembres) {
+      case 'presence':
+        return sorted.sort((a, b) => (b.statsPresence ?? -1) - (a.statsPresence ?? -1));
+      case 'loyaute':
+        return sorted.sort((a, b) => (b.statsLoyaute ?? -1) - (a.statsLoyaute ?? -1));
+      case 'nom':
+      default:
+        return sorted.sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+    }
+  }, [membres, triMembres]);
+
+  return (
+    <section id="membres">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+        <h2 className="text-xl font-semibold">
+          Membres du groupe ({membres.length.toLocaleString('fr-FR')})
+        </h2>
+        <SortSelect
+          value={triMembres}
+          onChange={setTriMembres}
+          options={MEMBRE_SORT_OPTIONS}
+        />
+      </div>
+
+      {sortedMembres.length > 0 ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {sortedMembres.map((membre) => (
+            <MembreCard key={membre.id} membre={membre} chambre={chambre} />
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-8 text-muted-foreground">
+          <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+          <p>Aucun membre actif dans ce groupe.</p>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -500,7 +546,7 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
           label="Loyauté moyenne"
           value={groupe.stats.loyauteMoyenne}
           suffix="%"
-          icon={TrendingUp}
+          icon={ShieldCheck}
         />
         <StatCard
           label="Amendements déposés"
@@ -833,26 +879,7 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
       </section>
 
       {/* Liste des membres */}
-      <section id="membres">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold">
-            Membres du groupe ({groupe.membres.length.toLocaleString('fr-FR')})
-          </h2>
-        </div>
-
-        {groupe.membres.length > 0 ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {groupe.membres.map((membre) => (
-              <MembreCard key={membre.id} membre={membre} chambre={chambre} />
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-8 text-muted-foreground">
-            <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p>Aucun membre actif dans ce groupe.</p>
-          </div>
-        )}
-      </section>
+      <MembresList membres={groupe.membres} chambre={chambre} />
     </div>
   );
 }
