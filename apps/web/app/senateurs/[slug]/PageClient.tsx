@@ -15,7 +15,7 @@ import {
   Twitter,
   Mail,
   Globe,
-  TrendingUp,
+  ShieldCheck,
   Vote,
   MessageSquare,
   FileText,
@@ -765,7 +765,7 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
               label="Présence"
               value={senateur.stats.presence}
               suffix="%"
-              icon={TrendingUp}
+              icon={ShieldCheck}
               tooltip="Pourcentage de scrutins publics auxquels ce parlementaire a participé (voté pour, contre ou abstention)."
               tooltipHref="/comprendre/parlementaire"
             />

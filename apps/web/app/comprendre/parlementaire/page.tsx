@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { User, TrendingUp, Users, Vote, MessageSquare } from 'lucide-react';
+import { User, TrendingUp, ShieldCheck, Users, Vote, MessageSquare } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'Le parlementaire | CLAIR',
@@ -16,7 +16,7 @@ const stats = [
       'Pourcentage de scrutins solennels auxquels le parlementaire a participé (voté pour, contre ou abstention). Les scrutins solennels portent sur l\u2019ensemble d\u2019un texte de loi et sont les plus importants.',
   },
   {
-    icon: Users,
+    icon: ShieldCheck,
     title: 'Loyauté au groupe',
     description:
       'Pourcentage de votes alignés avec la position majoritaire du groupe politique. Si le groupe vote majoritairement « pour » et que le parlementaire vote « pour », c\u2019est un vote loyal.',
