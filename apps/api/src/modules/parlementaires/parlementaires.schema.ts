@@ -35,14 +35,14 @@ export const parlementaireQuerySchema = z.object({
 
 export const parlementairesListQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1).describe('Numéro de page'),
-  limit: z.coerce.number().int().min(1).max(100).default(20).describe('Nombre de résultats par page'),
+  limit: z.coerce.number().int().min(1).max(200).default(20).describe('Nombre de résultats par page'),
   chambre: chambreEnum.optional().describe('Filtrer par chambre (assemblee ou senat)'),
   groupe: z.string().optional().describe('Filtrer par slug de groupe politique'),
   departement: z.string().optional().describe('Filtrer par numéro de département'),
   search: z.string().optional().describe('Recherche par nom/prénom'),
   actif: z.coerce.boolean().optional().default(true).describe('Filtrer les actifs'),
   sort: z
-    .enum(['nom', 'prenom', 'presence', 'loyaute', 'activite'])
+    .enum(['nom', 'prenom', 'presence', 'loyaute', 'activite', 'amendements', 'interventions'])
     .default('nom')
     .describe('Champ de tri'),
   order: z.enum(['asc', 'desc']).default('asc').describe('Ordre de tri'),
