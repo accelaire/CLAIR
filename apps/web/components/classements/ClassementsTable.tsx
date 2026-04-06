@@ -4,6 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowUp, ArrowDown, Users } from 'lucide-react';
 import { getGroupColor } from '@/lib/colors';
+import { ShareButton } from '@/components/ShareButton';
 
 interface ParlementaireRow {
   slug: string;
@@ -138,6 +139,7 @@ export function ClassementsTable({ data, sort, order, onSort, page, limit }: Cla
                   </span>
                 </th>
               ))}
+              <th className="w-10" />
             </tr>
           </thead>
           <tbody>
@@ -149,7 +151,7 @@ export function ClassementsTable({ data, sort, order, onSort, page, limit }: Cla
               const rank = startRank + index;
 
               return (
-                <tr key={row.slug} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                <tr key={row.slug} className="group/row border-b last:border-0 hover:bg-muted/30 transition-colors">
                   <td className="px-3 py-3 text-muted-foreground tabular-nums">{rank}</td>
                   <td className="px-3 py-3">
                     <Link href={`/${route}/${row.slug}`} className="flex items-center gap-3 hover:text-primary transition-colors">
@@ -189,6 +191,12 @@ export function ClassementsTable({ data, sort, order, onSort, page, limit }: Cla
                       </td>
                     );
                   })}
+                  <td className="px-1 py-3">
+                    <ShareButton
+                      url={`/classements?sort=${sort}&highlight=${row.slug}&rank=${rank}`}
+                      className="opacity-0 group-hover/row:opacity-100 transition-opacity"
+                    />
+                  </td>
                 </tr>
               );
             })}

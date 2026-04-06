@@ -17,6 +17,7 @@ import { getGroupColor } from '@/lib/colors';
 import { ChambreToggle } from '@/components/classements/ChambreToggle';
 import { SortSelect, PARLEMENTAIRE_SORT_OPTIONS } from '@/components/classements/SortSelect';
 import { TopFlopCards } from '@/components/classements/TopFlopCards';
+import { ShareButton } from '@/components/ShareButton';
 import { ClassementsTable } from '@/components/classements/ClassementsTable';
 
 // =============================================================================
@@ -456,7 +457,10 @@ function ClassementsPageContent() {
     <div className="container mx-auto px-4 py-8">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold">Classements parlementaires</h1>
+        <div className="flex items-start justify-between gap-4">
+          <h1 className="text-3xl font-bold">Classements parlementaires</h1>
+          <ShareButton variant="button" title="Classements parlementaires — CLAIR" />
+        </div>
         <p className="mt-2 text-muted-foreground">
           Comparez l&apos;activité des parlementaires et des groupes politiques
         </p>

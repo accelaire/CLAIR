@@ -4,6 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Trophy, TrendingDown, Users } from 'lucide-react';
 import { getGroupColor } from '@/lib/colors';
+import { ShareButton } from '@/components/ShareButton';
 
 interface ParlementaireItem {
   slug: string;
@@ -32,6 +33,8 @@ interface TopFlopCardsProps {
   criterionLabel: string;
   getValue: (item: ParlementaireItem) => number | null;
   formatValue: (value: number) => string;
+  /** Base share URL (without /top or /flop suffix). Current page URL is used if omitted. */
+  shareUrl?: string;
 }
 
 function MiniCard({
@@ -119,6 +122,7 @@ export function TopFlopCards({
   criterionLabel,
   getValue,
   formatValue,
+  shareUrl,
 }: TopFlopCardsProps) {
   if (top.length === 0 && flop.length === 0) return null;
 
@@ -128,9 +132,13 @@ export function TopFlopCards({
       <div>
         <div className="flex items-center gap-2 mb-3">
           <Trophy className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-          <h3 className="font-semibold">
+          <h3 className="font-semibold flex-1">
             Top 5 — {criterionLabel}
           </h3>
+          <ShareButton
+            url={shareUrl}
+            title={`Top 5 ${criterionLabel} — CLAIR`}
+          />
         </div>
         <div className="space-y-2">
           {top.map((item, i) => (
@@ -150,9 +158,13 @@ export function TopFlopCards({
       <div>
         <div className="flex items-center gap-2 mb-3">
           <TrendingDown className="h-5 w-5 text-red-600 dark:text-red-400" />
-          <h3 className="font-semibold">
+          <h3 className="font-semibold flex-1">
             Flop 5 — {criterionLabel}
           </h3>
+          <ShareButton
+            url={shareUrl}
+            title={`Flop 5 ${criterionLabel} — CLAIR`}
+          />
         </div>
         <div className="space-y-2">
           {flop.map((item, i) => (
