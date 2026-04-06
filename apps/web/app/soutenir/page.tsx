@@ -1,22 +1,22 @@
 import { Metadata } from 'next';
 import Image from 'next/image';
-import { Heart, Shield, Eye, Users, Clock, Code, Server, Megaphone, Linkedin, ExternalLink } from 'lucide-react';
+import { Heart, Shield, Eye, Users, CheckCircle2, Code, Server, Megaphone, Linkedin, ExternalLink } from 'lucide-react';
 import { FAQAccordion } from '@/components/ui/faq-accordion';
 
 export const metadata: Metadata = {
   title: 'Soutenir CLAIR - Transparence Politique',
-  description: 'Soutenez CLAIR, la plateforme citoyenne de transparence politique. Un projet 100% indépendant.',
+  description: 'Soutenez CLAIR, la plateforme citoyenne de transparence politique. Vos dons sont déductibles à 66% de vos impôts.',
 };
 
-const LEETCHI_URL = 'https://www.leetchi.com/fr/c/lancement-de-clair--transparence-politique-citoyenne-1807149';
+const HELLOASSO_URL = 'https://www.helloasso.com/associations/clair-citoyen-libre-analyse-information-republique/formulaires/1';
+const HELLOASSO_WIDGET_URL = `${HELLOASSO_URL}/widget`;
 
-// Flag pour activer les mentions de défiscalisation (après obtention du rescrit)
-const DEFISCALISATION_ACTIVE = false;
+const DEFISCALISATION_ACTIVE = true;
 
 const faqItems = [
   {
     question: 'Les dons sont-ils défiscalisables ?',
-    answer: 'Nous sommes en cours d\'obtention du statut d\'association d\'intérêt général. Une fois ce statut obtenu, vos dons seront déductibles à 66% de votre impôt sur le revenu. Les donateurs seront informés dès que la défiscalisation sera active.',
+    answer: 'Oui ! CLAIR est une association reconnue d\'intérêt général. Vos dons sont déductibles à 66% de votre impôt sur le revenu (dans la limite de 20% du revenu imposable). Un reçu fiscal vous est envoyé automatiquement après chaque don.',
   },
   {
     question: 'À quoi servent les dons ?',
@@ -28,7 +28,7 @@ const faqItems = [
   },
   {
     question: 'Comment contribuer financièrement ?',
-    answer: 'Vous pouvez faire un don via notre cagnotte Leetchi. Le lien est disponible sur cette page. Nous mettrons en place d\'autres moyens de don dès que possible.',
+    answer: 'Vous pouvez faire un don directement depuis cette page via le formulaire HelloAsso intégré. Le paiement est sécurisé, 0% de frais sont prélevés sur votre don, et votre reçu fiscal est généré automatiquement.',
   },
 ];
 
@@ -39,9 +39,9 @@ export default function SoutenirPage() {
       <section className="py-16 px-4 bg-gradient-to-b from-primary/5 to-background">
         <div className="container mx-auto max-w-4xl text-center">
           {/* Badge statut */}
-          <div className="inline-flex items-center gap-2 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 px-4 py-2 rounded-full text-sm font-medium mb-6">
-            <Clock className="h-4 w-4" />
-            Statut d&apos;intérêt général en cours d&apos;obtention
+          <div className="inline-flex items-center gap-2 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 px-4 py-2 rounded-full text-sm font-medium mb-6">
+            <CheckCircle2 className="h-4 w-4" />
+            Association reconnue d&apos;intérêt général
           </div>
 
           <h1 className="text-4xl md:text-5xl font-bold mb-6">
@@ -65,20 +65,25 @@ export default function SoutenirPage() {
                 Pourquoi soutenir CLAIR ?
               </h2>
 
-              {!DEFISCALISATION_ACTIVE && (
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
-                  <p className="text-blue-800 text-sm">
-                    <strong>Bonne nouvelle !</strong> CLAIR est en cours d&apos;obtention du statut d&apos;association
-                    d&apos;intérêt général. Une fois obtenu, vos dons seront déductibles à 66% de vos impôts.
-                  </p>
-                </div>
-              )}
-
               {DEFISCALISATION_ACTIVE && (
-                <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
-                  <p className="text-green-800 text-sm">
-                    <strong>66% déductible de vos impôts !</strong> Un don de 30€ ne vous coûte que 10,20€ après réduction.
+                <div className="bg-green-50 border border-green-200 dark:bg-green-900/20 dark:border-green-800 rounded-xl p-4 mb-6">
+                  <p className="text-green-800 dark:text-green-300 text-sm font-medium mb-3">
+                    66% déductible de vos impôts !
                   </p>
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div>
+                      <p className="text-lg font-bold text-green-900 dark:text-green-200">10&thinsp;&euro;</p>
+                      <p className="text-xs text-green-700 dark:text-green-400">= 3,40&thinsp;&euro; après impôts</p>
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold text-green-900 dark:text-green-200">30&thinsp;&euro;</p>
+                      <p className="text-xs text-green-700 dark:text-green-400">= 10,20&thinsp;&euro; après impôts</p>
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold text-green-900 dark:text-green-200">50&thinsp;&euro;</p>
+                      <p className="text-xs text-green-700 dark:text-green-400">= 17&thinsp;&euro; après impôts</p>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -128,34 +133,41 @@ export default function SoutenirPage() {
               </div>
             </div>
 
-            {/* Colonne droite — Cagnotte */}
+            {/* Colonne droite — Formulaire de don */}
             <div>
               <div className="flex items-center gap-2 mb-6">
                 <Heart className="h-6 w-6 text-red-500" />
                 <h2 className="text-xl md:text-2xl font-bold">Faire un don</h2>
               </div>
 
-              <div className="rounded-2xl border bg-card p-8 text-center">
-                <p className="text-lg font-semibold mb-2">Cagnotte de lancement</p>
+              {/* Desktop : widget intégré */}
+              <div className="hidden lg:block rounded-2xl border bg-card overflow-hidden">
+                <iframe
+                  id="haWidget"
+                  src={HELLOASSO_WIDGET_URL}
+                  style={{ width: '100%', height: '750px', border: 'none' }}
+                  allow="payment"
+                  title="Formulaire de don HelloAsso"
+                />
+              </div>
+
+              {/* Mobile : lien direct */}
+              <div className="lg:hidden rounded-2xl border bg-card p-8 text-center">
+                <p className="text-lg font-semibold mb-2">Soutenez CLAIR</p>
                 <p className="text-sm text-muted-foreground mb-6">
-                  Participez au financement de CLAIR via notre cagnotte Leetchi.
-                  Chaque contribution compte !
+                  Faites un don sécurisé via HelloAsso. 0% de frais, reçu fiscal automatique.
                 </p>
                 <a
-                  href={LEETCHI_URL}
+                  href={HELLOASSO_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-xl font-medium hover:bg-primary/90 transition-colors"
                 >
                   <Heart className="h-5 w-5" />
-                  Contribuer sur Leetchi
+                  Faire un don
                   <ExternalLink className="h-4 w-4" />
                 </a>
               </div>
-
-              <p className="text-sm text-muted-foreground mt-4">
-                Même un petit don nous aide à maintenir CLAIR gratuit et accessible à tous.
-              </p>
             </div>
           </div>
         </div>
