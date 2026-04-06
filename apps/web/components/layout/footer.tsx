@@ -17,8 +17,6 @@ function DiscordIcon({ className }: { className?: string }) {
   );
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
 export function Footer() {
   return (
     <footer className="border-t bg-muted/30">
@@ -124,14 +122,9 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <a
-                  href={`${API_URL}/docs`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-muted-foreground hover:text-foreground"
-                >
-                  API Documentation
-                </a>
+                <Link href="/api" className="text-sm text-muted-foreground hover:text-foreground">
+                  API ouverte
+                </Link>
               </li>
             </ul>
           </div>
