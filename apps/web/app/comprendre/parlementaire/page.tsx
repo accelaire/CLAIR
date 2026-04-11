@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { User, TrendingUp, ShieldCheck, Users, Vote, MessageSquare } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Le parlementaire | CLAIR',
+  title: 'Le parlementaire',
   description:
     'Comprendre le rôle d\u2019un parlementaire : mandat, élection, statistiques de présence, loyauté et participation.',
 };

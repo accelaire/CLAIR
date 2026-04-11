@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Search } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Suivre un sujet | CLAIR',
+  title: 'Suivre un sujet',
   description:
     'Parcours guidé pour rechercher un thème politique et suivre les votes associés sur CLAIR.',
 };

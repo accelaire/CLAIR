@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { FileText } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Le dossier législatif | CLAIR',
+  title: 'Le dossier législatif',
   description:
     'Comprendre le cycle de vie d\u2019une loi : de la proposition à la promulgation, en passant par les amendements.',
 };

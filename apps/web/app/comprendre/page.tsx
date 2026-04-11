@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Comprendre la politique française | CLAIR',
+  title: 'Comprendre la politique française',
   description:
     'Découvrez le fonctionnement des institutions démocratiques françaises : Parlement, scrutins, dossiers législatifs, groupes politiques, lobbying et commissions.',
 };

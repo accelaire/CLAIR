@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Building } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Les commissions parlementaires | CLAIR',
+  title: 'Les commissions parlementaires',
   description:
     'Comprendre les commissions parlementaires : permanentes, spéciales et d\u2019enquête.',
 };

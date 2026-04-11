@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { GitCompareArrows } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Comparer des élus | CLAIR',
+  title: 'Comparer des élus',
   description:
     'Parcours guidé pour comparer l\u2019activité de deux parlementaires sur CLAIR.',
 };

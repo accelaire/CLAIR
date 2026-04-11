@@ -53,13 +53,13 @@ export async function generateMetadata({
   let description: string;
 
   if (highlight) {
-    title = `Classement par ${sortLabel} — CLAIR`;
+    title = `Classement par ${sortLabel}`;
     description = `Découvrez le classement des parlementaires par ${sortLabel}${chambreLabel ? ` (${chambreLabel})` : ''} sur CLAIR.vote.`;
   } else if (tab === 'groupes') {
-    title = `Classement des groupes politiques — CLAIR`;
+    title = `Classement des groupes politiques`;
     description = `Comparez les groupes politiques par ${sortLabel}${chambreLabel ? ` (${chambreLabel})` : ''}. Données officielles sur CLAIR.vote.`;
   } else {
-    title = `Classement par ${sortLabel}${chambreLabel ? ` — ${chambreLabel}` : ''} — CLAIR`;
+    title = `Classement par ${sortLabel}${chambreLabel ? ` — ${chambreLabel}` : ''}`;
     description = `Classement des parlementaires par ${sortLabel}${chambreLabel ? ` (${chambreLabel})` : ''}. Top et flop, données officielles sur CLAIR.vote.`;
   }
 

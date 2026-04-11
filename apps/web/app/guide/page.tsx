@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Guide pratique | CLAIR',
+  title: 'Guide pratique',
   description:
     'Parcours guidés pour tirer le maximum de CLAIR : découvrir votre député, suivre un sujet, comparer des élus, explorer le lobbying.',
 };

@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Briefcase, Building2, TrendingUp, Users } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Le lobbying en France | CLAIR',
+  title: 'Le lobbying en France',
   description:
     'Comprendre le lobbying en France : loi Sapin II, HATVP, déclarations et statistiques.',
 };

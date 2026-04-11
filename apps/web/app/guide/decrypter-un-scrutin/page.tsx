@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Vote } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Décrypter un scrutin | CLAIR',
+  title: 'Décrypter un scrutin',
   description:
     'Parcours guidé pour lire et analyser un vote parlementaire sur CLAIR.',
 };
