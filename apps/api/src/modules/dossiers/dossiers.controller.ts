@@ -450,9 +450,9 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const skip = (page - 1) * limit;
-      const whereClause = { dossierId: dossier.id };
+      const whereClause: Record<string, unknown> = { dossierId: dossier.id };
       if (typeFilter?.type) {
-        whereClause['typeVote'] = typeFilter.type as 'solennel' | 'ordinaire' | 'motion';
+        whereClause.typeVote = typeFilter.type as 'solennel' | 'ordinaire' | 'motion';
       }
 
       const [scrutins, total] = await Promise.all([
@@ -509,9 +509,9 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, _reply) => {
       const { uid } = z.object({ uid: z.string() }).parse(request.params);
-      const { page, limit, voted, groupe } = amendementsQuerySchema.parse(request.query);
+      const { page, limit, voted, groupe, sort: sortValue } = amendementsQuerySchema.parse(request.query);
 
-      const cacheKey = `dossiers:${uid}:amendements:${page}:${limit}:${voted ?? 'all'}:${groupe ?? 'all'}`;
+      const cacheKey = `dossiers:${uid}:amendements:${page}:${limit}:${voted ?? 'all'}:${groupe ?? 'all'}:${sortValue ?? 'all'}`;
       const cached = await fastify.redis.get(cacheKey);
       if (cached) return JSON.parse(cached);
 
@@ -530,6 +530,9 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
       }
       if (groupe) {
         where.parlementaire = { groupe: { slug: groupe } };
+      }
+      if (sortValue) {
+        where.sort = sortValue;
       }
 
       const skip = (page - 1) * limit;

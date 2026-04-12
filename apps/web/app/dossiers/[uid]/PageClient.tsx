@@ -6,8 +6,9 @@ import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   FileText, Calendar, Vote, CheckCircle, XCircle, ExternalLink,
-  ArrowLeft, Loader2, Scale, ChevronDown, ChevronUp, X, Users, Layers, BookOpen, Gavel,
+  ArrowLeft, Loader2, Scale, ChevronDown, ChevronUp, X, Users, Layers, BookOpen, Gavel, Filter,
 } from 'lucide-react';
+import { FilterBar } from '@/components/FilterBar';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { AmendementSortBadge } from '@/components/AmendementSortBadge';
@@ -260,7 +261,8 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
 
   // Groupe filter from URL (set when coming from sujet stats page)
   const groupeFilter = searchParams.get('groupe') || '';
-  const hasAmendementFilter = showVotedOnly || !!groupeFilter;
+  const sortFilter = searchParams.get('sort') || '';
+  const hasAmendementFilter = showVotedOnly || !!groupeFilter || !!sortFilter;
 
   const setGroupeFilter = (slug: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -268,6 +270,23 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
     else params.delete('groupe');
     router.replace(`/dossiers/${uid}?${params.toString()}`, { scroll: false });
   };
+
+  const setSortFilter = (sort: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (sort) params.set('sort', sort);
+    else params.delete('sort');
+    router.replace(`/dossiers/${uid}?${params.toString()}`, { scroll: false });
+  };
+
+  const clearFilters = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('groupe');
+    params.delete('sort');
+    router.replace(`/dossiers/${uid}?${params.toString()}`, { scroll: false });
+  };
+
+  const activeFilterCount = (groupeFilter ? 1 : 0) + (sortFilter ? 1 : 0);
+
 
   const { data: dossier, isLoading, error } = useQuery<DossierDetail>({
     queryKey: ['dossier', uid],
@@ -331,7 +350,7 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
     isFetchingNextPage: isFetchingNextFiltered,
     isLoading: isLoadingFiltered,
   } = useInfiniteQuery<PaginatedResponse<DossierAmendement>>({
-    queryKey: ['dossier-amendements-filtered', uid, showVotedOnly, groupeFilter],
+    queryKey: ['dossier-amendements-filtered', uid, showVotedOnly, groupeFilter, sortFilter],
     queryFn: ({ pageParam = 1 }) =>
       api.get(`/dossiers/${uid}/amendements`, {
         params: {
@@ -339,6 +358,7 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
           limit: 20,
           ...(showVotedOnly && { voted: true }),
           ...(groupeFilter && { groupe: groupeFilter }),
+          ...(sortFilter && { sort: sortFilter }),
         },
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
@@ -415,6 +435,15 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
   // Auto-switch to scrutins tab if no amendements
   const hasAmendements = dossier.amendementsCount > 0;
   const effectiveTab = hasAmendements ? activeTab : 'scrutins';
+
+  // Compute unique sorts from all loaded amendements
+  const allAmendements = [
+    ...(dossier.amendements || []),
+    ...(moreAmendements?.pages.flatMap((p) => p.data) ?? []),
+  ];
+  const uniqueSorts = Array.from(
+    new Set(allAmendements.map((a) => a.sort).filter(Boolean) as string[])
+  ).sort();
 
   // Counts for filter badges (from all loaded scrutins)
   const solennelCount = allScrutins.filter(
@@ -604,40 +633,45 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
       {/* ================================================================== */}
       {effectiveTab === 'amendements' && (
         <div className="space-y-4">
-          {/* Filter bar */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Voted toggle */}
-            {dossier.votedAmendementsCount > 0 && (
-              <button
-                onClick={() => setShowVotedOnly(!showVotedOnly)}
-                className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                  showVotedOnly
-                    ? 'bg-indigo-100 border-indigo-300 text-indigo-700 hover:bg-indigo-200'
-                    : 'bg-background border-input hover:bg-accent'
-                }`}
-              >
-                <Vote className={`h-4 w-4 ${showVotedOnly ? 'text-indigo-600' : 'text-muted-foreground'}`} />
-                Votes publics
-                <span className={`px-1.5 py-0.5 rounded text-xs ${
-                  showVotedOnly ? 'bg-indigo-200 text-indigo-800' : 'bg-muted text-muted-foreground'
-                }`}>
-                  {showVotedOnly && filteredTotal !== undefined
-                    ? filteredTotal
-                    : !!groupeFilter && groupeVotedCount !== undefined
-                    ? groupeVotedCount
-                    : dossier.votedAmendementsCount}
-                </span>
-              </button>
-            )}
-
+          {/* Filter bar — same pattern as deputes/dossiers pages: FilterBar is standalone */}
+          <FilterBar
+            search={
+              dossier.votedAmendementsCount > 0 ? (
+                <button
+                  onClick={() => setShowVotedOnly(!showVotedOnly)}
+                  className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                    showVotedOnly
+                      ? 'bg-indigo-100 border-indigo-300 text-indigo-700 hover:bg-indigo-200'
+                      : 'bg-background border-input hover:bg-accent'
+                  }`}
+                >
+                  <Vote className={`h-4 w-4 ${showVotedOnly ? 'text-indigo-600' : 'text-muted-foreground'}`} />
+                  Votes publics
+                  <span className={`px-1.5 py-0.5 rounded text-xs ${
+                    showVotedOnly ? 'bg-indigo-200 text-indigo-800' : 'bg-muted text-muted-foreground'
+                  }`}>
+                    {showVotedOnly && filteredTotal !== undefined
+                      ? filteredTotal
+                      : !!groupeFilter && groupeVotedCount !== undefined
+                      ? groupeVotedCount
+                      : dossier.votedAmendementsCount}
+                  </span>
+                </button>
+              ) : (
+                <div className="w-px" />
+              )
+            }
+            activeFilterCount={activeFilterCount}
+            onClear={activeFilterCount > 0 ? clearFilters : undefined}
+          >
             {/* Groupe filter */}
             {dossier.amendementsGroupes && dossier.amendementsGroupes.length > 0 && (
-              <div className="relative">
+              <div className="relative md:w-auto md:min-w-[160px]">
                 <Users className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 <select
                   value={groupeFilter}
                   onChange={(e) => setGroupeFilter(e.target.value)}
-                  className={`appearance-none rounded-lg border pl-9 pr-8 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
+                  className={`appearance-none w-full rounded-lg border pl-9 pr-8 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
                     groupeFilter
                       ? 'bg-purple-100 border-purple-300 text-purple-700'
                       : 'bg-background border-input hover:bg-accent'
@@ -654,7 +688,28 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
               </div>
             )}
 
+            {/* Sort filter */}
+            <div className="relative md:w-auto md:min-w-[160px]">
+              <Filter className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <select
+                value={sortFilter}
+                onChange={(e) => setSortFilter(e.target.value)}
+                className={`appearance-none w-full rounded-lg border pl-9 pr-8 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary ${
+                  sortFilter
+                    ? 'bg-orange-100 border-orange-300 text-orange-700'
+                    : 'bg-background border-input hover:bg-accent'
+                }`}
+              >
+                <option value="">Tous les sorts</option>
+                {uniqueSorts.map((sort) => (
+                  <option key={sort} value={sort}>
+                    {sort}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
             </div>
+          </FilterBar>
 
           {/* Loading state for filtered query */}
           {hasAmendementFilter && isLoadingFiltered && (

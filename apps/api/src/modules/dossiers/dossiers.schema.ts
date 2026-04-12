@@ -22,6 +22,7 @@ export const paginationQuerySchema = z.object({
 export const amendementsQuerySchema = paginationQuerySchema.extend({
   voted: z.coerce.boolean().optional(),
   groupe: z.string().optional(), // slug du groupe politique pour filtrer par auteur
+  sort: z.string().optional(), // valeur exacte du sort (ex: "adopté", "rejeté", "retiré")
 });
 
 export const trendingQuerySchema = z.object({
