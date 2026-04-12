@@ -433,9 +433,10 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, _reply) => {
       const { uid } = z.object({ uid: z.string() }).parse(request.params);
-      const { page, limit } = paginationQuerySchema.parse(request.query);
+      const { page, limit, ...rest } = paginationQuerySchema.parse(request.query);
+      const typeFilter = rest as { type?: string } | undefined;
 
-      const cacheKey = `dossiers:${uid}:scrutins:${page}:${limit}`;
+      const cacheKey = `dossiers:${uid}:scrutins:${page}:${limit}:${typeFilter?.type ?? 'all'}`;
       const cached = await fastify.redis.get(cacheKey);
       if (cached) return JSON.parse(cached);
 
@@ -449,10 +450,14 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const skip = (page - 1) * limit;
+      const whereClause = { dossierId: dossier.id };
+      if (typeFilter?.type) {
+        whereClause['typeVote'] = typeFilter.type as 'solennel' | 'ordinaire' | 'motion';
+      }
 
       const [scrutins, total] = await Promise.all([
         fastify.prisma.scrutin.findMany({
-          where: { dossierId: dossier.id },
+          where: whereClause,
           orderBy: [{ date: 'desc' }, { numero: 'asc' }],
           skip,
           take: limit,
@@ -471,7 +476,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
             nombreVotants: true,
           },
         }),
-        fastify.prisma.scrutin.count({ where: { dossierId: dossier.id } }),
+        fastify.prisma.scrutin.count({ where: whereClause }),
       ]);
 
       const totalPages = Math.ceil(total / limit);

@@ -6,7 +6,7 @@ import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   FileText, Calendar, Vote, CheckCircle, XCircle, ExternalLink,
-  ArrowLeft, Loader2, Scale, ChevronDown, ChevronUp, X, Users, Layers, BookOpen,
+  ArrowLeft, Loader2, Scale, ChevronDown, ChevronUp, X, Users, Layers, BookOpen, Gavel,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
@@ -194,29 +194,29 @@ function ExpandableAmendementCard({ amendement }: { amendement: DossierAmendemen
             )}
           </div>
 
+        </div>
+        <div className="flex flex-col items-end gap-2 flex-shrink-0">
+          <AmendementSortBadge sort={amendement.sort} />
           {/* Lien vers le scrutin si l'amendement a ete vote */}
           {amendement.scrutins && amendement.scrutins.length > 0 && (
-            <div className="mt-3 pt-3 border-t">
+            <div className="flex flex-col items-end gap-1">
               {amendement.scrutins.map((s) => (
                 <Link
                   key={s.id}
                   href={`/scrutins/${s.numero}?chambre=${s.chambre || 'assemblee'}${s.chambre === 'senat' && s.session ? `&session=${s.session}` : ''}`}
-                  className="inline-flex items-center gap-2 text-xs text-indigo-600 hover:text-indigo-800 hover:underline bg-indigo-50 px-3 py-1.5 rounded-md transition-colors mr-2 mb-1"
+                  className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 hover:underline w-fit"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <Vote className="h-3.5 w-3.5" />
-                  <span>Voir le vote n&deg;{s.numero}</span>
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                    s.sort === 'adopte' ? 'badge-adopte' : 'badge-rejete'
-                  }`}>
-                    {s.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
-                  </span>
+                  <span className="hidden sm:inline">Voir le vote n&deg;{s.numero}</span>
+                  <span className="sm:hidden">Vote n&deg;{s.numero}</span>
+                  <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
                 </Link>
               ))}
             </div>
           )}
         </div>
-        <AmendementSortBadge sort={amendement.sort} />
       </div>
 
       {/* Bouton expand/collapse */}
@@ -252,6 +252,8 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
   const searchParams = useSearchParams();
   const uid = params.uid as string;
   const [showVotedOnly, setShowVotedOnly] = useState(false);
+  const [showSolennelOnly, setShowSolennelOnly] = useState(false);
+  const [showMotionOnly, setShowMotionOnly] = useState(false);
   const [activeTab, setActiveTab] = useState<'amendements' | 'scrutins'>(
     searchParams.get('tab') === 'scrutins' ? 'scrutins' : 'amendements',
   );
@@ -280,7 +282,7 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
     hasNextPage: hasNextScrutins,
     isFetchingNextPage: isFetchingNextScrutins,
   } = useInfiniteQuery<PaginatedResponse<DossierScrutin>>({
-    queryKey: ['dossier-scrutins', uid],
+    queryKey: ['dossier-scrutins', uid, showSolennelOnly],
     queryFn: ({ pageParam = 2 }) =>
       api.get(`/dossiers/${uid}/scrutins`, {
         params: { page: pageParam, limit: 20 },
@@ -288,7 +290,7 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
     initialPageParam: 2,
-    enabled: !!dossier && dossier.scrutinsCount > 20,
+    enabled: !!dossier && (showSolennelOnly || dossier.scrutinsCount > 20),
   });
 
   const { loadMoreRef: loadMoreScrutinsRef } = useInfiniteScroll({
@@ -342,7 +344,17 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
     initialPageParam: 1,
-    enabled: !!dossier && hasAmendementFilter,
+    enabled: !!dossier && (hasAmendementFilter || !!groupeFilter),
+  });
+
+  // Count of voted amendements for the selected group (for counter)
+  const { data: groupeVotedCount } = useQuery<number>({
+    queryKey: ['dossier-amendements-voted-count', uid, groupeFilter],
+    queryFn: () =>
+      api.get(`/dossiers/${uid}/amendements`, {
+        params: { page: 1, limit: 1, voted: true, ...(groupeFilter && { groupe: groupeFilter }) },
+      }).then((res) => res.data.meta.total),
+    enabled: !!dossier && !!groupeFilter,
   });
 
   const { loadMoreRef: loadMoreFilteredRef } = useInfiniteScroll({
@@ -384,6 +396,11 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
     ...dossier.scrutins,
     ...(moreScrutins?.pages.flatMap((p) => p.data) ?? []),
   ];
+  const filteredScrutins = showSolennelOnly
+    ? allScrutins.filter((s) => s.typeVote === 'solennel' || s.titre.includes("l'ensemble") || s.titre.includes("l'ensemble de la"))
+    : showMotionOnly
+    ? allScrutins.filter((s) => s.typeVote === 'motion')
+    : allScrutins;
   const totalVotes = dossier.stats.totalAdopte + dossier.stats.totalRejete;
 
   // Amendements: filtered → use filtered query; unfiltered → detail batch + extras
@@ -398,6 +415,12 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
   // Auto-switch to scrutins tab if no amendements
   const hasAmendements = dossier.amendementsCount > 0;
   const effectiveTab = hasAmendements ? activeTab : 'scrutins';
+
+  // Counts for filter badges (from all loaded scrutins)
+  const solennelCount = allScrutins.filter(
+    (s) => s.typeVote === 'solennel' || s.titre.toLowerCase().includes("l'ensemble"),
+  ).length;
+  const motionCount = allScrutins.filter((s) => s.typeVote === 'motion').length;
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -594,11 +617,15 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
                 }`}
               >
                 <Vote className={`h-4 w-4 ${showVotedOnly ? 'text-indigo-600' : 'text-muted-foreground'}`} />
-                Votés individuellement
+                Votes publics
                 <span className={`px-1.5 py-0.5 rounded text-xs ${
                   showVotedOnly ? 'bg-indigo-200 text-indigo-800' : 'bg-muted text-muted-foreground'
                 }`}>
-                  {dossier.votedAmendementsCount}
+                  {showVotedOnly && filteredTotal !== undefined
+                    ? filteredTotal
+                    : !!groupeFilter && groupeVotedCount !== undefined
+                    ? groupeVotedCount
+                    : dossier.votedAmendementsCount}
                 </span>
               </button>
             )}
@@ -627,24 +654,7 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
               </div>
             )}
 
-            {/* Active filter badge */}
-            {groupeFilter && (
-              <button
-                onClick={() => setGroupeFilter('')}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 text-sm font-medium hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors"
-              >
-                <span
-                  className="h-2.5 w-2.5 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: dossier.amendementsGroupes?.find(g => g.slug === groupeFilter)?.couleur }}
-                />
-                {dossier.amendementsGroupes?.find(g => g.slug === groupeFilter)?.nom ?? groupeFilter}
-                {filteredTotal !== undefined && (
-                  <span className="text-xs text-purple-500">({filteredTotal})</span>
-                )}
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
+            </div>
 
           {/* Loading state for filtered query */}
           {hasAmendementFilter && isLoadingFiltered && (
@@ -706,10 +716,49 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
       {/* ================================================================== */}
       {effectiveTab === 'scrutins' && (
         <>
-          {allScrutins.length > 0 ? (
+          {/* Filter bar */}
+          <div className="flex flex-wrap items-center gap-2 mb-6">
+            <button
+              onClick={() => { setShowSolennelOnly(!showSolennelOnly); setShowMotionOnly(false); }}
+              className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                showSolennelOnly
+                  ? 'bg-indigo-100 border-indigo-300 text-indigo-700 hover:bg-indigo-200'
+                  : 'bg-background border-input hover:bg-accent'
+              }`}
+            >
+              <Scale className={`h-4 w-4 ${showSolennelOnly ? 'text-indigo-600' : 'text-muted-foreground'}`} />
+              Votes solennels
+              <span className={`px-1.5 py-0.5 rounded text-xs ${
+                showSolennelOnly ? 'bg-indigo-200 text-indigo-800' : 'bg-muted text-muted-foreground'
+              }`}>
+                {solennelCount}
+              </span>
+            </button>
+
+            {motionCount > 0 && (
+              <button
+                onClick={() => { setShowMotionOnly(!showMotionOnly); setShowSolennelOnly(false); }}
+                className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                  showMotionOnly
+                    ? 'bg-indigo-100 border-indigo-300 text-indigo-700 hover:bg-indigo-200'
+                    : 'bg-background border-input hover:bg-accent'
+                }`}
+              >
+                <Gavel className={`h-4 w-4 ${showMotionOnly ? 'text-indigo-600' : 'text-muted-foreground'}`} />
+                Motions
+                <span className={`px-1.5 py-0.5 rounded text-xs ${
+                  showMotionOnly ? 'bg-indigo-200 text-indigo-800' : 'bg-muted text-muted-foreground'
+                }`}>
+                  {motionCount}
+                </span>
+              </button>
+            )}
+          </div>
+
+          {filteredScrutins.length > 0 ? (
             <>
               <div className="space-y-3">
-                {allScrutins.map((scrutin) => {
+                {filteredScrutins.map((scrutin) => {
                   const total = scrutin.nombrePour + scrutin.nombreContre + scrutin.nombreAbstention;
                   const pourPct = total > 0 ? (scrutin.nombrePour / total) * 100 : 0;
                   const contrePct = total > 0 ? (scrutin.nombreContre / total) * 100 : 0;
