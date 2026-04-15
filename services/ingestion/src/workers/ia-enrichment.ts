@@ -3,7 +3,7 @@
 // Batch processing pour éviter les OOM en prod (6GB heap max)
 // =============================================================================
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import pLimit from 'p-limit';
 import { CLAIRMistralClient } from '../llm/mistral-client.js';
 import { computeContentHash } from '../llm/content-hash.js';
@@ -12,9 +12,11 @@ import {
   SYSTEM_PROMPT,
   SYSTEM_PROMPT_DOSSIER,
   SYSTEM_PROMPT_SUJET,
+  SYSTEM_PROMPT_SUJET_GROUPES,
   buildScrutinResumePrompt,
   buildDossierResumePrompt,
   buildSujetResumePrompt,
+  buildGroupeAmendementPrompt,
 } from '../llm/prompts.js';
 import { logger } from '../utils/logger.js';
 
@@ -583,6 +585,207 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
     enriched: result.enriched, skipped: result.skipped, errors: result.errors,
     tokensIn: result.totalTokensIn, tokensOut: result.totalTokensOut,
   }, 'Sujets IA enrichment completed');
+
+  return result;
+}
+
+// =============================================================================
+// SUJETS — DESCRIPTIONS AMENDEMENTS PAR GROUPE
+// =============================================================================
+
+export async function enrichSujetGroupeAmendements(options: EnrichmentOptions = {}): Promise<EnrichmentResult> {
+  const { limit, dryRun = false, concurrency = 2, force = false } = options;
+
+  const result: EnrichmentResult = {
+    enriched: 0, skipped: 0, errors: 0, totalTokensIn: 0, totalTokensOut: 0,
+  };
+
+  if (!process.env.MISTRAL_API_KEY) {
+    logger.warn('MISTRAL_API_KEY not set — skipping groupe amendement enrichment');
+    return result;
+  }
+
+  const mistral = new CLAIRMistralClient();
+  const limiter = pLimit(concurrency);
+
+  logger.info({ dryRun, concurrency, limit, force }, 'Starting groupe amendement descriptions enrichment...');
+
+  const where: Prisma.SujetWhereInput = force
+    ? { dossiers: { some: { amendements: { some: {} } } } }
+    : { groupeAmendementDescriptions: { equals: Prisma.DbNull }, dossiers: { some: { amendements: { some: {} } } } };
+
+  let remaining = limit ?? Infinity;
+
+  while (remaining > 0) {
+    const take = Math.min(BATCH_SIZE, remaining);
+    const sujets = await prisma.sujet.findMany({
+      where,
+      select: {
+        id: true,
+        label: true,
+        iaGroupeAmendementHash: true,
+      },
+      orderBy: { scrutinCount: 'desc' },
+      take,
+    });
+
+    if (sujets.length === 0) break;
+
+    const tasks = sujets.map(sujet =>
+      limiter(async () => {
+        try {
+          const amendements = await prisma.$queryRaw<Array<{
+            groupe_nom: string;
+            groupe_slug: string;
+            groupe_chambre: string;
+            numero: string;
+            expose_sommaire: string | null;
+            sort: string | null;
+          }>>`
+            SELECT
+              gp.nom as groupe_nom,
+              gp.slug as groupe_slug,
+              gp.chambre as groupe_chambre,
+              a.numero,
+              a.expose_sommaire,
+              a.sort
+            FROM amendements a
+            JOIN dossiers_legislatifs dl ON a.dossier_id = dl.id
+            JOIN parlementaires p ON a.parlementaire_id = p.id
+            JOIN groupes_politiques gp ON p.groupe_id = gp.id
+            WHERE dl.sujet_id = ${sujet.id}
+              AND a.expose_sommaire IS NOT NULL
+              AND a.expose_sommaire != ''
+            ORDER BY gp.slug, gp.chambre, a.date_depot DESC NULLS LAST
+          `;
+
+          if (amendements.length === 0) {
+            result.skipped++;
+            return;
+          }
+
+          const groupeMap = new Map<string, {
+            nom: string;
+            slug: string;
+            chambre: string;
+            amendements: Array<{ numero: string; exposeSommaire: string; sort: string | null }>;
+          }>();
+
+          for (const a of amendements) {
+            const key = `${a.groupe_slug}-${a.groupe_chambre}`;
+            if (!groupeMap.has(key)) {
+              groupeMap.set(key, {
+                nom: a.groupe_nom,
+                slug: a.groupe_slug,
+                chambre: a.groupe_chambre,
+                amendements: [],
+              });
+            }
+            const group = groupeMap.get(key)!;
+            if (group.amendements.length < 8) {
+              group.amendements.push({
+                numero: a.numero,
+                exposeSommaire: a.expose_sommaire!,
+                sort: a.sort,
+              });
+            }
+          }
+
+          const groupes = [...groupeMap.values()].filter(g => g.amendements.length > 0);
+          if (groupes.length === 0) {
+            result.skipped++;
+            return;
+          }
+
+          const hashParts = groupes.map(g =>
+            `${g.slug}-${g.chambre}:${g.amendements.map(a => a.numero).join(',')}`
+          );
+          const contentHash = computeContentHash(sujet.id, ...hashParts);
+
+          if (!force && sujet.iaGroupeAmendementHash === contentHash) {
+            result.skipped++;
+            return;
+          }
+
+          if (dryRun) {
+            result.enriched++;
+            return;
+          }
+
+          const userPrompt = buildGroupeAmendementPrompt({
+            sujetLabel: sujet.label,
+            groupes,
+          });
+
+          const response = await mistral.complete(SYSTEM_PROMPT_SUJET_GROUPES, userPrompt, { maxTokens: 1500 });
+
+          const descriptions: Record<string, string> = {};
+          const blocks = response.split('---').map(b => b.trim()).filter(Boolean);
+
+          for (const block of blocks) {
+            const lines = block.split('\n').map(l => l.trim()).filter((l): l is string => l.length > 0);
+            if (lines.length < 2) continue;
+
+            const firstLine = lines[0];
+            const headerMatch = firstLine ? firstLine.match(/^GROUPE:\s*(.+)$/i) : null;
+            if (headerMatch && headerMatch[1]) {
+              const key = headerMatch[1].trim();
+              const description = cleanLLMOutput(lines.slice(1).join(' '));
+              if (description && description.length > 10) {
+                descriptions[key] = description;
+              }
+            }
+          }
+
+          if (Object.keys(descriptions).length === 0 && blocks.length > 0) {
+            const groupKeys = groupes.map(g => `${g.slug}-${g.chambre}`);
+            let blockIdx = 0;
+            for (const key of groupKeys) {
+              const rawBlock = blocks[blockIdx];
+              if (blockIdx < blocks.length && rawBlock !== undefined) {
+                const desc = cleanLLMOutput(rawBlock);
+                if (desc && desc.length > 10) {
+                  descriptions[key] = desc;
+                }
+                blockIdx++;
+              }
+            }
+          }
+
+          if (Object.keys(descriptions).length > 0) {
+            await prisma.sujet.update({
+              where: { id: sujet.id },
+              data: {
+                groupeAmendementDescriptions: descriptions,
+                iaGroupeAmendementHash: contentHash,
+              },
+            });
+            result.enriched++;
+          } else {
+            logger.warn({ sujetId: sujet.id }, 'Failed to parse groupe amendement descriptions');
+            result.errors++;
+          }
+        } catch (error: any) {
+          result.errors++;
+          logger.warn({ sujetId: sujet.id, error: error.message }, 'Failed to enrich groupe amendement descriptions');
+        }
+      })
+    );
+
+    await Promise.all(tasks);
+    remaining -= sujets.length;
+
+    logger.info({ processed: result.enriched + result.skipped + result.errors, remaining }, 'Groupe amendement batch processed');
+    if (sujets.length < take) break;
+  }
+
+  result.totalTokensIn = mistral.totalTokensIn;
+  result.totalTokensOut = mistral.totalTokensOut;
+
+  logger.info({
+    enriched: result.enriched, skipped: result.skipped, errors: result.errors,
+    tokensIn: result.totalTokensIn, tokensOut: result.totalTokensOut,
+  }, 'Groupe amendement descriptions enrichment completed');
 
   return result;
 }

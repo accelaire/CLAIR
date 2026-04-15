@@ -362,6 +362,10 @@ model Sujet {
   iaContentHash  String?   @map("ia_content_hash")
   iaGeneratedAt  DateTime? @map("ia_generated_at")
 
+  // Descriptions IA des amendements par groupe politique (JSON: { [groupeSlug-chambre]: string })
+  groupeAmendementDescriptions Json?   @map("groupe_amendement_descriptions")
+  iaGroupeAmendementHash       String? @map("ia_groupe_amendement_hash")
+
   dossiers      DossierLegislatif[]
 
   createdAt     DateTime  @default(now()) @map("created_at")

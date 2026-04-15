@@ -1706,7 +1706,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
   // IA Enrichment (cascade : scrutins → dossiers → sujets → parlementaires)
   if (results.sourcesChanged.length > 0 && !options.skipIAEnrichment) {
     try {
-      const { enrichScrutinsIA, enrichDossiersIA, enrichSujetsIA } = await import('./ia-enrichment.js');
+      const { enrichScrutinsIA, enrichDossiersIA, enrichSujetsIA, enrichSujetGroupeAmendements } = await import('./ia-enrichment.js');
 
       const iaScrutins = await enrichScrutinsIA({ concurrency: 3 });
       logger.info({
@@ -1725,6 +1725,12 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         enriched: iaSujets.enriched, skipped: iaSujets.skipped, errors: iaSujets.errors,
         tokensIn: iaSujets.totalTokensIn, tokensOut: iaSujets.totalTokensOut,
       }, 'Sujets IA enrichment completed');
+
+      const iaGroupeAmendements = await enrichSujetGroupeAmendements({ concurrency: 2 });
+      logger.info({
+        enriched: iaGroupeAmendements.enriched, skipped: iaGroupeAmendements.skipped, errors: iaGroupeAmendements.errors,
+        tokensIn: iaGroupeAmendements.totalTokensIn, tokensOut: iaGroupeAmendements.totalTokensOut,
+      }, 'Groupe amendement descriptions enrichment completed');
 
       // Fiches parlementaires enrichies (Wikipedia + Tavily + Mistral)
       const { enrichParlementairesIA } = await import('./parlementaire-enrichment.js');

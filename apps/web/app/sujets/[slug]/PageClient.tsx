@@ -1,11 +1,11 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
-  ArrowLeft, ArrowRight, Calendar, Vote, Loader2, CheckCircle, XCircle,
+  ArrowLeft, ArrowRight, Vote, Loader2,
   Layers, ExternalLink, Scale, BookOpen,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -257,14 +257,18 @@ function ParliamentaryTimeline({ dossiers, sujet }: { dossiers: SujetDossier[]; 
   };
 
   const dotColor = (status: string) => {
-    if (status === 'done') return 'bg-green-500 ring-green-200';
-    if (status === 'active') return 'bg-amber-500 ring-amber-200 animate-pulse';
-    return 'bg-muted ring-border';
+    if (status === 'done') return 'bg-green-500';
+    if (status === 'active') return 'bg-amber-500 animate-pulse';
+    return 'bg-muted-foreground/30';
   };
 
   return (
     <div className="rounded-lg border bg-card p-5">
-      <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-5">
+      <h2 className="text-sm font-semibold flex items-center gap-2 mb-5">
+        <svg className="h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="5" cy="12" r="2" /><circle cx="19" cy="12" r="2" /><circle cx="12" cy="5" r="2" />
+          <path d="M7 12h4M14 12h3M12 7v3" />
+        </svg>
         Parcours parlementaire
       </h2>
 
@@ -280,7 +284,7 @@ function ParliamentaryTimeline({ dossiers, sujet }: { dossiers: SujetDossier[]; 
               <div key={i} className="flex items-start flex-1 last:flex-none">
                 {/* Step column */}
                 <div className="flex flex-col items-center flex-shrink-0" style={{ minWidth: '80px' }}>
-                  <div className={`h-4 w-4 rounded-full ring-4 ${dotColor(step.status)}`} />
+                  <div className={`h-3.5 w-3.5 rounded-full border-2 border-background shadow-sm ${dotColor(step.status)}`} />
                   <span className={`mt-2.5 text-[11px] font-semibold text-center leading-tight whitespace-nowrap ${
                     step.status === 'pending' ? 'text-muted-foreground/40' : 'text-foreground'
                   }`}>
@@ -305,7 +309,7 @@ function ParliamentaryTimeline({ dossiers, sujet }: { dossiers: SujetDossier[]; 
 
                 {/* Connector line */}
                 {nextStep && (
-                  <div className="flex items-center self-start pt-[7px] mx-1 flex-1 min-w-[20px]">
+                  <div className="flex items-center self-start pt-[6px] mx-1 flex-1 min-w-[20px]">
                     {nextStep.status === 'pending' ? (
                       <div className="h-0.5 w-full border-t-2 border-dashed border-border" />
                     ) : (
@@ -480,6 +484,8 @@ function ContextSection({ sujet, dossiers }: { sujet: SujetDetail; dossiers: Suj
 // ---------------------------------------------------------------------------
 
 function ScrutinsPanel({ slug, totalScrutins }: { slug: string; totalScrutins: number }) {
+  const [chambreFilter, setChambreFilter] = useState<string>('all');
+
   const {
     data: scrutinsPages,
     fetchNextPage,
@@ -503,6 +509,9 @@ function ScrutinsPanel({ slug, totalScrutins }: { slug: string; totalScrutins: n
   });
 
   const scrutins = scrutinsPages?.pages.flatMap((p) => p.data) ?? [];
+  const filteredScrutins = chambreFilter === 'all'
+    ? scrutins
+    : scrutins.filter(s => s.chambre === chambreFilter);
 
   return (
     <div className="rounded-lg border bg-card flex flex-col min-h-0">
@@ -512,12 +521,21 @@ function ScrutinsPanel({ slug, totalScrutins }: { slug: string; totalScrutins: n
           Scrutins
           <span className="text-xs font-normal text-muted-foreground">({totalScrutins})</span>
         </h2>
+        <select
+          value={chambreFilter}
+          onChange={(e) => setChambreFilter(e.target.value)}
+          className="text-xs border rounded-md px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+        >
+          <option value="all">Toutes les chambres</option>
+          <option value="assemblee">Assemblée Nationale</option>
+          <option value="senat">Sénat</option>
+        </select>
       </div>
 
       <div className="overflow-y-auto flex-1 max-h-[600px]">
-        {scrutins.length > 0 ? (
+        {filteredScrutins.length > 0 ? (
           <div className="divide-y">
-            {scrutins.map((scrutin) => {
+            {filteredScrutins.map((scrutin) => {
               const total = scrutin.nombrePour + scrutin.nombreContre + scrutin.nombreAbstention;
               const pourPct = total > 0 ? (scrutin.nombrePour / total) * 100 : 0;
               const contrePct = total > 0 ? (scrutin.nombreContre / total) * 100 : 0;
@@ -531,7 +549,7 @@ function ScrutinsPanel({ slug, totalScrutins }: { slug: string; totalScrutins: n
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs text-muted-foreground">{formatDateShort(scrutin.date)}</span>
                     <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${scrutin.chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'}`}>
-                      {scrutin.chambre === 'senat' ? 'Sénat' : 'AN'}
+                      {scrutin.chambre === 'senat' ? 'Sénat' : 'Assemblée Nationale'}
                     </span>
                     <span className={`ml-auto px-1.5 py-0.5 rounded text-[10px] font-medium ${
                       scrutin.sort === 'adopte' ? 'badge-adopte' : 'badge-rejete'
@@ -631,20 +649,38 @@ function DossiersPanel({ dossiers }: { dossiers: SujetDossier[] }) {
 // ---------------------------------------------------------------------------
 
 function StatsPanel({ slug, dossiers }: { slug: string; dossiers: SujetDossier[] }) {
-  const { data: statsData, isLoading } = useQuery<{ data: GroupeVoteStats[] }>({
+  const [sortBy, setSortBy] = useState<'votes' | 'chambre' | 'amendements'>('amendements');
+  const [statsChambreFilter, setStatsChambreFilter] = useState<string>('all');
+
+  const { data: statsData, isLoading } = useQuery<{ data: GroupeVoteStats[]; groupeAmendementDescriptions: Record<string, string> }>({
     queryKey: ['sujet-stats', slug],
     queryFn: () => api.get(`/sujets/${slug}/stats`).then((res) => res.data),
   });
 
   const groupeStats = statsData?.data ?? [];
+  const groupeDescriptions = statsData?.groupeAmendementDescriptions ?? {};
 
-  const sorted = useMemo(() =>
-    [...groupeStats].sort((a, b) => {
-      const totalA = a.votes.pour + a.votes.contre + a.votes.abstention + a.votes.absent;
-      const totalB = b.votes.pour + b.votes.contre + b.votes.abstention + b.votes.absent;
-      return totalB - totalA;
-    }),
-  [groupeStats]);
+  const sorted = useMemo(() => {
+    let filtered = [...groupeStats];
+
+    if (statsChambreFilter !== 'all') {
+      filtered = filtered.filter(g => g.chambre === statsChambreFilter);
+    }
+
+    if (sortBy === 'votes') {
+      filtered.sort((a, b) => {
+        const totalA = a.votes.pour + a.votes.contre + a.votes.abstention + a.votes.absent;
+        const totalB = b.votes.pour + b.votes.contre + b.votes.abstention + b.votes.absent;
+        return totalB - totalA;
+      });
+    } else if (sortBy === 'chambre') {
+      filtered.sort((a, b) => a.chambre.localeCompare(b.chambre) || a.nom.localeCompare(b.nom));
+    } else if (sortBy === 'amendements') {
+      filtered.sort((a, b) => b.amendements - a.amendements);
+    }
+
+    return filtered;
+  }, [groupeStats, sortBy, statsChambreFilter]);
 
   if (isLoading) {
     return (
@@ -664,8 +700,28 @@ function StatsPanel({ slug, dossiers }: { slug: string; dossiers: SujetDossier[]
 
   return (
     <div className="rounded-lg border bg-card flex flex-col min-h-0">
-      <div className="px-4 py-3 border-b">
-        <h2 className="text-sm font-semibold">Stats par groupe</h2>
+      <div className="px-4 py-3 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold">Stats par groupe politique</h2>
+        <div className="flex items-center gap-2">
+          <select
+            value={statsChambreFilter}
+            onChange={(e) => setStatsChambreFilter(e.target.value)}
+            className="text-xs border rounded-md px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="all">Toutes les chambres</option>
+            <option value="assemblee">Assemblée Nationale</option>
+            <option value="senat">Sénat</option>
+          </select>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as 'votes' | 'chambre' | 'amendements')}
+            className="text-xs border rounded-md px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="votes">Par votes (total)</option>
+            <option value="chambre">Par chambre</option>
+            <option value="amendements">Par amendements</option>
+          </select>
+        </div>
       </div>
 
       <div className="overflow-y-auto flex-1 max-h-[600px] divide-y">
@@ -675,19 +731,28 @@ function StatsPanel({ slug, dossiers }: { slug: string; dossiers: SujetDossier[]
           const contrePct = totalVotes > 0 ? (groupe.votes.contre / totalVotes) * 100 : 0;
           const abstPct = totalVotes > 0 ? (groupe.votes.abstention / totalVotes) * 100 : 0;
 
-          return (
-            <div key={`${groupe.slug}-${groupe.chambre}`} className="px-4 py-3">
+          const targetDossier = groupe.amendements > 0
+            ? (dossiers.find(d => d.chambre === groupe.chambre) ?? dossiers[0])
+            : null;
+
+          const content = (
+            <div className={`px-4 py-3 ${targetDossier ? 'hover:bg-muted/50 transition-colors' : ''}`}>
               <div className="flex items-center gap-2 mb-2">
                 <div
                   className="h-3 w-3 rounded-full flex-shrink-0"
                   style={{ backgroundColor: groupe.couleur }}
                 />
-                <span className="text-sm font-medium truncate">{groupe.nom}</span>
+                <span className="text-sm font-semibold truncate">{groupe.nom}</span>
                 <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded flex-shrink-0 ${
                   groupe.chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'
                 }`}>
-                  {groupe.chambre === 'senat' ? 'Sénat' : 'AN'}
+                  {groupe.chambre === 'senat' ? 'Sénat' : 'Assemblée Nationale'}
                 </span>
+                {groupe.amendements > 0 && (
+                  <span className="ml-auto text-xs text-muted-foreground flex-shrink-0">
+                    {groupe.amendements} amendement{groupe.amendements > 1 ? 's' : ''} →
+                  </span>
+                )}
               </div>
 
               <div className="h-2 rounded-full bg-muted overflow-hidden flex mb-2">
@@ -702,22 +767,25 @@ function StatsPanel({ slug, dossiers }: { slug: string; dossiers: SujetDossier[]
                 <span className="text-yellow-600">{groupe.votes.abstention.toLocaleString('fr-FR')} abst.</span>
                 <span className="ml-auto">{groupe.votes.absent.toLocaleString('fr-FR')} abs.</span>
               </div>
-              {groupe.amendements > 0 && (() => {
-                const targetDossier = dossiers.find(d => d.chambre === groupe.chambre) ?? dossiers[0];
-                return targetDossier ? (
-                  <Link
-                    href={`/dossiers/${targetDossier.uid}?groupe=${groupe.slug}&tab=amendements`}
-                    className="mt-1.5 inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                  >
-                    {groupe.amendements.toLocaleString('fr-FR')} amendement{groupe.amendements > 1 ? 's' : ''} déposé{groupe.amendements > 1 ? 's' : ''}
-                    <ArrowRight className="h-3 w-3" />
-                  </Link>
-                ) : (
-                  <div className="mt-1.5 text-xs text-muted-foreground">
-                    {groupe.amendements.toLocaleString('fr-FR')} amendement{groupe.amendements > 1 ? 's' : ''} déposé{groupe.amendements > 1 ? 's' : ''}
-                  </div>
-                );
-              })()}
+              {groupeDescriptions[`${groupe.slug}-${groupe.chambre}`] && (
+                <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
+                  {groupeDescriptions[`${groupe.slug}-${groupe.chambre}`]}
+                </p>
+              )}
+            </div>
+          );
+
+          return targetDossier ? (
+            <Link
+              key={`${groupe.slug}-${groupe.chambre}`}
+              href={`/dossiers/${targetDossier.uid}?groupe=${groupe.slug}&tab=amendements`}
+              className="block"
+            >
+              {content}
+            </Link>
+          ) : (
+            <div key={`${groupe.slug}-${groupe.chambre}`}>
+              {content}
             </div>
           );
         }) : (
@@ -820,24 +888,17 @@ export default function PageClient({ initialData }: { initialData?: { data: Suje
         )}
 
         {/* Key dates */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
           {sujet.dateDebut && (
-            <span className="flex items-center gap-1.5">
-              <Calendar className="h-4 w-4" />
-              Déposé le {formatDate(sujet.dateDebut)}
-            </span>
+            <span>Déposé le {formatDate(sujet.dateDebut)}</span>
           )}
+          {sujet.dateDebut && sujet.dateDernierVote && <span>•</span>}
           {sujet.dateDernierVote && (
-            <span className="flex items-center gap-1.5">
-              <Vote className="h-4 w-4" />
-              Dernier vote le {formatDate(sujet.dateDernierVote)}
-            </span>
+            <span>Dernier vote le {formatDate(sujet.dateDernierVote)}</span>
           )}
+          {(sujet.dateDebut || sujet.dateDernierVote) && sujet.dateFin && sujet.status === 'promulgue' && <span>•</span>}
           {sujet.dateFin && sujet.status === 'promulgue' && (
-            <span className="flex items-center gap-1.5">
-              <CheckCircle className="h-4 w-4 text-green-600" />
-              Promulgué le {formatDate(sujet.dateFin)}
-            </span>
+            <span className="text-green-700 font-medium">Promulgué le {formatDate(sujet.dateFin)}</span>
           )}
         </div>
       </div>

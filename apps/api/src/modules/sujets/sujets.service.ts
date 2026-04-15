@@ -269,7 +269,7 @@ export class SujetsService {
   async getVoteStats(slug: string) {
     const sujet = await this.prisma.sujet.findUnique({
       where: { slug },
-      select: { id: true },
+      select: { id: true, groupeAmendementDescriptions: true },
     });
 
     if (!sujet) return null;
@@ -352,7 +352,10 @@ export class SujetsService {
       byGroupe[groupeKey].votes[row.position as keyof typeof byGroupe[string]['votes']] = Number(row.count);
     }
 
-    return { data: Object.values(byGroupe) };
+    return {
+      data: Object.values(byGroupe),
+      groupeAmendementDescriptions: (sujet.groupeAmendementDescriptions as Record<string, string> | null) ?? {},
+    };
   }
 }
 
