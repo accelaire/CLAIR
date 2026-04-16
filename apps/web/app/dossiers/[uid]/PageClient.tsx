@@ -6,7 +6,7 @@ import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   FileText, Calendar, Vote, CheckCircle, XCircle, ExternalLink,
-  ArrowLeft, Loader2, Scale, ChevronDown, ChevronUp, X, Users, Layers, BookOpen, Gavel, Filter,
+  ArrowLeft, ArrowRight, Loader2, Scale, ChevronDown, ChevronUp, X, Users, Layers, BookOpen, Gavel, Filter,
 } from 'lucide-react';
 import { FilterBar } from '@/components/FilterBar';
 import { api } from '@/lib/api';
@@ -511,10 +511,11 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
           {dossier.sujet && (
             <Link
               href={`/sujets/${dossier.sujet.slug}`}
-              className="inline-flex items-center gap-1 text-amber-600 hover:text-amber-800 hover:underline"
+              className="ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground font-semibold text-sm shadow-sm hover:bg-primary/90 transition-colors"
             >
-              <Layers className="h-3.5 w-3.5" />
-              Voir le sujet complet
+              <Layers className="h-4 w-4 flex-shrink-0" />
+              Voir l&apos;analyse complète du sujet
+              <ArrowRight className="h-4 w-4 flex-shrink-0" />
             </Link>
           )}
         </div>
@@ -572,13 +573,13 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
 
       {/* Loi promulguee */}
       {dossier.loiNumero && (
-        <div className="p-4 rounded-lg border border-green-200 bg-green-50/50 mb-8">
+        <div className="p-4 rounded-lg border border-green-500/30 bg-green-500/5 dark:bg-green-500/10 mb-8">
           <div className="flex items-start gap-3">
-            <div className="p-2 rounded-lg bg-green-100">
-              <Scale className="h-5 w-5 text-green-600" />
+            <div className="p-2 rounded-lg bg-green-500/15">
+              <Scale className="h-5 w-5 text-green-500" />
             </div>
             <div className="flex-1">
-              <span className="text-xs font-medium text-green-600 uppercase tracking-wide">Loi promulguée</span>
+              <span className="text-xs font-medium text-green-500 uppercase tracking-wide">Loi promulguée</span>
               <p className="font-semibold text-foreground">Loi n&deg;{dossier.loiNumero}</p>
               {dossier.loiTitre && <p className="text-sm text-muted-foreground">{dossier.loiTitre}</p>}
               {dossier.loiDateJO && (

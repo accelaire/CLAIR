@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { PrismaClient } from '@prisma/client';
+import { parseActesLegislatifs } from '../../utils/parse-actes-legislatifs';
 import type {
   SujetsListQuery,
   SujetScrutinsQuery,
@@ -177,6 +178,7 @@ export class SujetsService {
           loiTitre: true,
           loiDateJO: true,
           urlLegifrance: true,
+          sourceData: true,
           _count: { select: { scrutins: true } },
         },
       }),
@@ -190,7 +192,9 @@ export class SujetsService {
         ...d,
         chambre: d.uid.startsWith('SENAT') ? 'senat' : 'assemblee',
         scrutinCount: d._count.scrutins,
+        legislativeSteps: parseActesLegislatifs(d.sourceData, { etat: d.etat, loiDateJO: d.loiDateJO }),
         _count: undefined,
+        sourceData: undefined,
       })),
       meta: {
         total,
