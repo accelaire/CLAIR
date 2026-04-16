@@ -110,6 +110,7 @@ interface VoteArticle {
 interface DossierPromptData {
   titre: string;
   titreCourt?: string | null;
+  chambre?: 'assemblee' | 'senat' | null;
   procedureLibelle?: string | null;
   etat?: string | null;
   scrutinsResumes: { titre: string; sort: string; typeVote: string; resumeIA?: string | null }[];
@@ -141,10 +142,14 @@ function formatGroupePosition(g: GroupePosition): string {
 }
 
 export function buildDossierResumePrompt(data: DossierPromptData): string {
+  const chambreLabel = data.chambre === 'senat' ? 'Sénat' : data.chambre === 'assemblee' ? 'Assemblée nationale' : null;
   const parts: string[] = [
     `Dossier : ${data.titre}`,
   ];
 
+  if (chambreLabel) {
+    parts.push(`Chambre : ${chambreLabel}`);
+  }
   if (data.titreCourt) {
     parts.push(`Titre court : ${data.titreCourt}`);
   }

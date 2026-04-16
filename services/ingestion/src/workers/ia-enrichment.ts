@@ -186,6 +186,7 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
       where,
       select: {
         id: true,
+        uid: true,
         titre: true,
         titreCourt: true,
         procedureLibelle: true,
@@ -304,9 +305,11 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             orientation: g.orientation,
           }));
 
+          const chambre = dossier.uid.startsWith('SENAT') ? 'senat' : 'assemblee';
           const userPrompt = buildDossierResumePrompt({
             titre: dossier.titre,
             titreCourt: dossier.titreCourt,
+            chambre,
             procedureLibelle: dossier.procedureLibelle,
             etat: dossier.etat,
             scrutinsResumes: scrutinsClefs.map(s => ({
@@ -408,7 +411,7 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
         try {
           const dossiers = await prisma.dossierLegislatif.findMany({
             where: { sujetId: sujet.id },
-            select: { id: true, titre: true, etat: true, resumeIA: true },
+            select: { id: true, uid: true, titre: true, etat: true, resumeIA: true },
           });
 
           const dossierIds = dossiers.map(d => d.id);
@@ -511,7 +514,7 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
             status: sujet.status,
             dossiersResumes: dossiers.map(d => ({
               titre: d.titre,
-              chambre: 'cross',
+              chambre: d.uid.startsWith('SENAT') ? 'senat' : 'assemblee',
               etat: d.etat,
               resumeIA: d.resumeIA,
             })),
