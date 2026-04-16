@@ -1703,6 +1703,33 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     }
   }
 
+  // Recalcul des statuses des sujets après chaque sync de dossiers
+  // (évite les statuses stales quand un dossier passe de adopte → promulgue/rejete)
+  if (results.sourcesChanged.length > 0) {
+    try {
+      const { PrismaClient: PC } = await import('@prisma/client');
+      const prismaLocal = new PC();
+      await prismaLocal.$executeRaw`
+        UPDATE sujets s SET status = (
+          SELECT CASE
+            WHEN bool_or(dl.etat = 'promulgue') THEN 'promulgue'
+            WHEN bool_or(dl.etat = 'rejete')    THEN 'rejete'
+            WHEN bool_or(dl.etat = 'adopte')    THEN 'adopte'
+            WHEN bool_or(dl.etat = 'en_cours')  THEN 'en_cours'
+            WHEN bool_or(dl.etat = 'caduc')     THEN 'caduc'
+            ELSE 'retire'
+          END
+          FROM dossiers_legislatifs dl WHERE dl.sujet_id = s.id
+        )
+        WHERE EXISTS (SELECT 1 FROM dossiers_legislatifs dl WHERE dl.sujet_id = s.id)
+      `;
+      await prismaLocal.$disconnect();
+      logger.info('Sujet statuses refreshed from dossier etats');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Sujet status refresh failed (non-blocking)');
+    }
+  }
+
   // IA Enrichment (cascade : scrutins → dossiers → sujets → parlementaires)
   if (results.sourcesChanged.length > 0 && !options.skipIAEnrichment) {
     try {
