@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { normalizeAmendementSort, getAmendementSortClasses } from '@/lib/amendements';
 
 interface AmendementSortBadgeProps {
@@ -13,8 +14,11 @@ export function AmendementSortBadge({ sort }: AmendementSortBadgeProps) {
   const className = getAmendementSortClasses(sort);
 
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${className}`}>
+    <Link
+      href="/comprendre/dossier-legislatif#amendements-sort"
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${className} hover:opacity-80 transition-opacity`}
+    >
       {label}
-    </span>
+    </Link>
   );
 }

@@ -110,6 +110,7 @@ interface VoteArticle {
 interface DossierPromptData {
   titre: string;
   titreCourt?: string | null;
+  chambre?: 'assemblee' | 'senat' | null;
   procedureLibelle?: string | null;
   etat?: string | null;
   scrutinsResumes: { titre: string; sort: string; typeVote: string; resumeIA?: string | null }[];
@@ -141,10 +142,14 @@ function formatGroupePosition(g: GroupePosition): string {
 }
 
 export function buildDossierResumePrompt(data: DossierPromptData): string {
+  const chambreLabel = data.chambre === 'senat' ? 'Sénat' : data.chambre === 'assemblee' ? 'Assemblée nationale' : null;
   const parts: string[] = [
     `Dossier : ${data.titre}`,
   ];
 
+  if (chambreLabel) {
+    parts.push(`Chambre : ${chambreLabel}`);
+  }
   if (data.titreCourt) {
     parts.push(`Titre court : ${data.titreCourt}`);
   }
@@ -302,6 +307,61 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
     ] : []),
     '- Pourquoi ce sujet est important ou controversé.',
   );
+
+  return parts.join('\n');
+}
+
+// =============================================================================
+// SUJETS — DESCRIPTIONS AMENDEMENTS PAR GROUPE
+// =============================================================================
+
+export const SYSTEM_PROMPT_SUJET_GROUPES = `Tu es un analyste parlementaire expert. Tu synthétises l'action législative des groupes politiques sur un sujet donné, en te basant sur les amendements déposés.
+
+Règles :
+- Sois factuel, neutre et concis.
+- 1 à 2 phrases maximum par groupe.
+- Décris ce que le groupe a proposé concrètement via ses amendements.
+- N'utilise pas de jargon juridique sans l'expliquer.
+- Réponds en texte brut, sans markdown.`;
+
+interface GroupeAmendementPromptData {
+  sujetLabel: string;
+  groupes: Array<{
+    nom: string;
+    slug: string;
+    chambre: string;
+    amendements: Array<{
+      numero: string;
+      exposeSommaire: string;
+      sort?: string | null;
+    }>;
+  }>;
+}
+
+export function buildGroupeAmendementPrompt(data: GroupeAmendementPromptData): string {
+  const parts: string[] = [
+    `Sujet parlementaire : ${data.sujetLabel}`,
+    '',
+    'Pour chaque groupe politique ci-dessous, génère une description de 1 à 2 phrases résumant ce que le groupe propose via ses amendements.',
+    '',
+    'Format de réponse STRICT — une entrée par groupe, séparée par "---" :',
+    'GROUPE:slug-chambre',
+    'Description du groupe...',
+    '---',
+    '',
+  ];
+
+  for (const groupe of data.groupes) {
+    const chambreLabel = groupe.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale';
+    parts.push(`--- Groupe : ${groupe.nom} (${chambreLabel}) [clé: ${groupe.slug}-${groupe.chambre}] ---`);
+    parts.push(`Amendements (${groupe.amendements.length}) :`);
+    for (const a of groupe.amendements.slice(0, 8)) {
+      const sortStr = a.sort ? ` [${a.sort}]` : '';
+      const expose = a.exposeSommaire.length > 300 ? a.exposeSommaire.slice(0, 300) + '...' : a.exposeSommaire;
+      parts.push(`  n°${a.numero}${sortStr} : ${expose}`);
+    }
+    parts.push('');
+  }
 
   return parts.join('\n');
 }

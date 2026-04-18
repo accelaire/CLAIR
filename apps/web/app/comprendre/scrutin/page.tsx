@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Vote } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Le scrutin public | CLAIR',
+  title: 'Le scrutin public',
   description:
     'Comprendre les scrutins publics : types de vote, déroulement, lecture des résultats.',
 };

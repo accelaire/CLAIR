@@ -454,9 +454,10 @@ function computeStatus(members: DossierRow[]): string {
   if (etats.length === 0) return 'en_cours';
 
   if (etats.includes('promulgue')) return 'promulgue';
+  // Un rejet définitif par n'importe quelle chambre prime sur adopté/en_cours
+  if (etats.includes('rejete')) return 'rejete';
   if (etats.includes('adopte')) return 'adopte';
   if (etats.includes('en_cours')) return 'en_cours';
-  if (etats.every(e => e === 'rejete')) return 'rejete';
   if (etats.every(e => e === 'caduc')) return 'caduc';
   if (etats.every(e => e === 'retire')) return 'retire';
 

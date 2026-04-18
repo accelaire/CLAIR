@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Landmark } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Le Parlement français | CLAIR',
+  title: 'Le Parlement français',
   description:
     'Comprendre le fonctionnement du Parlement français : Assemblée nationale, Sénat, sessions parlementaires et navette législative.',
 };

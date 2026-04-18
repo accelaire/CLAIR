@@ -15,7 +15,7 @@ import {
   Twitter,
   Mail,
   Globe,
-  TrendingUp,
+  ShieldCheck,
   Vote,
   MessageSquare,
   FileText,
@@ -761,7 +761,7 @@ export default function PageClient({ initialData }: { initialData?: DeputeDetail
               value={depute.stats.presenceSolennel ?? depute.stats.presence}
               suffix="%"
               subtitle={`${depute.stats.presence}% tous scrutins`}
-              icon={TrendingUp}
+              icon={ShieldCheck}
               tooltip="Pourcentage de scrutins solennels auxquels ce parlementaire a participé (voté pour, contre ou abstention)."
               tooltipHref="/comprendre/parlementaire"
             />

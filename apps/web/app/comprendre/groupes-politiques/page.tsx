@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Users } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Les groupes politiques | CLAIR',
+  title: 'Les groupes politiques',
   description:
     'Comprendre les groupes parlementaires : différence avec les partis, rôle, cohésion et loyauté.',
 };

@@ -51,6 +51,11 @@ export class ParlementairesService {
     const orderByMap: Record<string, Prisma.ParlementaireOrderByWithRelationInput> = {
       nom: { nom: order },
       prenom: { prenom: order },
+      presence: { statsPresence: order },
+      loyaute: { statsLoyaute: order },
+      activite: { statsInterventions: order },
+      amendements: { statsAmendements: order },
+      interventions: { statsInterventions: order },
     };
 
     const orderBy = orderByMap[sort] || { nom: order };
@@ -127,6 +132,25 @@ export class ParlementairesService {
         votesCount: p._count.votes,
         interventionsCount: p._count.interventions,
         amendementsCount: p._count.amendements,
+        stats: p.statsCalculatedAt
+          ? {
+              presence: p.statsPresence ?? 0,
+              loyaute: p.statsLoyaute ?? 0,
+              participation: p.statsParticipation ?? 0,
+              interventions: p.statsInterventions ?? 0,
+              amendements: p.statsAmendements ?? 0,
+            }
+          : null,
+        // Retirer les champs stats bruts
+        statsPresence: undefined,
+        statsPresenceSolennel: undefined,
+        statsLoyaute: undefined,
+        statsParticipation: undefined,
+        statsInterventions: undefined,
+        statsAmendements: undefined,
+        statsAmendementsAdoptes: undefined,
+        statsQuestions: undefined,
+        statsCalculatedAt: undefined,
       })),
       meta,
     };

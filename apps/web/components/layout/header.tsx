@@ -40,7 +40,7 @@ const navigation: NavItem[] = [
     items: [
       { name: 'Comprendre', href: '/comprendre' },
       { name: 'Guide pratique', href: '/guide' },
-      { name: 'Classements', href: '/classements', soon: true },
+      { name: 'Classements', href: '/classements' },
       { name: 'Comparer des députés', href: '/deputes?compare=true' },
       { name: 'Comparer des sénateurs', href: '/senateurs?compare=true' },
     ],

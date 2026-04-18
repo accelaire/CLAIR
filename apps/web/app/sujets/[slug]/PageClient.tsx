@@ -1,16 +1,18 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
-  ArrowLeft, ArrowRight, Calendar, Vote, Loader2, CheckCircle, XCircle,
+  ArrowLeft, ArrowRight, Vote, Loader2,
   Layers, ExternalLink, Scale, BookOpen,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
+import { LegislativeStep } from '@/lib/legislative-steps';
+import { LegislativeTimeline } from '@/components/LegislativeTimeline';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,6 +54,7 @@ interface SujetDossier {
   loiDateJO: string | null;
   urlLegifrance: string | null;
   scrutinCount: number;
+  legislativeSteps: LegislativeStep[];
 }
 
 /** Préfixe le type de procédure si le titre commence par une minuscule */
@@ -124,202 +127,172 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; dot: string 
 // Parliamentary Journey Timeline
 // ---------------------------------------------------------------------------
 
-function ParliamentaryTimeline({ dossiers, sujet }: { dossiers: SujetDossier[]; sujet: SujetDetail }) {
+// Builds fallback LegislativeStep[] from dossier etat data (for Sénat-only dossiers
+// without actesLegislatifs, or any dossier where legislativeSteps is empty).
+function buildFallbackSteps(
+  dossiers: SujetDossier[],
+  sujet: SujetDetail,
+): LegislativeStep[] {
   const anDossiers = dossiers.filter(d => d.chambre === 'assemblee');
   const senatDossiers = dossiers.filter(d => d.chambre === 'senat');
 
-  const steps = useMemo(() => {
-    const result: Array<{
-      label: string;
-      chambre: 'assemblee' | 'senat' | 'both';
-      status: 'done' | 'active' | 'pending';
-      date?: string;
-      detail?: string;
-    }> = [];
+  const allEtats = dossiers.map(d => d.etat).filter(Boolean);
+  const hasPromulgue = allEtats.includes('promulgue');
+  const hasAdopte = allEtats.includes('adopte');
+  const allRejete = allEtats.length > 0 && allEtats.every(e => e === 'rejete');
 
-    const allEtats = dossiers.map(d => d.etat).filter(Boolean);
-    const hasPromulgue = allEtats.includes('promulgue');
-    const hasAdopte = allEtats.includes('adopte');
-    const allRejete = allEtats.length > 0 && allEtats.every(e => e === 'rejete');
+  const depotDates = dossiers
+    .map(d => d.dateDepot)
+    .filter((d): d is string => d !== null)
+    .sort();
 
-    const depotDates = dossiers
-      .map(d => d.dateDepot)
-      .filter((d): d is string => d !== null)
-      .sort();
+  const etatToOutcome = (etat: string | null): LegislativeStep['outcome'] => {
+    if (etat === 'adopte') return 'adopted';
+    if (etat === 'rejete') return 'rejected';
+    if (etat === 'promulgue') return 'adopted';
+    return null;
+  };
 
-    // Dépôt
+  const result: LegislativeStep[] = [];
+
+  // Dépôt
+  result.push({
+    code: 'DEPOT',
+    label: 'Dépôt',
+    chambre: anDossiers.length > 0 && senatDossiers.length > 0 ? 'both' : anDossiers.length > 0 ? 'assemblee' : 'senat',
+    status: 'done',
+    outcome: null,
+    date: depotDates[0] ?? null,
+    detail: null,
+  });
+
+  if (sujet.matchMethod === 'cross_ref') {
+    const anEtat = anDossiers[0]?.etat ?? null;
+    const senatEtat = senatDossiers[0]?.etat ?? null;
+    const anAdoption = anDossiers.find(d => d.dateAdoption)?.dateAdoption ?? null;
+    const senatAdoption = senatDossiers.find(d => d.dateAdoption)?.dateAdoption ?? null;
+
     result.push({
-      label: 'Dépôt',
-      chambre: anDossiers.length > 0 && senatDossiers.length > 0 ? 'both' : anDossiers.length > 0 ? 'assemblee' : 'senat',
-      status: 'done',
-      date: depotDates[0] ? formatDateShort(depotDates[0]) : undefined,
+      code: 'AN1',
+      label: 'Assemblée nationale',
+      chambre: 'assemblee',
+      status: anEtat && anEtat !== 'en_cours' ? 'done' : anEtat === 'en_cours' ? 'active' : 'pending',
+      outcome: etatToOutcome(anEtat),
+      date: anAdoption,
+      detail: anDossiers.length > 0 ? `${anDossiers.reduce((s, d) => s + d.scrutinCount, 0)} scrutins` : null,
     });
 
-    if (sujet.matchMethod === 'cross_ref') {
-      const anEtat = anDossiers[0]?.etat;
-      const senatEtat = senatDossiers[0]?.etat;
-      const anAdoption = anDossiers.find(d => d.dateAdoption)?.dateAdoption;
-      const senatAdoption = senatDossiers.find(d => d.dateAdoption)?.dateAdoption;
+    result.push({
+      code: 'SN1',
+      label: 'Sénat',
+      chambre: 'senat',
+      status: senatEtat && senatEtat !== 'en_cours' ? 'done' : senatEtat === 'en_cours' ? 'active' : 'pending',
+      outcome: etatToOutcome(senatEtat),
+      date: senatAdoption,
+      detail: senatDossiers.length > 0 ? `${senatDossiers.reduce((s, d) => s + d.scrutinCount, 0)} scrutins` : null,
+    });
 
+    if (hasPromulgue || hasAdopte) {
       result.push({
-        label: 'Assemblée nationale',
-        chambre: 'assemblee',
-        status: anEtat && anEtat !== 'en_cours' ? 'done' : anEtat === 'en_cours' ? 'active' : 'pending',
-        date: anAdoption ? formatDateShort(anAdoption) : undefined,
-        detail: anDossiers.length > 0 ? `${anDossiers.reduce((s, d) => s + d.scrutinCount, 0)} scrutins` : undefined,
-      });
-
-      result.push({
-        label: 'Sénat',
-        chambre: 'senat',
-        status: senatEtat && senatEtat !== 'en_cours' ? 'done' : senatEtat === 'en_cours' ? 'active' : 'pending',
-        date: senatAdoption ? formatDateShort(senatAdoption) : undefined,
-        detail: senatDossiers.length > 0 ? `${senatDossiers.reduce((s, d) => s + d.scrutinCount, 0)} scrutins` : undefined,
-      });
-
-      if (hasPromulgue || hasAdopte) {
-        result.push({
-          label: 'Adoption définitive',
-          chambre: 'both',
-          status: 'done',
-        });
-      } else if (!allRejete) {
-        result.push({
-          label: 'Adoption définitive',
-          chambre: 'both',
-          status: 'pending',
-        });
-      }
-    } else {
-      // Solo — always show full journey: Examen → Adoption → Promulgation
-      const chambre = anDossiers.length > 0 ? 'assemblee' : 'senat';
-      const etat = dossiers[0]?.etat;
-      const adoption = dossiers.find(d => d.dateAdoption)?.dateAdoption;
-      const isDone = etat && etat !== 'en_cours';
-
-      result.push({
-        label: 'Examen',
-        chambre: chambre as 'assemblee' | 'senat',
-        status: isDone ? 'done' : 'active',
-        date: sujet.dateDernierVote ? formatDateShort(sujet.dateDernierVote) : undefined,
-        detail: `${sujet.scrutinCount} scrutin${sujet.scrutinCount > 1 ? 's' : ''}`,
-      });
-
-      if (etat === 'rejete') {
-        result.push({
-          label: 'Rejeté',
-          chambre: chambre as 'assemblee' | 'senat',
-          status: 'done',
-          date: adoption ? formatDateShort(adoption) : undefined,
-        });
-      } else {
-        result.push({
-          label: 'Adoption',
-          chambre: chambre as 'assemblee' | 'senat',
-          status: isDone ? 'done' : 'pending',
-          date: isDone && adoption ? formatDateShort(adoption) : undefined,
-        });
-      }
-    }
-
-    // Promulgation — always show as last step (done or pending)
-    if (hasPromulgue) {
-      const loiNumero = dossiers.find(d => d.loiNumero)?.loiNumero;
-      const loiDateJO = dossiers.find(d => d.loiDateJO)?.loiDateJO;
-      result.push({
-        label: 'Promulgation',
+        code: 'ADOPT_DEF',
+        label: 'Adoption définitive',
         chambre: 'both',
         status: 'done',
-        date: loiDateJO ? formatDateShort(loiDateJO) : sujet.dateFin ? formatDateShort(sujet.dateFin) : undefined,
-        detail: loiNumero ? `Loi n°${loiNumero}` : undefined,
+        outcome: 'adopted_definitive',
+        date: null,
+        detail: null,
       });
     } else if (!allRejete) {
       result.push({
-        label: 'Promulgation',
+        code: 'ADOPT_DEF',
+        label: 'Adoption définitive',
         chambre: 'both',
         status: 'pending',
+        outcome: null,
+        date: null,
+        detail: null,
       });
     }
+  } else {
+    // Solo — always show full journey: Examen → Adoption/Rejeté
+    const chambre: 'assemblee' | 'senat' = anDossiers.length > 0 ? 'assemblee' : 'senat';
+    const etat = dossiers[0]?.etat ?? null;
+    const adoption = dossiers.find(d => d.dateAdoption)?.dateAdoption ?? null;
+    const isDone = etat && etat !== 'en_cours';
 
-    return result;
-  }, [dossiers, anDossiers, senatDossiers, sujet]);
+    result.push({
+      code: 'EXAM',
+      label: 'Examen',
+      chambre,
+      status: isDone ? 'done' : 'active',
+      outcome: null,
+      date: sujet.dateDernierVote ?? null,
+      detail: `${sujet.scrutinCount} scrutin${sujet.scrutinCount > 1 ? 's' : ''}`,
+    });
 
-  const chambreLabel = (chambre: string) => {
-    if (chambre === 'assemblee') return 'AN';
-    if (chambre === 'senat') return 'Sénat';
-    return 'AN + Sénat';
-  };
+    if (etat === 'rejete') {
+      result.push({
+        code: 'REJETE',
+        label: 'Rejeté',
+        chambre,
+        status: 'done',
+        outcome: 'rejected',
+        date: adoption,
+        detail: null,
+      });
+    } else {
+      result.push({
+        code: 'ADOPT',
+        label: 'Adoption',
+        chambre,
+        status: isDone ? 'done' : 'pending',
+        outcome: isDone ? etatToOutcome(etat) : null,
+        date: isDone ? adoption : null,
+        detail: null,
+      });
+    }
+  }
 
-  const chambreColor = (chambre: string) => {
-    if (chambre === 'assemblee') return 'badge-assemblee border border-purple-300 dark:border-purple-800';
-    if (chambre === 'senat') return 'badge-senat border border-blue-300 dark:border-blue-800';
-    return 'border-primary/30 bg-primary/5 text-primary';
-  };
+  // Promulgation — always show as last step (done or pending), unless all rejected
+  if (hasPromulgue) {
+    const loiNumero = dossiers.find(d => d.loiNumero)?.loiNumero ?? null;
+    const loiDateJO = dossiers.find(d => d.loiDateJO)?.loiDateJO ?? null;
+    result.push({
+      code: 'PROMULGATION',
+      label: 'Promulgation',
+      chambre: 'both',
+      status: 'done',
+      outcome: 'adopted',
+      date: loiDateJO ?? sujet.dateFin ?? null,
+      detail: loiNumero ? `Loi n°${loiNumero}` : null,
+    });
+  } else if (!allRejete) {
+    result.push({
+      code: 'PROMULGATION',
+      label: 'Promulgation',
+      chambre: 'both',
+      status: 'pending',
+      outcome: null,
+      date: null,
+      detail: null,
+    });
+  }
 
-  const dotColor = (status: string) => {
-    if (status === 'done') return 'bg-green-500 ring-green-200';
-    if (status === 'active') return 'bg-amber-500 ring-amber-200 animate-pulse';
-    return 'bg-muted ring-border';
-  };
+  return result;
+}
 
-  return (
-    <div className="rounded-lg border bg-card p-5">
-      <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-5">
-        Parcours parlementaire
-      </h2>
+function ParliamentaryTimeline({ dossiers, sujet }: { dossiers: SujetDossier[]; sujet: SujetDetail }) {
+  // Prefer AN dossier (DLR prefix) for cross_ref sujets that have both AN and Sénat dossiers
+  const dossierWithSteps =
+    dossiers.find(d => d.uid.startsWith('DLR') && d.legislativeSteps.length > 0) ??
+    dossiers.find(d => d.legislativeSteps.length > 0);
 
-      <div className="overflow-x-auto pt-1 pb-2 -mx-1 px-1">
-        <div className="flex items-start" style={{ minWidth: `${steps.length * 120}px` }}>
-          {steps.map((step, i) => {
-            const nextStep = steps[i + 1];
-            const lineColor = !nextStep ? '' :
-              nextStep.status === 'done' ? 'bg-green-400' :
-              nextStep.status === 'active' ? 'bg-amber-400' : '';
-
-            return (
-              <div key={i} className="flex items-start flex-1 last:flex-none">
-                {/* Step column */}
-                <div className="flex flex-col items-center flex-shrink-0" style={{ minWidth: '80px' }}>
-                  <div className={`h-4 w-4 rounded-full ring-4 ${dotColor(step.status)}`} />
-                  <span className={`mt-2.5 text-[11px] font-semibold text-center leading-tight whitespace-nowrap ${
-                    step.status === 'pending' ? 'text-muted-foreground/40' : 'text-foreground'
-                  }`}>
-                    {step.label}
-                  </span>
-                  {step.date && (
-                    <span className="mt-0.5 text-[10px] text-muted-foreground font-medium">
-                      {step.date}
-                    </span>
-                  )}
-                  <span className={`mt-1.5 px-1.5 py-0.5 text-[10px] font-medium rounded border ${chambreColor(step.chambre)} ${
-                    step.status === 'pending' ? 'opacity-30' : ''
-                  }`}>
-                    {chambreLabel(step.chambre)}
-                  </span>
-                  {step.detail && (
-                    <span className="mt-1 text-[10px] text-muted-foreground text-center">
-                      {step.detail}
-                    </span>
-                  )}
-                </div>
-
-                {/* Connector line */}
-                {nextStep && (
-                  <div className="flex items-center self-start pt-[7px] mx-1 flex-1 min-w-[20px]">
-                    {nextStep.status === 'pending' ? (
-                      <div className="h-0.5 w-full border-t-2 border-dashed border-border" />
-                    ) : (
-                      <div className={`h-0.5 w-full rounded-full ${lineColor}`} />
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
+  const steps = useMemo(
+    () => dossierWithSteps ? dossierWithSteps.legislativeSteps : buildFallbackSteps(dossiers, sujet),
+    [dossierWithSteps, dossiers, sujet],
   );
+
+  return <LegislativeTimeline steps={steps} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -392,13 +365,13 @@ function ContextSection({ sujet, dossiers }: { sujet: SujetDetail; dossiers: Suj
   // Promulgué — law card (same style as dossier page)
   if (sujet.status === 'promulgue' && loiDossier) {
     sections.push(
-      <div key="loi" className="p-4 rounded-lg border border-green-200 bg-green-50/50">
+      <div key="loi" className="p-4 rounded-lg border border-green-500/30 bg-green-500/5 dark:bg-green-500/10">
         <div className="flex items-start gap-3">
-          <div className="p-2 rounded-lg bg-green-100 flex-shrink-0">
-            <Scale className="h-5 w-5 text-green-600" />
+          <div className="p-2 rounded-lg bg-green-500/15 flex-shrink-0">
+            <Scale className="h-5 w-5 text-green-500" />
           </div>
           <div className="flex-1 min-w-0">
-            <span className="text-xs font-medium text-green-600 uppercase tracking-wide">Loi promulguée</span>
+            <span className="text-xs font-medium text-green-500 uppercase tracking-wide">Loi promulguée</span>
             <p className="font-semibold">Loi n°{loiDossier.loiNumero}</p>
             {loiDossier.loiTitre && (
               <p className="text-sm text-muted-foreground">{loiDossier.loiTitre}</p>
@@ -480,6 +453,8 @@ function ContextSection({ sujet, dossiers }: { sujet: SujetDetail; dossiers: Suj
 // ---------------------------------------------------------------------------
 
 function ScrutinsPanel({ slug, totalScrutins }: { slug: string; totalScrutins: number }) {
+  const [chambreFilter, setChambreFilter] = useState<string>('all');
+
   const {
     data: scrutinsPages,
     fetchNextPage,
@@ -503,6 +478,9 @@ function ScrutinsPanel({ slug, totalScrutins }: { slug: string; totalScrutins: n
   });
 
   const scrutins = scrutinsPages?.pages.flatMap((p) => p.data) ?? [];
+  const filteredScrutins = chambreFilter === 'all'
+    ? scrutins
+    : scrutins.filter(s => s.chambre === chambreFilter);
 
   return (
     <div className="rounded-lg border bg-card flex flex-col min-h-0">
@@ -512,12 +490,21 @@ function ScrutinsPanel({ slug, totalScrutins }: { slug: string; totalScrutins: n
           Scrutins
           <span className="text-xs font-normal text-muted-foreground">({totalScrutins})</span>
         </h2>
+        <select
+          value={chambreFilter}
+          onChange={(e) => setChambreFilter(e.target.value)}
+          className="text-xs border rounded-md px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+        >
+          <option value="all">Toutes les chambres</option>
+          <option value="assemblee">Assemblée Nationale</option>
+          <option value="senat">Sénat</option>
+        </select>
       </div>
 
       <div className="overflow-y-auto flex-1 max-h-[600px]">
-        {scrutins.length > 0 ? (
+        {filteredScrutins.length > 0 ? (
           <div className="divide-y">
-            {scrutins.map((scrutin) => {
+            {filteredScrutins.map((scrutin) => {
               const total = scrutin.nombrePour + scrutin.nombreContre + scrutin.nombreAbstention;
               const pourPct = total > 0 ? (scrutin.nombrePour / total) * 100 : 0;
               const contrePct = total > 0 ? (scrutin.nombreContre / total) * 100 : 0;
@@ -531,7 +518,7 @@ function ScrutinsPanel({ slug, totalScrutins }: { slug: string; totalScrutins: n
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs text-muted-foreground">{formatDateShort(scrutin.date)}</span>
                     <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${scrutin.chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'}`}>
-                      {scrutin.chambre === 'senat' ? 'Sénat' : 'AN'}
+                      {scrutin.chambre === 'senat' ? 'Sénat' : 'Assemblée Nationale'}
                     </span>
                     <span className={`ml-auto px-1.5 py-0.5 rounded text-[10px] font-medium ${
                       scrutin.sort === 'adopte' ? 'badge-adopte' : 'badge-rejete'
@@ -631,20 +618,38 @@ function DossiersPanel({ dossiers }: { dossiers: SujetDossier[] }) {
 // ---------------------------------------------------------------------------
 
 function StatsPanel({ slug, dossiers }: { slug: string; dossiers: SujetDossier[] }) {
-  const { data: statsData, isLoading } = useQuery<{ data: GroupeVoteStats[] }>({
+  const [sortBy, setSortBy] = useState<'votes' | 'chambre' | 'amendements'>('amendements');
+  const [statsChambreFilter, setStatsChambreFilter] = useState<string>('all');
+
+  const { data: statsData, isLoading } = useQuery<{ data: GroupeVoteStats[]; groupeAmendementDescriptions: Record<string, string> }>({
     queryKey: ['sujet-stats', slug],
     queryFn: () => api.get(`/sujets/${slug}/stats`).then((res) => res.data),
   });
 
   const groupeStats = statsData?.data ?? [];
+  const groupeDescriptions = statsData?.groupeAmendementDescriptions ?? {};
 
-  const sorted = useMemo(() =>
-    [...groupeStats].sort((a, b) => {
-      const totalA = a.votes.pour + a.votes.contre + a.votes.abstention + a.votes.absent;
-      const totalB = b.votes.pour + b.votes.contre + b.votes.abstention + b.votes.absent;
-      return totalB - totalA;
-    }),
-  [groupeStats]);
+  const sorted = useMemo(() => {
+    let filtered = [...groupeStats];
+
+    if (statsChambreFilter !== 'all') {
+      filtered = filtered.filter(g => g.chambre === statsChambreFilter);
+    }
+
+    if (sortBy === 'votes') {
+      filtered.sort((a, b) => {
+        const totalA = a.votes.pour + a.votes.contre + a.votes.abstention + a.votes.absent;
+        const totalB = b.votes.pour + b.votes.contre + b.votes.abstention + b.votes.absent;
+        return totalB - totalA;
+      });
+    } else if (sortBy === 'chambre') {
+      filtered.sort((a, b) => a.chambre.localeCompare(b.chambre) || a.nom.localeCompare(b.nom));
+    } else if (sortBy === 'amendements') {
+      filtered.sort((a, b) => b.amendements - a.amendements);
+    }
+
+    return filtered;
+  }, [groupeStats, sortBy, statsChambreFilter]);
 
   if (isLoading) {
     return (
@@ -664,60 +669,75 @@ function StatsPanel({ slug, dossiers }: { slug: string; dossiers: SujetDossier[]
 
   return (
     <div className="rounded-lg border bg-card flex flex-col min-h-0">
-      <div className="px-4 py-3 border-b">
-        <h2 className="text-sm font-semibold">Stats par groupe</h2>
+      <div className="px-4 py-3 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold">Stats par groupe politique</h2>
+        <div className="flex items-center gap-2">
+          <select
+            value={statsChambreFilter}
+            onChange={(e) => setStatsChambreFilter(e.target.value)}
+            className="text-xs border rounded-md px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="all">Toutes les chambres</option>
+            <option value="assemblee">Assemblée Nationale</option>
+            <option value="senat">Sénat</option>
+          </select>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as 'votes' | 'chambre' | 'amendements')}
+            className="text-xs border rounded-md px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="votes">Par votes (total)</option>
+            <option value="chambre">Par chambre</option>
+            <option value="amendements">Par amendements</option>
+          </select>
+        </div>
       </div>
 
       <div className="overflow-y-auto flex-1 max-h-[600px] divide-y">
         {sorted.length > 0 ? sorted.map((groupe) => {
-          const totalVotes = groupe.votes.pour + groupe.votes.contre + groupe.votes.abstention;
-          const pourPct = totalVotes > 0 ? (groupe.votes.pour / totalVotes) * 100 : 0;
-          const contrePct = totalVotes > 0 ? (groupe.votes.contre / totalVotes) * 100 : 0;
-          const abstPct = totalVotes > 0 ? (groupe.votes.abstention / totalVotes) * 100 : 0;
+          const targetDossier = groupe.amendements > 0
+            ? (dossiers.find(d => d.chambre === groupe.chambre) ?? dossiers[0])
+            : null;
 
-          return (
-            <div key={`${groupe.slug}-${groupe.chambre}`} className="px-4 py-3">
+          const content = (
+            <div className={`px-4 py-3 ${targetDossier ? 'hover:bg-muted/50 transition-colors' : ''}`}>
               <div className="flex items-center gap-2 mb-2">
                 <div
                   className="h-3 w-3 rounded-full flex-shrink-0"
                   style={{ backgroundColor: groupe.couleur }}
                 />
-                <span className="text-sm font-medium truncate">{groupe.nom}</span>
+                <span className="text-sm font-semibold truncate">{groupe.nom}</span>
                 <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded flex-shrink-0 ${
                   groupe.chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'
                 }`}>
-                  {groupe.chambre === 'senat' ? 'Sénat' : 'AN'}
+                  {groupe.chambre === 'senat' ? 'Sénat' : 'Assemblée Nationale'}
                 </span>
+                {groupe.amendements > 0 && (
+                  <span className="ml-auto text-xs text-muted-foreground flex-shrink-0">
+                    {groupe.amendements} amendement{groupe.amendements > 1 ? 's' : ''} →
+                  </span>
+                )}
               </div>
 
-              <div className="h-2 rounded-full bg-muted overflow-hidden flex mb-2">
-                <div className="bg-green-500 transition-all" style={{ width: `${pourPct}%` }} />
-                <div className="bg-red-500 transition-all" style={{ width: `${contrePct}%` }} />
-                <div className="bg-yellow-400 transition-all" style={{ width: `${abstPct}%` }} />
-              </div>
+              {groupeDescriptions[`${groupe.slug}-${groupe.chambre}`] && (
+                <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
+                  {groupeDescriptions[`${groupe.slug}-${groupe.chambre}`]}
+                </p>
+              )}
+            </div>
+          );
 
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <span className="text-green-600">{groupe.votes.pour.toLocaleString('fr-FR')} pour</span>
-                <span className="text-red-600">{groupe.votes.contre.toLocaleString('fr-FR')} contre</span>
-                <span className="text-yellow-600">{groupe.votes.abstention.toLocaleString('fr-FR')} abst.</span>
-                <span className="ml-auto">{groupe.votes.absent.toLocaleString('fr-FR')} abs.</span>
-              </div>
-              {groupe.amendements > 0 && (() => {
-                const targetDossier = dossiers.find(d => d.chambre === groupe.chambre) ?? dossiers[0];
-                return targetDossier ? (
-                  <Link
-                    href={`/dossiers/${targetDossier.uid}?groupe=${groupe.slug}&tab=amendements`}
-                    className="mt-1.5 inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                  >
-                    {groupe.amendements.toLocaleString('fr-FR')} amendement{groupe.amendements > 1 ? 's' : ''} déposé{groupe.amendements > 1 ? 's' : ''}
-                    <ArrowRight className="h-3 w-3" />
-                  </Link>
-                ) : (
-                  <div className="mt-1.5 text-xs text-muted-foreground">
-                    {groupe.amendements.toLocaleString('fr-FR')} amendement{groupe.amendements > 1 ? 's' : ''} déposé{groupe.amendements > 1 ? 's' : ''}
-                  </div>
-                );
-              })()}
+          return targetDossier ? (
+            <Link
+              key={`${groupe.slug}-${groupe.chambre}`}
+              href={`/dossiers/${targetDossier.uid}?groupe=${groupe.slug}&tab=amendements`}
+              className="block"
+            >
+              {content}
+            </Link>
+          ) : (
+            <div key={`${groupe.slug}-${groupe.chambre}`}>
+              {content}
             </div>
           );
         }) : (
@@ -820,24 +840,17 @@ export default function PageClient({ initialData }: { initialData?: { data: Suje
         )}
 
         {/* Key dates */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
           {sujet.dateDebut && (
-            <span className="flex items-center gap-1.5">
-              <Calendar className="h-4 w-4" />
-              Déposé le {formatDate(sujet.dateDebut)}
-            </span>
+            <span>Déposé le {formatDate(sujet.dateDebut)}</span>
           )}
+          {sujet.dateDebut && sujet.dateDernierVote && <span>•</span>}
           {sujet.dateDernierVote && (
-            <span className="flex items-center gap-1.5">
-              <Vote className="h-4 w-4" />
-              Dernier vote le {formatDate(sujet.dateDernierVote)}
-            </span>
+            <span>Dernier vote le {formatDate(sujet.dateDernierVote)}</span>
           )}
+          {(sujet.dateDebut || sujet.dateDernierVote) && sujet.dateFin && sujet.status === 'promulgue' && <span>•</span>}
           {sujet.dateFin && sujet.status === 'promulgue' && (
-            <span className="flex items-center gap-1.5">
-              <CheckCircle className="h-4 w-4 text-green-600" />
-              Promulgué le {formatDate(sujet.dateFin)}
-            </span>
+            <span className="text-green-700 font-medium">Promulgué le {formatDate(sujet.dateFin)}</span>
           )}
         </div>
       </div>

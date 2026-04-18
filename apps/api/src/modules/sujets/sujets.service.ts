@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { PrismaClient } from '@prisma/client';
+import { parseActesLegislatifs } from '../../utils/parse-actes-legislatifs';
 import type {
   SujetsListQuery,
   SujetScrutinsQuery,
@@ -177,6 +178,7 @@ export class SujetsService {
           loiTitre: true,
           loiDateJO: true,
           urlLegifrance: true,
+          sourceData: true,
           _count: { select: { scrutins: true } },
         },
       }),
@@ -190,7 +192,9 @@ export class SujetsService {
         ...d,
         chambre: d.uid.startsWith('SENAT') ? 'senat' : 'assemblee',
         scrutinCount: d._count.scrutins,
+        legislativeSteps: parseActesLegislatifs(d.sourceData, { etat: d.etat, loiDateJO: d.loiDateJO }),
         _count: undefined,
+        sourceData: undefined,
       })),
       meta: {
         total,
@@ -269,7 +273,7 @@ export class SujetsService {
   async getVoteStats(slug: string) {
     const sujet = await this.prisma.sujet.findUnique({
       where: { slug },
-      select: { id: true },
+      select: { id: true, groupeAmendementDescriptions: true },
     });
 
     if (!sujet) return null;
@@ -352,7 +356,10 @@ export class SujetsService {
       byGroupe[groupeKey].votes[row.position as keyof typeof byGroupe[string]['votes']] = Number(row.count);
     }
 
-    return { data: Object.values(byGroupe) };
+    return {
+      data: Object.values(byGroupe),
+      groupeAmendementDescriptions: (sujet.groupeAmendementDescriptions as Record<string, string> | null) ?? {},
+    };
   }
 }
 

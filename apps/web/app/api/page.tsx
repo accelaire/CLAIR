@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Database, Code, ExternalLink, Landmark, Users, Vote, Briefcase, BookOpen, FileText, Search, BarChart3, Folders } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'API ouverte - CLAIR',
+  title: 'API ouverte',
   description: 'Accédez librement aux données politiques françaises via l\'API CLAIR : députés, sénateurs, scrutins, lobbying, dossiers législatifs. Données ouvertes, documentées et gratuites.',
 };
 

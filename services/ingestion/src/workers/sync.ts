@@ -1703,10 +1703,37 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     }
   }
 
+  // Recalcul des statuses des sujets après chaque sync de dossiers
+  // (évite les statuses stales quand un dossier passe de adopte → promulgue/rejete)
+  if (results.sourcesChanged.length > 0) {
+    try {
+      const { PrismaClient: PC } = await import('@prisma/client');
+      const prismaLocal = new PC();
+      await prismaLocal.$executeRaw`
+        UPDATE sujets s SET status = (
+          SELECT CASE
+            WHEN bool_or(dl.etat = 'promulgue') THEN 'promulgue'
+            WHEN bool_or(dl.etat = 'rejete')    THEN 'rejete'
+            WHEN bool_or(dl.etat = 'adopte')    THEN 'adopte'
+            WHEN bool_or(dl.etat = 'en_cours')  THEN 'en_cours'
+            WHEN bool_or(dl.etat = 'caduc')     THEN 'caduc'
+            ELSE 'retire'
+          END
+          FROM dossiers_legislatifs dl WHERE dl.sujet_id = s.id
+        )
+        WHERE EXISTS (SELECT 1 FROM dossiers_legislatifs dl WHERE dl.sujet_id = s.id)
+      `;
+      await prismaLocal.$disconnect();
+      logger.info('Sujet statuses refreshed from dossier etats');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Sujet status refresh failed (non-blocking)');
+    }
+  }
+
   // IA Enrichment (cascade : scrutins → dossiers → sujets → parlementaires)
   if (results.sourcesChanged.length > 0 && !options.skipIAEnrichment) {
     try {
-      const { enrichScrutinsIA, enrichDossiersIA, enrichSujetsIA } = await import('./ia-enrichment.js');
+      const { enrichScrutinsIA, enrichDossiersIA, enrichSujetsIA, enrichSujetGroupeAmendements } = await import('./ia-enrichment.js');
 
       const iaScrutins = await enrichScrutinsIA({ concurrency: 3 });
       logger.info({
@@ -1725,6 +1752,12 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         enriched: iaSujets.enriched, skipped: iaSujets.skipped, errors: iaSujets.errors,
         tokensIn: iaSujets.totalTokensIn, tokensOut: iaSujets.totalTokensOut,
       }, 'Sujets IA enrichment completed');
+
+      const iaGroupeAmendements = await enrichSujetGroupeAmendements({ concurrency: 2 });
+      logger.info({
+        enriched: iaGroupeAmendements.enriched, skipped: iaGroupeAmendements.skipped, errors: iaGroupeAmendements.errors,
+        tokensIn: iaGroupeAmendements.totalTokensIn, tokensOut: iaGroupeAmendements.totalTokensOut,
+      }, 'Groupe amendement descriptions enrichment completed');
 
       // Fiches parlementaires enrichies (Wikipedia + Tavily + Mistral)
       const { enrichParlementairesIA } = await import('./parlementaire-enrichment.js');

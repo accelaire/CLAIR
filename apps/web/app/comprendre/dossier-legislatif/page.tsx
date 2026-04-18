@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { FileText } from 'lucide-react';
+import { SORTSList } from '@/components/SORTSList';
 
 export const metadata: Metadata = {
-  title: 'Le dossier législatif | CLAIR',
+  title: 'Le dossier législatif',
   description:
-    'Comprendre le cycle de vie d\u2019une loi : de la proposition à la promulgation, en passant par les amendements.',
+    "Comprendre le cycle de vie d'une loi : de la proposition à la promulgation, en passant par les amendements.",
 };
 
 const cycleSteps = [
@@ -19,19 +20,19 @@ const cycleSteps = [
     step: 2,
     title: 'Examen en commission',
     description:
-      'La commission permanente compétente examine le texte : auditions d\u2019experts, débats, adoption d\u2019amendements, vote en commission.',
+      "La commission permanente compétente examine le texte : auditions d'experts, débats, adoption d'amendements, vote en commission.",
   },
   {
     step: 3,
     title: 'Discussion en séance publique',
     description:
-      'Le texte est débattu dans l\u2019hémicycle. Les parlementaires défendent leurs amendements et votent article par article.',
+      'Le texte est débattu dans l\'hémicycle. Les parlementaires défendent leurs amendements et votent article par article.',
   },
   {
     step: 4,
     title: 'Navette parlementaire',
     description:
-      'Le texte fait des allers-retours entre l\u2019Assemblée nationale et le Sénat jusqu\u2019à accord sur une version identique.',
+      'Le texte fait des allers-retours entre l\'Assemblée nationale et le Sénat jusqu\'à accord sur une version identique.',
   },
   {
     step: 5,
@@ -77,7 +78,7 @@ export default function DossierLegislatifPage() {
         </section>
 
         {/* Amendements */}
-        <section className="mt-10">
+        <section id="amendements-sort" className="mt-10 scroll-mt-8">
           <h2 className="text-2xl font-bold">Les amendements</h2>
           <div className="mt-4 space-y-3 text-muted-foreground">
             <p>
@@ -85,37 +86,13 @@ export default function DossierLegislatifPage() {
               texte de loi. Il peut être déposé par un parlementaire ou par le gouvernement, à n&apos;importe
               quelle étape de la discussion.
             </p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-lg border bg-card p-4">
-                <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
-                  Adopté
-                </span>
-                <p className="mt-2 text-sm">L&apos;amendement est intégré au texte de loi.</p>
-              </div>
-              <div className="rounded-lg border bg-card p-4">
-                <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800">
-                  Rejeté
-                </span>
-                <p className="mt-2 text-sm">L&apos;amendement est refusé par la majorité des votants.</p>
-              </div>
-              <div className="rounded-lg border bg-card p-4">
-                <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-800">
-                  Retiré
-                </span>
-                <p className="mt-2 text-sm">L&apos;auteur retire son amendement avant le vote.</p>
-              </div>
-              <div className="rounded-lg border bg-card p-4">
-                <span className="inline-flex items-center rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-medium text-orange-800">
-                  Tombé
-                </span>
-                <p className="mt-2 text-sm">L&apos;amendement devient sans objet suite à l&apos;adoption d&apos;un autre amendement incompatible.</p>
-              </div>
-            </div>
-            <p>
-              <strong className="text-foreground">Rectification</strong> : l&apos;auteur d&apos;un amendement
-              peut le modifier avant le vote. On parle alors d&apos;amendement rectifié.
-            </p>
+
+            <SORTSList />
           </div>
+          <p className="mt-4">
+            <strong className="text-foreground">Rectification</strong> : l&apos;auteur d&apos;un amendement
+            peut le modifier avant le vote. L&apos;amendement modifié est alors marqué comme &quot;Rect&quot; dans la numérotation.
+          </p>
         </section>
 
         {/* États sur CLAIR */}

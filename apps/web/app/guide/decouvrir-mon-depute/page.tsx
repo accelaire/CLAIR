@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { User } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Découvrir mon député | CLAIR',
+  title: 'Découvrir mon député',
   description:
     'Parcours guidé pour trouver votre député et comprendre son activité parlementaire sur CLAIR.',
 };

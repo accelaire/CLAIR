@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Briefcase } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Comprendre le lobbying | CLAIR',
+  title: 'Comprendre le lobbying',
   description:
     'Parcours guidé pour explorer les représentants d\u2019intérêts et leurs actions sur CLAIR.',
 };
