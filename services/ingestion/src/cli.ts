@@ -68,7 +68,7 @@ program
   .option('--am, --amendements', 'Synchroniser les amendements (--an ou --se pour filtrer)')
   .option('--do, --dossiers', 'Synchroniser les dossiers législatifs (--an ou --se pour filtrer)')
   .option('--lo, --lobbyistes', 'Synchroniser les lobbyistes et actions (HATVP)')
-  .option('--declarations', 'Synchroniser les déclarations HATVP (intérêts & patrimoine des parlementaires)')
+  .option('--de, --declarations', 'Synchroniser les déclarations HATVP (intérêts & patrimoine des parlementaires)')
   // Modificateurs
   .option('-c, --circonscriptions', 'Inclure les circonscriptions (avec -p --an)')
   .option('--ameli', 'Utiliser le mode AMELI legacy (avec --se -a)')

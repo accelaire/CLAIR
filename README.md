@@ -12,18 +12,13 @@ CLAIR agrège, croise et présente de manière accessible les données publiques
 Le projet est **open source**, **apartisan** et **factuel** : zéro opinion, uniquement des données brutes et des sources vérifiables.
 ## Source
 
-Le service d'`ingestion` agrège les données parlementaires françaises depuis plusieurs sources gouvernementales officielles. Il interroge quatre sources principales : 
-- l'API Open Data de l'Assemblée Nationale (députés, scrutins, dossiers, amendements)
-- le Sénat via data.senat.fr (sénateurs, scrutins, interventions)
-- la HATVP pour les données de lobbying (lobbyistes et déclarations)
-- la DILA pour les débats (comptes rendus intégraux)
+Le service d'`ingestion` agrège les données parlementaires françaises depuis plusieurs sources gouvernementales officielles. Il interroge quatre sources principales :
+- l'**Assemblée Nationale** via [data.assemblee-nationale.fr](https://data.assemblee-nationale.fr) et [data.gouv.fr](https://www.data.gouv.fr) (députés, scrutins, dossiers, amendements)
+- le **Sénat** via [data.senat.fr](https://data.senat.fr) (sénateurs, scrutins, interventions)
+- la **HATVP** pour les données de lobbying (lobbyistes et déclarations)
+- la **DILA** pour les débats (comptes rendus intégraux)
 
-Les synchronisations des données sont planifiés à des heures stratégiques : 
-- sync complet à 5h du matin
-- scrutins à 12h et 19h en semaine
-- lobbying le dimanche
-
-Un enrichissement IA utilise Mistral pour générer des résumés accessibles des scrutins et dossiers.  Un générateur de sujets croise les données Assemblée-Sénat pour regrouper les dossiers législatifs apparentés. L'ensemble des opérations est tracé dans des tables SourceState et SyncLog pour la traçabilité et le monitoring.
+En production, un CRON Railway déclenche un smart-sync complet tous les jours à 5h du matin. Un enrichissement IA utilise Mistral Small pour générer des résumés accessibles des scrutins et dossiers. Un générateur de sujets croise les données Assemblée-Sénat pour regrouper les dossiers législatifs apparentés. L'ensemble des opérations est tracé dans des tables SourceState et SyncLog pour la traçabilité et le monitoring.
 
 ## Démarrage rapide
 
@@ -33,22 +28,26 @@ Prérequis :   Node.js >= 20.0.0,  pnpm >= 8.0.0, Docker & Docker Compose
 pnpm install
 cp apps/api/.env.example apps/api/.env
 
-
 pnpm docker:up
 pnpm db:generate
-pnpm db:migrate
+pnpm db:push          # initialise le schéma localement (voir note migrations ci-dessous)
 pnpm dev
-
-# Ingestion
-pnpm ingestion:sync -- -p   # ingest parlementaires (deputés + sénateur)
-pnpm ingestion:sync -- -s   # ingest scrutins
-pnpm ingestion:sync -- --lo # ingest lobby
-pnpm ingestion:smart-sync   # ingest tout (avec détection intélligente)
-pnpm ingestion:calculate-stats # exemple : taux de présence des parlementaires
-pnpm ingestion:schedule     # 
 ```
 
-> Pour plus d'information, que ce soit pour nous aider à développer et/ou auditer notre solution, veilliez rejoindre notre [wiki](https://github.com/accelaire/CLAIR/wiki) pour plus informations technique ou nous joindre par [mail](mailto:contact@clair.vote).
+> **Migrations** : `pnpm db:push` synchronise le schéma Prisma avec la base locale sans créer de fichier de migration — c'est la méthode recommandée pour le développement local. Les fichiers de migration présents dans le repo servent uniquement à faire évoluer la base de **production**. Si tu modifies le schéma Prisma et que le changement doit partir en prod, génère un fichier de migration avec `pnpm db:migrate --create-only`, vérifie-le, et inclus-le dans ta PR.
+
+```bash
+# Ingestion (après un premier `pnpm --filter @clair/ingestion build`)
+pnpm ingestion:sync -- -p        # parlementaires (députés + sénateurs)
+pnpm ingestion:sync -- -s        # scrutins
+pnpm ingestion:sync -- --lo      # lobbying
+pnpm ingestion:smart-sync -- -a  # tout (détection intelligente des changements)
+pnpm ingestion:calculate-stats   # recalcul des stats (présence, loyauté…)
+```
+
+L'API REST est documentée via Swagger à `http://localhost:3001/docs/static/index.html` une fois le serveur lancé.
+
+> Pour contribuer ou auditer la solution, consulte notre [wiki](https://github.com/accelaire/CLAIR/wiki) ou contacte-nous par [mail](mailto:contact@clair.vote).
 
 ## Contact
 
