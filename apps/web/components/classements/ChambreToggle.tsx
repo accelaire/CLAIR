@@ -22,7 +22,7 @@ export function ChambreToggle({ value, onChange, showAll = true }: ChambreToggle
           key={option.value}
           type="button"
           onClick={() => onChange(option.value)}
-          className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+          className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
             value === option.value
               ? 'bg-background text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'

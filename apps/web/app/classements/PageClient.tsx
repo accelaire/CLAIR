@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Loader2,
   Users,
-  Search,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
@@ -168,7 +167,7 @@ function ParlementairesTab() {
   });
 
   // Fetch groupes for filter
-  const { data: groupesData } = useQuery<{ data: { slug: string; nom: string; membresCount: number }[] }>({
+  const { data: groupesData } = useQuery<{ data: { slug: string; nom: string; couleur: string | null; position: string | null; membresCount: number }[] }>({
     queryKey: ['classements-groupes-filter', filters.chambre],
     queryFn: () => {
       const endpoint = filters.chambre
@@ -185,41 +184,74 @@ function ParlementairesTab() {
     setFilters({ sort: newSort, order: newOrder, page: '1' });
   };
 
+  const hasData = (item: ParlementaireItem) =>
+    item.stats !== null &&
+    (item.stats.presence > 0 || item.stats.loyaute > 0 || item.stats.amendements > 0 || item.stats.interventions > 0);
+
   return (
     <div>
       {/* Filters */}
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-        <ChambreToggle
-          value={filters.chambre}
-          onChange={(v) => setFilters({ chambre: v, page: '1' })}
-        />
-        <SortSelect
-          value={sort}
-          onChange={(v) => setFilters({ sort: v, order: 'desc', page: '1' })}
-          options={PARLEMENTAIRE_SORT_OPTIONS}
-        />
-        <div className="relative sm:w-auto">
-          <select
-            value={filters.groupe}
-            onChange={(e) => setFilters({ groupe: e.target.value, page: '1' })}
-            className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-          >
-            <option value="">Tous les groupes</option>
-            {groupesData?.data?.map((g) => (
-              <option key={g.slug} value={g.slug}>
-                {g.nom} ({g.membresCount})
-              </option>
-            ))}
-          </select>
-          <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+      <div className="mb-6 rounded-xl border bg-muted/30 p-3 sm:p-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Filtres
+        </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          {/* Static controls */}
+          <div className="flex shrink-0 items-center gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+            <ChambreToggle
+              value={filters.chambre}
+              onChange={(v) => setFilters({ chambre: v, groupe: '', page: '1' })}
+            />
+            <SortSelect
+              value={sort}
+              onChange={(v) => setFilters({ sort: v, order: 'desc', page: '1' })}
+              options={PARLEMENTAIRE_SORT_OPTIONS}
+            />
+          </div>
+          <div className="hidden h-5 w-px shrink-0 bg-border sm:block" />
+          {/* Group pills — single scrollable row */}
+          <div className="flex min-w-0 gap-1.5 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+            <button
+              type="button"
+              onClick={() => setFilters({ groupe: '', page: '1' })}
+              className={`shrink-0 inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
+                !filters.groupe
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border hover:border-primary/40 hover:bg-muted'
+              }`}
+            >
+              Tous
+            </button>
+            {groupesData?.data?.map((g) => {
+              const color = getGroupColor(g.nom, g.couleur, g.position);
+              return (
+                <button
+                  key={g.slug}
+                  type="button"
+                  onClick={() => setFilters({ groupe: g.slug, page: '1' })}
+                  className={`shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
+                    filters.groupe === g.slug
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-border hover:border-primary/40 hover:bg-muted'
+                  }`}
+                >
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: color }}
+                  />
+                  {g.nom}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
       {/* Top / Flop */}
       {showTopFlop && parlementairesData && order === 'desc' && flopData && (
         <TopFlopCards
-          top={parlementairesData.data.slice(0, 5)}
-          flop={[...flopData.data].reverse()}
+          top={parlementairesData.data.filter(hasData).slice(0, 5)}
+          flop={[...flopData.data].filter(hasData).reverse()}
           criterionLabel={criterion.label}
           getValue={criterion.getValue}
           formatValue={criterion.format}
@@ -344,16 +376,21 @@ function GroupesTab() {
   return (
     <div>
       {/* Filters */}
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <ChambreToggle
-          value={filters.chambre}
-          onChange={(v) => setFilter('chambre', v)}
-        />
-        <SortSelect
-          value={groupeSort}
-          onChange={(v) => setFilter('groupeSort', v)}
-          options={GROUPE_SORT_OPTIONS}
-        />
+      <div className="mb-6 rounded-xl border bg-muted/30 p-3 sm:p-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Filtres
+        </p>
+        <div className="flex items-center gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+          <ChambreToggle
+            value={filters.chambre}
+            onChange={(v) => setFilter('chambre', v)}
+          />
+          <SortSelect
+            value={groupeSort}
+            onChange={(v) => setFilter('groupeSort', v)}
+            options={GROUPE_SORT_OPTIONS}
+          />
+        </div>
       </div>
 
       {isLoading && (
