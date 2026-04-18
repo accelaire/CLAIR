@@ -27,7 +27,7 @@ Ce projet est un outil citoyen et apartisan. Les contributions doivent rester fa
 
 1. **Fork** le repo
 2. **Clone** ton fork localement
-3. **Crée une branche** depuis `main` :
+3. **Crée une branche** depuis `master` :
    ```bash
    git checkout -b feature/ma-fonctionnalite
    # ou
@@ -49,7 +49,7 @@ Ce projet est un outil citoyen et apartisan. Les contributions doivent rester fa
    ```bash
    git push origin feature/ma-fonctionnalite
    ```
-9. **Ouvre une Pull Request** vers `main`
+9. **Ouvre une Pull Request** vers `master`
 
 ## Conventions
 
@@ -106,11 +106,19 @@ docker
 
 # Installation
 pnpm install
-cp .env.example .env
+cp apps/api/.env.example apps/api/.env
 pnpm docker:up
 pnpm db:generate
-pnpm db:migrate
+pnpm db:push          # synchronise le schéma Prisma localement (sans migration)
 pnpm dev
+```
+
+> **Migrations** : `pnpm db:push` est réservé au développement local. Les fichiers de migration du repo servent à faire évoluer la base de **production**. Si tu modifies le schéma Prisma, génère un fichier de migration avec `pnpm db:migrate --create-only`, vérifie-le et inclus-le dans ta PR.
+
+```bash
+# Si tu travailles sur l'ingestion, build avant toute sync locale
+pnpm --filter @clair/ingestion build
+pnpm ingestion:sync -- -p   # exemple : sync parlementaires
 ```
 
 ## Sources de données
