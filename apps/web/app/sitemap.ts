@@ -60,9 +60,19 @@ async function fetchAllPages<T>(endpoint: string): Promise<T[]> {
 
   try {
     while (true) {
-      const response = await fetch(`${API_URL}/api/v1${endpoint}?page=${page}&limit=${limit}`);
+      const url = `${API_URL}/api/v1${endpoint}?page=${page}&limit=${limit}`;
+      // User-Agent override is required — Node's default "undici" is blocked
+      // by the API rate-limit plugin (see apps/web/lib/api-server.ts).
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'CLAIR-Web-Sitemap/1.0' },
+      });
 
-      if (!response.ok) break;
+      if (!response.ok) {
+        console.error(
+          `[sitemap] ${response.status} ${response.statusText} — ${url}`,
+        );
+        break;
+      }
 
       const data: PaginatedResponse<T> = await response.json();
       if (!data.data || !Array.isArray(data.data)) break;
@@ -72,7 +82,7 @@ async function fetchAllPages<T>(endpoint: string): Promise<T[]> {
       page++;
     }
   } catch (error) {
-    console.error(`Error fetching ${endpoint} for sitemap:`, error);
+    console.error(`[sitemap] fetch failed — ${endpoint}`, error);
   }
 
   return items;
