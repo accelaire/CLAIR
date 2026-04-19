@@ -23,7 +23,7 @@ export async function generateMetadata({
 
   const fullName = `${data.prenom} ${data.nom}`;
   const isFemale = data.sexe === 'F';
-  const title = `${fullName}, ${isFemale ? 'sénatrice' : 'sénateur'}`;
+  const title = `${fullName}, ${isFemale ? 'sénatrice' : 'sénateur'} — votes et activité`;
 
   const parts = [
     `Fiche de ${fullName}, ${isFemale ? 'sénatrice' : 'sénateur'}`,

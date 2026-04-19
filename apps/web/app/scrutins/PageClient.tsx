@@ -3,12 +3,16 @@
 import { Suspense, useMemo } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Search, ChevronDown, CheckCircle, XCircle, Calendar, Tag, Loader2, ArrowRight, Vote } from 'lucide-react';
+import { Search, ChevronDown, Loader2, ArrowRight, Vote } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
 import { useUrlFilters, useUrlDateRange } from '@/hooks/useUrlFilters';
 import { FilterBar } from '@/components/FilterBar';
+import {
+  ScrutinListCard,
+  type ScrutinListItem,
+} from '@/components/scrutins/ScrutinListCard';
 
 interface TrendingDossier {
   id: string;
@@ -33,21 +37,8 @@ import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
 
 const etatLabels = DOSSIER_ETAT_CONFIG;
 
-interface Scrutin {
-  id: string;
-  numero: number;
-  chambre: string;
-  session: string;
-  date: string;
-  titre: string;
-  sort: string;
-  typeVote: string;
-  nombrePour: number;
-  nombreContre: number;
-  nombreAbstention: number;
+interface Scrutin extends ScrutinListItem {
   nombreVotants: number;
-  importance: number;
-  tags: string[];
   votesCount?: number;
 }
 
@@ -62,40 +53,10 @@ interface ScrutinsResponse {
   };
 }
 
-const sortLabels: Record<string, { label: string; color: string }> = {
-  adopte: { label: 'Adopté', color: 'badge-adopte' },
-  rejete: { label: 'Rejeté', color: 'badge-rejete' },
-};
-
-const typeLabels: Record<string, string> = {
-  solennel: 'Solennel',
-  ordinaire: 'Ordinaire',
-  motion: 'Motion',
-};
-
-const chambreLabels: Record<string, string> = {
-  assemblee: 'Assemblée nationale',
-  senat: 'Sénat',
-};
-
 // Capitalize first letter of a string
 const capitalize = (str: string): string => {
   if (!str) return str;
   return str.charAt(0).toUpperCase() + str.slice(1);
-};
-
-// Formater la session pour l'affichage
-const formatSession = (chambre: string, session: string): string | null => {
-  if (chambre === 'senat') {
-    // Pour le Sénat: "2024" -> "Session 2024-2025"
-    const year = parseInt(session, 10);
-    if (!isNaN(year)) {
-      return `${year}-${year + 1}`;
-    }
-    return session;
-  }
-  // Pour l'AN, on n'affiche pas la législature (c'est toujours la même)
-  return null;
 };
 
 function ScrutinsPageContent() {
@@ -171,14 +132,6 @@ function ScrutinsPageContent() {
 
   const handleClearFilters = () => {
     clearAll(['dateFrom', 'dateTo']);
-  };
-
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('fr-FR', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    });
   };
 
   return (
@@ -331,85 +284,7 @@ function ScrutinsPageContent() {
         <>
           <div className="space-y-4">
             {scrutins.map((scrutin) => (
-              <Link
-                key={scrutin.id}
-                href={`/scrutins/${scrutin.numero}?chambre=${scrutin.chambre || 'assemblee'}${scrutin.chambre === 'senat' && scrutin.session ? `&session=${scrutin.session}` : ''}`}
-                className="block rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
-              >
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  {/* Infos principales */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span className="text-sm font-medium text-muted-foreground">
-                        Scrutin n°{scrutin.numero}
-                      </span>
-                      <span className={`px-2 py-0.5 text-xs font-medium rounded ${scrutin.chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'}`}>
-                        {chambreLabels[scrutin.chambre] || 'Assemblée nationale'}
-                      </span>
-                      {scrutin.chambre === 'senat' && scrutin.session && (
-                        <span className="px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground rounded">
-                          {formatSession(scrutin.chambre, scrutin.session)}
-                        </span>
-                      )}
-                      {scrutin.importance >= 4 && (
-                        <span className="px-2 py-0.5 text-xs font-medium badge-important rounded">
-                          Important
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="font-semibold text-lg leading-tight mb-2 line-clamp-2">
-                      {scrutin.titre}
-                    </h3>
-
-                    {/* Meta infos */}
-                    <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Calendar className="h-4 w-4" />
-                        {formatDate(scrutin.date)}
-                      </span>
-                      <span className="px-2 py-0.5 bg-muted rounded text-xs">
-                        {typeLabels[scrutin.typeVote] || scrutin.typeVote}
-                      </span>
-                      {scrutin.tags && scrutin.tags.length > 0 && (
-                        <span className="flex items-center gap-1 flex-wrap">
-                          <Tag className="h-3 w-3" />
-                          {scrutin.tags.slice(0, 3).map((tag, idx) => (
-                            <span key={tag}>
-                              {capitalize(tag)}{idx < Math.min(scrutin.tags.length, 3) - 1 && ','}
-                            </span>
-                          ))}
-                          {scrutin.tags.length > 3 && ` +${scrutin.tags.length - 3}`}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Résultat */}
-                  <div className="flex items-center gap-4">
-                    {/* Votes */}
-                    <div className="flex items-center gap-3 text-sm">
-                      <span className="flex items-center gap-1 text-adopte">
-                        <CheckCircle className="h-4 w-4" />
-                        {scrutin.nombrePour}
-                      </span>
-                      <span className="flex items-center gap-1 text-rejete">
-                        <XCircle className="h-4 w-4" />
-                        {scrutin.nombreContre}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {scrutin.nombreAbstention} abs.
-                      </span>
-                    </div>
-
-                    {/* Badge résultat */}
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium flex items-center gap-1 ${sortLabels[scrutin.sort]?.color || 'bg-muted text-muted-foreground'}`}>
-                      {scrutin.sort === 'adopte' && <CheckCircle className="h-4 w-4" />}
-                      {scrutin.sort === 'rejete' && <XCircle className="h-4 w-4" />}
-                      {sortLabels[scrutin.sort]?.label || scrutin.sort}
-                    </span>
-                  </div>
-                </div>
-              </Link>
+              <ScrutinListCard key={scrutin.id} scrutin={scrutin} />
             ))}
           </div>
 

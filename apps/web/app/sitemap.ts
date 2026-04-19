@@ -216,6 +216,38 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.7,
   }));
 
+  // Year / month archive pages (/votes/[year], /votes/[year]/[month]).
+  // Emitted only for periods that actually have scrutins so Google doesn't
+  // crawl empty pages.
+  const archiveKeys = new Set<string>();
+  const yearSet = new Set<string>();
+  for (const s of scrutins) {
+    if (!s.date || typeof s.date !== 'string') continue;
+    const year = s.date.slice(0, 4);
+    const month = s.date.slice(5, 7);
+    if (!/^\d{4}$/.test(year) || !/^\d{2}$/.test(month)) continue;
+    yearSet.add(year);
+    archiveKeys.add(`${year}/${month}`);
+  }
+
+  const yearArchivePages: MetadataRoute.Sitemap = Array.from(yearSet).map(
+    (year) => ({
+      url: `${BASE_URL}/votes/${year}`,
+      lastModified: now,
+      changeFrequency: 'monthly' as const,
+      priority: 0.6,
+    }),
+  );
+
+  const monthArchivePages: MetadataRoute.Sitemap = Array.from(archiveKeys).map(
+    (key) => ({
+      url: `${BASE_URL}/votes/${key}`,
+      lastModified: now,
+      changeFrequency: 'monthly' as const,
+      priority: 0.5,
+    }),
+  );
+
   // Lobbyistes pages
   const lobbyistePages: MetadataRoute.Sitemap = lobbyistes.map((lobbyiste) => ({
     url: `${BASE_URL}/lobbying/${lobbyiste.id}`,
@@ -253,6 +285,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...deputePages,
     ...senateurPages,
     ...scrutinPages,
+    ...yearArchivePages,
+    ...monthArchivePages,
     ...lobbyistePages,
     ...groupePages,
     ...dossierPages,
