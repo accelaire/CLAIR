@@ -1,8 +1,8 @@
 import { MetadataRoute } from 'next';
 
-// Force dynamic rendering — the API is not available at Vercel build time
+// force-dynamic: the sitemap fetches live data from the API at request time
+// so it is always up-to-date after the daily ingestion cron (05:00 Railway).
 export const dynamic = 'force-dynamic';
-export const revalidate = 86400; // Revalidate every 24 hours
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -116,6 +116,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       lastModified: now,
       changeFrequency: 'daily',
       priority: 0.9,
+    },
+    {
+      url: `${BASE_URL}/votes`,
+      lastModified: now,
+      changeFrequency: 'monthly',
+      priority: 0.8,
     },
     {
       url: `${BASE_URL}/lobbying`,

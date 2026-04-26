@@ -82,7 +82,7 @@ export default async function VotesYearPage({
       <BreadcrumbJsonLd
         items={[
           { name: 'Accueil', url: BASE_URL },
-          { name: 'Scrutins', url: `${BASE_URL}/scrutins` },
+          { name: 'Archives des votes', url: `${BASE_URL}/votes` },
           { name: `Votes ${year}`, url: `${BASE_URL}/votes/${year}` },
         ]}
       />
@@ -96,10 +96,10 @@ export default async function VotesYearPage({
           </Link>
           {' › '}
           <Link
-            href="/scrutins"
+            href="/votes"
             className="hover:text-foreground hover:underline"
           >
-            Scrutins
+            Archives des votes
           </Link>
           {' › '}
           <span className="text-foreground">Votes {year}</span>

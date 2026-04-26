@@ -83,9 +83,8 @@ export default async function VotesMonthPage({
     limit: MONTH_ARCHIVE_PAGE_SIZE,
   });
 
-  if (currentPage > 1 && result.scrutins.length === 0 && result.total > 0) {
-    notFound();
-  }
+  if (result.total === 0) notFound();
+  if (currentPage > 1 && result.scrutins.length === 0) notFound();
 
   const monthName = MONTH_NAMES_FR[month - 1];
   const monthNameCap = monthName.charAt(0).toUpperCase() + monthName.slice(1);
@@ -106,7 +105,7 @@ export default async function VotesMonthPage({
       <BreadcrumbJsonLd
         items={[
           { name: 'Accueil', url: BASE_URL },
-          { name: 'Scrutins', url: `${BASE_URL}/scrutins` },
+          { name: 'Archives des votes', url: `${BASE_URL}/votes` },
           { name: `Votes ${year}`, url: `${BASE_URL}/votes/${year}` },
           {
             name: `${monthNameCap} ${year}`,
@@ -124,10 +123,10 @@ export default async function VotesMonthPage({
           </Link>
           {' › '}
           <Link
-            href="/scrutins"
+            href="/votes"
             className="hover:text-foreground hover:underline"
           >
-            Scrutins
+            Archives des votes
           </Link>
           {' › '}
           <Link
