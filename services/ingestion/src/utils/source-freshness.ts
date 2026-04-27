@@ -57,6 +57,22 @@ export const SOURCES: Record<string, SourceConfig> = {
     dataType: 'dossiers',
     url: `https://data.assemblee-nationale.fr/static/openData/repository/${LEGISLATURE}/loi/dossiers_legislatifs/Dossiers_Legislatifs.json.zip`,
   },
+  'assemblee_nationale:commissions': {
+    source: 'assemblee_nationale',
+    dataType: 'commissions',
+    // Same AMO10 ZIP as deputes — organes are in the same archive
+    url: `https://data.assemblee-nationale.fr/static/openData/repository/${LEGISLATURE}/amo/deputes_actifs_mandats_actifs_organes/AMO10_deputes_actifs_mandats_actifs_organes.json.zip`,
+  },
+  'assemblee_nationale:reunions': {
+    source: 'assemblee_nationale',
+    dataType: 'reunions',
+    url: `https://data.assemblee-nationale.fr/static/openData/repository/${LEGISLATURE}/vp/reunions/Agenda.json.zip`,
+  },
+  'assemblee_nationale:seances_odj': {
+    source: 'assemblee_nationale',
+    dataType: 'seances_odj',
+    url: `https://data.assemblee-nationale.fr/static/openData/repository/${LEGISLATURE}/vp/seances/seances_publique_excel.csv`,
+  },
 
   // ==========================================================================
   // SÉNAT (data.senat.fr + API)
@@ -91,6 +107,24 @@ export const SOURCES: Record<string, SourceConfig> = {
     dataType: 'dossiers',
     // Base DOSLEG (dossiers législatifs)
     url: 'https://data.senat.fr/data/dosleg/dosleg.zip',
+  },
+  'senat:reunions': {
+    source: 'senat',
+    dataType: 'reunions',
+    // Index des comptes rendus de commissions (scraping HTML — pas de dataset structuré)
+    url: 'https://www.senat.fr/compte-rendu-commissions/',
+  },
+  'senat:videos': {
+    source: 'senat',
+    dataType: 'videos',
+    // Page des vidéos de séances publiques (mise à jour quotidienne)
+    url: 'https://videos.senat.fr/chaine.seance-publique',
+  },
+  'assemblee_nationale:videos': {
+    source: 'assemblee_nationale',
+    dataType: 'videos',
+    // Page des vidéos AN (mise à jour quotidienne)
+    url: 'https://videos.assemblee-nationale.fr/',
   },
 
   // ==========================================================================

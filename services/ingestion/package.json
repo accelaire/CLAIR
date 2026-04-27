@@ -24,6 +24,7 @@
     "@prisma/client": "^5.7.0",
     "@types/xml2js": "^0.4.14",
     "axios": "^1.6.2",
+    "cheerio": "^1.2.0",
     "commander": "^11.1.0",
     "csv-parse": "^6.1.0",
     "dotenv": "^16.3.1",

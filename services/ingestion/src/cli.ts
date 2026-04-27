@@ -34,6 +34,10 @@ import {
   linkAmendementsToDossiers,
   linkAmendementsToDossiersByTexteRef,
   propagateDossierIdBySiblingTexteRef,
+  syncCommissions,
+  syncReunions,
+  syncSeancesODJ,
+  syncSenatReunions,
 } from './workers/sync.js';
 import {
   calculateAllStats,
@@ -69,6 +73,9 @@ program
   .option('--do, --dossiers', 'Synchroniser les dossiers législatifs (--an ou --se pour filtrer)')
   .option('--lo, --lobbyistes', 'Synchroniser les lobbyistes et actions (HATVP)')
   .option('--de, --declarations', 'Synchroniser les déclarations HATVP (intérêts & patrimoine des parlementaires)')
+  .option('--co, --commissions', 'Synchroniser les commissions parlementaires (AN + Sénat)')
+  .option('--re, --reunions', 'Synchroniser les réunions/agenda parlementaire (--an ou --se pour filtrer)')
+  .option('--seances-odj', 'Enrichir les réunions séance publique avec l\'ODJ du CSV AN (AN uniquement)')
   // Modificateurs
   .option('-c, --circonscriptions', 'Inclure les circonscriptions (avec -p --an)')
   .option('--ameli', 'Utiliser le mode AMELI legacy (avec --se -a)')
@@ -223,6 +230,50 @@ program
         console.log(`   Créés/mis à jour: ${result.created}`);
         console.log(`   Non matchés: ${result.unmatched}`);
         console.log(`   Erreurs: ${result.errors}`);
+      } else if (options.commissions) {
+        const result = await syncCommissions();
+        console.log(`\n📊 Commissions:`);
+        console.log(`   Créées: ${result.created}`);
+        console.log(`   Mises à jour: ${result.updated}`);
+        console.log(`   Mandats liés: ${result.mandatsLinked}`);
+      } else if (options.reunions) {
+        if (chambre === 'se') {
+          const result = await syncSenatReunions({ maxWeeks: options.limit });
+          console.log(`\n📊 Réunions Sénat (scraping HTML):`);
+          console.log(`   Créées: ${result.created}`);
+          console.log(`   Mises à jour: ${result.updated}`);
+          console.log(`   Participants liés: ${result.participantsLinked}`);
+          console.log(`   Semaines traitées: ${result.weeksFetched}`);
+          console.log(`   Pages parsées: ${result.pagesParsed}`);
+          console.log(`   Pages en erreur: ${result.pagesErrored}`);
+        } else if (chambre === 'an') {
+          const result = await syncReunions({ limit: options.limit });
+          console.log(`\n📊 Réunions AN:`);
+          console.log(`   Créées: ${result.created}`);
+          console.log(`   Mises à jour: ${result.updated}`);
+          console.log(`   Participants liés: ${result.participantsLinked}`);
+        } else {
+          const resultAN = await syncReunions({ limit: options.limit });
+          console.log(`\n📊 Réunions AN:`);
+          console.log(`   Créées: ${resultAN.created}`);
+          console.log(`   Mises à jour: ${resultAN.updated}`);
+          console.log(`   Participants liés: ${resultAN.participantsLinked}`);
+
+          const resultSE = await syncSenatReunions({ maxWeeks: options.limit });
+          console.log(`\n📊 Réunions Sénat (scraping HTML):`);
+          console.log(`   Créées: ${resultSE.created}`);
+          console.log(`   Mises à jour: ${resultSE.updated}`);
+          console.log(`   Participants liés: ${resultSE.participantsLinked}`);
+          console.log(`   Semaines traitées: ${resultSE.weeksFetched}`);
+          console.log(`   Pages parsées: ${resultSE.pagesParsed}`);
+          console.log(`   Pages en erreur: ${resultSE.pagesErrored}`);
+        }
+      } else if (options.seancesOdj) {
+        const result = await syncSeancesODJ();
+        console.log(`\n📊 Séances publiques ODJ:`);
+        console.log(`   Lignes CSV: ${result.totalCsvRows}`);
+        console.log(`   Réunions matchées: ${result.matched}`);
+        console.log(`   Mises à jour: ${result.updated}`);
       } else {
         // Par défaut: sync incrémental
         await incrementalSync();
@@ -291,6 +342,12 @@ program
   .option('--do, --dossiers', 'Inclure les dossiers législatifs (AN)')
   .option('--in, --interventions', 'Inclure les interventions (DILA + Sénat)')
   .option('--lo, --lobbying', 'Inclure les lobbyistes')
+  .option('--co, --commissions', 'Inclure les commissions parlementaires')
+  .option('--re, --reunions', 'Inclure les réunions/agenda parlementaire (AN)')
+  .option('--senat-reunions', 'Inclure les réunions Sénat (scraping HTML comptes rendus)')
+  .option('--senat-videos', 'Inclure les vidéos Sénat (scraping videos.senat.fr)')
+  .option('--an-videos', 'Inclure les vidéos AN (videos.assemblee-nationale.fr)')
+  .option('--seances-odj', 'Inclure l\'enrichissement ODJ des séances publiques (CSV AN)')
   .option('-l, --limit <number>', 'Limite globale pour tous les types (défaut: TOUT)', parseInt)
   .option('--sources <sources>', 'Sources spécifiques à sync (séparées par des virgules)')
   .action(async (options) => {
@@ -305,11 +362,18 @@ program
         includeDossiers: options.dossiers,
         includeInterventions: options.interventions,
         includeLobbying: options.lobbying,
+        includeCommissions: options.commissions,
+        includeReunions: options.reunions,
+        includeSenatReunions: options.senatReunions,
+        includeSenatVideos: options.senatVideos,
+        includeAnVideos: options.anVideos,
+        includeSeancesODJ: options.seancesOdj,
         scrutinsLimit: options.limit,
         amendementsLimit: options.limit,
         dossiersLimit: options.limit,
         interventionsLimit: options.limit,
         lobbyingLimit: options.limit,
+        reunionsLimit: options.limit,
         sources: options.sources?.split(',').map((s: string) => s.trim()),
       });
 

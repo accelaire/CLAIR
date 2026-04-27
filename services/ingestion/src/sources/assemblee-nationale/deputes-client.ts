@@ -201,11 +201,20 @@ export class AssembleeNationaleDeputesClient {
   // FETCH ORGANES (pour les groupes politiques)
   // ===========================================================================
 
-  async getOrganes(): Promise<Map<string, ANOrgane>> {
+  /**
+   * Download AMO10 once, extract both organes and mandate→organe refs.
+   * Avoids the double download that getOrganes() + getMandateOrganeRefs() would cause.
+   */
+  async getOrganesAndMandateRefs(): Promise<{
+    organes: Map<string, ANOrgane>;
+    mandateRefs: Map<string, string>;
+  }> {
     const zipUrl = `${this.baseUrl}/${this.legislature}/amo/deputes_actifs_mandats_actifs_organes/AMO10_deputes_actifs_mandats_actifs_organes.json.zip`;
-    const tempDir = path.join(os.tmpdir(), 'clair-organes');
-    const zipPath = path.join(tempDir, 'organes.zip');
+    const tempDir = path.join(os.tmpdir(), 'clair-amo10-combined');
+    const zipPath = path.join(tempDir, 'amo10.zip');
     const extractDir = path.join(tempDir, 'extracted');
+
+    const COMMISSION_TYPES = ['COMPER', 'CNPE', 'CNPS', 'CMP', 'COMNL', 'COMSENAT', 'COMSPSENAT', 'DELEGSENAT'];
 
     try {
       await fs.promises.rm(tempDir, { recursive: true, force: true });
@@ -214,23 +223,20 @@ export class AssembleeNationaleDeputesClient {
       await this.downloadFile(zipUrl, zipPath);
       await this.extractZip(zipPath, extractDir);
 
-      // Chercher les fichiers organe
+      // 1. Parse organes
       const organeDir = path.join(extractDir, 'json', 'organe');
-      const organeMap = new Map<string, ANOrgane>();
+      const organes = new Map<string, ANOrgane>();
 
       if (await fs.promises.access(organeDir).then(() => true).catch(() => false)) {
         const files = await fs.promises.readdir(organeDir);
-
         for (const file of files) {
           if (!file.endsWith('.json')) continue;
-
           try {
             const content = await fs.promises.readFile(path.join(organeDir, file), 'utf-8');
             const data = JSON.parse(content);
-
             if (data.organe) {
               const organe = data.organe;
-              organeMap.set(organe.uid, {
+              organes.set(organe.uid, {
                 uid: organe.uid,
                 codeType: organe.codeType,
                 libelle: organe.libelle,
@@ -241,18 +247,53 @@ export class AssembleeNationaleDeputesClient {
                 positionPolitique: organe.positionPolitique,
               });
             }
-          } catch (e) {
-            // Ignorer les fichiers non valides
+          } catch {
+            // Skip invalid files
           }
         }
       }
+      logger.info({ count: organes.size }, 'Organes loaded');
 
-      logger.info({ count: organeMap.size }, 'Organes loaded');
-      return organeMap;
+      // 2. Parse mandate refs (PM→PO mapping)
+      const mandateRefs = new Map<string, string>();
+      const acteurDir = path.join(extractDir, 'json', 'acteur');
 
+      if (await fs.promises.access(acteurDir).then(() => true).catch(() => false)) {
+        const files = await fs.promises.readdir(acteurDir);
+        for (const file of files) {
+          if (!file.endsWith('.json')) continue;
+          try {
+            const content = await fs.promises.readFile(path.join(acteurDir, file), 'utf-8');
+            const acteur = JSON.parse(content).acteur;
+            if (!acteur) continue;
+
+            const mandats = Array.isArray(acteur.mandats?.mandat)
+              ? acteur.mandats.mandat
+              : acteur.mandats?.mandat ? [acteur.mandats.mandat] : [];
+
+            for (const m of mandats) {
+              if (!m?.uid || !m?.typeOrgane) continue;
+              if (!COMMISSION_TYPES.includes(m.typeOrgane)) continue;
+              if (m.organes?.organeRef) {
+                mandateRefs.set(m.uid, m.organes.organeRef);
+              }
+            }
+          } catch {
+            // Skip invalid files
+          }
+        }
+      }
+      logger.info({ pmToPoSize: mandateRefs.size }, 'Mandate→Organe mapping built');
+
+      return { organes, mandateRefs };
     } finally {
       await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
+  }
+
+  async getOrganes(): Promise<Map<string, ANOrgane>> {
+    const { organes } = await this.getOrganesAndMandateRefs();
+    return organes;
   }
 
   // ===========================================================================
@@ -421,7 +462,10 @@ export class AssembleeNationaleDeputesClient {
       sexe: ident.civ === 'Mme' ? 'F' : 'M',
       dateNaissance,
       lieuNaissance: acteur.etatCivil?.infoNaissance?.villeNais || null,
-      profession: acteur.profession?.libelleCourant || null,
+      profession:
+        typeof acteur.profession?.libelleCourant === 'string'
+          ? acteur.profession.libelleCourant
+          : null,
       email: emailAddr?.valElec || null,
       twitter: twitterAddr?.valElec?.replace('@', '') || null,
       facebook: null, // Non disponible pour AN

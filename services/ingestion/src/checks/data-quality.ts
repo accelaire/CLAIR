@@ -191,6 +191,38 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     min: 40,
     query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (linked * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE dossier_id IS NOT NULL) AS linked FROM amendements) sub`,
   },
+
+  // ---- Commissions & Agenda ----
+  commissions_count: {
+    type: 'threshold',
+    label: 'Nombre de commissions et organes',
+    min: 2900,
+    query: `SELECT COUNT(*)::int AS value FROM commissions`,
+  },
+  commissions_an_count: {
+    type: 'threshold',
+    label: 'Commissions AN',
+    min: 2800,
+    query: `SELECT COUNT(*)::int AS value FROM commissions WHERE chambre = 'assemblee'`,
+  },
+  commissions_senat_count: {
+    type: 'threshold',
+    label: 'Commissions Sénat',
+    min: 35,
+    query: `SELECT COUNT(*)::int AS value FROM commissions WHERE chambre = 'senat'`,
+  },
+  reunions_count: {
+    type: 'threshold',
+    label: 'Nombre de réunions',
+    min: 6000,
+    query: `SELECT COUNT(*)::int AS value FROM reunions`,
+  },
+  reunions_commission_link_rate: {
+    type: 'threshold',
+    label: 'Taux de liaison réunions-commissions AN (%)',
+    min: 85,
+    query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (linked * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE commission_id IS NOT NULL) AS linked FROM reunions) sub`,
+  },
 };
 
 // =============================================================================
