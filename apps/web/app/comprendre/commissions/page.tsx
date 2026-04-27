@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Building } from 'lucide-react';
+import { Building, ArrowRight, Calendar } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'Les commissions parlementaires',
@@ -37,6 +37,31 @@ export default function CommissionsPage() {
           <Building className="h-8 w-8 text-primary" />
           Les commissions parlementaires
         </h1>
+
+        {/* CTA données en direct */}
+        <div className="mt-8 rounded-lg border bg-primary/5 border-primary/20 p-5">
+          <p className="text-sm font-medium text-foreground mb-3">
+            Explorez les données en temps réel sur CLAIR
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/commissions"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              <Building className="h-4 w-4" />
+              Voir les commissions
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link
+              href="/agenda"
+              className="inline-flex items-center gap-2 rounded-lg border bg-background px-4 py-2 text-sm font-medium hover:bg-accent transition-colors"
+            >
+              <Calendar className="h-4 w-4" />
+              Consulter l&apos;agenda
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
 
         {/* Commissions permanentes */}
         <section className="mt-10">

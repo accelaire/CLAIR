@@ -24,6 +24,7 @@ const navigation: NavItem[] = [
       { name: 'Groupes politiques', href: '/groupes' },
       { name: 'Députés', href: '/deputes' },
       { name: 'Sénateurs', href: '/senateurs' },
+      { name: 'Commissions', href: '/commissions' },
     ],
   },
   {
@@ -32,6 +33,7 @@ const navigation: NavItem[] = [
       { name: 'Sujets parlementaires', href: '/sujets' },
       { name: 'Dossiers législatifs', href: '/dossiers' },
       { name: 'Scrutins', href: '/scrutins' },
+      { name: 'Agenda parlementaire', href: '/agenda' },
     ],
   },
   { name: 'Lobbying', href: '/lobbying' },

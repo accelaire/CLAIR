@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -32,6 +32,24 @@ interface TrendingDossier {
   amendementsCount: number;
   lastScrutinDate: string | null;
   voteStats: { adopte: number; rejete: number };
+}
+
+interface UpcomingEvent {
+  id: string;
+  uid: string;
+  type: string;
+  dateDebut: string;
+  dateFin: string | null;
+  lieu: string | null;
+  odjResume: string | null;
+  etat: string;
+  captationVideo: boolean | null;
+  commission: {
+    slug: string;
+    nom: string;
+    nomCourt: string | null;
+    chambre: string;
+  } | null;
 }
 
 const formatDossierTitre = (titre: string, procedureLibelle?: string | null): string => {
@@ -84,11 +102,221 @@ const statItems = [
   { key: 'actionsLobby', label: 'Actions lobby', href: '/lobbying' },
 ] as const;
 
+function toISODate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const VISIBLE_EVENTS = 3;
+const FALLBACK_DURATION_MS = 4 * 60 * 60 * 1000;
+
+function isEventHappeningNow(ev: UpcomingEvent, now: number): boolean {
+  const start = new Date(ev.dateDebut).getTime();
+  const end = ev.dateFin ? new Date(ev.dateFin).getTime() : start + FALLBACK_DURATION_MS;
+  return now >= start && now <= end;
+}
+
+function DayCard({ isoDate, label, events }: { isoDate: string; label: string; events: UpcomingEvent[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Always show happening events even if beyond VISIBLE_EVENTS
+  const visible = expanded
+    ? events
+    : events.filter((ev, i) => i < VISIBLE_EVENTS || isEventHappeningNow(ev, now));
+  const hiddenCount = events.filter((ev, i) => i >= VISIBLE_EVENTS && !isEventHappeningNow(ev, now)).length;
+  const hasMore = hiddenCount > 0;
+
+  return (
+    <div className="w-[calc((100%-2rem)/3)] min-w-[300px] shrink-0 rounded-xl border bg-card p-4">
+      <h3 className="text-sm font-semibold text-foreground mb-3 capitalize">{label}</h3>
+      <div className="relative">
+        <div className="space-y-2">
+          {visible.map((ev) => {
+            const chambre = ev.commission?.chambre;
+            const isSeance = ev.type === 'seance';
+            const chambreLabel = chambre === 'assemblee' ? 'Assemblée' : chambre === 'senat' ? 'Sénat' : null;
+            const time = new Date(ev.dateDebut).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+            const commissionName = ev.commission?.nom;
+            const happeningNow = isEventHappeningNow(ev, now);
+
+            return (
+              <Link
+                key={ev.id}
+                href={`/agenda?date=${isoDate}#event-${ev.id}`}
+                className={`flex items-start gap-3 rounded-lg border p-3 transition-all hover:border-primary hover:shadow-sm ${
+                  happeningNow
+                    ? 'border-primary/50 bg-primary/[0.04] dark:bg-primary/[0.08]'
+                    : 'bg-background'
+                }`}
+              >
+                <div className="shrink-0 w-12 text-center pt-0.5">
+                  <span className="text-sm font-semibold tabular-nums">{time}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {chambreLabel && (
+                      <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'}`}>
+                        {chambreLabel}
+                      </span>
+                    )}
+                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                      isSeance
+                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                        : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                    }`}>
+                      {isSeance ? 'Séance' : 'Commission'}
+                    </span>
+                    {happeningNow && ev.captationVideo && (
+                      <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary border border-primary/25">
+                        <span className="relative flex h-1.5 w-1.5 shrink-0">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary" />
+                        </span>
+                        En direct
+                      </span>
+                    )}
+                  </div>
+                  {!isSeance && commissionName && (
+                    <p className="mt-1 text-xs font-medium text-foreground line-clamp-1">{commissionName}</p>
+                  )}
+                  {ev.odjResume && (
+                    <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{ev.odjResume}</p>
+                  )}
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+        {hasMore && !expanded && (
+          <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-card to-transparent pointer-events-none" />
+        )}
+      </div>
+      {hasMore && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-2 text-xs font-medium text-primary hover:underline self-center"
+        >
+          {expanded ? 'Réduire' : `Afficher plus (${hiddenCount})`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function UpcomingTimeline({ events }: { events: UpcomingEvent[] | null }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollIndex, setScrollIndex] = useState(0);
+
+  const dayGroups = useMemo(() => {
+    if (!events || events.length === 0) return [];
+    const groups: Array<{ isoDate: string; label: string; events: UpcomingEvent[] }> = [];
+    const seen = new Map<string, number>();
+    for (const ev of events) {
+      const d = new Date(ev.dateDebut);
+      const iso = toISODate(d);
+      const idx = seen.get(iso);
+      if (idx !== undefined) {
+        groups[idx].events.push(ev);
+      } else {
+        const label = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+        seen.set(iso, groups.length);
+        groups.push({ isoDate: iso, label, events: [ev] });
+      }
+    }
+    return groups;
+  }, [events]);
+
+  const visibleCount = 3;
+  const canPrev = scrollIndex > 0;
+  const canNext = scrollIndex + visibleCount < dayGroups.length;
+
+  const scroll = useCallback((dir: -1 | 1) => {
+    const next = scrollIndex + dir;
+    if (next < 0 || next >= dayGroups.length) return;
+    setScrollIndex(next);
+    const el = scrollRef.current;
+    if (el) {
+      const card = el.children[next] as HTMLElement | undefined;
+      if (card) {
+        el.scrollTo({ left: card.offsetLeft - 16, behavior: 'smooth' });
+      }
+    }
+  }, [scrollIndex, dayGroups.length]);
+
+  if (!events) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="rounded-xl border bg-card p-5 animate-pulse">
+            <div className="h-5 bg-muted rounded w-2/3 mb-4" />
+            <div className="space-y-3">
+              <div className="h-16 bg-muted rounded" />
+              <div className="h-16 bg-muted rounded" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (dayGroups.length === 0) {
+    return (
+      <div className="rounded-xl border bg-card p-8 text-center text-muted-foreground text-sm">
+        Aucun événement à venir
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative group">
+      {canPrev && (
+        <button
+          onClick={() => scroll(-1)}
+          className="absolute -left-4 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center w-9 h-9 rounded-full bg-background/90 border shadow-md transition-opacity hover:bg-background"
+          aria-label="Jours précédents"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+      )}
+      {canNext && (
+        <button
+          onClick={() => scroll(1)}
+          className="absolute -right-4 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center w-9 h-9 rounded-full bg-background/90 border shadow-md transition-opacity hover:bg-background"
+          aria-label="Jours suivants"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      )}
+
+      <div
+        ref={scrollRef}
+        className="flex items-start gap-4 overflow-x-auto scrollbar-none scroll-smooth pb-2"
+      >
+        {dayGroups.map(({ isoDate, label, events: dayEvents }) => (
+          <DayCard key={isoDate} isoDate={isoDate} label={label} events={dayEvents} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
 
-  const { data: homepageData } = useQuery<{ stats: Stats; trendingDossiers: TrendingDossier[]; lastUpdate: string | null }>({
+  const { data: homepageData } = useQuery<{
+    stats: Stats;
+    trendingDossiers: TrendingDossier[];
+    lastUpdate: string | null;
+    upcoming: {
+      events: UpcomingEvent[];
+    } | null;
+  }>({
     queryKey: ['homepage'],
     queryFn: () => api.get('/homepage').then(res => res.data),
     staleTime: 5 * 60 * 1000,   // 5min — données quasi-statiques (cache API = 1h)
@@ -99,6 +327,7 @@ export default function HomePage() {
 
   const stats = homepageData?.stats;
   const trendingDossiers = homepageData?.trendingDossiers;
+  const upcoming = homepageData?.upcoming;
 
   // Animated counters
   const deputesCount = useCountUp(Math.min(stats?.deputes ?? 0, 577));
@@ -212,6 +441,41 @@ export default function HomePage() {
                 })}
               </p>
             )}
+          </div>
+        </div>
+      </section>
+
+      {/* Prochainement au Parlement */}
+      <section className="py-16">
+        <div className="container mx-auto px-4">
+          <div className="mb-8">
+            <span className="text-sm font-medium text-primary">Agenda</span>
+            <div className="flex items-center justify-between mt-1">
+              <div>
+                <h2 className="text-2xl font-bold">Prochainement au Parlement</h2>
+                <p className="text-muted-foreground mt-1">Les prochaines séances et réunions confirmées</p>
+              </div>
+              <Link
+                href="/agenda"
+                className="hidden sm:inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+              >
+                <Calendar className="h-4 w-4" />
+                Voir l&apos;agenda complet
+              </Link>
+            </div>
+          </div>
+
+          <UpcomingTimeline events={upcoming?.events ?? null} />
+
+          {/* Mobile CTA */}
+          <div className="mt-6 sm:hidden">
+            <Link
+              href="/agenda"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              <Calendar className="h-4 w-4" />
+              Voir l&apos;agenda complet
+            </Link>
           </div>
         </div>
       </section>
