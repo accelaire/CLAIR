@@ -74,6 +74,7 @@ model Parlementaire {
   actionsLobby  ActionLobby[]
   mandats       Mandat[]
   declarations  DeclarationHATVP[]
+  reunionParticipants ReunionParticipant[]
 
   // Métadonnées source
   sourceId   String? @map("source_id") // PA123456 (AN) ou 14133K (Sénat)
@@ -153,15 +154,116 @@ model Mandat {
   dateDebut DateTime  @map("date_debut")
   dateFin   DateTime? @map("date_fin")
 
+  // Relation vers la commission (si le mandat est lié à une commission)
+  commissionId String? @map("commission_id")
+  commission   Commission? @relation(fields: [commissionId], references: [id])
+
   // Identifiants source (pour dédoublonnage)
   sourceUid String? @unique @map("source_uid") // PM847462 (AN) ou code organe (Sénat)
 
+  // UID de l'organe de référence (POxxx pour les commissions AN)
+  // Permet le lien direct commission ↔ mandat sans passer par le nom
+  organeRef String? @map("organe_ref")
+
   createdAt DateTime @default(now()) @map("created_at")
 
+  @@unique([parlementaireId, organeRef])
   @@index([parlementaireId])
   @@index([typeOrgane])
   @@index([dateDebut])
+  @@index([commissionId])
   @@map("mandats")
+}
+
+// =============================================================================
+// COMMISSIONS PARLEMENTAIRES
+// =============================================================================
+
+model Commission {
+  id          String    @id @default(uuid())
+  uid         String    @unique              // AN organe UID (ex: PO59048)
+  organeRef   String?   @map("organe_ref")  // Raw organeRef (PO59048 for AN, COM-AFCL for Senate)
+  slug        String    @unique              // "finances", "affaires-etrangeres"
+  chambre     String                         // 'assemblee' | 'senat'
+  // Types d'organes valides (String, pas d'enum SQL — validation côté code) :
+  // - 'permanente'              — commissions permanentes (COMPER, COMSENAT)
+  // - 'enquete'                 — commissions d'enquête (CNPE)
+  // - 'speciale'                — commissions spéciales (CNPS, COMSPSENAT)
+  // - 'mixte_paritaire'         — commissions mixtes paritaires (CMP)
+  // - 'office'                  — offices parlementaires (OFFPAR, ex: OPECST)
+  // - 'delegation'              — délégations (DELEG, DELEGBUREAU, DELEGSENAT)
+  // - 'mission_info'            — missions d'information (MISINFO, MISINFOCOM, MISINFOPRE)
+  // - 'groupe_etudes'           — groupes d'études (GE, GEVI)
+  // - 'groupe_amitie'           — groupes d'amitié (GA)
+  // - 'assemblee_internationale' — assemblées parlementaires internationales (API)
+  // - 'hemicycle'               — organe racine pour séances publiques (ASSEMBLEE, SENAT)
+  // - 'autre'                   — fallback (COMNL, BUREAU, CONFPT, GROUPESENAT)
+  type        String                         // voir liste ci-dessus
+  nom         String                         // Libellé complet
+  nomCourt    String?   @map("nom_court")    // Libellé abrégé
+  dateDebut   DateTime  @map("date_debut")
+  dateFin     DateTime? @map("date_fin")
+  actif       Boolean   @default(true)
+
+  // Relations
+  mandats     Mandat[]
+  reunions    Reunion[]
+
+  @@index([chambre])
+  @@index([type])
+  @@index([actif])
+  @@index([organeRef])
+  @@map("commissions")
+}
+
+// =============================================================================
+// RÉUNIONS ET AGENDA PARLEMENTAIRE
+// =============================================================================
+
+model Reunion {
+  id              String    @id @default(uuid())
+  uid             String    @unique              // AN reunion UID
+  type            String                         // 'commission', 'seance', 'initiative_parlementaire'
+  dateDebut       DateTime  @map("date_debut")
+  dateFin         DateTime? @map("date_fin")
+  lieu            String?
+  etat            String                         // 'confirme', 'annule', 'supprime', 'eventuel'
+  odjResume       String?   @map("odj_resume")   // Ordre du jour (texte)
+  odjComplet      String?   @map("odj_complet")  // ODJ détaillé
+  captationVideo  Boolean   @default(false) @map("captation_video")
+  ouvertePresse   Boolean   @default(false) @map("ouverte_presse")
+  compteRenduRef  String?   @map("compte_rendu_ref") // Référence vers le CR
+  urlVideo        String?   @map("url_video")         // URL vidéo directe (Sénat: videos.senat.fr)
+
+  // Relations
+  commissionId    String?   @map("commission_id")
+  commission      Commission? @relation(fields: [commissionId], references: [id])
+
+  // Référence organe brute (même si non résolue vers une Commission)
+  organeRef       String?   @map("organe_ref")
+
+  participants    ReunionParticipant[]
+
+  @@index([dateDebut])
+  @@index([commissionId])
+  @@index([type])
+  @@index([etat])
+  @@index([organeRef])
+  @@map("reunions")
+}
+
+model ReunionParticipant {
+  id              String @id @default(uuid())
+  reunionId       String @map("reunion_id")
+  parlementaireId String @map("parlementaire_id")
+  presence        String // 'present', 'absent', 'excuse'
+
+  reunion         Reunion       @relation(fields: [reunionId], references: [id], onDelete: Cascade)
+  parlementaire   Parlementaire @relation(fields: [parlementaireId], references: [id], onDelete: Cascade)
+
+  @@unique([reunionId, parlementaireId])
+  @@index([parlementaireId])
+  @@map("reunion_participants")
 }
 
 // =============================================================================
