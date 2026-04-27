@@ -1,8 +1,8 @@
 import { MetadataRoute } from 'next';
 
-// Force dynamic rendering — the API is not available at Vercel build time
+// force-dynamic: the sitemap fetches live data from the API at request time
+// so it is always up-to-date after the daily ingestion cron (05:00 Railway).
 export const dynamic = 'force-dynamic';
-export const revalidate = 86400; // Revalidate every 24 hours
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -60,9 +60,19 @@ async function fetchAllPages<T>(endpoint: string): Promise<T[]> {
 
   try {
     while (true) {
-      const response = await fetch(`${API_URL}/api/v1${endpoint}?page=${page}&limit=${limit}`);
+      const url = `${API_URL}/api/v1${endpoint}?page=${page}&limit=${limit}`;
+      // User-Agent override is required — Node's default "undici" is blocked
+      // by the API rate-limit plugin (see apps/web/lib/api-server.ts).
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'CLAIR-Web-Sitemap/1.0' },
+      });
 
-      if (!response.ok) break;
+      if (!response.ok) {
+        console.error(
+          `[sitemap] ${response.status} ${response.statusText} — ${url}`,
+        );
+        break;
+      }
 
       const data: PaginatedResponse<T> = await response.json();
       if (!data.data || !Array.isArray(data.data)) break;
@@ -72,7 +82,7 @@ async function fetchAllPages<T>(endpoint: string): Promise<T[]> {
       page++;
     }
   } catch (error) {
-    console.error(`Error fetching ${endpoint} for sitemap:`, error);
+    console.error(`[sitemap] fetch failed — ${endpoint}`, error);
   }
 
   return items;
@@ -106,6 +116,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       lastModified: now,
       changeFrequency: 'daily',
       priority: 0.9,
+    },
+    {
+      url: `${BASE_URL}/votes`,
+      lastModified: now,
+      changeFrequency: 'monthly',
+      priority: 0.8,
     },
     {
       url: `${BASE_URL}/lobbying`,
@@ -216,6 +232,38 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.7,
   }));
 
+  // Year / month archive pages (/votes/[year], /votes/[year]/[month]).
+  // Emitted only for periods that actually have scrutins so Google doesn't
+  // crawl empty pages.
+  const archiveKeys = new Set<string>();
+  const yearSet = new Set<string>();
+  for (const s of scrutins) {
+    if (!s.date || typeof s.date !== 'string') continue;
+    const year = s.date.slice(0, 4);
+    const month = s.date.slice(5, 7);
+    if (!/^\d{4}$/.test(year) || !/^\d{2}$/.test(month)) continue;
+    yearSet.add(year);
+    archiveKeys.add(`${year}/${month}`);
+  }
+
+  const yearArchivePages: MetadataRoute.Sitemap = Array.from(yearSet).map(
+    (year) => ({
+      url: `${BASE_URL}/votes/${year}`,
+      lastModified: now,
+      changeFrequency: 'monthly' as const,
+      priority: 0.6,
+    }),
+  );
+
+  const monthArchivePages: MetadataRoute.Sitemap = Array.from(archiveKeys).map(
+    (key) => ({
+      url: `${BASE_URL}/votes/${key}`,
+      lastModified: now,
+      changeFrequency: 'monthly' as const,
+      priority: 0.5,
+    }),
+  );
+
   // Lobbyistes pages
   const lobbyistePages: MetadataRoute.Sitemap = lobbyistes.map((lobbyiste) => ({
     url: `${BASE_URL}/lobbying/${lobbyiste.id}`,
@@ -253,6 +301,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...deputePages,
     ...senateurPages,
     ...scrutinPages,
+    ...yearArchivePages,
+    ...monthArchivePages,
     ...lobbyistePages,
     ...groupePages,
     ...dossierPages,

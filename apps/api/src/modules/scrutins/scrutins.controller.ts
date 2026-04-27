@@ -232,6 +232,35 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ===========================================================================
+  // GET /api/v1/scrutins/annees - Années disponibles avec comptage
+  // ===========================================================================
+  fastify.get('/annees', {
+    schema: {
+      tags: ['Scrutins'],
+      summary: 'Années disponibles',
+      description: 'Retourne les années pour lesquelles des scrutins existent, avec leur nombre, triées décroissantes.',
+    },
+    handler: async (_request, _reply) => {
+      const cacheKey = 'scrutins:annees';
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+
+      const rows = await fastify.prisma.$queryRaw<{ year: number; count: bigint }[]>`
+        SELECT EXTRACT(YEAR FROM date)::int AS year, COUNT(*) AS count
+        FROM scrutins
+        GROUP BY year
+        ORDER BY year DESC
+      `;
+
+      const data = rows.map((r) => ({ year: r.year, count: Number(r.count) }));
+      const response = { data };
+
+      await fastify.redis.setex(cacheKey, 86400, JSON.stringify(response));
+      return response;
+    },
+  });
+
+  // ===========================================================================
   // GET /api/v1/scrutins/importants - Scrutins importants récents
   // ===========================================================================
   fastify.get('/importants', {
