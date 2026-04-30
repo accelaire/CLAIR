@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
 export const agendaQuerySchema = z.object({
-  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).transform((s) => new Date(s)),
-  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).transform((s) => new Date(s)).optional(),
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).transform((s) => new Date(s + 'T00:00:00.000Z')),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).transform((s) => new Date(s + 'T23:59:59.999Z')).optional(),
   type: z.enum(['commission', 'seance', 'tous']).default('tous'),
   commissionId: z.string().uuid().optional(),
   chambre: z.enum(['assemblee', 'senat']).optional(),
