@@ -493,6 +493,7 @@ model Sujet {
   iaGroupeAmendementHash       String? @map("ia_groupe_amendement_hash")
 
   dossiers      DossierLegislatif[]
+  actionsLobby  SujetActionLobby[]
 
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
@@ -759,7 +760,8 @@ model ActionLobby {
   texteVise     String? @map("texte_vise")
   texteViseNom  String? @map("texte_vise_nom")
 
-  secteurs ActionSecteur[]
+  secteurs     ActionSecteur[]
+  sujets       SujetActionLobby[]
 
   sourceUrl String?  @map("source_url")
   createdAt DateTime @default(now()) @map("created_at")
@@ -770,6 +772,20 @@ model ActionLobby {
   @@index([descriptionId])
   @@index([dateDebut])
   @@map("actions_lobby")
+}
+
+model SujetActionLobby {
+  sujetId       String      @map("sujet_id")
+  sujet         Sujet       @relation(fields: [sujetId], references: [id], onDelete: Cascade)
+  actionLobbyId String      @map("action_lobby_id")
+  actionLobby   ActionLobby @relation(fields: [actionLobbyId], references: [id], onDelete: Cascade)
+
+  score     Float
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([sujetId, actionLobbyId])
+  @@index([actionLobbyId])
+  @@map("sujet_action_lobby")
 }
 
 model Secteur {

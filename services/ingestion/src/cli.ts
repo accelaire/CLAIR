@@ -837,6 +837,68 @@ program
     }
   });
 
+// =============================================================================
+// COMMANDE: check-lobby
+// =============================================================================
+program
+  .command('check-lobby')
+  .description('Correspondance sémantique (TF-IDF) entre les actions de lobbying (cible=parlementaire) et les sujets. Persiste les résultats dans sujet_action_lobby sauf avec --dry-run.')
+  .option('-l, --limit <number>', 'Nombre max d\'actions à traiter', parseInt)
+  .option('--min-score <number>', 'Score TF-IDF minimum pour accepter une correspondance (défaut: 0.15)', parseFloat)
+  .option('--top-n <number>', 'Nombre max de sujets retournés par action (défaut: 3)', parseInt)
+  .option('--max-age-days <number>', 'Ancienneté maximale des actions en jours (défaut: 365)', parseInt)
+  .option('--dry-run', 'Calculer les scores sans écrire en base')
+  .action(async (options) => {
+    try {
+      const dryRun: boolean = options.dryRun ?? false;
+      const maxAgeMs = options.maxAgeDays ? options.maxAgeDays * 24 * 60 * 60 * 1000 : undefined;
+
+      console.log(`\nCorrespondance sémantique actions lobby ↔ sujets${dryRun ? ' (dry-run)' : ''}...\n`);
+
+      const { checkLobby } = await import('./workers/check-lobby.js');
+      const result = await checkLobby({
+        limit: options.limit,
+        minScore: options.minScore,
+        topN: options.topN,
+        maxAgeMs,
+        persist: !dryRun,
+      });
+
+      console.log(`\nRésultats:`);
+      console.log(`   Actions analysées : ${result.totalActions}`);
+      console.log(`   Matchées          : ${result.matched}`);
+      console.log(`   Non matchées      : ${result.unmatched}`);
+      console.log(`   Ignorées (vide)   : ${result.skipped}`);
+      console.log(`   Correspondances   : ${result.matches.length}`);
+      if (!dryRun) {
+        console.log(`   Persistées        : ${result.persisted}`);
+      }
+      console.log(`   Durée             : ${result.durationMs}ms`);
+
+      if (result.matches.length > 0) {
+        console.log('\nTop correspondances (score décroissant):');
+        const top = result.matches
+          .slice()
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 20);
+        const descWidth = 55;
+        const sujetWidth = 40;
+        console.log(`   ${'Score'.padEnd(7)} ${'Action (description)'.padEnd(descWidth)} ${'Sujet'.padEnd(sujetWidth)}`);
+        console.log(`   ${'-'.repeat(7)} ${'-'.repeat(descWidth)} ${'-'.repeat(sujetWidth)}`);
+        for (const m of top) {
+          const desc = m.actionDescription.slice(0, descWidth).padEnd(descWidth);
+          const sujet = m.sujetLabel.slice(0, sujetWidth).padEnd(sujetWidth);
+          console.log(`   ${m.score.toFixed(4).padEnd(7)} ${desc} ${sujet}`);
+        }
+      }
+
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'check-lobby failed');
+      process.exit(1);
+    }
+  });
+
 // pnpm forwards '--' from 'pnpm run script -- args' into the child process argv.
 // Commander treats '--' as end-of-options, so flags after it are ignored.
 // Strip the first '--' that appears after the subcommand name.
