@@ -34,6 +34,14 @@ export const commissionReunionsQuerySchema = z.object({
   passees: z.enum(['true', 'false']).optional(),
 });
 
+export const commissionDossiersQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  role: z.enum(['fond', 'avis']).optional(),
+  etat: z.enum(['adopte', 'en_cours', 'promulgue', 'rejete', 'retire', 'caduc', 'fusionne']).optional(),
+});
+
 export type CommissionQuery = z.infer<typeof commissionQuerySchema>;
 export type CommissionDetail = z.infer<typeof commissionDetailSchema>;
 export type CommissionReunionsQuery = z.infer<typeof commissionReunionsQuerySchema>;
+export type CommissionDossiersQuery = z.infer<typeof commissionDossiersQuerySchema>;

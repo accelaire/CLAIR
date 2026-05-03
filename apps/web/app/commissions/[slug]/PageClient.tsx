@@ -15,9 +15,13 @@ import {
   ChevronRight,
   Loader2,
   Video,
+  ChevronDown,
+  ArrowRight,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
+import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
+import { FilterBar } from '@/components/FilterBar';
 
 export interface CommissionDetail {
   id: string;
@@ -32,6 +36,7 @@ export interface CommissionDetail {
   actif: boolean;
   nbMembres: number;
   nbReunions: number;
+  nbDossiers: number;
   membres: Array<{
     qualite: string | null;
     parlementaire: {
@@ -164,14 +169,15 @@ function ReunionItem({ reunion }: { reunion: { id: string; uid: string; dateDebu
     <div className='rounded-lg border bg-card p-4'>
       <div className='flex items-start justify-between gap-3'>
         <div className='flex-1 min-w-0'>
-          <div className='flex items-center gap-2 text-sm font-medium mb-1'>
-            <Clock className='h-3.5 w-3.5 text-muted-foreground shrink-0' />
-            <span className='capitalize'>{formatDate(reunion.dateDebut)}</span>
-            <span className='text-muted-foreground'>·</span>
-            <span className='text-muted-foreground'>{formatTime(reunion.dateDebut)}</span>
-            {reunion.dateFin && (
-              <span className='text-muted-foreground'>— {formatTime(reunion.dateFin)}</span>
-            )}
+          <div className='flex items-center gap-x-2 gap-y-0.5 flex-wrap text-sm font-medium mb-1'>
+            <span className='flex items-center gap-1.5'>
+              <Clock className='h-3.5 w-3.5 text-muted-foreground shrink-0' />
+              <span className='capitalize'>{formatDate(reunion.dateDebut)}</span>
+            </span>
+            <span className='whitespace-nowrap text-muted-foreground'>
+              · {formatTime(reunion.dateDebut)}
+              {reunion.dateFin && ` — ${formatTime(reunion.dateFin)}`}
+            </span>
           </div>
           {reunion.odjResume && (
             <p className='text-sm text-muted-foreground line-clamp-2'>{reunion.odjResume}</p>
@@ -394,8 +400,224 @@ function TabHistorique({ slug }: { slug: string }) {
   );
 }
 
+// ── Tab Textes & Rapports ──
+interface DossierItem {
+  uid: string;
+  titre: string;
+  titreCourt: string | null;
+  etat: string | null;
+  dateDepot: string | null;
+  urlAN: string | null;
+  urlSenat: string | null;
+  procedureLibelle: string | null;
+  role: 'fond' | 'avis';
+}
+
+interface DossiersResponse {
+  data: DossierItem[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
+  fond: {
+    label: 'Saisie au fond',
+    className: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400',
+  },
+  avis: {
+    label: 'Saisie pour avis',
+    className: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400',
+  },
+};
+
+const formatDossierTitre = (titre: string, procedureLibelle?: string | null): string => {
+  const firstChar = titre.charAt(0);
+  if (firstChar !== firstChar.toUpperCase() && procedureLibelle) {
+    return `${procedureLibelle} ${titre}`;
+  }
+  return titre;
+};
+
+function TabDossiers({ slug }: { slug: string }) {
+  const [roleFilter, setRoleFilter] = useState<string>('');
+  const [etatFilter, setEtatFilter] = useState<string>('');
+
+  const {
+    data,
+    isLoading,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery<DossiersResponse>({
+    queryKey: ['commission-dossiers', slug, roleFilter, etatFilter],
+    queryFn: ({ pageParam = 1 }) => {
+      const params: Record<string, unknown> = { page: pageParam, limit: 20 };
+      if (roleFilter) params.role = roleFilter;
+      if (etatFilter) params.etat = etatFilter;
+      return api
+        .get(`/commissions/${slug}/dossiers`, { params })
+        .then((res) => res.data);
+    },
+    getNextPageParam: (lastPage) =>
+      lastPage.pagination.page < lastPage.pagination.totalPages
+        ? lastPage.pagination.page + 1
+        : undefined,
+    initialPageParam: 1,
+  });
+
+  const { loadMoreRef } = useInfiniteScroll({
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  });
+
+  const dossiers = data?.pages.flatMap((p) => p.data) ?? [];
+  const total = data?.pages[0]?.pagination.total ?? 0;
+
+  const activeFilterCount = (roleFilter ? 1 : 0) + (etatFilter ? 1 : 0);
+
+  return (
+    <div>
+      <FilterBar
+        search={
+          <span className='text-sm text-muted-foreground whitespace-nowrap py-2'>
+            {total > 0 ? `${total.toLocaleString('fr-FR')} dossier${total > 1 ? 's' : ''}` : ''}
+          </span>
+        }
+        activeFilterCount={activeFilterCount}
+        onClear={() => { setRoleFilter(''); setEtatFilter(''); }}
+      >
+        <div className='relative md:w-auto'>
+          <select
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value)}
+            className='w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary'
+          >
+            <option value=''>Tous les rôles</option>
+            <option value='fond'>Saisie au fond</option>
+            <option value='avis'>Saisie pour avis</option>
+          </select>
+          <ChevronDown className='absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none' />
+        </div>
+        <div className='relative md:w-auto'>
+          <select
+            value={etatFilter}
+            onChange={(e) => setEtatFilter(e.target.value)}
+            className='w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary'
+          >
+            <option value=''>Tous les états</option>
+            {Object.entries(DOSSIER_ETAT_CONFIG).map(([value, cfg]) => (
+              <option key={value} value={value}>{cfg.label}</option>
+            ))}
+          </select>
+          <ChevronDown className='absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none' />
+        </div>
+      </FilterBar>
+
+      {isLoading ? (
+        <div className='space-y-4'>
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className='animate-pulse rounded-lg border bg-card p-4'>
+              <div className='h-5 w-3/4 rounded bg-muted mb-2' />
+              <div className='h-4 w-1/2 rounded bg-muted' />
+            </div>
+          ))}
+        </div>
+      ) : error ? (
+        <div className='rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive'>
+          Erreur lors du chargement des dossiers.
+        </div>
+      ) : dossiers.length === 0 ? (
+        <div className='py-12 text-center text-muted-foreground'>
+          Aucun dossier enregistré pour cette commission.
+        </div>
+      ) : (
+        <>
+          <div className='space-y-4'>
+            {dossiers.map((dossier) => {
+              const etatCfg = dossier.etat ? DOSSIER_ETAT_CONFIG[dossier.etat] : null;
+              const roleCfg = ROLE_CONFIG[dossier.role];
+              return (
+                <Link
+                  key={`${dossier.uid}-${dossier.role}`}
+                  href={`/dossiers/${dossier.uid}`}
+                  className='block rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md'
+                >
+                  <div className='flex items-start justify-between gap-3'>
+                    <div className='flex-1 min-w-0'>
+                      {/* Badges */}
+                      <div className='flex items-center gap-2 mb-1 flex-wrap'>
+                        <span
+                          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${roleCfg.className}`}
+                          title={dossier.role === 'fond'
+                            ? 'Commission principale qui examine le texte'
+                            : 'Commission qui donne un avis consultatif'}
+                        >
+                          {roleCfg.label}
+                        </span>
+                        {etatCfg && (
+                          <span className={`px-2 py-0.5 text-xs font-medium rounded ${etatCfg.color}`}>
+                            {etatCfg.label}
+                          </span>
+                        )}
+                        {dossier.procedureLibelle && (
+                          <span className='px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground rounded'>
+                            {dossier.procedureLibelle}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Title */}
+                      <h3 className='font-semibold leading-tight mb-1 line-clamp-2'>
+                        {formatDossierTitre(dossier.titre, dossier.procedureLibelle)}
+                      </h3>
+                      {dossier.titreCourt && dossier.titreCourt !== dossier.titre && (
+                        <p className='text-sm text-muted-foreground mb-2 line-clamp-1'>{dossier.titreCourt}</p>
+                      )}
+
+                      {/* Meta */}
+                      {dossier.dateDepot && (
+                        <p className='text-sm text-muted-foreground'>
+                          Déposé le{' '}
+                          {new Date(dossier.dateDepot).toLocaleDateString('fr-FR', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                          })}
+                        </p>
+                      )}
+                    </div>
+
+                    <ArrowRight className='h-5 w-5 text-muted-foreground shrink-0 mt-1 hidden sm:block' />
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+          <div ref={loadMoreRef} className='mt-8 flex justify-center py-4'>
+            {isFetchingNextPage && (
+              <div className='flex items-center gap-2 text-muted-foreground'>
+                <Loader2 className='h-5 w-5 animate-spin' />
+                <span>Chargement...</span>
+              </div>
+            )}
+            {!hasNextPage && dossiers.length > 0 && (
+              <p className='text-sm text-muted-foreground'>Tous les dossiers ont été chargés</p>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Main Component ──
-type Tab = 'membres' | 'agenda' | 'historique';
+type Tab = 'membres' | 'agenda' | 'historique' | 'dossiers';
 
 function CommissionDetailContent({
   initialData,
@@ -445,6 +667,7 @@ function CommissionDetailContent({
     ...(!isHemicycle ? [{ id: 'membres' as Tab, label: 'Membres', count: commission.nbMembres }] : []),
     { id: 'agenda', label: isHemicycle ? 'Prochaines séances' : 'Agenda', count: commission.prochainesReunions.length || undefined },
     { id: 'historique', label: isHemicycle ? 'Séances passées' : 'Historique', count: commission.nbReunions },
+    ...(!isHemicycle && commission.nbDossiers > 0 ? [{ id: 'dossiers' as Tab, label: 'Textes & Rapports', count: commission.nbDossiers }] : []),
   ];
 
   return (
@@ -465,7 +688,7 @@ function CommissionDetailContent({
             <Building2 className='h-6 w-6 text-primary' />
           </div>
           <div className='flex-1 min-w-0'>
-            <h1 className='text-2xl font-bold leading-tight'>{commission.nom}</h1>
+            <h1 className='text-xl sm:text-2xl font-bold leading-tight break-words'>{commission.nom}</h1>
             <div className='mt-2 flex flex-wrap items-center gap-2'>
               <span
                 className={`px-2.5 py-1 rounded-md text-xs font-medium ${
@@ -510,8 +733,8 @@ function CommissionDetailContent({
       </div>
 
       {/* Tabs */}
-      <div className='mb-6 border-b'>
-        <div className='flex gap-0 -mb-px'>
+      <div className='mb-6 border-b overflow-x-auto scrollbar-none'>
+        <div className='flex gap-0 -mb-px min-w-max'>
           {tabs.map((tab) => (
             <button
               key={tab.id}
@@ -544,6 +767,7 @@ function CommissionDetailContent({
         {activeTab === 'membres' && !isHemicycle && <TabMembres commission={commission} />}
         {activeTab === 'agenda' && <TabAgenda commission={commission} />}
         {activeTab === 'historique' && <TabHistorique slug={slug} />}
+        {activeTab === 'dossiers' && <TabDossiers slug={slug} />}
       </div>
     </div>
   );

@@ -16,6 +16,7 @@ import { DILAInterventionsClient } from '../sources/dila/interventions-client';
 import { SenatInterventionsClient } from '../sources/senat/interventions-client';
 import { SenatDossiersClient } from '../sources/senat/dossiers-client';
 import { logger } from '../utils/logger';
+import { extractCommissionSaisines } from '../utils/dossier-commissions';
 import {
   checkSourceFreshness,
   updateSourceState,
@@ -3285,7 +3286,7 @@ export async function syncAmendementsSenatCsv(
 
 export async function syncDossiers(
   options: { limit?: number; linkScrutins?: boolean } = {}
-): Promise<{ created: number; updated: number; scrutinsLinked: number }> {
+): Promise<{ created: number; updated: number; scrutinsLinked: number; amendementsLinked: number; commissionsLinked: number }> {
   const linkScrutins = options.linkScrutins ?? true;
   logger.info({ limit: options.limit, linkScrutins }, 'Starting dossiers législatifs sync...');
 
@@ -3296,6 +3297,15 @@ export async function syncDossiers(
   let updated = 0;
   let scrutinsLinked = 0;
   let amendementsLinked = 0;
+  let commissionsLinked = 0;
+
+  // Batch load all commissions for organeRef lookup (avoids N queries in the loop)
+  const commissions = await prisma.commission.findMany({
+    select: { id: true, organeRef: true },
+  });
+  const commissionByOrganeRef = new Map(
+    commissions.filter(c => c.organeRef).map(c => [c.organeRef!, c.id]),
+  );
 
   for (const dossier of dossiers) {
     try {
@@ -3374,6 +3384,30 @@ export async function syncDossiers(
         }
       }
 
+      // Lier les commissions au dossier via sourceData
+      if (dossier.sourceData) {
+        const saisines = extractCommissionSaisines(dossier.sourceData);
+        for (const saisine of saisines) {
+          const commissionId = commissionByOrganeRef.get(saisine.organeRef);
+          if (!commissionId) {
+            logger.debug({ organeRef: saisine.organeRef, dossierUid: dossier.uid }, 'Commission not found for organeRef — skipping');
+            continue;
+          }
+          const result = await prisma.dossierCommission.upsert({
+            where: {
+              dossierId_commissionId_role: {
+                dossierId,
+                commissionId,
+                role: saisine.role,
+              },
+            },
+            create: { dossierId, commissionId, role: saisine.role },
+            update: {},
+          });
+          if (result) commissionsLinked++;
+        }
+      }
+
     } catch (e: any) {
       logger.warn({ uid: dossier.uid, error: e.message }, 'Failed to upsert dossier');
     }
@@ -3394,8 +3428,8 @@ export async function syncDossiers(
     logger.info({ propagated }, 'Propagated urlLegifrance to Sénat dossiers');
   }
 
-  logger.info({ created, updated, scrutinsLinked, amendementsLinked, total: dossiers.length }, 'Dossiers législatifs sync completed');
-  return { created, updated, scrutinsLinked, amendementsLinked };
+  logger.info({ created, updated, scrutinsLinked, amendementsLinked, commissionsLinked, total: dossiers.length }, 'Dossiers législatifs sync completed');
+  return { created, updated, scrutinsLinked, amendementsLinked, commissionsLinked };
 }
 
 // =============================================================================

@@ -4,6 +4,7 @@ import {
   commissionQuerySchema,
   commissionDetailSchema,
   commissionReunionsQuerySchema,
+  commissionDossiersQuerySchema,
 } from './commissions.schema';
 import { ApiError } from '../../utils/errors';
 
@@ -90,6 +91,35 @@ export const commissionsRoutes: FastifyPluginAsync = async (fastify) => {
       const parsed = commissionReunionsQuerySchema.parse(request.query);
       const result = await service.getCommissionReunions(slug, parsed);
       if (!result) throw new ApiError(404, 'Commission non trouvée');
+      return result;
+    },
+  });
+
+  fastify.get('/:slug/dossiers', {
+    schema: {
+      tags: ['Commissions'],
+      summary: "Dossiers législatifs d'une commission",
+      description: 'Dossiers examinés par la commission (fond ou avis)',
+      querystring: {
+        type: 'object',
+        properties: {
+          page: { type: 'number', default: 1 },
+          limit: { type: 'number', default: 20 },
+          role: { type: 'string', enum: ['fond', 'avis'] },
+          etat: { type: 'string', enum: ['adopte', 'en_cours', 'promulgue', 'rejete', 'retire', 'caduc', 'fusionne'] },
+        },
+      },
+      params: {
+        type: 'object',
+        required: ['slug'],
+        properties: { slug: { type: 'string' } },
+      },
+    },
+    handler: async (request, reply) => {
+      const { slug } = commissionDetailSchema.parse(request.params);
+      const query = commissionDossiersQuerySchema.parse(request.query);
+      const result = await service.getDossiersByCommission(slug, query);
+      if (!result) return reply.status(404).send({ error: 'Commission not found' });
       return result;
     },
   });

@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { Redis } from 'ioredis';
-import { CommissionQuery, CommissionReunionsQuery } from './commissions.schema';
+import { CommissionQuery, CommissionReunionsQuery, CommissionDossiersQuery } from './commissions.schema';
 
 export class CommissionsService {
   // Commissions data is very stable (synced daily, rarely changes)
@@ -76,7 +76,10 @@ export class CommissionsService {
       where: { slug },
       include: {
         _count: {
-          select: { reunions: true },
+          select: {
+            reunions: true,
+            dossierCommissions: true,
+          },
         },
       },
     });
@@ -140,6 +143,7 @@ export class CommissionsService {
       actif: commission.actif,
       nbMembres: mandats.length,
       nbReunions: commission._count.reunions,
+      nbDossiers: commission._count.dossierCommissions,
       membres: mandats.map((m) => ({
         qualite: m.qualite,
         parlementaire: m.parlementaire,
@@ -197,6 +201,66 @@ export class CommissionsService {
     };
 
     await this.redis.setex(cacheKey, this.CACHE_TTL_SHORT, JSON.stringify(result));
+    return result;
+  }
+
+  async getDossiersByCommission(slug: string, query: CommissionDossiersQuery) {
+    const commission = await this.prisma.commission.findUnique({ where: { slug } });
+    if (!commission) return null;
+
+    const cacheKey = `commissions:dossiers:${slug}:${JSON.stringify(query)}`;
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
+    const where: Record<string, unknown> = { commissionId: commission.id };
+    if (query.role) where.role = query.role;
+    if (query.etat) where.dossier = { etat: query.etat };
+
+    const [items, total] = await Promise.all([
+      this.prisma.dossierCommission.findMany({
+        where,
+        include: {
+          dossier: {
+            select: {
+              uid: true,
+              titre: true,
+              titreCourt: true,
+              etat: true,
+              dateDepot: true,
+              urlAN: true,
+              urlSenat: true,
+              procedureLibelle: true,
+            },
+          },
+        },
+        orderBy: { dossier: { dateDepot: 'desc' } },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.dossierCommission.count({ where }),
+    ]);
+
+    const result = {
+      data: items.map((dc) => ({
+        uid: dc.dossier.uid,
+        titre: dc.dossier.titre,
+        titreCourt: dc.dossier.titreCourt,
+        etat: dc.dossier.etat,
+        dateDepot: dc.dossier.dateDepot,
+        urlAN: dc.dossier.urlAN,
+        urlSenat: dc.dossier.urlSenat,
+        procedureLibelle: dc.dossier.procedureLibelle,
+        role: dc.role,
+      })),
+      pagination: {
+        page: query.page,
+        limit: query.limit,
+        total,
+        totalPages: Math.ceil(total / query.limit),
+      },
+    };
+
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
     return result;
   }
 }
