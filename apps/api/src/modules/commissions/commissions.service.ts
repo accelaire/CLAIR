@@ -121,6 +121,9 @@ export class CommissionsService {
         lieu: true,
         odjResume: true,
         etat: true,
+        captationVideo: true,
+        urlVideo: true,
+        compteRenduRef: true,
       },
     });
 

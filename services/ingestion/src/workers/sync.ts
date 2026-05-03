@@ -376,13 +376,18 @@ async function syncMandatsFromSourceData(
   if (!mandatsRaw) return 0;
 
   const mandats = Array.isArray(mandatsRaw) ? mandatsRaw : [mandatsRaw];
+  const activeSourceUids: string[] = [];
   let count = 0;
 
   for (const m of mandats) {
     if (!m?.uid || !m?.typeOrgane) continue;
     if (!COMMISSION_CODE_TYPES.includes(m.typeOrgane as (typeof COMMISSION_CODE_TYPES)[number])) continue;
 
-    const organeRef: string | undefined = m.organes?.organeRef || undefined;
+    const organeRefRaw = m.organes?.organeRef;
+    // organeRef can be a string or an array in some edge cases — always take first
+    const organeRef: string | undefined = Array.isArray(organeRefRaw)
+      ? (organeRefRaw[0] || undefined)
+      : (organeRefRaw || undefined);
     const commissionId: string | undefined = organeRef
       ? (organeRefToCommissionId.get(organeRef) || undefined)
       : undefined;
@@ -409,32 +414,43 @@ async function syncMandatsFromSourceData(
         commissionId: commissionId || null,
       },
     });
+    activeSourceUids.push(m.uid);
     count++;
   }
+
+  // Remove stale commission mandats for this deputy (PM IDs no longer in AMO10 active mandats)
+  if (activeSourceUids.length > 0) {
+    await prisma.mandat.deleteMany({
+      where: {
+        parlementaireId,
+        typeOrgane: { in: Array.from(COMMISSION_CODE_TYPES) },
+        sourceUid: { notIn: activeSourceUids, startsWith: 'PM' },
+      },
+    });
+  }
+
   return count;
 }
 
 /**
- * Backfill Mandats for existing AN deputes who have commission mandats in sourceData
- * but no Mandats record yet.
+ * Sync commission mandats for all AN députés from their stored sourceData (AMO10).
+ * Runs on every sync to keep PM IDs fresh (deputies get reassigned to different commissions).
  */
 async function backfillCommissionMandats(
   organeRefToCommissionId: Map<string, string>
 ): Promise<number> {
-  // Single query: find AN députés with sourceData but no mandats at all
-  const deputesSansMandats = await prisma.parlementaire.findMany({
+  const deputes = await prisma.parlementaire.findMany({
     where: {
       chambre: 'assemblee',
       sourceData: { not: Prisma.JsonNull },
-      mandats: { none: {} },
     },
     select: { id: true, sourceData: true },
   });
 
   let total = 0;
-  for (const p of deputesSansMandats) {
-    const created = await syncMandatsFromSourceData(p.id, p.sourceData, organeRefToCommissionId);
-    total += created;
+  for (const p of deputes) {
+    const count = await syncMandatsFromSourceData(p.id, p.sourceData, organeRefToCommissionId);
+    total += count;
   }
 
   return total;

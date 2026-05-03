@@ -56,6 +56,9 @@ export interface CommissionDetail {
     lieu: string | null;
     odjResume: string | null;
     etat: string | null;
+    captationVideo: boolean | null;
+    urlVideo: string | null;
+    compteRenduRef: string | null;
   }>;
 }
 
@@ -68,6 +71,8 @@ interface Reunion {
   odjResume: string | null;
   etat: string | null;
   captationVideo: boolean | null;
+  urlVideo: string | null;
+  compteRenduRef: string | null;
   nbParticipants: number;
 }
 
@@ -94,13 +99,13 @@ const TYPE_LABELS: Record<string, string> = {
   autre: 'Autre',
 };
 
-const QUALITE_ORDER = ['Président', 'Présidente', 'Vice-Président', 'Vice-Présidente'];
-
 function qualiteOrder(q: string | null): number {
   if (!q) return 99;
-  for (let i = 0; i < QUALITE_ORDER.length; i++) {
-    if (q.includes(QUALITE_ORDER[i]!)) return i;
-  }
+  const l = q.toLowerCase();
+  if (l.startsWith('président')) return 0;
+  if (l.startsWith('vice-président') || l.startsWith('vice président')) return 1;
+  if (l.startsWith('secrétaire')) return 2;
+  if (l.startsWith('rapporteur')) return 3;
   return 10;
 }
 
@@ -137,7 +142,19 @@ function QualiteBadge({ qualite }: { qualite: string | null }) {
   );
 }
 
-function ReunionItem({ reunion }: { reunion: { id: string; uid: string; dateDebut: string; dateFin: string | null; lieu: string | null; odjResume: string | null; etat: string | null; captationVideo?: boolean | null; nbParticipants?: number } }) {
+function buildCompteRenduUrl(ref: string): string | null {
+  if (ref.startsWith('CRCA') || ref.startsWith('CRCO')) {
+    return `https://www.assemblee-nationale.fr/dyn/17/comptes-rendus/CRC/${ref}`;
+  }
+  if (ref.startsWith('CRSS') || ref.startsWith('CRSC') || ref.startsWith('CRSI')) {
+    return `https://www.senat.fr/compte-rendu-commissions/${ref}.html`;
+  }
+  return null;
+}
+
+function ReunionItem({ reunion }: { reunion: { id: string; uid: string; dateDebut: string; dateFin: string | null; lieu: string | null; odjResume: string | null; etat: string | null; captationVideo?: boolean | null; urlVideo?: string | null; compteRenduRef?: string | null; nbParticipants?: number } }) {
+  const crUrl = reunion.compteRenduRef ? buildCompteRenduUrl(reunion.compteRenduRef) : null;
+
   return (
     <div className='rounded-lg border bg-card p-4'>
       <div className='flex items-start justify-between gap-3'>
@@ -162,11 +179,26 @@ function ReunionItem({ reunion }: { reunion: { id: string; uid: string; dateDebu
           )}
         </div>
         <div className='flex flex-col items-end gap-1 shrink-0'>
-          {reunion.captationVideo && (
-            <span className='flex items-center gap-1 px-2 py-0.5 rounded text-xs border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800'>
+          {reunion.urlVideo && (
+            <a
+              href={reunion.urlVideo}
+              target='_blank'
+              rel='noopener noreferrer'
+              className='flex items-center gap-1 px-2 py-0.5 rounded text-xs border bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 transition-colors dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800 dark:hover:bg-blue-950/50'
+            >
               <Video className='h-3 w-3' />
               Vidéo
-            </span>
+            </a>
+          )}
+          {crUrl && (
+            <a
+              href={crUrl}
+              target='_blank'
+              rel='noopener noreferrer'
+              className='flex items-center gap-1 px-2 py-0.5 rounded text-xs border bg-muted/50 text-muted-foreground border-border hover:text-foreground hover:border-foreground transition-colors'
+            >
+              Compte rendu
+            </a>
           )}
           {reunion.nbParticipants !== undefined && reunion.nbParticipants > 0 && (
             <span className='text-xs text-muted-foreground'>
