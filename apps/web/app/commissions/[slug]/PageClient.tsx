@@ -96,6 +96,7 @@ const TYPE_LABELS: Record<string, string> = {
   enquete: "Enquête",
   speciale: 'Spéciale',
   mixte_paritaire: 'Mixte paritaire',
+  hemicycle: 'Séance plénière',
   autre: 'Autre',
 };
 
@@ -146,6 +147,9 @@ function buildCompteRenduUrl(ref: string): string | null {
   if (ref.startsWith('CRCA') || ref.startsWith('CRCO')) {
     return `https://www.assemblee-nationale.fr/dyn/17/comptes-rendus/CRC/${ref}`;
   }
+  if (ref.startsWith('CRSA')) {
+    return `https://www.assemblee-nationale.fr/dyn/17/comptes-rendus/seance/${ref}`;
+  }
   if (ref.startsWith('CRSS') || ref.startsWith('CRSC') || ref.startsWith('CRSI')) {
     return `https://www.senat.fr/compte-rendu-commissions/${ref}.html`;
   }
@@ -153,7 +157,8 @@ function buildCompteRenduUrl(ref: string): string | null {
 }
 
 function ReunionItem({ reunion }: { reunion: { id: string; uid: string; dateDebut: string; dateFin: string | null; lieu: string | null; odjResume: string | null; etat: string | null; captationVideo?: boolean | null; urlVideo?: string | null; compteRenduRef?: string | null; nbParticipants?: number } }) {
-  const crUrl = reunion.compteRenduRef ? buildCompteRenduUrl(reunion.compteRenduRef) : null;
+  const isPast = new Date(reunion.dateDebut) < new Date();
+  const crUrl = isPast && reunion.compteRenduRef ? buildCompteRenduUrl(reunion.compteRenduRef) : null;
 
   return (
     <div className='rounded-lg border bg-card p-4'>
@@ -399,7 +404,9 @@ function CommissionDetailContent({
   initialData?: CommissionDetail;
   slug: string;
 }) {
-  const [activeTab, setActiveTab] = useState<Tab>('membres');
+  const commission_type_init = initialData?.type;
+  const defaultTab: Tab = commission_type_init === 'hemicycle' ? 'historique' : 'membres';
+  const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
   const router = useRouter();
 
   const { data: fetchedData, isLoading } = useQuery<{ data: CommissionDetail }>({
@@ -432,10 +439,12 @@ function CommissionDetailContent({
     );
   }
 
+  const isHemicycle = commission.type === 'hemicycle';
+
   const tabs: Array<{ id: Tab; label: string; count?: number }> = [
-    { id: 'membres', label: 'Membres', count: commission.nbMembres },
-    { id: 'agenda', label: 'Agenda', count: commission.prochainesReunions.length || undefined },
-    { id: 'historique', label: 'Historique', count: commission.nbReunions },
+    ...(!isHemicycle ? [{ id: 'membres' as Tab, label: 'Membres', count: commission.nbMembres }] : []),
+    { id: 'agenda', label: isHemicycle ? 'Prochaines séances' : 'Agenda', count: commission.prochainesReunions.length || undefined },
+    { id: 'historique', label: isHemicycle ? 'Séances passées' : 'Historique', count: commission.nbReunions },
   ];
 
   return (
@@ -475,17 +484,19 @@ function CommissionDetailContent({
               )}
             </div>
             <div className='mt-3 flex flex-wrap items-center gap-4 text-sm text-muted-foreground'>
-              <span className='flex items-center gap-1.5'>
-                <Users className='h-4 w-4' />
-                {commission.nbMembres} membres
-              </span>
+              {!isHemicycle && (
+                <span className='flex items-center gap-1.5'>
+                  <Users className='h-4 w-4' />
+                  {commission.nbMembres} membres
+                </span>
+              )}
               <span className='flex items-center gap-1.5'>
                 <Calendar className='h-4 w-4' />
-                {commission.nbReunions} réunions au total
+                {commission.nbReunions} {isHemicycle ? 'séances' : 'réunions'} au total
               </span>
               {commission.dateDebut && (
                 <span className='text-xs'>
-                  Créée le{' '}
+                  Depuis le{' '}
                   {new Date(commission.dateDebut).toLocaleDateString('fr-FR', {
                     day: 'numeric',
                     month: 'long',
@@ -530,7 +541,7 @@ function CommissionDetailContent({
 
       {/* Tab content */}
       <div>
-        {activeTab === 'membres' && <TabMembres commission={commission} />}
+        {activeTab === 'membres' && !isHemicycle && <TabMembres commission={commission} />}
         {activeTab === 'agenda' && <TabAgenda commission={commission} />}
         {activeTab === 'historique' && <TabHistorique slug={slug} />}
       </div>

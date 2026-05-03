@@ -244,7 +244,8 @@ export function ReunionCard({ reunion }: { reunion: AgendaReunion }) {
                 </a>
               )}
               {(() => {
-                const crUrl = reunion.compteRenduRef ? getCompteRenduUrl(reunion.compteRenduRef) : null;
+                const isPast = new Date(reunion.dateDebut) < new Date();
+                const crUrl = isPast && reunion.compteRenduRef ? getCompteRenduUrl(reunion.compteRenduRef) : null;
                 if (!crUrl) return null;
                 return (
                   <a

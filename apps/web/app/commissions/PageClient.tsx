@@ -38,10 +38,11 @@ const TYPE_LABELS: Record<string, string> = {
   enquete: "Commissions d'enquête",
   speciale: 'Commissions spéciales',
   mixte_paritaire: 'Commissions mixtes paritaires',
+  hemicycle: 'Hémicycle',
   autre: 'Autres commissions',
 };
 
-const TYPE_ORDER = ['permanente', 'enquete', 'speciale', 'mixte_paritaire', 'autre'];
+const TYPE_ORDER = ['permanente', 'enquete', 'speciale', 'mixte_paritaire', 'hemicycle', 'autre'];
 
 function ChambreBadge({ chambre }: { chambre: string }) {
   const isAN = chambre === 'assemblee';
