@@ -715,9 +715,11 @@ model Lobbyiste {
   actions  ActionLobby[]
   secteurs LobbyisteSecteur[]
 
+  // Identifiant stable HATVP (SIREN, RNA...) — clé d'upsert
+  identifiantNational String? @unique @map("identifiant_national")
+
   // Métadonnées source
-  sourceId   String? @map("source_id")
-  sourceData Json?   @map("source_data")
+  sourceData Json? @map("source_data")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

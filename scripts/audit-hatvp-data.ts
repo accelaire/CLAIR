@@ -121,15 +121,15 @@ async function auditLobbyistes() {
     },
   });
 
-  // 5. Lobbyistes sans sourceId (potentiellement créés manuellement ou problème)
+  // 5. Lobbyistes sans identifiantNational (potentiellement créés manuellement ou problème)
   const sansSourceId = await prisma.lobbyiste.count({
-    where: { sourceId: null },
+    where: { identifiantNational: null },
   });
 
   log({
     section: 'Source',
     status: sansSourceId > 0 ? 'WARNING' : 'OK',
-    message: `${sansSourceId} lobbyistes sans sourceId HATVP`,
+    message: `${sansSourceId} lobbyistes sans identifiantNational HATVP`,
   });
 
   // 6. Lobbyistes avec actions vs sans actions

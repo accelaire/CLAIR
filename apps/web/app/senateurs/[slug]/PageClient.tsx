@@ -364,7 +364,7 @@ function AmendementsList({ slug }: { slug: string }) {
           }`}
         >
           <Vote className={`h-4 w-4 ${votedOnly ? 'text-indigo-600' : 'text-muted-foreground'}`} />
-          Votés individuellement
+          Votes publics
           {votedOnly && total > 0 && (
             <span className="px-1.5 py-0.5 rounded bg-indigo-200 text-indigo-800 text-xs">
               {total.toLocaleString('fr-FR')}

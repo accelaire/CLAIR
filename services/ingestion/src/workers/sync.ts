@@ -4932,16 +4932,16 @@ export async function syncLobbyistes(
   for (const csvLobbyiste of csvLobbyistes) {
     try {
       const siren = csvLobbyiste.typeIdentifiant === 'SIREN' ? csvLobbyiste.identifiantNational : null;
+      const identifiantNational = csvLobbyiste.identifiantNational?.trim() || null;
       const type = categorieMap[csvLobbyiste.categorie] || 'entreprise';
 
-      const existing = await prisma.lobbyiste.findFirst({
-        where: {
-          OR: [
-            { sourceId: csvLobbyiste.id },
-            ...(siren ? [{ siren }] : []),
-          ],
-        },
-      });
+      // Match par identifiantNational (SIREN/RNA) — clé stable HATVP.
+      // Fallback sur le SIREN pour les edge cases (identifiant vide).
+      const existing = identifiantNational
+        ? await prisma.lobbyiste.findUnique({ where: { identifiantNational } })
+        : siren
+          ? await prisma.lobbyiste.findFirst({ where: { siren } })
+          : null;
 
       const secteur = csvLobbyiste.secteurs.length > 0
         ? csvLobbyiste.secteurs.slice(0, 3).join(', ').substring(0, 500)
@@ -4952,7 +4952,7 @@ export async function syncLobbyistes(
         : salariesByLobbyiste.get(csvLobbyiste.id) || null;
 
       const data = {
-        sourceId: csvLobbyiste.id,
+        identifiantNational,
         siren,
         nom: csvLobbyiste.denomination,
         type,
@@ -5106,6 +5106,7 @@ export async function syncLobbyistes(
     const toUpdate: Array<{ id: string; descriptionId: string; cible: string | null; cibleTypeId: string | null; texteVise: string | null; texteViseNom: string | null }> = [];
     const pivotActionIds: string[] = [];
     const pivotPairs: Array<{ actionId: string; secteurId: string }> = [];
+    const validActionKeys = new Set<string>();
 
     for (const act of csvActivites) {
       if (!act.objet) continue;
@@ -5135,6 +5136,8 @@ export async function syncLobbyistes(
 
       const descriptionId = descriptionMap.get(description);
       if (!descriptionId) continue;
+
+      validActionKeys.add(`${lobbyisteId}::${descriptionId}`);
 
       const cibleTypeId = cibleNom ? cibleTypeMap.get(cibleNom) ?? null : null;
 
@@ -5238,6 +5241,43 @@ export async function syncLobbyistes(
     pivotActionIds.length = 0;
     pivotPairs.length = 0;
     existingActionMap.clear();
+
+    // ── Stale action cleanup ──
+    // Delete actions for processed lobbyistes that are no longer present
+    // in the current CSV source. This prevents chimera-lobbyist records
+    // caused by HATVP representants_id recycling between exports.
+    const validDescByLobbyist = new Map<string, number[]>();
+    for (const key of validActionKeys) {
+      const sepIndex = key.indexOf('::');
+      const dbId = key.slice(0, sepIndex);
+      const descId = Number(key.slice(sepIndex + 2));
+      const list = validDescByLobbyist.get(dbId) || [];
+      list.push(descId);
+      validDescByLobbyist.set(dbId, list);
+    }
+
+    let staleDeleted = 0;
+    for (const dbLobbyisteId of lobbyisteIdMap.values()) {
+      const validDescIds = validDescByLobbyist.get(dbLobbyisteId);
+      if (validDescIds && validDescIds.length > 0) {
+        const result = await prisma.actionLobby.deleteMany({
+          where: {
+            lobbyisteId: dbLobbyisteId,
+            descriptionId: { notIn: validDescIds },
+          },
+        });
+        staleDeleted += result.count;
+      } else {
+        const result = await prisma.actionLobby.deleteMany({
+          where: { lobbyisteId: dbLobbyisteId },
+        });
+        staleDeleted += result.count;
+      }
+    }
+
+    if (staleDeleted > 0) {
+      logger.info({ staleDeleted }, 'Stale actions cleaned up');
+    }
   }
 
   logger.info({
