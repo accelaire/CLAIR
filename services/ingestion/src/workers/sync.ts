@@ -162,15 +162,21 @@ export async function syncCommissions(): Promise<{ created: number; updated: num
         { organeRef: null, typeOrgane: { in: Array.from(COMMISSION_CODE_TYPES) } },
       ],
     },
-    select: { id: true, sourceUid: true, institution: true },
+    select: { id: true, sourceUid: true, institution: true, organeRef: true },
   });
 
   for (const mandat of mandatsToProcess) {
     let commissionId: string | null = null;
     let organeRef: string | null = null;
 
-    // Try organeRef first (precise — PM→PO from AMO10)
-    if (mandat.sourceUid && pmToPo.has(mandat.sourceUid)) {
+    // Use already stored organeRef directly if available (most reliable path)
+    if (mandat.organeRef) {
+      organeRef = mandat.organeRef;
+      commissionId = commissionByUid.get(organeRef) || null;
+    }
+
+    // Fallback: PM→PO mapping from AMO10 (covers mandats created without organeRef)
+    if (!commissionId && mandat.sourceUid && pmToPo.has(mandat.sourceUid)) {
       organeRef = pmToPo.get(mandat.sourceUid)!;
       commissionId = commissionByUid.get(organeRef) || null;
     }
@@ -199,7 +205,10 @@ export async function syncCommissions(): Promise<{ created: number; updated: num
     }
   }
 
-  logger.info({ created, updated, mandatsLinked }, 'Commissions sync completed');
+  // Re-backfill all AN députés' mandats with fresh commission map.
+  // Critical for cases where syncDeputes() updated sourceData but crashed before backfill ran.
+  const backfilled = await backfillCommissionMandats(commissionByUid);
+  logger.info({ created, updated, mandatsLinked, backfilled }, 'Commissions sync completed');
   return { created, updated, mandatsLinked };
 }
 
@@ -2182,11 +2191,12 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
   if (options.all) {
     // Tout synchroniser dans le bon ordre (relations d'abord)
     sourcesToCheck = [
-      // 1. Parlementaires (nécessaires pour les autres sources)
+      // 1. Commissions en premier : syncDeputes() appelle backfillCommissionMandats()
+      //    qui requiert que les commissions soient déjà en DB pour lier les mandats
+      'assemblee_nationale:commissions',
+      // 2. Parlementaires (nécessaires pour les autres sources)
       'assemblee_nationale:deputes',
       'senat:senateurs',
-      // 2. Commissions (organes — même ZIP que deputes)
-      'assemblee_nationale:commissions',
       // 3. Scrutins et votes
       'assemblee_nationale:scrutins',
       'senat:scrutins',
