@@ -17,6 +17,7 @@ import {
   Video,
   ChevronDown,
   ArrowRight,
+  FileText,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
@@ -790,6 +791,12 @@ function CommissionDetailContent({
                 <Calendar className='h-4 w-4' />
                 {commission.nbReunions} {isHemicycle ? 'séances' : 'réunions'} au total
               </span>
+              {!isHemicycle && commission.nbDossiers > 0 && (
+                <span className='flex items-center gap-1.5'>
+                  <FileText className='h-4 w-4' />
+                  {commission.nbDossiers} texte{commission.nbDossiers > 1 ? 's' : ''} examiné{commission.nbDossiers > 1 ? 's' : ''}
+                </span>
+              )}
               {commission.dateDebut && (
                 <span className='text-xs'>
                   Depuis le{' '}
@@ -801,6 +808,29 @@ function CommissionDetailContent({
                 </span>
               )}
             </div>
+            {(() => {
+              const president = commission.membres.find((m) =>
+                m.qualite?.toLowerCase().startsWith('président'),
+              );
+              if (!president) return null;
+              const href = president.parlementaire.chambre === 'assemblee'
+                ? `/deputes/${president.parlementaire.slug}`
+                : `/senateurs/${president.parlementaire.slug}`;
+              return (
+                <div className='mt-3 flex items-center gap-2'>
+                  <span className='text-xs text-muted-foreground'>Présidé par</span>
+                  <Link
+                    href={href}
+                    className='inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline'
+                  >
+                    {president.parlementaire.prenom} {president.parlementaire.nom}
+                  </Link>
+                  <span className='text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-700'>
+                    {president.qualite}
+                  </span>
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>

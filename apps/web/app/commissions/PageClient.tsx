@@ -82,16 +82,16 @@ function CommissionCard({ commission }: { commission: Commission }) {
       href={`/commissions/${commission.slug}`}
       className="group block rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
     >
-      <div className='flex items-start justify-between gap-2 mb-3'>
-        <h3 className='font-semibold text-sm leading-snug group-hover:text-primary transition-colors line-clamp-2'>
-          {commission.nomCourt || commission.nom}
+      <div className='flex items-start justify-between gap-2 mb-2'>
+        <h3 className='font-semibold text-sm leading-snug group-hover:text-primary transition-colors line-clamp-3'>
+          {commission.nom}
         </h3>
         <ChambreBadge chambre={commission.chambre} />
       </div>
       {commission.nomCourt && (
-        <p className='text-xs text-muted-foreground mb-3 line-clamp-2'>{commission.nom}</p>
+        <p className='text-xs text-muted-foreground/70 mb-2 font-mono'>{commission.nomCourt}</p>
       )}
-      <div className='flex items-center gap-4 text-xs text-muted-foreground'>
+      <div className='flex items-center gap-4 text-xs text-muted-foreground mb-2'>
         <span className='flex items-center gap-1'>
           <Users className='h-3.5 w-3.5' />
           {commission.nbMembres} membres
@@ -101,8 +101,13 @@ function CommissionCard({ commission }: { commission: Commission }) {
           {commission.nbReunions} réunions
         </span>
       </div>
+      {commission.dateDebut && (
+        <p className='text-xs text-muted-foreground/60'>
+          Depuis {new Date(commission.dateDebut).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
+        </p>
+      )}
       {!commission.actif && (
-        <span className='mt-2 inline-block text-xs text-muted-foreground/60 italic'>Inactive</span>
+        <span className='mt-1 inline-block text-xs text-muted-foreground/60 italic'>Inactive</span>
       )}
     </Link>
   );
