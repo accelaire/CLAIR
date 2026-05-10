@@ -32,6 +32,10 @@ const senatClient = new SenatSenateursClient();
 // Réduit de 5 à 2 pour éviter les OOM sur les syncs avec gros payloads
 const limit = pLimit(2);
 
+// Redirections COMSENAT PO* → SENAT-* commissionId
+// Rempli par syncCommissions()/syncSenatCommissions(), consommé par syncDossiers()
+const comsenatRedirects = new Map<string, string>();
+
 // =============================================================================
 // SYNC COMMISSIONS (depuis les organes AMO10)
 // =============================================================================
@@ -77,16 +81,39 @@ export async function syncCommissions(): Promise<{ created: number; updated: num
 
   logger.info({ total: amo30Organes.length }, 'AMO30 organes found (all types)');
 
-  // Load existing slugs from DB to avoid collisions
-  const existingCommissions = await prisma.commission.findMany({ select: { slug: true } });
+  // Load existing commissions for slug collision avoidance AND COMSENAT dedup
+  const existingCommissions = await prisma.commission.findMany({
+    select: { slug: true, uid: true, id: true, nom: true, chambre: true, type: true },
+  });
   const usedSlugs = new Set(existingCommissions.map((c) => c.slug));
 
+  // Build SENAT-* permanente lookup for COMSENAT dedup (by normalized name)
+  const nameNormalize = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  const senatPermByName = new Map<string, string>();
+  for (const c of existingCommissions) {
+    if (c.uid.startsWith('SENAT-') && c.chambre === 'senat' && c.type === 'permanente') {
+      senatPermByName.set(nameNormalize(c.nom), c.id);
+    }
+  }
+
   // Track counts by type for logging
-  const countsByType: Record<string, { created: number; updated: number }> = {};
+  const countsByType: Record<string, { created: number; updated: number; redirected: number }> = {};
 
   for (const organe of amo30Organes) {
     const type = organe.type;
-    if (!countsByType[type]) countsByType[type] = { created: 0, updated: 0 };
+    if (!countsByType[type]) countsByType[type] = { created: 0, updated: 0, redirected: 0 };
+
+    // COMSENAT: si une commission SENAT-* équivalente existe, ne pas créer de doublon PO*
+    if (organe.codeType === 'COMSENAT') {
+      const existingPo = await prisma.commission.findUnique({ where: { uid: organe.uid } });
+      const matchingSenatId = senatPermByName.get(nameNormalize(organe.libelle));
+      if (matchingSenatId && !existingPo) {
+        comsenatRedirects.set(organe.uid, matchingSenatId);
+        countsByType[type].redirected++;
+        continue;
+      }
+    }
 
     // Generate unique slug with collision handling
     let slug = slugifyCommission(organe.libelle, organe.chambre);
@@ -663,29 +690,43 @@ const SENAT_CODE_TO_TYPE: Record<string, string> = {
  * Also backfills organeRef on existing Senate commissions.
  */
 export async function syncSenatCommissions(): Promise<{ created: number; updated: number }> {
-  // Cleanup: merge any PO-prefixed duplicates into SENAT-prefixed canonical entries
-  // (caused by syncCommissions having previously ingested AN organes with chambre=senat)
+  // Cleanup: merge PO* (AMO30 COMSENAT) duplicates into SENAT-* canonical entries
+  // Match by normalized name since PO* and SENAT-* have different organeRef values
   const allSenatCommissions = await prisma.commission.findMany({
-    where: { chambre: 'senat' },
-    select: { id: true, uid: true, organeRef: true },
+    where: { chambre: 'senat', type: 'permanente' },
+    select: { id: true, uid: true, slug: true, nom: true, organeRef: true },
   });
-  const groupedByRef = new Map<string, typeof allSenatCommissions>();
-  for (const c of allSenatCommissions) {
-    if (!c.organeRef) continue;
-    const group = groupedByRef.get(c.organeRef) || [];
-    group.push(c);
-    groupedByRef.set(c.organeRef, group);
-  }
-  for (const [ref, group] of groupedByRef) {
-    if (group.length <= 1) continue;
-    const keeper = group.find((c) => c.uid.startsWith('SENAT-')) || group[0]!;
-    const duplicates = group.filter((c) => c.id !== keeper.id);
-    for (const dup of duplicates) {
-      await prisma.mandat.updateMany({ where: { commissionId: dup.id }, data: { commissionId: keeper.id } });
-      await prisma.reunion.updateMany({ where: { commissionId: dup.id }, data: { commissionId: keeper.id } });
-      await prisma.commission.delete({ where: { id: dup.id } });
-      logger.info({ deletedUid: dup.uid, keptUid: keeper.uid, ref }, 'Merged duplicate Senate commission');
+  const nameNorm = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+
+  const senatEntries = allSenatCommissions.filter(c => c.uid.startsWith('SENAT-'));
+  const poEntries = allSenatCommissions.filter(c => c.uid.startsWith('PO'));
+
+  for (const po of poEntries) {
+    const poNorm = nameNorm(po.nom);
+    const match = senatEntries.find(s => nameNorm(s.nom) === poNorm);
+    if (!match) continue;
+
+    // Transfer dossier_commissions, mandats, reunions from PO* → SENAT-*
+    const [dcCount, mandatCount, reunionCount] = await Promise.all([
+      prisma.dossierCommission.updateMany({ where: { commissionId: po.id }, data: { commissionId: match.id } }),
+      prisma.mandat.updateMany({ where: { commissionId: po.id }, data: { commissionId: match.id } }),
+      prisma.reunion.updateMany({ where: { commissionId: po.id }, data: { commissionId: match.id } }),
+    ]);
+
+    // Copy SEO-friendly slug from PO* if the SENAT-* still has its generated one
+    if (match.slug.startsWith('senat-com-') && po.slug.startsWith('senat-commission-')) {
+      await prisma.commission.update({ where: { id: po.id }, data: { slug: `tmp-del-${po.uid}` } });
+      await prisma.commission.update({ where: { id: match.id }, data: { slug: po.slug } });
     }
+
+    await prisma.commission.delete({ where: { id: po.id } });
+    comsenatRedirects.set(po.uid, match.id);
+
+    logger.info(
+      { deletedUid: po.uid, keptUid: match.uid, dossiers: dcCount.count, mandats: mandatCount.count, reunions: reunionCount.count },
+      'Merged PO* COMSENAT duplicate into SENAT-* commission',
+    );
   }
 
   // Load all senateurs to extract commission data from sourceData
@@ -749,10 +790,6 @@ export async function syncSenatCommissions(): Promise<{ created: number; updated
   }
 
   // Backfill organeRef on existing Senate commissions that don't have one yet
-  // by matching commission libelle to existing commission names
-  const nameNorm = (s: string) =>
-    s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
-
   const existingWithoutOrganeRef = existing.filter((c) => !c.organeRef);
   for (const c of existingWithoutOrganeRef) {
     const cNorm = nameNorm(c.nom);
@@ -3319,6 +3356,10 @@ export async function syncDossiers(
   const commissionByOrganeRef = new Map(
     commissions.filter(c => c.organeRef).map(c => [c.organeRef!, c.id]),
   );
+  // COMSENAT redirects: PO* UIDs from dossier saisines → SENAT-* commission IDs
+  for (const [poUid, senatId] of comsenatRedirects) {
+    commissionByOrganeRef.set(poUid, senatId);
+  }
 
   for (const dossier of dossiers) {
     try {
