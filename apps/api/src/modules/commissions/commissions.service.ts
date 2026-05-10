@@ -86,25 +86,35 @@ export class CommissionsService {
 
     if (!commission) return null;
 
-    // Membres actuels (mandats actifs uniquement)
-    const mandats = await this.prisma.mandat.findMany({
-      where: { commissionId: commission.id, dateFin: null },
-      include: {
-        parlementaire: {
-          select: {
-            id: true,
-            slug: true,
-            nom: true,
-            prenom: true,
-            photoUrl: true,
-            chambre: true,
-            groupe: {
-              select: { nom: true, couleur: true, slug: true },
-            },
+    const membreInclude = {
+      parlementaire: {
+        select: {
+          id: true,
+          slug: true,
+          nom: true,
+          prenom: true,
+          photoUrl: true,
+          chambre: true,
+          groupe: {
+            select: { nom: true, couleur: true, slug: true },
           },
         },
       },
+    };
+
+    // Membres actuels (mandats actifs uniquement)
+    const mandats = await this.prisma.mandat.findMany({
+      where: { commissionId: commission.id, dateFin: null },
+      include: membreInclude,
       orderBy: [{ qualite: 'asc' }, { parlementaire: { nom: 'asc' } }],
+    });
+
+    // Anciens membres (mandats terminés), 100 plus récents
+    const anciensMandat = await this.prisma.mandat.findMany({
+      where: { commissionId: commission.id, dateFin: { not: null } },
+      include: membreInclude,
+      orderBy: { dateFin: 'desc' },
+      take: 100,
     });
 
     // Prochaines reunions
@@ -146,6 +156,12 @@ export class CommissionsService {
       nbDossiers: commission._count.dossierCommissions,
       membres: mandats.map((m) => ({
         qualite: m.qualite,
+        parlementaire: m.parlementaire,
+      })),
+      anciensMembres: anciensMandat.map((m) => ({
+        qualite: m.qualite,
+        dateDebut: m.dateDebut,
+        dateFin: m.dateFin,
         parlementaire: m.parlementaire,
       })),
       prochainesReunions,

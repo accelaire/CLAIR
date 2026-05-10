@@ -46,11 +46,21 @@ export interface CommissionDetail {
       prenom: string;
       photoUrl: string | null;
       chambre: string;
-      groupe: {
-        nom: string;
-        couleur: string | null;
-        slug: string;
-      } | null;
+      groupe: { nom: string; couleur: string | null; slug: string } | null;
+    };
+  }>;
+  anciensMembres?: Array<{
+    qualite: string | null;
+    dateDebut: string;
+    dateFin: string | null;
+    parlementaire: {
+      id: string;
+      slug: string;
+      nom: string;
+      prenom: string;
+      photoUrl: string | null;
+      chambre: string;
+      groupe: { nom: string; couleur: string | null; slug: string } | null;
     };
   }>;
   prochainesReunions: Array<{
@@ -222,13 +232,85 @@ function ReunionItem({ reunion }: { reunion: { id: string; uid: string; dateDebu
   );
 }
 
+function formatShortDate(dateStr: string) {
+  return new Date(dateStr).toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function MembreRow({
+  qualite,
+  parlementaire,
+  dateDebut,
+  dateFin,
+}: {
+  qualite: string | null;
+  parlementaire: CommissionDetail['membres'][0]['parlementaire'];
+  dateDebut?: string;
+  dateFin?: string | null;
+}) {
+  const isDeputy = parlementaire.chambre === 'assemblee' || parlementaire.chambre === 'depute';
+  const href = isDeputy ? `/deputes/${parlementaire.slug}` : `/senateurs/${parlementaire.slug}`;
+  const isPast = dateFin != null;
+
+  return (
+    <Link
+      href={href}
+      className={`group flex items-center gap-4 rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-sm ${isPast ? 'opacity-70' : ''}`}
+    >
+      <div className='relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-full bg-muted'>
+        {parlementaire.photoUrl ? (
+          <Image
+            src={parlementaire.photoUrl}
+            alt={`${parlementaire.prenom} ${parlementaire.nom}`}
+            fill
+            className='object-cover'
+            unoptimized
+          />
+        ) : (
+          <Users className='absolute inset-0 m-auto h-6 w-6 text-muted-foreground' />
+        )}
+      </div>
+      <div className='flex-1 min-w-0'>
+        <div className='flex items-center gap-2 flex-wrap'>
+          <span className='font-medium group-hover:text-primary transition-colors'>
+            {parlementaire.prenom} {parlementaire.nom}
+          </span>
+          <QualiteBadge qualite={qualite} />
+        </div>
+        {parlementaire.groupe && (
+          <div className='mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground'>
+            <span
+              className='h-2 w-2 rounded-full shrink-0'
+              style={{ backgroundColor: parlementaire.groupe.couleur || '#888' }}
+            />
+            <span className='truncate'>{parlementaire.groupe.nom}</span>
+          </div>
+        )}
+        {isPast && dateDebut && (
+          <p className='mt-0.5 text-xs text-muted-foreground/70'>
+            {formatShortDate(dateDebut)}
+            {dateFin ? ` → ${formatShortDate(dateFin)}` : ''}
+          </p>
+        )}
+      </div>
+      <ChevronRight className='h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0' />
+    </Link>
+  );
+}
+
 // ── Tab Membres ──
 function TabMembres({ commission }: { commission: CommissionDetail }) {
+  const [showAnciens, setShowAnciens] = useState(false);
+
   const sorted = [...commission.membres].sort(
     (a, b) => qualiteOrder(a.qualite) - qualiteOrder(b.qualite),
   );
+  const anciens = commission.anciensMembres ?? [];
 
-  if (sorted.length === 0) {
+  if (sorted.length === 0 && anciens.length === 0) {
     return (
       <div className='py-12 text-center text-muted-foreground'>
         Aucun membre enregistré pour cette commission.
@@ -237,56 +319,47 @@ function TabMembres({ commission }: { commission: CommissionDetail }) {
   }
 
   return (
-    <div className='space-y-2'>
-      {sorted.map(({ qualite, parlementaire }) => {
-        const isDeputy = parlementaire.chambre === 'assemblee' || parlementaire.chambre === 'depute';
-        const href = isDeputy
-          ? `/deputes/${parlementaire.slug}`
-          : `/senateurs/${parlementaire.slug}`;
-        return (
-          <Link
-            key={parlementaire.id}
-            href={href}
-            className='group flex items-center gap-4 rounded-lg border bg-card p-3 transition-all hover:border-primary hover:shadow-sm'
+    <div className='space-y-6'>
+      {/* Membres actuels */}
+      {sorted.length > 0 ? (
+        <div className='space-y-2'>
+          {sorted.map(({ qualite, parlementaire }) => (
+            <MembreRow key={parlementaire.id} qualite={qualite} parlementaire={parlementaire} />
+          ))}
+        </div>
+      ) : (
+        <div className='py-8 text-center text-muted-foreground text-sm'>
+          Aucun membre actuel enregistré.
+        </div>
+      )}
+
+      {/* Anciens membres — repliable */}
+      {anciens.length > 0 && (
+        <div>
+          <button
+            onClick={() => setShowAnciens((v) => !v)}
+            className='flex w-full items-center justify-between rounded-lg border bg-muted/40 px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors'
           >
-            {/* Photo */}
-            <div className='relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-full bg-muted'>
-              {parlementaire.photoUrl ? (
-                <Image
-                  src={parlementaire.photoUrl}
-                  alt={`${parlementaire.prenom} ${parlementaire.nom}`}
-                  fill
-                  className='object-cover'
-                  unoptimized
+            <span>Anciens membres ({anciens.length})</span>
+            <ChevronDown
+              className={`h-4 w-4 transition-transform ${showAnciens ? 'rotate-180' : ''}`}
+            />
+          </button>
+          {showAnciens && (
+            <div className='mt-2 space-y-2'>
+              {anciens.map((m, i) => (
+                <MembreRow
+                  key={`${m.parlementaire.id}-${m.dateDebut}-${i}`}
+                  qualite={m.qualite}
+                  parlementaire={m.parlementaire}
+                  dateDebut={m.dateDebut}
+                  dateFin={m.dateFin}
                 />
-              ) : (
-                <Users className='absolute inset-0 m-auto h-6 w-6 text-muted-foreground' />
-              )}
+              ))}
             </div>
-
-            {/* Infos */}
-            <div className='flex-1 min-w-0'>
-              <div className='flex items-center gap-2 flex-wrap'>
-                <span className='font-medium group-hover:text-primary transition-colors'>
-                  {parlementaire.prenom} {parlementaire.nom}
-                </span>
-                <QualiteBadge qualite={qualite} />
-              </div>
-              {parlementaire.groupe && (
-                <div className='mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground'>
-                  <span
-                    className='h-2 w-2 rounded-full shrink-0'
-                    style={{ backgroundColor: parlementaire.groupe.couleur || '#888' }}
-                  />
-                  <span className='truncate'>{parlementaire.groupe.nom}</span>
-                </div>
-              )}
-            </div>
-
-            <ChevronRight className='h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0' />
-          </Link>
-        );
-      })}
+          )}
+        </div>
+      )}
     </div>
   );
 }

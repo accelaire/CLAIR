@@ -394,20 +394,34 @@ async function syncMandatsFromSourceData(
     if (!COMMISSION_CODE_TYPES.includes(m.typeOrgane as (typeof COMMISSION_CODE_TYPES)[number])) continue;
 
     const organeRefRaw = m.organes?.organeRef;
-    // organeRef can be a string or an array in some edge cases — always take first
     const organeRef: string | undefined = Array.isArray(organeRefRaw)
       ? (organeRefRaw[0] || undefined)
       : (organeRefRaw || undefined);
     const commissionId: string | undefined = organeRef
       ? (organeRefToCommissionId.get(organeRef) || undefined)
       : undefined;
+    const newDateDebut = m.dateDebut ? new Date(m.dateDebut) : new Date();
+
+    // Close any previously active mandat for the same (parlementaire, organe) with a different PM id.
+    // This preserves history: the old mandat gets a dateFin, the new one is the current active.
+    if (organeRef) {
+      await prisma.mandat.updateMany({
+        where: {
+          parlementaireId,
+          organeRef,
+          dateFin: null,
+          sourceUid: { not: m.uid },
+        },
+        data: { dateFin: newDateDebut },
+      });
+    }
 
     await prisma.mandat.upsert({
       where: { sourceUid: m.uid },
       update: {
         typeOrgane: m.typeOrgane,
         qualite: m.infosQualite?.libQualite || null,
-        dateDebut: m.dateDebut ? new Date(m.dateDebut) : new Date(),
+        dateDebut: newDateDebut,
         dateFin: m.dateFin ? new Date(m.dateFin) : null,
         organeRef: organeRef || null,
         commissionId: commissionId || null,
@@ -417,7 +431,7 @@ async function syncMandatsFromSourceData(
         parlementaireId,
         typeOrgane: m.typeOrgane,
         qualite: m.infosQualite?.libQualite || null,
-        dateDebut: m.dateDebut ? new Date(m.dateDebut) : new Date(),
+        dateDebut: newDateDebut,
         dateFin: m.dateFin ? new Date(m.dateFin) : null,
         sourceUid: m.uid,
         organeRef: organeRef || null,
@@ -428,14 +442,17 @@ async function syncMandatsFromSourceData(
     count++;
   }
 
-  // Remove stale commission mandats for this deputy (PM IDs no longer in AMO10 active mandats)
+  // Mark stale mandats as ended (date_fin = now) instead of deleting — preserves history.
+  // Only marks active ones (dateFin: null) that are no longer in AMO10.
   if (activeSourceUids.length > 0) {
-    await prisma.mandat.deleteMany({
+    await prisma.mandat.updateMany({
       where: {
         parlementaireId,
         typeOrgane: { in: Array.from(COMMISSION_CODE_TYPES) },
         sourceUid: { notIn: activeSourceUids, startsWith: 'PM' },
+        dateFin: null,
       },
+      data: { dateFin: new Date() },
     });
   }
 

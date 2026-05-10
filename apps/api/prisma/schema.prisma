@@ -167,8 +167,8 @@ model Mandat {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  @@unique([parlementaireId, organeRef])
   @@index([parlementaireId])
+  @@index([parlementaireId, organeRef, dateFin])
   @@index([typeOrgane])
   @@index([dateDebut])
   @@index([commissionId])
