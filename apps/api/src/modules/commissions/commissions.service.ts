@@ -20,7 +20,7 @@ export class CommissionsService {
     const where: Record<string, unknown> = {};
     if (query.chambre) where.chambre = query.chambre;
     if (query.type) where.type = query.type;
-    if (query.actif) where.actif = query.actif === 'true';
+    if (query.actif === 'true') where.actif = true;
 
     const [commissions, total] = await Promise.all([
       this.prisma.commission.findMany({

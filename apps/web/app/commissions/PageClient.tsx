@@ -38,11 +38,30 @@ const TYPE_LABELS: Record<string, string> = {
   enquete: "Commissions d'enquête",
   speciale: 'Commissions spéciales',
   mixte_paritaire: 'Commissions mixtes paritaires',
+  delegation: 'Délégations parlementaires',
+  mission_info: "Missions d'information",
+  office: 'Offices parlementaires',
   hemicycle: 'Hémicycle',
-  autre: 'Autres commissions',
+  autre: 'Autres organes',
+  groupe_etudes: "Groupes d'études",
+  groupe_amitie: "Groupes d'amitié",
+  assemblee_internationale: 'Assemblées internationales',
 };
 
-const TYPE_ORDER = ['permanente', 'enquete', 'speciale', 'mixte_paritaire', 'hemicycle', 'autre'];
+const TYPE_ORDER = [
+  'permanente',
+  'enquete',
+  'speciale',
+  'mixte_paritaire',
+  'delegation',
+  'mission_info',
+  'office',
+  'hemicycle',
+  'autre',
+  'groupe_etudes',
+  'groupe_amitie',
+  'assemblee_internationale',
+];
 
 function ChambreBadge({ chambre }: { chambre: string }) {
   const isAN = chambre === 'assemblee';
@@ -93,7 +112,11 @@ function CommissionsPageContent() {
   const [filters, setFilter, , clearAll] = useUrlFilters<{
     chambre: string;
     type: string;
-  }>(['chambre', 'type']);
+    historique: string;
+  }>(['chambre', 'type', 'historique']);
+
+  // 'historique' absent ou '' → actif=true (défaut). 'historique=1' → toutes.
+  const showAll = filters.historique === '1';
 
   const { data, isLoading, error } = useQuery<CommissionsResponse>({
     queryKey: ['commissions', filters],
@@ -103,7 +126,8 @@ function CommissionsPageContent() {
           params: {
             chambre: filters.chambre || undefined,
             type: filters.type || undefined,
-            limit: 200,
+            actif: showAll ? undefined : 'true',
+            limit: 500,
           },
         })
         .then((res) => res.data),
@@ -132,8 +156,9 @@ function CommissionsPageContent() {
     let count = 0;
     if (filters.chambre) count++;
     if (filters.type) count++;
+    if (showAll) count++;
     return count;
-  }, [filters]);
+  }, [filters, showAll]);
 
   return (
     <div className='container mx-auto px-4 py-8'>
@@ -144,7 +169,8 @@ function CommissionsPageContent() {
           <div>
             <h1 className='text-3xl font-bold'>Commissions parlementaires</h1>
             <p className='mt-1 text-muted-foreground'>
-              {total > 0 ? `${total} commissions` : '—'} — Assemblée nationale & Sénat
+              {total > 0 ? `${total} commission${total > 1 ? 's' : ''}` : '—'}
+              {showAll ? ' (toutes, incl. passées)' : ' actives'} — Assemblée nationale & Sénat
             </p>
           </div>
         </div>
@@ -194,9 +220,25 @@ function CommissionsPageContent() {
             <option value='enquete'>Enquête</option>
             <option value='speciale'>Spéciales</option>
             <option value='mixte_paritaire'>Mixtes paritaires</option>
+            <option value='delegation'>Délégations</option>
+            <option value='mission_info'>Missions d&apos;information</option>
+            <option value='office'>Offices parlementaires</option>
+            <option value='groupe_etudes'>Groupes d&apos;études</option>
+            <option value='groupe_amitie'>Groupes d&apos;amitié</option>
+            <option value='assemblee_internationale'>Assemblées internationales</option>
+            <option value='autre'>Autres</option>
           </select>
           <ChevronDown className='absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none' />
         </div>
+        <label className='flex cursor-pointer items-center gap-2 rounded-lg border bg-background px-4 py-2 text-sm'>
+          <input
+            type='checkbox'
+            checked={showAll}
+            onChange={(e) => setFilter('historique', e.target.checked ? '1' : '')}
+            className='h-4 w-4 accent-primary'
+          />
+          Inclure les passées
+        </label>
       </FilterBar>
 
       {/* Loading */}
