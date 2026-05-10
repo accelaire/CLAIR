@@ -402,20 +402,6 @@ async function syncMandatsFromSourceData(
       : undefined;
     const newDateDebut = m.dateDebut ? new Date(m.dateDebut) : new Date();
 
-    // Close any previously active mandat for the same (parlementaire, organe) with a different PM id.
-    // This preserves history: the old mandat gets a dateFin, the new one is the current active.
-    if (organeRef) {
-      await prisma.mandat.updateMany({
-        where: {
-          parlementaireId,
-          organeRef,
-          dateFin: null,
-          sourceUid: { not: m.uid },
-        },
-        data: { dateFin: newDateDebut },
-      });
-    }
-
     await prisma.mandat.upsert({
       where: { sourceUid: m.uid },
       update: {
