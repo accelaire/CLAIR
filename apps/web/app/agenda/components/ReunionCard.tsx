@@ -62,9 +62,8 @@ function isHappeningNow(reunion: AgendaReunion, now: number): boolean {
   return now >= start && now <= end;
 }
 
-function getLiveUrl(chambre: string, type: string): string {
+function getLiveUrl(chambre: string): string {
   if (chambre === 'senat') return 'https://videos.senat.fr/chaine.seance-publique';
-  if (type === 'seance') return 'https://www.assemblee-nationale.fr/dyn/live';
   return 'https://videos.assemblee-nationale.fr/direct.php';
 }
 
@@ -92,18 +91,19 @@ function getCompteRenduUrl(ref: string): string | null {
 
 function getChambre(reunion: AgendaReunion): string | null {
   if (reunion.commission?.chambre) return reunion.commission.chambre;
-  // Séances sans commission → déduire via compteRenduRef ou urlVideo
   if (reunion.compteRenduRef?.startsWith('CRSA')) return 'assemblee';
   if (reunion.compteRenduRef?.startsWith('CRSS')) return 'senat';
   if (reunion.urlVideo?.includes('assemblee-nationale.fr')) return 'assemblee';
   if (reunion.urlVideo?.includes('senat.fr')) return 'senat';
+  if (reunion.lieu?.includes('Palais Bourbon') || reunion.lieu?.includes('Assemblée nationale')) return 'assemblee';
+  if (reunion.lieu?.includes('Palais du Luxembourg') || reunion.lieu?.includes('Sénat')) return 'senat';
   return null;
 }
 
 export function ReunionCard({ reunion }: { reunion: AgendaReunion }) {
   const [expanded, setExpanded] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const commissionName = reunion.commission?.nomCourt || reunion.commission?.nom;
+  const commissionName = reunion.commission?.nom || reunion.commission?.nomCourt;
   const chambre = getChambre(reunion);
 
   useEffect(() => {
@@ -118,7 +118,7 @@ export function ReunionCard({ reunion }: { reunion: AgendaReunion }) {
   const videoUrl = reunion.urlVideo
     ? reunion.urlVideo
     : happeningNow && reunion.captationVideo && chambre
-      ? getLiveUrl(chambre, reunion.type)
+      ? getLiveUrl(chambre)
       : null;
 
   const handleCardClick = videoUrl
@@ -220,7 +220,7 @@ export function ReunionCard({ reunion }: { reunion: AgendaReunion }) {
 
               {chambre && isLiveNow(reunion, now) && !reunion.urlVideo && (
                 <a
-                  href={getLiveUrl(chambre, reunion.type)}
+                  href={getLiveUrl(chambre)}
                   target='_blank'
                   rel='noopener noreferrer'
                   className='flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border bg-red-50 text-red-600 border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-950/50 transition-colors font-medium'

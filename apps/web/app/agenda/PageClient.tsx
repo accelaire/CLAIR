@@ -118,63 +118,64 @@ function AgendaPageContent() {
   const totalThisMonth = data?.total ?? 0;
 
   return (
-    <div className='container mx-auto px-4 py-8'>
-      {/* Header */}
-      <div className='mb-8'>
-        <h1 className='text-3xl font-bold'>Agenda parlementaire</h1>
-        <p className='mt-1 text-muted-foreground'>
-          {isLoading
-            ? 'Chargement...'
-            : totalThisMonth > 0
-              ? `${totalThisMonth} réunion${totalThisMonth > 1 ? 's' : ''} ce mois`
-              : 'Aucune réunion ce mois'}{' '}
-          — Assemblée nationale &amp; Sénat
-        </p>
-      </div>
+    <div className='container mx-auto px-4 pt-8'>
+      {/* Header + Filtres — ancrés sous le header du site */}
+      <div className='lg:sticky lg:top-16 lg:z-30 bg-background pt-4 pb-4 border-b'>
+        <div className='mb-4'>
+          <h1 className='text-3xl font-bold'>Agenda parlementaire</h1>
+          <p className='mt-1 text-muted-foreground'>
+            {isLoading
+              ? 'Chargement...'
+              : totalThisMonth > 0
+                ? `${totalThisMonth} réunion${totalThisMonth > 1 ? 's' : ''} ce mois`
+                : 'Aucune réunion ce mois'}{' '}
+            — Assemblée nationale &amp; Sénat
+          </p>
+        </div>
 
-      {/* Filtres */}
-      <FilterBar
-        activeFilterCount={activeFilterCount}
-        onClear={() => clearAll()}
-        search={<div />}
-      >
-        <div className='relative'>
-          <select
-            value={filters.chambre}
-            onChange={(e) => setFilter('chambre', e.target.value)}
-            className='appearance-none rounded-lg border bg-background px-4 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary'
-          >
-            <option value=''>Toutes les chambres</option>
-            <option value='assemblee'>Assemblée nationale</option>
-            <option value='senat'>Sénat</option>
-          </select>
-          <ChevronDown className='absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none' />
-        </div>
-        <div className='relative'>
-          <select
-            value={filters.type}
-            onChange={(e) => setFilter('type', e.target.value)}
-            className='appearance-none rounded-lg border bg-background px-4 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary'
-          >
-            <option value=''>Tous les types</option>
-            <option value='commission'>Commissions</option>
-            <option value='seance'>Séances publiques</option>
-          </select>
-          <ChevronDown className='absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none' />
-        </div>
-      </FilterBar>
+        <FilterBar
+          activeFilterCount={activeFilterCount}
+          onClear={() => clearAll()}
+          search={<div />}
+        >
+          <div className='relative'>
+            <select
+              value={filters.chambre}
+              onChange={(e) => setFilter('chambre', e.target.value)}
+              className='appearance-none rounded-lg border bg-background px-4 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary'
+            >
+              <option value=''>Toutes les chambres</option>
+              <option value='assemblee'>Assemblée nationale</option>
+              <option value='senat'>Sénat</option>
+            </select>
+            <ChevronDown className='absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none' />
+          </div>
+          <div className='relative'>
+            <select
+              value={filters.type}
+              onChange={(e) => setFilter('type', e.target.value)}
+              className='appearance-none rounded-lg border bg-background px-4 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary'
+            >
+              <option value=''>Tous les types</option>
+              <option value='commission'>Commissions</option>
+              <option value='seance'>Séances publiques</option>
+            </select>
+            <ChevronDown className='absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none' />
+          </div>
+        </FilterBar>
+      </div>
 
       {/* Error */}
       {error && (
-        <div className='mb-6 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive'>
+        <div className='mt-4 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive'>
           Erreur lors du chargement de l&apos;agenda.
         </div>
       )}
 
-      {/* Main layout: calendar + day detail */}
-      <div className='grid gap-6 lg:grid-cols-[380px_1fr]'>
-        {/* Left: Calendar */}
-        <div className='rounded-lg border bg-card p-5'>
+      {/* Main layout: calendar sticky + day detail */}
+      <div className='grid gap-6 lg:grid-cols-[380px_1fr] items-start py-6'>
+        {/* Left: Calendar — sticky sous le header page */}
+        <div className='rounded-lg border bg-card p-5 lg:sticky lg:top-[16rem] lg:self-start'>
           {isLoading ? (
             <div className='animate-pulse space-y-3'>
               <div className='flex justify-between'>
@@ -201,7 +202,7 @@ function AgendaPageContent() {
           )}
         </div>
 
-        {/* Right: Day detail */}
+        {/* Right: Day detail — défile avec la page */}
         <div className='rounded-lg border bg-card p-5'>
           {isLoading ? (
             <div className='animate-pulse space-y-3'>

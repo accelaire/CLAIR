@@ -115,8 +115,14 @@ function isEventHappeningNow(ev: UpcomingEvent, now: number): boolean {
   return now >= start && now <= end;
 }
 
+function deriveChambresFromLieu(lieu: string | null): string | null {
+  if (!lieu) return null;
+  if (lieu.includes('Palais Bourbon') || lieu.includes('Assemblée nationale')) return 'assemblee';
+  if (lieu.includes('Palais du Luxembourg') || lieu.includes('Sénat')) return 'senat';
+  return null;
+}
+
 function DayCard({ isoDate, label, events }: { isoDate: string; label: string; events: UpcomingEvent[] }) {
-  const [expanded, setExpanded] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -124,85 +130,79 @@ function DayCard({ isoDate, label, events }: { isoDate: string; label: string; e
     return () => clearInterval(timer);
   }, []);
 
-  // Always show happening events even if beyond VISIBLE_EVENTS
-  const visible = expanded
-    ? events
-    : events.filter((ev, i) => i < VISIBLE_EVENTS || isEventHappeningNow(ev, now));
+  const visible = events.filter((ev, i) => i < VISIBLE_EVENTS || isEventHappeningNow(ev, now));
   const hiddenCount = events.filter((ev, i) => i >= VISIBLE_EVENTS && !isEventHappeningNow(ev, now)).length;
-  const hasMore = hiddenCount > 0;
 
   return (
     <div className="w-[calc((100%-2rem)/3)] min-w-[300px] shrink-0 rounded-xl border bg-card p-4">
       <h3 className="text-sm font-semibold text-foreground mb-3 capitalize">{label}</h3>
-      <div className="relative">
-        <div className="space-y-2">
-          {visible.map((ev) => {
-            const chambre = ev.commission?.chambre;
-            const isSeance = ev.type === 'seance';
-            const chambreLabel = chambre === 'assemblee' ? 'Assemblée' : chambre === 'senat' ? 'Sénat' : null;
-            const time = new Date(ev.dateDebut).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-            const commissionName = ev.commission?.nom;
-            const happeningNow = isEventHappeningNow(ev, now);
+      <div className="space-y-2">
+        {visible.map((ev) => {
+          const chambre = ev.commission?.chambre || deriveChambresFromLieu(ev.lieu);
+          const isSeance = ev.type === 'seance';
+          const chambreLabel = chambre === 'assemblee' ? 'Assemblée' : chambre === 'senat' ? 'Sénat' : null;
+          const time = new Date(ev.dateDebut).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+          const commissionName = ev.commission?.nomCourt || ev.commission?.nom;
+          const happeningNow = isEventHappeningNow(ev, now);
 
-            return (
-              <Link
-                key={ev.id}
-                href={`/agenda?date=${isoDate}#event-${ev.id}`}
-                className={`flex items-start gap-3 rounded-lg border p-3 transition-all hover:border-primary hover:shadow-sm ${
-                  happeningNow
-                    ? 'border-primary/50 bg-primary/[0.04] dark:bg-primary/[0.08]'
-                    : 'bg-background'
-                }`}
-              >
-                <div className="shrink-0 w-12 text-center pt-0.5">
-                  <span className="text-sm font-semibold tabular-nums">{time}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {chambreLabel && (
-                      <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'}`}>
-                        {chambreLabel}
-                      </span>
-                    )}
-                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                      isSeance
-                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                        : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                    }`}>
-                      {isSeance ? 'Séance' : 'Commission'}
+          return (
+            <Link
+              key={ev.id}
+              href={`/agenda?date=${isoDate}#event-${ev.id}`}
+              className={`flex items-start gap-3 rounded-lg border p-3 transition-all hover:border-primary hover:shadow-sm ${
+                happeningNow
+                  ? 'border-primary/50 bg-primary/[0.04] dark:bg-primary/[0.08]'
+                  : 'bg-background'
+              }`}
+            >
+              <div className="shrink-0 w-12 text-center pt-0.5">
+                <span className="text-sm font-semibold tabular-nums">{time}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {chambreLabel && (
+                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'}`}>
+                      {chambreLabel}
                     </span>
-                    {happeningNow && ev.captationVideo && (
-                      <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary border border-primary/25">
-                        <span className="relative flex h-1.5 w-1.5 shrink-0">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary" />
-                        </span>
-                        En direct
-                      </span>
-                    )}
-                  </div>
-                  {!isSeance && commissionName && (
-                    <p className="mt-1 text-xs font-medium text-foreground line-clamp-1">{commissionName}</p>
                   )}
-                  {ev.odjResume && (
-                    <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{ev.odjResume}</p>
+                  <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                    isSeance
+                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                      : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                  }`}>
+                    {isSeance ? 'Séance' : 'Commission'}
+                  </span>
+                  {happeningNow && ev.captationVideo && (
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary border border-primary/25">
+                      <span className="relative flex h-1.5 w-1.5 shrink-0">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary" />
+                      </span>
+                      En direct
+                    </span>
                   )}
                 </div>
-              </Link>
-            );
-          })}
-        </div>
-        {hasMore && !expanded && (
-          <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-card to-transparent pointer-events-none" />
-        )}
+                {commissionName && (
+                  <p className="mt-1 text-xs font-medium text-foreground line-clamp-1">{commissionName}</p>
+                )}
+                {!commissionName && (
+                  <p className="mt-1 text-xs font-medium text-foreground">Séance publique</p>
+                )}
+                {ev.odjResume && (
+                  <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{ev.odjResume}</p>
+                )}
+              </div>
+            </Link>
+          );
+        })}
       </div>
-      {hasMore && (
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="mt-2 text-xs font-medium text-primary hover:underline self-center"
+      {hiddenCount > 0 && (
+        <Link
+          href={`/agenda?date=${isoDate}`}
+          className="mt-2 block text-xs font-medium text-primary hover:underline"
         >
-          {expanded ? 'Réduire' : `Afficher plus (${hiddenCount})`}
-        </button>
+          Afficher plus ({hiddenCount})
+        </Link>
       )}
     </div>
   );
