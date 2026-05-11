@@ -108,10 +108,14 @@ export const SOURCES: Record<string, SourceConfig> = {
     // Base DOSLEG (dossiers législatifs)
     url: 'https://data.senat.fr/data/dosleg/dosleg.zip',
   },
+  'senat:agenda': {
+    source: 'senat',
+    dataType: 'agenda',
+    url: 'https://www.senat.fr/api/v1/agenda/events',
+  },
   'senat:reunions': {
     source: 'senat',
     dataType: 'reunions',
-    // Index des comptes rendus de commissions (scraping HTML — pas de dataset structuré)
     url: 'https://www.senat.fr/compte-rendu-commissions/',
   },
   'senat:videos': {

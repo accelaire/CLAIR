@@ -38,6 +38,7 @@ import {
   syncReunions,
   syncSeancesODJ,
   syncSenatReunions,
+  syncSenatAgenda,
 } from './workers/sync.js';
 import {
   calculateAllStats,
@@ -246,6 +247,11 @@ program
           console.log(`   Semaines traitées: ${result.weeksFetched}`);
           console.log(`   Pages parsées: ${result.pagesParsed}`);
           console.log(`   Pages en erreur: ${result.pagesErrored}`);
+
+          const agendaResult = await syncSenatAgenda();
+          console.log(`\n📊 Agenda Sénat (séances publiques à venir):`);
+          console.log(`   Créées: ${agendaResult.created}`);
+          console.log(`   Mises à jour: ${agendaResult.updated}`);
         } else if (chambre === 'an') {
           const result = await syncReunions({ limit: options.limit });
           console.log(`\n📊 Réunions AN:`);
@@ -267,6 +273,11 @@ program
           console.log(`   Semaines traitées: ${resultSE.weeksFetched}`);
           console.log(`   Pages parsées: ${resultSE.pagesParsed}`);
           console.log(`   Pages en erreur: ${resultSE.pagesErrored}`);
+
+          const agendaResult = await syncSenatAgenda();
+          console.log(`\n📊 Agenda Sénat (séances publiques à venir):`);
+          console.log(`   Créées: ${agendaResult.created}`);
+          console.log(`   Mises à jour: ${agendaResult.updated}`);
         }
       } else if (options.seancesOdj) {
         const result = await syncSeancesODJ();
@@ -345,6 +356,7 @@ program
   .option('--co, --commissions', 'Inclure les commissions parlementaires')
   .option('--re, --reunions', 'Inclure les réunions/agenda parlementaire (AN)')
   .option('--senat-reunions', 'Inclure les réunions Sénat (scraping HTML comptes rendus)')
+  .option('--senat-agenda', 'Inclure l\'agenda Sénat (séances publiques à venir via API senat.fr)')
   .option('--senat-videos', 'Inclure les vidéos Sénat (scraping videos.senat.fr)')
   .option('--an-videos', 'Inclure les vidéos AN (videos.assemblee-nationale.fr)')
   .option('--seances-odj', 'Inclure l\'enrichissement ODJ des séances publiques (CSV AN)')
@@ -365,6 +377,7 @@ program
         includeCommissions: options.commissions,
         includeReunions: options.reunions,
         includeSenatReunions: options.senatReunions,
+        includeSenatAgenda: options.senatAgenda,
         includeSenatVideos: options.senatVideos,
         includeAnVideos: options.anVideos,
         includeSeancesODJ: options.seancesOdj,

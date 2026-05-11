@@ -310,6 +310,25 @@ export async function syncReunions(options: { limit?: number } = {}): Promise<{
           created++;
         }
 
+        // Dedup: when a RUSN (Sénat séance from AN archive) arrives, replace SENAT_AGENDA_* entries for that day
+        if (r.uid.startsWith('RUSN')) {
+          const dayStart = new Date(reunionData.dateDebut);
+          dayStart.setUTCHours(0, 0, 0, 0);
+          const dayEnd = new Date(dayStart);
+          dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+
+          const deleted = await prisma.reunion.deleteMany({
+            where: {
+              uid: { startsWith: 'SENAT_AGENDA_' },
+              type: 'seance',
+              dateDebut: { gte: dayStart, lt: dayEnd },
+            },
+          });
+          if (deleted.count > 0) {
+            logger.info({ rusnUid: r.uid, deletedAgenda: deleted.count }, 'Replaced SENAT_AGENDA entries with RUSN');
+          }
+        }
+
         // Sync participants — skip for past meetings that already exist (participants are final)
         const isPastAndExisting = existing && reunionData.dateDebut < new Date();
         if (r.participants.length > 0 && !isPastAndExisting) {
@@ -2014,6 +2033,69 @@ export async function syncSenatReunions(options: { maxWeeks?: number } = {}): Pr
 }
 
 // =============================================================================
+// SYNC AGENDA SÉNAT (séances publiques à venir via API senat.fr)
+// =============================================================================
+
+export async function syncSenatAgenda(): Promise<{ created: number; updated: number }> {
+  const { SenatAgendaClient } = await import('../sources/senat/agenda-client.js');
+
+  logger.info('Starting Sénat agenda sync (upcoming public sessions)...');
+
+  const client = new SenatAgendaClient();
+  const seances = await client.getUpcomingSeances(4);
+
+  logger.info({ count: seances.length }, 'Sénat agenda fetched — starting DB upsert...');
+
+  const commission = await prisma.commission.findFirst({
+    where: { slug: 'senat-senat-5eme-republique' },
+    select: { id: true },
+  });
+  const commissionId = commission?.id || null;
+
+  if (!commissionId) {
+    logger.warn('Commission "senat-senat-5eme-republique" not found — séances will have no commission link');
+  }
+
+  let created = 0;
+  let updated = 0;
+
+  for (const s of seances) {
+    try {
+      const reunionData = {
+        uid: s.uid,
+        type: 'seance' as const,
+        dateDebut: s.dateDebut,
+        dateFin: null,
+        lieu: 'Sénat',
+        etat: s.etat,
+        odjResume: s.odjResume,
+        odjComplet: s.odjItems.join('\n') || null,
+        captationVideo: true,
+        ouvertePresse: false,
+        compteRenduRef: null,
+        organeRef: 'PO78718',
+        commissionId,
+      };
+
+      const existing = await prisma.reunion.findUnique({ where: { uid: s.uid } });
+
+      if (existing) {
+        await prisma.reunion.update({ where: { id: existing.id }, data: reunionData });
+        updated++;
+      } else {
+        await prisma.reunion.create({ data: reunionData });
+        created++;
+      }
+    } catch (err: any) {
+      logger.warn({ uid: s.uid, error: err.message }, 'Error syncing Sénat agenda séance');
+    }
+  }
+
+  logger.info({ created, updated, total: seances.length }, 'Sénat agenda sync completed');
+  return { created, updated };
+}
+
+// =============================================================================
 // SYNC SÉANCES ODJ (enrichissement des réunions depuis le CSV AN)
 // =============================================================================
 
@@ -2185,6 +2267,7 @@ export interface SmartSyncOptions {
   includeCommissions?: boolean;
   includeReunions?: boolean;
   includeSenatReunions?: boolean;
+  includeSenatAgenda?: boolean;
   includeSenatVideos?: boolean;
   includeAnVideos?: boolean;
   includeSeancesODJ?: boolean;
@@ -2257,7 +2340,9 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       'assemblee_nationale:seances_odj',
       // 10. Réunions Sénat (scraping HTML comptes rendus — nécessite commissions Sénat)
       'senat:reunions',
-      // 11. Vidéos Sénat (scraping videos.senat.fr — lie les replays aux séances)
+      // 11. Agenda Sénat (séances publiques à venir via API senat.fr)
+      'senat:agenda',
+      // 12. Vidéos Sénat (scraping videos.senat.fr — lie les replays aux séances)
       'senat:videos',
       // 12. Vidéos AN (videos.assemblee-nationale.fr — séances + commissions)
       'assemblee_nationale:videos',
@@ -2275,6 +2360,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       ...(options.includeReunions ? ['assemblee_nationale:reunions'] : []),
       ...(options.includeSeancesODJ ? ['assemblee_nationale:seances_odj'] : []),
       ...(options.includeSenatReunions ? ['senat:reunions'] : []),
+      ...(options.includeSenatAgenda ? ['senat:agenda'] : []),
       ...(options.includeSenatVideos ? ['senat:videos'] : []),
       ...(options.includeAnVideos ? ['assemblee_nationale:videos'] : []),
     ];
@@ -2430,6 +2516,12 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
           case 'senat:reunions': {
             const senatReunionsResult = await syncSenatReunions({ maxWeeks: options.reunionsLimit });
             syncResult = { created: senatReunionsResult.created, updated: senatReunionsResult.updated };
+            break;
+          }
+
+          case 'senat:agenda': {
+            const senatAgendaResult = await syncSenatAgenda();
+            syncResult = { created: senatAgendaResult.created, updated: senatAgendaResult.updated };
             break;
           }
 
