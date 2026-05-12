@@ -206,7 +206,7 @@ function ReunionItem({ reunion }: { reunion: { id: string; uid: string; dateDebu
               href={reunion.urlVideo}
               target='_blank'
               rel='noopener noreferrer'
-              className='flex items-center gap-1 px-2 py-0.5 rounded text-xs border bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 transition-colors dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800 dark:hover:bg-blue-950/50'
+              className='flex items-center gap-1 px-2 py-0.5 rounded text-xs border bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100 transition-colors dark:bg-violet-950/30 dark:text-violet-400 dark:border-violet-800 dark:hover:bg-violet-950/50'
             >
               <Video className='h-3 w-3' />
               Vidéo

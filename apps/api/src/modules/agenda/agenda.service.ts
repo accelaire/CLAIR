@@ -60,6 +60,7 @@ export class AgendaService {
               nomCourt: true,
               chambre: true,
               type: true,
+              organeRef: true,
             },
           },
           _count: { select: { participants: true } },
@@ -94,7 +95,7 @@ export class AgendaService {
     for (const s of scrutins) {
       if (!s.seanceRef) continue;
       if (!scrutinsBySeanceRef[s.seanceRef]) scrutinsBySeanceRef[s.seanceRef] = [];
-      scrutinsBySeanceRef[s.seanceRef].push(s);
+      scrutinsBySeanceRef[s.seanceRef]!.push(s);
     }
 
     // Group by day

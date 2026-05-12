@@ -168,8 +168,9 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
           select: {
             id: true, uid: true, type: true, dateDebut: true, dateFin: true,
             lieu: true, odjResume: true, etat: true, captationVideo: true,
+            compteRenduRef: true,
             commission: {
-              select: { slug: true, nom: true, nomCourt: true, chambre: true },
+              select: { slug: true, nom: true, nomCourt: true, chambre: true, organeRef: true },
             },
           },
         });

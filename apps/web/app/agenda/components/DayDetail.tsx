@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { ReunionCard, type AgendaReunion } from './ReunionCard';
 import { Calendar } from 'lucide-react';
+import { useLiveNow } from '@/hooks/useLiveNow';
 
 interface DayDetailProps {
   selectedDate: string | null; // 'YYYY-MM-DD'
@@ -24,7 +25,35 @@ function formatDayTitle(dateStr: string): string {
   return `${dayName.charAt(0).toUpperCase() + dayName.slice(1)} ${day} ${month} ${year}`;
 }
 
+function getLiveUrl(
+  reunion: AgendaReunion,
+  liveByOrganeRef: Map<string, string>,
+  liveBySeanceKey: Map<string, string>,
+  liveBySeanceDate: Map<string, string>,
+): string | undefined {
+  // Commissions: match by organeRef
+  if (reunion.commission?.organeRef) {
+    const url = liveByOrganeRef.get(reunion.commission.organeRef);
+    if (url) return url;
+    // fall through — séances have a commission linked (hemicycle) but aren't in the commission map
+  }
+  const isoDate = new Date(reunion.dateDebut).toISOString().slice(0, 10);
+  // Séances: match by order extracted from compteRenduRef (e.g. CRSA20260512N002 → order 2)
+  const match = reunion.compteRenduRef?.match(/N(\d+)$/);
+  if (match) {
+    const url = liveBySeanceKey.get(`${isoDate}|${parseInt(match[1]!, 10)}`);
+    if (url) return url;
+  }
+  // Fallback for séances in progress that don't have compteRenduRef yet
+  if (reunion.type === 'seance') {
+    return liveBySeanceDate.get(isoDate);
+  }
+  return undefined;
+}
+
 export function DayDetail({ selectedDate, reunions }: DayDetailProps) {
+  const { liveByOrganeRef, liveBySeanceKey, liveBySeanceDate } = useLiveNow();
+
   if (!selectedDate) {
     return (
       <div className='flex flex-col items-center justify-center py-16 text-center text-muted-foreground'>
@@ -70,7 +99,11 @@ export function DayDetail({ selectedDate, reunions }: DayDetailProps) {
       </div>
       <div className='space-y-2'>
         {sorted.map((reunion) => (
-          <ReunionCard key={reunion.id} reunion={reunion} />
+          <ReunionCard
+            key={reunion.id}
+            reunion={reunion}
+            liveUrl={getLiveUrl(reunion, liveByOrganeRef, liveBySeanceKey, liveBySeanceDate)}
+          />
         ))}
       </div>
     </div>

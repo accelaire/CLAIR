@@ -549,6 +549,8 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
   const slug = params.slug as string;
   const [activeTab, setActiveTab] = useState<'votes' | 'interventions' | 'amendements'>('votes');
   const [showAnciensMandats, setShowAnciensMandats] = useState(false);
+  const [showAllMandats, setShowAllMandats] = useState(false);
+  const [showAllDeclarations, setShowAllDeclarations] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['senateur', slug],
@@ -851,6 +853,7 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
                 {(() => {
                   const mandatsActifs = senateur.mandats!.filter((m) => !m.dateFin);
                   const mandatsAnciens = senateur.mandats!.filter((m) => !!m.dateFin);
+                  const visibleMandats = showAllMandats ? mandatsActifs : mandatsActifs.slice(0, 4);
                   const renderMandat = (m: NonNullable<typeof senateur.mandats>[0]) => {
                     const commissionLabel = m.commission?.nom || m.institution || m.typeOrgane;
                     const commissionHref = m.commission ? `/commissions/${m.commission.slug}` : null;
@@ -875,7 +878,27 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
                   };
                   return (
                     <>
-                      <div className="space-y-2">{mandatsActifs.map(renderMandat)}</div>
+                      <div className="space-y-2">{visibleMandats.map(renderMandat)}</div>
+                      {mandatsActifs.length > 4 && (
+                        <div className="mt-2">
+                          <button
+                            onClick={() => setShowAllMandats((v) => !v)}
+                            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            {showAllMandats ? (
+                              <>
+                                <ChevronUp className="h-3.5 w-3.5" />
+                                Réduire
+                              </>
+                            ) : (
+                              <>
+                                <ChevronDown className="h-3.5 w-3.5" />
+                                Voir {mandatsActifs.length - 4} de plus
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
                       {mandatsAnciens.length > 0 && (
                         <div className="mt-3">
                           <button
@@ -906,39 +929,68 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
                 <h2 className="text-xl font-semibold">Transparence HATVP</h2>
               </div>
               <div className="space-y-2">
-                {senateur.declarations.map((d) => {
-                  const labels: Record<string, string> = {
-                    di: "Déclaration d'intérêts",
-                    dia: "Déclaration d'intérêts et d'activités",
-                    diam: "Déclaration d'intérêts (modification)",
-                    dsp: 'Déclaration de patrimoine',
-                    dspm: 'Déclaration de patrimoine (modification)',
-                    dspfm: 'Déclaration de patrimoine (fin de mandat)',
-                  };
+                {(() => {
+                  const visibleDeclarations = showAllDeclarations
+                    ? senateur.declarations!
+                    : senateur.declarations!.slice(0, 4);
                   return (
-                    <div key={d.id} className="flex items-center gap-3 rounded-lg border bg-card p-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium">{labels[d.typeDocument] || d.typeDocument}</p>
-                        {d.datePublication && (
-                          <p className="text-xs text-muted-foreground">
-                            Publiée le {new Date(d.datePublication).toLocaleDateString('fr-FR')}
-                          </p>
-                        )}
-                      </div>
-                      {d.urlDossier && (
-                        <a
-                          href={d.urlDossier}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex-shrink-0 rounded-lg border p-2 hover:bg-accent transition-colors"
-                          title="Voir sur hatvp.fr"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
+                    <>
+                      {visibleDeclarations.map((d) => {
+                        const labels: Record<string, string> = {
+                          di: "Déclaration d'intérêts",
+                          dia: "Déclaration d'intérêts et d'activités",
+                          diam: "Déclaration d'intérêts (modification)",
+                          dsp: 'Déclaration de patrimoine',
+                          dspm: 'Déclaration de patrimoine (modification)',
+                          dspfm: 'Déclaration de patrimoine (fin de mandat)',
+                        };
+                        return (
+                          <div key={d.id} className="flex items-center gap-3 rounded-lg border bg-card p-3">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium">{labels[d.typeDocument] || d.typeDocument}</p>
+                              {d.datePublication && (
+                                <p className="text-xs text-muted-foreground">
+                                  Publiée le {new Date(d.datePublication).toLocaleDateString('fr-FR')}
+                                </p>
+                              )}
+                            </div>
+                            {d.urlDossier && (
+                              <a
+                                href={d.urlDossier}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex-shrink-0 rounded-lg border p-2 hover:bg-accent transition-colors"
+                                title="Voir sur hatvp.fr"
+                              >
+                                <ExternalLink className="h-4 w-4" />
+                              </a>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {senateur.declarations!.length > 4 && (
+                        <div className="mt-2">
+                          <button
+                            onClick={() => setShowAllDeclarations((v) => !v)}
+                            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            {showAllDeclarations ? (
+                              <>
+                                <ChevronUp className="h-3.5 w-3.5" />
+                                Réduire
+                              </>
+                            ) : (
+                              <>
+                                <ChevronDown className="h-3.5 w-3.5" />
+                                Voir {senateur.declarations!.length - 4} de plus
+                              </>
+                            )}
+                          </button>
+                        </div>
                       )}
-                    </div>
+                    </>
                   );
-                })}
+                })()}
               </div>
             </div>
           )}

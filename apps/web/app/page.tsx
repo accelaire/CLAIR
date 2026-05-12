@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { Search, ArrowRight, Calendar, ChevronLeft, ChevronRight, Landmark, Building2, Users } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useCountUp } from '@/hooks/useCountUp';
+import { useLiveNow } from '@/hooks/useLiveNow';
 import { FAQAccordion } from '@/components/ui/faq-accordion';
 
 interface Stats {
@@ -44,11 +45,13 @@ interface UpcomingEvent {
   odjResume: string | null;
   etat: string;
   captationVideo: boolean | null;
+  compteRenduRef: string | null;
   commission: {
     slug: string;
     nom: string;
     nomCourt: string | null;
     chambre: string;
+    organeRef: string | null;
   } | null;
 }
 
@@ -124,11 +127,27 @@ function deriveChambresFromLieu(lieu: string | null): string | null {
 
 function DayCard({ isoDate, label, events }: { isoDate: string; label: string; events: UpcomingEvent[] }) {
   const [now, setNow] = useState(() => Date.now());
+  const { liveByOrganeRef, liveBySeanceKey, liveBySeanceDate } = useLiveNow();
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(timer);
   }, []);
+
+  function getEventLiveUrl(ev: UpcomingEvent): string | undefined {
+    if (ev.commission?.organeRef) {
+      const url = liveByOrganeRef.get(ev.commission.organeRef);
+      if (url) return url;
+    }
+    const evIsoDate = new Date(ev.dateDebut).toISOString().slice(0, 10);
+    const match = ev.compteRenduRef?.match(/N(\d+)$/);
+    if (match) {
+      const url = liveBySeanceKey.get(`${evIsoDate}|${parseInt(match[1]!, 10)}`);
+      if (url) return url;
+    }
+    if (ev.type === 'seance') return liveBySeanceDate.get(evIsoDate);
+    return undefined;
+  }
 
   const visible = events.filter((ev, i) => i < VISIBLE_EVENTS || isEventHappeningNow(ev, now));
   const hiddenCount = events.filter((ev, i) => i >= VISIBLE_EVENTS && !isEventHappeningNow(ev, now)).length;
@@ -144,6 +163,7 @@ function DayCard({ isoDate, label, events }: { isoDate: string; label: string; e
           const time = new Date(ev.dateDebut).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
           const commissionName = ev.commission?.nomCourt || ev.commission?.nom;
           const happeningNow = isEventHappeningNow(ev, now);
+          const liveUrl = happeningNow ? getEventLiveUrl(ev) : undefined;
 
           return (
             <Link
@@ -172,7 +192,7 @@ function DayCard({ isoDate, label, events }: { isoDate: string; label: string; e
                   }`}>
                     {isSeance ? 'Séance' : 'Commission'}
                   </span>
-                  {happeningNow && ev.captationVideo && (
+                  {liveUrl && (
                     <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary border border-primary/25">
                       <span className="relative flex h-1.5 w-1.5 shrink-0">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
