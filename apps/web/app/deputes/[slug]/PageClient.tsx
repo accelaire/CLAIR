@@ -845,8 +845,8 @@ export default function PageClient({ initialData }: { initialData?: DeputeDetail
         <div className="mb-8 grid gap-6 lg:grid-cols-2">
           {/* Mandats et fonctions */}
           {depute.mandats && depute.mandats.length > 0 && (() => {
-            const mandatsActifs = depute.mandats!.filter((m) => !m.dateFin);
-            const mandatsAnciens = depute.mandats!.filter((m) => !!m.dateFin);
+            const mandatsActifs = (depute.mandats ?? []).filter((m) => !m.dateFin);
+            const mandatsAnciens = (depute.mandats ?? []).filter((m) => !!m.dateFin);
             const renderMandat = (m: NonNullable<typeof depute.mandats>[0]) => {
               const commissionLabel = m.commission?.nom || m.institution || m.typeOrgane;
               const commissionHref = m.commission ? `/commissions/${m.commission.slug}` : null;
@@ -928,74 +928,39 @@ export default function PageClient({ initialData }: { initialData?: DeputeDetail
                 <h2 className="text-xl font-semibold">Transparence HATVP</h2>
               </div>
               <div className="space-y-2">
-                {showAllDeclarations
-                  ? depute.declarations.map((d) => {
-                      const labels: Record<string, string> = {
-                        di: "Déclaration d'intérêts",
-                        dia: "Déclaration d'intérêts et d'activités",
-                        diam: "Déclaration d'intérêts (modification)",
-                        dsp: 'Déclaration de patrimoine',
-                        dspm: 'Déclaration de patrimoine (modification)',
-                        dspfm: 'Déclaration de patrimoine (fin de mandat)',
-                      };
-                      return (
-                        <div key={d.id} className="flex items-center gap-3 rounded-lg border bg-card p-3">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium">{labels[d.typeDocument] || d.typeDocument}</p>
-                            {d.datePublication && (
-                              <p className="text-xs text-muted-foreground">
-                                Publiée le {new Date(d.datePublication).toLocaleDateString('fr-FR')}
-                              </p>
-                            )}
-                          </div>
-                          {d.urlDossier && (
-                            <a
-                              href={d.urlDossier}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex-shrink-0 rounded-lg border p-2 hover:bg-accent transition-colors"
-                              title="Voir sur hatvp.fr"
-                            >
-                              <ExternalLink className="h-4 w-4" />
-                            </a>
-                          )}
-                        </div>
-                      );
-                    })
-                  : depute.declarations.slice(0, 4).map((d) => {
-                      const labels: Record<string, string> = {
-                        di: "Déclaration d'intérêts",
-                        dia: "Déclaration d'intérêts et d'activités",
-                        diam: "Déclaration d'intérêts (modification)",
-                        dsp: 'Déclaration de patrimoine',
-                        dspm: 'Déclaration de patrimoine (modification)',
-                        dspfm: 'Déclaration de patrimoine (fin de mandat)',
-                      };
-                      return (
-                        <div key={d.id} className="flex items-center gap-3 rounded-lg border bg-card p-3">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium">{labels[d.typeDocument] || d.typeDocument}</p>
-                            {d.datePublication && (
-                              <p className="text-xs text-muted-foreground">
-                                Publiée le {new Date(d.datePublication).toLocaleDateString('fr-FR')}
-                              </p>
-                            )}
-                          </div>
-                          {d.urlDossier && (
-                            <a
-                              href={d.urlDossier}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex-shrink-0 rounded-lg border p-2 hover:bg-accent transition-colors"
-                              title="Voir sur hatvp.fr"
-                            >
-                              <ExternalLink className="h-4 w-4" />
-                            </a>
-                          )}
-                        </div>
-                      );
-                    })
-                }
+                {(showAllDeclarations ? depute.declarations : depute.declarations.slice(0, 4)).map((d) => {
+                  const labels: Record<string, string> = {
+                    di: "Déclaration d'intérêts",
+                    dia: "Déclaration d'intérêts et d'activités",
+                    diam: "Déclaration d'intérêts (modification)",
+                    dsp: 'Déclaration de patrimoine',
+                    dspm: 'Déclaration de patrimoine (modification)',
+                    dspfm: 'Déclaration de patrimoine (fin de mandat)',
+                  };
+                  return (
+                    <div key={d.id} className="flex items-center gap-3 rounded-lg border bg-card p-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium">{labels[d.typeDocument] || d.typeDocument}</p>
+                        {d.datePublication && (
+                          <p className="text-xs text-muted-foreground">
+                            Publiée le {new Date(d.datePublication).toLocaleDateString('fr-FR')}
+                          </p>
+                        )}
+                      </div>
+                      {d.urlDossier && (
+                        <a
+                          href={d.urlDossier}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-shrink-0 rounded-lg border p-2 hover:bg-accent transition-colors"
+                          title="Voir sur hatvp.fr"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               {depute.declarations.length > 4 && (
                 <div className="mt-2">

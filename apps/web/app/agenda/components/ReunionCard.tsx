@@ -76,16 +76,7 @@ function getCompteRenduUrl(ref: string): string | null {
   return null;
 }
 
-function getChambre(reunion: AgendaReunion): string | null {
-  if (reunion.commission?.chambre) return reunion.commission.chambre;
-  if (reunion.compteRenduRef?.startsWith('CRSA')) return 'assemblee';
-  if (reunion.compteRenduRef?.startsWith('CRSS')) return 'senat';
-  if (reunion.urlVideo?.includes('assemblee-nationale.fr')) return 'assemblee';
-  if (reunion.urlVideo?.includes('senat.fr')) return 'senat';
-  if (reunion.lieu?.includes('Palais Bourbon') || reunion.lieu?.includes('Assemblée nationale')) return 'assemblee';
-  if (reunion.lieu?.includes('Palais du Luxembourg') || reunion.lieu?.includes('Sénat')) return 'senat';
-  return null;
-}
+import { deriveChambre } from '@/lib/chambre';
 
 export function ReunionCard({
   reunion,
@@ -97,7 +88,7 @@ export function ReunionCard({
   const [expanded, setExpanded] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const commissionName = reunion.commission?.nom || reunion.commission?.nomCourt;
-  const chambre = getChambre(reunion);
+  const chambre = deriveChambre(reunion);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);

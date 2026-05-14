@@ -115,11 +115,11 @@ export const commissionsRoutes: FastifyPluginAsync = async (fastify) => {
         properties: { slug: { type: 'string' } },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request) => {
       const { slug } = commissionDetailSchema.parse(request.params);
       const query = commissionDossiersQuerySchema.parse(request.query);
       const result = await service.getDossiersByCommission(slug, query);
-      if (!result) return reply.status(404).send({ error: 'Commission not found' });
+      if (!result) throw new ApiError(404, 'Commission non trouvée');
       return result;
     },
   });

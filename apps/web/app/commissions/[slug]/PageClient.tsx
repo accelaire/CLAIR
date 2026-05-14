@@ -813,7 +813,8 @@ function CommissionDetailContent({
                 m.qualite?.toLowerCase().startsWith('président'),
               );
               if (!president) return null;
-              const href = president.parlementaire.chambre === 'assemblee'
+              const isDeputy = president.parlementaire.chambre === 'assemblee' || president.parlementaire.chambre === 'depute';
+              const href = isDeputy
                 ? `/deputes/${president.parlementaire.slug}`
                 : `/senateurs/${president.parlementaire.slug}`;
               return (

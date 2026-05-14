@@ -71,7 +71,7 @@ function AgendaPageContent() {
           params: {
             dateFrom,
             dateTo,
-            type: filters.type || 'tous',
+            type: filters.type || undefined,
             chambre: filters.chambre || undefined,
             limit: 1000,
           },

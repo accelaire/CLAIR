@@ -8,6 +8,7 @@ import { Search, ArrowRight, Calendar, ChevronLeft, ChevronRight, Landmark, Buil
 import { api } from '@/lib/api';
 import { useCountUp } from '@/hooks/useCountUp';
 import { useLiveNow } from '@/hooks/useLiveNow';
+import { matchLiveUrl } from '@/lib/live-url';
 import { FAQAccordion } from '@/components/ui/faq-accordion';
 
 interface Stats {
@@ -118,12 +119,7 @@ function isEventHappeningNow(ev: UpcomingEvent, now: number): boolean {
   return now >= start && now <= end;
 }
 
-function deriveChambresFromLieu(lieu: string | null): string | null {
-  if (!lieu) return null;
-  if (lieu.includes('Palais Bourbon') || lieu.includes('Assemblée nationale')) return 'assemblee';
-  if (lieu.includes('Palais du Luxembourg') || lieu.includes('Sénat')) return 'senat';
-  return null;
-}
+import { deriveChambre } from '@/lib/chambre';
 
 function DayCard({ isoDate, label, events }: { isoDate: string; label: string; events: UpcomingEvent[] }) {
   const [now, setNow] = useState(() => Date.now());
@@ -134,21 +130,6 @@ function DayCard({ isoDate, label, events }: { isoDate: string; label: string; e
     return () => clearInterval(timer);
   }, []);
 
-  function getEventLiveUrl(ev: UpcomingEvent): string | undefined {
-    if (ev.commission?.organeRef) {
-      const url = liveByOrganeRef.get(ev.commission.organeRef);
-      if (url) return url;
-    }
-    const evIsoDate = new Date(ev.dateDebut).toISOString().slice(0, 10);
-    const match = ev.compteRenduRef?.match(/N(\d+)$/);
-    if (match) {
-      const url = liveBySeanceKey.get(`${evIsoDate}|${parseInt(match[1]!, 10)}`);
-      if (url) return url;
-    }
-    if (ev.type === 'seance') return liveBySeanceDate.get(evIsoDate);
-    return undefined;
-  }
-
   const visible = events.filter((ev, i) => i < VISIBLE_EVENTS || isEventHappeningNow(ev, now));
   const hiddenCount = events.filter((ev, i) => i >= VISIBLE_EVENTS && !isEventHappeningNow(ev, now)).length;
 
@@ -157,13 +138,13 @@ function DayCard({ isoDate, label, events }: { isoDate: string; label: string; e
       <h3 className="text-sm font-semibold text-foreground mb-3 capitalize">{label}</h3>
       <div className="space-y-2">
         {visible.map((ev) => {
-          const chambre = ev.commission?.chambre || deriveChambresFromLieu(ev.lieu);
+          const chambre = deriveChambre(ev);
           const isSeance = ev.type === 'seance';
           const chambreLabel = chambre === 'assemblee' ? 'Assemblée' : chambre === 'senat' ? 'Sénat' : null;
           const time = new Date(ev.dateDebut).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
           const commissionName = ev.commission?.nomCourt || ev.commission?.nom;
           const happeningNow = isEventHappeningNow(ev, now);
-          const liveUrl = happeningNow ? getEventLiveUrl(ev) : undefined;
+          const liveUrl = happeningNow ? matchLiveUrl(ev, liveByOrganeRef, liveBySeanceKey, liveBySeanceDate) : undefined;
 
           return (
             <Link

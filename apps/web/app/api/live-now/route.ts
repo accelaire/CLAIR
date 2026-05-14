@@ -56,44 +56,52 @@ async function fetchType(typeVideo: string): Promise<RawAnVideo[]> {
 }
 
 export async function GET() {
-  const today = new Date().toISOString().slice(0, 10);
+  try {
+    const today = new Date().toISOString().slice(0, 10);
 
-  const [rawSeances, rawCommissions] = await Promise.all([
-    fetchType('Séance publique'),
-    fetchType('Commission'),
-  ]);
+    const [rawSeances, rawCommissions] = await Promise.all([
+      fetchType('Séance publique'),
+      fetchType('Commission'),
+    ]);
 
-  const commissions: { organeRef: string; directUrl: string }[] = [];
-  const seances: { isoDate: string; order: number; directUrl: string }[] = [];
+    const commissions: { organeRef: string; directUrl: string }[] = [];
+    const seances: { isoDate: string; order: number; directUrl: string }[] = [];
 
-  for (const item of rawCommissions) {
-    if (item.published === false) continue;
-    const ts = parseInt(item.date, 10);
-    const isoDate = new Date(ts * 1000).toISOString().slice(0, 10);
-    if (isoDate !== today) continue;
+    for (const item of rawCommissions) {
+      if (item.published === false) continue;
+      const ts = parseInt(item.date, 10);
+      if (isNaN(ts)) continue;
+      const isoDate = new Date(ts * 1000).toISOString().slice(0, 10);
+      if (isoDate !== today) continue;
 
-    const rawCode = item.commission?.split(';')[0]?.trim() ?? null;
-    const organeRef = rawCode ? (AN_VIDEO_CODE_TO_ORGANE[rawCode] ?? null) : null;
-    if (!organeRef) continue;
+      const rawCode = item.commission?.split(';')[0]?.trim() ?? null;
+      const organeRef = rawCode ? (AN_VIDEO_CODE_TO_ORGANE[rawCode] ?? null) : null;
+      if (!organeRef) continue;
 
-    const idHash = item.url.replace(/^\//, '');
-    commissions.push({ organeRef, directUrl: `${BASE}/direct.${idHash}` });
+      const idHash = item.url.replace(/^\//, '');
+      commissions.push({ organeRef, directUrl: `${BASE}/direct.${idHash}` });
+    }
+
+    for (const item of rawSeances) {
+      if (item.published === false) continue;
+      const ts = parseInt(item.date, 10);
+      if (isNaN(ts)) continue;
+      const isoDate = new Date(ts * 1000).toISOString().slice(0, 10);
+      if (isoDate !== today) continue;
+
+      const order = parseSeanceOrder(item.title);
+      if (order === null) continue;
+
+      const idHash = item.url.replace(/^\//, '');
+      seances.push({ isoDate, order, directUrl: `${BASE}/direct.${idHash}` });
+    }
+
+    return NextResponse.json({ commissions, seances }, {
+      headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60' },
+    });
+  } catch {
+    return NextResponse.json({ commissions: [], seances: [] }, {
+      headers: { 'Cache-Control': 'public, s-maxage=60' },
+    });
   }
-
-  for (const item of rawSeances) {
-    if (item.published === false) continue;
-    const ts = parseInt(item.date, 10);
-    const isoDate = new Date(ts * 1000).toISOString().slice(0, 10);
-    if (isoDate !== today) continue;
-
-    const order = parseSeanceOrder(item.title);
-    if (order === null) continue;
-
-    const idHash = item.url.replace(/^\//, '');
-    seances.push({ isoDate, order, directUrl: `${BASE}/direct.${idHash}` });
-  }
-
-  return NextResponse.json({ commissions, seances }, {
-    headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60' },
-  });
 }

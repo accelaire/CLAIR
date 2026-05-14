@@ -851,8 +851,8 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
               </div>
               <div className="space-y-2">
                 {(() => {
-                  const mandatsActifs = senateur.mandats!.filter((m) => !m.dateFin);
-                  const mandatsAnciens = senateur.mandats!.filter((m) => !!m.dateFin);
+                  const mandatsActifs = (senateur.mandats ?? []).filter((m) => !m.dateFin);
+                  const mandatsAnciens = (senateur.mandats ?? []).filter((m) => !!m.dateFin);
                   const visibleMandats = showAllMandats ? mandatsActifs : mandatsActifs.slice(0, 4);
                   const renderMandat = (m: NonNullable<typeof senateur.mandats>[0]) => {
                     const commissionLabel = m.commission?.nom || m.institution || m.typeOrgane;
@@ -931,8 +931,8 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
               <div className="space-y-2">
                 {(() => {
                   const visibleDeclarations = showAllDeclarations
-                    ? senateur.declarations!
-                    : senateur.declarations!.slice(0, 4);
+                    ? (senateur.declarations ?? [])
+                    : (senateur.declarations ?? []).slice(0, 4);
                   return (
                     <>
                       {visibleDeclarations.map((d) => {
@@ -968,7 +968,7 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
                           </div>
                         );
                       })}
-                      {senateur.declarations!.length > 4 && (
+                      {(senateur.declarations ?? []).length > 4 && (
                         <div className="mt-2">
                           <button
                             onClick={() => setShowAllDeclarations((v) => !v)}
@@ -982,7 +982,7 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
                             ) : (
                               <>
                                 <ChevronDown className="h-3.5 w-3.5" />
-                                Voir {senateur.declarations!.length - 4} de plus
+                                Voir {(senateur.declarations ?? []).length - 4} de plus
                               </>
                             )}
                           </button>

@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { ReunionCard, type AgendaReunion } from './ReunionCard';
 import { Calendar } from 'lucide-react';
 import { useLiveNow } from '@/hooks/useLiveNow';
+import { matchLiveUrl } from '@/lib/live-url';
 
 interface DayDetailProps {
   selectedDate: string | null; // 'YYYY-MM-DD'
@@ -25,34 +26,19 @@ function formatDayTitle(dateStr: string): string {
   return `${dayName.charAt(0).toUpperCase() + dayName.slice(1)} ${day} ${month} ${year}`;
 }
 
-function getLiveUrl(
-  reunion: AgendaReunion,
-  liveByOrganeRef: Map<string, string>,
-  liveBySeanceKey: Map<string, string>,
-  liveBySeanceDate: Map<string, string>,
-): string | undefined {
-  // Commissions: match by organeRef
-  if (reunion.commission?.organeRef) {
-    const url = liveByOrganeRef.get(reunion.commission.organeRef);
-    if (url) return url;
-    // fall through — séances have a commission linked (hemicycle) but aren't in the commission map
-  }
-  const isoDate = new Date(reunion.dateDebut).toISOString().slice(0, 10);
-  // Séances: match by order extracted from compteRenduRef (e.g. CRSA20260512N002 → order 2)
-  const match = reunion.compteRenduRef?.match(/N(\d+)$/);
-  if (match) {
-    const url = liveBySeanceKey.get(`${isoDate}|${parseInt(match[1]!, 10)}`);
-    if (url) return url;
-  }
-  // Fallback for séances in progress that don't have compteRenduRef yet
-  if (reunion.type === 'seance') {
-    return liveBySeanceDate.get(isoDate);
-  }
-  return undefined;
-}
-
 export function DayDetail({ selectedDate, reunions }: DayDetailProps) {
   const { liveByOrganeRef, liveBySeanceKey, liveBySeanceDate } = useLiveNow();
+
+  const sorted = [...reunions].sort(
+    (a, b) => new Date(a.dateDebut).getTime() - new Date(b.dateDebut).getTime(),
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.location.hash || reunions.length === 0) return;
+    const id = window.location.hash.slice(1);
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [reunions.length]);
 
   if (!selectedDate) {
     return (
@@ -76,19 +62,6 @@ export function DayDetail({ selectedDate, reunions }: DayDetailProps) {
     );
   }
 
-  // Sort by time
-  const sorted = [...reunions].sort(
-    (a, b) => new Date(a.dateDebut).getTime() - new Date(b.dateDebut).getTime(),
-  );
-
-  // Scroll to anchor once reunions are available
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.location.hash) return;
-    const id = window.location.hash.slice(1);
-    const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [sorted.length]);
-
   return (
     <div>
       <div className='mb-4 flex items-center justify-between'>
@@ -102,7 +75,7 @@ export function DayDetail({ selectedDate, reunions }: DayDetailProps) {
           <ReunionCard
             key={reunion.id}
             reunion={reunion}
-            liveUrl={getLiveUrl(reunion, liveByOrganeRef, liveBySeanceKey, liveBySeanceDate)}
+            liveUrl={matchLiveUrl(reunion, liveByOrganeRef, liveBySeanceKey, liveBySeanceDate)}
           />
         ))}
       </div>

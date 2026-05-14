@@ -310,18 +310,19 @@ export async function syncReunions(options: { limit?: number } = {}): Promise<{
           created++;
         }
 
-        // Dedup: when a RUSN (Sénat séance from AN archive) arrives, replace SENAT_AGENDA_* entries for that day
+        // Dedup: when a RUSN (Sénat séance from AN archive) arrives, replace matching SENAT_AGENDA_* entry
         if (r.uid.startsWith('RUSN')) {
-          const dayStart = new Date(reunionData.dateDebut);
-          dayStart.setUTCHours(0, 0, 0, 0);
-          const dayEnd = new Date(dayStart);
-          dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+          const reunionDate = new Date(reunionData.dateDebut);
+          const marginMs = 60 * 60 * 1000; // ±1h window
 
           const deleted = await prisma.reunion.deleteMany({
             where: {
               uid: { startsWith: 'SENAT_AGENDA_' },
               type: 'seance',
-              dateDebut: { gte: dayStart, lt: dayEnd },
+              dateDebut: {
+                gte: new Date(reunionDate.getTime() - marginMs),
+                lt: new Date(reunionDate.getTime() + marginMs),
+              },
             },
           });
           if (deleted.count > 0) {
@@ -332,11 +333,8 @@ export async function syncReunions(options: { limit?: number } = {}): Promise<{
         // Sync participants — skip for past meetings that already exist (participants are final)
         const isPastAndExisting = existing && reunionData.dateDebut < new Date();
         if (r.participants.length > 0 && !isPastAndExisting) {
-          await prisma.reunionParticipant.deleteMany({ where: { reunionId } });
-
-          // Deduplicate by parlementaireId (AN data can have the same acteurRef twice)
           const seen = new Set<string>();
-          const participantRecords = [];
+          const participantRecords: Array<{ reunionId: string; parlementaireId: string; presence: string | null }> = [];
           for (const p of r.participants) {
             const parlementaireId = parlementaireByRef.get(p.acteurRef);
             if (!parlementaireId || seen.has(parlementaireId)) continue;
@@ -345,7 +343,10 @@ export async function syncReunions(options: { limit?: number } = {}): Promise<{
           }
 
           if (participantRecords.length > 0) {
-            await prisma.reunionParticipant.createMany({ data: participantRecords });
+            await prisma.$transaction(async (tx) => {
+              await tx.reunionParticipant.deleteMany({ where: { reunionId } });
+              await tx.reunionParticipant.createMany({ data: participantRecords });
+            });
             participantsLinked += participantRecords.length;
           }
         }
@@ -734,12 +735,13 @@ export async function syncSenatCommissions(): Promise<{ created: number; updated
     ]);
 
     // Copy SEO-friendly slug from PO* if the SENAT-* still has its generated one
-    if (match.slug.startsWith('senat-com-') && po.slug.startsWith('senat-commission-')) {
-      await prisma.commission.update({ where: { id: po.id }, data: { slug: `tmp-del-${po.uid}` } });
-      await prisma.commission.update({ where: { id: match.id }, data: { slug: po.slug } });
-    }
-
-    await prisma.commission.delete({ where: { id: po.id } });
+    await prisma.$transaction(async (tx) => {
+      if (match.slug.startsWith('senat-com-') && po.slug.startsWith('senat-commission-')) {
+        await tx.commission.update({ where: { id: po.id }, data: { slug: `tmp-del-${po.uid}` } });
+        await tx.commission.update({ where: { id: match.id }, data: { slug: po.slug } });
+      }
+      await tx.commission.delete({ where: { id: po.id } });
+    });
     comsenatRedirects.set(po.uid, match.id);
 
     logger.info(
@@ -1848,10 +1850,10 @@ export async function syncSenatVideos(): Promise<{ linked: number }> {
   for (const r of reunions) {
     const date = r.dateDebut;
     const isoDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    const hour = date.getHours();
+    const parisHour = new Date(date.toLocaleString('en-US', { timeZone: 'Europe/Paris' })).getHours();
 
     // Heuristic: matin < 13h, apres-midi 13h–20h, soir ≥ 20h
-    const moment = hour < 13 ? 'matin' : hour < 20 ? 'apres-midi' : 'soir';
+    const moment = parisHour < 13 ? 'matin' : parisHour < 20 ? 'apres-midi' : 'soir';
 
     const url = videoMap.get(`${isoDate}|${moment}`) || videoMap.get(`${isoDate}|apres-midi`) || null;
 
