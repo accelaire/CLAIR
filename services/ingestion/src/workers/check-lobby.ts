@@ -64,16 +64,14 @@ export interface CheckLobbyOptions {
 
 /**
  * Sélectionne le texte d'un sujet pour TF-IDF selon la priorité :
- * resume → description → label (première valeur non vide).
+ * resume → label (première valeur non vide).
  */
 function pickSujetText(sujet: {
   id: string;
   label: string;
-  description: string | null;
   resume: string | null;
-}): { text: string; source: 'resume' | 'description' | 'label' } {
+}): { text: string; source: 'resume' | 'label' } {
   if (sujet.resume) return { text: sujet.resume, source: 'resume' };
-  if (sujet.description) return { text: sujet.description, source: 'description' };
   return { text: sujet.label, source: 'label' };
 }
 
@@ -123,7 +121,6 @@ export async function checkLobby(options: CheckLobbyOptions = {}): Promise<Check
     select: {
       id: true,
       label: true,
-      description: true,
       resume: true,
       dateFin: true,
     },
@@ -137,21 +134,16 @@ export async function checkLobby(options: CheckLobbyOptions = {}): Promise<Check
 
   logger.info({ count: sujets.length }, 'Sujets chargés');
 
-  // 2. Construire le corpus TF-IDF des sujets (resume → description → label)
+  // 2. Construire le corpus TF-IDF des sujets (resume → label)
   const sujetTexts: string[] = [];
-  const sourceCounts = { resume: 0, description: 0, label: 0 };
+  const sourceCounts = { resume: 0, label: 0 };
 
   for (const s of sujets) {
     const { text, source } = pickSujetText(s);
     sujetTexts.push(tokenize(text).join(' '));
-    sourceCounts[source]++;
-    logger.debug({ sujetId: s.id, label: s.label, source }, 'Texte sujet sélectionné');
+    if (source === 'resume') sourceCounts.resume++;
+    else sourceCounts.label++;
   }
-
-  logger.info(
-    { sourceCounts },
-    'Sources utilisées pour les textes sujets (priorité : resume > description > label)'
-  );
 
   const vectorizer = new TfidfVectorizer();
   const sujetVectors: SparseMatrix = vectorizer.fitTransform(sujetTexts);
@@ -182,17 +174,17 @@ export async function checkLobby(options: CheckLobbyOptions = {}): Promise<Check
   logger.info({ count: actions.length }, 'Actions lobby (cible=parlementaire) chargées');
 
   // 4. Apparier chaque action aux sujets éligibles
+  const actionSourceCounts = { description: 0, texteVise: 0, vide: 0 };
   for (const action of actions) {
     const picked = pickActionText(action.actionDescription?.texte, action.texteViseNom);
 
     if (!picked) {
-      logger.debug({ actionId: action.id }, 'Action ignorée — ni description ni texteVise disponible');
+      actionSourceCounts.vide++;
       result.skipped++;
       continue;
     }
 
-    logger.debug({ actionId: action.id, source: picked.source }, 'Texte action sélectionné');
-
+    actionSourceCounts[picked.source]++;
     const actionTokens = tokenize(picked.text).join(' ');
 
     if (!actionTokens) {
@@ -287,6 +279,8 @@ export async function checkLobby(options: CheckLobbyOptions = {}): Promise<Check
       persisted: result.persisted,
       totalMatches: result.matches.length,
       durationMs: result.durationMs,
+      sujetSources: sourceCounts,
+      actionSources: actionSourceCounts,
     },
     'Correspondance sémantique actions lobby ↔ sujets terminée'
   );

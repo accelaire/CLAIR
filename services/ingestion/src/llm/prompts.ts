@@ -232,7 +232,6 @@ export function buildDossierResumePrompt(data: DossierPromptData): string {
 
 interface SujetPromptData {
   label: string;
-  description?: string | null;
   category?: string | null;
   status: string;
   dossiersResumes: { titre: string; chambre: string; etat?: string | null; resumeIA?: string | null }[];
@@ -246,9 +245,6 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
     `Statut : ${data.status}`,
   ];
 
-  if (data.description) {
-    parts.push(`Description : ${data.description}`);
-  }
   if (data.category) {
     parts.push(`Catégorie : ${data.category}`);
   }

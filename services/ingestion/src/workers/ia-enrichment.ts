@@ -395,7 +395,6 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
       select: {
         id: true,
         label: true,
-        description: true,
         category: true,
         status: true,
         iaContentHash: true,
@@ -484,7 +483,6 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
           const hashParts = [
             sujet.label,
             sujet.status,
-            sujet.description,
             dossiers.map(d => `${d.titre}:${d.resumeIA ?? ''}`).join('|'),
             ensembleForHash,
             articlesForHash,
@@ -509,7 +507,6 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
 
           const userPrompt = buildSujetResumePrompt({
             label: sujet.label,
-            description: sujet.description,
             category: sujet.category,
             status: sujet.status,
             dossiersResumes: dossiers.map(d => ({
@@ -553,6 +550,11 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
             logger.debug({ sujetId: sujet.id, oldLabel: sujet.label, newLabel: labelIA }, 'Sujet label updated');
           } else {
             labelIA = null;
+          }
+
+          if (!enjeux) {
+            enjeux = resume.length > 200 ? resume.slice(0, 200) + '...' : resume;
+            logger.warn({ sujetId: sujet.id }, 'Enjeux missing from AI response, fell back to resume');
           }
 
           await prisma.sujet.update({

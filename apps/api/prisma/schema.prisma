@@ -464,7 +464,6 @@ model Sujet {
   id            String    @id @default(uuid())
   slug          String    @unique
   label         String
-  description   String?
   category      String?
 
   dossierCount  Int       @default(0) @map("dossier_count")
