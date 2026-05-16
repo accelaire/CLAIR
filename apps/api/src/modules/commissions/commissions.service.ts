@@ -202,11 +202,80 @@ export class CommissionsService {
       this.prisma.reunion.count({ where }),
     ]);
 
+    // For hemicycle commissions, enrich reunions with scrutins
+    const isHemicycle = commission.type === 'hemicycle';
+    const scrutinSelect = {
+      id: true,
+      numero: true,
+      titre: true,
+      sort: true,
+      chambre: true,
+      session: true,
+      nombrePour: true,
+      nombreContre: true,
+      nombreAbstention: true,
+      seanceRef: true,
+      date: true,
+      dossier: {
+        select: { id: true, uid: true, titre: true, titreCourt: true, procedureLibelle: true },
+      },
+    } as const;
+
+    type ScrutinRow = Awaited<ReturnType<typeof this.prisma.scrutin.findMany<{ select: typeof scrutinSelect }>>>[number];
+    const scrutinsByUid: Record<string, ScrutinRow[]> = {};
+
+    if (isHemicycle && reunions.length > 0) {
+      const uids = reunions.map((r) => r.uid).filter(Boolean) as string[];
+
+      // seanceRef match (AN)
+      if (uids.length > 0) {
+        const byRef = await this.prisma.scrutin.findMany({
+          where: { seanceRef: { in: uids } },
+          select: scrutinSelect,
+          orderBy: { numero: 'asc' },
+        });
+        for (const s of byRef) {
+          if (!s.seanceRef) continue;
+          if (!scrutinsByUid[s.seanceRef]) scrutinsByUid[s.seanceRef] = [];
+          scrutinsByUid[s.seanceRef]!.push(s);
+        }
+      }
+
+      // Date match for Sénat séances without seanceRef-linked scrutins
+      if (commission.chambre === 'senat') {
+        const unmatched = reunions.filter((r) => !scrutinsByUid[r.uid]);
+        if (unmatched.length > 0) {
+          const dateRanges = unmatched.map((r) => {
+            const d = new Date(r.dateDebut);
+            const start = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+            const end = new Date(start.getTime() + 86_400_000);
+            return { date: { gte: start, lt: end } };
+          });
+          const byDate = await this.prisma.scrutin.findMany({
+            where: { chambre: 'senat', OR: dateRanges },
+            select: scrutinSelect,
+            orderBy: { numero: 'asc' },
+          });
+          const dateToUid = new Map<string, string>();
+          for (const r of unmatched) {
+            dateToUid.set(r.dateDebut.toISOString().split('T')[0]!, r.uid);
+          }
+          for (const s of byDate) {
+            const uid = dateToUid.get(s.date.toISOString().split('T')[0]!);
+            if (!uid) continue;
+            if (!scrutinsByUid[uid]) scrutinsByUid[uid] = [];
+            scrutinsByUid[uid]!.push(s);
+          }
+        }
+      }
+    }
+
     const result = {
       data: reunions.map((r) => ({
         ...r,
         nbParticipants: r._count.participants,
         _count: undefined,
+        ...(isHemicycle ? { scrutins: scrutinsByUid[r.uid] || [] } : {}),
       })),
       pagination: {
         page: query.page,

@@ -1,9 +1,9 @@
 'use client';
 
-import { Suspense, useMemo } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { ChevronDown, Users, Calendar, Building2 } from 'lucide-react';
+import { ChevronDown, Users, Calendar, Building2, Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
 import { FilterBar } from '@/components/FilterBar';
@@ -119,6 +119,7 @@ function CommissionsPageContent() {
     type: string;
     historique: string;
   }>(['chambre', 'type', 'historique']);
+  const [search, setSearch] = useState('');
 
   // 'historique' absent ou '' → actif=true (défaut). 'historique=1' → toutes.
   const showAll = filters.historique === '1';
@@ -139,8 +140,16 @@ function CommissionsPageContent() {
     staleTime: 60000,
   });
 
-  const commissions = data?.data ?? [];
-  const total = data?.pagination.total ?? 0;
+  const allCommissions = data?.data ?? [];
+  const commissions = useMemo(() => {
+    if (!search.trim()) return allCommissions;
+    const q = search.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    return allCommissions.filter((c) => {
+      const hay = `${c.nom} ${c.nomCourt || ''}`.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      return hay.includes(q);
+    });
+  }, [allCommissions, search]);
+  const total = commissions.length;
 
   // Group by type, respecting order
   const grouped = useMemo(() => {
@@ -162,8 +171,9 @@ function CommissionsPageContent() {
     if (filters.chambre) count++;
     if (filters.type) count++;
     if (showAll) count++;
+    if (search.trim()) count++;
     return count;
-  }, [filters, showAll]);
+  }, [filters, showAll, search]);
 
   return (
     <div className='container mx-auto px-4 py-8'>
@@ -199,8 +209,19 @@ function CommissionsPageContent() {
       {/* Filtres */}
       <FilterBar
         activeFilterCount={activeFilterCount}
-        onClear={() => clearAll()}
-        search={<div />}
+        onClear={() => { clearAll(); setSearch(''); }}
+        search={
+          <div className='relative flex-1 min-w-[200px]'>
+            <Search className='absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none' />
+            <input
+              type='text'
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder='Rechercher une commission…'
+              className='w-full rounded-lg border bg-background pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary'
+            />
+          </div>
+        }
       >
         <div className='relative'>
           <select

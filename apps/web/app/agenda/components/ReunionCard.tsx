@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { MapPin, Video, FileText, ChevronDown, ChevronUp, Users } from 'lucide-react';
+import { ScrutinsByDossier } from '@/components/scrutins/ScrutinsByDossier';
 
 export interface AgendaReunion {
   id: string;
@@ -32,10 +33,11 @@ export interface AgendaReunion {
     titre: string;
     sort: string;
     chambre: string;
+    session?: string;
     nombrePour: number;
     nombreContre: number;
     nombreAbstention: number;
-    dossier: { id: string; uid: string; titre: string; titreCourt: string | null } | null;
+    dossier: { id: string; uid: string; titre: string; titreCourt: string | null; procedureLibelle?: string | null } | null;
   }>;
 }
 
@@ -51,7 +53,6 @@ function formatTime(dateStr: string) {
   });
 }
 
-const ODJ_CLAMP_THRESHOLD = 120;
 // Fenêtre de direct: dateDebut → dateFin (ou +4h par défaut)
 const LIVE_FALLBACK_DURATION_MS = 4 * 60 * 60 * 1000;
 
@@ -85,19 +86,55 @@ export function ReunionCard({
   reunion: AgendaReunion;
   liveUrl?: string;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const STORAGE_KEY = 'agenda-expanded';
+  const [expanded, setExpandedRaw] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const stored = sessionStorage.getItem(STORAGE_KEY);
+      if (!stored) return false;
+      const set: string[] = JSON.parse(stored);
+      return set.includes(reunion.id);
+    } catch { return false; }
+  });
+  const setExpanded = useCallback((val: boolean) => {
+    setExpandedRaw(val);
+    try {
+      const stored = sessionStorage.getItem(STORAGE_KEY);
+      const set: string[] = stored ? JSON.parse(stored) : [];
+      if (val && !set.includes(reunion.id)) {
+        set.push(reunion.id);
+      } else if (!val) {
+        const idx = set.indexOf(reunion.id);
+        if (idx >= 0) set.splice(idx, 1);
+      }
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(set));
+    } catch { /* noop */ }
+  }, [reunion.id]);
+
   const [now, setNow] = useState(() => Date.now());
+  const [isOdjClamped, setIsOdjClamped] = useState(false);
+  const odjRef = useRef<HTMLParagraphElement>(null);
   const commissionName = reunion.commission?.nom || reunion.commission?.nomCourt;
   const chambre = deriveChambre(reunion);
+
+  const checkClamp = useCallback(() => {
+    const el = odjRef.current;
+    if (!el) return;
+    setIsOdjClamped(el.scrollHeight > el.clientHeight + 1);
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    checkClamp();
+  }, [checkClamp, reunion.odjResume]);
+
   const happeningNow = isHappeningNow(reunion, now);
   const hasScrutins = !!reunion.scrutins && reunion.scrutins.length > 0;
-  const hasExpandableContent = (!!reunion.odjResume && reunion.odjResume.length > ODJ_CLAMP_THRESHOLD) || hasScrutins;
+  const hasExpandableContent = isOdjClamped || hasScrutins;
 
   const videoUrl = happeningNow && liveUrl
     ? liveUrl
@@ -148,45 +185,21 @@ export function ReunionCard({
 
             {/* ODJ resume — collapsed: 2 lines, expanded: full */}
             {reunion.odjResume && (
-              <p className={`mt-0.5 text-xs text-muted-foreground ${expanded ? '' : 'line-clamp-2'}`}>
+              <p
+                ref={odjRef}
+                className={`mt-0.5 text-xs text-muted-foreground ${expanded ? '' : 'line-clamp-2'}`}
+              >
                 {reunion.odjResume}
               </p>
             )}
 
-            {/* Scrutins — only shown when expanded */}
+            {/* Scrutins — only shown when expanded, grouped by dossier */}
             {expanded && hasScrutins && (
-              <div className='mt-3 space-y-1.5'>
-                <div className='text-sm font-medium text-foreground'>
-                  Scrutins votés ({reunion.scrutins!.length})
-                </div>
-                {reunion.scrutins!.map((scrutin) => {
-                  const adopte = scrutin.sort === 'adopte';
-                  const badgeClass = adopte
-                    ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-950/30 dark:text-green-400 dark:border-green-800'
-                    : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-800';
-                  return (
-                    <div key={scrutin.id} className='flex items-center gap-2 min-w-0'>
-                      <span className={`shrink-0 px-1.5 py-0.5 rounded text-xs font-medium border ${badgeClass}`}>
-                        {adopte ? 'Adopté' : 'Rejeté'}
-                      </span>
-                      <span className='flex-1 min-w-0 text-xs text-muted-foreground line-clamp-1'>
-                        {scrutin.dossier ? (
-                          <Link
-                            href={`/dossiers/${scrutin.dossier.uid}`}
-                            className='hover:text-primary transition-colors'
-                          >
-                            {scrutin.titre}
-                          </Link>
-                        ) : (
-                          scrutin.titre
-                        )}
-                      </span>
-                      <span className='shrink-0 text-xs text-muted-foreground tabular-nums whitespace-nowrap'>
-                        Pour : {scrutin.nombrePour} | Contre : {scrutin.nombreContre}
-                      </span>
-                    </div>
-                  );
-                })}
+              <div className='mt-3'>
+                <ScrutinsByDossier
+                  scrutins={reunion.scrutins!}
+                  label='Scrutins de la séance'
+                />
               </div>
             )}
 

@@ -865,17 +865,16 @@ export default function PageClient({ initialData }: { initialData?: { data: Suje
       {/* Context section — law info or procedure info */}
       <ContextSection sujet={sujet} dossiers={dossiers} />
 
-      {/* Two-panel dashboard */}
+      {/* Dashboard: mobile order = Dossiers → Stats → Scrutins; desktop = 2 cols */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left: Dossiers + Scrutins */}
-        <div className="space-y-6">
+        <div className="order-1 lg:col-start-1">
           <DossiersPanel dossiers={dossiers} />
-          <ScrutinsPanel slug={slug} totalScrutins={sujet.scrutinCount} />
         </div>
-
-        {/* Right: Stats */}
-        <div>
+        <div className="order-2 lg:order-none lg:col-start-2 lg:row-start-1 lg:row-span-2">
           <StatsPanel slug={slug} dossiers={dossiers} />
+        </div>
+        <div className="order-3 lg:col-start-1">
+          <ScrutinsPanel slug={slug} totalScrutins={sujet.scrutinCount} />
         </div>
       </div>
     </div>

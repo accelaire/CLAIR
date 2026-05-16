@@ -69,33 +69,73 @@ export class AgendaService {
       this.prisma.reunion.count({ where }),
     ]);
 
+    const scrutinSelect = {
+      id: true,
+      numero: true,
+      titre: true,
+      sort: true,
+      chambre: true,
+      nombrePour: true,
+      nombreContre: true,
+      nombreAbstention: true,
+      seanceRef: true,
+      date: true,
+      session: true,
+      dossier: {
+        select: { id: true, uid: true, titre: true, titreCourt: true, procedureLibelle: true },
+      },
+    } as const;
+
     const reunionUids = reunions.map((r) => r.uid).filter(Boolean) as string[];
     const scrutins = reunionUids.length > 0
       ? await this.prisma.scrutin.findMany({
           where: { seanceRef: { in: reunionUids } },
-          select: {
-            id: true,
-            numero: true,
-            titre: true,
-            sort: true,
-            chambre: true,
-            nombrePour: true,
-            nombreContre: true,
-            nombreAbstention: true,
-            seanceRef: true,
-            dossier: {
-              select: { id: true, uid: true, titre: true, titreCourt: true },
-            },
-          },
+          select: scrutinSelect,
           orderBy: { numero: 'asc' },
         })
       : [];
 
-    const scrutinsBySeanceRef: Record<string, typeof scrutins> = {};
+    const scrutinsByReunionUid: Record<string, typeof scrutins> = {};
     for (const s of scrutins) {
       if (!s.seanceRef) continue;
-      if (!scrutinsBySeanceRef[s.seanceRef]) scrutinsBySeanceRef[s.seanceRef] = [];
-      scrutinsBySeanceRef[s.seanceRef]!.push(s);
+      if (!scrutinsByReunionUid[s.seanceRef]) scrutinsByReunionUid[s.seanceRef] = [];
+      scrutinsByReunionUid[s.seanceRef]!.push(s);
+    }
+
+    // Sénat scrutins have no seanceRef — match by date for séance reunions
+    const senatSeances = reunions.filter(
+      (r) => r.type === 'seance' && r.commission?.chambre === 'senat' && !scrutinsByReunionUid[r.uid],
+    );
+    if (senatSeances.length > 0) {
+      const dateRanges = senatSeances.map((r) => {
+        const d = new Date(r.dateDebut);
+        const start = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+        const end = new Date(start.getTime() + 86_400_000);
+        return { date: { gte: start, lt: end } };
+      });
+
+      const senatScrutins = await this.prisma.scrutin.findMany({
+        where: {
+          chambre: 'senat',
+          OR: dateRanges,
+        },
+        select: scrutinSelect,
+        orderBy: { numero: 'asc' },
+      });
+
+      const dateToReunionUid = new Map<string, string>();
+      for (const r of senatSeances) {
+        const dayKey = r.dateDebut.toISOString().split('T')[0]!;
+        dateToReunionUid.set(dayKey, r.uid);
+      }
+
+      for (const s of senatScrutins) {
+        const dayKey = s.date.toISOString().split('T')[0]!;
+        const reunionUid = dateToReunionUid.get(dayKey);
+        if (!reunionUid) continue;
+        if (!scrutinsByReunionUid[reunionUid]) scrutinsByReunionUid[reunionUid] = [];
+        scrutinsByReunionUid[reunionUid]!.push(s);
+      }
     }
 
     // Group by day
@@ -117,7 +157,7 @@ export class AgendaService {
         urlVideo: r.urlVideo,
         commission: r.commission,
         nbParticipants: r._count.participants,
-        scrutins: scrutinsBySeanceRef[r.uid] || [],
+        scrutins: scrutinsByReunionUid[r.uid] || [],
       });
     }
 

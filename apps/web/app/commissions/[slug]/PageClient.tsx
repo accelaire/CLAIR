@@ -23,6 +23,7 @@ import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
 import { FilterBar } from '@/components/FilterBar';
+import { ScrutinsByDossier } from '@/components/scrutins/ScrutinsByDossier';
 
 export interface CommissionDetail {
   id: string;
@@ -78,6 +79,19 @@ export interface CommissionDetail {
   }>;
 }
 
+interface ReunionScrutin {
+  id: string;
+  numero: number;
+  titre: string;
+  sort: string;
+  chambre: string;
+  session?: string;
+  nombrePour: number;
+  nombreContre: number;
+  nombreAbstention: number;
+  dossier: { id: string; uid: string; titre: string; titreCourt: string | null; procedureLibelle?: string | null } | null;
+}
+
 interface Reunion {
   id: string;
   uid: string;
@@ -89,7 +103,8 @@ interface Reunion {
   captationVideo: boolean | null;
   urlVideo: string | null;
   compteRenduRef: string | null;
-  nbParticipants: number;
+  nbParticipants?: number;
+  scrutins?: ReunionScrutin[];
 }
 
 interface ReunionsResponse {
@@ -172,9 +187,10 @@ function buildCompteRenduUrl(ref: string): string | null {
   return null;
 }
 
-function ReunionItem({ reunion }: { reunion: { id: string; uid: string; dateDebut: string; dateFin: string | null; lieu: string | null; odjResume: string | null; etat: string | null; captationVideo?: boolean | null; urlVideo?: string | null; compteRenduRef?: string | null; nbParticipants?: number } }) {
+function ReunionItem({ reunion }: { reunion: Reunion }) {
   const isPast = new Date(reunion.dateDebut) < new Date();
   const crUrl = isPast && reunion.compteRenduRef ? buildCompteRenduUrl(reunion.compteRenduRef) : null;
+  const hasScrutins = reunion.scrutins && reunion.scrutins.length > 0;
 
   return (
     <div className='rounded-lg border bg-card p-4'>
@@ -229,6 +245,15 @@ function ReunionItem({ reunion }: { reunion: { id: string; uid: string; dateDebu
           )}
         </div>
       </div>
+
+      {hasScrutins && (
+        <div className='mt-3 pt-3 border-t'>
+          <ScrutinsByDossier
+            scrutins={reunion.scrutins!}
+            label='Scrutins de la séance'
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useMemo, Suspense } from 'react';
+import { useState, useMemo, useCallback, useEffect, Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { ChevronDown } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
@@ -46,14 +46,37 @@ function todayStr(): string {
 
 function AgendaPageContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const dateParam = searchParams.get('date');
   const initialDate = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? new Date(dateParam + 'T12:00:00') : new Date();
 
   const [year, setYear] = useState(initialDate.getFullYear());
   const [month, setMonth] = useState(initialDate.getMonth()); // 0-indexed
-  const [selectedDate, setSelectedDate] = useState<string | null>(
+  const [selectedDate, setSelectedDateRaw] = useState<string | null>(
     dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : todayStr(),
   );
+
+  const setSelectedDate = useCallback(
+    (date: string | null) => {
+      setSelectedDateRaw(date);
+      const params = new URLSearchParams(searchParams.toString());
+      if (date) params.set('date', date);
+      else params.delete('date');
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [searchParams, router, pathname],
+  );
+
+  // Restore month/year from URL date param when navigating back
+  useEffect(() => {
+    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      const d = new Date(dateParam + 'T12:00:00');
+      setYear(d.getFullYear());
+      setMonth(d.getMonth());
+      setSelectedDateRaw(dateParam);
+    }
+  }, [dateParam]);
 
   const [filters, setFilter, , clearAll] = useUrlFilters<{
     chambre: string;
