@@ -26,7 +26,7 @@ Prérequis :   Node.js >= 20.0.0,  pnpm >= 8.0.0, Docker & Docker Compose
 
 ```bash
 pnpm install
-cp apps/api/.env.example apps/api/.env
+cp .env.exemple apps/api/.env
 
 pnpm docker:up
 pnpm db:generate

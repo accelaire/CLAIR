@@ -6,6 +6,12 @@
 # Claude Code instructions (local only)
 CLAUDE.md
 
+# OpenCode instructions (local only)
+AGENTS.md
+opencode.json
+.opencode/
+.ocx/
+
 # Secrets
 *.pem
 *.key
