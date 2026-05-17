@@ -148,7 +148,7 @@ export function scoreCandidate(query: string, candidate: FuzzyCandidate): number
   // Strategy 2: Partial/prefix matching on tokens
   if (queryTokens.length === 1) {
     // Single word query — check if it's a prefix of nom or prenom
-    const q = queryTokens[0];
+    const q = queryTokens[0]!;
     if (isPartialMatch(q, nomNorm) || isPartialMatch(q, prenomNorm)) {
       bestScore = Math.max(bestScore, PARTIAL_MATCH_SCORE);
     }
@@ -204,6 +204,88 @@ export function fuzzySearchCandidates(
 
   for (const candidate of candidates) {
     const score = scoreCandidate(query, candidate);
+    if (score > 0) {
+      results.push({ id: candidate.id, score });
+    }
+  }
+
+  results.sort((a, b) => b.score - a.score);
+  return results.slice(0, maxResults);
+}
+
+// =============================================================================
+// Generic fuzzy search — for entities with text labels (groupes, commissions, sujets)
+// =============================================================================
+
+export interface GenericFuzzyCandidate {
+  id: string;
+  labels: string[];
+}
+
+export function scoreGenericCandidate(query: string, candidate: GenericFuzzyCandidate): number {
+  const normalizedQuery = normalizeForFuzzy(query);
+  const queryTokens = tokenize(query);
+
+  let bestScore = 0;
+
+  for (const label of candidate.labels) {
+    if (!label) continue;
+    const normalizedLabel = normalizeForFuzzy(label);
+    const labelTokens = tokenize(label);
+
+    const fullScore = jaroWinklerSimilarity(normalizedQuery, normalizedLabel);
+    bestScore = Math.max(bestScore, fullScore);
+
+    if (queryTokens.length === 1) {
+      const q = queryTokens[0]!;
+      if (isPartialMatch(q, normalizedLabel)) {
+        bestScore = Math.max(bestScore, PARTIAL_MATCH_SCORE);
+      }
+      for (const lt of labelTokens) {
+        if (isPartialMatch(q, lt)) {
+          bestScore = Math.max(bestScore, PARTIAL_MATCH_SCORE);
+        }
+        bestScore = Math.max(bestScore, jaroWinklerSimilarity(q, lt));
+      }
+    }
+
+    if (queryTokens.length > 1) {
+      let tokenMatchScore = 0;
+      let allTokensMatched = true;
+
+      for (const qt of queryTokens) {
+        let bestTokenScore = 0;
+        for (const lt of labelTokens) {
+          if (lt.startsWith(qt)) {
+            bestTokenScore = Math.max(bestTokenScore, PARTIAL_MATCH_SCORE);
+          }
+          bestTokenScore = Math.max(bestTokenScore, jaroWinklerSimilarity(qt, lt));
+        }
+        if (bestTokenScore < JARO_WINKLER_THRESHOLD) {
+          allTokensMatched = false;
+          break;
+        }
+        tokenMatchScore += bestTokenScore;
+      }
+
+      if (allTokensMatched) {
+        bestScore = Math.max(bestScore, tokenMatchScore / queryTokens.length);
+      }
+    }
+  }
+
+  return bestScore >= JARO_WINKLER_THRESHOLD ? bestScore : 0;
+}
+
+export function fuzzySearchGeneric(
+  query: string,
+  candidates: GenericFuzzyCandidate[],
+  maxResults = 50
+): FuzzyResult[] {
+  const results: FuzzyResult[] = [];
+
+  for (const candidate of candidates) {
+    const score = scoreGenericCandidate(query, candidate);
     if (score > 0) {
       results.push({ id: candidate.id, score });
     }

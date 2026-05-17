@@ -133,7 +133,7 @@ describe('fuzzySearchCandidates', () => {
   it('devrait trier par score décroissant', () => {
     const results = fuzzySearchCandidates('melenchon', candidates);
     for (let i = 1; i < results.length; i++) {
-      expect(results[i - 1].score).toBeGreaterThanOrEqual(results[i].score);
+      expect(results[i - 1]!.score).toBeGreaterThanOrEqual(results[i]!.score);
     }
   });
 
@@ -152,7 +152,7 @@ describe('fuzzySearchCandidates', () => {
   it('devrait trouver avec recherche multi-mots', () => {
     const results = fuzzySearchCandidates('jean luc melenchon', candidates);
     expect(results.length).toBeGreaterThan(0);
-    expect(results[0].id).toBe('1');
+    expect(results[0]!.id).toBe('1');
   });
 
   it('devrait retourner un tableau vide si rien ne correspond', () => {
