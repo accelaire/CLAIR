@@ -178,8 +178,17 @@ export class ParlementairesService {
         groupe: true,
         circonscription: true,
         mandats: {
+          where: {
+            // Exclut les orphelins (actifs sans organe_ref = stale PM sans fermeture)
+            OR: [{ dateFin: { not: null } }, { organeRef: { not: null } }],
+          },
           orderBy: { dateDebut: 'desc' },
-          take: 20,
+          take: 50,
+          include: {
+            commission: {
+              select: { slug: true, nom: true, chambre: true },
+            },
+          },
         },
         declarations: {
           orderBy: { datePublication: 'desc' },
@@ -784,7 +793,7 @@ export class ParlementairesService {
       skip: number;
     },
     include: any,
-    orderBy: any
+    _orderBy: any
   ) {
     const candidates = await this.getFuzzyCandidates({
       chambre: filters.chambre,

@@ -575,7 +575,7 @@ export class HATVPClient {
   // ===========================================================================
 
   transformLobbyiste(raw: HATVPRepresentant): {
-    sourceId: string;
+    identifiantNational: string | null;
     siren: string | null;
     nom: string;
     type: string;
@@ -627,7 +627,7 @@ export class HATVPClient {
     const siren = raw.typeIdentifiantNational === 'SIREN' ? raw.identifiantNational : null;
 
     return {
-      sourceId: raw.identifiantNational,
+      identifiantNational: raw.identifiantNational || null,
       siren,
       nom: raw.denomination,
       type,

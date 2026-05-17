@@ -9,6 +9,9 @@ import { FastifyPluginAsync } from 'fastify';
 // Le cache est renouvelé activement par l'ingestion après chaque sync
 const CACHE_TTL = 97200;
 
+// Cache plus court pour l'agenda (change quotidiennement)
+const UPCOMING_CACHE_TTL = 900;
+
 const dossierChambre = (legislature: number) => legislature === 0 ? 'senat' : 'assemblee';
 
 interface HomepageStats {
@@ -145,6 +148,44 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
       const fillCount = 8 - bigDossiers.length;
       const trendingDossiers = [...bigDossiers, ...recentlyVotedDossiers.slice(0, fillCount)];
 
+      // Batch 4 — agenda à venir (TTL court séparé), liste unifiée chronologique
+      const upcomingCacheKey = 'homepage:upcoming';
+      let upcoming: { events: unknown[] } | null = null;
+      const cachedUpcoming = await fastify.redis.get(upcomingCacheKey);
+      if (cachedUpcoming) {
+        upcoming = JSON.parse(cachedUpcoming);
+      } else {
+        const now = new Date();
+        const TARGET_DAYS = 7;
+        const allEvents = await fastify.prisma.reunion.findMany({
+          where: {
+            dateDebut: { gte: now },
+            etat: 'confirme',
+            type: { in: ['seance', 'commission'] },
+          },
+          orderBy: { dateDebut: 'asc' },
+          take: 200,
+          select: {
+            id: true, uid: true, type: true, dateDebut: true, dateFin: true,
+            lieu: true, odjResume: true, etat: true, captationVideo: true,
+            compteRenduRef: true,
+            commission: {
+              select: { slug: true, nom: true, nomCourt: true, chambre: true, organeRef: true },
+            },
+          },
+        });
+        const seenDays = new Set<string>();
+        const events: typeof allEvents = [];
+        for (const ev of allEvents) {
+          const day = ev.dateDebut.toISOString().split('T')[0]!;
+          seenDays.add(day);
+          if (seenDays.size > TARGET_DAYS) break;
+          events.push(ev);
+        }
+        upcoming = { events };
+        await fastify.redis.setex(upcomingCacheKey, UPCOMING_CACHE_TTL, JSON.stringify(upcoming));
+      }
+
       // Fetch vote stats (adopté/rejeté) per dossier
       const dossierIds = trendingDossiers.map(d => d.id);
       const voteStats = await fastify.prisma.scrutin.groupBy({
@@ -198,6 +239,7 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
           };
         }),
         lastUpdate: lastSync?.completedAt || null,
+        upcoming,
       };
 
       // Mettre en cache (27h)
@@ -226,8 +268,9 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.status(403).send({ error: 'Forbidden' });
       }
 
-      // Supprimer le cache existant — le rebuild sera fait par le scheduler via GET
+      // Supprimer les caches existants — le rebuild sera fait par le scheduler via GET
       await fastify.redis.del('homepage:data');
+      await fastify.redis.del('homepage:upcoming');
 
       return { ok: true, message: 'Cache invalidated' };
     },

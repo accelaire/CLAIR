@@ -59,6 +59,9 @@ export default function MethodologiePage() {
                   <li><strong>Votes individuels</strong> : position de chaque député sur chaque scrutin (pour, contre, abstention, absent)</li>
                   <li><strong>Amendements</strong> : texte, auteur, sort (adopté, rejeté, retiré)</li>
                   <li><strong>Dossiers législatifs</strong> : projets et propositions de loi, procédure</li>
+                  <li><strong>Commissions</strong> : organes parlementaires, types, composition et mandats des membres</li>
+                  <li><strong>Réunions</strong> : agenda des commissions et séances publiques, participants, ordres du jour</li>
+                  <li><strong>Vidéos</strong> : replays des séances et commissions (via videos.assemblee-nationale.fr)</li>
                 </ul>
               </div>
               <p>
@@ -94,6 +97,9 @@ export default function MethodologiePage() {
                   <li><strong>Votes individuels</strong> : position de chaque sénateur</li>
                   <li><strong>Amendements</strong> : propositions de modification des textes</li>
                   <li><strong>Interventions</strong> : prises de parole en séance</li>
+                  <li><strong>Commissions</strong> : commissions permanentes, spéciales et d&apos;enquête</li>
+                  <li><strong>Réunions</strong> : comptes rendus des commissions avec participants identifiés</li>
+                  <li><strong>Agenda des séances</strong> : séances publiques à venir avec ordres du jour (via l&apos;API senat.fr)</li>
                 </ul>
               </div>
             </div>
@@ -237,6 +243,12 @@ export default function MethodologiePage() {
               <li>
                 <strong>Lobbying (HATVP)</strong> : Synchronisation hebdomadaire
               </li>
+              <li>
+                <strong>Commissions et réunions</strong> : Synchronisation biquotidienne
+              </li>
+              <li>
+                <strong>Vidéos et directs</strong> : Détection en temps réel (proxy vers l&apos;API vidéo de l&apos;Assemblée nationale)
+              </li>
             </ul>
           </div>
         </div>
@@ -375,6 +387,22 @@ export default function MethodologiePage() {
             <p className="mt-2 text-sm text-muted-foreground">
               Proposition de modification d&apos;un texte avec auteur,
               contenu et sort (adopté, rejeté, retiré).
+            </p>
+          </div>
+
+          <div className="rounded-lg border p-4">
+            <h3 className="font-semibold">Commission</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Commission parlementaire (permanente, spéciale, d&apos;enquête) avec ses
+              membres actuels et anciens, ses réunions et les dossiers législatifs examinés.
+            </p>
+          </div>
+
+          <div className="rounded-lg border p-4">
+            <h3 className="font-semibold">Réunion</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Séance publique ou réunion de commission avec date, lieu, ordre du jour,
+              participants et lien vers la vidéo.
             </p>
           </div>
 

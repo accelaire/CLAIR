@@ -82,6 +82,7 @@ interface ExtractedMandat {
   dateDebut: string;
   dateFin?: string | null;
   sourceUid?: string;
+  organeRef?: string | null;
 }
 
 function extractMandatsAN(sourceData: any): ExtractedMandat[] {
@@ -97,6 +98,7 @@ function extractMandatsAN(sourceData: any): ExtractedMandat[] {
       dateDebut: m.dateDebut,
       dateFin: m.dateFin || null,
       sourceUid: m.uid || null,
+      organeRef: m.organes?.organeRef || null,
     }))
     .sort((a: ExtractedMandat, b: ExtractedMandat) =>
       (b.dateDebut || '').localeCompare(a.dateDebut || '')
@@ -417,11 +419,13 @@ async function persistMandats(parlementaireId: string, mandats: ExtractedMandat[
           dateDebut: new Date(m.dateDebut),
           dateFin: m.dateFin ? new Date(m.dateFin) : null,
           sourceUid: m.sourceUid,
+          organeRef: m.organeRef || null,
         },
         update: {
           institution: m.institution,
           qualite: m.qualite,
           dateFin: m.dateFin ? new Date(m.dateFin) : null,
+          organeRef: m.organeRef || undefined,
         },
       });
     } catch (error: any) {

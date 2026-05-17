@@ -21,6 +21,8 @@ import { searchRoutes } from './modules/search/search.controller';
 import { healthRoutes } from './modules/health/health.controller';
 import { analyticsRoutes } from './modules/analytics/analytics.controller';
 import { groupesRoutes } from './modules/groupes/groupes.controller';
+import { commissionsRoutes } from './modules/commissions/commissions.controller';
+import { agendaRoutes } from './modules/agenda/agenda.controller';
 import { homepageRoutes } from './modules/homepage/homepage.controller';
 import { dossiersRoutes } from './modules/dossiers/dossiers.controller';
 import { sujetsRoutes } from './modules/sujets/sujets.controller';
@@ -149,6 +151,8 @@ async function buildApp() {
       await api.register(deputesRoutes, { prefix: '/deputes' });
       await api.register(senateursRoutes, { prefix: '/senateurs' });
       await api.register(groupesRoutes, { prefix: '/groupes' });
+      await api.register(commissionsRoutes, { prefix: '/commissions' });
+      await api.register(agendaRoutes, { prefix: '/agenda' });
       await api.register(scrutinsRoutes, { prefix: '/scrutins' });
       await api.register(lobbyingRoutes, { prefix: '/lobbying' });
       await api.register(searchRoutes, { prefix: '/search' });

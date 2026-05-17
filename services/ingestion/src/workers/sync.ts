@@ -7,6 +7,7 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import pLimit from 'p-limit';
 import { AssembleeNationaleDeputesClient, TransformedParlementaire } from '../sources/assemblee-nationale/deputes-client';
+import { AssembleeNationaleOrganesClient } from '../sources/assemblee-nationale/organes-client.js';
 import { AssembleeNationaleScrutinsClient } from '../sources/assemblee-nationale/scrutins-client';
 import { DossiersLegislatifsClient } from '../sources/assemblee-nationale/dossiers-client';
 import { SenatSenateursClient, TransformedSenateur } from '../sources/senat/senateurs-client';
@@ -15,6 +16,7 @@ import { DILAInterventionsClient } from '../sources/dila/interventions-client';
 import { SenatInterventionsClient } from '../sources/senat/interventions-client';
 import { SenatDossiersClient } from '../sources/senat/dossiers-client';
 import { logger } from '../utils/logger';
+import { extractCommissionSaisines } from '../utils/dossier-commissions';
 import {
   checkSourceFreshness,
   updateSourceState,
@@ -29,6 +31,341 @@ const senatClient = new SenatSenateursClient();
 // Limiter les requêtes parallèles
 // Réduit de 5 à 2 pour éviter les OOM sur les syncs avec gros payloads
 const limit = pLimit(2);
+
+// Redirections COMSENAT PO* → SENAT-* commissionId
+// Rempli par syncCommissions()/syncSenatCommissions(), consommé par syncDossiers()
+const comsenatRedirects = new Map<string, string>();
+
+// =============================================================================
+// SYNC COMMISSIONS (depuis les organes AMO10)
+// =============================================================================
+
+const COMMISSION_CODE_TYPES = [
+  'COMPER', 'COMSENAT',
+  'CNPE',
+  'CNPS', 'COMSPSENAT',
+  'CMP',
+  'OFFPAR',
+  'DELEG', 'DELEGBUREAU', 'DELEGSENAT',
+  'MISINFO', 'MISINFOCOM', 'MISINFOPRE',
+  'GE', 'GEVI',
+  'GA',
+  'API',
+  'ASSEMBLEE', 'SENAT',
+  'COMNL', 'BUREAU', 'CONFPT',
+] as const;
+
+function slugifyCommission(nom: string, chambre: string): string {
+  const base = nom
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .substring(0, 70);
+  return `${chambre}-${base}`;
+}
+
+export async function syncCommissions(): Promise<{ created: number; updated: number; mandatsLinked: number }> {
+  logger.info('Starting commissions sync (from AMO30 organes historiques)...');
+
+  // AMO30: tous les organes historiques (actifs + clos) — couvre AN + 52 Sénat
+  const organesClient = new AssembleeNationaleOrganesClient(17);
+  const amo30Organes = await organesClient.getOrganes();
+
+  // AMO10 (via anClient): nécessaire uniquement pour la map PM→PO des mandats actifs
+  const { mandateRefs: pmToPo } = await anClient.getOrganesAndMandateRefs();
+
+  let created = 0;
+  let updated = 0;
+
+  logger.info({ total: amo30Organes.length }, 'AMO30 organes found (all types)');
+
+  // Load existing commissions for slug collision avoidance AND COMSENAT dedup
+  const existingCommissions = await prisma.commission.findMany({
+    select: { slug: true, uid: true, id: true, nom: true, chambre: true, type: true },
+  });
+  const usedSlugs = new Set(existingCommissions.map((c) => c.slug));
+
+  // Build SENAT-* permanente lookup for COMSENAT dedup (by normalized name)
+  const nameNormalize = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  const senatPermByName = new Map<string, string>();
+  for (const c of existingCommissions) {
+    if (c.uid.startsWith('SENAT-') && c.chambre === 'senat' && c.type === 'permanente') {
+      senatPermByName.set(nameNormalize(c.nom), c.id);
+    }
+  }
+
+  // Track counts by type for logging
+  const countsByType: Record<string, { created: number; updated: number; redirected: number }> = {};
+
+  for (const organe of amo30Organes) {
+    const type = organe.type;
+    if (!countsByType[type]) countsByType[type] = { created: 0, updated: 0, redirected: 0 };
+
+    // COMSENAT: si une commission SENAT-* équivalente existe, ne pas créer de doublon PO*
+    if (organe.codeType === 'COMSENAT') {
+      const existingPo = await prisma.commission.findUnique({ where: { uid: organe.uid } });
+      const matchingSenatId = senatPermByName.get(nameNormalize(organe.libelle));
+      if (matchingSenatId && !existingPo) {
+        comsenatRedirects.set(organe.uid, matchingSenatId);
+        countsByType[type].redirected++;
+        continue;
+      }
+    }
+
+    // Generate unique slug with collision handling
+    let slug = slugifyCommission(organe.libelle, organe.chambre);
+    const existing = await prisma.commission.findUnique({ where: { uid: organe.uid } });
+
+    // Only generate new slug if creating (to avoid slug drift on updates)
+    if (!existing) {
+      if (usedSlugs.has(slug)) {
+        let counter = 1;
+        while (usedSlugs.has(`${slug}-${counter}`)) counter++;
+        slug = `${slug}-${counter}`;
+      }
+      usedSlugs.add(slug);
+    } else {
+      slug = existing.slug; // preserve existing slug on update
+      usedSlugs.add(slug);
+    }
+
+    const data = {
+      uid: organe.uid,
+      organeRef: organe.uid,
+      slug,
+      chambre: organe.chambre,
+      type,
+      nom: organe.libelle,
+      nomCourt: organe.libelleAbrev || organe.libelleAbrege || null,
+      dateDebut: organe.dateDebut,
+      dateFin: organe.dateFin,
+      actif: organe.actif,
+    };
+
+    if (existing) {
+      await prisma.commission.update({ where: { id: existing.id }, data });
+      updated++;
+      countsByType[type].updated++;
+    } else {
+      await prisma.commission.create({ data });
+      created++;
+      countsByType[type].created++;
+    }
+  }
+
+  logger.info({ created, updated, byType: countsByType }, 'AMO30 commissions upserted');
+
+  // Compléter le Sénat via l'API Sénat (AMO30 ne couvre qu'une fraction des commissions Sénat)
+  await syncSenatCommissions();
+
+  // Link existing Mandats to Commissions
+  // Step 1: Build PM→PO mapping from AMO10 to get organeRef for existing mandats
+  let mandatsLinked = 0;
+  const commissions = await prisma.commission.findMany({
+    select: { id: true, uid: true, nom: true, nomCourt: true },
+  });
+  const commissionByUid = new Map<string, string>(commissions.map((c) => [c.uid, c.id]));
+
+  // Also build name-based lookup as fallback
+  const normalize = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  const commissionByName = new Map<string, string>();
+  for (const c of commissions) {
+    commissionByName.set(normalize(c.nom), c.id);
+    if (c.nomCourt) commissionByName.set(normalize(c.nomCourt), c.id);
+  }
+
+  // Step 2: Find mandats that need linking (no commissionId yet) or organeRef backfill
+  // (pmToPo already built from the single AMO10 download above)
+  const mandatsToProcess = await prisma.mandat.findMany({
+    where: {
+      OR: [
+        // Either no commissionId linked yet
+        { commissionId: null, typeOrgane: { in: Array.from(COMMISSION_CODE_TYPES) } },
+        // Or missing organeRef (backfill needed)
+        { organeRef: null, typeOrgane: { in: Array.from(COMMISSION_CODE_TYPES) } },
+      ],
+    },
+    select: { id: true, sourceUid: true, institution: true, organeRef: true },
+  });
+
+  for (const mandat of mandatsToProcess) {
+    let commissionId: string | null = null;
+    let organeRef: string | null = null;
+
+    // Use already stored organeRef directly if available (most reliable path)
+    if (mandat.organeRef) {
+      organeRef = mandat.organeRef;
+      commissionId = commissionByUid.get(organeRef) || null;
+    }
+
+    // Fallback: PM→PO mapping from AMO10 (covers mandats created without organeRef)
+    if (!commissionId && mandat.sourceUid && pmToPo.has(mandat.sourceUid)) {
+      organeRef = pmToPo.get(mandat.sourceUid)!;
+      commissionId = commissionByUid.get(organeRef) || null;
+    }
+
+    // Fallback: name-based matching (for CNPE/CNPS which have specific institution names)
+    if (!commissionId && mandat.institution) {
+      const normalized = normalize(mandat.institution);
+      commissionId = commissionByName.get(normalized) || null;
+      if (!commissionId) {
+        for (const [name, id] of commissionByName) {
+          if (normalized.includes(name) || name.includes(normalized)) {
+            commissionId = id;
+            break;
+          }
+        }
+      }
+    }
+
+    const updateData: { commissionId?: string; organeRef?: string } = {};
+    if (commissionId) updateData.commissionId = commissionId;
+    if (organeRef) updateData.organeRef = organeRef;
+
+    if (Object.keys(updateData).length > 0) {
+      await prisma.mandat.update({ where: { id: mandat.id }, data: updateData });
+      if (commissionId) mandatsLinked++;
+    }
+  }
+
+  // Re-backfill all AN députés' mandats with fresh commission map.
+  // Critical for cases where syncDeputes() updated sourceData but crashed before backfill ran.
+  const backfilled = await backfillCommissionMandats(commissionByUid);
+  logger.info({ created, updated, mandatsLinked, backfilled }, 'Commissions sync completed');
+  return { created, updated, mandatsLinked };
+}
+
+// =============================================================================
+// SYNC RÉUNIONS (depuis Agenda.json.zip)
+// =============================================================================
+
+export async function syncReunions(options: { limit?: number } = {}): Promise<{
+  created: number;
+  updated: number;
+  participantsLinked: number;
+}> {
+  const { AssembleeNationaleReunionsClient } = await import('../sources/assemblee-nationale/reunions-client.js');
+
+  logger.info({ limit: options.limit }, 'Starting reunions sync...');
+
+  const reunionsClient = new AssembleeNationaleReunionsClient(17);
+  const reunions = await reunionsClient.getReunions(options.limit);
+
+  // Load commissions for organeReuniRef → commissionId mapping
+  const commissions = await prisma.commission.findMany({ select: { id: true, uid: true } });
+  const commissionByUid = new Map(commissions.map((c) => [c.uid, c.id]));
+
+  // Load parlementaires for acteurRef → parlementaireId mapping
+  const parlementaires = await prisma.parlementaire.findMany({
+    where: { chambre: 'assemblee' },
+    select: { id: true, sourceId: true },
+  });
+  const parlementaireByRef = new Map<string, string>();
+  for (const p of parlementaires) {
+    if (p.sourceId) parlementaireByRef.set(p.sourceId, p.id);
+  }
+
+  let created = 0;
+  let updated = 0;
+  let participantsLinked = 0;
+
+  const batchSize = 100;
+  for (let i = 0; i < reunions.length; i += batchSize) {
+    const batch = reunions.slice(i, i + batchSize);
+
+    for (const r of batch) {
+      try {
+        const commissionId = r.organeReuniRef ? (commissionByUid.get(r.organeReuniRef) || null) : null;
+
+        const reunionData = {
+          uid: r.uid,
+          type: r.type,
+          dateDebut: r.dateDebut,
+          dateFin: r.dateFin,
+          lieu: r.lieu,
+          etat: r.etat,
+          odjResume: r.odjResume,
+          odjComplet: r.odjComplet,
+          captationVideo: r.captationVideo,
+          ouvertePresse: r.ouvertePresse,
+          compteRenduRef: r.compteRenduRef,
+          organeRef: r.organeReuniRef || null,
+          commissionId,
+        };
+
+        const existing = await prisma.reunion.findUnique({ where: { uid: r.uid } });
+
+        let reunionId: string;
+        if (existing) {
+          await prisma.reunion.update({ where: { id: existing.id }, data: reunionData });
+          reunionId = existing.id;
+          updated++;
+        } else {
+          const createdReunion = await prisma.reunion.create({ data: reunionData });
+          reunionId = createdReunion.id;
+          created++;
+        }
+
+        // Dedup: when a RUSN (Sénat séance from AN archive) arrives, replace matching SENAT_AGENDA_* entry
+        if (r.uid.startsWith('RUSN')) {
+          const reunionDate = new Date(reunionData.dateDebut);
+          const marginMs = 60 * 60 * 1000; // ±1h window
+
+          const deleted = await prisma.reunion.deleteMany({
+            where: {
+              uid: { startsWith: 'SENAT_AGENDA_' },
+              type: 'seance',
+              dateDebut: {
+                gte: new Date(reunionDate.getTime() - marginMs),
+                lt: new Date(reunionDate.getTime() + marginMs),
+              },
+            },
+          });
+          if (deleted.count > 0) {
+            logger.info({ rusnUid: r.uid, deletedAgenda: deleted.count }, 'Replaced SENAT_AGENDA entries with RUSN');
+          }
+        }
+
+        // Sync participants — skip for past meetings that already exist (participants are final)
+        const isPastAndExisting = existing && reunionData.dateDebut < new Date();
+        if (r.participants.length > 0 && !isPastAndExisting) {
+          const seen = new Set<string>();
+          const participantRecords: Array<{ reunionId: string; parlementaireId: string; presence: string | null }> = [];
+          for (const p of r.participants) {
+            const parlementaireId = parlementaireByRef.get(p.acteurRef);
+            if (!parlementaireId || seen.has(parlementaireId)) continue;
+            seen.add(parlementaireId);
+            participantRecords.push({ reunionId, parlementaireId, presence: p.presence });
+          }
+
+          if (participantRecords.length > 0) {
+            await prisma.$transaction(async (tx) => {
+              await tx.reunionParticipant.deleteMany({ where: { reunionId } });
+              await tx.reunionParticipant.createMany({ data: participantRecords });
+            });
+            participantsLinked += participantRecords.length;
+          }
+        }
+      } catch (error: any) {
+        logger.warn({ uid: r.uid, error: error.message }, 'Error syncing reunion');
+      }
+    }
+
+    if ((i + batchSize) % 1000 === 0 || i + batchSize >= reunions.length) {
+      logger.info(
+        { processed: Math.min(i + batchSize, reunions.length), total: reunions.length, created, updated },
+        'Reunions sync progress',
+      );
+    }
+  }
+
+  logger.info({ created, updated, participantsLinked, total: reunions.length }, 'Reunions sync completed');
+  return { created, updated, participantsLinked };
+}
 
 // =============================================================================
 // SYNC GROUPES POLITIQUES (via API Assemblée Nationale)
@@ -72,6 +409,111 @@ export async function syncGroupes(): Promise<{ created: number; updated: number 
 
   logger.info({ created, updated }, 'Groupes sync completed');
   return { created, updated };
+}
+
+
+
+// =============================================================================
+// HELPERS - Mandats commission sync
+// =============================================================================
+
+/**
+ * Extract commission-type mandats from AN acteur sourceData and upsert them.
+ * Also sets commissionId if the organeRef is already in organeRefToCommissionId.
+ */
+async function syncMandatsFromSourceData(
+  parlementaireId: string,
+  sourceData: unknown,
+  organeRefToCommissionId: Map<string, string>
+): Promise<number> {
+  if (!sourceData || typeof sourceData !== 'object') return 0;
+
+  const data = sourceData as Record<string, unknown>;
+  const mandatsRaw = (data as any).mandats?.mandat;
+  if (!mandatsRaw) return 0;
+
+  const mandats = Array.isArray(mandatsRaw) ? mandatsRaw : [mandatsRaw];
+  const activeSourceUids: string[] = [];
+  let count = 0;
+
+  for (const m of mandats) {
+    if (!m?.uid || !m?.typeOrgane) continue;
+    if (!COMMISSION_CODE_TYPES.includes(m.typeOrgane as (typeof COMMISSION_CODE_TYPES)[number])) continue;
+
+    const organeRefRaw = m.organes?.organeRef;
+    const organeRef: string | undefined = Array.isArray(organeRefRaw)
+      ? (organeRefRaw[0] || undefined)
+      : (organeRefRaw || undefined);
+    const commissionId: string | undefined = organeRef
+      ? (organeRefToCommissionId.get(organeRef) || undefined)
+      : undefined;
+    const newDateDebut = m.dateDebut ? new Date(m.dateDebut) : new Date();
+
+    await prisma.mandat.upsert({
+      where: { sourceUid: m.uid },
+      update: {
+        typeOrgane: m.typeOrgane,
+        qualite: m.infosQualite?.libQualite || null,
+        dateDebut: newDateDebut,
+        dateFin: m.dateFin ? new Date(m.dateFin) : null,
+        organeRef: organeRef || null,
+        commissionId: commissionId || null,
+      },
+      create: {
+        id: randomUUID(),
+        parlementaireId,
+        typeOrgane: m.typeOrgane,
+        qualite: m.infosQualite?.libQualite || null,
+        dateDebut: newDateDebut,
+        dateFin: m.dateFin ? new Date(m.dateFin) : null,
+        sourceUid: m.uid,
+        organeRef: organeRef || null,
+        commissionId: commissionId || null,
+      },
+    });
+    activeSourceUids.push(m.uid);
+    count++;
+  }
+
+  // Mark stale mandats as ended (date_fin = now) instead of deleting — preserves history.
+  // Only marks active ones (dateFin: null) that are no longer in AMO10.
+  if (activeSourceUids.length > 0) {
+    await prisma.mandat.updateMany({
+      where: {
+        parlementaireId,
+        typeOrgane: { in: Array.from(COMMISSION_CODE_TYPES) },
+        sourceUid: { notIn: activeSourceUids, startsWith: 'PM' },
+        dateFin: null,
+      },
+      data: { dateFin: new Date() },
+    });
+  }
+
+  return count;
+}
+
+/**
+ * Sync commission mandats for all AN députés from their stored sourceData (AMO10).
+ * Runs on every sync to keep PM IDs fresh (deputies get reassigned to different commissions).
+ */
+async function backfillCommissionMandats(
+  organeRefToCommissionId: Map<string, string>
+): Promise<number> {
+  const deputes = await prisma.parlementaire.findMany({
+    where: {
+      chambre: 'assemblee',
+      sourceData: { not: Prisma.JsonNull },
+    },
+    select: { id: true, sourceData: true },
+  });
+
+  let total = 0;
+  for (const p of deputes) {
+    const count = await syncMandatsFromSourceData(p.id, p.sourceData, organeRefToCommissionId);
+    total += count;
+  }
+
+  return total;
 }
 
 // =============================================================================
@@ -122,6 +564,10 @@ export async function syncDeputes(fullSync: boolean = false): Promise<{ created:
   });
   const circoMap = new Map(circosDb.map((c) => [`${c.departement}-${c.numero}`, c.id]));
 
+  // Construire le mapping organeRef→commissionId (depuis commissions déjà en DB)
+  const commissionsDb = await prisma.commission.findMany({ select: { id: true, uid: true } });
+  const organeRefToCommissionId = new Map<string, string>(commissionsDb.map((c) => [c.uid, c.id]));
+
   let created = 0;
   let updated = 0;
 
@@ -130,7 +576,7 @@ export async function syncDeputes(fullSync: boolean = false): Promise<{ created:
     parlementaires.map((p) =>
       limit(async () => {
         try {
-          return await syncSingleParlementaireAN(p, groupeMap, circoMap);
+          return await syncSingleParlementaireAN(p, groupeMap, circoMap, organeRefToCommissionId);
         } catch (error: any) {
           logger.error({ slug: p.slug, error: error.message }, 'Error syncing parlementaire');
           return null;
@@ -144,14 +590,24 @@ export async function syncDeputes(fullSync: boolean = false): Promise<{ created:
     if (result === 'updated') updated++;
   }
 
+  // Backfill commission mandats for existing deputes
+  logger.info('Backfilling commission mandats for existing deputes...');
+  const backfilled = await backfillCommissionMandats(organeRefToCommissionId);
+  logger.info({ backfilled }, 'Commission mandats backfill completed');
+
   logger.info({ created, updated, total: parlementaires.length }, 'Parlementaires AN sync completed');
   return { created, updated };
 }
 
+// =============================================================================
+// SYNC SÉNATEURS
+// =============================================================================
+
 async function syncSingleParlementaireAN(
   p: TransformedParlementaire,
   groupeMap: Map<string, string>,
-  circoMap: Map<string, string>
+  circoMap: Map<string, string>,
+  organeRefToCommissionId: Map<string, string>
 ): Promise<'created' | 'updated' | null> {
   // Trouver le groupe par sourceId (uid AN) ou sigle
   let groupeId: string | undefined;
@@ -236,6 +692,142 @@ async function syncSingleParlementaireAN(
 }
 
 // =============================================================================
+// SYNC SÉNATS - CommissionsSenate depuis API Sénat
+// =============================================================================
+
+const SENAT_CODE_TO_TYPE: Record<string, string> = {
+  COMAFCL: 'permanente',
+  COMAFETR: 'permanente',
+  COMCAEE: 'permanente',
+  COMLOIS: 'permanente',
+  COMSOCIALE: 'permanente',
+  COMFINC: 'permanente',
+  COMEUROPE: 'permanente', // Commission des affaires européennes
+};
+
+/**
+ * Sync Senate commissions from the Senate API data embedded in senateurs.
+ * Also backfills organeRef on existing Senate commissions.
+ */
+export async function syncSenatCommissions(): Promise<{ created: number; updated: number }> {
+  // Cleanup: merge PO* (AMO30 COMSENAT) duplicates into SENAT-* canonical entries
+  // Match by normalized name since PO* and SENAT-* have different organeRef values
+  const allSenatCommissions = await prisma.commission.findMany({
+    where: { chambre: 'senat', type: 'permanente' },
+    select: { id: true, uid: true, slug: true, nom: true, organeRef: true },
+  });
+  const nameNorm = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+
+  const senatEntries = allSenatCommissions.filter(c => c.uid.startsWith('SENAT-'));
+  const poEntries = allSenatCommissions.filter(c => c.uid.startsWith('PO'));
+
+  for (const po of poEntries) {
+    const poNorm = nameNorm(po.nom);
+    const match = senatEntries.find(s => nameNorm(s.nom) === poNorm);
+    if (!match) continue;
+
+    // Transfer dossier_commissions, mandats, reunions from PO* → SENAT-*
+    const [dcCount, mandatCount, reunionCount] = await Promise.all([
+      prisma.dossierCommission.updateMany({ where: { commissionId: po.id }, data: { commissionId: match.id } }),
+      prisma.mandat.updateMany({ where: { commissionId: po.id }, data: { commissionId: match.id } }),
+      prisma.reunion.updateMany({ where: { commissionId: po.id }, data: { commissionId: match.id } }),
+    ]);
+
+    // Copy SEO-friendly slug from PO* if the SENAT-* still has its generated one
+    await prisma.$transaction(async (tx) => {
+      if (match.slug.startsWith('senat-com-') && po.slug.startsWith('senat-commission-')) {
+        await tx.commission.update({ where: { id: po.id }, data: { slug: `tmp-del-${po.uid}` } });
+        await tx.commission.update({ where: { id: match.id }, data: { slug: po.slug } });
+      }
+      await tx.commission.delete({ where: { id: po.id } });
+    });
+    comsenatRedirects.set(po.uid, match.id);
+
+    logger.info(
+      { deletedUid: po.uid, keptUid: match.uid, dossiers: dcCount.count, mandats: mandatCount.count, reunions: reunionCount.count },
+      'Merged PO* COMSENAT duplicate into SENAT-* commission',
+    );
+  }
+
+  // Load all senateurs to extract commission data from sourceData
+  const senateurs = await prisma.parlementaire.findMany({
+    where: { chambre: 'senat' },
+    select: { id: true, sourceData: true },
+  });
+
+  // Extract unique commissions from senateurs' organismes
+  const commissionData = new Map<string, { code: string; libelle: string }>();
+  for (const p of senateurs) {
+    const data = p.sourceData as Record<string, unknown> | null;
+    if (!data) continue;
+    const organismes = (data as any).organismes || [];
+    for (const org of organismes) {
+      if (org.type !== 'COMMISSION') continue;
+      if (!commissionData.has(org.code)) {
+        commissionData.set(org.code, { code: org.code, libelle: org.libelle });
+      }
+    }
+  }
+
+  // Load existing Senate commissions (for matching by organeRef or name)
+  const existing = await prisma.commission.findMany({
+    where: { chambre: 'senat' },
+    select: { id: true, uid: true, organeRef: true, nom: true, nomCourt: true },
+  });
+  const byOrganeRef = new Map<string, string>();
+  for (const c of existing) {
+    if (c.organeRef) byOrganeRef.set(c.organeRef, c.id);
+  }
+
+  let created = 0;
+  let updated = 0;
+  const defaultDateDebut = new Date('2017-10-01'); // Start of current Senate term
+
+  for (const [, { code, libelle }] of commissionData) {
+    const slug = `senat-${code.toLowerCase()}`;
+    const data = {
+      uid: `SENAT-${code}`,
+      slug,
+      chambre: 'senat' as const,
+      type: 'permanente',
+      nom: libelle,
+      organeRef: code,
+      dateDebut: defaultDateDebut,
+      actif: true,
+    };
+
+    const existingByOrganeRef = byOrganeRef.get(code);
+    if (existingByOrganeRef) {
+      await prisma.commission.update({
+        where: { id: existingByOrganeRef },
+        data: { organeRef: code },
+      });
+      updated++;
+    } else {
+      await prisma.commission.create({ data });
+      created++;
+    }
+  }
+
+  // Backfill organeRef on existing Senate commissions that don't have one yet
+  const existingWithoutOrganeRef = existing.filter((c) => !c.organeRef);
+  for (const c of existingWithoutOrganeRef) {
+    const cNorm = nameNorm(c.nom);
+    for (const [code, { libelle }] of commissionData) {
+      if (nameNorm(libelle).includes(cNorm) || cNorm.includes(nameNorm(libelle))) {
+        await prisma.commission.update({ where: { id: c.id }, data: { organeRef: code } });
+        updated++;
+        break;
+      }
+    }
+  }
+
+  logger.info({ created, updated, commissions: commissionData.size }, 'Senat commissions sync completed');
+  return { created, updated };
+}
+
+// =============================================================================
 // SYNC SÉNATEURS (via API Sénat)
 // =============================================================================
 
@@ -284,6 +876,16 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
   });
   const circoMap = new Map(circosDb.map((c) => [c.departement, c.id]));
 
+  // Sync Senate commissions first, then build organeRef→commissionId map
+  await syncSenatCommissions();
+  const commissionsDb = await prisma.commission.findMany({
+    where: { chambre: 'senat', organeRef: { not: null } },
+    select: { id: true, organeRef: true },
+  });
+  const commissionByOrganeRef = new Map<string, string>(
+    commissionsDb.map((c) => [c.organeRef!, c.id]),
+  );
+
   let created = 0;
   let updated = 0;
 
@@ -292,7 +894,7 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
     senateurs.map((s) =>
       limit(async () => {
         try {
-          return await syncSingleSenateur(s, groupeMap, circoMap);
+          return await syncSingleSenateur(s, groupeMap, circoMap, commissionByOrganeRef);
         } catch (error: any) {
           logger.error({ slug: s.slug, error: error.message }, 'Error syncing sénateur');
           return null;
@@ -313,7 +915,8 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
 async function syncSingleSenateur(
   s: TransformedSenateur,
   groupeMap: Map<string, string>,
-  circoMap: Map<string, string>
+  circoMap: Map<string, string>,
+  commissionByOrganeRef: Map<string, string>
 ): Promise<'created' | 'updated' | null> {
   // Trouver le groupe par sigle
   let groupeId: string | undefined;
@@ -383,6 +986,8 @@ async function syncSingleSenateur(
     },
   });
 
+  let parlementaireId: string;
+
   if (existing) {
     await prisma.parlementaire.update({
       where: { id: existing.id },
@@ -393,11 +998,44 @@ async function syncSingleSenateur(
         circonscription: circonscriptionId ? { connect: { id: circonscriptionId } } : undefined,
       },
     });
-    return 'updated';
+    parlementaireId = existing.id;
   } else {
-    await prisma.parlementaire.create({ data });
-    return 'created';
+    const created = await prisma.parlementaire.create({ data });
+    parlementaireId = created.id;
   }
+
+  // Create/update commission mandats from sourceData.organismes
+  const organismes = s.sourceData.organismes || [];
+  for (const org of organismes) {
+    if (org.type !== 'COMMISSION') continue;
+    const code = org.organeRef || org.code;
+    if (!code) continue;
+    const commissionId = commissionByOrganeRef.get(code);
+    if (!commissionId) continue;
+
+    const mandatData: Prisma.MandatUncheckedCreateInput = {
+      typeOrgane: 'COMMISSION',
+      qualite: org.qualite || 'Membre',
+      dateDebut: org.dateDebut ? new Date(org.dateDebut) : new Date(),
+      dateFin: org.dateFin ? new Date(org.dateFin) : null,
+      organeRef: code,
+      parlementaireId: parlementaireId,
+      commissionId: commissionId,
+    };
+
+    await prisma.mandat.upsert({
+      where: {
+        parlementaireId_organeRef: { parlementaireId, organeRef: code },
+      },
+      create: mandatData,
+      update: {
+        qualite: org.qualite || 'Membre',
+        dateFin: org.dateFin ? new Date(org.dateFin) : null,
+      },
+    });
+  }
+
+  return existing ? 'updated' : 'created';
 }
 
 // =============================================================================
@@ -1076,6 +1714,455 @@ function extractKeywords(text: string): string[] {
 // FULL SYNC
 // =============================================================================
 
+// =============================================================================
+// SYNC VIDÉOS AN (videos.assemblee-nationale.fr)
+// =============================================================================
+
+export async function syncAnVideos(): Promise<{ linked: number }> {
+  const { AnVideosClient } = await import('../sources/assemblee-nationale/an-videos-client.js');
+
+  logger.info('Starting AN videos sync...');
+
+  const client = new AnVideosClient();
+  const videos = await client.getAllVideos();
+
+  if (videos.length === 0) {
+    logger.warn('No AN videos fetched — aborting');
+    return { linked: 0 };
+  }
+
+  let linked = 0;
+
+  // --- Séances AN ---
+  // Build: "YYYY-MM-DD|order" → url
+  const seanceVideoMap = new Map<string, string>();
+  for (const v of videos) {
+    if (v.videoType !== 'seance' || v.seanceOrder === null) continue;
+    const key = `${v.isoDate}|${v.seanceOrder}`;
+    if (!seanceVideoMap.has(key)) seanceVideoMap.set(key, v.url);
+  }
+
+  // Load AN séances with CRSA ref (only these have videos)
+  const anSeances = await prisma.reunion.findMany({
+    where: {
+      type: 'seance',
+      compteRenduRef: { startsWith: 'CRSA' },
+    },
+    select: { id: true, dateDebut: true, compteRenduRef: true },
+    orderBy: { dateDebut: 'asc' },
+  });
+
+  // Group by date, sort by CRSA number suffix → determines 1ère/2ème/3ème order
+  const seancesByDate = new Map<string, typeof anSeances>();
+  for (const r of anSeances) {
+    const isoDate = r.dateDebut.toISOString().slice(0, 10);
+    if (!seancesByDate.has(isoDate)) seancesByDate.set(isoDate, []);
+    seancesByDate.get(isoDate)!.push(r);
+  }
+
+  for (const [isoDate, daySeances] of seancesByDate) {
+    // Sort by CRSA ref number (NXX suffix) → ascending = chronological order
+    daySeances.sort((a, b) => {
+      const na = parseInt(a.compteRenduRef?.match(/N(\d+)$/)?.[1] ?? '0', 10);
+      const nb = parseInt(b.compteRenduRef?.match(/N(\d+)$/)?.[1] ?? '0', 10);
+      return na - nb;
+    });
+
+    for (let i = 0; i < daySeances.length; i++) {
+      const order = i + 1; // 1-indexed
+      const url = seanceVideoMap.get(`${isoDate}|${order}`);
+      if (url) {
+        await prisma.reunion.update({ where: { id: daySeances[i]!.id }, data: { urlVideo: url } });
+        linked++;
+      }
+    }
+  }
+
+  logger.info({ linked: linked }, 'AN séances videos linked');
+
+  // --- Commissions AN ---
+  // Build: "YYYY-MM-DD|organeRef" → url (first video per commission+day)
+  const commissionVideoMap = new Map<string, string>();
+  for (const v of videos) {
+    if (v.videoType !== 'commission' || !v.organeRef) continue;
+    const key = `${v.isoDate}|${v.organeRef}`;
+    if (!commissionVideoMap.has(key)) commissionVideoMap.set(key, v.url);
+  }
+
+  // Load AN commission meetings
+  const anCommissions = await prisma.reunion.findMany({
+    where: {
+      type: 'commission',
+      commission: { chambre: 'assemblee' },
+    },
+    select: { id: true, dateDebut: true, commission: { select: { organeRef: true } } },
+  });
+
+  for (const r of anCommissions) {
+    const organeRef = r.commission?.organeRef;
+    if (!organeRef) continue;
+    const isoDate = r.dateDebut.toISOString().slice(0, 10);
+    const url = commissionVideoMap.get(`${isoDate}|${organeRef}`);
+    if (url) {
+      await prisma.reunion.update({ where: { id: r.id }, data: { urlVideo: url } });
+      linked++;
+    }
+  }
+
+  logger.info({ total: linked }, 'AN videos sync completed');
+  return { linked };
+}
+
+// =============================================================================
+// SYNC VIDÉOS SÉNAT (scraping videos.senat.fr)
+// =============================================================================
+
+export async function syncSenatVideos(): Promise<{ linked: number }> {
+  const { SenatVideosClient } = await import('../sources/senat/videos-client.js');
+
+  logger.info('Starting Sénat videos sync...');
+
+  const client = new SenatVideosClient();
+  const videos = await client.getAllVideos();
+
+  if (videos.length === 0) {
+    logger.warn('No Sénat videos fetched — aborting');
+    return { linked: 0 };
+  }
+
+  // Build lookup: "YYYY-MM-DD|moment" → url
+  const videoMap = new Map<string, string>();
+  for (const v of videos) {
+    const key = `${v.isoDate}|${v.moment}`;
+    if (!videoMap.has(key)) videoMap.set(key, v.url);
+  }
+
+  // Load Sénat séances from DB
+  const reunions = await prisma.reunion.findMany({
+    where: { type: 'seance', commission: { chambre: 'senat' } },
+    select: { id: true, dateDebut: true },
+  });
+
+  logger.info({ reunions: reunions.length, videos: videos.length }, 'Matching videos to séances...');
+
+  let linked = 0;
+
+  for (const r of reunions) {
+    const date = r.dateDebut;
+    const isoDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const parisHour = new Date(date.toLocaleString('en-US', { timeZone: 'Europe/Paris' })).getHours();
+
+    // Heuristic: matin < 13h, apres-midi 13h–20h, soir ≥ 20h
+    const moment = parisHour < 13 ? 'matin' : parisHour < 20 ? 'apres-midi' : 'soir';
+
+    const url = videoMap.get(`${isoDate}|${moment}`) || videoMap.get(`${isoDate}|apres-midi`) || null;
+
+    if (url) {
+      await prisma.reunion.update({ where: { id: r.id }, data: { urlVideo: url } });
+      linked++;
+    }
+  }
+
+  logger.info({ linked }, 'Sénat videos sync completed');
+  return { linked };
+}
+
+// =============================================================================
+// SYNC RÉUNIONS SÉNAT (scraping comptes rendus HTML)
+// =============================================================================
+
+export async function syncSenatReunions(options: { maxWeeks?: number } = {}): Promise<{
+  created: number;
+  updated: number;
+  participantsLinked: number;
+  weeksFetched: number;
+  pagesParsed: number;
+  pagesErrored: number;
+}> {
+  const { SenatReunionsClient } = await import('../sources/senat/reunions-client.js');
+
+  logger.info({ maxWeeks: options.maxWeeks }, 'Starting Sénat reunions sync (HTML scraping)...');
+
+  const client = new SenatReunionsClient();
+  const { reunions, weeksFetched, pagesParsed, pagesErrored } = await client.getAllReunions({
+    maxWeeks: options.maxWeeks,
+  });
+
+  logger.info({ count: reunions.length, weeksFetched }, 'Sénat reunions fetched — starting DB upsert...');
+
+  // Load commissions by slug for organeReuniRef → commissionId mapping
+  const commissions = await prisma.commission.findMany({
+    where: { chambre: 'senat' },
+    select: { id: true, slug: true },
+  });
+  const commissionBySlug = new Map(commissions.map((c) => [c.slug, c.id]));
+
+  // Load sénat parlementaires for fuzzy name matching
+  // Indexing by normalized "NOM Prénom" to allow fast lookups
+  const senateurs = await prisma.parlementaire.findMany({
+    where: { chambre: 'senat' },
+    select: { id: true, nom: true, prenom: true },
+  });
+
+  /**
+   * Normalize a name for fuzzy matching:
+   * - Lowercase, remove diacritics, remove hyphens, collapse spaces
+   */
+  function normalizeName(s: string): string {
+    return s
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[-']/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  // Build lookup: normalized "nom prenom" → id
+  const senByNomPrenom = new Map<string, string>();
+  // Also: normalized "nom" → id (for last-name-only matches)
+  const senByNom = new Map<string, string[]>();
+  for (const s of senateurs) {
+    const key = normalizeName(`${s.nom} ${s.prenom}`);
+    senByNomPrenom.set(key, s.id);
+    const nomKey = normalizeName(s.nom);
+    if (!senByNom.has(nomKey)) senByNom.set(nomKey, []);
+    senByNom.get(nomKey)!.push(s.id);
+  }
+
+  /**
+   * Match a raw name extracted from HTML to a sénat parlementaire ID.
+   * Returns null if no match with sufficient confidence.
+   */
+  function matchSenateur(rawName: string): string | null {
+    // Remove civility prefixes and abbreviations
+    const cleaned = rawName
+      .replace(/^M(?:me|M)?\.?\s*/i, '')
+      .replace(/^M\.\s*/i, '')
+      .trim();
+
+    const normalized = normalizeName(cleaned);
+
+    // 1. Exact nom + prénom match
+    const exactMatch = senByNomPrenom.get(normalized);
+    if (exactMatch) return exactMatch;
+
+    // 2. Try "NOM Prénom" or "Prénom NOM" permutations
+    const parts = normalized.split(' ').filter((p) => p.length > 1);
+
+    // Try each part as the surname
+    for (const part of parts) {
+      const ids = senByNom.get(part);
+      if (ids && ids.length === 1) return ids[0]!;
+    }
+
+    // 3. Partial match: check if normalized name contains a known full key
+    for (const [key, id] of senByNomPrenom) {
+      if (normalized.includes(key) || key.includes(normalized)) {
+        return id;
+      }
+    }
+
+    return null;
+  }
+
+  let created = 0;
+  let updated = 0;
+  let participantsLinked = 0;
+
+  for (const r of reunions) {
+    try {
+      const commissionId = commissionBySlug.get(r.organeReuniRef || '') || null;
+
+      const reunionData = {
+        uid: r.uid,
+        type: r.type,
+        dateDebut: r.dateDebut,
+        dateFin: r.dateFin,
+        lieu: r.lieu,
+        etat: r.etat,
+        odjResume: r.odjResume,
+        odjComplet: r.odjComplet,
+        captationVideo: r.captationVideo,
+        ouvertePresse: r.ouvertePresse,
+        compteRenduRef: r.compteRenduRef,
+        organeRef: r.organeReuniRef || null,
+        commissionId,
+      };
+
+      const existing = await prisma.reunion.findUnique({ where: { uid: r.uid } });
+
+      let reunionId: string;
+      if (existing) {
+        await prisma.reunion.update({ where: { id: existing.id }, data: reunionData });
+        reunionId = existing.id;
+        updated++;
+      } else {
+        const created_ = await prisma.reunion.create({ data: reunionData });
+        reunionId = created_.id;
+        created++;
+      }
+
+      // Match participants — only for new reunions (compte-rendu passé = données finales)
+      if (!existing && (r as any).participantNames?.length > 0) {
+        const participantNames = (r as any).participantNames as string[];
+        const seen = new Set<string>();
+        const records: Array<{ reunionId: string; parlementaireId: string; presence: string }> = [];
+
+        for (const name of participantNames) {
+          const parlementaireId = matchSenateur(name);
+          if (!parlementaireId || seen.has(parlementaireId)) continue;
+          seen.add(parlementaireId);
+          records.push({ reunionId, parlementaireId, presence: 'present' });
+        }
+
+        if (records.length > 0) {
+          await prisma.reunionParticipant.createMany({ data: records, skipDuplicates: true });
+          participantsLinked += records.length;
+        }
+      }
+    } catch (err: any) {
+      logger.warn({ uid: r.uid, error: err.message }, 'Error syncing Sénat reunion');
+    }
+  }
+
+  logger.info(
+    { created, updated, participantsLinked, weeksFetched, pagesParsed, pagesErrored },
+    'Sénat reunions sync completed'
+  );
+
+  return { created, updated, participantsLinked, weeksFetched, pagesParsed, pagesErrored };
+}
+
+// =============================================================================
+// SYNC AGENDA SÉNAT (séances publiques à venir via API senat.fr)
+// =============================================================================
+
+export async function syncSenatAgenda(): Promise<{ created: number; updated: number }> {
+  const { SenatAgendaClient } = await import('../sources/senat/agenda-client.js');
+
+  logger.info('Starting Sénat agenda sync (upcoming public sessions)...');
+
+  const client = new SenatAgendaClient();
+  const seances = await client.getUpcomingSeances(4);
+
+  logger.info({ count: seances.length }, 'Sénat agenda fetched — starting DB upsert...');
+
+  const commission = await prisma.commission.findFirst({
+    where: { slug: 'senat-senat-5eme-republique' },
+    select: { id: true },
+  });
+  const commissionId = commission?.id || null;
+
+  if (!commissionId) {
+    logger.warn('Commission "senat-senat-5eme-republique" not found — séances will have no commission link');
+  }
+
+  let created = 0;
+  let updated = 0;
+
+  for (const s of seances) {
+    try {
+      const reunionData = {
+        uid: s.uid,
+        type: 'seance' as const,
+        dateDebut: s.dateDebut,
+        dateFin: null,
+        lieu: 'Sénat',
+        etat: s.etat,
+        odjResume: s.odjResume,
+        odjComplet: s.odjItems.join('\n') || null,
+        captationVideo: true,
+        ouvertePresse: false,
+        compteRenduRef: null,
+        organeRef: 'PO78718',
+        commissionId,
+      };
+
+      const existing = await prisma.reunion.findUnique({ where: { uid: s.uid } });
+
+      if (existing) {
+        await prisma.reunion.update({ where: { id: existing.id }, data: reunionData });
+        updated++;
+      } else {
+        await prisma.reunion.create({ data: reunionData });
+        created++;
+      }
+    } catch (err: any) {
+      logger.warn({ uid: s.uid, error: err.message }, 'Error syncing Sénat agenda séance');
+    }
+  }
+
+  logger.info({ created, updated, total: seances.length }, 'Sénat agenda sync completed');
+  return { created, updated };
+}
+
+// =============================================================================
+// SYNC SÉANCES ODJ (enrichissement des réunions depuis le CSV AN)
+// =============================================================================
+
+export async function syncSeancesODJ(): Promise<{
+  updated: number;
+  totalCsvRows: number;
+  matched: number;
+}> {
+  const { SeancesODJClient } = await import('../sources/assemblee-nationale/seances-odj-client.js');
+
+  logger.info('Starting séances ODJ sync (CSV enrichment)...');
+
+  const client = new SeancesODJClient(17);
+  const seances = await client.getSeancesODJ();
+
+  let updated = 0;
+  let matched = 0;
+
+  for (const seance of seances) {
+    try {
+      // Skip rows with no ODJ content — nothing to enrich
+      if (!seance.odjResume && !seance.odjComplet) continue;
+
+      // Find all séances publiques on the same calendar day
+      const startOfDay = new Date(`${seance.date}T00:00:00.000Z`);
+      const endOfDay = new Date(`${seance.date}T23:59:59.999Z`);
+
+      const candidates = await prisma.reunion.findMany({
+        where: {
+          type: 'seance',
+          dateDebut: { gte: startOfDay, lte: endOfDay },
+        },
+        select: { id: true, dateDebut: true, odjResume: true, odjComplet: true },
+      });
+
+      // seance.dateDebut is already correct UTC (timezone conversion handled by the client)
+      const matchingReunions = candidates.filter(
+        (r) => r.dateDebut.getUTCHours() === seance.dateDebut.getUTCHours()
+      );
+
+      for (const reunion of matchingReunions) {
+        matched++;
+
+        // Only enrich if currently empty — existing rich data from the AN ZIP takes priority
+        if (reunion.odjResume || reunion.odjComplet) continue;
+
+        await prisma.reunion.update({
+          where: { id: reunion.id },
+          data: {
+            odjResume: seance.odjResume || null,
+            odjComplet: seance.odjComplet || null,
+          },
+        });
+        updated++;
+      }
+    } catch (err: any) {
+      logger.warn({ date: seance.date, heure: seance.heure, error: err.message }, 'Error processing séance ODJ row');
+    }
+  }
+
+  logger.info({ updated, totalCsvRows: seances.length, matched }, 'Séances ODJ sync completed');
+
+  return { updated, totalCsvRows: seances.length, matched };
+}
+
 export async function fullSync(): Promise<void> {
   logger.info('Starting full sync (Assemblée Nationale + Sénat)...');
   const startTime = Date.now();
@@ -1179,7 +2266,15 @@ export interface SmartSyncOptions {
   includeInterventions?: boolean;
   includeDossiers?: boolean;
   includeLobbying?: boolean;
+  includeCommissions?: boolean;
+  includeReunions?: boolean;
+  includeSenatReunions?: boolean;
+  includeSenatAgenda?: boolean;
+  includeSenatVideos?: boolean;
+  includeAnVideos?: boolean;
+  includeSeancesODJ?: boolean;
   scrutinsLimit?: number;
+  reunionsLimit?: number;
   amendementsLimit?: number;
   interventionsLimit?: number;
   dossiersLimit?: number;
@@ -1221,33 +2316,55 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
   if (options.all) {
     // Tout synchroniser dans le bon ordre (relations d'abord)
     sourcesToCheck = [
-      // 1. Parlementaires (nécessaires pour les autres sources)
+      // 1. Commissions en premier : syncDeputes() appelle backfillCommissionMandats()
+      //    qui requiert que les commissions soient déjà en DB pour lier les mandats
+      'assemblee_nationale:commissions',
+      // 2. Parlementaires (nécessaires pour les autres sources)
       'assemblee_nationale:deputes',
       'senat:senateurs',
-      // 2. Scrutins et votes
+      // 3. Scrutins et votes
       'assemblee_nationale:scrutins',
       'senat:scrutins',
-      // 3. Amendements
+      // 4. Amendements
       'assemblee_nationale:amendements',
       'senat:amendements',
-      // 4. Dossiers législatifs (lie scrutins et amendements aux textes de loi)
+      // 5. Dossiers législatifs (lie scrutins et amendements aux textes de loi)
       'assemblee_nationale:dossiers',
       'senat:dossiers',
-      // 5. Interventions
+      // 6. Interventions
       'dila:interventions',
       'senat:interventions',
-      // 6. Lobbying
+      // 7. Lobbying
       'hatvp:lobbyistes',
+      // 8. Réunions / Agenda (nécessite commissions + parlementaires)
+      'assemblee_nationale:reunions',
+      // 9. Séances publiques ODJ (enrichissement CSV — doit venir après reunions)
+      'assemblee_nationale:seances_odj',
+      // 10. Réunions Sénat (scraping HTML comptes rendus — nécessite commissions Sénat)
+      'senat:reunions',
+      // 11. Agenda Sénat (séances publiques à venir via API senat.fr)
+      'senat:agenda',
+      // 12. Vidéos Sénat (scraping videos.senat.fr — lie les replays aux séances)
+      'senat:videos',
+      // 12. Vidéos AN (videos.assemblee-nationale.fr — séances + commissions)
+      'assemblee_nationale:videos',
     ];
   } else {
     sourcesToCheck = options.sources || [
       'assemblee_nationale:deputes',
       'senat:senateurs',
+      ...(options.includeCommissions ? ['assemblee_nationale:commissions'] : []),
       ...(options.includeScrutins ? ['assemblee_nationale:scrutins', 'senat:scrutins'] : []),
       ...(options.includeAmendements ? ['assemblee_nationale:amendements', 'senat:amendements'] : []),
       ...(options.includeDossiers ? ['assemblee_nationale:dossiers', 'senat:dossiers'] : []),
       ...(options.includeInterventions ? ['dila:interventions', 'senat:interventions'] : []),
       ...(options.includeLobbying ? ['hatvp:lobbyistes'] : []),
+      ...(options.includeReunions ? ['assemblee_nationale:reunions'] : []),
+      ...(options.includeSeancesODJ ? ['assemblee_nationale:seances_odj'] : []),
+      ...(options.includeSenatReunions ? ['senat:reunions'] : []),
+      ...(options.includeSenatAgenda ? ['senat:agenda'] : []),
+      ...(options.includeSenatVideos ? ['senat:videos'] : []),
+      ...(options.includeAnVideos ? ['assemblee_nationale:videos'] : []),
     ];
   }
 
@@ -1318,6 +2435,12 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
             syncResult = await syncSenateurs(false);
             break;
 
+          case 'assemblee_nationale:commissions': {
+            const commissionsResult = await syncCommissions();
+            syncResult = { created: commissionsResult.created, updated: commissionsResult.updated };
+            break;
+          }
+
           case 'assemblee_nationale:scrutins': {
             // Si --all et pas de limite explicite, on sync TOUT (undefined = pas de limite)
             const scrutinsResult = await syncScrutins({ limit: options.scrutinsLimit });
@@ -1377,6 +2500,42 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
               includeActions: true,
             });
             syncResult = lobbyingResult.lobbyistes;
+            break;
+          }
+
+          case 'assemblee_nationale:reunions': {
+            const reunionsResult = await syncReunions({ limit: options.reunionsLimit });
+            syncResult = { created: reunionsResult.created, updated: reunionsResult.updated };
+            break;
+          }
+
+          case 'assemblee_nationale:seances_odj': {
+            const odjResult = await syncSeancesODJ();
+            syncResult = { created: 0, updated: odjResult.updated };
+            break;
+          }
+
+          case 'senat:reunions': {
+            const senatReunionsResult = await syncSenatReunions({ maxWeeks: options.reunionsLimit });
+            syncResult = { created: senatReunionsResult.created, updated: senatReunionsResult.updated };
+            break;
+          }
+
+          case 'senat:agenda': {
+            const senatAgendaResult = await syncSenatAgenda();
+            syncResult = { created: senatAgendaResult.created, updated: senatAgendaResult.updated };
+            break;
+          }
+
+          case 'senat:videos': {
+            const senatVideosResult = await syncSenatVideos();
+            syncResult = { created: 0, updated: senatVideosResult.linked };
+            break;
+          }
+
+          case 'assemblee_nationale:videos': {
+            const anVideosResult = await syncAnVideos();
+            syncResult = { created: 0, updated: anVideosResult.linked };
             break;
           }
 
@@ -2271,7 +3430,7 @@ export async function syncAmendementsSenatCsv(
 
 export async function syncDossiers(
   options: { limit?: number; linkScrutins?: boolean } = {}
-): Promise<{ created: number; updated: number; scrutinsLinked: number }> {
+): Promise<{ created: number; updated: number; scrutinsLinked: number; amendementsLinked: number; commissionsLinked: number }> {
   const linkScrutins = options.linkScrutins ?? true;
   logger.info({ limit: options.limit, linkScrutins }, 'Starting dossiers législatifs sync...');
 
@@ -2282,6 +3441,19 @@ export async function syncDossiers(
   let updated = 0;
   let scrutinsLinked = 0;
   let amendementsLinked = 0;
+  let commissionsLinked = 0;
+
+  // Batch load all commissions for organeRef lookup (avoids N queries in the loop)
+  const commissions = await prisma.commission.findMany({
+    select: { id: true, organeRef: true },
+  });
+  const commissionByOrganeRef = new Map(
+    commissions.filter(c => c.organeRef).map(c => [c.organeRef!, c.id]),
+  );
+  // COMSENAT redirects: PO* UIDs from dossier saisines → SENAT-* commission IDs
+  for (const [poUid, senatId] of comsenatRedirects) {
+    commissionByOrganeRef.set(poUid, senatId);
+  }
 
   for (const dossier of dossiers) {
     try {
@@ -2360,6 +3532,30 @@ export async function syncDossiers(
         }
       }
 
+      // Lier les commissions au dossier via sourceData
+      if (dossier.sourceData) {
+        const saisines = extractCommissionSaisines(dossier.sourceData);
+        for (const saisine of saisines) {
+          const commissionId = commissionByOrganeRef.get(saisine.organeRef);
+          if (!commissionId) {
+            logger.debug({ organeRef: saisine.organeRef, dossierUid: dossier.uid }, 'Commission not found for organeRef — skipping');
+            continue;
+          }
+          const result = await prisma.dossierCommission.upsert({
+            where: {
+              dossierId_commissionId_role: {
+                dossierId,
+                commissionId,
+                role: saisine.role,
+              },
+            },
+            create: { dossierId, commissionId, role: saisine.role },
+            update: {},
+          });
+          if (result) commissionsLinked++;
+        }
+      }
+
     } catch (e: any) {
       logger.warn({ uid: dossier.uid, error: e.message }, 'Failed to upsert dossier');
     }
@@ -2380,8 +3576,8 @@ export async function syncDossiers(
     logger.info({ propagated }, 'Propagated urlLegifrance to Sénat dossiers');
   }
 
-  logger.info({ created, updated, scrutinsLinked, amendementsLinked, total: dossiers.length }, 'Dossiers législatifs sync completed');
-  return { created, updated, scrutinsLinked, amendementsLinked };
+  logger.info({ created, updated, scrutinsLinked, amendementsLinked, commissionsLinked, total: dossiers.length }, 'Dossiers législatifs sync completed');
+  return { created, updated, scrutinsLinked, amendementsLinked, commissionsLinked };
 }
 
 // =============================================================================
@@ -3884,16 +5080,16 @@ export async function syncLobbyistes(
   for (const csvLobbyiste of csvLobbyistes) {
     try {
       const siren = csvLobbyiste.typeIdentifiant === 'SIREN' ? csvLobbyiste.identifiantNational : null;
+      const identifiantNational = csvLobbyiste.identifiantNational?.trim() || null;
       const type = categorieMap[csvLobbyiste.categorie] || 'entreprise';
 
-      const existing = await prisma.lobbyiste.findFirst({
-        where: {
-          OR: [
-            { sourceId: csvLobbyiste.id },
-            ...(siren ? [{ siren }] : []),
-          ],
-        },
-      });
+      // Match par identifiantNational (SIREN/RNA) — clé stable HATVP.
+      // Fallback sur le SIREN pour les edge cases (identifiant vide).
+      const existing = identifiantNational
+        ? await prisma.lobbyiste.findUnique({ where: { identifiantNational } })
+        : siren
+          ? await prisma.lobbyiste.findFirst({ where: { siren } })
+          : null;
 
       const secteur = csvLobbyiste.secteurs.length > 0
         ? csvLobbyiste.secteurs.slice(0, 3).join(', ').substring(0, 500)
@@ -3904,7 +5100,7 @@ export async function syncLobbyistes(
         : salariesByLobbyiste.get(csvLobbyiste.id) || null;
 
       const data = {
-        sourceId: csvLobbyiste.id,
+        identifiantNational,
         siren,
         nom: csvLobbyiste.denomination,
         type,
@@ -4058,6 +5254,7 @@ export async function syncLobbyistes(
     const toUpdate: Array<{ id: string; descriptionId: string; cible: string | null; cibleTypeId: string | null; texteVise: string | null; texteViseNom: string | null }> = [];
     const pivotActionIds: string[] = [];
     const pivotPairs: Array<{ actionId: string; secteurId: string }> = [];
+    const validActionKeys = new Set<string>();
 
     for (const act of csvActivites) {
       if (!act.objet) continue;
@@ -4087,6 +5284,8 @@ export async function syncLobbyistes(
 
       const descriptionId = descriptionMap.get(description);
       if (!descriptionId) continue;
+
+      validActionKeys.add(`${lobbyisteId}::${descriptionId}`);
 
       const cibleTypeId = cibleNom ? cibleTypeMap.get(cibleNom) ?? null : null;
 
@@ -4190,6 +5389,43 @@ export async function syncLobbyistes(
     pivotActionIds.length = 0;
     pivotPairs.length = 0;
     existingActionMap.clear();
+
+    // ── Stale action cleanup ──
+    // Delete actions for processed lobbyistes that are no longer present
+    // in the current CSV source. This prevents chimera-lobbyist records
+    // caused by HATVP representants_id recycling between exports.
+    const validDescByLobbyist = new Map<string, number[]>();
+    for (const key of validActionKeys) {
+      const sepIndex = key.indexOf('::');
+      const dbId = key.slice(0, sepIndex);
+      const descId = Number(key.slice(sepIndex + 2));
+      const list = validDescByLobbyist.get(dbId) || [];
+      list.push(descId);
+      validDescByLobbyist.set(dbId, list);
+    }
+
+    let staleDeleted = 0;
+    for (const dbLobbyisteId of lobbyisteIdMap.values()) {
+      const validDescIds = validDescByLobbyist.get(dbLobbyisteId);
+      if (validDescIds && validDescIds.length > 0) {
+        const result = await prisma.actionLobby.deleteMany({
+          where: {
+            lobbyisteId: dbLobbyisteId,
+            descriptionId: { notIn: validDescIds },
+          },
+        });
+        staleDeleted += result.count;
+      } else {
+        const result = await prisma.actionLobby.deleteMany({
+          where: { lobbyisteId: dbLobbyisteId },
+        });
+        staleDeleted += result.count;
+      }
+    }
+
+    if (staleDeleted > 0) {
+      logger.info({ staleDeleted }, 'Stale actions cleaned up');
+    }
   }
 
   logger.info({

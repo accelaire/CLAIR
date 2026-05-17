@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -287,6 +287,14 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
 
   const activeFilterCount = (groupeFilter ? 1 : 0) + (sortFilter ? 1 : 0);
 
+  const tabParam = searchParams.get('tab');
+  useEffect(() => {
+    if (!tabParam) return;
+    const el = document.getElementById('tabs-section');
+    if (el) {
+      requestAnimationFrame(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    }
+  }, [tabParam]);
 
   const { data: dossier, isLoading, error } = useQuery<DossierDetail>({
     queryKey: ['dossier', uid],
@@ -602,7 +610,7 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
       )}
 
       {/* Tabs: Amendements / Scrutins */}
-      <div className="flex items-center gap-1 border-b mb-6">
+      <div id="tabs-section" className="flex items-center gap-1 border-b mb-6 scroll-mt-20">
         {hasAmendements && (
           <button
             onClick={() => setActiveTab('amendements')}
