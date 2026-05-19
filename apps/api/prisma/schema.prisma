@@ -491,6 +491,9 @@ model Sujet {
   groupeAmendementDescriptions Json?   @map("groupe_amendement_descriptions")
   iaGroupeAmendementHash       String? @map("ia_groupe_amendement_hash")
 
+  // Embedding vector for semantic matching (mistral-embed, 1024-dim)
+  embed Json?
+
   dossiers      DossierLegislatif[]
   actionsLobby  SujetActionLobby[]
 
@@ -758,6 +761,9 @@ model ActionLobby {
   // Texte de loi concerné
   texteVise     String? @map("texte_vise")
   texteViseNom  String? @map("texte_vise_nom")
+
+  // Embedding vector for semantic matching (mistral-embed, 1024-dim)
+  embed Json?
 
   secteurs     ActionSecteur[]
   sujets       SujetActionLobby[]

@@ -842,9 +842,9 @@ program
 // =============================================================================
 program
   .command('check-lobby')
-  .description('Correspondance sémantique (TF-IDF) entre les actions de lobbying (cible=parlementaire) et les sujets. Persiste les résultats dans sujet_action_lobby sauf avec --dry-run.')
+  .description('Correspondance sémantique (embeddings Mistral) entre les actions de lobbying (cible=parlementaire) et les sujets. Persiste les résultats dans sujet_action_lobby sauf avec --dry-run.')
   .option('-l, --limit <number>', 'Nombre max d\'actions à traiter', parseInt)
-  .option('--min-score <number>', 'Score TF-IDF minimum pour accepter une correspondance (défaut: 0.15)', parseFloat)
+  .option('--min-score <number>', 'Score de similarité cosinus minimum (embeddings) pour accepter une correspondance (défaut: 0.35)', parseFloat)
   .option('--top-n <number>', 'Nombre max de sujets retournés par action (défaut: 3)', parseInt)
   .option('--max-age-days <number>', 'Ancienneté maximale des actions en jours (défaut: 365)', parseInt)
   .option('--dry-run', 'Calculer les scores sans écrire en base')
