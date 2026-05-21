@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 const BASE = 'https://videos.assemblee-nationale.fr';
 const SEARCH_URL = `${BASE}/php/eventsearch.php`;
 
