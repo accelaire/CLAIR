@@ -83,7 +83,7 @@ function cosineSimilarity(a: number[], b: number[], dim: number): number {
 
 /**
  * Sélectionne le texte d'un sujet pour l'embedding selon la priorité :
- * enjeux → resume → label → slug (première valeur non vide).
+ * resume → enjeux → label → slug (première valeur non vide).
  */
 function pickSujetText(sujet: {
   id: string;
@@ -282,65 +282,80 @@ export async function checkLobby(
   );
 
   // ===========================================================================
-  // 4. Apparier chaque action aux sujets éligibles
+  // 3b. Pré-générer les embeddings manquants des actions (batch)
   // ===========================================================================
   const actionSourceCounts = { description: 0, texteVise: 0, vide: 0 };
-  let actionIdx = 0;
 
-  for (const action of actions) {
-    actionIdx++;
+  // Préparer le texte et l'embedding de chaque action
+  type ActionWithEmbed = {
+    action: typeof actions[number];
+    text: string | null;
+    source: "description" | "texteVise" | null;
+    embedding: number[] | null;
+  };
+
+  const actionEntries: ActionWithEmbed[] = actions.map((action) => {
     const picked = pickActionText(
       action.actionDescription?.texte,
       action.texteViseNom,
     );
-
     if (!picked) {
       actionSourceCounts.vide++;
-      result.skipped++;
-      continue;
+      return { action, text: null, source: null, embedding: null };
     }
-
     actionSourceCounts[picked.source]++;
+    const cached = parseEmbed(action.embed);
+    const validCache = cached && cached.length === embedDim ? cached : null;
+    return { action, text: picked.text, source: picked.source, embedding: validCache };
+  });
 
-    // Embedding de l'action — utiliser le cache si disponible
-    let actionEmbedding = parseEmbed(action.embed);
+  const needEmbedIndices = actionEntries
+    .map((e, i) => (e.text && !e.embedding ? i : -1))
+    .filter((i) => i >= 0);
 
-    if (!actionEmbedding || actionEmbedding.length !== embedDim) {
-      logger.debug(
-        { actionIdx, total: actions.length, source: picked.source },
-        "Génération embedding action (pas de cache)...",
-      );
+  if (needEmbedIndices.length > 0) {
+    logger.info(
+      { total: actions.length, cached: actions.length - needEmbedIndices.length - actionSourceCounts.vide, toGenerate: needEmbedIndices.length },
+      "Génération des embeddings manquants pour les actions (batch)...",
+    );
 
-      try {
-        const embeddings = await mistral.embed([picked.text]);
-        actionEmbedding = embeddings[0]!;
+    const textsToEmbed = needEmbedIndices.map((i) => actionEntries[i]!.text!);
+    const newEmbeddings = await mistral.embed(textsToEmbed);
 
-        // Persister le cache si demandé
-        if (persist) {
-          await prisma.actionLobby.update({
-            where: { id: action.id },
-            data: { embed: actionEmbedding as any },
-          });
-        }
-      } catch (error: any) {
-        logger.warn(
-          { actionId: action.id, error: error.message },
-          "Échec embedding action, ignorée",
-        );
-        result.skipped++;
-        continue;
+    for (let j = 0; j < needEmbedIndices.length; j++) {
+      const idx = needEmbedIndices[j]!;
+      const vec = newEmbeddings[j]!;
+      actionEntries[idx]!.embedding = vec;
+
+      if (persist) {
+        await prisma.actionLobby.update({
+          where: { id: actionEntries[idx]!.action.id },
+          data: { embed: vec as any },
+        });
       }
-    } else {
-      logger.debug(
-        { actionIdx, total: actions.length },
-        "Embedding action (cache)",
-      );
     }
 
-    if (!actionEmbedding || actionEmbedding.length !== embedDim) {
-      result.skipped++;
+    logger.info(
+      { generated: newEmbeddings.length },
+      "Embeddings actions générés",
+    );
+  } else {
+    logger.info(
+      { cached: actions.length - actionSourceCounts.vide },
+      "Tous les embeddings actions sont déjà en cache",
+    );
+  }
+
+  // ===========================================================================
+  // 4. Apparier chaque action aux sujets éligibles
+  // ===========================================================================
+  for (const entry of actionEntries) {
+    if (!entry.text || !entry.embedding) {
+      if (!entry.text) result.skipped++;
       continue;
     }
+
+    const { action, embedding: actionEmbedding } = entry;
 
     // Filtrer les sujets par contrainte temporelle
     const candidateIndices: number[] = [];
@@ -384,7 +399,7 @@ export async function checkLobby(
       result.matches.push({
         actionId: action.id,
         lobbyisteId: action.lobbyisteId,
-        actionDescription: picked.text,
+        actionDescription: entry.text,
         actionDateDebut: action.dateDebut,
         actionDateFin: action.dateFin,
         sujetId: sujet.id,

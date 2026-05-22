@@ -8,6 +8,7 @@ const DEFAULT_TEMPERATURE = 0.3;
 const DEFAULT_MAX_TOKENS = 512;
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY_MS = 2000;
+const EMBED_BATCH_SIZE = 50;
 
 interface MistralClientOptions {
   apiKey?: string;
@@ -125,11 +126,30 @@ export class CLAIRMistralClient {
 
   /**
    * Generate embeddings for a list of texts using Mistral Embed API.
-   * Returns an array of dense vectors, one per input text.
+   * Automatically batches inputs to stay within API limits.
    */
   async embed(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
 
+    const allEmbeddings: number[][] = [];
+
+    for (let i = 0; i < texts.length; i += EMBED_BATCH_SIZE) {
+      const batch = texts.slice(i, i + EMBED_BATCH_SIZE);
+      const batchEmbeddings = await this.embedBatch(batch);
+      allEmbeddings.push(...batchEmbeddings);
+
+      if (i + EMBED_BATCH_SIZE < texts.length) {
+        logger.info(
+          { done: allEmbeddings.length, total: texts.length },
+          'Embed batch progress',
+        );
+      }
+    }
+
+    return allEmbeddings;
+  }
+
+  private async embedBatch(texts: string[]): Promise<number[][]> {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
