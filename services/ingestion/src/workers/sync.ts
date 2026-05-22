@@ -5352,7 +5352,7 @@ export async function syncLobbyistes(
             cible_type_id = t.cible_type_id,
             texte_vise = t.texte_vise,
             texte_vise_nom = t.texte_vise_nom
-          FROM UNNEST($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[])
+          FROM UNNEST($1::text[], $2::integer[], $3::text[], $4::integer[], $5::text[], $6::text[])
             AS t(id, description_id, cible, cible_type_id, texte_vise, texte_vise_nom)
           WHERE actions_lobby.id = t.id`,
           chunk.map(u => u.id),
