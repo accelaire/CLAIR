@@ -2792,6 +2792,21 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     }
   }
 
+  // Génération incrémentale des sujets (rattache les nouveaux dossiers, crée les sujets manquants)
+  if (results.sourcesChanged.length > 0) {
+    try {
+      const { generateSujets } = await import('./sujet-generator.js');
+      const sujetResult = await generateSujets();
+      logger.info({
+        created: sujetResult.created,
+        updated: sujetResult.updated,
+        totalDossiers: sujetResult.totalDossiers,
+      }, 'Incremental sujet generation completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Sujet generation failed (non-blocking)');
+    }
+  }
+
   // Recalculer les stats dénormalisées des sujets (date_dernier_vote, scrutin_count, dossier_count)
   // Nécessaire car les nouveaux scrutins sont liés aux dossiers mais pas propagés aux sujets
   if (results.sourcesChanged.length > 0) {
