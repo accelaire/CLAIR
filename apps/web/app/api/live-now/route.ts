@@ -2,10 +2,12 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-const BASE = 'https://videos.assemblee-nationale.fr';
-const SEARCH_URL = `${BASE}/php/eventsearch.php`;
+// ---------------------------------------------------------------------------
+// Assemblée nationale — JSON endpoint
+// ---------------------------------------------------------------------------
+const AN_BASE = 'https://videos.assemblee-nationale.fr';
+const AN_SEARCH_URL = `${AN_BASE}/php/eventsearch.php`;
 
-// Mapping code vidéo AN → organeRef en DB (identique à an-videos-client.ts dans ingestion)
 const AN_VIDEO_CODE_TO_ORGANE: Record<string, string> = {
   CION_DEF:    'PO59046',
   CION_AFETR:  'PO59047',
@@ -24,7 +26,7 @@ const AN_VIDEO_CODE_TO_ORGANE: Record<string, string> = {
   OTS:         'PO273589',
 };
 
-function parseSeanceOrder(title: string): number | null {
+function parseAnSeanceOrder(title: string): number | null {
   const m = title.match(/^(\d+)[eè]me?\s+s[eé]ance/i);
   if (m) return parseInt(m[1]!, 10);
   if (/^1[eè]re?\s+s[eé]ance/i.test(title)) return 1;
@@ -40,36 +42,113 @@ interface RawAnVideo {
   published: boolean;
 }
 
-async function fetchType(typeVideo: string): Promise<RawAnVideo[]> {
+async function fetchAnType(typeVideo: string): Promise<RawAnVideo[]> {
   const params = new URLSearchParams({
     Date: '', Intervenant: '', Commission: '', Heure: '',
     TypeVideo: typeVideo, Rubrique: '', rnd: String(Date.now()),
   });
-  const res = await fetch(`${SEARCH_URL}?${params}`, {
+  const res = await fetch(`${AN_SEARCH_URL}?${params}`, {
     headers: {
       'User-Agent': 'CLAIR-bot (transparence-politique, contact@clair.vote)',
-      Referer: BASE,
+      Referer: AN_BASE,
     },
   });
   const text = await res.text();
-  // Strip UTF-8 BOM if present
   const json = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
   return JSON.parse(json) as RawAnVideo[];
 }
 
+// ---------------------------------------------------------------------------
+// Sénat — HTML scraping of videos.senat.fr/direct
+// ---------------------------------------------------------------------------
+const SENAT_BASE = 'https://videos.senat.fr';
+
+const SENAT_MONTHS: Record<string, string> = {
+  janvier: '01', fevrier: '02', mars: '03', avril: '04',
+  mai: '05', juin: '06', juillet: '07', aout: '08',
+  septembre: '09', octobre: '10', novembre: '11', decembre: '12',
+};
+
+const SENAT_MOMENT_ORDER: Record<string, number> = {
+  matin: 1, 'apres-midi': 2, soir: 3,
+};
+
+function parseSenatSeanceSlug(slug: string): { isoDate: string; order: number } | null {
+  const m = slug.match(/seance-publique-du-(\d{1,2})-([a-z]+)-(\d{4})-(matin|apres-midi|soir)$/);
+  if (!m) return null;
+  const month = SENAT_MONTHS[m[2]!];
+  if (!month) return null;
+  const order = SENAT_MOMENT_ORDER[m[4]!];
+  if (!order) return null;
+  return {
+    isoDate: `${m[3]}-${month}-${String(m[1]).padStart(2, '0')}`,
+    order,
+  };
+}
+
+async function fetchSenatDirect(): Promise<{ href: string; subtitle: string }[]> {
+  const res = await fetch(`${SENAT_BASE}/direct`, {
+    headers: {
+      'User-Agent': 'CLAIR-bot (transparence-politique, contact@clair.vote)',
+      Accept: 'text/html',
+      Referer: SENAT_BASE,
+    },
+  });
+  if (!res.ok) return [];
+  const html = await res.text();
+
+  const results: { href: string; subtitle: string }[] = [];
+  const parts = html.split('card-live');
+  for (let i = 1; i < parts.length; i++) {
+    const block = parts[i]!;
+    const hrefMatch = block.match(/href="(video\.[^"]+)"/);
+    const subtitleMatch = block.match(/card-subtitle[^>]*>([^<]+)/);
+    if (hrefMatch) {
+      results.push({
+        href: hrefMatch[1]!,
+        subtitle: subtitleMatch?.[1]?.trim() ?? '',
+      });
+    }
+  }
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Response types
+// ---------------------------------------------------------------------------
+type Chambre = 'assemblee' | 'senat';
+
+interface LiveCommission {
+  organeRef: string;
+  directUrl: string;
+  chambre: Chambre;
+}
+
+interface LiveSeance {
+  isoDate: string;
+  order: number;
+  directUrl: string;
+  chambre: Chambre;
+}
+
+// ---------------------------------------------------------------------------
+// GET handler
+// ---------------------------------------------------------------------------
 export async function GET() {
   try {
     const today = new Date().toISOString().slice(0, 10);
 
-    const [rawSeances, rawCommissions] = await Promise.all([
-      fetchType('Séance publique'),
-      fetchType('Commission'),
+    const [rawAnSeances, rawAnCommissions, rawSenatLive] = await Promise.all([
+      fetchAnType('Séance publique'),
+      fetchAnType('Commission'),
+      fetchSenatDirect(),
     ]);
 
-    const commissions: { organeRef: string; directUrl: string }[] = [];
-    const seances: { isoDate: string; order: number; directUrl: string }[] = [];
+    const commissions: LiveCommission[] = [];
+    const seances: LiveSeance[] = [];
 
-    for (const item of rawCommissions) {
+    // --- AN commissions ---
+    for (const item of rawAnCommissions) {
       if (item.published === false) continue;
       const ts = parseInt(item.date, 10);
       if (isNaN(ts)) continue;
@@ -81,21 +160,36 @@ export async function GET() {
       if (!organeRef) continue;
 
       const idHash = item.url.replace(/^\//, '');
-      commissions.push({ organeRef, directUrl: `${BASE}/direct.${idHash}` });
+      commissions.push({ organeRef, directUrl: `${AN_BASE}/direct.${idHash}`, chambre: 'assemblee' });
     }
 
-    for (const item of rawSeances) {
+    // --- AN séances ---
+    for (const item of rawAnSeances) {
       if (item.published === false) continue;
       const ts = parseInt(item.date, 10);
       if (isNaN(ts)) continue;
       const isoDate = new Date(ts * 1000).toISOString().slice(0, 10);
       if (isoDate !== today) continue;
 
-      const order = parseSeanceOrder(item.title);
+      const order = parseAnSeanceOrder(item.title);
       if (order === null) continue;
 
       const idHash = item.url.replace(/^\//, '');
-      seances.push({ isoDate, order, directUrl: `${BASE}/direct.${idHash}` });
+      seances.push({ isoDate, order, directUrl: `${AN_BASE}/direct.${idHash}`, chambre: 'assemblee' });
+    }
+
+    // --- Sénat live ---
+    for (const item of rawSenatLive) {
+      if (/s[ée]ance publique/i.test(item.subtitle)) {
+        const parsed = parseSenatSeanceSlug(item.href.replace(/^video\.\d+_[a-f0-9]+\./, ''));
+        if (!parsed) continue;
+        seances.push({
+          isoDate: parsed.isoDate,
+          order: parsed.order,
+          directUrl: `${SENAT_BASE}/${item.href}`,
+          chambre: 'senat',
+        });
+      }
     }
 
     return NextResponse.json({ commissions, seances }, {
