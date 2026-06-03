@@ -5,12 +5,14 @@ import { useQuery } from '@tanstack/react-query';
 interface LiveNowCommission {
   organeRef: string;
   directUrl: string;
+  chambre: string;
 }
 
 interface LiveNowSeance {
   isoDate: string;
   order: number;
   directUrl: string;
+  chambre: string;
 }
 
 interface LiveNowResponse {
@@ -35,8 +37,9 @@ export function useLiveNow() {
       liveByOrganeRef.set(c.organeRef, c.directUrl);
     }
     for (const s of data.seances) {
-      liveBySeanceKey.set(`${s.isoDate}|${s.order}`, s.directUrl);
-      if (!liveBySeanceDate.has(s.isoDate)) liveBySeanceDate.set(s.isoDate, s.directUrl);
+      liveBySeanceKey.set(`${s.chambre}|${s.isoDate}|${s.order}`, s.directUrl);
+      const dateKey = `${s.chambre}|${s.isoDate}`;
+      if (!liveBySeanceDate.has(dateKey)) liveBySeanceDate.set(dateKey, s.directUrl);
     }
   }
 

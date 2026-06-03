@@ -2,7 +2,7 @@ interface LiveMatchable {
   type: string;
   dateDebut: string;
   compteRenduRef?: string | null;
-  commission?: { organeRef?: string | null } | null;
+  commission?: { organeRef?: string | null; chambre?: string | null } | null;
 }
 
 export function matchLiveUrl(
@@ -15,14 +15,18 @@ export function matchLiveUrl(
     const url = liveByOrganeRef.get(reunion.commission.organeRef);
     if (url) return url;
   }
+
+  const chambre = reunion.commission?.chambre;
+  if (!chambre) return undefined;
+
   const isoDate = new Date(reunion.dateDebut).toISOString().slice(0, 10);
   const match = reunion.compteRenduRef?.match(/N(\d+)$/);
   if (match) {
-    const url = liveBySeanceKey.get(`${isoDate}|${parseInt(match[1]!, 10)}`);
+    const url = liveBySeanceKey.get(`${chambre}|${isoDate}|${parseInt(match[1]!, 10)}`);
     if (url) return url;
   }
   if (reunion.type === 'seance') {
-    return liveBySeanceDate.get(isoDate);
+    return liveBySeanceDate.get(`${chambre}|${isoDate}`);
   }
   return undefined;
 }
