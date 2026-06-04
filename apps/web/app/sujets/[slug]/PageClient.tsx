@@ -835,10 +835,6 @@ export default function PageClient({ initialData }: { initialData?: { data: Suje
 
         <h1 className="text-2xl md:text-3xl font-bold mb-3">{sujet.label}</h1>
 
-        {sujet.description && (
-          <p className="text-muted-foreground mb-3">{sujet.description}</p>
-        )}
-
         {/* Key dates */}
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
           {sujet.dateDebut && (

@@ -39,23 +39,6 @@ export default async function Image({
           {data.label}
         </span>
 
-        {/* Description */}
-        {data.description && (
-          <span
-            style={{
-              fontSize: '26px',
-              color: '#cbd5e1',
-              lineHeight: 1.4,
-              display: '-webkit-box',
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden',
-            }}
-          >
-            {data.description}
-          </span>
-        )}
-
         {/* Stats */}
         <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
           <OgStat

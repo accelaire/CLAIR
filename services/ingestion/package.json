@@ -14,6 +14,8 @@
     "backfill": "tsx src/cli.ts backfill",
     "calculate-stats": "tsx src/cli.ts calculate-stats",
     "check-quality": "tsx src/cli.ts check-quality",
+    "check-lobby": "tsx src/cli.ts check-lobby --dry-run",
+    "generate-sujets": "tsx src/cli.ts generate-sujets",
     "lint": "eslint src --ext .ts",
     "type-check": "tsc --noEmit",
     "test": "vitest run",

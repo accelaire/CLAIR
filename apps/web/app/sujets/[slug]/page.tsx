@@ -21,7 +21,6 @@ export async function generateMetadata({
 
   const title = data.label;
   const desc =
-    data.description ||
     data.resume ||
     `Sujet politique : ${data.label}. ${data.dossierCount} dossier${data.dossierCount > 1 ? 's' : ''} législatif${data.dossierCount > 1 ? 's' : ''}, ${data.scrutinCount} scrutin${data.scrutinCount > 1 ? 's' : ''}.`;
   const description = `${desc} Suivez les votes et dossiers sur CLAIR.vote.`;

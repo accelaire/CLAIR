@@ -464,7 +464,6 @@ model Sujet {
   id            String    @id @default(uuid())
   slug          String    @unique
   label         String
-  description   String?
   category      String?
 
   dossierCount  Int       @default(0) @map("dossier_count")
@@ -492,7 +491,11 @@ model Sujet {
   groupeAmendementDescriptions Json?   @map("groupe_amendement_descriptions")
   iaGroupeAmendementHash       String? @map("ia_groupe_amendement_hash")
 
+  // Embedding vector for semantic matching (mistral-embed, 1024-dim)
+  embed Json?
+
   dossiers      DossierLegislatif[]
+  actionsLobby  SujetActionLobby[]
 
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
@@ -759,7 +762,11 @@ model ActionLobby {
   texteVise     String? @map("texte_vise")
   texteViseNom  String? @map("texte_vise_nom")
 
-  secteurs ActionSecteur[]
+  // Embedding vector for semantic matching (mistral-embed, 1024-dim)
+  embed Json?
+
+  secteurs     ActionSecteur[]
+  sujets       SujetActionLobby[]
 
   sourceUrl String?  @map("source_url")
   createdAt DateTime @default(now()) @map("created_at")
@@ -770,6 +777,20 @@ model ActionLobby {
   @@index([descriptionId])
   @@index([dateDebut])
   @@map("actions_lobby")
+}
+
+model SujetActionLobby {
+  sujetId       String      @map("sujet_id")
+  sujet         Sujet       @relation(fields: [sujetId], references: [id], onDelete: Cascade)
+  actionLobbyId String      @map("action_lobby_id")
+  actionLobby   ActionLobby @relation(fields: [actionLobbyId], references: [id], onDelete: Cascade)
+
+  score     Float
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([sujetId, actionLobbyId])
+  @@index([actionLobbyId])
+  @@map("sujet_action_lobby")
 }
 
 model Secteur {
