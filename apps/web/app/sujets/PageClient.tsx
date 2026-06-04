@@ -311,7 +311,7 @@ function SujetsPageContent() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold">Sujets parlementaires</h1>
         <p className="mt-2 text-muted-foreground">
-          {total > 0 ? total.toLocaleString('fr-FR') : '\u2014'} sujets regroupant les dossiers AN et Sénat
+          {total > 0 ? total.toLocaleString('fr-FR') : '\u2014'} grands textes de loi suivis de bout en bout, du dépôt au vote final — côté Assemblée comme côté Sénat
         </p>
       </div>
 
