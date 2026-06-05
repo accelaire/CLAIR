@@ -6,7 +6,7 @@ import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   ArrowLeft, ArrowRight, Vote, Loader2,
-  Layers, ExternalLink, Scale, BookOpen,
+  Layers, ExternalLink, Scale, BookOpen, FileText,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
@@ -17,6 +17,17 @@ import { LegislativeTimeline } from '@/components/LegislativeTimeline';
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+export interface SujetLien {
+  id: string;
+  famille: string;
+  titre: string;
+  url: string;
+  source: string;
+  sourceLabel: string | null;
+  datePublication: string | null;
+  ordre: number;
+}
 
 export interface SujetDetail {
   id: string;
@@ -34,6 +45,10 @@ export interface SujetDetail {
   resume: string | null;
   enjeux: string | null;
   featured: boolean;
+  liens?: {
+    construction: SujetLien[];
+    contexte: SujetLien[];
+  };
 }
 
 interface SujetDossier {
@@ -446,6 +461,70 @@ function ContextSection({ sujet, dossiers }: { sujet: SujetDetail; dossiers: Suj
   if (sections.length === 0) return null;
 
   return <div className="mb-8 space-y-4">{sections}</div>;
+}
+
+// ---------------------------------------------------------------------------
+// Ressources externes — liens sortants par famille (construction / contexte)
+// ---------------------------------------------------------------------------
+
+const LIEN_FAMILLE_CONFIG: Record<
+  'construction' | 'contexte',
+  { titre: string; icon: typeof FileText; hint: string }
+> = {
+  construction: {
+    titre: 'Documents officiels',
+    icon: FileText,
+    hint: "Les textes, études d'impact et rapports déposés au Parlement.",
+  },
+  contexte: {
+    titre: 'Pour comprendre',
+    icon: BookOpen,
+    hint: 'Ressources de référence neutres pour situer le texte.',
+  },
+};
+
+function RessourcesSujet({ liens }: { liens?: SujetDetail['liens'] }) {
+  if (!liens) return null;
+
+  const familles = (['construction', 'contexte'] as const).filter(
+    (f) => (liens[f]?.length ?? 0) > 0,
+  );
+  if (familles.length === 0) return null;
+
+  return (
+    <div className="mb-8 space-y-4">
+      {familles.map((fam) => {
+        const cfg = LIEN_FAMILLE_CONFIG[fam];
+        const Icon = cfg.icon;
+        return (
+          <div key={fam} className="rounded-lg border bg-card p-5">
+            <h2 className="text-sm font-semibold flex items-center gap-2 mb-1">
+              <Icon className="h-4 w-4" />
+              {cfg.titre}
+            </h2>
+            <p className="text-xs text-muted-foreground mb-3">{cfg.hint}</p>
+            <div className="flex flex-col gap-2">
+              {liens[fam].map((lien) => (
+                <a
+                  key={lien.id}
+                  href={lien.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+                >
+                  <ExternalLink className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span>{lien.titre}</span>
+                  {lien.sourceLabel && (
+                    <span className="text-xs text-muted-foreground">· {lien.sourceLabel}</span>
+                  )}
+                </a>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -864,6 +943,9 @@ export default function PageClient({ initialData }: { initialData?: { data: Suje
 
       {/* Context section — law info or procedure info */}
       <ContextSection sujet={sujet} dossiers={dossiers} />
+
+      {/* Ressources externes — documents officiels / pour comprendre */}
+      <RessourcesSujet liens={sujet.liens} />
 
       {/* Dashboard: mobile order = Dossiers → Stats → Scrutins; desktop = 2 cols */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -109,10 +109,34 @@ export class SujetsService {
         actif: true,
         createdAt: true,
         updatedAt: true,
+        liens: {
+          select: {
+            id: true,
+            famille: true,
+            titre: true,
+            url: true,
+            source: true,
+            sourceLabel: true,
+            datePublication: true,
+            ordre: true,
+          },
+          orderBy: [{ famille: 'asc' }, { ordre: 'asc' }, { titre: 'asc' }],
+        },
       },
     });
 
-    return sujet;
+    if (!sujet) return null;
+
+    // Regroupe les liens sortants par famille (construction / contexte).
+    // La famille "presse" n'est pas servie ici (live + cache, cf. plan).
+    const { liens, ...rest } = sujet;
+    return {
+      ...rest,
+      liens: {
+        construction: liens.filter(l => l.famille === 'construction'),
+        contexte: liens.filter(l => l.famille === 'contexte'),
+      },
+    };
   }
 
   /**

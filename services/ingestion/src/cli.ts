@@ -700,6 +700,37 @@ program
   });
 
 // =============================================================================
+// COMMANDE: generate-sujet-links
+// =============================================================================
+program
+  .command('generate-sujet-links')
+  .description('Générer les liens sortants des sujets — famille "construction" (documents officiels AN)')
+  .option('--no-validate', 'Ne pas vérifier (HEAD) que les URLs résolvent')
+  .option('--dry-run', 'Afficher les stats sans modifier la DB')
+  .action(async (options) => {
+    try {
+      logger.info({ options }, 'Starting sujet links generation...');
+      const { generateSujetLinks } = await import('./workers/sujet-links-generator.js');
+      const result = await generateSujetLinks({
+        validate: options.validate,
+        dryRun: options.dryRun,
+      });
+
+      console.log(`\n🔗 Liens sujets — construction${options.dryRun ? ' (DRY RUN)' : ''}:`);
+      console.log(`   Sujets traités: ${result.sujetsProcessed}`);
+      console.log(`   Liens créés: ${result.created}`);
+      console.log(`   Liens supprimés: ${result.deleted}`);
+      console.log(`   URLs validées: ${result.validated}`);
+      console.log(`   Écartés (URL morte): ${result.dropped}`);
+
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Sujet links generation failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
 // COMMANDE: enrich-ia
 // =============================================================================
 program

@@ -2807,6 +2807,21 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     }
   }
 
+  // Génération des liens sortants des sujets — famille "construction" (documents officiels AN)
+  if (results.sourcesChanged.length > 0) {
+    try {
+      const { generateSujetLinks } = await import('./sujet-links-generator.js');
+      const linksResult = await generateSujetLinks();
+      logger.info({
+        created: linksResult.created,
+        deleted: linksResult.deleted,
+        dropped: linksResult.dropped,
+      }, 'Sujet links generation completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Sujet links generation failed (non-blocking)');
+    }
+  }
+
   // Recalculer les stats dénormalisées des sujets (date_dernier_vote, scrutin_count, dossier_count)
   // Nécessaire car les nouveaux scrutins sont liés aux dossiers mais pas propagés aux sujets
   if (results.sourcesChanged.length > 0) {
