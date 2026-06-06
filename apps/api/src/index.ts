@@ -26,6 +26,7 @@ import { agendaRoutes } from './modules/agenda/agenda.controller';
 import { homepageRoutes } from './modules/homepage/homepage.controller';
 import { dossiersRoutes } from './modules/dossiers/dossiers.controller';
 import { sujetsRoutes } from './modules/sujets/sujets.controller';
+import { feedbackRoutes } from './modules/feedback/feedback.controller';
 
 import { errorHandler } from './utils/errors';
 import { logger } from './utils/logger';
@@ -160,6 +161,7 @@ async function buildApp() {
       await api.register(homepageRoutes, { prefix: '/homepage' });
       await api.register(dossiersRoutes, { prefix: '/dossiers' });
       await api.register(sujetsRoutes, { prefix: '/sujets' });
+      await api.register(feedbackRoutes, { prefix: '/feedback' });
     },
     { prefix: '/api/v1' }
   );

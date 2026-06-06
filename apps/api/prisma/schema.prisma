@@ -941,3 +941,26 @@ model SourceState {
   @@map("source_states")
 }
 
+// =============================================================================
+// FEEDBACK UTILISATEURS (retours anonymes, sans cookie)
+// =============================================================================
+
+model Feedback {
+  id        String   @id @default(uuid())
+
+  sentiment String?  // 'positif' | 'neutre' | 'negatif' (émoji) — nullable
+  type      String   // 'bug' | 'idee' | 'autre'
+  message   String?  // texte libre optionnel
+  email     String?  // contact optionnel (rappel)
+
+  page      String?  // pathname depuis lequel le retour a été envoyé
+  trigger   String?  @default("passif") // 'passif' (bouton) | 'nudge' (sollicitation)
+  userAgent String?  @map("user_agent")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([type])
+  @@map("feedbacks")
+}
+

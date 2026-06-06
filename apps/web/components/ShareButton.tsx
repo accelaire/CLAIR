@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { Share2, Check, Link as LinkIcon } from 'lucide-react';
+import { signalStrongAction } from '@/components/feedback/FeedbackWidget';
 
 interface ShareButtonProps {
   /** Full URL to share. Defaults to current page URL. */
@@ -25,6 +26,9 @@ export function ShareButton({
   const [copied, setCopied] = useState(false);
 
   const handleShare = useCallback(async () => {
+    // Partager = action forte → qualifie pour la sollicitation de feedback
+    signalStrongAction();
+
     const rawUrl = url || window.location.href;
     const shareUrl = rawUrl.startsWith('/') ? `${window.location.origin}${rawUrl}` : rawUrl;
 
