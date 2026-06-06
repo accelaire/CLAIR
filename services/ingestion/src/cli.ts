@@ -735,17 +735,26 @@ program
 // =============================================================================
 program
   .command('generate-sujet-context')
-  .description('Résoudre les liens "contexte" des sujets (Wikipédia FR, seuil de confiance)')
+  .description('Résoudre les liens "contexte" des sujets (vie-publique + Wikipédia FR)')
   .option('--dry-run', 'Afficher les stats sans modifier la DB')
+  .option('--incremental', 'Ne traiter que les sujets nouveaux/modifiés (défaut: tous)')
+  .option('-l, --limit <number>', 'Nombre max de sujets à traiter (test)', parseInt)
+  .option('-c, --concurrency <number>', 'Appels externes en parallèle (défaut: 3)', parseInt)
   .action(async (options) => {
     try {
       logger.info({ options }, 'Starting sujet context links generation...');
       const { generateSujetContextLinks } = await import('./workers/sujet-links-generator.js');
-      const result = await generateSujetContextLinks({ dryRun: options.dryRun });
+      const result = await generateSujetContextLinks({
+        dryRun: options.dryRun,
+        limit: options.limit,
+        concurrency: options.concurrency,
+        incremental: options.incremental,
+      });
 
       console.log(`\n📚 Liens sujets — contexte${options.dryRun ? ' (DRY RUN)' : ''}:`);
       console.log(`   Sujets traités: ${result.sujetsProcessed}`);
-      console.log(`   Résolus (Wikipédia): ${result.resolved}`);
+      console.log(`   Sujets avec ≥1 lien: ${result.resolved}`);
+      console.log(`   vie-publique: ${result.viePublique}   ·   Wikipédia: ${result.wikipedia}`);
       console.log(`   Liens créés: ${result.created}`);
       console.log(`   Liens supprimés: ${result.deleted}`);
 

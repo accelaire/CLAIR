@@ -605,7 +605,7 @@ export function printReport(report: QualityReport): void {
       );
     };
     fam('Documents officiels', sl.construction);
-    fam('Pour comprendre (contexte)', sl.contexte);
+    fam('Pour aller plus loin (contexte)', sl.contexte);
 
     if (sl.deadLinks) {
       const d = sl.deadLinks;

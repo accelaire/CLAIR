@@ -17,6 +17,8 @@
 import { PrismaClient } from '@prisma/client';
 import * as crypto from 'crypto';
 import { logger } from '../utils/logger';
+import { tavilySearch } from '../sources/tavily/client';
+import { embedTexts, cosineSim } from '../sources/mistral/embeddings';
 
 // -----------------------------------------------------------------------------
 // Types de documents AN (préfixe 4 lettres de l'UID → libellé + ordre d'affichage)
@@ -86,7 +88,7 @@ function normalizeRefs(refs: unknown): string[] {
 /** Extrait le numéro de document depuis un UID (ex. PRJLANR5L17B0529 → "529"). */
 function uidNumber(uid: string): string | null {
   const m = uid.match(/B(\d+)\D*$/);
-  if (!m) return null;
+  if (!m || !m[1]) return null;
   return String(parseInt(m[1], 10));
 }
 
@@ -145,7 +147,7 @@ async function validateUrls(urls: string[], concurrency = 8): Promise<Set<string
   let i = 0;
   async function worker(): Promise<void> {
     while (i < urls.length) {
-      const url = urls[i++];
+      const url = urls[i++]!;
       if (await urlResolves(url)) alive.add(url);
     }
   }
@@ -284,26 +286,39 @@ export async function generateSujetLinks(
 }
 
 // =============================================================================
-// Famille "contexte" — Wikipédia FR (résolution avec seuil de confiance)
+// Famille "contexte" — sources analytiques neutres (re-ranking par embeddings)
 //
 // Sur une plateforme de transparence, un mauvais lien coûte plus cher que
-// l'absence de lien. On ne garde donc un article que si les tokens significatifs
-// du label du sujet sont majoritairement couverts par le titre de l'article
-// (containment >= seuil), ce qui élimine le bruit (articles génériques, hors
-// sujet). vie-publique.fr reste un TODO (pas d'API/URL dérivable fiable).
+// l'absence de lien. Deux sources, deux garde-fous adaptés :
+//   • vie-publique.fr (primaire) : une page dossier par loi. Retrieval via Tavily
+//     restreint au domaine, filtre par type d'URL (loi/eclairage/rapport), puis
+//     re-ranking par embeddings (mistral-embed) pour départager les dossiers.
+//   • Wikipédia FR (secondaire) : pour les grands thèmes. Gardé en HAUTE confiance
+//     seulement (containment du titre + ancrage ≥2 tokens + garde-fou année), car
+//     son titre porte l'année du sujet (ex. "Budget de l'État français en 2025").
+// Le cosine n'est PAS discriminant sur des intitulés courts : il sert au
+// re-ranking, pas de seuil d'acceptation ; la précision vient des filtres.
 // =============================================================================
 
 const WIKI_API = 'https://fr.wikipedia.org/w/api.php';
 const WIKI_UA = 'CLAIR/1.0 (+https://clair.vote)';
 const CONTEXT_MIN_CONTAINMENT = 0.6;
+const CONTEXT_TOPK = 5;
 
-// Mots génériques ignorés dans le scoring (procédure, années, ordinaux).
+// vie-publique : seuls les types de page analytiques/législatifs sont surfacés
+// (on écarte discours, mots-clés, pages de catégorie, fiches génériques…).
+const VP_DOMAIN = 'vie-publique.fr';
+const VP_ALLOWED_PATHS = ['/loi/', '/eclairage/', '/rapport/'];
+
+// Mots génériques ignorés dans le scoring (procédure, ordinaux). Les années NE
+// sont PAS dans cette liste : elles sont retirées des tokens via un filtre dédié
+// et servent au garde-fou année (cf. ctxYears).
 const CONTEXT_STOPWORDS = new Set([
   'le', 'la', 'les', 'de', 'des', 'du', 'un', 'une', 'et', 'en', 'pour', 'dans',
-  'au', 'aux', 'sur', 'par',
+  'au', 'aux', 'sur', 'par', 'a', 'l', 'd',
   'projet', 'loi', 'proposition', 'resolution', 'texte', 'relatif', 'relative',
   'relatifs', 'portant', 'visant', 'tendant',
-  '15e', '16e', '17e', '2022', '2023', '2024', '2025', '2026', '2027',
+  '15e', '16e', '17e',
 ]);
 
 function ctxNorm(s: string): string {
@@ -317,49 +332,134 @@ function ctxNorm(s: string): string {
 
 function ctxTokens(s: string): Set<string> {
   return new Set(
-    ctxNorm(s).split(' ').filter(w => w.length > 2 && !CONTEXT_STOPWORDS.has(w)),
+    ctxNorm(s)
+      .split(' ')
+      .filter(w => w.length > 2 && !CONTEXT_STOPWORDS.has(w) && !/^\d{4}$/.test(w)),
   );
+}
+
+/** Années (19xx/20xx) présentes dans une chaîne. */
+function ctxYears(s: string): Set<string> {
+  return new Set(s.match(/\b(?:19|20)\d{2}\b/g) ?? []);
 }
 
 function wikiUrl(title: string): string {
   return 'https://fr.wikipedia.org/wiki/' + encodeURIComponent(title.replace(/ /g, '_'));
 }
 
-async function searchWikipedia(query: string): Promise<string | null> {
+interface ContextCandidate { titre: string; url: string; }
+export interface ContextLink { source: string; sourceLabel: string; titre: string; url: string; ordre: number; }
+
+// ---- vie-publique (primaire) -------------------------------------------------
+
+function vpPathAllowed(url: string): boolean {
   try {
-    const url = `${WIKI_API}?action=query&list=search&format=json&srlimit=1&srsearch=${encodeURIComponent(query)}`;
+    const path = new URL(url).pathname;
+    return VP_ALLOWED_PATHS.some(p => path.startsWith(p));
+  } catch {
+    return false;
+  }
+}
+
+function cleanVpTitle(title: string): string {
+  return title.replace(/\s*[|–-]\s*vie[- ]publique(\.fr)?\s*$/i, '').trim();
+}
+
+async function resolveViePublique(label: string): Promise<ContextCandidate | null> {
+  const results = await tavilySearch(label, { includeDomains: [VP_DOMAIN], maxResults: CONTEXT_TOPK });
+  if (!results || results.length === 0) return null;
+
+  const labelTokens = ctxTokens(label);
+  // Whitelist type d'URL + ancrage lexical (≥1 token significatif partagé).
+  const cands = results
+    .filter(r => vpPathAllowed(r.url))
+    .map(r => {
+      const titre = cleanVpTitle(r.title);
+      const tt = ctxTokens(titre);
+      let overlap = 0;
+      for (const t of labelTokens) if (tt.has(t)) overlap++;
+      return { titre, url: r.url, content: (r.content ?? '').slice(0, 400), overlap };
+    })
+    .filter(c => c.overlap >= 1);
+
+  if (cands.length === 0) return null;
+  if (cands.length === 1) return { titre: cands[0]!.titre, url: cands[0]!.url };
+
+  // Re-ranking sémantique entre dossiers candidats (sinon ordre Tavily).
+  const embs = await embedTexts([label, ...cands.map(c => `${c.titre}. ${c.content}`)]);
+  let best = cands[0]!;
+  if (embs && embs.length === cands.length + 1) {
+    const le = embs[0]!;
+    let bestScore = -Infinity;
+    for (let i = 0; i < cands.length; i++) {
+      const score = cosineSim(le, embs[i + 1]!);
+      if (score > bestScore) { bestScore = score; best = cands[i]!; }
+    }
+  }
+  return { titre: best.titre, url: best.url };
+}
+
+// ---- Wikipédia (secondaire, haute confiance) --------------------------------
+
+async function searchWikipediaTitles(query: string): Promise<string[]> {
+  try {
+    const url = `${WIKI_API}?action=query&list=search&format=json&srlimit=${CONTEXT_TOPK}&srsearch=${encodeURIComponent(query)}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12000);
     const res = await fetch(url, { headers: { 'User-Agent': WIKI_UA }, signal: controller.signal });
     clearTimeout(timeout);
-    if (!res.ok) return null;
+    if (!res.ok) return [];
     const json = (await res.json()) as { query?: { search?: Array<{ title: string }> } };
-    return json?.query?.search?.[0]?.title ?? null;
+    return (json?.query?.search ?? []).map(s => s.title);
   } catch {
-    return null;
+    return [];
   }
 }
 
 /** Résout (ou non) un article Wikipédia FR fiable pour le label d'un sujet. */
-async function resolveWikipedia(label: string): Promise<{ titre: string; url: string } | null> {
+async function resolveWikipedia(label: string): Promise<ContextCandidate | null> {
   // Labels manifestement non-pertinents (UID bruts)
   if (/^DLR\d/i.test(label) || /^SENAT-/i.test(label)) return null;
 
   const labelTokens = ctxTokens(label);
   if (labelTokens.size < 2) return null;
+  const labelYears = ctxYears(label);
 
-  const title = await searchWikipedia(label);
-  if (!title) return null;
+  const titles = await searchWikipediaTitles(label);
+  let best: string | null = null;
+  let bestOverlap = 0;
+  for (const title of titles) {
+    const titleTokens = ctxTokens(title);
+    if (titleTokens.size < 1) continue;
+    // Garde-fou année : si le label ET le titre portent une année, elles doivent
+    // coïncider (évite "budget 2023" → "Budget de l'État français en 2025").
+    const titleYears = ctxYears(title);
+    if (labelYears.size > 0 && titleYears.size > 0 && ![...labelYears].some(y => titleYears.has(y))) continue;
+    let overlap = 0;
+    for (const t of labelTokens) if (titleTokens.has(t)) overlap++;
+    if (overlap < 2) continue;
+    // Containment du TITRE : ses tokens significatifs sont majoritairement dans
+    // le label → l'article est bien sur le sujet (pas plus large/à côté).
+    if (overlap / titleTokens.size < CONTEXT_MIN_CONTAINMENT) continue;
+    if (overlap > bestOverlap) { bestOverlap = overlap; best = title; }
+  }
+  return best ? { titre: best, url: wikiUrl(best) } : null;
+}
 
-  const titleTokens = ctxTokens(title);
-  if (titleTokens.size < 2) return null;
+// ---- Combinaison -------------------------------------------------------------
 
-  let overlap = 0;
-  for (const t of labelTokens) if (titleTokens.has(t)) overlap++;
-  if (overlap < 2) return null;
-  if (overlap / labelTokens.size < CONTEXT_MIN_CONTAINMENT) return null;
+/** Liens de contexte d'un sujet : vie-publique (ordre 0) + Wikipédia (ordre 1). */
+async function resolveContextLinks(label: string): Promise<ContextLink[]> {
+  const [vp, wiki] = await Promise.all([resolveViePublique(label), resolveWikipedia(label)]);
+  const links: ContextLink[] = [];
+  if (vp) links.push({ source: 'vie-publique', sourceLabel: 'Vie-publique', titre: vp.titre, url: vp.url, ordre: 0 });
+  if (wiki) links.push({ source: 'wikipedia', sourceLabel: 'Wikipédia', titre: wiki.titre, url: wiki.url, ordre: 1 });
+  return links;
+}
 
-  return { titre: title, url: wikiUrl(title) };
+/** Hash d'entrée pour la résolution incrémentale (change si label/statut change). */
+function contextHash(label: string, status: string): string {
+  return crypto.createHash('md5').update(`${label}|${status}`).digest('hex');
 }
 
 export interface GenerateSujetContextResult {
@@ -367,26 +467,40 @@ export interface GenerateSujetContextResult {
   resolved: number;
   created: number;
   deleted: number;
+  viePublique: number;
+  wikipedia: number;
 }
 
 export async function generateSujetContextLinks(
-  options: { dryRun?: boolean; concurrency?: number } = {},
+  options: { dryRun?: boolean; concurrency?: number; limit?: number; incremental?: boolean } = {},
 ): Promise<GenerateSujetContextResult> {
   const prisma = new PrismaClient();
-  const { dryRun = false, concurrency = 4 } = options;
+  const { dryRun = false, concurrency = 3, limit, incremental = false } = options;
+  const STALE_MS = 30 * 24 * 60 * 60 * 1000; // retry du long-tail sans lien après 30j
 
   try {
-    logger.info({ dryRun, concurrency }, 'Starting sujet context links generation (Wikipédia)...');
+    logger.info({ dryRun, concurrency, limit, incremental }, 'Starting sujet context links generation (vie-publique + Wikipédia)...');
 
-    const sujets = await prisma.$queryRaw<Array<{ id: string; label: string }>>`
-      SELECT id, label FROM sujets WHERE actif = true
+    // ORDER BY scrutin_count : un éventuel --limit cible les sujets importants.
+    const allSujets = await prisma.$queryRaw<Array<{
+      id: string;
+      label: string;
+      status: string;
+      contextResolvedAt: Date | null;
+      contextInputHash: string | null;
+    }>>`
+      SELECT id, label, status,
+             context_resolved_at AS "contextResolvedAt",
+             context_input_hash AS "contextInputHash"
+      FROM sujets WHERE actif = true
+      ORDER BY scrutin_count DESC NULLS LAST
     `;
 
-    // Liens contexte/wikipedia/auto existants (peut y en avoir >1 par sujet)
+    // Liens contexte/auto existants, toutes sources (peut y en avoir >1 par sujet)
     const existingRows = await prisma.$queryRaw<ExistingRow[]>`
       SELECT sujet_id as "sujetId", url, id
       FROM sujet_liens
-      WHERE famille = 'contexte' AND source = 'wikipedia' AND provenance = 'auto'
+      WHERE famille = 'contexte' AND provenance = 'auto'
     `;
     const existingBySujet = new Map<string, Array<{ url: string; id: string }>>();
     for (const r of existingRows) {
@@ -394,36 +508,59 @@ export async function generateSujetContextLinks(
       existingBySujet.get(r.sujetId)!.push({ url: r.url, id: r.id });
     }
 
-    // Résolution Wikipédia (concurrence bornée)
-    const desired = new Map<string, { titre: string; url: string }>();
+    // Mode incrémental : ne traiter que les sujets nouveaux, dont le hash
+    // (label|status) a changé, ou sans lien depuis >30j. Sinon : tous.
+    const candidates = typeof limit === 'number' ? allSujets.slice(0, limit) : allSujets;
+    const now = Date.now();
+    const sujets = incremental
+      ? candidates.filter(s => {
+          if (s.contextResolvedAt == null) return true;
+          if (s.contextInputHash !== contextHash(s.label, s.status)) return true;
+          const hasLink = (existingBySujet.get(s.id)?.length ?? 0) > 0;
+          return !hasLink && now - new Date(s.contextResolvedAt).getTime() > STALE_MS;
+        })
+      : candidates;
+
+    // Résolution multi-sources (concurrence bornée — appels Tavily + embeddings)
+    const desired = new Map<string, ContextLink[]>();
     let idx = 0;
     async function worker(): Promise<void> {
       while (idx < sujets.length) {
-        const s = sujets[idx++];
-        const r = await resolveWikipedia(s.label);
-        if (r) desired.set(s.id, r);
+        const s = sujets[idx++]!;
+        const links = await resolveContextLinks(s.label);
+        if (links.length > 0) desired.set(s.id, links);
       }
     }
     await Promise.all(Array.from({ length: Math.min(concurrency, sujets.length) }, worker));
 
-    // Diff : au plus 1 lien wiki par sujet
-    const inserts: Array<{ sujetId: string; titre: string; url: string }> = [];
+    // Diff par URL : insère les liens désirés absents, supprime les liens auto
+    // qui ne sont plus désirés (idempotent ; provenance='manual' préservée).
+    const inserts: ContextLink[] = [];
+    const insertSujetIds: string[] = [];
     const deleteIds: string[] = [];
+    let countViePublique = 0;
+    let countWikipedia = 0;
     for (const s of sujets) {
-      const want = desired.get(s.id);
+      const want = desired.get(s.id) ?? [];
       const have = existingBySujet.get(s.id) ?? [];
-      if (want) {
-        const match = have.find(h => h.url === want.url);
-        // supprime les anciens liens wiki qui ne correspondent plus
-        for (const h of have) if (h.url !== want.url) deleteIds.push(h.id);
-        if (!match) inserts.push({ sujetId: s.id, titre: want.titre, url: want.url });
-      } else {
-        for (const h of have) deleteIds.push(h.id);
+      const wantUrls = new Set(want.map(l => l.url));
+      for (const h of have) if (!wantUrls.has(h.url)) deleteIds.push(h.id);
+      const haveUrls = new Set(have.map(h => h.url));
+      for (const link of want) {
+        if (link.source === 'vie-publique') countViePublique++;
+        else if (link.source === 'wikipedia') countWikipedia++;
+        if (!haveUrls.has(link.url)) { inserts.push(link); insertSujetIds.push(s.id); }
       }
     }
 
     logger.info(
-      { resolved: desired.size, toInsert: inserts.length, toDelete: deleteIds.length },
+      {
+        resolved: desired.size,
+        toInsert: inserts.length,
+        toDelete: deleteIds.length,
+        viePublique: countViePublique,
+        wikipedia: countWikipedia,
+      },
       'Sujet context links diff computed',
     );
 
@@ -434,13 +571,27 @@ export async function generateSujetContextLinks(
           deleteIds,
         );
       }
-      for (const { sujetId, titre, url } of inserts) {
+      for (let i = 0; i < inserts.length; i++) {
+        const link = inserts[i]!;
         await prisma.$executeRawUnsafe(
           `INSERT INTO sujet_liens
              (id, sujet_id, famille, titre, url, source, source_label, provenance, ordre, created_at, updated_at)
-           VALUES ($1, $2, 'contexte', $3, $4, 'wikipedia', 'Wikipédia', 'auto', 0, NOW(), NOW())
+           VALUES ($1, $2, 'contexte', $3, $4, $5, $6, 'auto', $7, NOW(), NOW())
            ON CONFLICT (sujet_id, url) DO NOTHING`,
-          crypto.randomUUID(), sujetId, titre, url,
+          crypto.randomUUID(), insertSujetIds[i], link.titre, link.url, link.source, link.sourceLabel, link.ordre,
+        );
+      }
+
+      // Marque tous les sujets traités comme résolus (même sans lien trouvé),
+      // pour ne pas les ré-interroger au prochain sync incrémental.
+      if (sujets.length > 0) {
+        const ids = sujets.map(s => s.id);
+        const hashes = sujets.map(s => contextHash(s.label, s.status));
+        await prisma.$executeRawUnsafe(
+          `UPDATE sujets s SET context_resolved_at = NOW(), context_input_hash = d.h
+           FROM (SELECT unnest($1::text[]) AS id, unnest($2::text[]) AS h) d
+           WHERE s.id = d.id`,
+          ids, hashes,
         );
       }
     }
@@ -450,6 +601,8 @@ export async function generateSujetContextLinks(
       resolved: desired.size,
       created: inserts.length,
       deleted: deleteIds.length,
+      viePublique: countViePublique,
+      wikipedia: countWikipedia,
     };
     logger.info(result, 'Sujet context links generation completed');
     return result;

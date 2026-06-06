@@ -492,6 +492,12 @@ model Sujet {
   groupeAmendementDescriptions Json?   @map("groupe_amendement_descriptions")
   iaGroupeAmendementHash       String? @map("ia_groupe_amendement_hash")
 
+  // Résolution incrémentale des liens "contexte" (vie-publique + Wikipédia) :
+  // hash = md5(label|status). On ne ré-interroge Tavily que si le hash change,
+  // si jamais résolu, ou si sans lien depuis >30j (retry du long-tail).
+  contextResolvedAt DateTime? @map("context_resolved_at")
+  contextInputHash  String?   @map("context_input_hash")
+
   dossiers      DossierLegislatif[]
   liens         SujetLien[]
 

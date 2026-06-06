@@ -458,7 +458,7 @@ const LIEN_FAMILLE_CONFIG: Record<
     hint: "Les textes, études d'impact et rapports déposés au Parlement.",
   },
   contexte: {
-    titre: 'Pour comprendre',
+    titre: 'Pour aller plus loin',
     icon: BookOpen,
     hint: 'Ressources de référence neutres pour situer le texte.',
   },

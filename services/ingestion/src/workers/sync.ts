@@ -2822,12 +2822,15 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     }
   }
 
-  // Liens "contexte" des sujets — résolution Wikipédia FR (seuil de confiance)
+  // Liens "contexte" des sujets — vie-publique + Wikipédia FR.
+  // INCRÉMENTAL : ne ré-interroge Tavily/Wikipédia que pour les sujets nouveaux,
+  // au label/statut changé, ou sans lien depuis >30j → coût quasi nul au quotidien.
   if (results.sourcesChanged.length > 0) {
     try {
       const { generateSujetContextLinks } = await import('./sujet-links-generator.js');
-      const ctxResult = await generateSujetContextLinks();
+      const ctxResult = await generateSujetContextLinks({ incremental: true });
       logger.info({
+        sujetsProcessed: ctxResult.sujetsProcessed,
         resolved: ctxResult.resolved,
         created: ctxResult.created,
         deleted: ctxResult.deleted,
