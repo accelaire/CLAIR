@@ -856,7 +856,7 @@ program
       try {
         console.log('\n🔍 Vérification de la qualité des données...\n');
         const { runDataQualityChecks, printReport } = await import('./checks/data-quality.js');
-        const report = await runDataQualityChecks(prisma);
+        const report = await runDataQualityChecks(prisma, { checkSujetLinksHttp: true });
         printReport(report);
         process.exit(report.passed ? 0 : 1);
       } finally {
