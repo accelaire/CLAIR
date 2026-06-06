@@ -6,13 +6,14 @@ import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   ArrowLeft, ArrowRight, Vote, Loader2,
-  Layers, ExternalLink, Scale, BookOpen, FileText,
+  Layers, ExternalLink, Target, BookOpen, FileText, Newspaper, ChevronDown,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
 import { LegislativeStep } from '@/lib/legislative-steps';
 import { LegislativeTimeline } from '@/components/LegislativeTimeline';
+import { LoiPromulgueeCard } from '@/components/LoiPromulgueeCard';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -68,6 +69,7 @@ interface SujetDossier {
   loiTitre: string | null;
   loiDateJO: string | null;
   urlLegifrance: string | null;
+  urlJournalOfficiel: string | null;
   scrutinCount: number;
   legislativeSteps: LegislativeStep[];
 }
@@ -315,7 +317,13 @@ function ParliamentaryTimeline({ dossiers, sujet }: { dossiers: SujetDossier[]; 
 // ---------------------------------------------------------------------------
 
 function ContextSection({ sujet, dossiers }: { sujet: SujetDetail; dossiers: SujetDossier[] }) {
-  const loiDossier = dossiers.find(d => d.loiNumero);
+  // Les infos loi peuvent être éclatées entre dossiers AN/Sénat : on agrège
+  // chaque champ depuis le dossier qui le porte (n° souvent côté Sénat, URLs côté AN).
+  const loiNumero = dossiers.find(d => d.loiNumero)?.loiNumero ?? null;
+  const loiTitre = dossiers.find(d => d.loiTitre)?.loiTitre ?? null;
+  const loiDateJO = dossiers.find(d => d.loiDateJO)?.loiDateJO ?? null;
+  const loiUrlLegifrance = dossiers.find(d => d.urlLegifrance)?.urlLegifrance ?? null;
+  const loiUrlJournalOfficiel = dossiers.find(d => d.urlJournalOfficiel)?.urlJournalOfficiel ?? null;
 
   // Deduplicate external links by URL
   const uniqueLinks = (() => {
@@ -364,7 +372,7 @@ function ContextSection({ sujet, dossiers }: { sujet: SujetDetail; dossiers: Suj
         {sujet.enjeux && (
           <div>
             <h2 className="text-sm font-semibold flex items-center gap-2 mb-2">
-              <Scale className="h-4 w-4" />
+              <Target className="h-4 w-4" />
               Enjeux
             </h2>
             <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">{sujet.enjeux}</p>
@@ -377,44 +385,17 @@ function ContextSection({ sujet, dossiers }: { sujet: SujetDetail; dossiers: Suj
     );
   }
 
-  // Promulgué — law card (same style as dossier page)
-  if (sujet.status === 'promulgue' && loiDossier) {
+  // Promulgué — carte loi (composant partagé avec la page dossier)
+  if (sujet.status === 'promulgue' && loiNumero) {
     sections.push(
-      <div key="loi" className="p-4 rounded-lg border border-green-500/30 bg-green-500/5 dark:bg-green-500/10">
-        <div className="flex items-start gap-3">
-          <div className="p-2 rounded-lg bg-green-500/15 flex-shrink-0">
-            <Scale className="h-5 w-5 text-green-500" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <span className="text-xs font-medium text-green-500 uppercase tracking-wide">Loi promulguée</span>
-            <p className="font-semibold">Loi n°{loiDossier.loiNumero}</p>
-            {loiDossier.loiTitre && (
-              <p className="text-sm text-muted-foreground">{loiDossier.loiTitre}</p>
-            )}
-            {loiDossier.loiDateJO && (
-              <p className="text-xs text-muted-foreground mt-1">
-                Publiée au JO le {formatDate(loiDossier.loiDateJO)}
-              </p>
-            )}
-            {uniqueLinks.some(l => l.label.includes('Légifrance')) && (
-              <div className="mt-3">
-                {uniqueLinks.filter(l => l.label.includes('Légifrance')).map(link => (
-                  <a
-                    key={link.url}
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    Consulter le texte de loi sur Légifrance
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>,
+      <LoiPromulgueeCard
+        key="loi"
+        loiNumero={loiNumero}
+        loiTitre={loiTitre}
+        loiDateJO={loiDateJO}
+        urlLegifrance={loiUrlLegifrance}
+        urlJournalOfficiel={loiUrlJournalOfficiel}
+      />,
     );
   }
 
@@ -468,7 +449,7 @@ function ContextSection({ sujet, dossiers }: { sujet: SujetDetail; dossiers: Suj
 // ---------------------------------------------------------------------------
 
 const LIEN_FAMILLE_CONFIG: Record<
-  'construction' | 'contexte',
+  'construction' | 'contexte' | 'presse',
   { titre: string; icon: typeof FileText; hint: string }
 > = {
   construction: {
@@ -481,48 +462,146 @@ const LIEN_FAMILLE_CONFIG: Record<
     icon: BookOpen,
     hint: 'Ressources de référence neutres pour situer le texte.',
   },
+  presse: {
+    titre: 'Dans les médias',
+    icon: Newspaper,
+    hint: 'Articles de presse sur le sujet.',
+  },
 };
 
-function RessourcesSujet({ liens }: { liens?: SujetDetail['liens'] }) {
-  if (!liens) return null;
+type FamilleKey = keyof typeof LIEN_FAMILLE_CONFIG;
 
-  const familles = (['construction', 'contexte'] as const).filter(
-    (f) => (liens[f]?.length ?? 0) > 0,
-  );
-  if (familles.length === 0) return null;
+const LIENS_INITIAL_VISIBLE = 6;
+
+function LiensList({ liens }: { liens: SujetLien[] }) {
+  const [expanded, setExpanded] = useState(false);
+  if (liens.length === 0) return null;
+
+  const visible = expanded ? liens : liens.slice(0, LIENS_INITIAL_VISIBLE);
+  const hiddenCount = liens.length - LIENS_INITIAL_VISIBLE;
 
   return (
-    <div className="mb-8 space-y-4">
-      {familles.map((fam) => {
-        const cfg = LIEN_FAMILLE_CONFIG[fam];
-        const Icon = cfg.icon;
-        return (
-          <div key={fam} className="rounded-lg border bg-card p-5">
-            <h2 className="text-sm font-semibold flex items-center gap-2 mb-1">
-              <Icon className="h-4 w-4" />
-              {cfg.titre}
-            </h2>
-            <p className="text-xs text-muted-foreground mb-3">{cfg.hint}</p>
-            <div className="flex flex-col gap-2">
-              {liens[fam].map((lien) => (
-                <a
-                  key={lien.id}
-                  href={lien.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
-                >
-                  <ExternalLink className="h-3.5 w-3.5 flex-shrink-0" />
-                  <span>{lien.titre}</span>
-                  {lien.sourceLabel && (
-                    <span className="text-xs text-muted-foreground">· {lien.sourceLabel}</span>
-                  )}
-                </a>
-              ))}
+    <div className="flex flex-col gap-2">
+      {visible.map((lien) => (
+        <a
+          key={lien.id}
+          href={lien.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+        >
+          <ExternalLink className="h-3.5 w-3.5 flex-shrink-0" />
+          <span>{lien.titre}</span>
+          {lien.sourceLabel && (
+            <span className="text-xs text-muted-foreground">· {lien.sourceLabel}</span>
+          )}
+        </a>
+      ))}
+      {hiddenCount > 0 && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-1 inline-flex items-center gap-1.5 text-sm text-primary hover:underline self-start"
+        >
+          {expanded ? 'Voir moins' : `Voir les ${hiddenCount} autres`}
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function FamilleBody({ fam, liens }: { fam: FamilleKey; liens?: SujetDetail['liens'] }) {
+  if (fam === 'presse') {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Bientôt : une sélection d&apos;articles de presse sur ce sujet.
+      </p>
+    );
+  }
+  return <LiensList liens={liens?.[fam] ?? []} />;
+}
+
+function RessourcesSujet({ liens }: { liens?: SujetDetail['liens'] }) {
+  const construction = liens?.construction ?? [];
+  const contexte = liens?.contexte ?? [];
+
+  // Colonnes visibles : familles avec contenu + Presse (placeholder "à venir")
+  const columns = useMemo<FamilleKey[]>(() => {
+    const c: FamilleKey[] = [];
+    if (construction.length) c.push('construction');
+    if (contexte.length) c.push('contexte');
+    c.push('presse');
+    return c;
+  }, [construction.length, contexte.length]);
+
+  const [activeTab, setActiveTab] = useState<FamilleKey>('construction');
+  const effectiveTab = columns.includes(activeTab) ? activeTab : columns[0];
+
+  // Section masquée si aucune famille réelle n'a de contenu
+  if (construction.length === 0 && contexte.length === 0) return null;
+
+  const countOf = (fam: FamilleKey): number | null =>
+    fam === 'construction' ? construction.length : fam === 'contexte' ? contexte.length : null;
+
+  const gridCols =
+    columns.length >= 3 ? 'md:grid-cols-3' : columns.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-1';
+
+  return (
+    <div className="mb-8">
+      {/* Mobile : onglets (un par section) */}
+      <div className="md:hidden">
+        <div className="flex gap-1 border-b mb-3 overflow-x-auto">
+          {columns.map((fam) => {
+            const cfg = LIEN_FAMILLE_CONFIG[fam];
+            const Icon = cfg.icon;
+            const count = countOf(fam);
+            const active = fam === effectiveTab;
+            return (
+              <button
+                key={fam}
+                onClick={() => setActiveTab(fam)}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${
+                  active
+                    ? 'border-primary text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {cfg.titre}
+                {count !== null && <span className="text-xs text-muted-foreground">{count}</span>}
+              </button>
+            );
+          })}
+        </div>
+        <div className="rounded-lg border bg-card p-5">
+          <p className="text-xs text-muted-foreground mb-3">
+            {LIEN_FAMILLE_CONFIG[effectiveTab].hint}
+          </p>
+          <FamilleBody fam={effectiveTab} liens={liens} />
+        </div>
+      </div>
+
+      {/* Desktop : colonnes côte à côte */}
+      <div className={`hidden md:grid ${gridCols} gap-4 items-start`}>
+        {columns.map((fam) => {
+          const cfg = LIEN_FAMILLE_CONFIG[fam];
+          const Icon = cfg.icon;
+          const count = countOf(fam);
+          return (
+            <div key={fam} className="rounded-lg border bg-card p-5">
+              <h2 className="text-sm font-semibold flex items-center gap-2 mb-1">
+                <Icon className="h-4 w-4" />
+                {cfg.titre}
+                {count !== null && (
+                  <span className="text-xs font-normal text-muted-foreground">({count})</span>
+                )}
+              </h2>
+              <p className="text-xs text-muted-foreground mb-3">{cfg.hint}</p>
+              <FamilleBody fam={fam} liens={liens} />
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }

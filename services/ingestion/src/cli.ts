@@ -731,6 +731,32 @@ program
   });
 
 // =============================================================================
+// COMMANDE: generate-sujet-context
+// =============================================================================
+program
+  .command('generate-sujet-context')
+  .description('Résoudre les liens "contexte" des sujets (Wikipédia FR, seuil de confiance)')
+  .option('--dry-run', 'Afficher les stats sans modifier la DB')
+  .action(async (options) => {
+    try {
+      logger.info({ options }, 'Starting sujet context links generation...');
+      const { generateSujetContextLinks } = await import('./workers/sujet-links-generator.js');
+      const result = await generateSujetContextLinks({ dryRun: options.dryRun });
+
+      console.log(`\n📚 Liens sujets — contexte${options.dryRun ? ' (DRY RUN)' : ''}:`);
+      console.log(`   Sujets traités: ${result.sujetsProcessed}`);
+      console.log(`   Résolus (Wikipédia): ${result.resolved}`);
+      console.log(`   Liens créés: ${result.created}`);
+      console.log(`   Liens supprimés: ${result.deleted}`);
+
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Sujet context links generation failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
 // COMMANDE: enrich-ia
 // =============================================================================
 program

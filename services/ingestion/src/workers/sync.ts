@@ -2822,6 +2822,21 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     }
   }
 
+  // Liens "contexte" des sujets — résolution Wikipédia FR (seuil de confiance)
+  if (results.sourcesChanged.length > 0) {
+    try {
+      const { generateSujetContextLinks } = await import('./sujet-links-generator.js');
+      const ctxResult = await generateSujetContextLinks();
+      logger.info({
+        resolved: ctxResult.resolved,
+        created: ctxResult.created,
+        deleted: ctxResult.deleted,
+      }, 'Sujet context links generation completed');
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'Sujet context links generation failed (non-blocking)');
+    }
+  }
+
   // Recalculer les stats dénormalisées des sujets (date_dernier_vote, scrutin_count, dossier_count)
   // Nécessaire car les nouveaux scrutins sont liés aux dossiers mais pas propagés aux sujets
   if (results.sourcesChanged.length > 0) {

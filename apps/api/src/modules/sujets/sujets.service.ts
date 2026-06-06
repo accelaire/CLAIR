@@ -5,6 +5,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { parseActesLegislatifs } from '../../utils/parse-actes-legislatifs';
+import { buildJournalOfficielUrl } from '../../utils/journal-officiel';
 import type {
   SujetsListQuery,
   SujetScrutinsQuery,
@@ -217,6 +218,7 @@ export class SujetsService {
         chambre: d.uid.startsWith('SENAT') ? 'senat' : 'assemblee',
         scrutinCount: d._count.scrutins,
         legislativeSteps: parseActesLegislatifs(d.sourceData, { etat: d.etat, loiDateJO: d.loiDateJO }),
+        urlJournalOfficiel: buildJournalOfficielUrl(d.sourceData),
         _count: undefined,
         sourceData: undefined,
       })),

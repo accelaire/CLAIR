@@ -12,6 +12,7 @@ import { FilterBar } from '@/components/FilterBar';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { AmendementSortBadge } from '@/components/AmendementSortBadge';
+import { LoiPromulgueeCard } from '@/components/LoiPromulgueeCard';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -79,6 +80,7 @@ export interface DossierDetail {
   loiTitre: string | null;
   loiDateJO: string | null;
   urlLegifrance: string | null;
+  urlJournalOfficiel: string | null;
   resumeIA: string | null;
   sujet: {
     slug: string;
@@ -579,35 +581,15 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
         </div>
       )}
 
-      {/* Loi promulguee */}
-      {dossier.loiNumero && (
-        <div className="p-4 rounded-lg border border-green-500/30 bg-green-500/5 dark:bg-green-500/10 mb-8">
-          <div className="flex items-start gap-3">
-            <div className="p-2 rounded-lg bg-green-500/15">
-              <Scale className="h-5 w-5 text-green-500" />
-            </div>
-            <div className="flex-1">
-              <span className="text-xs font-medium text-green-500 uppercase tracking-wide">Loi promulguée</span>
-              <p className="font-semibold text-foreground">Loi n&deg;{dossier.loiNumero}</p>
-              {dossier.loiTitre && <p className="text-sm text-muted-foreground">{dossier.loiTitre}</p>}
-              {dossier.loiDateJO && (
-                <p className="text-xs text-muted-foreground mt-1">Publiée au JO le {formatDate(dossier.loiDateJO)}</p>
-              )}
-              {dossier.urlLegifrance && (
-                <a
-                  href={dossier.urlLegifrance}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  Consulter le texte de loi sur Légifrance
-                </a>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Loi promulguee — composant partagé avec la page sujet */}
+      <LoiPromulgueeCard
+        className="mb-8"
+        loiNumero={dossier.loiNumero}
+        loiTitre={dossier.loiTitre}
+        loiDateJO={dossier.loiDateJO}
+        urlLegifrance={dossier.urlLegifrance}
+        urlJournalOfficiel={dossier.urlJournalOfficiel}
+      />
 
       {/* Tabs: Amendements / Scrutins */}
       <div id="tabs-section" className="flex items-center gap-1 border-b mb-6 scroll-mt-20">
