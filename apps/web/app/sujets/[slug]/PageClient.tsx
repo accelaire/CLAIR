@@ -471,7 +471,7 @@ const LIEN_FAMILLE_CONFIG: Record<
 
 type FamilleKey = keyof typeof LIEN_FAMILLE_CONFIG;
 
-const LIENS_INITIAL_VISIBLE = 6;
+const LIENS_INITIAL_VISIBLE = 5;
 
 function LiensList({ liens }: { liens: SujetLien[] }) {
   const [expanded, setExpanded] = useState(false);
@@ -510,22 +510,93 @@ function LiensList({ liens }: { liens: SujetLien[] }) {
   );
 }
 
-function FamilleBody({ fam, liens }: { fam: FamilleKey; liens?: SujetDetail['liens'] }) {
-  if (fam === 'presse') {
+// Famille « Presse » — articles récupérés en live (Google Actualités), cache
+// côté API. Fetch client-side dédié avec son propre état de chargement.
+interface PressArticle {
+  titre: string;
+  media: string | null;
+  url: string;
+  date: string | null;
+}
+
+const PRESSE_INITIAL_VISIBLE = 4;
+
+function PresseList({ slug }: { slug: string }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const { data, isLoading, isError } = useQuery<{ data: PressArticle[] }>({
+    queryKey: ['sujet-presse', slug],
+    queryFn: () => api.get(`/sujets/${slug}/presse`).then((res) => res.data),
+    staleTime: 1000 * 60 * 30,
+  });
+
+  if (isLoading) {
     return (
-      <p className="text-sm text-muted-foreground">
-        Bientôt : une sélection d&apos;articles de presse sur ce sujet.
-      </p>
+      <div className="flex flex-col gap-2">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="h-4 w-full rounded bg-muted animate-pulse" />
+        ))}
+      </div>
     );
+  }
+
+  const articles = data?.data ?? [];
+  if (isError || articles.length === 0) {
+    return <p className="text-sm text-muted-foreground">Aucun article récent.</p>;
+  }
+
+  const visible = expanded ? articles : articles.slice(0, PRESSE_INITIAL_VISIBLE);
+  const hiddenCount = articles.length - PRESSE_INITIAL_VISIBLE;
+
+  return (
+    <div className="flex flex-col gap-3">
+      {visible.map((article) => (
+        <a
+          key={article.url}
+          href={article.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group flex flex-col gap-0.5"
+        >
+          <span className="flex items-start gap-1.5 text-sm text-primary group-hover:underline">
+            <ExternalLink className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+            <span className="line-clamp-2">{article.titre}</span>
+          </span>
+          {(article.media || article.date) && (
+            <span className="pl-5 text-xs text-muted-foreground">
+              {article.media}
+              {article.media && article.date && ' · '}
+              {article.date && formatDateShort(article.date)}
+            </span>
+          )}
+        </a>
+      ))}
+      {hiddenCount > 0 && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-1 inline-flex items-center gap-1.5 text-sm text-primary hover:underline self-start"
+        >
+          {expanded ? 'Voir moins' : `Voir les ${hiddenCount} autres`}
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </button>
+      )}
+      <p className="mt-1 text-xs text-muted-foreground/60">Source : Google Actualités</p>
+    </div>
+  );
+}
+
+function FamilleBody({ fam, slug, liens }: { fam: FamilleKey; slug: string; liens?: SujetDetail['liens'] }) {
+  if (fam === 'presse') {
+    return <PresseList slug={slug} />;
   }
   return <LiensList liens={liens?.[fam] ?? []} />;
 }
 
-function RessourcesSujet({ liens }: { liens?: SujetDetail['liens'] }) {
+function RessourcesSujet({ slug, liens }: { slug: string; liens?: SujetDetail['liens'] }) {
   const construction = liens?.construction ?? [];
   const contexte = liens?.contexte ?? [];
 
-  // Colonnes visibles : familles avec contenu + Presse (placeholder "à venir")
+  // Colonnes : familles stockées avec contenu + Presse (live, toujours présente)
   const columns = useMemo<FamilleKey[]>(() => {
     const c: FamilleKey[] = [];
     if (construction.length) c.push('construction');
@@ -536,9 +607,6 @@ function RessourcesSujet({ liens }: { liens?: SujetDetail['liens'] }) {
 
   const [activeTab, setActiveTab] = useState<FamilleKey>('construction');
   const effectiveTab = columns.includes(activeTab) ? activeTab : columns[0];
-
-  // Section masquée si aucune famille réelle n'a de contenu
-  if (construction.length === 0 && contexte.length === 0) return null;
 
   const countOf = (fam: FamilleKey): number | null =>
     fam === 'construction' ? construction.length : fam === 'contexte' ? contexte.length : null;
@@ -577,7 +645,7 @@ function RessourcesSujet({ liens }: { liens?: SujetDetail['liens'] }) {
           <p className="text-xs text-muted-foreground mb-3">
             {LIEN_FAMILLE_CONFIG[effectiveTab].hint}
           </p>
-          <FamilleBody fam={effectiveTab} liens={liens} />
+          <FamilleBody fam={effectiveTab} slug={slug} liens={liens} />
         </div>
       </div>
 
@@ -597,7 +665,7 @@ function RessourcesSujet({ liens }: { liens?: SujetDetail['liens'] }) {
                 )}
               </h2>
               <p className="text-xs text-muted-foreground mb-3">{cfg.hint}</p>
-              <FamilleBody fam={fam} liens={liens} />
+              <FamilleBody fam={fam} slug={slug} liens={liens} />
             </div>
           );
         })}
@@ -1023,8 +1091,8 @@ export default function PageClient({ initialData }: { initialData?: { data: Suje
       {/* Context section — law info or procedure info */}
       <ContextSection sujet={sujet} dossiers={dossiers} />
 
-      {/* Ressources externes — documents officiels / pour comprendre */}
-      <RessourcesSujet liens={sujet.liens} />
+      {/* Ressources externes — documents officiels / pour comprendre / presse */}
+      <RessourcesSujet slug={slug} liens={sujet.liens} />
 
       {/* Dashboard: mobile order = Dossiers → Stats → Scrutins; desktop = 2 cols */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

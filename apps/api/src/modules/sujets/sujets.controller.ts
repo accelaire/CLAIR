@@ -13,6 +13,8 @@ import {
 import { ApiError } from '../../utils/errors';
 
 const CACHE_TTL_1H = 3600;
+const CACHE_TTL_3H = 10800;
+const CACHE_TTL_15MIN = 900;
 const CACHE_TTL_12H = 43200;
 
 export const sujetsRoutes: FastifyPluginAsync = async (fastify) => {
@@ -216,6 +218,38 @@ export const sujetsRoutes: FastifyPluginAsync = async (fastify) => {
       if (!result) throw new ApiError(404, 'Sujet non trouvé');
 
       await fastify.redis.setex(cacheKey, CACHE_TTL_1H, JSON.stringify(result));
+      return result;
+    },
+  });
+
+  // ===========================================================================
+  // GET /api/v1/sujets/:slug/presse - Articles de presse (live + cache)
+  // ===========================================================================
+  fastify.get('/:slug/presse', {
+    schema: {
+      tags: ['Sujets'],
+      summary: 'Presse d\'un sujet',
+      description: 'Articles de presse récupérés en live via Google Actualités (cache ~3h). Liens-only.',
+      params: {
+        type: 'object',
+        required: ['slug'],
+        properties: { slug: { type: 'string' } },
+      },
+    },
+    handler: async (request, _reply) => {
+      const { slug } = sujetParamsSchema.parse(request.params);
+
+      const cacheKey = `sujets:presse:${slug}`;
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+
+      const result = await service.getPresse(slug);
+      if (!result) throw new ApiError(404, 'Sujet non trouvé');
+
+      // Flux non vide → cache 3h (frais mais pas figé) ; flux vide → 15 min
+      // pour réessayer rapidement en cas d'échec réseau transitoire.
+      const ttl = result.data.length > 0 ? CACHE_TTL_3H : CACHE_TTL_15MIN;
+      await fastify.redis.setex(cacheKey, ttl, JSON.stringify(result));
       return result;
     },
   });
