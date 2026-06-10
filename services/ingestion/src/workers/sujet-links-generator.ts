@@ -365,9 +365,14 @@ function cleanVpTitle(title: string): string {
   return title.replace(/\s*[|–-]\s*vie[- ]publique(\.fr)?\s*$/i, '').trim();
 }
 
-async function resolveViePublique(label: string): Promise<ContextCandidate | null> {
+// `ok: false` = source indisponible (clé absente, erreur réseau/API) : le résultat
+// ne fait pas foi et ne doit ni marquer le sujet résolu ni supprimer ses liens.
+interface ResolveOutcome { cand: ContextCandidate | null; ok: boolean; }
+
+async function resolveViePublique(label: string): Promise<ResolveOutcome> {
   const results = await tavilySearch(label, { includeDomains: [VP_DOMAIN], maxResults: CONTEXT_TOPK });
-  if (!results || results.length === 0) return null;
+  if (results === null) return { cand: null, ok: false };
+  if (results.length === 0) return { cand: null, ok: true };
 
   const labelTokens = ctxTokens(label);
   // Whitelist type d'URL + ancrage lexical (≥1 token significatif partagé).
@@ -382,8 +387,8 @@ async function resolveViePublique(label: string): Promise<ContextCandidate | nul
     })
     .filter(c => c.overlap >= 1);
 
-  if (cands.length === 0) return null;
-  if (cands.length === 1) return { titre: cands[0]!.titre, url: cands[0]!.url };
+  if (cands.length === 0) return { cand: null, ok: true };
+  if (cands.length === 1) return { cand: { titre: cands[0]!.titre, url: cands[0]!.url }, ok: true };
 
   // Re-ranking sémantique entre dossiers candidats (sinon ordre Tavily).
   const embs = await embedTexts([label, ...cands.map(c => `${c.titre}. ${c.content}`)]);
@@ -396,36 +401,38 @@ async function resolveViePublique(label: string): Promise<ContextCandidate | nul
       if (score > bestScore) { bestScore = score; best = cands[i]!; }
     }
   }
-  return { titre: best.titre, url: best.url };
+  return { cand: { titre: best.titre, url: best.url }, ok: true };
 }
 
 // ---- Wikipédia (secondaire, haute confiance) --------------------------------
 
-async function searchWikipediaTitles(query: string): Promise<string[]> {
+/** Retourne null si l'API Wikipédia est indisponible (réseau, non-OK). */
+async function searchWikipediaTitles(query: string): Promise<string[] | null> {
   try {
     const url = `${WIKI_API}?action=query&list=search&format=json&srlimit=${CONTEXT_TOPK}&srsearch=${encodeURIComponent(query)}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12000);
     const res = await fetch(url, { headers: { 'User-Agent': WIKI_UA }, signal: controller.signal });
     clearTimeout(timeout);
-    if (!res.ok) return [];
+    if (!res.ok) return null;
     const json = (await res.json()) as { query?: { search?: Array<{ title: string }> } };
     return (json?.query?.search ?? []).map(s => s.title);
   } catch {
-    return [];
+    return null;
   }
 }
 
 /** Résout (ou non) un article Wikipédia FR fiable pour le label d'un sujet. */
-async function resolveWikipedia(label: string): Promise<ContextCandidate | null> {
+async function resolveWikipedia(label: string): Promise<ResolveOutcome> {
   // Labels manifestement non-pertinents (UID bruts)
-  if (/^DLR\d/i.test(label) || /^SENAT-/i.test(label)) return null;
+  if (/^DLR\d/i.test(label) || /^SENAT-/i.test(label)) return { cand: null, ok: true };
 
   const labelTokens = ctxTokens(label);
-  if (labelTokens.size < 2) return null;
+  if (labelTokens.size < 2) return { cand: null, ok: true };
   const labelYears = ctxYears(label);
 
   const titles = await searchWikipediaTitles(label);
+  if (titles === null) return { cand: null, ok: false };
   let best: string | null = null;
   let bestOverlap = 0;
   for (const title of titles) {
@@ -443,18 +450,20 @@ async function resolveWikipedia(label: string): Promise<ContextCandidate | null>
     if (overlap / titleTokens.size < CONTEXT_MIN_CONTAINMENT) continue;
     if (overlap > bestOverlap) { bestOverlap = overlap; best = title; }
   }
-  return best ? { titre: best, url: wikiUrl(best) } : null;
+  return { cand: best ? { titre: best, url: wikiUrl(best) } : null, ok: true };
 }
 
 // ---- Combinaison -------------------------------------------------------------
 
-/** Liens de contexte d'un sujet : vie-publique (ordre 0) + Wikipédia (ordre 1). */
-async function resolveContextLinks(label: string): Promise<ContextLink[]> {
+/** Liens de contexte d'un sujet : vie-publique (ordre 0) + Wikipédia (ordre 1).
+ *  `ok: false` si au moins une source était indisponible : les liens trouvés
+ *  restent insérables, mais le résultat est incomplet. */
+async function resolveContextLinks(label: string): Promise<{ links: ContextLink[]; ok: boolean }> {
   const [vp, wiki] = await Promise.all([resolveViePublique(label), resolveWikipedia(label)]);
   const links: ContextLink[] = [];
-  if (vp) links.push({ source: 'vie-publique', sourceLabel: 'Vie-publique', titre: vp.titre, url: vp.url, ordre: 0 });
-  if (wiki) links.push({ source: 'wikipedia', sourceLabel: 'Wikipédia', titre: wiki.titre, url: wiki.url, ordre: 1 });
-  return links;
+  if (vp.cand) links.push({ source: 'vie-publique', sourceLabel: 'Vie-publique', titre: vp.cand.titre, url: vp.cand.url, ordre: 0 });
+  if (wiki.cand) links.push({ source: 'wikipedia', sourceLabel: 'Wikipédia', titre: wiki.cand.titre, url: wiki.cand.url, ordre: 1 });
+  return { links, ok: vp.ok && wiki.ok };
 }
 
 /** Hash d'entrée pour la résolution incrémentale (change si label/statut change). */
@@ -521,14 +530,19 @@ export async function generateSujetContextLinks(
         })
       : candidates;
 
-    // Résolution multi-sources (concurrence bornée — appels Tavily + embeddings)
+    // Résolution multi-sources (concurrence bornée — appels Tavily + embeddings).
+    // okIds = sujets dont toutes les sources ont répondu : eux seuls peuvent être
+    // marqués résolus ou voir leurs liens supprimés (un échec transitoire ne doit
+    // ni geler le sujet 30j ni effacer des liens valides).
     const desired = new Map<string, ContextLink[]>();
+    const okIds = new Set<string>();
     let idx = 0;
     const worker = async (): Promise<void> => {
       while (idx < sujets.length) {
         const s = sujets[idx++]!;
-        const links = await resolveContextLinks(s.label);
+        const { links, ok } = await resolveContextLinks(s.label);
         if (links.length > 0) desired.set(s.id, links);
+        if (ok) okIds.add(s.id);
       }
     };
     await Promise.all(Array.from({ length: Math.min(concurrency, sujets.length) }, worker));
@@ -544,7 +558,9 @@ export async function generateSujetContextLinks(
       const want = desired.get(s.id) ?? [];
       const have = existingBySujet.get(s.id) ?? [];
       const wantUrls = new Set(want.map(l => l.url));
-      for (const h of have) if (!wantUrls.has(h.url)) deleteIds.push(h.id);
+      if (okIds.has(s.id)) {
+        for (const h of have) if (!wantUrls.has(h.url)) deleteIds.push(h.id);
+      }
       const haveUrls = new Set(have.map(h => h.url));
       for (const link of want) {
         if (link.source === 'vie-publique') countViePublique++;
@@ -582,11 +598,12 @@ export async function generateSujetContextLinks(
         );
       }
 
-      // Marque tous les sujets traités comme résolus (même sans lien trouvé),
-      // pour ne pas les ré-interroger au prochain sync incrémental.
-      if (sujets.length > 0) {
-        const ids = sujets.map(s => s.id);
-        const hashes = sujets.map(s => contextHash(s.label, s.status));
+      // Marque comme résolus les seuls sujets dont les sources ont répondu
+      // (même sans lien trouvé). Les autres seront retentés au prochain sync.
+      const resolvedSujets = sujets.filter(s => okIds.has(s.id));
+      if (resolvedSujets.length > 0) {
+        const ids = resolvedSujets.map(s => s.id);
+        const hashes = resolvedSujets.map(s => contextHash(s.label, s.status));
         await prisma.$executeRawUnsafe(
           `UPDATE sujets s SET context_resolved_at = NOW(), context_input_hash = d.h
            FROM (SELECT unnest($1::text[]) AS id, unnest($2::text[]) AS h) d

@@ -13,7 +13,7 @@ export const feedbackBodySchema = z
   .object({
     sentiment: z
       .enum(['positif', 'neutre', 'negatif'])
-      .optional()
+      .nullish()
       .describe('Sentiment général de l’utilisateur'),
     type: z
       .enum(['bug', 'idee', 'autre'])
