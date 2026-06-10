@@ -524,13 +524,13 @@ export async function generateSujetContextLinks(
     // Résolution multi-sources (concurrence bornée — appels Tavily + embeddings)
     const desired = new Map<string, ContextLink[]>();
     let idx = 0;
-    async function worker(): Promise<void> {
+    const worker = async (): Promise<void> => {
       while (idx < sujets.length) {
         const s = sujets[idx++]!;
         const links = await resolveContextLinks(s.label);
         if (links.length > 0) desired.set(s.id, links);
       }
-    }
+    };
     await Promise.all(Array.from({ length: Math.min(concurrency, sujets.length) }, worker));
 
     // Diff par URL : insère les liens désirés absents, supprime les liens auto
