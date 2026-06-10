@@ -168,6 +168,13 @@ describe('Data Quality Checks (intégration)', () => {
       expect(report.multiAmendment.mismatches).toBeInstanceOf(Array);
       expect(typeof report.multiAmendment.byChambre).toBe('object');
 
+      // Sujet liens report (informatif)
+      expect(report.sujetLiens).toBeDefined();
+      expect(typeof report.sujetLiens.available).toBe('boolean');
+      expect(typeof report.sujetLiens.construction.totalLinks).toBe('number');
+      expect(typeof report.sujetLiens.construction.coverageRate).toBe('number');
+      expect(typeof report.sujetLiens.contexte.totalLinks).toBe('number');
+
       for (const r of report.results) {
         expect(r.key).toBeTruthy();
         expect(r.label).toBeTruthy();

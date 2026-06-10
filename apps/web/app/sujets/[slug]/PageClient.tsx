@@ -6,17 +6,29 @@ import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   ArrowLeft, ArrowRight, Vote, Loader2,
-  Layers, ExternalLink, Scale, BookOpen,
+  Layers, ExternalLink, Target, BookOpen, FileText, Newspaper, ChevronDown,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
 import { LegislativeStep } from '@/lib/legislative-steps';
 import { LegislativeTimeline } from '@/components/LegislativeTimeline';
+import { LoiPromulgueeCard } from '@/components/LoiPromulgueeCard';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+export interface SujetLien {
+  id: string;
+  famille: string;
+  titre: string;
+  url: string;
+  source: string;
+  sourceLabel: string | null;
+  datePublication: string | null;
+  ordre: number;
+}
 
 export interface SujetDetail {
   id: string;
@@ -34,6 +46,10 @@ export interface SujetDetail {
   resume: string | null;
   enjeux: string | null;
   featured: boolean;
+  liens?: {
+    construction: SujetLien[];
+    contexte: SujetLien[];
+  };
 }
 
 interface SujetDossier {
@@ -53,6 +69,7 @@ interface SujetDossier {
   loiTitre: string | null;
   loiDateJO: string | null;
   urlLegifrance: string | null;
+  urlJournalOfficiel: string | null;
   scrutinCount: number;
   legislativeSteps: LegislativeStep[];
 }
@@ -300,7 +317,13 @@ function ParliamentaryTimeline({ dossiers, sujet }: { dossiers: SujetDossier[]; 
 // ---------------------------------------------------------------------------
 
 function ContextSection({ sujet, dossiers }: { sujet: SujetDetail; dossiers: SujetDossier[] }) {
-  const loiDossier = dossiers.find(d => d.loiNumero);
+  // Les infos loi peuvent être éclatées entre dossiers AN/Sénat : on agrège
+  // chaque champ depuis le dossier qui le porte (n° souvent côté Sénat, URLs côté AN).
+  const loiNumero = dossiers.find(d => d.loiNumero)?.loiNumero ?? null;
+  const loiTitre = dossiers.find(d => d.loiTitre)?.loiTitre ?? null;
+  const loiDateJO = dossiers.find(d => d.loiDateJO)?.loiDateJO ?? null;
+  const loiUrlLegifrance = dossiers.find(d => d.urlLegifrance)?.urlLegifrance ?? null;
+  const loiUrlJournalOfficiel = dossiers.find(d => d.urlJournalOfficiel)?.urlJournalOfficiel ?? null;
 
   // Deduplicate external links by URL
   const uniqueLinks = (() => {
@@ -349,7 +372,7 @@ function ContextSection({ sujet, dossiers }: { sujet: SujetDetail; dossiers: Suj
         {sujet.enjeux && (
           <div>
             <h2 className="text-sm font-semibold flex items-center gap-2 mb-2">
-              <Scale className="h-4 w-4" />
+              <Target className="h-4 w-4" />
               Enjeux
             </h2>
             <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">{sujet.enjeux}</p>
@@ -362,44 +385,17 @@ function ContextSection({ sujet, dossiers }: { sujet: SujetDetail; dossiers: Suj
     );
   }
 
-  // Promulgué — law card (same style as dossier page)
-  if (sujet.status === 'promulgue' && loiDossier) {
+  // Promulgué — carte loi (composant partagé avec la page dossier)
+  if (sujet.status === 'promulgue' && loiNumero) {
     sections.push(
-      <div key="loi" className="p-4 rounded-lg border border-green-500/30 bg-green-500/5 dark:bg-green-500/10">
-        <div className="flex items-start gap-3">
-          <div className="p-2 rounded-lg bg-green-500/15 flex-shrink-0">
-            <Scale className="h-5 w-5 text-green-500" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <span className="text-xs font-medium text-green-500 uppercase tracking-wide">Loi promulguée</span>
-            <p className="font-semibold">Loi n°{loiDossier.loiNumero}</p>
-            {loiDossier.loiTitre && (
-              <p className="text-sm text-muted-foreground">{loiDossier.loiTitre}</p>
-            )}
-            {loiDossier.loiDateJO && (
-              <p className="text-xs text-muted-foreground mt-1">
-                Publiée au JO le {formatDate(loiDossier.loiDateJO)}
-              </p>
-            )}
-            {uniqueLinks.some(l => l.label.includes('Légifrance')) && (
-              <div className="mt-3">
-                {uniqueLinks.filter(l => l.label.includes('Légifrance')).map(link => (
-                  <a
-                    key={link.url}
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    Consulter le texte de loi sur Légifrance
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>,
+      <LoiPromulgueeCard
+        key="loi"
+        loiNumero={loiNumero}
+        loiTitre={loiTitre}
+        loiDateJO={loiDateJO}
+        urlLegifrance={loiUrlLegifrance}
+        urlJournalOfficiel={loiUrlJournalOfficiel}
+      />,
     );
   }
 
@@ -446,6 +442,236 @@ function ContextSection({ sujet, dossiers }: { sujet: SujetDetail; dossiers: Suj
   if (sections.length === 0) return null;
 
   return <div className="mb-8 space-y-4">{sections}</div>;
+}
+
+// ---------------------------------------------------------------------------
+// Ressources externes — liens sortants par famille (construction / contexte)
+// ---------------------------------------------------------------------------
+
+const LIEN_FAMILLE_CONFIG: Record<
+  'construction' | 'contexte' | 'presse',
+  { titre: string; icon: typeof FileText; hint: string }
+> = {
+  construction: {
+    titre: 'Documents officiels',
+    icon: FileText,
+    hint: "Les textes, études d'impact et rapports déposés au Parlement.",
+  },
+  contexte: {
+    titre: 'Pour aller plus loin',
+    icon: BookOpen,
+    hint: 'Ressources de référence neutres pour situer le texte.',
+  },
+  presse: {
+    titre: 'Dans les médias',
+    icon: Newspaper,
+    hint: 'Articles de presse sur le sujet.',
+  },
+};
+
+type FamilleKey = keyof typeof LIEN_FAMILLE_CONFIG;
+
+const LIENS_INITIAL_VISIBLE = 5;
+
+function LiensList({ liens }: { liens: SujetLien[] }) {
+  const [expanded, setExpanded] = useState(false);
+  if (liens.length === 0) return null;
+
+  const visible = expanded ? liens : liens.slice(0, LIENS_INITIAL_VISIBLE);
+  const hiddenCount = liens.length - LIENS_INITIAL_VISIBLE;
+
+  return (
+    <div className="flex flex-col gap-2">
+      {visible.map((lien) => (
+        <a
+          key={lien.id}
+          href={lien.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+        >
+          <ExternalLink className="h-3.5 w-3.5 flex-shrink-0" />
+          <span>{lien.titre}</span>
+          {lien.sourceLabel && (
+            <span className="text-xs text-muted-foreground">· {lien.sourceLabel}</span>
+          )}
+        </a>
+      ))}
+      {hiddenCount > 0 && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-1 inline-flex items-center gap-1.5 text-sm text-primary hover:underline self-start"
+        >
+          {expanded ? 'Voir moins' : `Voir les ${hiddenCount} autres`}
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Famille « Presse » — articles récupérés en live (Google Actualités), cache
+// côté API. Fetch client-side dédié avec son propre état de chargement.
+interface PressArticle {
+  titre: string;
+  media: string | null;
+  url: string;
+  date: string | null;
+}
+
+const PRESSE_INITIAL_VISIBLE = 4;
+
+function PresseList({ slug }: { slug: string }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const { data, isLoading, isError } = useQuery<{ data: PressArticle[] }>({
+    queryKey: ['sujet-presse', slug],
+    queryFn: () => api.get(`/sujets/${slug}/presse`).then((res) => res.data),
+    staleTime: 1000 * 60 * 30,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-2">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="h-4 w-full rounded bg-muted animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  const articles = data?.data ?? [];
+  if (isError || articles.length === 0) {
+    return <p className="text-sm text-muted-foreground">Aucun article récent.</p>;
+  }
+
+  const visible = expanded ? articles : articles.slice(0, PRESSE_INITIAL_VISIBLE);
+  const hiddenCount = articles.length - PRESSE_INITIAL_VISIBLE;
+
+  return (
+    <div className="flex flex-col gap-3">
+      {visible.map((article) => (
+        <a
+          key={article.url}
+          href={article.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group flex flex-col gap-0.5"
+        >
+          <span className="flex items-start gap-1.5 text-sm text-primary group-hover:underline">
+            <ExternalLink className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+            <span className="line-clamp-2">{article.titre}</span>
+          </span>
+          {(article.media || article.date) && (
+            <span className="pl-5 text-xs text-muted-foreground">
+              {article.media}
+              {article.media && article.date && ' · '}
+              {article.date && formatDateShort(article.date)}
+            </span>
+          )}
+        </a>
+      ))}
+      {hiddenCount > 0 && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-1 inline-flex items-center gap-1.5 text-sm text-primary hover:underline self-start"
+        >
+          {expanded ? 'Voir moins' : `Voir les ${hiddenCount} autres`}
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </button>
+      )}
+      <p className="mt-1 text-xs text-muted-foreground/60">Source : Google Actualités</p>
+    </div>
+  );
+}
+
+function FamilleBody({ fam, slug, liens }: { fam: FamilleKey; slug: string; liens?: SujetDetail['liens'] }) {
+  if (fam === 'presse') {
+    return <PresseList slug={slug} />;
+  }
+  return <LiensList liens={liens?.[fam] ?? []} />;
+}
+
+function RessourcesSujet({ slug, liens }: { slug: string; liens?: SujetDetail['liens'] }) {
+  const construction = liens?.construction ?? [];
+  const contexte = liens?.contexte ?? [];
+
+  // Colonnes : familles stockées avec contenu + Presse (live, toujours présente)
+  const columns = useMemo<FamilleKey[]>(() => {
+    const c: FamilleKey[] = [];
+    if (construction.length) c.push('construction');
+    if (contexte.length) c.push('contexte');
+    c.push('presse');
+    return c;
+  }, [construction.length, contexte.length]);
+
+  const [activeTab, setActiveTab] = useState<FamilleKey>('construction');
+  const effectiveTab = columns.includes(activeTab) ? activeTab : columns[0];
+
+  const countOf = (fam: FamilleKey): number | null =>
+    fam === 'construction' ? construction.length : fam === 'contexte' ? contexte.length : null;
+
+  const gridCols =
+    columns.length >= 3 ? 'md:grid-cols-3' : columns.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-1';
+
+  return (
+    <div className="mb-8">
+      {/* Mobile : onglets (un par section) */}
+      <div className="md:hidden">
+        <div className="flex gap-1 border-b mb-3 overflow-x-auto">
+          {columns.map((fam) => {
+            const cfg = LIEN_FAMILLE_CONFIG[fam];
+            const Icon = cfg.icon;
+            const count = countOf(fam);
+            const active = fam === effectiveTab;
+            return (
+              <button
+                key={fam}
+                onClick={() => setActiveTab(fam)}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${
+                  active
+                    ? 'border-primary text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {cfg.titre}
+                {count !== null && <span className="text-xs text-muted-foreground">{count}</span>}
+              </button>
+            );
+          })}
+        </div>
+        <div className="rounded-lg border bg-card p-5">
+          <p className="text-xs text-muted-foreground mb-3">
+            {LIEN_FAMILLE_CONFIG[effectiveTab].hint}
+          </p>
+          <FamilleBody fam={effectiveTab} slug={slug} liens={liens} />
+        </div>
+      </div>
+
+      {/* Desktop : colonnes côte à côte */}
+      <div className={`hidden md:grid ${gridCols} gap-4 items-start`}>
+        {columns.map((fam) => {
+          const cfg = LIEN_FAMILLE_CONFIG[fam];
+          const Icon = cfg.icon;
+          const count = countOf(fam);
+          return (
+            <div key={fam} className="rounded-lg border bg-card p-5">
+              <h2 className="text-sm font-semibold flex items-center gap-2 mb-1">
+                <Icon className="h-4 w-4" />
+                {cfg.titre}
+                {count !== null && (
+                  <span className="text-xs font-normal text-muted-foreground">({count})</span>
+                )}
+              </h2>
+              <p className="text-xs text-muted-foreground mb-3">{cfg.hint}</p>
+              <FamilleBody fam={fam} slug={slug} liens={liens} />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -864,6 +1090,9 @@ export default function PageClient({ initialData }: { initialData?: { data: Suje
 
       {/* Context section — law info or procedure info */}
       <ContextSection sujet={sujet} dossiers={dossiers} />
+
+      {/* Ressources externes — documents officiels / pour comprendre / presse */}
+      <RessourcesSujet slug={slug} liens={sujet.liens} />
 
       {/* Dashboard: mobile order = Dossiers → Stats → Scrutins; desktop = 2 cols */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

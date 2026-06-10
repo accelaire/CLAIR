@@ -1,7 +1,8 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useEffect, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { signalStrongAction } from '@/components/feedback/FeedbackWidget';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -58,6 +59,15 @@ function ComparerPageContent() {
   });
 
   const parlementaires = data?.data ?? [];
+
+  // Comparateur abouti (≥2 élus comparés) = action forte pour le feedback
+  const strongSignaled = useRef(false);
+  useEffect(() => {
+    if (!strongSignaled.current && parlementaires.length >= 2) {
+      strongSignaled.current = true;
+      signalStrongAction();
+    }
+  }, [parlementaires.length]);
 
   // Retirer un parlementaire de la comparaison
   const handleRemove = (slug: string) => {

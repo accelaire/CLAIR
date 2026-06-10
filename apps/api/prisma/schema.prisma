@@ -492,7 +492,14 @@ model Sujet {
   groupeAmendementDescriptions Json?   @map("groupe_amendement_descriptions")
   iaGroupeAmendementHash       String? @map("ia_groupe_amendement_hash")
 
+  // Résolution incrémentale des liens "contexte" (vie-publique + Wikipédia) :
+  // hash = md5(label|status). On ne ré-interroge Tavily que si le hash change,
+  // si jamais résolu, ou si sans lien depuis >30j (retry du long-tail).
+  contextResolvedAt DateTime? @map("context_resolved_at")
+  contextInputHash  String?   @map("context_input_hash")
+
   dossiers      DossierLegislatif[]
+  liens         SujetLien[]
 
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
@@ -501,6 +508,32 @@ model Sujet {
   @@index([category])
   @@index([featured, featuredOrder])
   @@map("sujets")
+}
+
+// Liens sortants attachés à un sujet, regroupés par famille.
+//   - 'construction' : documents officiels (étude d'impact, rapports, avis, versions)
+//   - 'contexte'     : sources neutres/libres (Wikipédia FR, vie-publique.fr)
+// La famille 'presse' n'est PAS stockée ici (servie en live + cache, cf. plan).
+model SujetLien {
+  id              String    @id @default(uuid())
+  sujetId         String    @map("sujet_id")
+  famille         String    // 'construction' | 'contexte'
+  titre           String
+  url             String
+  source          String    // 'an' | 'senat' | 'wikipedia' | 'vie-publique'
+  sourceLabel     String?   @map("source_label")
+  datePublication DateTime? @map("date_publication")
+  provenance      String    @default("auto")  // 'auto' | 'manual'
+  ordre           Int       @default(0)
+
+  sujet           Sujet     @relation(fields: [sujetId], references: [id], onDelete: Cascade)
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@unique([sujetId, url])
+  @@index([sujetId, famille, ordre])
+  @@map("sujet_liens")
 }
 
 // =============================================================================
@@ -906,5 +939,28 @@ model SourceState {
   @@unique([source, dataType])
   @@index([source])
   @@map("source_states")
+}
+
+// =============================================================================
+// FEEDBACK UTILISATEURS (retours anonymes, sans cookie)
+// =============================================================================
+
+model Feedback {
+  id        String   @id @default(uuid())
+
+  sentiment String?  // 'positif' | 'neutre' | 'negatif' (émoji) — nullable
+  type      String   // 'bug' | 'idee' | 'autre'
+  message   String?  // texte libre optionnel
+  email     String?  // contact optionnel (rappel)
+
+  page      String?  // pathname depuis lequel le retour a été envoyé
+  trigger   String?  @default("passif") // 'passif' (bouton) | 'nudge' (sollicitation)
+  userAgent String?  @map("user_agent")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([type])
+  @@map("feedbacks")
 }
 

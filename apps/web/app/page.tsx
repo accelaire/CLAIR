@@ -4,7 +4,7 @@ import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, ArrowRight, Calendar, ChevronLeft, ChevronRight, Landmark, Building2, Users } from 'lucide-react';
+import { Search, ArrowRight, Calendar, ChevronLeft, ChevronRight, Landmark, Building2, Users, Lightbulb } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useCountUp } from '@/hooks/useCountUp';
 import { useLiveNow } from '@/hooks/useLiveNow';
@@ -104,6 +104,45 @@ const statItems = [
   { key: 'amendements', label: 'Amendements', href: '/scrutins' },
   { key: 'lobbyistes', label: 'Lobbyistes', href: '/lobbying' },
   { key: 'actionsLobby', label: 'Actions lobby', href: '/lobbying' },
+] as const;
+
+const comprendreTopics = [
+  {
+    title: 'Le Parlement',
+    description:
+      'Assemblée nationale et Sénat : découvrez les deux chambres du Parlement, leurs différences et comment elles votent les lois ensemble.',
+    href: '/comprendre/parlement',
+  },
+  {
+    title: 'Le parlementaire',
+    description:
+      'Mandat, circonscription, groupe politique... Comprenez le rôle d\'un député ou sénateur, comment il est élu et ses missions.',
+    href: '/comprendre/parlementaire',
+  },
+  {
+    title: 'Le scrutin',
+    description:
+      'Comment se déroule un vote au Parlement ? Apprenez à distinguer les différents types de scrutins et à décrypter les résultats des votes.',
+    href: '/comprendre/scrutin',
+  },
+  {
+    title: 'Le dossier législatif',
+    description:
+      'De la proposition à la promulgation : suivez le parcours d\'un texte de loi à travers les différentes étapes du processus parlementaire.',
+    href: '/comprendre/dossier-legislatif',
+  },
+  {
+    title: 'Les groupes politiques',
+    description:
+      'Parti vs groupe parlementaire : comprenez la différence, comment se forment les alliances et leur impact sur les votes à l\'Assemblée.',
+    href: '/comprendre/groupes-politiques',
+  },
+  {
+    title: 'Le lobbying',
+    description:
+      'Représentants d\'intérêts, HATVP, déclarations... Découvrez qui peut influencer les parlementaires et comment c\'est encadré.',
+    href: '/comprendre/lobbying',
+  },
 ] as const;
 
 function toISODate(d: Date): string {
@@ -691,6 +730,54 @@ export default function HomePage() {
                 <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
               </div>
             </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Comment ça marche la politique */}
+      <section className="py-20">
+        <div className="container mx-auto px-4">
+          <div className="grid gap-12 lg:grid-cols-3">
+            {/* Intro */}
+            <div className="lg:col-span-1">
+              <div className="mb-6 inline-flex rounded-xl bg-primary/10 p-3">
+                <Lightbulb className="h-6 w-6 text-primary" />
+              </div>
+              <h2 className="text-3xl font-bold leading-tight">
+                Comment ça marche, la politique ?
+              </h2>
+              <p className="mt-4 text-muted-foreground">
+                Des guides courts et clairs pour comprendre le Parlement, les
+                scrutins, le lobbying et tous les rouages de la démocratie.
+              </p>
+              <Link
+                href="/guide"
+                className="mt-6 inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+              >
+                Voir les guides pratiques
+              </Link>
+            </div>
+
+            {/* Topics grid */}
+            <div className="lg:col-span-2">
+              <div className="grid gap-x-10 gap-y-8 sm:grid-cols-2">
+                {comprendreTopics.map((topic) => (
+                  <div key={topic.href}>
+                    <h3 className="font-semibold">{topic.title}</h3>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {topic.description}
+                    </p>
+                    <Link
+                      href={topic.href}
+                      className="group mt-3 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                    >
+                      En savoir plus
+                      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </section>

@@ -14,7 +14,13 @@ import {
   type ParlementairePromptData,
 } from '../llm/prompts.js';
 import { fetchWikipediaBio } from '../sources/wikipedia/client.js';
-import { searchParlementaire as tavilySearch, isTavilyAvailable } from '../sources/tavily/client.js';
+import { tavilySearch, isTavilyAvailable } from '../sources/tavily/client.js';
+
+// Réseaux sociaux / sites non pertinents exclus des recherches Tavily de bios.
+const TAVILY_SOCIAL_EXCLUDE = [
+  'twitter.com', 'x.com', 'facebook.com', 'instagram.com',
+  'tiktok.com', 'youtube.com', 'linkedin.com',
+];
 import { DECLARATION_TYPES } from '../sources/hatvp/declarations-client.js';
 import { logger } from '../utils/logger.js';
 import type { EnrichmentResult, EnrichmentOptions } from './ia-enrichment.js';
@@ -250,10 +256,10 @@ export async function enrichParlementairesIA(
 
           // Fetch Tavily results (optional)
           const tavilyResults = tavilyEnabled
-            ? await tavilySearch(parl.prenom, parl.nom, {
-                chambre: parl.chambre,
-                maxResults: 3,
-              })
+            ? await tavilySearch(
+                `${parl.prenom} ${parl.nom} ${role} France actualité politique`,
+                { excludeDomains: TAVILY_SOCIAL_EXCLUDE, maxResults: 3 },
+              )
             : null;
 
           // Build prompt data
@@ -299,7 +305,7 @@ export async function enrichParlementairesIA(
               urlDossier: d.urlDossier,
             })),
             wikipediaBio: wikiBio?.extract,
-            tavilyResults: tavilyResults?.results.map(r => ({
+            tavilyResults: tavilyResults?.map(r => ({
               title: r.title,
               content: r.content,
             })),

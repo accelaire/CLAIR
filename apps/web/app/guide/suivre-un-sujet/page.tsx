@@ -1,37 +1,37 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Search } from 'lucide-react';
+import { FileText } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'Suivre un sujet',
   description:
-    'Parcours guidé pour rechercher un thème politique et suivre les votes associés sur CLAIR.',
+    "Comprendre une page Sujet sur CLAIR : le parcours d'un grand texte de loi entre l'Assemblée et le Sénat, sa chronologie, ses scrutins et les votes par groupe politique.",
 };
 
 const steps = [
   {
     step: 1,
-    title: 'Lancer une recherche',
+    title: 'Choisir un texte',
     description:
-      'Utilisez la barre de recherche globale (icône loupe dans le header) pour trouver un sujet : « immigration », « énergie », « retraites »...',
+      "Depuis la page Sujets, parcourez les grands textes de loi : en cours d'examen, adoptés, rejetés ou promulgués. Chaque sujet réunit un même texte suivi à l'Assemblée et au Sénat.",
   },
   {
     step: 2,
-    title: 'Explorer les résultats',
+    title: 'Suivre son parcours',
     description:
-      'Les résultats affichent les scrutins, dossiers législatifs et parlementaires liés à votre recherche.',
+      "La chronologie législative montre où en est le texte : dépôt, examen à l'Assemblée nationale et au Sénat, adoption ou rejet, puis promulgation.",
   },
   {
     step: 3,
-    title: 'Filtrer les scrutins',
+    title: 'Voir qui a voté quoi',
     description:
-      'Sur la page Scrutins, utilisez les filtres par thématique (tags) pour affiner. Vous pouvez aussi filtrer par chambre, résultat ou période.',
+      "Les scrutins liés et les statistiques par groupe politique montrent comment chaque camp s'est positionné, à l'Assemblée comme au Sénat.",
   },
   {
     step: 4,
-    title: 'Voir qui a voté quoi',
+    title: 'Remonter à la source',
     description:
-      'Cliquez sur un scrutin pour voir le détail : répartition par groupe, liste des votes individuels, et le dossier législatif associé.',
+      "Les liens vers Légifrance et les dossiers officiels de l'Assemblée et du Sénat permettent de vérifier chaque information directement à la source.",
   },
 ];
 
@@ -40,12 +40,13 @@ export default function SuivreUnSujetPage() {
     <div className="container mx-auto px-4 py-12">
       <div className="mx-auto max-w-4xl">
         <h1 className="flex items-center gap-3 text-3xl font-bold tracking-tight sm:text-4xl">
-          <Search className="h-8 w-8 text-primary" />
+          <FileText className="h-8 w-8 text-primary" />
           Suivre un sujet
         </h1>
         <p className="mt-4 text-muted-foreground">
-          En 4 étapes, apprenez à rechercher un thème politique et à suivre les votes
-          associés sur CLAIR.
+          Un sujet, c&apos;est un grand texte de loi suivi de bout en bout, de son dépôt
+          à son issue, à travers l&apos;Assemblée nationale et le Sénat. Voici comment lire
+          sa page en 4 étapes.
         </p>
 
         <div className="mt-10 space-y-6">
@@ -62,10 +63,10 @@ export default function SuivreUnSujetPage() {
 
         <div className="mt-12">
           <Link
-            href="/recherche"
+            href="/sujets"
             className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
           >
-            Commencer &rarr; Lancer une recherche
+            Commencer &rarr; Voir les sujets
           </Link>
         </div>
       </div>

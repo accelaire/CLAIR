@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { dossiersListQuerySchema, paginationQuerySchema, amendementsQuerySchema, trendingQuerySchema } from './dossiers.schema';
 import { ApiError } from '../../utils/errors';
 import { buildMultiFieldSearchCondition } from '../../utils/search';
+import { buildJournalOfficielUrl } from '../../utils/journal-officiel';
 
 const CACHE_TTL_1H = 3600;
 
@@ -292,10 +293,12 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
           etat: true,
           dateDepot: true,
           dateAdoption: true,
+          sujetId: true,
           loiNumero: true,
           loiTitre: true,
           loiDateJO: true,
           urlLegifrance: true,
+          sourceData: true,
           resumeIA: true,
           sujet: {
             select: {
@@ -402,8 +405,37 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
         totalRejete: statsResult.find((s: { sort: string; _count: number }) => s.sort === 'rejete')?._count || 0,
       };
 
+      // Agrège les infos loi à travers les dossiers du même sujet (le n° est
+      // souvent porté côté Sénat, les URLs côté AN) pour une carte cohérente
+      // avec la page sujet.
+      let loiNumero = dossier.loiNumero;
+      let loiTitre = dossier.loiTitre;
+      let loiDateJO = dossier.loiDateJO;
+      let urlLegifrance = dossier.urlLegifrance;
+      let urlJournalOfficiel = buildJournalOfficielUrl(dossier.sourceData);
+
+      if (dossier.sujetId) {
+        const siblings = await fastify.prisma.dossierLegislatif.findMany({
+          where: { sujetId: dossier.sujetId },
+          select: { loiNumero: true, loiTitre: true, loiDateJO: true, urlLegifrance: true, sourceData: true },
+        });
+        for (const s of siblings) {
+          loiNumero ??= s.loiNumero;
+          loiTitre ??= s.loiTitre;
+          loiDateJO ??= s.loiDateJO;
+          urlLegifrance ??= s.urlLegifrance;
+          urlJournalOfficiel ??= buildJournalOfficielUrl(s.sourceData);
+        }
+      }
+
       const result = {
         ...dossier,
+        sourceData: undefined,
+        loiNumero,
+        loiTitre,
+        loiDateJO,
+        urlLegifrance,
+        urlJournalOfficiel,
         chambre: dossierChambre(dossier.legislature),
         scrutinsCount: dossier._count.scrutins,
         amendementsCount: dossier._count.amendements,

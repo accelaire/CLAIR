@@ -48,9 +48,31 @@ export interface MultiAmendmentReport {
   mismatches: MultiAmendmentMismatch[];
 }
 
+export interface SujetLiensFamilleStats {
+  totalLinks: number;
+  sujetsCovered: number;
+  coverageRate: number; // % de sujets actifs portant ≥1 lien de cette famille
+}
+
+export interface SujetLiensDeadLinkSample {
+  sampled: number; // liens tirés au sort
+  checked: number; // liens ayant renvoyé une réponse HTTP
+  dead: number;    // réponses >= 400
+  deadUrls: string[];
+}
+
+export interface SujetLiensReport {
+  available: boolean; // false si la table n'existe pas encore (migration non appliquée)
+  sujetsTotal: number;
+  construction: SujetLiensFamilleStats;
+  contexte: SujetLiensFamilleStats;
+  deadLinks: SujetLiensDeadLinkSample | null; // null si le check HTTP n'a pas été demandé
+}
+
 export interface QualityReport {
   results: CheckResult[];
   multiAmendment: MultiAmendmentReport;
+  sujetLiens: SujetLiensReport;
   passed: boolean;
   invariantsPassed: boolean;
   thresholdsPassed: boolean;
@@ -339,10 +361,118 @@ export async function runMultiAmendmentCheck(prisma: PrismaClient): Promise<Mult
 }
 
 // =============================================================================
+// Liens sortants Sujets — rapport informatif (non bloquant)
+//
+// La couverture est volontairement partielle (Wikipédia haute précision,
+// construction dépendante des actesLegislatifs disponibles) et la table peut
+// être absente avant la migration : ce check est donc informatif, table-guardé,
+// et ne participe pas au pass/fail.
+// =============================================================================
+
+const SUJET_LIENS_SAMPLE_SIZE = 10;
+const DEAD_LINK_TIMEOUT_MS = 5000;
+
+export async function runSujetLiensCheck(
+  prisma: PrismaClient,
+  opts: { checkDeadLinks?: boolean } = {},
+): Promise<SujetLiensReport> {
+  const empty: SujetLiensReport = {
+    available: false,
+    sujetsTotal: 0,
+    construction: { totalLinks: 0, sujetsCovered: 0, coverageRate: 0 },
+    contexte: { totalLinks: 0, sujetsCovered: 0, coverageRate: 0 },
+    deadLinks: null,
+  };
+
+  // Table absente (migration non appliquée) → rapport "non disponible".
+  const existsRows: Array<{ exists: boolean }> = await prisma.$queryRawUnsafe(
+    `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'sujet_liens') AS exists`,
+  );
+  if (!existsRows[0]?.exists) return empty;
+
+  const aggRows: Array<{
+    sujets_total: number;
+    c_links: number;
+    c_sujets: number;
+    x_links: number;
+    x_sujets: number;
+  }> = await prisma.$queryRawUnsafe(`
+    SELECT
+      (SELECT COUNT(*) FROM sujets WHERE actif = true)::int AS sujets_total,
+      (SELECT COUNT(*) FROM sujet_liens WHERE famille = 'construction')::int AS c_links,
+      (SELECT COUNT(DISTINCT sujet_id) FROM sujet_liens WHERE famille = 'construction')::int AS c_sujets,
+      (SELECT COUNT(*) FROM sujet_liens WHERE famille = 'contexte')::int AS x_links,
+      (SELECT COUNT(DISTINCT sujet_id) FROM sujet_liens WHERE famille = 'contexte')::int AS x_sujets
+  `);
+
+  const agg = aggRows[0];
+  const sujetsTotal = Number(agg?.sujets_total ?? 0);
+  const rate = (covered: number) =>
+    sujetsTotal > 0 ? Math.round((covered / sujetsTotal) * 100) : 0;
+
+  // Échantillon de liens non-morts (best-effort, jamais bloquant).
+  // Une erreur réseau (timeout, offline) compte comme "non vérifié", pas "mort" :
+  // seuls les statuts HTTP >= 400 sont considérés comme morts.
+  let deadLinks: SujetLiensDeadLinkSample | null = null;
+  if (opts.checkDeadLinks) {
+    const sample: Array<{ url: string }> = await prisma.$queryRawUnsafe(
+      `SELECT url FROM sujet_liens ORDER BY random() LIMIT ${SUJET_LIENS_SAMPLE_SIZE}`,
+    );
+    let checked = 0;
+    let dead = 0;
+    const deadUrls: string[] = [];
+
+    await Promise.all(
+      sample.map(async ({ url }) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), DEAD_LINK_TIMEOUT_MS);
+        try {
+          const res = await fetch(url, {
+            method: 'HEAD',
+            signal: controller.signal,
+            redirect: 'follow',
+          });
+          checked++;
+          if (res.status >= 400) {
+            dead++;
+            deadUrls.push(url);
+          }
+        } catch {
+          // réseau indisponible → non vérifié
+        } finally {
+          clearTimeout(timer);
+        }
+      }),
+    );
+
+    deadLinks = { sampled: sample.length, checked, dead, deadUrls };
+  }
+
+  return {
+    available: true,
+    sujetsTotal,
+    construction: {
+      totalLinks: Number(agg?.c_links ?? 0),
+      sujetsCovered: Number(agg?.c_sujets ?? 0),
+      coverageRate: rate(Number(agg?.c_sujets ?? 0)),
+    },
+    contexte: {
+      totalLinks: Number(agg?.x_links ?? 0),
+      sujetsCovered: Number(agg?.x_sujets ?? 0),
+      coverageRate: rate(Number(agg?.x_sujets ?? 0)),
+    },
+    deadLinks,
+  };
+}
+
+// =============================================================================
 // Runner
 // =============================================================================
 
-export async function runDataQualityChecks(prisma: PrismaClient): Promise<QualityReport> {
+export async function runDataQualityChecks(
+  prisma: PrismaClient,
+  opts: { checkSujetLinksHttp?: boolean } = {},
+): Promise<QualityReport> {
   const start = Date.now();
   const results: CheckResult[] = [];
 
@@ -372,6 +502,9 @@ export async function runDataQualityChecks(prisma: PrismaClient): Promise<Qualit
   }
 
   const multiAmendment = await runMultiAmendmentCheck(prisma);
+  const sujetLiens = await runSujetLiensCheck(prisma, {
+    checkDeadLinks: opts.checkSujetLinksHttp ?? false,
+  });
 
   const invariantResults = results.filter((r) => r.type === 'invariant');
   const thresholdResults = results.filter((r) => r.type === 'threshold');
@@ -381,6 +514,7 @@ export async function runDataQualityChecks(prisma: PrismaClient): Promise<Qualit
   return {
     results,
     multiAmendment,
+    sujetLiens,
     passed: results.every((r) => r.passed),
     invariantsPassed: invariantResults.every((r) => r.passed),
     thresholdsPassed: thresholdResults.every((r) => r.passed),
@@ -456,6 +590,35 @@ export function printReport(report: QualityReport): void {
     }
   }
   console.log();
+
+  // Liens sortants Sujets (informatif — ne bloque pas le pass/fail)
+  const sl = report.sujetLiens;
+  console.log('--- Liens sortants Sujets (informatif) ---\n');
+  if (!sl.available) {
+    console.log('  \x1b[33m⚠\x1b[0m  Table sujet_liens absente (migration non appliquée)\n');
+  } else {
+    const fam = (label: string, s: SujetLiensFamilleStats) => {
+      const icon = s.totalLinks > 0 ? '\x1b[32m✓\x1b[0m' : '\x1b[33m⚠\x1b[0m';
+      console.log(
+        `  ${icon}  ${label.padEnd(28)} ${String(s.totalLinks).padStart(5)} liens · ` +
+          `${s.sujetsCovered}/${sl.sujetsTotal} sujets (${s.coverageRate}%)`,
+      );
+    };
+    fam('Documents officiels', sl.construction);
+    fam('Pour aller plus loin (contexte)', sl.contexte);
+
+    if (sl.deadLinks) {
+      const d = sl.deadLinks;
+      const icon = d.dead === 0 ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m';
+      console.log(
+        `  ${icon}  ${'Échantillon liens HTTP'.padEnd(28)} ${d.dead} mort(s) sur ${d.checked} vérifié(s) (échantillon ${d.sampled})`,
+      );
+      for (const url of d.deadUrls.slice(0, 5)) {
+        console.log(`       \x1b[31m✗\x1b[0m ${url}`);
+      }
+    }
+    console.log();
+  }
 
   // Summary
   console.log('========================================');

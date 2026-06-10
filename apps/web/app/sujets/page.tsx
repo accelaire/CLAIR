@@ -4,14 +4,14 @@ import PageClient from './PageClient';
 export const metadata: Metadata = {
   title: 'Sujets',
   description:
-    'Sujets politiques et thématiques suivis sur CLAIR.vote. Dossiers législatifs, scrutins et débats classés par thème.',
+    "Suivez chaque grand texte de loi de bout en bout sur CLAIR.vote : son parcours entre l'Assemblée nationale et le Sénat, les scrutins, les votes par groupe et son issue.",
   alternates: {
     canonical: `${process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote'}/sujets`,
   },
   openGraph: {
-    title: 'Sujets politiques',
+    title: 'Sujets parlementaires',
     description:
-      'Explorez les sujets politiques : santé, économie, environnement, sécurité et plus.',
+      "Chaque grand texte de loi suivi de son dépôt à son issue : parcours entre l'Assemblée et le Sénat, scrutins et votes par groupe politique.",
   },
 };
 

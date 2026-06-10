@@ -5,6 +5,7 @@ import { Providers } from './providers';
 import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
 import { PlausibleAnalytics } from '@/components/analytics/PlausibleAnalytics';
+import { FeedbackWidget } from '@/components/feedback/FeedbackWidget';
 import { OrganizationJsonLd, WebSiteJsonLd } from '@/components/seo/JsonLd';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -60,6 +61,7 @@ export default function RootLayout({
             <main className="flex-1">{children}</main>
             <Footer />
           </div>
+          <FeedbackWidget />
         </Providers>
       </body>
     </html>

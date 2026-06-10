@@ -5,6 +5,8 @@
 
 import { PrismaClient } from '@prisma/client';
 import { parseActesLegislatifs } from '../../utils/parse-actes-legislatifs';
+import { buildJournalOfficielUrl } from '../../utils/journal-officiel';
+import { fetchGoogleNews } from '../../utils/google-news';
 import type {
   SujetsListQuery,
   SujetScrutinsQuery,
@@ -109,10 +111,34 @@ export class SujetsService {
         actif: true,
         createdAt: true,
         updatedAt: true,
+        liens: {
+          select: {
+            id: true,
+            famille: true,
+            titre: true,
+            url: true,
+            source: true,
+            sourceLabel: true,
+            datePublication: true,
+            ordre: true,
+          },
+          orderBy: [{ famille: 'asc' }, { ordre: 'asc' }, { titre: 'asc' }],
+        },
       },
     });
 
-    return sujet;
+    if (!sujet) return null;
+
+    // Regroupe les liens sortants par famille (construction / contexte).
+    // La famille "presse" n'est pas servie ici (live + cache, cf. plan).
+    const { liens, ...rest } = sujet;
+    return {
+      ...rest,
+      liens: {
+        construction: liens.filter(l => l.famille === 'construction'),
+        contexte: liens.filter(l => l.famille === 'contexte'),
+      },
+    };
   }
 
   /**
@@ -193,6 +219,7 @@ export class SujetsService {
         chambre: d.uid.startsWith('SENAT') ? 'senat' : 'assemblee',
         scrutinCount: d._count.scrutins,
         legislativeSteps: parseActesLegislatifs(d.sourceData, { etat: d.etat, loiDateJO: d.loiDateJO }),
+        urlJournalOfficiel: buildJournalOfficielUrl(d.sourceData),
         _count: undefined,
         sourceData: undefined,
       })),
@@ -262,6 +289,33 @@ export class SujetsService {
         totalPages,
         hasNext: page < totalPages,
         hasPrev: page > 1,
+      },
+    };
+  }
+
+  /**
+   * Famille « Presse » — articles de presse récupérés en live via Google
+   * Actualités (non stockés). La requête est construite depuis le label du
+   * sujet (nom courant), au plus près de la façon dont la presse en parle.
+   * Le cache Redis (TTL ~3h, géré au niveau du controller) garde le flux frais.
+   */
+  async getPresse(slug: string) {
+    const sujet = await this.prisma.sujet.findFirst({
+      where: { slug, actif: true },
+      select: { id: true, label: true },
+    });
+
+    if (!sujet) return null;
+
+    const query = sujet.label.trim();
+    const articles = await fetchGoogleNews(query, { limit: 12 });
+
+    return {
+      data: articles,
+      meta: {
+        query,
+        source: 'google-news',
+        fetchedAt: new Date().toISOString(),
       },
     };
   }
