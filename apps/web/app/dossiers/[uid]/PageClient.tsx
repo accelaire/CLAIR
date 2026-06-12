@@ -6,13 +6,13 @@ import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   FileText, Calendar, Vote, CheckCircle, XCircle, ExternalLink,
-  ArrowLeft, ArrowRight, Loader2, Scale, ChevronDown, ChevronUp, X, Users, Layers, BookOpen, Gavel, Filter,
+  ArrowLeft, ArrowRight, Loader2, Scale, ChevronDown, X, Users, Layers, BookOpen, Gavel, Filter,
 } from 'lucide-react';
 import { FilterBar } from '@/components/FilterBar';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
-import { AmendementSortBadge } from '@/components/AmendementSortBadge';
 import { LoiPromulgueeCard } from '@/components/LoiPromulgueeCard';
+import { ExpandableAmendementCard } from '@/components/ExpandableAmendementCard';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,6 +35,7 @@ interface DossierAmendement {
   articleVise: string | null;
   dispositif: string | null;
   exposeSommaire: string | null;
+  texteRef: string | null;
   sort: string | null;
   dateDepot: string | null;
   scrutins: AmendementScrutin[];
@@ -136,114 +137,6 @@ const formatDossierTitre = (titre: string, procedureLibelle?: string | null): st
   }
   return titre;
 };
-
-/** Strip HTML tags for plain text display */
-const stripHtml = (html: string): string =>
-  html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\r\n/g, '\n').trim();
-
-// ---------------------------------------------------------------------------
-// Sub-components (same pattern as parlementaire page)
-// ---------------------------------------------------------------------------
-
-function ExpandableAmendementCard({ amendement }: { amendement: DossierAmendement }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  const exposeText = amendement.exposeSommaire ? stripHtml(amendement.exposeSommaire) : null;
-  const dispositifText = amendement.dispositif ? stripHtml(amendement.dispositif) : null;
-  const hasLongContent =
-    (exposeText && exposeText.length > 200) || dispositifText;
-
-  return (
-    <div className="rounded-lg border bg-card p-4">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="font-mono text-sm font-medium">
-              n&deg;{amendement.numero}
-            </span>
-            {amendement.articleVise && (
-              <span className="text-sm text-muted-foreground">
-                &bull; {amendement.articleVise}
-              </span>
-            )}
-          </div>
-
-          {amendement.auteurLibelle && (
-            <p className="text-sm text-muted-foreground line-clamp-1 mb-2">{amendement.auteurLibelle}</p>
-          )}
-
-          {/* Expose sommaire - visible in header, line-clamped */}
-          {exposeText && (
-            <div className="mb-2">
-              <p className={`text-sm leading-relaxed ${!isExpanded ? 'line-clamp-3' : ''}`}>
-                {exposeText}
-              </p>
-            </div>
-          )}
-
-          {/* Dispositif (visible uniquement si expanded) */}
-          {isExpanded && dispositifText && (
-            <div className="mt-3 rounded bg-muted/50 p-3">
-              <p className="text-xs font-medium text-muted-foreground mb-1">Dispositif :</p>
-              <p className="text-sm leading-relaxed whitespace-pre-line">{dispositifText}</p>
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mt-2">
-            {amendement.dateDepot && (
-              <span>
-                Déposé le {formatDateShort(amendement.dateDepot)}
-              </span>
-            )}
-          </div>
-
-        </div>
-        <div className="flex flex-col items-end gap-2 flex-shrink-0">
-          <AmendementSortBadge sort={amendement.sort} />
-          {/* Lien vers le scrutin si l'amendement a ete vote */}
-          {amendement.scrutins && amendement.scrutins.length > 0 && (
-            <div className="flex flex-col items-end gap-1">
-              {amendement.scrutins.map((s) => (
-                <Link
-                  key={s.id}
-                  href={`/scrutins/${s.numero}?chambre=${s.chambre || 'assemblee'}${s.chambre === 'senat' && s.session ? `&session=${s.session}` : ''}`}
-                  className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 hover:underline w-fit"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <span className="hidden sm:inline">Voir le vote n&deg;{s.numero}</span>
-                  <span className="sm:hidden">Vote n&deg;{s.numero}</span>
-                  <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Bouton expand/collapse */}
-      {hasLongContent && (
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="mt-3 flex items-center gap-1 text-xs text-primary hover:underline"
-        >
-          {isExpanded ? (
-            <>
-              <ChevronUp className="h-3 w-3" />
-              Réduire
-            </>
-          ) : (
-            <>
-              <ChevronDown className="h-3 w-3" />
-              Voir plus
-            </>
-          )}
-        </button>
-      )}
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Page
@@ -713,7 +606,7 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
             <>
               <div className="space-y-4">
                 {displayedAmendements.map((a) => (
-                  <ExpandableAmendementCard key={a.id} amendement={a} />
+                  <ExpandableAmendementCard key={a.id} amendement={a} showAuteur />
                 ))}
               </div>
 
