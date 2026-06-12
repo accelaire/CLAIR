@@ -295,15 +295,24 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
         // Build voted filter (uses EXISTS subquery - performant)
         const votedFilter = votedOnly ? { scrutins: { some: {} } } : {};
 
+        const parlWhere = {
+          OR: [
+            { parlementaireId: parlementaire.id },
+            { cosignataires: { some: { id: parlementaire.id } } },
+          ],
+          ...(sort && { sort }),
+          ...dateFilter,
+          ...votedFilter,
+        };
+
         const [amendements, total] = await Promise.all([
           fastify.prisma.amendement.findMany({
-            where: {
-              parlementaireId: parlementaire.id,
-              ...(sort && { sort }),
-              ...dateFilter,
-              ...votedFilter,
-            },
-            orderBy: { dateDepot: 'desc' },
+            where: parlWhere,
+            orderBy: [
+              { dateDepot: { sort: 'desc', nulls: 'last' } },
+              { dossierId: 'asc' },
+              { numeroOrdre: { sort: 'desc', nulls: 'last' } },
+            ],
             skip,
             take: limit,
             select: {
@@ -320,18 +329,18 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
               sort: true,
               dateDepot: true,
               dateSort: true,
-              // Inclure les scrutins où cet amendement a été voté
               scrutins: {
                 select: {
                   id: true,
                   numero: true,
+                  chambre: true,
+                  session: true,
                   titre: true,
                   date: true,
                   sort: true,
                 },
-                take: 1, // Généralement un seul scrutin par amendement
+                take: 1,
               },
-              // Dossier législatif associé
               dossier: {
                 select: {
                   uid: true,
@@ -342,12 +351,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
             },
           }),
           fastify.prisma.amendement.count({
-            where: {
-              parlementaireId: parlementaire.id,
-              ...(sort && { sort }),
-              ...dateFilter,
-              ...votedFilter,
-            },
+            where: parlWhere,
           }),
         ]);
 
