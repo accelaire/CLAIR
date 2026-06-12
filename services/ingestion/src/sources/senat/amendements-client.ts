@@ -53,6 +53,7 @@ export interface TransformedAmendementSenat {
   texteRef: string | null;
   sourceUrl: string | null;
   articleVise?: string | null;
+  cosignatairesMatricules: string[];
 }
 
 // =============================================================================
@@ -106,6 +107,15 @@ function stripHtml(html: string | null): string | null {
   // Trim each line
   text = text.split('\n').map(line => line.trim()).join('\n');
   return text.trim();
+}
+
+/**
+ * Normalise un numéro d'amendement Sénat pour la jointure AMELI ↔ CSV.
+ * AMELI stocke le numéro de base (la rectification est dans un champ `rev` séparé),
+ * le CSV inclut le suffixe ("4 rect.", "77 rect. bis") → on retire tout à partir de " rect".
+ */
+export function normalizeSenatNumero(numero: string): string {
+  return numero.replace(/\s+rect\b.*$/i, '').trim();
 }
 
 function parseDate(dateStr: string | null): Date | null {
@@ -434,6 +444,9 @@ export class SenatAmendementsClient {
           auteurLibelle,
           texteRef: amd.texteId ? `SENAT-TXT-${amd.texteId}` : null,
           sourceUrl: amd.numero ? `https://www.senat.fr/amendements/${amd.numero}.html` : null,
+          cosignatairesMatricules: amd.auteurs.slice(1)
+            .map(a => a.matricule)
+            .filter((m): m is string => !!m),
         });
       }
 
@@ -446,17 +459,35 @@ export class SenatAmendementsClient {
   }
 
   // ===========================================================================
-  // TEXTE MAPPING (AMELI lightweight parse)
+  // AMELI MAPPINGS (lightweight parse: textes + cosignataires)
   // ===========================================================================
 
   /**
-   * Parse AMELI dump to extract texteId → { num (externe), session } mapping.
-   * Only reads `ses` and `txt_ameli` tables — much lighter than full parse.
+   * Parse AMELI dump to extract:
+   * - texteMapping: texteId → { num (externe), session }
+   * - cosignatairesByKey: `${session}/${texteNum}:${numeroAmendement}` → matricules cosignataires
+   *
+   * Single pass over the dump. Table order in the dump is alphabetical
+   * (amd → amdsen → sen_ameli → ses → txt_ameli), so amdsen links can be
+   * filtered against retained amd ids inline, but ses/txt_ameli resolution
+   * happens after the loop. Much lighter than the full parse (no dispositif/objet).
    */
-  async getTexteMapping(): Promise<Map<number, { num: string; session: string }>> {
+  async getAmeliMappings(options: { minYear?: number } = {}): Promise<{
+    texteMapping: Map<number, { num: string; session: string }>;
+    cosignatairesByKey: Map<string, string[]>;
+  }> {
     const tempDir = path.join(os.tmpdir(), 'clair-ameli-mapping');
     const zipPath = path.join(tempDir, 'ameli.zip');
     const extractDir = path.join(tempDir, 'extracted');
+
+    const minYear = options.minYear ?? (new Date().getFullYear() - 3);
+    const minDate = new Date(minYear, 0, 1);
+
+    const amdMap = new Map<number, { txtid: number; numero: string }>();
+    const amdSenLinks: Array<{ amdId: number; senId: number; rang: number }> = [];
+    const senMatriculeMap = new Map<number, string>();
+    const sesMap = new Map<number, string>(); // sesId → session label (e.g. "2025-2026")
+    const texteMapping = new Map<number, { num: string; session: string }>();
 
     try {
       await fs.promises.rm(tempDir, { recursive: true, force: true });
@@ -464,10 +495,6 @@ export class SenatAmendementsClient {
 
       await this.downloadFile(this.dataUrl, zipPath);
       const sqlPath = await this.extractZip(zipPath, extractDir);
-
-      // Parse only ses + txt_ameli tables
-      const sesMap = new Map<number, string>(); // sesId → session label (e.g. "2025-2026")
-      const texteMap = new Map<number, { num: string; session: string }>();
 
       const rl = readline.createInterface({
         input: createReadStream(sqlPath, { encoding: 'latin1' }),
@@ -482,7 +509,7 @@ export class SenatAmendementsClient {
           if (match) currentTable = match[1] ?? null;
           continue;
         }
-        if (line === '\\.' || line === '\\.') {
+        if (line === '\\.') {
           currentTable = null;
           continue;
         }
@@ -491,6 +518,40 @@ export class SenatAmendementsClient {
         const fields = line.split('\t');
 
         try {
+          // amd table: id(0), ..., txtid(10), ..., num(15), ..., datdep(20)
+          // Seuls les amendements récents sont retenus (filtre mémoire)
+          if (currentTable === 'amd') {
+            if (fields.length < 21) continue;
+            const id = parseInt(fields[0] ?? '0', 10);
+            const txtid = parseInt(fields[10] ?? '0', 10);
+            const num = (fields[15] ?? '').trim();
+            const datdep = (fields[20] ?? '') !== '\\N' ? (fields[20] ?? null) : null;
+            const dateDepot = parseDate(datdep);
+            if (dateDepot && dateDepot >= minDate) {
+              amdMap.set(id, { txtid, numero: num });
+            }
+          }
+
+          // amdsen table: amdid(0), senid(1), rng(2) — seulement pour les amd retenus
+          if (currentTable === 'amdsen') {
+            if (fields.length < 8) continue;
+            const amdId = parseInt(fields[0] ?? '0', 10);
+            if (!amdMap.has(amdId)) continue;
+            const senId = parseInt(fields[1] ?? '0', 10);
+            const rang = parseInt(fields[2] ?? '0', 10) || 0;
+            amdSenLinks.push({ amdId, senId, rang });
+          }
+
+          // sen_ameli table: entid(0), ..., mat(4)
+          if (currentTable === 'sen_ameli') {
+            if (fields.length < 8) continue;
+            const entId = parseInt(fields[0] ?? '0', 10);
+            const mat = (fields[4] ?? '').trim();
+            if (mat && mat !== '\\N') {
+              senMatriculeMap.set(entId, mat);
+            }
+          }
+
           // ses table: id, typid, ann, lil
           if (currentTable === 'ses') {
             if (fields.length < 4) continue;
@@ -510,7 +571,7 @@ export class SenatAmendementsClient {
             if (id && num && num !== '\\N') {
               const session = sesMap.get(sesinsid);
               if (session) {
-                texteMap.set(id, { num, session });
+                texteMapping.set(id, { num, session });
               }
             }
           }
@@ -519,12 +580,69 @@ export class SenatAmendementsClient {
         }
       }
 
-      logger.info({ sessions: sesMap.size, textes: texteMap.size }, 'AMELI texte mapping extracted');
-      return texteMap;
+      // Grouper les liens par amendement
+      const linksByAmd = new Map<number, Array<{ amdId: number; senId: number; rang: number }>>();
+      for (const link of amdSenLinks) {
+        const list = linksByAmd.get(link.amdId);
+        if (list) {
+          list.push(link);
+        } else {
+          linksByAmd.set(link.amdId, [link]);
+        }
+      }
+
+      // Produire les cosignataires par clé session/texteNum:numero
+      // En cas de collision (même numero sur plusieurs lectures), garder le txtid
+      // le plus grand (lecture la plus récente, cohérent avec le dedup du CSV sync)
+      const keyMaxTxtid = new Map<string, { txtid: number; cosignataires: string[] }>();
+
+      for (const [amdId, amdData] of amdMap) {
+        const links = linksByAmd.get(amdId);
+        if (!links || links.length === 0) continue;
+        if (!amdData.numero) continue;
+
+        const texte = texteMapping.get(amdData.txtid);
+        if (!texte) continue;
+
+        // Retirer l'auteur principal (rang le plus bas), mapper les senId → matricules
+        const sorted = [...links].sort((a, b) => a.rang - b.rang);
+        const matricules = sorted.slice(1)
+          .map(link => senMatriculeMap.get(link.senId))
+          .filter((m): m is string => !!m);
+        if (matricules.length === 0) continue;
+
+        const key = `${texte.session}/${texte.num}:${normalizeSenatNumero(amdData.numero)}`;
+        const existing = keyMaxTxtid.get(key);
+        if (!existing || amdData.txtid > existing.txtid) {
+          keyMaxTxtid.set(key, { txtid: amdData.txtid, cosignataires: matricules });
+        }
+      }
+
+      const cosignatairesByKey = new Map<string, string[]>();
+      for (const [key, { cosignataires }] of keyMaxTxtid) {
+        cosignatairesByKey.set(key, cosignataires);
+      }
+
+      logger.info({
+        sessions: sesMap.size,
+        textes: texteMapping.size,
+        amendementsRetenus: amdMap.size,
+        clesCosignataires: cosignatairesByKey.size,
+      }, 'AMELI mappings extracted');
+
+      return { texteMapping, cosignatairesByKey };
 
     } finally {
       await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
+  }
+
+  /**
+   * Wrapper autour de getAmeliMappings, ne conserve que le mapping des textes.
+   */
+  async getTexteMapping(): Promise<Map<number, { num: string; session: string }>> {
+    const { texteMapping } = await this.getAmeliMappings();
+    return texteMapping;
   }
 
   // ===========================================================================
@@ -668,6 +786,7 @@ export class SenatAmendementsClient {
           texteRef: `SENAT-TXT-${texteId}`,
           sourceUrl,
           articleVise: subdivision,
+          cosignatairesMatricules: [],
         });
       }
 
