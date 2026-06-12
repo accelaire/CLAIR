@@ -3033,7 +3033,7 @@ export async function syncAmendements(
 
   const parlementaires = await prisma.parlementaire.findMany({
     where: { chambre: 'assemblee' },
-    select: { id: true, nom: true, prenom: true }
+    select: { id: true, nom: true, prenom: true, sourceId: true }
   });
 
   const normalize = (s: string) => s.toLowerCase()
@@ -3041,8 +3041,10 @@ export async function syncAmendements(
     .replace(/-/g, ' ').replace(/'/g, ' ').trim();
 
   const parlementaireNameMap = new Map<string, string>();
+  const parlementaireByRef = new Map<string, string>();
   for (const p of parlementaires) {
     parlementaireNameMap.set(normalize(p.nom), p.id);
+    if (p.sourceId) parlementaireByRef.set(p.sourceId, p.id);
     const parts = p.nom.trim().split(/\s+/);
     if (parts.length > 1) {
       const lastName = parts[parts.length - 1];
@@ -3082,6 +3084,8 @@ export async function syncAmendements(
           where: { uid: transformed.uid },
         });
 
+        const numeroOrdre = parseInt(transformed.numero.replace(/[^0-9]/g, ''), 10) || null;
+
         const data = {
           uid: transformed.uid,
           numero: transformed.numero,
@@ -3098,6 +3102,7 @@ export async function syncAmendements(
           sort: transformed.sort,
           dateDepot: transformed.dateDepot,
           dateSort: transformed.dateSort,
+          numeroOrdre,
         };
 
         if (existing) {
@@ -3109,6 +3114,19 @@ export async function syncAmendements(
         } else {
           await prisma.amendement.create({ data });
           created++;
+        }
+
+        // Lier les cosignataires
+        if (transformed.cosignatairesRefs.length > 0) {
+          const cosignataireIds = transformed.cosignatairesRefs
+            .map(ref => parlementaireByRef.get(ref))
+            .filter((id): id is string => !!id);
+          if (cosignataireIds.length > 0) {
+            await prisma.amendement.update({
+              where: { uid: transformed.uid },
+              data: { cosignataires: { set: cosignataireIds.map(id => ({ id })) } },
+            });
+          }
         }
 
         if (parlementaireId) linked++;
@@ -3204,6 +3222,8 @@ export async function syncAmendementsSenat(
           where: { uid: amd.uid },
         });
 
+        const numeroOrdre = parseInt(amd.numero.replace(/[^0-9]/g, ''), 10) || null;
+
         const data = {
           uid: amd.uid,
           numero: amd.numero,
@@ -3220,6 +3240,7 @@ export async function syncAmendementsSenat(
           sort: amd.sort,
           dateDepot: amd.dateDepot,
           dateSort: null,
+          numeroOrdre,
         };
 
         if (existing) {
@@ -3231,6 +3252,19 @@ export async function syncAmendementsSenat(
         } else {
           await prisma.amendement.create({ data });
           created++;
+        }
+
+        // Lier les cosignataires
+        if (amd.cosignatairesMatricules.length > 0) {
+          const cosignataireIds = amd.cosignatairesMatricules
+            .map(m => parlementaireByMatricule.get(m))
+            .filter((id): id is string => !!id);
+          if (cosignataireIds.length > 0) {
+            await prisma.amendement.update({
+              where: { uid: amd.uid },
+              data: { cosignataires: { set: cosignataireIds.map(id => ({ id })) } },
+            });
+          }
         }
 
         if (parlementaireId) linked++;
@@ -3255,16 +3289,17 @@ export async function syncAmendementsSenat(
 export async function syncAmendementsSenatCsv(
   options: { minYear?: number; texteIds?: number[]; } = {}
 ): Promise<{ created: number; updated: number; linked: number; texteMapping?: Map<number, { num: string; session: string }> }> {
-  const { SenatAmendementsClient } = await import('../sources/senat/amendements-client.js');
+  const { SenatAmendementsClient, normalizeSenatNumero } = await import('../sources/senat/amendements-client.js');
 
   logger.info({ options }, 'Starting amendements Sénat CSV sync...');
 
   const client = new SenatAmendementsClient();
 
-  // 1. Get texte mapping from AMELI (texteId → { num, session })
-  logger.info('Fetching AMELI texte mapping...');
-  const texteMapping = await client.getTexteMapping();
-  logger.info({ textes: texteMapping.size }, 'Texte mapping loaded');
+  // 1. Get AMELI mappings: texteId → { num, session } + cosignataires par amendement
+  // (un seul téléchargement du dump pour les deux)
+  logger.info('Fetching AMELI mappings...');
+  const { texteMapping, cosignatairesByKey } = await client.getAmeliMappings();
+  logger.info({ textes: texteMapping.size, clesCosignataires: cosignatairesByKey.size }, 'AMELI mappings loaded');
 
   // 2. Determine which textes to fetch
   let texteIds: number[];
@@ -3343,6 +3378,7 @@ export async function syncAmendementsSenatCsv(
   let created = 0;
   let updated = 0;
   let linked = 0;
+  let cosignatairesLinked = 0;
   let totalAmendements = 0;
   const chambre = 'senat';
 
@@ -3384,12 +3420,15 @@ export async function syncAmendementsSenatCsv(
 
       const texteRef = `SENAT-TXT-${texte.texteId}`;
 
-      // 1. Fetch ALL existing amendments for this texte in ONE query
+      // 1. Fetch ALL existing amendments in ONE query — lookup par uid (stable).
+      // Pas par texteRef : le texteId canonique avance quand une nouvelle lecture
+      // arrive, le lookup par texteRef ratait alors les rows existantes (update
+      // silencieusement sauté via skipDuplicates, texteRef jamais rafraîchi).
       const existingAmds = await prisma.amendement.findMany({
-        where: { chambre, texteRef },
-        select: { id: true, numero: true },
+        where: { uid: { in: amendments.map(a => a.uid) } },
+        select: { id: true, uid: true },
       });
-      const existingByNumero = new Map(existingAmds.map(a => [a.numero, a.id]));
+      const existingByUid = new Map(existingAmds.map(a => [a.uid, a.id]));
 
       // 2. Partition into creates and updates
       const toCreate: Array<{
@@ -3398,12 +3437,15 @@ export async function syncAmendementsSenatCsv(
         auteurLibelle: string | null; texteRef: string; articleVise: string | null;
         dispositif: string | null; exposeSommaire: string | null; sort: string | null;
         dateDepot: Date | null; dateSort: Date | null; sourceUrl: string | null;
+        numeroOrdre: number | null;
       }> = [];
       const toUpdate: Array<{ id: string; data: Record<string, unknown> }> = [];
 
       for (const amd of amendments) {
         const parlementaireId = resolveParlementaire(amd);
         if (parlementaireId) linked++;
+
+        const numeroOrdre = parseInt(amd.numero.replace(/[^0-9]/g, ''), 10) || null;
 
         const data = {
           numero: amd.numero,
@@ -3421,9 +3463,10 @@ export async function syncAmendementsSenatCsv(
           dateDepot: amd.dateDepot,
           dateSort: null as Date | null,
           sourceUrl: amd.sourceUrl,
+          numeroOrdre,
         };
 
-        const existingId = existingByNumero.get(amd.numero);
+        const existingId = existingByUid.get(amd.uid);
         if (existingId) {
           toUpdate.push({ id: existingId, data });
         } else {
@@ -3455,6 +3498,49 @@ export async function syncAmendementsSenatCsv(
         updated += toUpdate.length;
       }
 
+      // 5. Lier les cosignataires (matricules AMELI → parlementaires) via la table pivot
+      const cosignRows: Array<{ uid: string; parlementaireIds: string[] }> = [];
+      for (const amd of amendments) {
+        const matricules = cosignatairesByKey.get(`${texte.session}/${texte.texteNum}:${normalizeSenatNumero(amd.numero)}`);
+        if (!matricules || matricules.length === 0) continue;
+        const ids = matricules
+          .map(m => parlementaireByMatricule.get(m))
+          .filter((id): id is string => !!id);
+        if (ids.length > 0) cosignRows.push({ uid: amd.uid, parlementaireIds: ids });
+      }
+
+      if (cosignRows.length > 0) {
+        // Résoudre les ids DB (inclut les créations du batch ci-dessus)
+        const amdRecords = await prisma.amendement.findMany({
+          where: { uid: { in: cosignRows.map(r => r.uid) } },
+          select: { id: true, uid: true },
+        });
+        const idByUid = new Map(amdRecords.map(a => [a.uid, a.id]));
+
+        const pairs: Array<[string, string]> = [];
+        for (const row of cosignRows) {
+          const amendementId = idByUid.get(row.uid);
+          if (!amendementId) continue;
+          for (const pid of row.parlementaireIds) pairs.push([amendementId, pid]);
+        }
+
+        if (pairs.length > 0) {
+          // Reset puis insert (idempotent, gère les retraits de cosignataires)
+          const amendementIds = Array.from(new Set(pairs.map(p => p[0])));
+          await prisma.$executeRaw`DELETE FROM "_AmendementCosignataires" WHERE "A" IN (${Prisma.join(amendementIds)})`;
+          const PAIR_CHUNK = 1000;
+          for (let i = 0; i < pairs.length; i += PAIR_CHUNK) {
+            const chunk = pairs.slice(i, i + PAIR_CHUNK);
+            await prisma.$executeRaw`
+              INSERT INTO "_AmendementCosignataires" ("A", "B")
+              VALUES ${Prisma.join(chunk.map(([a, b]) => Prisma.sql`(${a}, ${b})`))}
+              ON CONFLICT DO NOTHING
+            `;
+          }
+          cosignatairesLinked += pairs.length;
+        }
+      }
+
       totalAmendements += amendments.length;
     } catch (error: any) {
       logger.warn({ texteId: texte.texteId, error: error.message }, 'Error processing texte CSV');
@@ -3468,7 +3554,7 @@ export async function syncAmendementsSenatCsv(
     }
   }
 
-  logger.info({ created, updated, linked, totalAmendements }, 'Amendements Sénat CSV sync completed');
+  logger.info({ created, updated, linked, cosignatairesLinked, totalAmendements }, 'Amendements Sénat CSV sync completed');
   return { created, updated, linked, texteMapping };
 }
 

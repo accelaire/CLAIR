@@ -236,6 +236,7 @@ export class AssembleeNationaleClient {
     sort: string | null;
     dateDepot: Date | null;
     dateSort: Date | null;
+    cosignatairesRefs: string[];
   } {
     // Decode HTML entities helper
     const decodeHtmlEntities = (text: string): string => {
@@ -322,6 +323,11 @@ export class AssembleeNationaleClient {
         || raw.cycleDeVie?.etatDesTraitements?.etat?.libelle || null,
       dateDepot: safeDate(raw.cycleDeVie?.dateDepot),
       dateSort: safeDate(raw.cycleDeVie?.dateSort),
+      cosignatairesRefs: (() => {
+        const refs = raw.signataires?.cosignataires?.acteurRef;
+        if (!refs) return [];
+        return Array.isArray(refs) ? refs.filter((r): r is string => typeof r === 'string') : typeof refs === 'string' ? [refs] : [];
+      })(),
     };
   }
 }

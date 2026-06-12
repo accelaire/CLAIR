@@ -334,7 +334,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
             },
           },
           amendements: {
-            orderBy: [{ dateDepot: 'desc' }, { numero: 'asc' }],
+            orderBy: [{ dateDepot: { sort: 'desc', nulls: 'last' } }, { numeroOrdre: { sort: 'desc', nulls: 'last' } }],
             take: 20,
             select: {
               id: true,
@@ -344,6 +344,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
               articleVise: true,
               dispositif: true,
               exposeSommaire: true,
+              texteRef: true,
               sort: true,
               dateDepot: true,
               scrutins: {
@@ -572,7 +573,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
       const [amendements, total] = await Promise.all([
         fastify.prisma.amendement.findMany({
           where,
-          orderBy: [{ dateDepot: 'desc' }, { numero: 'asc' }],
+          orderBy: [{ dateDepot: { sort: 'desc', nulls: 'last' } }, { numeroOrdre: { sort: 'desc', nulls: 'last' } }],
           skip,
           take: limit,
           select: {
@@ -583,6 +584,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
             articleVise: true,
             dispositif: true,
             exposeSommaire: true,
+            texteRef: true,
             sort: true,
             dateDepot: true,
             scrutins: {

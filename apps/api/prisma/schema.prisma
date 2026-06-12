@@ -70,7 +70,8 @@ model Parlementaire {
   // Relations
   votes         Vote[]
   interventions Intervention[]
-  amendements   Amendement[]
+  amendements          Amendement[]
+  amendementsCoSignes  Amendement[] @relation("AmendementCosignataires")
   actionsLobby  ActionLobby[]
   mandats       Mandat[]
   declarations  DeclarationHATVP[]
@@ -709,6 +710,12 @@ model Amendement {
   // URL source de l'amendement (ex: page senat.fr)
   sourceUrl String? @map("source_url")
 
+  // Ordre numérique extrait du numéro (pour tri naturel)
+  numeroOrdre Int? @map("numero_ordre")
+
+  // Co-signataires (M:N)
+  cosignataires Parlementaire[] @relation("AmendementCosignataires")
+
   // Scrutins portant sur cet amendement
   scrutins  Scrutin[]
 
@@ -723,6 +730,7 @@ model Amendement {
   @@index([dossierId])
   @@index([numero, chambre, texteRef])
   @@index([chambre, texteRef, numero])
+  @@index([numeroOrdre])
   @@map("amendements")
 }
 
