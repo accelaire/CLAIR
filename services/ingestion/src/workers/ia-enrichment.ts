@@ -37,6 +37,8 @@ export interface EnrichmentOptions {
   dryRun?: boolean;
   concurrency?: number;
   force?: boolean;
+  /** Parlementaires only: regenerate a random sample of N active fiches (ORDER BY random()). */
+  randomSample?: number;
 }
 
 // =============================================================================

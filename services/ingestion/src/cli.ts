@@ -776,6 +776,7 @@ program
   .option('--sujets', 'Enrichir uniquement les sujets')
   .option('--parlementaires', 'Enrichir uniquement les fiches parlementaires (Wikipedia + Tavily + Mistral)')
   .option('--groupe-amendements', 'Enrichir les descriptions d\'amendements par groupe pour les sujets')
+  .option('--random <number>', 'Parlementaires uniquement : régénérer un échantillon aléatoire de N fiches actives (rafraîchit aussi la date)', parseInt)
   .option('-l, --limit <number>', 'Nombre max d\'entités à traiter', parseInt)
   .option('--dry-run', 'Mode simulation (calcule mais n\'écrit pas)')
   .option('--force', 'Ignorer le hash, regénérer tout')
@@ -789,10 +790,12 @@ program
         dryRun: options.dryRun,
         force: options.force,
         concurrency: options.concurrency,
+        randomSample: options.random,
       };
 
+      // --random cible exclusivement les parlementaires (pas de cascade complète)
       // Sans flag spécifique → cascade complète : scrutins → dossiers → sujets → parlementaires
-      const enrichAll = !options.scrutins && !options.dossiers && !options.sujets && !options.parlementaires && !options.groupeAmendements;
+      const enrichAll = !options.scrutins && !options.dossiers && !options.sujets && !options.parlementaires && !options.groupeAmendements && options.random == null;
 
       if (options.scrutins || enrichAll) {
         const { enrichScrutinsIA } = await import('./workers/ia-enrichment.js');
@@ -834,7 +837,7 @@ program
         console.log(`   Tokens IN: ${result.totalTokensIn} | OUT: ${result.totalTokensOut}`);
       }
 
-      if (options.parlementaires || enrichAll) {
+      if (options.parlementaires || options.random != null || enrichAll) {
         const { enrichParlementairesIA } = await import('./workers/parlementaire-enrichment.js');
         const result = await enrichParlementairesIA(enrichOptions);
         console.log(`\n📊 Enrichissement IA des parlementaires${options.dryRun ? ' (DRY RUN)' : ''}:`);

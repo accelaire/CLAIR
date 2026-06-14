@@ -3,7 +3,7 @@
 // Pipeline : DB stats + mandats sourceData + HATVP declarations + Wikipedia + Tavily → Mistral → DB
 // =============================================================================
 
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import pLimit from 'p-limit';
 import { CLAIRMistralClient } from '../llm/mistral-client.js';
 import { computeContentHash } from '../llm/content-hash.js';
@@ -137,7 +137,7 @@ function extractMandatsSenat(sourceData: any): ExtractedMandat[] {
 export async function enrichParlementairesIA(
   options: EnrichmentOptions = {}
 ): Promise<EnrichmentResult> {
-  const { limit, dryRun = false, concurrency = 2, force = false } = options;
+  const { limit, dryRun = false, concurrency = 2, force = false, randomSample } = options;
 
   const result: EnrichmentResult = {
     enriched: 0, skipped: 0, errors: 0, totalTokensIn: 0, totalTokensOut: 0,
@@ -157,18 +157,29 @@ export async function enrichParlementairesIA(
     'Starting parlementaires IA enrichment...'
   );
 
-  // Only enrich active parlementaires (or all if force)
-  const where = force
+  // bypassHash: with --force or --random we regenerate regardless of content hash,
+  // which also refreshes iaGeneratedAt (the "mise à jour" date shown on the public fiche).
+  const bypassHash = force || randomSample != null;
+
+  // Optional random sample: pick N active parlementaires at random (ORDER BY random()),
+  // so repeated runs spread coverage instead of always re-hitting the same alphabetical head.
+  let sampleIds: string[] | null = null;
+  if (randomSample != null) {
+    const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM parlementaires WHERE actif = true ORDER BY random() LIMIT ${randomSample}
+    `;
+    sampleIds = rows.map((r) => r.id);
+    logger.info({ requested: randomSample, selected: sampleIds.length }, 'Random parlementaire sample selected');
+  }
+
+  // Default working set: new fiches only (or all active with --force).
+  const baseWhere: Prisma.ParlementaireWhereInput = force
     ? { actif: true }
     : { actif: true, resumeIA: null };
 
-  let remaining = limit ?? Infinity;
-
-  while (remaining > 0) {
-    const take = Math.min(BATCH_SIZE, remaining);
-    // No cursor pagination: enriched items drop out of the where filter (resumeIA: null → not null),
-    // so we always take from the top. With --force, use offset-based pagination.
-    const parlementaires = await prisma.parlementaire.findMany({
+  // Single source of truth for the projection — ParlRecord is inferred from this select.
+  async function fetchBatch(where: Prisma.ParlementaireWhereInput, take: number) {
+    return prisma.parlementaire.findMany({
       where,
       select: {
         id: true,
@@ -195,10 +206,10 @@ export async function enrichParlementairesIA(
       orderBy: [{ chambre: 'asc' }, { nom: 'asc' }],
       take,
     });
+  }
+  type ParlRecord = Awaited<ReturnType<typeof fetchBatch>>[number];
 
-    if (parlementaires.length === 0) break;
-
-    const tasks = parlementaires.map(parl =>
+  const processParl = (parl: ParlRecord) =>
       limiter(async () => {
         try {
           // Extract mandats from sourceData
@@ -240,7 +251,7 @@ export async function enrichParlementairesIA(
           ];
           const contentHash = computeContentHash(...hashParts);
 
-          if (!force && parl.iaContentHash === contentHash) {
+          if (!bypassHash && parl.iaContentHash === contentHash) {
             result.skipped++;
             return;
           }
@@ -380,17 +391,31 @@ export async function enrichParlementairesIA(
             'Failed to enrich parlementaire'
           );
         }
-      })
-    );
+      });
 
-    await Promise.all(tasks);
-    remaining -= parlementaires.length;
-
-    if (parlementaires.length < take) break;
-    logger.info(
-      { batch: result.enriched + result.skipped + result.errors },
-      'Parlementaires batch processed'
-    );
+  // Run the per-parlementaire enrichment over the chosen working set.
+  if (sampleIds) {
+    for (let off = 0; off < sampleIds.length; off += BATCH_SIZE) {
+      const chunk = sampleIds.slice(off, off + BATCH_SIZE);
+      const records = await fetchBatch({ id: { in: chunk } }, chunk.length);
+      await Promise.all(records.map(processParl));
+      logger.info(
+        { processed: Math.min(off + BATCH_SIZE, sampleIds.length), total: sampleIds.length },
+        'Random sample batch processed'
+      );
+    }
+  } else {
+    // Cursor-free pagination: enriched rows drop out of `resumeIA: null`, so we re-take
+    // from the top each batch (the legacy behaviour for the non-sample path).
+    let remaining = limit ?? Infinity;
+    while (remaining > 0) {
+      const take = Math.min(BATCH_SIZE, remaining);
+      const records = await fetchBatch(baseWhere, take);
+      if (records.length === 0) break;
+      await Promise.all(records.map(processParl));
+      remaining -= records.length;
+      if (records.length < take) break;
+    }
   }
 
   result.totalTokensIn = mistral.totalTokensIn;
