@@ -255,7 +255,7 @@ export default function MethodologiePage() {
       </div>
 
       {/* Enrichissement IA */}
-      <div className="mx-auto mt-16 max-w-4xl">
+      <div id="enrichissement-ia" className="mx-auto mt-16 max-w-4xl scroll-mt-20">
         <h2 className="flex items-center gap-2 text-2xl font-bold">
           <Sparkles className="h-6 w-6" />
           Enrichissement par intelligence artificielle
@@ -301,6 +301,18 @@ export default function MethodologiePage() {
                 <strong>Résumés de sujets parlementaires</strong> : Les sujets transversaux
                 regroupant plusieurs dossiers bénéficient d&apos;une synthèse globale.
               </li>
+              <li>
+                <strong>Fiches de parlementaires</strong> : Chaque député et sénateur dispose
+                d&apos;une fiche de synthèse (résumé, parcours, positions clés, faits notables)
+                rédigée à partir de ses données officielles (mandats, statistiques de votes et
+                d&apos;interventions, déclarations HATVP) complétées par des sources publiques
+                (Wikipédia, articles de presse).
+              </li>
+              <li>
+                <strong>Positions des groupes par sujet</strong> : Sur un sujet donné, l&apos;action
+                de chaque groupe politique est résumée à partir des amendements qu&apos;il a
+                effectivement déposés.
+              </li>
             </ul>
           </div>
 
@@ -308,8 +320,11 @@ export default function MethodologiePage() {
             <h3 className="font-semibold text-blue-800 dark:text-blue-400">Garanties de fiabilité</h3>
             <ul className="mt-4 space-y-2 text-sm text-blue-700 dark:text-blue-500">
               <li>
-                <strong>Données factuelles en entrée</strong> : L&apos;IA reçoit uniquement des données
-                officielles (titres, résultats de votes, positions des groupes) et non des opinions.
+                <strong>Données factuelles en entrée</strong> : Pour les résumés de scrutins, dossiers
+                et sujets, l&apos;IA reçoit uniquement des données officielles (titres, résultats de
+                votes, positions des groupes) et non des opinions. Les fiches de parlementaires
+                s&apos;appuient en complément sur des sources publiques (Wikipédia, articles de presse),
+                toujours signalées comme générées par IA.
               </li>
               <li>
                 <strong>Positions calculées, pas générées</strong> : Les positions des groupes politiques
