@@ -33,6 +33,7 @@ import {
   Shield,
   ScrollText,
   ExternalLink,
+  Info,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
@@ -806,7 +807,11 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
             <Sparkles className="h-5 w-5 text-amber-500" />
             <h2 className="text-xl font-semibold">Fiche parlementaire</h2>
             <span className="text-xs text-muted-foreground">
-              {senateur.iaGeneratedAt && `Mise à jour le ${new Date(senateur.iaGeneratedAt).toLocaleDateString('fr-FR')} - `}Généré par IA
+              {senateur.iaGeneratedAt && `Mise à jour le ${new Date(senateur.iaGeneratedAt).toLocaleDateString('fr-FR')} - `}
+              <Link href="/methodologie#enrichissement-ia" className="inline-flex items-center gap-1 align-baseline hover:underline">
+                <Info className="h-3 w-3" />
+                Généré par IA
+              </Link>
             </span>
           </div>
 

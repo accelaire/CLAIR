@@ -6,7 +6,7 @@ import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   ArrowLeft, ArrowRight, Vote, Loader2,
-  Layers, ExternalLink, Target, BookOpen, FileText, Newspaper, ChevronDown,
+  Layers, ExternalLink, Target, BookOpen, FileText, Newspaper, ChevronDown, Info,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
@@ -378,9 +378,13 @@ function ContextSection({ sujet, dossiers }: { sujet: SujetDetail; dossiers: Suj
             <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">{sujet.enjeux}</p>
           </div>
         )}
-        <p className="text-xs text-muted-foreground/60">
+        <Link
+          href="/methodologie#enrichissement-ia"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground/60 hover:text-muted-foreground hover:underline"
+        >
+          <Info className="h-3 w-3" />
           Résumé généré par IA
-        </p>
+        </Link>
       </div>,
     );
   }
@@ -854,6 +858,7 @@ function StatsPanel({ slug, dossiers }: { slug: string; dossiers: SujetDossier[]
 
   const groupeStats = statsData?.data ?? [];
   const groupeDescriptions = statsData?.groupeAmendementDescriptions ?? {};
+  const hasDescriptions = Object.keys(groupeDescriptions).length > 0;
 
   const sorted = useMemo(() => {
     let filtered = [...groupeStats];
@@ -972,6 +977,15 @@ function StatsPanel({ slug, dossiers }: { slug: string; dossiers: SujetDossier[]
           </div>
         )}
       </div>
+      {hasDescriptions && (
+        <Link
+          href="/methodologie#enrichissement-ia"
+          className="flex items-center gap-1 border-t px-4 py-2.5 text-xs text-muted-foreground/60 hover:text-muted-foreground hover:underline"
+        >
+          <Info className="h-3 w-3 flex-shrink-0" />
+          Descriptions des positions générées par IA
+        </Link>
+      )}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   FileText, Calendar, Vote, CheckCircle, XCircle, ExternalLink,
-  ArrowLeft, ArrowRight, Loader2, Scale, ChevronDown, X, Users, Layers, BookOpen, Gavel, Filter,
+  ArrowLeft, ArrowRight, Loader2, Scale, ChevronDown, X, Users, Layers, BookOpen, Gavel, Filter, Info,
 } from 'lucide-react';
 import { FilterBar } from '@/components/FilterBar';
 import { api } from '@/lib/api';
@@ -434,9 +434,13 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
           <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
             {dossier.resumeIA}
           </p>
-          <p className="text-xs text-muted-foreground/60 mt-2">
+          <Link
+            href="/methodologie#enrichissement-ia"
+            className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground/60 hover:text-muted-foreground hover:underline"
+          >
+            <Info className="h-3 w-3" />
             Résumé généré par IA
-          </p>
+          </Link>
         </div>
       )}
 

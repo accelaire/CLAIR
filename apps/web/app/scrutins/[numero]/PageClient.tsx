@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
-import { FileText, MessageSquare, Vote, ArrowLeft, BookOpen } from 'lucide-react';
+import { FileText, MessageSquare, Vote, ArrowLeft, BookOpen, Info } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import {
@@ -499,9 +499,13 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
           <p className="text-sm text-muted-foreground leading-relaxed">
             {scrutin.resumeIA}
           </p>
-          <p className="text-xs text-muted-foreground/60 mt-2">
+          <Link
+            href="/methodologie#enrichissement-ia"
+            className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground/60 hover:text-muted-foreground hover:underline"
+          >
+            <Info className="h-3 w-3" />
             Résumé généré par IA
-          </p>
+          </Link>
         </div>
       )}
 
