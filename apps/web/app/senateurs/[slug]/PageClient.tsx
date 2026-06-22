@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { AmendementSortBadge } from '@/components/AmendementSortBadge';
+import { FicheCompareCallout } from '@/components/FicheCompareCallout';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -26,9 +27,7 @@ import {
   ChevronDown,
   ChevronUp,
   Facebook,
-  Loader2,
-  GitCompareArrows,
-  AlertTriangle,
+  Loader2,  AlertTriangle,
   Sparkles,
   Shield,
   ScrollText,
@@ -625,15 +624,6 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
           <span className="flex-shrink-0">/</span>
           <span className="text-foreground font-medium truncate">{senateur.prenom} {senateur.nom}</span>
         </nav>
-
-        {/* Bouton Comparer */}
-        <Link
-          href={`/senateurs?compare=${senateur.slug}`}
-          className="inline-flex items-center gap-2 rounded-lg border-2 border-primary/20 bg-primary/5 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/10 hover:border-primary/40 transition-colors flex-shrink-0 self-start sm:self-auto"
-        >
-          <GitCompareArrows className="h-4 w-4" />
-          <span>Comparer avec un autre sénateur</span>
-        </Link>
       </div>
 
       {/* Header */}
@@ -803,6 +793,8 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
           </div>
         </div>
       )}
+
+      <FicheCompareCallout variant="parlementaire" chambre="senat" slug={senateur.slug} />
 
       {/* Fiche enrichie par IA */}
       {senateur.resumeIA && (

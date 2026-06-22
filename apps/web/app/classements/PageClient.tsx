@@ -1,7 +1,8 @@
 'use client';
 
-import { Suspense, useMemo } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   BarChart3,
@@ -123,13 +124,54 @@ function ParlementairesTab() {
     order: string;
     groupe: string;
     page: string;
-  }>(['chambre', 'sort', 'order', 'groupe', 'page'], {
+    highlight: string;
+    rank: string;
+  }>(['chambre', 'sort', 'order', 'groupe', 'page', 'highlight', 'rank'], {
     defaults: { sort: 'presence', order: 'desc', page: '1' },
   });
 
+  const searchParams = useSearchParams();
+  const rawPage = searchParams.get('page');
+
   const sort = filters.sort || 'presence';
   const order = filters.order || 'desc';
-  const page = Math.max(1, parseInt(filters.page || '1', 10));
+  const highlight = filters.highlight || undefined;
+  const rank = filters.rank ? parseInt(filters.rank, 10) : null;
+  // Page effective : param explicite > déduit du rang (deep-link) > 1
+  const page = rawPage
+    ? Math.max(1, parseInt(rawPage, 10))
+    : rank && rank > 0
+      ? Math.ceil(rank / PAGE_SIZE)
+      : 1;
+
+  // Deep-link depuis une fiche : highlight sans rank → on résout le rang via
+  // l'API (même tri que la liste) puis on écrit rank+page dans l'URL pour
+  // sauter sur la bonne page et déclencher le surlignage.
+  useEffect(() => {
+    if (!highlight || filters.rank) return;
+    let cancelled = false;
+    api
+      .get(`/parlementaires/${highlight}/rank`, {
+        params: {
+          sort,
+          order,
+          chambre: filters.chambre || undefined,
+          groupe: filters.groupe || undefined,
+        },
+      })
+      .then((res) => {
+        const resolved = res.data?.data?.rank as number | null | undefined;
+        if (!cancelled && resolved && resolved > 0) {
+          setFilters({ rank: String(resolved), page: String(Math.ceil(resolved / PAGE_SIZE)) });
+        }
+      })
+      .catch(() => {
+        /* slug hors classement : on reste sur la page courante, sans surlignage */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [highlight, filters.rank, sort, order, filters.chambre, filters.groupe, setFilters]);
 
   // Fetch parlementaires
   const { data: parlementairesData, isLoading } = useQuery<ParlementairesResponse>({
@@ -181,7 +223,8 @@ function ParlementairesTab() {
   const totalPages = parlementairesData?.meta.totalPages ?? 1;
 
   const handleSort = (newSort: string, newOrder: string) => {
-    setFilters({ sort: newSort, order: newOrder, page: '1' });
+    // On garde `highlight` : le rang sera recalculé pour la nouvelle catégorie.
+    setFilters({ sort: newSort, order: newOrder, page: '1', rank: '' });
   };
 
   const hasData = (item: ParlementaireItem) =>
@@ -200,11 +243,11 @@ function ParlementairesTab() {
           <div className="flex shrink-0 items-center gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
             <ChambreToggle
               value={filters.chambre}
-              onChange={(v) => setFilters({ chambre: v, groupe: '', page: '1' })}
+              onChange={(v) => setFilters({ chambre: v, groupe: '', page: '1', highlight: '', rank: '' })}
             />
             <SortSelect
               value={sort}
-              onChange={(v) => setFilters({ sort: v, order: 'desc', page: '1' })}
+              onChange={(v) => setFilters({ sort: v, order: 'desc', page: '1', rank: '' })}
               options={PARLEMENTAIRE_SORT_OPTIONS}
             />
           </div>
@@ -213,7 +256,7 @@ function ParlementairesTab() {
           <div className="flex min-w-0 gap-1.5 overflow-x-auto [&::-webkit-scrollbar]:hidden">
             <button
               type="button"
-              onClick={() => setFilters({ groupe: '', page: '1' })}
+              onClick={() => setFilters({ groupe: '', page: '1', highlight: '', rank: '' })}
               className={`shrink-0 inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
                 !filters.groupe
                   ? 'border-primary bg-primary text-primary-foreground'
@@ -228,7 +271,7 @@ function ParlementairesTab() {
                 <button
                   key={g.slug}
                   type="button"
-                  onClick={() => setFilters({ groupe: g.slug, page: '1' })}
+                  onClick={() => setFilters({ groupe: g.slug, page: '1', highlight: '', rank: '' })}
                   className={`shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
                     filters.groupe === g.slug
                       ? 'border-primary bg-primary text-primary-foreground'
@@ -281,6 +324,9 @@ function ParlementairesTab() {
             onSort={handleSort}
             page={page}
             limit={PAGE_SIZE}
+            chambre={filters.chambre}
+            groupe={filters.groupe}
+            highlightSlug={highlight}
           />
 
           {/* Pagination */}
@@ -357,6 +403,21 @@ function GroupesTab() {
     });
   }, [groupesResponse, groupeSort]);
 
+  // Deep-link depuis une fiche groupe : surligne + scrolle le groupe ciblé.
+  // Pas de pagination ici, donc tous les groupes sont rendus → simple scroll.
+  const searchParams = useSearchParams();
+  const highlight = searchParams.get('highlight') || undefined;
+  const highlightRef = useRef<HTMLAnchorElement | null>(null);
+  const [flashing, setFlashing] = useState(false);
+
+  useEffect(() => {
+    if (!highlight || !highlightRef.current) return;
+    highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFlashing(true);
+    const t = setTimeout(() => setFlashing(false), 2400);
+    return () => clearTimeout(t);
+  }, [highlight, sortedGroupes]);
+
   const getStatValue = (g: GroupeItem): number | null => {
     switch (groupeSort) {
       case 'presence': return g.statsPresenceMoyenne;
@@ -409,8 +470,15 @@ function GroupesTab() {
             return (
               <Link
                 key={groupe.id}
+                ref={groupe.slug === highlight ? highlightRef : undefined}
                 href={`/groupes/${groupe.chambre}/${groupe.slug}`}
-                className="group flex items-center gap-4 rounded-lg border bg-card p-4 transition-all hover:shadow-md hover:border-primary/30"
+                className={`group flex items-center gap-4 rounded-lg border bg-card p-4 transition-all duration-700 hover:shadow-md hover:border-primary/30 ${
+                  groupe.slug === highlight
+                    ? flashing
+                      ? 'bg-primary/15 ring-2 ring-inset ring-primary'
+                      : 'bg-primary/5 ring-1 ring-inset ring-primary/40'
+                    : ''
+                }`}
               >
                 {/* Rank */}
                 <span className="w-8 text-center text-lg font-bold text-muted-foreground tabular-nums">

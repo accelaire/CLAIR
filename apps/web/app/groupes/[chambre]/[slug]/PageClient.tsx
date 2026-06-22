@@ -36,6 +36,7 @@ import { api } from '@/lib/api';
 import { scrutinHref } from '@/lib/scrutin-url';
 import { getGroupColor } from '@/lib/colors';
 import { SortSelect, MEMBRE_SORT_OPTIONS } from '@/components/classements/SortSelect';
+import { FicheCompareCallout } from '@/components/FicheCompareCallout';
 
 interface Membre {
   id: string;
@@ -555,6 +556,8 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
           icon={FileEdit}
         />
       </div>
+
+      <FicheCompareCallout variant="groupe" chambre={chambre as 'assemblee' | 'senat'} slug={slug} />
 
       {/* Statistiques de votes */}
       <section className="mb-10 overflow-hidden">

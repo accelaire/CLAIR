@@ -10,6 +10,7 @@ import {
   parlementaireQuerySchema,
   parlementairesListQuerySchema,
   parlementaireVotesQuerySchema,
+  parlementaireRankQuerySchema,
   Chambre,
 } from './parlementaires.schema';
 import { ApiError } from '../../utils/errors';
@@ -185,6 +186,64 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
 
         const stats = await service.getParlementaireStats(parlementaire.id, parlementaire.chambre as Chambre);
         return { data: stats };
+      },
+    });
+
+    // ===========================================================================
+    // GET /:slug/rank - Rang dans le classement (pour deep-link + highlight)
+    // ===========================================================================
+    fastify.get('/:slug/rank', {
+      schema: {
+        tags: [chambreLabel],
+        summary: `Rang d'un ${chambreLabel.toLowerCase().slice(0, -1)} dans le classement`,
+        description: `Retourne la position (1-based) du parlementaire dans le classement trié et le total, pour le deep-link vers /classements.`,
+        params: {
+          type: 'object',
+          required: ['slug'],
+          properties: {
+            slug: { type: 'string' },
+          },
+        },
+        querystring: {
+          type: 'object',
+          properties: {
+            sort: {
+              type: 'string',
+              enum: ['nom', 'prenom', 'presence', 'loyaute', 'activite', 'amendements', 'interventions'],
+              default: 'presence',
+            },
+            order: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
+            chambre: { type: 'string', enum: ['assemblee', 'senat'] },
+            groupe: { type: 'string' },
+          },
+        },
+      },
+      handler: async (request, _reply) => {
+        const { slug } = parlementaireParamsSchema.parse(request.params);
+        const query = parlementaireRankQuerySchema.parse(request.query);
+
+        const parlementaire = await fastify.prisma.parlementaire.findUnique({
+          where: { slug },
+          select: { chambre: true },
+        });
+
+        if (!parlementaire) {
+          throw new ApiError(404, `${chambreLabel.slice(0, -1)} non trouvé`);
+        }
+
+        if (forcedChambre && parlementaire.chambre !== forcedChambre) {
+          throw new ApiError(404, `${chambreLabel.slice(0, -1)} non trouvé`);
+        }
+
+        const chambre = (forcedChambre || query.chambre || parlementaire.chambre) as Chambre;
+        const result = await service.getParlementaireRank(slug, {
+          sort: query.sort,
+          order: query.order,
+          chambre,
+          groupe: query.groupe,
+        });
+
+        return { data: result };
       },
     });
 

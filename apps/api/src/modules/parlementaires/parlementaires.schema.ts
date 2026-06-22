@@ -48,6 +48,16 @@ export const parlementairesListQuerySchema = z.object({
   order: z.enum(['asc', 'desc']).default('asc').describe('Ordre de tri'),
 });
 
+export const parlementaireRankQuerySchema = z.object({
+  sort: z
+    .enum(['nom', 'prenom', 'presence', 'loyaute', 'activite', 'amendements', 'interventions'])
+    .default('presence')
+    .describe('Champ de tri du classement (doit refléter celui de la liste)'),
+  order: z.enum(['asc', 'desc']).default('desc').describe('Ordre de tri'),
+  chambre: chambreEnum.optional().describe('Chambre du classement (défaut: celle du parlementaire)'),
+  groupe: z.string().optional().describe('Restreindre le classement à un slug de groupe'),
+});
+
 export const parlementaireVotesQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -161,6 +171,7 @@ export type ParlementaireIdParams = z.infer<typeof parlementaireIdParamsSchema>;
 export type ParlementaireQuery = z.infer<typeof parlementaireQuerySchema>;
 export type ParlementairesListQuery = z.infer<typeof parlementairesListQuerySchema>;
 export type ParlementaireVotesQuery = z.infer<typeof parlementaireVotesQuerySchema>;
+export type ParlementaireRankQuery = z.infer<typeof parlementaireRankQuerySchema>;
 
 export type GroupePolitique = z.infer<typeof groupePolitiqueSchema>;
 export type Circonscription = z.infer<typeof circonscriptionSchema>;

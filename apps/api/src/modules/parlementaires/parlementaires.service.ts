@@ -25,6 +25,73 @@ export class ParlementairesService {
   ) {}
 
   // ===========================================================================
+  // TRI PARTAGÉ (liste + rang) — garantit un ordre identique entre les deux
+  // ===========================================================================
+
+  private buildParlementaireOrderBy(
+    sort: string,
+    order: 'asc' | 'desc'
+  ): Prisma.ParlementaireOrderByWithRelationInput[] {
+    const primaryMap: Record<string, Prisma.ParlementaireOrderByWithRelationInput> = {
+      nom: { nom: order },
+      prenom: { prenom: order },
+      presence: { statsPresence: order },
+      loyaute: { statsLoyaute: order },
+      activite: { statsInterventions: order },
+      amendements: { statsAmendements: order },
+      interventions: { statsInterventions: order },
+    };
+    const primary = primaryMap[sort] || { nom: order };
+    // Tiebreakers déterministes : indispensables pour que la liste paginée et le
+    // calcul du rang ordonnent les ex æquo (ex. 0 amendement / 0 intervention,
+    // ou stats null) de façon strictement identique. Sans cela, page =
+    // ceil(rank / size) peut tomber sur la mauvaise page dans les gros paquets
+    // d'égalités. `id` (unique) garantit un ordre total stable.
+    return [primary, { nom: 'asc' }, { id: 'asc' }];
+  }
+
+  // ===========================================================================
+  // RANG D'UN PARLEMENTAIRE DANS LE CLASSEMENT
+  // ===========================================================================
+
+  /**
+   * Position 1-based d'un parlementaire dans le classement trié, avec le total.
+   * Réutilise EXACTEMENT le where + orderBy de getParlementaires pour que
+   * page = ceil(rank / pageSize) tombe sur la bonne page de la liste paginée.
+   * Renvoie rank=null si le slug n'appartient pas à l'ensemble filtré.
+   */
+  async getParlementaireRank(
+    slug: string,
+    opts: { sort: string; order: 'asc' | 'desc'; chambre?: Chambre; groupe?: string }
+  ): Promise<{ rank: number | null; total: number }> {
+    const { sort, order, chambre, groupe } = opts;
+    const cacheKey = `parlementaires:rank:${JSON.stringify({ slug, sort, order, chambre, groupe })}`;
+
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    const where: Prisma.ParlementaireWhereInput = {
+      actif: true,
+      ...(chambre && { chambre }),
+      ...(groupe && { groupe: { slug: groupe } }),
+    };
+
+    const rows = await this.prisma.parlementaire.findMany({
+      where,
+      orderBy: this.buildParlementaireOrderBy(sort, order),
+      select: { slug: true },
+    });
+
+    const index = rows.findIndex((r) => r.slug === slug);
+    const result = { rank: index >= 0 ? index + 1 : null, total: rows.length };
+
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+    return result;
+  }
+
+  // ===========================================================================
   // LISTE DES PARLEMENTAIRES
   // ===========================================================================
 
@@ -48,17 +115,7 @@ export class ParlementairesService {
       ...(search && buildParlementaireSearchCondition(search)),
     };
 
-    const orderByMap: Record<string, Prisma.ParlementaireOrderByWithRelationInput> = {
-      nom: { nom: order },
-      prenom: { prenom: order },
-      presence: { statsPresence: order },
-      loyaute: { statsLoyaute: order },
-      activite: { statsInterventions: order },
-      amendements: { statsAmendements: order },
-      interventions: { statsInterventions: order },
-    };
-
-    const orderBy = orderByMap[sort] || { nom: order };
+    const orderBy = this.buildParlementaireOrderBy(sort, order);
 
     const parlementaireInclude = {
       groupe: {
