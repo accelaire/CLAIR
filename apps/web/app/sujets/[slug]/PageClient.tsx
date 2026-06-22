@@ -9,6 +9,7 @@ import {
   Layers, ExternalLink, Target, BookOpen, FileText, Newspaper, ChevronDown, Info,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { scrutinHref } from '@/lib/scrutin-url';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
 import { LegislativeStep } from '@/lib/legislative-steps';
@@ -742,7 +743,7 @@ function ScrutinsPanel({ slug, totalScrutins }: { slug: string; totalScrutins: n
               return (
                 <Link
                   key={scrutin.id}
-                  href={`/scrutins/${scrutin.numero}?chambre=${scrutin.chambre || 'assemblee'}${scrutin.chambre === 'senat' && scrutin.session ? `&session=${scrutin.session}` : ''}`}
+                  href={scrutinHref(scrutin)}
                   className="block px-4 py-3 hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-center gap-2 mb-1">

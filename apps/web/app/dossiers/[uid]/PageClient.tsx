@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { FilterBar } from '@/components/FilterBar';
 import { api } from '@/lib/api';
+import { scrutinHref } from '@/lib/scrutin-url';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { LoiPromulgueeCard } from '@/components/LoiPromulgueeCard';
 import { ExpandableAmendementCard } from '@/components/ExpandableAmendementCard';
@@ -709,7 +710,7 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
                   return (
                     <Link
                       key={scrutin.id}
-                      href={`/scrutins/${scrutin.numero}?chambre=${scrutin.chambre || 'assemblee'}${scrutin.chambre === 'senat' && scrutin.session ? `&session=${scrutin.session}` : ''}`}
+                      href={scrutinHref(scrutin)}
                       className="block rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

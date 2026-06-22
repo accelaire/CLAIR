@@ -1,11 +1,15 @@
 import { ImageResponse } from 'next/og';
+import { NextRequest } from 'next/server';
 import { fetchFromApi } from '@/lib/api-server';
 import { OgLayout, OgVoteBar, OG_SIZE, loadFont } from '@/lib/og';
+import { scrutinQuery } from '@/lib/scrutin-url';
 
 export const runtime = 'nodejs';
-export const contentType = 'image/png';
-export const size = OG_SIZE;
 
+// Route handler (et non fichier-convention `opengraph-image.tsx`) : au Sénat le
+// numéro de scrutin n'est pas unique, il faut chambre + session pour résoudre le
+// bon scrutin. Or les fonctions `opengraph-image` ne reçoivent pas `searchParams`
+// dans Next.js — un route handler, lui, a accès à l'URL complète de la requête.
 interface ScrutinOg {
   numero: number;
   chambre: string;
@@ -17,14 +21,19 @@ interface ScrutinOg {
   nombreAbstention: number;
 }
 
-export default async function Image({
-  params,
-}: {
-  params: { numero: string };
-}) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { numero: string } },
+) {
+  const { searchParams } = request.nextUrl;
+  const query = scrutinQuery({
+    chambre: searchParams.get('chambre'),
+    session: searchParams.get('session'),
+  });
+
   const [font, res] = await Promise.all([
     loadFont(),
-    fetchFromApi<{ data: ScrutinOg }>(`/scrutins/${params.numero}`),
+    fetchFromApi<{ data: ScrutinOg }>(`/scrutins/${params.numero}?${query}`),
   ]);
   const data = res?.data;
   if (!data) return new Response('Not found', { status: 404 });
@@ -91,7 +100,7 @@ export default async function Image({
       </OgLayout>
     ),
     {
-      ...size,
+      ...OG_SIZE,
       fonts: [{ name: 'Inter', data: font, weight: 600 }],
     },
   );

@@ -488,6 +488,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
             date: true,
             sort: true,
             chambre: true,
+            session: true,
             seanceRef: true,
           },
         });

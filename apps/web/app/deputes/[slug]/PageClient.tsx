@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
 import { api } from '@/lib/api';
+import { scrutinHref } from '@/lib/scrutin-url';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { InterventionsList } from '@/components/parlementaire/interventions-list';
@@ -372,7 +373,7 @@ function VotesList({ slug }: { slug: string }) {
         return (
           <Link
             key={vote.id}
-            href={`/scrutins/${vote.scrutin.numero}`}
+            href={scrutinHref(vote.scrutin)}
             className={`block rounded-lg border bg-card p-4 transition-colors hover:bg-accent ${
               isDissident ? 'border-orange-200 bg-orange-50/50' : ''
             }`}

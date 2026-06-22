@@ -10,6 +10,7 @@ import {
   Landmark, BookOpen, Tag, ChevronRight,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { scrutinHref } from '@/lib/scrutin-url';
 import { getDossierEtat } from '@/lib/dossiers';
 import { useDebouncedCallback } from 'use-debounce';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
@@ -145,11 +146,12 @@ function getResultLink(result: SearchResult): string {
       return result.chambre === 'senat'
         ? `/senateurs/${result.slug}`
         : `/deputes/${result.slug}`;
-    case 'scrutin': {
-      const chambre = result.chambre || 'assemblee';
-      const sessionParam = chambre === 'senat' && result.session ? `&session=${result.session}` : '';
-      return `/scrutins/${result.numero}?chambre=${chambre}${sessionParam}`;
-    }
+    case 'scrutin':
+      return scrutinHref({
+        numero: result.numero!,
+        chambre: result.chambre,
+        session: result.session,
+      });
     case 'lobbyiste':  return `/lobbying/${result.id}`;
     case 'dossier':    return `/dossiers/${result.uid}`;
     case 'groupe':     return `/groupes/${result.chambre || 'assemblee'}/${result.slug}`;

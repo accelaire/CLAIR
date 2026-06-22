@@ -33,6 +33,7 @@ import {
   Radar,
 } from 'recharts';
 import { api } from '@/lib/api';
+import { scrutinHref } from '@/lib/scrutin-url';
 import { getGroupColor } from '@/lib/colors';
 import { SortSelect, MEMBRE_SORT_OPTIONS } from '@/components/classements/SortSelect';
 
@@ -674,7 +675,7 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
                   {votingStats.scrutinsRecents.map((scrutin) => (
                     <Link
                       key={scrutin.id}
-                      href={`/scrutins/${scrutin.numero}?chambre=${chambre}${chambre === 'senat' && scrutin.session ? `&session=${scrutin.session}` : ''}`}
+                      href={scrutinHref({ numero: scrutin.numero, chambre, session: scrutin.session })}
                       className="flex items-center gap-2 p-1.5 sm:p-2 rounded-lg hover:bg-accent transition-colors"
                     >
                       {/* Position du groupe */}

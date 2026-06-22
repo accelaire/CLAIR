@@ -9,6 +9,7 @@ import { api } from '@/lib/api';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { ExpandableText } from '@/components/ui/expandable-text';
+import { scrutinHref } from '@/lib/scrutin-url';
 
 interface SeanceGroup {
   seanceId: string;
@@ -30,6 +31,7 @@ interface SeanceGroup {
     date: string;
     sort: string;
     chambre: string;
+    session: string;
   }[];
 }
 
@@ -197,7 +199,7 @@ export function InterventionsList({
                         {seance.scrutins.map((scrutin) => (
                           <Link
                             key={scrutin.id}
-                            href={`/scrutins/${scrutin.numero}${chambre === 'senat' ? '?chambre=senat' : ''}`}
+                            href={scrutinHref(scrutin)}
                             className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 hover:underline bg-indigo-50 px-2 py-1 rounded transition-colors"
                           >
                             <Vote className="h-3 w-3" />

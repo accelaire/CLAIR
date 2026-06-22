@@ -36,6 +36,7 @@ import {
   Info,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { scrutinHref } from '@/lib/scrutin-url';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
@@ -109,6 +110,7 @@ interface VoteItem {
     id: string;
     numero: number;
     chambre: string;
+    session: string;
     date: string;
     titre: string;
     sort: string;
@@ -187,6 +189,8 @@ interface AmendementItem {
   scrutins: Array<{
     id: string;
     numero: number;
+    chambre: string;
+    session: string;
     titre: string;
     date: string;
     sort: string;
@@ -285,7 +289,7 @@ function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }
         )}
         {amendement.scrutins && amendement.scrutins.length > 0 && (
           <Link
-            href={`/scrutins/${amendement.scrutins[0].numero}?chambre=senat`}
+            href={scrutinHref(amendement.scrutins[0])}
             className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
           >
             <Vote className="h-3 w-3" />
@@ -488,7 +492,7 @@ function VotesList({ slug }: { slug: string }) {
             return (
               <Link
                 key={vote.id}
-                href={`/scrutins/${vote.scrutin.numero}?chambre=${vote.scrutin.chambre}`}
+                href={scrutinHref(vote.scrutin)}
                 className={`block rounded-lg border bg-card p-4 transition-colors hover:bg-accent ${
                   isDissident ? 'border-orange-200 bg-orange-50/50' : ''
                 }`}
