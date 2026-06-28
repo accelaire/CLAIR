@@ -5,6 +5,7 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Vote, Filter, ChevronDown, Loader2, Calendar } from 'lucide-react';
 import { api } from '@/lib/api';
+import { scrutinHref } from '@/lib/scrutin-url';
 
 type VotePosition = 'pour' | 'contre' | 'abstention' | 'absent';
 
@@ -209,7 +210,11 @@ export function ComparisonVotesTable({ parlementaires, chambre }: ComparisonVote
                 {/* Scrutin info */}
                 <div className="space-y-1">
                   <Link
-                    href={`/scrutins/${vote.scrutin.numero}?chambre=${vote.scrutin.chambre || (chambre === 'senateurs' ? 'senat' : 'assemblee')}${(vote.scrutin.chambre === 'senat' || chambre === 'senateurs') && vote.scrutin.session ? `&session=${vote.scrutin.session}` : ''}`}
+                    href={scrutinHref({
+                      numero: vote.scrutin.numero,
+                      chambre: vote.scrutin.chambre || (chambre === 'senateurs' ? 'senat' : 'assemblee'),
+                      session: vote.scrutin.session,
+                    })}
                     className="font-medium line-clamp-2 hover:text-primary hover:underline transition-colors"
                   >
                     {vote.scrutin.titre}

@@ -33,8 +33,10 @@ import {
   Radar,
 } from 'recharts';
 import { api } from '@/lib/api';
+import { scrutinHref } from '@/lib/scrutin-url';
 import { getGroupColor } from '@/lib/colors';
 import { SortSelect, MEMBRE_SORT_OPTIONS } from '@/components/classements/SortSelect';
+import { FicheCompareCallout } from '@/components/FicheCompareCallout';
 
 interface Membre {
   id: string;
@@ -555,6 +557,8 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
         />
       </div>
 
+      <FicheCompareCallout variant="groupe" chambre={chambre as 'assemblee' | 'senat'} slug={slug} />
+
       {/* Statistiques de votes */}
       <section className="mb-10 overflow-hidden">
         <div className="flex items-center gap-3 mb-4">
@@ -674,7 +678,7 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
                   {votingStats.scrutinsRecents.map((scrutin) => (
                     <Link
                       key={scrutin.id}
-                      href={`/scrutins/${scrutin.numero}?chambre=${chambre}${chambre === 'senat' && scrutin.session ? `&session=${scrutin.session}` : ''}`}
+                      href={scrutinHref({ numero: scrutin.numero, chambre, session: scrutin.session })}
                       className="flex items-center gap-2 p-1.5 sm:p-2 rounded-lg hover:bg-accent transition-colors"
                     >
                       {/* Position du groupe */}

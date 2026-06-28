@@ -1,21 +1,45 @@
 import type { Metadata } from 'next';
 import { fetchFromApi } from '@/lib/api-server';
 import { VoteEventJsonLd, BreadcrumbJsonLd } from '@/components/seo/JsonLd';
+import { scrutinQuery } from '@/lib/scrutin-url';
 import PageClient from './PageClient';
 import type { ScrutinDetail } from './PageClient';
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
 
-async function getScrutin(numero: string) {
-  return fetchFromApi<{ data: ScrutinDetail }>(`/scrutins/${numero}`);
+interface ScrutinSearchParams {
+  chambre?: string;
+  session?: string;
+}
+
+// Au Sénat, le numéro de scrutin n'est pas unique (réinitialisé chaque session) :
+// chambre + session doivent être transmis à l'API, sinon elle résout vers le
+// scrutin homonyme de l'Assemblée nationale (bug feedback : Sénat n°54 → AN n°54).
+async function getScrutin(numero: string, searchParams: ScrutinSearchParams) {
+  const query = scrutinQuery({
+    chambre: searchParams.chambre,
+    session: searchParams.session,
+  });
+  return fetchFromApi<{ data: ScrutinDetail }>(`/scrutins/${numero}?${query}`);
+}
+
+// URL canonique : on garde les URLs AN « propres » (sans query) déjà indexées,
+// et on désambiguïse les scrutins du Sénat avec chambre + session.
+function scrutinCanonicalUrl(data: ScrutinDetail): string {
+  if (data.chambre === 'senat') {
+    return `${BASE_URL}/scrutins/${data.numero}?${scrutinQuery(data)}`;
+  }
+  return `${BASE_URL}/scrutins/${data.numero}`;
 }
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: { numero: string };
+  searchParams: ScrutinSearchParams;
 }): Promise<Metadata> {
-  const response = await getScrutin(params.numero);
+  const response = await getScrutin(params.numero, searchParams);
   const data = response?.data;
   if (!data) return {};
 
@@ -24,7 +48,18 @@ export async function generateMetadata({
   const title = `Scrutin n\u00b0${data.numero} — ${data.titre}`;
   const resultLabel = data.sort === 'adopté' ? 'Adopté' : 'Rejeté';
   const description = `${chambreLabel} — ${resultLabel} (${data.nombrePour} pour, ${data.nombreContre} contre, ${data.nombreAbstention} abstentions). ${data.titre}`;
-  const url = `${BASE_URL}/scrutins/${data.numero}`;
+  const url = scrutinCanonicalUrl(data);
+  // L'image OG est servie par un route handler qui doit recevoir chambre+session
+  // pour désambiguïser les scrutins du Sénat (numéro non unique entre sessions).
+  // URL relative : résolue via metadataBase (cf. layout.tsx), comme les images
+  // file-convention des autres pages. Le descripteur reprend les mêmes champs
+  // (type/width/height) pour émettre exactement les mêmes balises meta.
+  const ogImage = {
+    url: `/scrutins/${data.numero}/og?${scrutinQuery(data)}`,
+    width: 1200,
+    height: 630,
+    type: 'image/png',
+  };
 
   return {
     title,
@@ -35,22 +70,27 @@ export async function generateMetadata({
       description,
       url,
       type: 'article',
+      images: [ogImage],
     },
     twitter: {
       card: 'summary_large_image',
       title,
       description,
+      images: [ogImage],
     },
   };
 }
 
 export default async function ScrutinDetailPage({
   params,
+  searchParams,
 }: {
   params: { numero: string };
+  searchParams: ScrutinSearchParams;
 }) {
-  const response = await getScrutin(params.numero);
+  const response = await getScrutin(params.numero, searchParams);
   const data = response?.data;
+  const canonicalUrl = data ? scrutinCanonicalUrl(data) : '';
 
   return (
     <>
@@ -59,7 +99,7 @@ export default async function ScrutinDetailPage({
           <VoteEventJsonLd
             name={`Scrutin n\u00b0${data.numero} — ${data.titre}`}
             description={data.titre}
-            url={`${BASE_URL}/scrutins/${data.numero}`}
+            url={canonicalUrl}
             dateCreated={data.date}
             result={data.sort === 'adopté' ? 'adopted' : 'rejected'}
             votesFor={data.nombrePour}
@@ -72,7 +112,7 @@ export default async function ScrutinDetailPage({
               { name: 'Scrutins', url: `${BASE_URL}/scrutins` },
               {
                 name: `Scrutin n\u00b0${data.numero}`,
-                url: `${BASE_URL}/scrutins/${data.numero}`,
+                url: canonicalUrl,
               },
             ]}
           />

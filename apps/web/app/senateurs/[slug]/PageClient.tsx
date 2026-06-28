@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { AmendementSortBadge } from '@/components/AmendementSortBadge';
+import { FicheCompareCallout } from '@/components/FicheCompareCallout';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -26,15 +27,15 @@ import {
   ChevronDown,
   ChevronUp,
   Facebook,
-  Loader2,
-  GitCompareArrows,
-  AlertTriangle,
+  Loader2,  AlertTriangle,
   Sparkles,
   Shield,
   ScrollText,
   ExternalLink,
+  Info,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { scrutinHref } from '@/lib/scrutin-url';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
@@ -108,6 +109,7 @@ interface VoteItem {
     id: string;
     numero: number;
     chambre: string;
+    session: string;
     date: string;
     titre: string;
     sort: string;
@@ -186,6 +188,8 @@ interface AmendementItem {
   scrutins: Array<{
     id: string;
     numero: number;
+    chambre: string;
+    session: string;
     titre: string;
     date: string;
     sort: string;
@@ -284,7 +288,7 @@ function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }
         )}
         {amendement.scrutins && amendement.scrutins.length > 0 && (
           <Link
-            href={`/scrutins/${amendement.scrutins[0].numero}?chambre=senat`}
+            href={scrutinHref(amendement.scrutins[0])}
             className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
           >
             <Vote className="h-3 w-3" />
@@ -355,7 +359,12 @@ function AmendementsList({ slug }: { slug: string }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Filtrer par période" />
+        <DateRangePicker
+          value={dateRange}
+          onChange={setDateRange}
+          placeholder="Filtrer par période"
+          resultCount={total}
+        />
         <button
           onClick={() => setVotedOnly(!votedOnly)}
           className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
@@ -448,7 +457,12 @@ function VotesList({ slug }: { slug: string }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Filtrer par période" />
+        <DateRangePicker
+          value={dateRange}
+          onChange={setDateRange}
+          placeholder="Filtrer par période"
+          resultCount={total}
+        />
         <button
           onClick={() => setDissidentOnly(!dissidentOnly)}
           className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
@@ -487,7 +501,7 @@ function VotesList({ slug }: { slug: string }) {
             return (
               <Link
                 key={vote.id}
-                href={`/scrutins/${vote.scrutin.numero}?chambre=${vote.scrutin.chambre}`}
+                href={scrutinHref(vote.scrutin)}
                 className={`block rounded-lg border bg-card p-4 transition-colors hover:bg-accent ${
                   isDissident ? 'border-orange-200 bg-orange-50/50' : ''
                 }`}
@@ -620,15 +634,6 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
           <span className="flex-shrink-0">/</span>
           <span className="text-foreground font-medium truncate">{senateur.prenom} {senateur.nom}</span>
         </nav>
-
-        {/* Bouton Comparer */}
-        <Link
-          href={`/senateurs?compare=${senateur.slug}`}
-          className="inline-flex items-center gap-2 rounded-lg border-2 border-primary/20 bg-primary/5 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/10 hover:border-primary/40 transition-colors flex-shrink-0 self-start sm:self-auto"
-        >
-          <GitCompareArrows className="h-4 w-4" />
-          <span>Comparer avec un autre sénateur</span>
-        </Link>
       </div>
 
       {/* Header */}
@@ -799,6 +804,8 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
         </div>
       )}
 
+      <FicheCompareCallout variant="parlementaire" chambre="senat" slug={senateur.slug} />
+
       {/* Fiche enrichie par IA */}
       {senateur.resumeIA && (
         <div className="mb-8 space-y-4">
@@ -806,7 +813,11 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
             <Sparkles className="h-5 w-5 text-amber-500" />
             <h2 className="text-xl font-semibold">Fiche parlementaire</h2>
             <span className="text-xs text-muted-foreground">
-              {senateur.iaGeneratedAt && `Mise à jour le ${new Date(senateur.iaGeneratedAt).toLocaleDateString('fr-FR')} - `}Généré par IA
+              {senateur.iaGeneratedAt && `Mise à jour le ${new Date(senateur.iaGeneratedAt).toLocaleDateString('fr-FR')} - `}
+              <Link href="/methodologie#enrichissement-ia" className="inline-flex items-center gap-1 align-baseline hover:underline">
+                <Info className="h-3 w-3" />
+                Généré par IA
+              </Link>
             </span>
           </div>
 

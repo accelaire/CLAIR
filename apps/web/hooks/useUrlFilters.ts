@@ -85,6 +85,26 @@ export function useUrlFilters<T extends Record<string, FilterValue>>(
   return [values, setFilter, setFilters, clearAll];
 }
 
+/** Parse une date URL "YYYY-MM-DD" en date locale (minuit local, sans décalage de fuseau). */
+function parseLocalDate(str: string | null): Date | null {
+  if (!str) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str);
+  if (m) {
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  }
+  // Fallback pour d'éventuelles URLs legacy au format ISO complet
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/** Formate une date en "YYYY-MM-DD" dans le fuseau local. */
+function formatLocalDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 /**
  * Hook for date range filter synced with URL.
  * Stores dateFrom and dateTo as URL params.
@@ -101,8 +121,8 @@ export function useUrlDateRange(): [
     const fromStr = searchParams.get('dateFrom');
     const toStr = searchParams.get('dateTo');
     return {
-      from: fromStr ? new Date(fromStr) : null,
-      to: toStr ? new Date(toStr) : null,
+      from: parseLocalDate(fromStr),
+      to: parseLocalDate(toStr),
     };
   }, [searchParams]);
 
@@ -111,13 +131,13 @@ export function useUrlDateRange(): [
       const params = new URLSearchParams(searchParams.toString());
 
       if (range.from) {
-        params.set('dateFrom', range.from.toISOString().split('T')[0]);
+        params.set('dateFrom', formatLocalDate(range.from));
       } else {
         params.delete('dateFrom');
       }
 
       if (range.to) {
-        params.set('dateTo', range.to.toISOString().split('T')[0]);
+        params.set('dateTo', formatLocalDate(range.to));
       } else {
         params.delete('dateTo');
       }

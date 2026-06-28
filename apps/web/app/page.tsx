@@ -371,7 +371,7 @@ export default function HomePage() {
 
   // Animated counters
   const deputesCount = useCountUp(Math.min(stats?.deputes ?? 0, 577));
-  const senateursCount = useCountUp(stats?.senateurs);
+  const senateursCount = useCountUp(Math.min(stats?.senateurs ?? 0, 348));
   const scrutinsCount = useCountUp(stats?.scrutins);
   const dossiersCount = useCountUp(stats?.dossiers);
   const lobbyistesCount = useCountUp(stats?.lobbyistes);

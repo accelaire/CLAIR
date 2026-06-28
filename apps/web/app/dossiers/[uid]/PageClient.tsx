@@ -6,10 +6,11 @@ import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   FileText, Calendar, Vote, CheckCircle, XCircle, ExternalLink,
-  ArrowLeft, ArrowRight, Loader2, Scale, ChevronDown, X, Users, Layers, BookOpen, Gavel, Filter,
+  ArrowLeft, ArrowRight, Loader2, Scale, ChevronDown, X, Users, Layers, BookOpen, Gavel, Filter, Info,
 } from 'lucide-react';
 import { FilterBar } from '@/components/FilterBar';
 import { api } from '@/lib/api';
+import { scrutinHref } from '@/lib/scrutin-url';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { LoiPromulgueeCard } from '@/components/LoiPromulgueeCard';
 import { ExpandableAmendementCard } from '@/components/ExpandableAmendementCard';
@@ -434,9 +435,13 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
           <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
             {dossier.resumeIA}
           </p>
-          <p className="text-xs text-muted-foreground/60 mt-2">
+          <Link
+            href="/methodologie#enrichissement-ia"
+            className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground/60 hover:text-muted-foreground hover:underline"
+          >
+            <Info className="h-3 w-3" />
             Résumé généré par IA
-          </p>
+          </Link>
         </div>
       )}
 
@@ -705,7 +710,7 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
                   return (
                     <Link
                       key={scrutin.id}
-                      href={`/scrutins/${scrutin.numero}?chambre=${scrutin.chambre || 'assemblee'}${scrutin.chambre === 'senat' && scrutin.session ? `&session=${scrutin.session}` : ''}`}
+                      href={scrutinHref(scrutin)}
                       className="block rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { CheckCircle, XCircle, Calendar, Tag } from 'lucide-react';
+import { scrutinHref } from '@/lib/scrutin-url';
 
 export interface ScrutinListItem {
   id: string;
@@ -49,12 +50,7 @@ const formatSenatSession = (session: string): string => {
 };
 
 export function ScrutinListCard({ scrutin }: { scrutin: ScrutinListItem }) {
-  const chambreParam = scrutin.chambre || 'assemblee';
-  const sessionParam =
-    scrutin.chambre === 'senat' && scrutin.session
-      ? `&session=${scrutin.session}`
-      : '';
-  const href = `/scrutins/${scrutin.numero}?chambre=${chambreParam}${sessionParam}`;
+  const href = scrutinHref(scrutin);
 
   return (
     <Link

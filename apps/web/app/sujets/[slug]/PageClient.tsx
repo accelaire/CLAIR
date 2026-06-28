@@ -6,9 +6,10 @@ import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   ArrowLeft, ArrowRight, Vote, Loader2,
-  Layers, ExternalLink, Target, BookOpen, FileText, Newspaper, ChevronDown,
+  Layers, ExternalLink, Target, BookOpen, FileText, Newspaper, ChevronDown, Info,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { scrutinHref } from '@/lib/scrutin-url';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
 import { LegislativeStep } from '@/lib/legislative-steps';
@@ -378,9 +379,13 @@ function ContextSection({ sujet, dossiers }: { sujet: SujetDetail; dossiers: Suj
             <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">{sujet.enjeux}</p>
           </div>
         )}
-        <p className="text-xs text-muted-foreground/60">
+        <Link
+          href="/methodologie#enrichissement-ia"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground/60 hover:text-muted-foreground hover:underline"
+        >
+          <Info className="h-3 w-3" />
           Résumé généré par IA
-        </p>
+        </Link>
       </div>,
     );
   }
@@ -738,7 +743,7 @@ function ScrutinsPanel({ slug, totalScrutins }: { slug: string; totalScrutins: n
               return (
                 <Link
                   key={scrutin.id}
-                  href={`/scrutins/${scrutin.numero}?chambre=${scrutin.chambre || 'assemblee'}${scrutin.chambre === 'senat' && scrutin.session ? `&session=${scrutin.session}` : ''}`}
+                  href={scrutinHref(scrutin)}
                   className="block px-4 py-3 hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-center gap-2 mb-1">
@@ -854,6 +859,7 @@ function StatsPanel({ slug, dossiers }: { slug: string; dossiers: SujetDossier[]
 
   const groupeStats = statsData?.data ?? [];
   const groupeDescriptions = statsData?.groupeAmendementDescriptions ?? {};
+  const hasDescriptions = Object.keys(groupeDescriptions).length > 0;
 
   const sorted = useMemo(() => {
     let filtered = [...groupeStats];
@@ -972,6 +978,15 @@ function StatsPanel({ slug, dossiers }: { slug: string; dossiers: SujetDossier[]
           </div>
         )}
       </div>
+      {hasDescriptions && (
+        <Link
+          href="/methodologie#enrichissement-ia"
+          className="flex items-center gap-1 border-t px-4 py-2.5 text-xs text-muted-foreground/60 hover:text-muted-foreground hover:underline"
+        >
+          <Info className="h-3 w-3 flex-shrink-0" />
+          Descriptions des positions générées par IA
+        </Link>
+      )}
     </div>
   );
 }

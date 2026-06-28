@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowUp, ArrowDown, Users } from 'lucide-react';
@@ -78,6 +79,28 @@ interface ClassementsTableProps {
   onSort: (sort: string, order: string) => void;
   page: number;
   limit: number;
+  /** Filtres courants — propagés au lien de partage pour un rang fidèle. */
+  chambre?: string;
+  groupe?: string;
+  /** Slug d'une ligne à surligner et vers laquelle scroller (deep-link). */
+  highlightSlug?: string;
+}
+
+/** Construit un lien /classements qui reproduit fidèlement la vue filtrée + le rang. */
+function buildHighlightUrl(params: {
+  sort: string;
+  order: string;
+  chambre?: string;
+  groupe?: string;
+  slug: string;
+  rank: number;
+}): string {
+  const sp = new URLSearchParams({ tab: 'parlementaires', sort: params.sort, order: params.order });
+  if (params.chambre) sp.set('chambre', params.chambre);
+  if (params.groupe) sp.set('groupe', params.groupe);
+  sp.set('highlight', params.slug);
+  sp.set('rank', String(params.rank));
+  return `/classements?${sp.toString()}`;
 }
 
 function StatBar({ value, max = 100, color }: { value: number; max?: number; color: string }) {
@@ -106,7 +129,7 @@ function SortIcon({ column, currentSort, currentOrder }: { column: string; curre
   );
 }
 
-export function ClassementsTable({ data, sort, order, onSort, page, limit }: ClassementsTableProps) {
+export function ClassementsTable({ data, sort, order, onSort, page, limit, chambre, groupe, highlightSlug }: ClassementsTableProps) {
   const handleSort = (key: string) => {
     if (sort === key) {
       onSort(key, order === 'desc' ? 'asc' : 'desc');
@@ -116,6 +139,37 @@ export function ClassementsTable({ data, sort, order, onSort, page, limit }: Cla
   };
 
   const startRank = (page - 1) * limit + 1;
+
+  // Deep-link : scroll vers la ligne surlignée (instance visible desktop/mobile)
+  // + flash temporaire qui retombe en douceur via transition-colors.
+  const desktopRowRef = useRef<HTMLTableRowElement | null>(null);
+  const mobileRowRef = useRef<HTMLDivElement | null>(null);
+  const [flashing, setFlashing] = useState(false);
+
+  useEffect(() => {
+    if (!highlightSlug) return;
+    const visible =
+      mobileRowRef.current && mobileRowRef.current.offsetParent !== null
+        ? mobileRowRef.current
+        : desktopRowRef.current && desktopRowRef.current.offsetParent !== null
+          ? desktopRowRef.current
+          : null;
+    if (!visible) {
+      setFlashing(false);
+      return;
+    }
+    visible.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFlashing(true);
+    const t = setTimeout(() => setFlashing(false), 2400);
+    return () => clearTimeout(t);
+  }, [highlightSlug, data]);
+
+  const highlightClass = (slug: string) =>
+    slug === highlightSlug
+      ? flashing
+        ? 'bg-primary/15 ring-2 ring-inset ring-primary'
+        : 'bg-primary/5 ring-1 ring-inset ring-primary/40'
+      : '';
 
   return (
     <>
@@ -151,7 +205,13 @@ export function ClassementsTable({ data, sort, order, onSort, page, limit }: Cla
               const rank = startRank + index;
 
               return (
-                <tr key={row.slug} className="group/row border-b last:border-0 hover:bg-muted/30 transition-colors">
+                <tr
+                  key={row.slug}
+                  ref={row.slug === highlightSlug ? desktopRowRef : undefined}
+                  className={`group/row border-b last:border-0 transition-colors duration-700 ${
+                    row.slug === highlightSlug ? highlightClass(row.slug) : 'hover:bg-muted/30'
+                  }`}
+                >
                   <td className="px-3 py-3 text-muted-foreground tabular-nums">{rank}</td>
                   <td className="px-3 py-3">
                     <Link href={`/${route}/${row.slug}`} className="flex items-center gap-3 hover:text-primary transition-colors">
@@ -193,7 +253,7 @@ export function ClassementsTable({ data, sort, order, onSort, page, limit }: Cla
                   })}
                   <td className="px-1 py-3">
                     <ShareButton
-                      url={`/classements?sort=${sort}&highlight=${row.slug}&rank=${rank}`}
+                      url={buildHighlightUrl({ sort, order, chambre, groupe, slug: row.slug, rank })}
                       className="opacity-0 group-hover/row:opacity-100 transition-opacity"
                     />
                   </td>
@@ -214,11 +274,18 @@ export function ClassementsTable({ data, sort, order, onSort, page, limit }: Cla
           const rank = startRank + index;
 
           return (
-            <Link
+            <div
               key={row.slug}
-              href={`/${route}/${row.slug}`}
-              className="flex items-center gap-3 rounded-lg border bg-card p-3 transition-all hover:shadow-md hover:border-primary/30"
+              ref={row.slug === highlightSlug ? mobileRowRef : undefined}
+              className={`relative flex items-center gap-3 rounded-lg border bg-card p-3 transition-all duration-700 hover:shadow-md hover:border-primary/30 ${highlightClass(row.slug)}`}
             >
+              {/* Lien plein-carte (sous les contrôles interactifs) */}
+              <Link
+                href={`/${route}/${row.slug}`}
+                aria-label={`${row.prenom} ${row.nom}`}
+                className="absolute inset-0 rounded-lg"
+              />
+
               {/* Rank */}
               <span className="w-8 text-center text-sm font-bold text-muted-foreground tabular-nums">
                 {rank}
@@ -263,7 +330,13 @@ export function ClassementsTable({ data, sort, order, onSort, page, limit }: Cla
                   </div>
                 );
               })()}
-            </Link>
+
+              {/* Partage (au-dessus du lien plein-carte) */}
+              <ShareButton
+                url={buildHighlightUrl({ sort, order, chambre, groupe, slug: row.slug, rank })}
+                className="relative z-10 shrink-0"
+              />
+            </div>
           );
         })}
       </div>

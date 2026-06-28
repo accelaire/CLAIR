@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { ChevronDown, ChevronUp, FileText, Vote } from 'lucide-react';
 import { AmendementSortBadge } from '@/components/AmendementSortBadge';
+import { scrutinHref } from '@/lib/scrutin-url';
 
 interface AmendementData {
   id: string;
@@ -41,15 +42,6 @@ export function ExpandableAmendementCard({ amendement, showAuteur }: ExpandableA
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
-  };
-
-  const scrutinQuery = (s: { chambre?: string; session?: string }) => {
-    const chambre = s.chambre || 'assemblee';
-    let query = `chambre=${chambre}`;
-    if (chambre === 'senat' && s.session) {
-      query += `&session=${s.session}`;
-    }
-    return query;
   };
 
   return (
@@ -98,7 +90,7 @@ export function ExpandableAmendementCard({ amendement, showAuteur }: ExpandableA
               {amendement.scrutins.map((s) => (
                 <Link
                   key={s.id}
-                  href={`/scrutins/${s.numero}?${scrutinQuery(s)}`}
+                  href={scrutinHref(s)}
                   className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 hover:underline w-fit"
                 >
                   <span className="hidden sm:inline">Voir le vote n&deg;{s.numero}</span>

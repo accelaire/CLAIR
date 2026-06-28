@@ -341,8 +341,12 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       // Requête scrutin SANS les votes (optimisation mémoire)
+      // orderBy déterministe : au Sénat le numéro se répète chaque session ; sans
+      // session fournie (lien legacy/externe), on résout vers la plus récente plutôt
+      // qu'un résultat arbitraire.
       const scrutin = await fastify.prisma.scrutin.findFirst({
         where: whereClause,
+        orderBy: { date: 'desc' },
         include: {
           dossier: {
             select: {
@@ -548,6 +552,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
 
       const scrutin = await fastify.prisma.scrutin.findFirst({
         where: whereClause,
+        orderBy: { date: 'desc' },
         select: { id: true, date: true, chambre: true },
       });
 
@@ -693,6 +698,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       // Use findFirst instead of findUnique to avoid composite key issues
       const scrutin = await fastify.prisma.scrutin.findFirst({
         where: whereClause,
+        orderBy: { date: 'desc' },
         select: { id: true },
       });
 

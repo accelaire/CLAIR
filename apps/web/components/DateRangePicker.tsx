@@ -14,64 +14,26 @@ export interface DateRangePickerProps {
   placeholder?: string;
   /** Show preset options */
   showPresets?: boolean;
+  /**
+   * Date la plus ancienne pertinente (ex: début du mandat). Borne le calendrier
+   * vers le passé et alimente les raccourcis par année + « depuis le début ».
+   */
+  minDate?: Date;
+  /** Date la plus récente sélectionnable (défaut: aujourd'hui). */
+  maxDate?: Date;
+  /**
+   * Libellé du raccourci « depuis minDate jusqu'à maintenant »
+   * (ex: « Depuis le début du mandat »). Affiché uniquement si minDate est fourni.
+   */
+  startLabel?: string;
+  /** Nombre de résultats sur la période active, affiché en badge sur le bouton. */
+  resultCount?: number | null;
 }
 
 interface PresetOption {
   label: string;
   getValue: () => DateRange;
 }
-
-const PRESETS: PresetOption[] = [
-  {
-    label: 'Tout',
-    getValue: () => ({ from: null, to: null }),
-  },
-  {
-    label: '7 derniers jours',
-    getValue: () => {
-      const to = new Date();
-      const from = new Date();
-      from.setDate(from.getDate() - 7);
-      return { from, to };
-    },
-  },
-  {
-    label: '30 derniers jours',
-    getValue: () => {
-      const to = new Date();
-      const from = new Date();
-      from.setDate(from.getDate() - 30);
-      return { from, to };
-    },
-  },
-  {
-    label: '3 derniers mois',
-    getValue: () => {
-      const to = new Date();
-      const from = new Date();
-      from.setMonth(from.getMonth() - 3);
-      return { from, to };
-    },
-  },
-  {
-    label: '12 derniers mois',
-    getValue: () => {
-      const to = new Date();
-      const from = new Date();
-      from.setFullYear(from.getFullYear() - 1);
-      return { from, to };
-    },
-  },
-  {
-    label: 'Cette année',
-    getValue: () => {
-      const now = new Date();
-      const from = new Date(now.getFullYear(), 0, 1);
-      const to = new Date();
-      return { from, to };
-    },
-  },
-];
 
 const MONTHS_FR = [
   'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
@@ -80,21 +42,30 @@ const MONTHS_FR = [
 
 const DAYS_FR = ['Lu', 'Ma', 'Me', 'Je', 'Ve', 'Sa', 'Di'];
 
-function formatDateShort(date: Date | null): string {
-  if (!date) return '';
-  return date.toLocaleDateString('fr-FR', {
-    day: 'numeric',
-    month: 'short',
-  });
+function startOfDay(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
-function formatDateFull(date: Date | null): string {
+/** "28 juin" (sans année) */
+function formatDay(date: Date | null): string {
   if (!date) return '';
-  return date.toLocaleDateString('fr-FR', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
+  return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+}
+
+/** "28 juin 2025" */
+function formatDayYear(date: Date | null): string {
+  if (!date) return '';
+  return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function isJan1(d: Date): boolean {
+  return d.getMonth() === 0 && d.getDate() === 1;
+}
+
+function isDec31(d: Date): boolean {
+  return d.getMonth() === 11 && d.getDate() === 31;
 }
 
 function isSameDay(d1: Date | null, d2: Date | null): boolean {
@@ -106,6 +77,14 @@ function isInRange(date: Date, from: Date | null, to: Date | null): boolean {
   if (!from || !to) return false;
   const time = date.getTime();
   return time >= from.getTime() && time <= to.getTime();
+}
+
+/** Formate une date en YYYY-MM-DD dans le fuseau local (évite le décalage d'un jour de toISOString). */
+function toLocalYMD(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function getDaysInMonth(year: number, month: number): Date[] {
@@ -143,6 +122,10 @@ export function DateRangePicker({
   onChange,
   placeholder = 'Sélectionner une période',
   showPresets = true,
+  minDate,
+  maxDate,
+  startLabel,
+  resultCount,
 }: DateRangePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [viewDate, setViewDate] = useState(() => value.from || new Date());
@@ -150,6 +133,18 @@ export function DateRangePicker({
   const [tempFrom, setTempFrom] = useState<Date | null>(value.from);
   const [tempTo, setTempTo] = useState<Date | null>(value.to);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const today = useMemo(() => startOfDay(new Date()), []);
+  const effectiveMax = useMemo(
+    () => startOfDay(maxDate ?? today),
+    [maxDate, today]
+  );
+  const maxYear = effectiveMax.getFullYear();
+  // Borne basse de navigation du calendrier : large par défaut pour ne masquer
+  // aucune donnée historique sur les pages sans contexte de mandat.
+  const navMinYear = minDate ? minDate.getFullYear() : maxYear - 12;
+  // Raccourcis « par année » : depuis le début du mandat si connu, sinon 3 ans récents.
+  const yearPresetMinYear = minDate ? minDate.getFullYear() : maxYear - 2;
 
   // Close on outside click
   useEffect(() => {
@@ -168,11 +163,60 @@ export function DateRangePicker({
       setTempFrom(value.from);
       setTempTo(value.to);
       setSelecting('from');
-      if (value.from) {
-        setViewDate(value.from);
-      }
+      setViewDate(value.from || effectiveMax);
     }
-  }, [isOpen, value.from, value.to]);
+  }, [isOpen, value.from, value.to, effectiveMax]);
+
+  const { quickPresets, yearPresets } = useMemo(() => {
+    const quick: PresetOption[] = [
+      { label: 'Tout', getValue: () => ({ from: null, to: null }) },
+    ];
+    if (startLabel && minDate) {
+      quick.push({ label: startLabel, getValue: () => ({ from: startOfDay(minDate), to: null }) });
+    }
+    quick.push(
+      {
+        label: '30 derniers jours',
+        getValue: () => {
+          const to = new Date(effectiveMax);
+          const from = new Date(effectiveMax);
+          from.setDate(from.getDate() - 30);
+          return { from, to };
+        },
+      },
+      {
+        label: '3 derniers mois',
+        getValue: () => {
+          const to = new Date(effectiveMax);
+          const from = new Date(effectiveMax);
+          from.setMonth(from.getMonth() - 3);
+          return { from, to };
+        },
+      },
+      {
+        label: '12 derniers mois',
+        getValue: () => {
+          const to = new Date(effectiveMax);
+          const from = new Date(effectiveMax);
+          from.setFullYear(from.getFullYear() - 1);
+          return { from, to };
+        },
+      },
+    );
+
+    const years: PresetOption[] = [];
+    for (let y = maxYear; y >= yearPresetMinYear; y--) {
+      years.push({
+        label: String(y),
+        getValue: () => ({
+          from: new Date(y, 0, 1),
+          to: y === maxYear ? new Date(effectiveMax) : new Date(y, 11, 31),
+        }),
+      });
+    }
+
+    return { quickPresets: quick, yearPresets: years };
+  }, [minDate, effectiveMax, startLabel, yearPresetMinYear, maxYear]);
 
   const days = useMemo(
     () => getDaysInMonth(viewDate.getFullYear(), viewDate.getMonth()),
@@ -211,25 +255,58 @@ export function DateRangePicker({
     onChange({ from: null, to: null });
   };
 
+  // Borne la vue du calendrier à [minYear janvier, maxMonth]
+  const clampView = (year: number, month: number) => {
+    let d = new Date(year, month, 1);
+    const maxMonthStart = new Date(maxYear, effectiveMax.getMonth(), 1);
+    const minMonthStart = new Date(navMinYear, 0, 1);
+    if (d > maxMonthStart) d = maxMonthStart;
+    if (d < minMonthStart) d = minMonthStart;
+    setViewDate(d);
+  };
+
+  const canPrev =
+    viewDate.getFullYear() > navMinYear ||
+    (viewDate.getFullYear() === navMinYear && viewDate.getMonth() > 0);
+  const canNext =
+    viewDate.getFullYear() < maxYear ||
+    (viewDate.getFullYear() === maxYear && viewDate.getMonth() < effectiveMax.getMonth());
+
   const prevMonth = () => {
-    setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1));
+    if (canPrev) clampView(viewDate.getFullYear(), viewDate.getMonth() - 1);
   };
 
   const nextMonth = () => {
-    setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1));
+    if (canNext) clampView(viewDate.getFullYear(), viewDate.getMonth() + 1);
   };
 
-  const displayValue = useMemo(() => {
-    if (!value.from && !value.to) return null;
-    if (value.from && value.to) {
-      return `${formatDateShort(value.from)} → ${formatDateShort(value.to)}`;
-    }
-    if (value.from) return `À partir du ${formatDateShort(value.from)}`;
-    return null;
-  }, [value.from, value.to]);
+  const yearOptions = useMemo(() => {
+    const arr: number[] = [];
+    for (let y = maxYear; y >= navMinYear; y--) arr.push(y);
+    return arr;
+  }, [navMinYear, maxYear]);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const displayValue = useMemo(() => {
+    const { from, to } = value;
+    if (!from && !to) return null;
+    if (from && to) {
+      const sameYear = from.getFullYear() === to.getFullYear();
+      // Année calendaire complète (ou année en cours jusqu'à aujourd'hui)
+      if (sameYear && isJan1(from) && (isDec31(to) || isSameDay(to, effectiveMax))) {
+        return `Année ${from.getFullYear()}`;
+      }
+      if (sameYear) {
+        // L'année n'apparaît qu'une fois, à la fin
+        return `${formatDay(from)} → ${formatDayYear(to)}`;
+      }
+      return `${formatDayYear(from)} → ${formatDayYear(to)}`;
+    }
+    if (from) {
+      if (startLabel && minDate && isSameDay(from, minDate)) return startLabel;
+      return `Depuis le ${formatDayYear(from)}`;
+    }
+    return null;
+  }, [value, startLabel, minDate, effectiveMax]);
 
   return (
     <div className="relative" ref={containerRef}>
@@ -248,14 +325,27 @@ export function DateRangePicker({
         <span className={`flex-1 text-left ${displayValue ? '' : 'text-muted-foreground'}`}>
           {displayValue || placeholder}
         </span>
+        {displayValue && typeof resultCount === 'number' && (
+          <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-xs font-medium flex-shrink-0">
+            {resultCount.toLocaleString('fr-FR')}
+          </span>
+        )}
         {displayValue && (
-          <button
-            type="button"
+          <span
+            role="button"
+            tabIndex={0}
+            aria-label="Effacer le filtre de période"
             onClick={handleClear}
-            className="p-0.5 hover:bg-muted rounded transition-colors"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleClear(e as unknown as React.MouseEvent);
+              }
+            }}
+            className="p-0.5 hover:bg-muted rounded transition-colors flex-shrink-0"
           >
             <X className="h-3.5 w-3.5 text-muted-foreground" />
-          </button>
+          </span>
         )}
       </button>
 
@@ -265,11 +355,11 @@ export function DateRangePicker({
           <div className="flex">
             {/* Presets */}
             {showPresets && (
-              <div className="border-r bg-muted/30 p-2 min-w-[140px]">
+              <div className="border-r bg-muted/30 p-2 min-w-[150px] max-h-[340px] overflow-y-auto">
                 <div className="text-xs font-medium text-muted-foreground px-2 py-1 mb-1">
                   Raccourcis
                 </div>
-                {PRESETS.map((preset) => (
+                {quickPresets.map((preset) => (
                   <button
                     key={preset.label}
                     type="button"
@@ -279,6 +369,23 @@ export function DateRangePicker({
                     {preset.label}
                   </button>
                 ))}
+                {yearPresets.length > 0 && (
+                  <>
+                    <div className="text-xs font-medium text-muted-foreground px-2 py-1 mb-1 mt-2 border-t pt-2">
+                      Par année
+                    </div>
+                    {yearPresets.map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => handlePresetClick(preset)}
+                        className="block w-full text-left px-3 py-1.5 text-sm rounded hover:bg-muted transition-colors"
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </>
+                )}
               </div>
             )}
 
@@ -294,7 +401,7 @@ export function DateRangePicker({
                   }`}
                   onClick={() => setSelecting('from')}
                 >
-                  {tempFrom ? formatDateShort(tempFrom) : 'Début'}
+                  {tempFrom ? formatDay(tempFrom) : 'Début'}
                 </div>
                 <span className="text-muted-foreground">→</span>
                 <div
@@ -305,26 +412,47 @@ export function DateRangePicker({
                   }`}
                   onClick={() => setSelecting('to')}
                 >
-                  {tempTo ? formatDateShort(tempTo) : 'Fin'}
+                  {tempTo ? formatDay(tempTo) : 'Fin'}
                 </div>
               </div>
 
-              {/* Month navigation */}
-              <div className="flex items-center justify-between mb-3">
+              {/* Month / year navigation */}
+              <div className="flex items-center justify-between gap-1 mb-3">
                 <button
                   type="button"
                   onClick={prevMonth}
-                  className="p-1 hover:bg-muted rounded transition-colors"
+                  disabled={!canPrev}
+                  className="p-1 hover:bg-muted rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
-                <span className="font-medium">
-                  {MONTHS_FR[viewDate.getMonth()]} {viewDate.getFullYear()}
-                </span>
+                <div className="flex items-center gap-1">
+                  <select
+                    value={viewDate.getMonth()}
+                    onChange={(e) => clampView(viewDate.getFullYear(), Number(e.target.value))}
+                    className="text-sm font-medium bg-transparent rounded px-1 py-0.5 hover:bg-muted focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                    aria-label="Mois"
+                  >
+                    {MONTHS_FR.map((m, i) => (
+                      <option key={m} value={i}>{m}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={viewDate.getFullYear()}
+                    onChange={(e) => clampView(Number(e.target.value), viewDate.getMonth())}
+                    className="text-sm font-medium bg-transparent rounded px-1 py-0.5 hover:bg-muted focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                    aria-label="Année"
+                  >
+                    {yearOptions.map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
                 <button
                   type="button"
                   onClick={nextMonth}
-                  className="p-1 hover:bg-muted rounded transition-colors"
+                  disabled={!canNext}
+                  className="p-1 hover:bg-muted rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
@@ -346,6 +474,8 @@ export function DateRangePicker({
               <div className="grid grid-cols-7 gap-1">
                 {days.map((day, i) => {
                   const isCurrentMonth = day.getMonth() === viewDate.getMonth();
+                  const isFuture = startOfDay(day) > effectiveMax;
+                  const isDisabled = !isCurrentMonth || isFuture;
                   const isToday = isSameDay(day, today);
                   const isSelected = isSameDay(day, tempFrom) || isSameDay(day, tempTo);
                   const isRangeStart = isSameDay(day, tempFrom);
@@ -357,10 +487,10 @@ export function DateRangePicker({
                       key={i}
                       type="button"
                       onClick={() => handleDayClick(day)}
-                      disabled={!isCurrentMonth}
+                      disabled={isDisabled}
                       className={`
                         h-8 w-8 flex items-center justify-center text-sm rounded transition-colors
-                        ${!isCurrentMonth ? 'text-muted-foreground/30 cursor-default' : 'hover:bg-muted'}
+                        ${isDisabled ? 'text-muted-foreground/30 cursor-default' : 'hover:bg-muted'}
                         ${isToday && !isSelected ? 'font-bold text-primary' : ''}
                         ${isSelected ? 'bg-primary text-primary-foreground font-medium' : ''}
                         ${inRange && !isSelected ? 'bg-primary/10' : ''}
@@ -382,11 +512,11 @@ export function DateRangePicker({
   );
 }
 
-// Helper to convert DateRange to API params
+// Helper to convert DateRange to API params (dates locales, sans décalage de fuseau)
 export function dateRangeToParams(range: DateRange): { dateFrom?: string; dateTo?: string } {
   return {
-    ...(range.from && { dateFrom: range.from.toISOString().split('T')[0] }),
-    ...(range.to && { dateTo: range.to.toISOString().split('T')[0] }),
+    ...(range.from && { dateFrom: toLocalYMD(range.from) }),
+    ...(range.to && { dateTo: toLocalYMD(range.to) }),
   };
 }
 

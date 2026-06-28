@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { ChevronDown } from 'lucide-react';
+import { scrutinHref } from '@/lib/scrutin-url';
 
 export interface ScrutinGroupItem {
   id: string;
@@ -56,7 +57,7 @@ function ScrutinRow({ scrutin }: { scrutin: ScrutinGroupItem }) {
 
   return (
     <Link
-      href={`/scrutins/${scrutin.numero}?chambre=${scrutin.chambre || 'assemblee'}${scrutin.chambre === 'senat' && scrutin.session ? `&session=${scrutin.session}` : ''}`}
+      href={scrutinHref(scrutin)}
       className='flex items-center gap-2 min-w-0 hover:bg-muted/50 rounded px-1 -mx-1 py-0.5 transition-colors'
     >
       <span className={`shrink-0 px-1.5 py-0.5 rounded text-xs font-medium border ${badgeClass}`}>

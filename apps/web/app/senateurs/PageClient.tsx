@@ -129,7 +129,7 @@ function SenateursPageContent() {
 
   // Flatten all pages data
   const senateurs = data?.pages.flatMap((page) => page.data) ?? [];
-  const total = data?.pages[0]?.meta.total ?? 0;
+  const total = Math.min(data?.pages[0]?.meta.total ?? 0, 348);
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
