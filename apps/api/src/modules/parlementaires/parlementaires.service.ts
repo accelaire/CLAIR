@@ -104,14 +104,29 @@ export class ParlementairesService {
       return JSON.parse(cached);
     }
 
-    const { page, limit, groupe, departement, search, actif, sort, order } = query;
+    const { page, limit, groupe, departement, search, actif, sort, order, legislature } = query;
     const skip = (page - 1) * limit;
 
+    // Filtre par législature : on sélectionne les personnes ayant un mandat de CETTE
+    // période (le groupe/circonscription de la période est réinjecté au shaping).
+    // Sans législature : comportement courant (parlementaires actifs).
     const where: Prisma.ParlementaireWhereInput = {
-      actif,
+      ...(legislature !== undefined
+        ? {
+            mandatsParlementaires: {
+              some: {
+                legislature,
+                ...(groupe && { groupe: { slug: groupe } }),
+                ...(departement && { circonscription: { departement } }),
+              },
+            },
+          }
+        : {
+            actif,
+            ...(groupe && { groupe: { slug: groupe } }),
+            ...(departement && { circonscription: { departement } }),
+          }),
       ...(chambre && { chambre }),
-      ...(groupe && { groupe: { slug: groupe } }),
-      ...(departement && { circonscription: { departement } }),
       ...(search && buildParlementaireSearchCondition(search)),
     };
 
@@ -182,9 +197,30 @@ export class ParlementairesService {
       hasPrev: page > 1,
     };
 
+    // Groupe/circonscription de la législature filtrée, réinjectés au shaping
+    // (sinon la liste afficherait le groupe COURANT pour une période passée).
+    const periodByPerson = new Map<string, { groupe: unknown; circonscription: unknown }>();
+    if (legislature !== undefined && parlementaires.length > 0) {
+      const periodMandats = await this.prisma.mandatParlementaire.findMany({
+        where: { personneId: { in: parlementaires.map((p) => p.id) }, legislature },
+        select: {
+          personneId: true,
+          groupe: { select: { id: true, slug: true, chambre: true, nom: true, nomComplet: true, couleur: true, position: true } },
+          circonscription: { select: { id: true, departement: true, numero: true, nom: true, type: true } },
+        },
+      });
+      for (const m of periodMandats) {
+        periodByPerson.set(m.personneId, { groupe: m.groupe, circonscription: m.circonscription });
+      }
+    }
+
     const result = {
-      data: parlementaires.map((p) => ({
+      data: parlementaires.map((p) => {
+        const period = periodByPerson.get(p.id);
+        return {
         ...p,
+        ...(period && { groupe: period.groupe, circonscription: period.circonscription }),
+        legislature,
         _count: undefined,
         votesCount: p._count.votes,
         interventionsCount: p._count.interventions,
@@ -208,7 +244,8 @@ export class ParlementairesService {
         statsAmendementsAdoptes: undefined,
         statsQuestions: undefined,
         statsCalculatedAt: undefined,
-      })),
+        };
+      }),
       meta,
     };
 
@@ -234,6 +271,15 @@ export class ParlementairesService {
       include: {
         groupe: true,
         circonscription: true,
+        // Timeline multi-législatures : un mandat par période (AN: législature,
+        // Sénat: mandature), avec le groupe/circonscription de CETTE période.
+        mandatsParlementaires: {
+          orderBy: [{ legislature: 'desc' }, { mandature: 'desc' }, { dateDebut: 'desc' }],
+          include: {
+            groupe: { select: { slug: true, nom: true, couleur: true, legislature: true } },
+            circonscription: { select: { nom: true, departement: true, numero: true } },
+          },
+        },
         mandats: {
           where: {
             // Exclut les orphelins (actifs sans organe_ref = stale PM sans fermeture)

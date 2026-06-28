@@ -40,6 +40,11 @@ export const parlementairesListQuerySchema = z.object({
   groupe: z.string().optional().describe('Filtrer par slug de groupe politique'),
   departement: z.string().optional().describe('Filtrer par numéro de département'),
   search: z.string().optional().describe('Recherche par nom/prénom'),
+  legislature: z.coerce
+    .number()
+    .int()
+    .optional()
+    .describe('Filtrer les parlementaires ayant siégé sous cette législature AN (15,16,17). Renvoie le groupe/circonscription de cette période. Défaut: législature courante (actifs).'),
   actif: z.coerce.boolean().optional().default(true).describe('Filtrer les actifs'),
   sort: z
     .enum(['nom', 'prenom', 'presence', 'loyaute', 'activite', 'amendements', 'interventions'])
