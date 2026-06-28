@@ -46,6 +46,7 @@ import {
   calculateAllGroupeAlliances,
   calculateAllGroupeThematiques,
 } from './workers/stats-calculator.js';
+import { backfillMandatsParlementaires } from './workers/backfill-mandats.js';
 import { logger } from './utils/logger';
 
 const program = new Command();
@@ -586,6 +587,31 @@ program
       process.exit(0);
     } catch (error: any) {
       logger.error({ error: error.message }, 'link-scrutins-dossiers failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: backfill-mandats (Phase 0 multi-législatures)
+// =============================================================================
+program
+  .command('backfill-mandats')
+  .description('Phase 0 multi-législatures : legislature=17 sur l\'AN + bootstrap des mandats parlementaires (idempotent)')
+  .action(async () => {
+    try {
+      logger.info('Starting backfill mandats parlementaires (Phase 0)...');
+      const result = await backfillMandatsParlementaires();
+      console.log('\n📊 Backfill Phase 0 multi-législatures :');
+      console.log(`   Groupes AN (legislature=17) : ${result.groupesUpdated}`);
+      console.log(`   Scrutins AN (legislature=17): ${result.scrutinsUpdated}`);
+      console.log(`   Mandats créés               : ${result.mandatsCreated}`);
+      console.log(`   Mandats déjà présents       : ${result.mandatsSkipped}`);
+      if (result.senateursSerieInconnue > 0) {
+        console.log(`   ⚠️  Sénateurs sans mandature (série inconnue): ${result.senateursSerieInconnue}`);
+      }
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'backfill-mandats failed');
       process.exit(1);
     }
   });
