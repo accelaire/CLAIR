@@ -240,7 +240,12 @@ function AmendementsList({ slug }: { slug: string }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Filtrer par période" />
+        <DateRangePicker
+          value={dateRange}
+          onChange={setDateRange}
+          placeholder="Filtrer par période"
+          resultCount={total}
+        />
         <button
           onClick={() => setVotedOnly(!votedOnly)}
           className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
@@ -333,7 +338,12 @@ function VotesList({ slug }: { slug: string }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Filtrer par période" />
+        <DateRangePicker
+          value={dateRange}
+          onChange={setDateRange}
+          placeholder="Filtrer par période"
+          resultCount={total}
+        />
         <button
           onClick={() => setDissidentOnly(!dissidentOnly)}
           className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
