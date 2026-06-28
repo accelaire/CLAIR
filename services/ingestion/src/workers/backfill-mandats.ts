@@ -14,21 +14,13 @@
 
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
+import {
+  LEGISLATURE_AN_COURANTE,
+  deriveMandatContextAN,
+  deriveMandatContextSenat,
+} from './mandats';
 
 const prisma = new PrismaClient();
-
-// --- Constantes de bootstrap (Phase 0) -------------------------------------
-const LEGISLATURE_AN_COURANTE = 17;
-const LEGISLATURE_17_DEBUT = new Date('2024-07-18'); // 1re séance de la 17e législature
-
-// Sénat : série électorale → année de renouvellement (= cohorte « mandature »).
-// Série 1 renouvelée en 2023 (mandat 2023-2029) ; série 2 en 2020 (mandat 2020-2026).
-const SENAT_SERIE_TO_MANDATURE: Record<string, number> = { '1': 2023, '2': 2020 };
-const SENAT_MANDATURE_DEBUT: Record<number, Date> = {
-  2020: new Date('2020-10-01'),
-  2023: new Date('2023-10-01'),
-};
-const SENAT_DEBUT_FALLBACK = new Date('2020-10-01'); // plancher si série inconnue
 
 export interface BackfillMandatsResult {
   groupesUpdated: number;
@@ -80,18 +72,12 @@ export async function backfillMandatsParlementaires(): Promise<BackfillMandatsRe
   let serieInconnue = 0;
 
   for (const p of parlementaires) {
-    let legislature: number | null = null;
-    let mandature: number | null = null;
-    let dateDebut: Date;
-
-    if (p.chambre === 'senat') {
-      mandature = p.serie ? SENAT_SERIE_TO_MANDATURE[p.serie] ?? null : null;
-      if (mandature === null) serieInconnue++;
-      dateDebut = (mandature && SENAT_MANDATURE_DEBUT[mandature]) || SENAT_DEBUT_FALLBACK;
-    } else {
-      legislature = LEGISLATURE_AN_COURANTE;
-      dateDebut = LEGISLATURE_17_DEBUT;
-    }
+    const ctx =
+      p.chambre === 'senat'
+        ? deriveMandatContextSenat(p.serie)
+        : deriveMandatContextAN(LEGISLATURE_AN_COURANTE);
+    const { legislature, mandature } = ctx;
+    if (p.chambre === 'senat' && mandature === null) serieInconnue++;
 
     // Idempotence : ne pas recréer un mandat déjà bootstrappé pour cette personne/période.
     const existing = await prisma.mandatParlementaire.findFirst({
@@ -110,7 +96,7 @@ export async function backfillMandatsParlementaires(): Promise<BackfillMandatsRe
         legislature,
         mandature,
         serie: p.serie,
-        dateDebut,
+        dateDebut: ctx.dateDebut,
         dateFin: null, // « en cours » au bootstrap ; raffiné par l'ingestion Phase 1
         groupeId: p.groupeId,
         circonscriptionId: p.circonscriptionId,

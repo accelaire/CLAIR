@@ -108,8 +108,7 @@ model GroupePolitique {
   // Chambre (les groupes AN et Sénat sont distincts)
   chambre    String  @default("assemblee") // 'assemblee' | 'senat'
 
-  // Législature AN (15,16,17). Null pour le Sénat (groupes continus, dédup par sourceId).
-  // Phase 0 : colonne seule (additive). L'unique passera à [slug,chambre,legislature] en Phase 1.
+  // Législature AN (15,16,17). Null pour le Sénat (groupes continus, dédup applicative par sourceId).
   legislature Int?
 
   // Stats pré-calculées (recalculées lors de l'ingestion quotidienne)
@@ -137,7 +136,7 @@ model GroupePolitique {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@unique([slug, chambre])
+  @@unique([slug, chambre, legislature])
   @@index([chambre])
   @@index([legislature])
   @@map("groupes_politiques")

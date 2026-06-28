@@ -17,7 +17,7 @@ async function main() {
 
   const groupes = await Promise.all([
     prisma.groupePolitique.upsert({
-      where: { slug_chambre: { slug: 'rn', chambre: 'assemblee' } },
+      where: { slug_chambre_legislature: { slug: 'rn', chambre: 'assemblee', legislature: 17 } },
       update: {},
       create: {
         slug: 'rn',
@@ -25,12 +25,13 @@ async function main() {
         nom: 'RN',
         nomComplet: 'Rassemblement National',
         couleur: '#0D47A1',
+        legislature: 17,
         position: 'extreme_droite',
         ordre: 1,
       },
     }),
     prisma.groupePolitique.upsert({
-      where: { slug_chambre: { slug: 'lr', chambre: 'assemblee' } },
+      where: { slug_chambre_legislature: { slug: 'lr', chambre: 'assemblee', legislature: 17 } },
       update: {},
       create: {
         slug: 'lr',
@@ -38,12 +39,13 @@ async function main() {
         nom: 'LR',
         nomComplet: 'Les Républicains',
         couleur: '#1565C0',
+        legislature: 17,
         position: 'droite',
         ordre: 2,
       },
     }),
     prisma.groupePolitique.upsert({
-      where: { slug_chambre: { slug: 'ens', chambre: 'assemblee' } },
+      where: { slug_chambre_legislature: { slug: 'ens', chambre: 'assemblee', legislature: 17 } },
       update: {},
       create: {
         slug: 'ens',
@@ -51,12 +53,13 @@ async function main() {
         nom: 'ENS',
         nomComplet: 'Ensemble pour la République',
         couleur: '#FFB300',
+        legislature: 17,
         position: 'centre',
         ordre: 3,
       },
     }),
     prisma.groupePolitique.upsert({
-      where: { slug_chambre: { slug: 'modem', chambre: 'assemblee' } },
+      where: { slug_chambre_legislature: { slug: 'modem', chambre: 'assemblee', legislature: 17 } },
       update: {},
       create: {
         slug: 'modem',
@@ -64,12 +67,13 @@ async function main() {
         nom: 'MoDem',
         nomComplet: 'Mouvement Démocrate',
         couleur: '#FF9800',
+        legislature: 17,
         position: 'centre',
         ordre: 4,
       },
     }),
     prisma.groupePolitique.upsert({
-      where: { slug_chambre: { slug: 'hor', chambre: 'assemblee' } },
+      where: { slug_chambre_legislature: { slug: 'hor', chambre: 'assemblee', legislature: 17 } },
       update: {},
       create: {
         slug: 'hor',
@@ -77,12 +81,13 @@ async function main() {
         nom: 'HOR',
         nomComplet: 'Horizons',
         couleur: '#42A5F5',
+        legislature: 17,
         position: 'centre_droit',
         ordre: 5,
       },
     }),
     prisma.groupePolitique.upsert({
-      where: { slug_chambre: { slug: 'soc', chambre: 'assemblee' } },
+      where: { slug_chambre_legislature: { slug: 'soc', chambre: 'assemblee', legislature: 17 } },
       update: {},
       create: {
         slug: 'soc',
@@ -90,12 +95,13 @@ async function main() {
         nom: 'SOC',
         nomComplet: 'Socialistes et apparentés',
         couleur: '#F06292',
+        legislature: 17,
         position: 'gauche',
         ordre: 6,
       },
     }),
     prisma.groupePolitique.upsert({
-      where: { slug_chambre: { slug: 'lfi', chambre: 'assemblee' } },
+      where: { slug_chambre_legislature: { slug: 'lfi', chambre: 'assemblee', legislature: 17 } },
       update: {},
       create: {
         slug: 'lfi',
@@ -103,12 +109,13 @@ async function main() {
         nom: 'LFI',
         nomComplet: 'La France Insoumise',
         couleur: '#E53935',
+        legislature: 17,
         position: 'gauche',
         ordre: 7,
       },
     }),
     prisma.groupePolitique.upsert({
-      where: { slug_chambre: { slug: 'eco', chambre: 'assemblee' } },
+      where: { slug_chambre_legislature: { slug: 'eco', chambre: 'assemblee', legislature: 17 } },
       update: {},
       create: {
         slug: 'eco',
@@ -116,12 +123,13 @@ async function main() {
         nom: 'ECO',
         nomComplet: 'Écologistes',
         couleur: '#4CAF50',
+        legislature: 17,
         position: 'gauche',
         ordre: 8,
       },
     }),
     prisma.groupePolitique.upsert({
-      where: { slug_chambre: { slug: 'gdr', chambre: 'assemblee' } },
+      where: { slug_chambre_legislature: { slug: 'gdr', chambre: 'assemblee', legislature: 17 } },
       update: {},
       create: {
         slug: 'gdr',
@@ -129,12 +137,13 @@ async function main() {
         nom: 'GDR',
         nomComplet: 'Gauche Démocrate et Républicaine',
         couleur: '#B71C1C',
+        legislature: 17,
         position: 'gauche',
         ordre: 9,
       },
     }),
     prisma.groupePolitique.upsert({
-      where: { slug_chambre: { slug: 'liot', chambre: 'assemblee' } },
+      where: { slug_chambre_legislature: { slug: 'liot', chambre: 'assemblee', legislature: 17 } },
       update: {},
       create: {
         slug: 'liot',
@@ -142,6 +151,7 @@ async function main() {
         nom: 'LIOT',
         nomComplet: 'Libertés, Indépendants, Outre-mer et Territoires',
         couleur: '#9E9E9E',
+        legislature: 17,
         position: 'centre',
         ordre: 10,
       },
@@ -204,7 +214,7 @@ async function main() {
         profession: 'Avocate',
         photoUrl: 'https://www.assemblee-nationale.fr/dyn/deputes/PA267013_official.jpg',
         twitter: 'MLP_officiel',
-        groupe: { connect: { slug_chambre: { slug: 'rn', chambre: 'assemblee' } } },
+        groupe: { connect: { slug_chambre_legislature: { slug: 'rn', chambre: 'assemblee', legislature: 17 } } },
       },
     }),
     prisma.parlementaire.upsert({
@@ -220,7 +230,7 @@ async function main() {
         profession: 'Haut fonctionnaire',
         photoUrl: 'https://www.assemblee-nationale.fr/dyn/deputes/PA721844_official.jpg',
         twitter: 'GabrielAttal',
-        groupe: { connect: { slug_chambre: { slug: 'ens', chambre: 'assemblee' } } },
+        groupe: { connect: { slug_chambre_legislature: { slug: 'ens', chambre: 'assemblee', legislature: 17 } } },
       },
     }),
     prisma.parlementaire.upsert({
@@ -236,7 +246,7 @@ async function main() {
         profession: 'Professeur',
         photoUrl: 'https://www.assemblee-nationale.fr/dyn/deputes/PA2397_official.jpg',
         twitter: 'JLMelenchon',
-        groupe: { connect: { slug_chambre: { slug: 'lfi', chambre: 'assemblee' } } },
+        groupe: { connect: { slug_chambre_legislature: { slug: 'lfi', chambre: 'assemblee', legislature: 17 } } },
       },
     }),
     prisma.parlementaire.upsert({
@@ -252,7 +262,7 @@ async function main() {
         profession: 'Cadre du secteur public',
         photoUrl: 'https://www.assemblee-nationale.fr/dyn/deputes/PA720752_official.jpg',
         twitter: 'faborel',
-        groupe: { connect: { slug_chambre: { slug: 'soc', chambre: 'assemblee' } } },
+        groupe: { connect: { slug_chambre_legislature: { slug: 'soc', chambre: 'assemblee', legislature: 17 } } },
       },
     }),
     prisma.parlementaire.upsert({
@@ -267,7 +277,7 @@ async function main() {
         dateNaissance: new Date('1975-04-12'),
         profession: 'Haut fonctionnaire',
         photoUrl: 'https://www.assemblee-nationale.fr/dyn/deputes/PA721950_official.jpg',
-        groupe: { connect: { slug_chambre: { slug: 'lr', chambre: 'assemblee' } } },
+        groupe: { connect: { slug_chambre_legislature: { slug: 'lr', chambre: 'assemblee', legislature: 17 } } },
       },
     }),
   ]);

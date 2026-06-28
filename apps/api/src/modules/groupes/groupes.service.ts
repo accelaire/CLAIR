@@ -129,10 +129,11 @@ export class GroupesService {
       return JSON.parse(cached);
     }
 
-    const groupe = await this.prisma.groupePolitique.findUnique({
-      where: {
-        slug_chambre: { slug, chambre },
-      },
+    const groupe = await this.prisma.groupePolitique.findFirst({
+      // Multi-législatures : un même slug peut exister sur plusieurs législatures (AN).
+      // On résout la plus récente (= législature courante). Sénat : legislature null.
+      where: { slug, chambre },
+      orderBy: { legislature: 'desc' },
       include: {
         parlementaires: {
           where: { actif: true },
@@ -272,10 +273,11 @@ export class GroupesService {
       return JSON.parse(cached);
     }
 
-    const groupe = await this.prisma.groupePolitique.findUnique({
-      where: {
-        slug_chambre: { slug, chambre },
-      },
+    const groupe = await this.prisma.groupePolitique.findFirst({
+      // Multi-législatures : un même slug peut exister sur plusieurs législatures (AN).
+      // On résout la plus récente (= législature courante). Sénat : legislature null.
+      where: { slug, chambre },
+      orderBy: { legislature: 'desc' },
       select: { id: true },
     });
 
@@ -338,10 +340,11 @@ export class GroupesService {
       return JSON.parse(cached);
     }
 
-    const groupe = await this.prisma.groupePolitique.findUnique({
-      where: {
-        slug_chambre: { slug, chambre },
-      },
+    const groupe = await this.prisma.groupePolitique.findFirst({
+      // Multi-législatures : un même slug peut exister sur plusieurs législatures (AN).
+      // On résout la plus récente (= législature courante). Sénat : legislature null.
+      where: { slug, chambre },
+      orderBy: { legislature: 'desc' },
       select: { id: true, nom: true, nomComplet: true, statsCohesion: true },
     });
 
@@ -584,10 +587,11 @@ export class GroupesService {
       return JSON.parse(cached);
     }
 
-    const groupe = await this.prisma.groupePolitique.findUnique({
-      where: {
-        slug_chambre: { slug, chambre },
-      },
+    const groupe = await this.prisma.groupePolitique.findFirst({
+      // Multi-législatures : un même slug peut exister sur plusieurs législatures (AN).
+      // On résout la plus récente (= législature courante). Sénat : legislature null.
+      where: { slug, chambre },
+      orderBy: { legislature: 'desc' },
       select: { id: true, nom: true, couleur: true },
     });
 
@@ -669,10 +673,11 @@ export class GroupesService {
       return JSON.parse(cached);
     }
 
-    const groupe = await this.prisma.groupePolitique.findUnique({
-      where: {
-        slug_chambre: { slug, chambre },
-      },
+    const groupe = await this.prisma.groupePolitique.findFirst({
+      // Multi-législatures : un même slug peut exister sur plusieurs législatures (AN).
+      // On résout la plus récente (= législature courante). Sénat : legislature null.
+      where: { slug, chambre },
+      orderBy: { legislature: 'desc' },
       select: { id: true, nom: true, nomComplet: true, couleur: true },
     });
 

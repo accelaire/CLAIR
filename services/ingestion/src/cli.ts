@@ -84,6 +84,7 @@ program
   .option('--texte-ids <ids>', 'IDs texte AMELI à cibler (séparés par des virgules, avec --se -a)')
   .option('--no-actions', 'Ne pas synchroniser les actions de lobbying (avec --lo)')
   .option('-l, --limit <number>', 'Limiter le nombre d\'éléments à synchroniser', parseInt)
+  .option('--legislature <number>', 'Législature AN à ingérer (15,16,17 — défaut: courante). Avec -p --an', parseInt)
   .option('--dry-run', 'Mode simulation (affiche ce qui serait fait sans modifier)')
   // Opérations de liaison (combiner avec --in ou --am)
   .option('--link', 'Lier les scrutins aux interventions (--in) ou amendements (--am)')
@@ -171,11 +172,11 @@ program
         await syncGroupes();
       } else if (options.parlementaires) {
         if (chambre === 'an') {
-          await syncDeputes(options.circonscriptions || false);
+          await syncDeputes(options.circonscriptions || false, options.legislature);
         } else if (chambre === 'se') {
           await syncSenateurs(false);
         } else {
-          await syncDeputes(options.circonscriptions || false);
+          await syncDeputes(options.circonscriptions || false, options.legislature);
           await syncSenateurs(false);
         }
       } else if (options.scrutins) {
