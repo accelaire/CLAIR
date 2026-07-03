@@ -6,12 +6,15 @@
 // - 10 req/min pour les accès directs à l'API, illimité pour le frontend
 // - Blocage des User-Agents suspects (scripts basiques)
 // - Auto-ban des IPs après trop de violations 429
+// - Clé API (header `x-api-key`) qui exempte totalement des 3 protections
+//   ci-dessus (rate limit, blocage UA, auto-ban) — pour les extractions en masse
 // - Messages d'erreur avec instructions de contact
 // =============================================================================
 
 import { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import fp from 'fastify-plugin';
 import rateLimit from '@fastify/rate-limit';
+import { createHash, timingSafeEqual } from 'crypto';
 
 // =============================================================================
 // CONFIGURATION
@@ -95,6 +98,49 @@ function getTrustedOrigins(): string[] {
   return _trustedOrigins;
 }
 
+let _apiKeyRaw: string | null = null;
+let _apiKeyHashes: Buffer[] = [];
+
+/** SHA-256 digest — fixed length so timingSafeEqual never leaks key length. */
+function sha256(value: string): Buffer {
+  return createHash('sha256').update(value, 'utf8').digest();
+}
+
+/**
+ * Configured API keys from CLAIR_API_KEYS (comma-separated), stored as hashes.
+ * Multiple keys allow per-consumer revocation. Recomputed only when the raw env
+ * value changes (cache stays valid in prod, and stays testable).
+ */
+function getApiKeyHashes(): Buffer[] {
+  const raw = process.env.CLAIR_API_KEYS || '';
+  if (raw !== _apiKeyRaw) {
+    _apiKeyRaw = raw;
+    _apiKeyHashes = raw
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean)
+      .map(sha256);
+  }
+
+  return _apiKeyHashes;
+}
+
+/**
+ * Check whether the request carries a valid API key (header `x-api-key`).
+ * Comparison is constant-time (hash + timingSafeEqual) to avoid timing leaks.
+ * A valid key exempts the request from UA blocking, auto-ban and rate limiting.
+ */
+function hasValidApiKey(request: FastifyRequest): boolean {
+  const hashes = getApiKeyHashes();
+  if (hashes.length === 0) return false;
+
+  const provided = request.headers['x-api-key'];
+  if (typeof provided !== 'string' || provided.length === 0) return false;
+
+  const providedHash = sha256(provided);
+  return hashes.some((h) => timingSafeEqual(h, providedHash));
+}
+
 // =============================================================================
 // PLUGIN
 // =============================================================================
@@ -105,6 +151,7 @@ const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
   // ===========================================================================
   fastify.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     if (isExcludedPath(request.url)) return;
+    if (hasValidApiKey(request)) return; // Trusted API key bypasses UA blocking
 
     const ua = (request.headers['user-agent'] || '').toLowerCase().trim();
 
@@ -126,6 +173,7 @@ const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
   // ===========================================================================
   fastify.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     if (isExcludedPath(request.url)) return;
+    if (hasValidApiKey(request)) return; // Trusted API key bypasses auto-ban
 
     const ip = request.ip;
     const banKey = `ratelimit:ban:${ip}`;
@@ -158,8 +206,13 @@ const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
     keyGenerator: (request: FastifyRequest) => request.ip,
     skipOnError: true, // If Redis is down, don't block
     allowList: (request: FastifyRequest) => {
-      // Health checks (Railway healthcheck) and cache warming (lightMyRequest) bypass rate limiting
-      return isExcludedPath(request.url) || request.ip === '127.0.0.1';
+      // Health checks (Railway healthcheck) and cache warming (lightMyRequest) bypass rate limiting.
+      // Trusted API keys are fully exempt (mass extraction).
+      return (
+        isExcludedPath(request.url) ||
+        request.ip === '127.0.0.1' ||
+        hasValidApiKey(request)
+      );
     },
     errorResponseBuilder: (_request: FastifyRequest, context) => ({
       statusCode: 429,
@@ -225,6 +278,7 @@ const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
         type: 'api_access',
         ip: request.ip,
         ua: request.headers['user-agent'] || 'none',
+        keyed: hasValidApiKey(request),
         method: request.method,
         url: request.url,
         status: reply.statusCode,
@@ -244,4 +298,4 @@ export default fp(rateLimitPlugin, {
   dependencies: ['redis'],
 });
 
-export { rateLimitPlugin };
+export { rateLimitPlugin, hasValidApiKey };
