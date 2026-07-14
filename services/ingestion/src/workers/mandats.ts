@@ -33,14 +33,66 @@ export const LEGISLATURE_FIN: Record<number, Date | null> = {
   17: null,
 };
 
-// Sénat : série électorale → année de renouvellement (= cohorte « mandature »).
-// Série 1 renouvelée en 2023 (mandat 2023-2029) ; série 2 en 2020 (mandat 2020-2026).
-export const SENAT_SERIE_TO_MANDATURE: Record<string, number> = { '1': 2023, '2': 2020 };
-export const SENAT_MANDATURE_DEBUT: Record<number, Date> = {
-  2020: new Date('2020-10-01'),
-  2023: new Date('2023-10-01'),
-};
+// =============================================================================
+// Sénat — calendrier des renouvellements (cohorte « mandature »)
+//
+// La source `senateurs.json` n'expose AUCUNE date de mandat : seulement la série
+// électorale. La mandature (= année du renouvellement qui a ouvert le mandat) est
+// donc DÉRIVÉE du calendrier, jamais lue de la source.
+//
+// Depuis 2011, renouvellement par moitiés tous les 3 ans, en alternance ; chaque
+// mandat dure 6 ans. Le scrutin a lieu fin septembre, la prise de fonction le 1er
+// octobre :
+//   - série 1 : 2011, 2017, 2023, 2029…
+//   - série 2 : 2014, 2020, 2026, 2032…  (renouvellement du 27 sept. 2026)
+// La série "3" est un héritage des tiers pré-2011 : pas de calendrier → mandature null.
+//
+// ⚠️ Ne JAMAIS figer la mandature dans une map statique : au renouvellement de
+// sept. 2026, un sénateur série 2 réélu doit obtenir une NOUVELLE mandature (2026)
+// pour que son mandat 2020 soit clos et conservé, au lieu d'être écrasé.
+// =============================================================================
+
+export const SENAT_MANDAT_DUREE_ANS = 6;
+
+/** Ancre du calendrier : dernier renouvellement connu de chaque série. */
+const SENAT_ANCRE_RENOUVELLEMENT: Record<string, number> = { '1': 2023, '2': 2020 };
+
 export const SENAT_DEBUT_FALLBACK = new Date('2020-10-01'); // plancher si série inconnue
+
+/** Prise de fonction d'une mandature : 1er octobre de l'année du renouvellement. */
+export function senatMandatureDebut(mandature: number): Date {
+  return new Date(Date.UTC(mandature, 9, 1)); // mois 9 = octobre
+}
+
+/** Fin de droit d'un mandat : veille du renouvellement suivant de la même série
+ *  (30 septembre, 6 ans plus tard). Sert à clore un mandat sans le supprimer. */
+export function senatMandatFinTheorique(mandature: number): Date {
+  const suivant = senatMandatureDebut(mandature + SENAT_MANDAT_DUREE_ANS);
+  return new Date(suivant.getTime() - 24 * 60 * 60 * 1000);
+}
+
+/**
+ * Mandature d'un sénateur d'une série donnée, observée à la date `at`.
+ * = dernier renouvellement de cette série antérieur ou égal à `at`.
+ *
+ * Ex. série 2 observée le 2026-09-01 → 2020 ; observée le 2026-10-02 → 2026.
+ */
+export function deriveMandatureSenat(serie: string | null, at: Date = new Date()): number | null {
+  if (!serie) return null;
+  const ancre = SENAT_ANCRE_RENOUVELLEMENT[serie];
+  if (ancre === undefined) return null; // série "3" (pré-2011) ou valeur inconnue
+
+  let mandature = ancre;
+  // Avance vers les renouvellements déjà survenus à `at`…
+  while (senatMandatureDebut(mandature + SENAT_MANDAT_DUREE_ANS) <= at) {
+    mandature += SENAT_MANDAT_DUREE_ANS;
+  }
+  // …ou recule si `at` est antérieure à l'ancre.
+  while (senatMandatureDebut(mandature) > at) {
+    mandature -= SENAT_MANDAT_DUREE_ANS;
+  }
+  return mandature;
+}
 
 /** Contexte temporel d'un mandat, dérivé de la chambre + législature/série. */
 export interface MandatContext {
@@ -62,14 +114,18 @@ export function deriveMandatContextAN(legislature: number): MandatContext {
   };
 }
 
-/** Dérive le contexte de mandat pour un sénateur, depuis sa série électorale. */
-export function deriveMandatContextSenat(serie: string | null): MandatContext {
-  const mandature = serie ? SENAT_SERIE_TO_MANDATURE[serie] ?? null : null;
+/**
+ * Dérive le contexte de mandat d'un sénateur depuis sa série électorale, à la date
+ * d'observation `at` (par défaut : maintenant). Le mandat en cours est ouvert
+ * (`dateFin: null`) ; c'est l'upsert qui clôt le mandat précédent au renouvellement.
+ */
+export function deriveMandatContextSenat(serie: string | null, at: Date = new Date()): MandatContext {
+  const mandature = deriveMandatureSenat(serie, at);
   return {
     legislature: null,
     mandature,
     serie,
-    dateDebut: (mandature && SENAT_MANDATURE_DEBUT[mandature]) || SENAT_DEBUT_FALLBACK,
+    dateDebut: mandature !== null ? senatMandatureDebut(mandature) : SENAT_DEBUT_FALLBACK,
     dateFin: null,
   };
 }
@@ -110,6 +166,8 @@ export async function upsertMandatParlementaire(
     select: { id: true },
   });
 
+  let created: boolean;
+
   if (existing) {
     await prisma.mandatParlementaire.update({
       where: { id: existing.id },
@@ -122,22 +180,56 @@ export async function upsertMandatParlementaire(
         commissionPermanente: input.commissionPermanente,
       },
     });
-    return { created: false };
+    created = false;
+  } else {
+    await prisma.mandatParlementaire.create({
+      data: {
+        personneId,
+        chambre,
+        legislature: ctx.legislature,
+        mandature: ctx.mandature,
+        serie: ctx.serie,
+        dateDebut: ctx.dateDebut,
+        dateFin: ctx.dateFin,
+        groupeId: input.groupeId,
+        circonscriptionId: input.circonscriptionId,
+        commissionPermanente: input.commissionPermanente,
+      },
+    });
+    created = true;
   }
 
-  await prisma.mandatParlementaire.create({
-    data: {
+  // Renouvellement Sénat : le mandat qui vient d'être ouvert sur une nouvelle
+  // mandature rend caducs les mandats antérieurs restés ouverts → on les CLÔT
+  // (jamais de suppression, jamais d'écrasement de leur groupe/circo d'époque).
+  if (chambre === 'senat' && ctx.mandature !== null) {
+    await cloturerMandatsSenatAnterieurs(prisma, personneId, ctx.mandature);
+  }
+
+  return { created };
+}
+
+/** Clôt les mandats sénatoriaux d'une personne antérieurs à `mandatureCourante`
+ *  et restés ouverts, à leur fin de droit (veille du renouvellement suivant). */
+async function cloturerMandatsSenatAnterieurs(
+  prisma: PrismaLike,
+  personneId: string,
+  mandatureCourante: number,
+): Promise<void> {
+  const anterieurs = await prisma.mandatParlementaire.findMany({
+    where: {
       personneId,
-      chambre,
-      legislature: ctx.legislature,
-      mandature: ctx.mandature,
-      serie: ctx.serie,
-      dateDebut: ctx.dateDebut,
-      dateFin: ctx.dateFin,
-      groupeId: input.groupeId,
-      circonscriptionId: input.circonscriptionId,
-      commissionPermanente: input.commissionPermanente,
+      chambre: 'senat',
+      dateFin: null,
+      mandature: { lt: mandatureCourante },
     },
+    select: { id: true, mandature: true },
   });
-  return { created: true };
+
+  for (const m of anterieurs) {
+    await prisma.mandatParlementaire.update({
+      where: { id: m.id },
+      data: { dateFin: senatMandatFinTheorique(m.mandature!) },
+    });
+  }
 }

@@ -23,6 +23,7 @@ import {
   deriveMandatContextAN,
   deriveMandatContextSenat,
   isLegislatureCourante,
+  senatMandatFinTheorique,
   upsertMandatParlementaire,
 } from './mandats';
 import {
@@ -868,8 +869,10 @@ export async function syncSenatCommissions(): Promise<{ created: number; updated
     select: { id: true, uid: true, organeRef: true, nom: true, nomCourt: true },
   });
   const byOrganeRef = new Map<string, string>();
+  const byUid = new Map<string, string>();
   for (const c of existing) {
     if (c.organeRef) byOrganeRef.set(c.organeRef, c.id);
+    byUid.set(c.uid, c.id);
   }
 
   let created = 0;
@@ -877,9 +880,10 @@ export async function syncSenatCommissions(): Promise<{ created: number; updated
   const defaultDateDebut = new Date('2017-10-01'); // Start of current Senate term
 
   for (const [, { code, libelle }] of commissionData) {
+    const uid = `SENAT-${code}`;
     const slug = `senat-${code.toLowerCase()}`;
     const data = {
-      uid: `SENAT-${code}`,
+      uid,
       slug,
       chambre: 'senat' as const,
       type: 'permanente',
@@ -889,10 +893,15 @@ export async function syncSenatCommissions(): Promise<{ created: number; updated
       actif: true,
     };
 
-    const existingByOrganeRef = byOrganeRef.get(code);
-    if (existingByOrganeRef) {
+    // `uid` est la vraie clé unique de la table : il faut la consulter AUSSI.
+    // Un organeRef divergent (hérité du merge COMSENAT PO* → SENAT-*) faisait
+    // manquer le lookup, partait en `create` et violait la contrainte unique sur
+    // `uid` → crash de tout le sync Sénat. Le même écart cassait silencieusement
+    // le rattachement sénateur↔commission (map organeRef ≠ `code` de la source).
+    const existingId = byOrganeRef.get(code) ?? byUid.get(uid);
+    if (existingId) {
       await prisma.commission.update({
-        where: { id: existingByOrganeRef },
+        where: { id: existingId },
         data: { organeRef: code },
       });
       updated++;
@@ -1003,11 +1012,65 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
     if (result.mandatCreated) mandatsCreated++;
   }
 
+  const sortants = await cloturerSenateursSortants(senateurs.map((s) => s.uid));
+
   logger.info(
-    { created, updated, mandatsCreated, total: senateurs.length },
+    { created, updated, mandatsCreated, sortants, total: senateurs.length },
     'Sénateurs sync completed',
   );
   return { created, updated };
+}
+
+/** Effectif plancher attendu du Sénat (348 sièges). En dessous, on considère le
+ *  fetch source comme dégradé et on REFUSE de désactiver qui que ce soit. */
+const SENAT_EFFECTIF_MIN = 300;
+
+/**
+ * Sortants : sénateurs actifs en base absents de la source (non réélus au
+ * renouvellement, démissions, décès). On ne supprime JAMAIS : on désactive la
+ * personne et on clôt son mandat ouvert à sa fin de droit (ou à la date
+ * d'observation en cas de départ anticipé). Votes et historique restent intacts.
+ */
+async function cloturerSenateursSortants(sourceUids: string[]): Promise<number> {
+  // Garde-fou : un fetch partiel/dégradé ne doit pas désactiver le Sénat en masse.
+  if (sourceUids.length < SENAT_EFFECTIF_MIN) {
+    logger.warn(
+      { recus: sourceUids.length, minimum: SENAT_EFFECTIF_MIN },
+      'Effectif Sénat source anormalement bas — passe sortants ANNULÉE',
+    );
+    return 0;
+  }
+
+  const sortants = await prisma.parlementaire.findMany({
+    where: { chambre: 'senat', actif: true, sourceId: { notIn: sourceUids } },
+    select: { id: true },
+  });
+  if (sortants.length === 0) return 0;
+
+  const ids = sortants.map((p) => p.id);
+  const now = new Date();
+
+  await prisma.parlementaire.updateMany({ where: { id: { in: ids } }, data: { actif: false } });
+
+  const mandatsOuverts = await prisma.mandatParlementaire.findMany({
+    where: { personneId: { in: ids }, chambre: 'senat', dateFin: null },
+    select: { id: true, mandature: true },
+  });
+
+  for (const m of mandatsOuverts) {
+    const finDroit = m.mandature !== null ? senatMandatFinTheorique(m.mandature) : now;
+    await prisma.mandatParlementaire.update({
+      where: { id: m.id },
+      // Renouvellement passé → fin de droit ; départ anticipé → date d'observation.
+      data: { dateFin: now >= finDroit ? finDroit : now },
+    });
+  }
+
+  logger.info(
+    { sortants: ids.length, mandatsClos: mandatsOuverts.length },
+    'Sénateurs sortants désactivés et mandats clos',
+  );
+  return ids.length;
 }
 
 async function syncSingleSenateur(
@@ -1102,39 +1165,47 @@ async function syncSingleSenateur(
     parlementaireId = created.id;
   }
 
-  // Create/update commission mandats from sourceData.organismes
-  const organismes = s.sourceData.organismes || [];
-  for (const org of organismes) {
-    if (org.type !== 'COMMISSION') continue;
-    const code = org.organeRef || org.code;
-    if (!code) continue;
-    const commissionId = commissionByOrganeRef.get(code);
-    if (!commissionId) continue;
-
-    const mandatData: Prisma.MandatUncheckedCreateInput = {
-      typeOrgane: 'COMMISSION',
-      qualite: org.qualite || 'Membre',
-      dateDebut: org.dateDebut ? new Date(org.dateDebut) : new Date(),
-      dateFin: org.dateFin ? new Date(org.dateFin) : null,
-      organeRef: code,
-      parlementaireId: parlementaireId,
-      commissionId: commissionId,
-    };
-
-    await prisma.mandat.upsert({
-      where: {
-        parlementaireId_organeRef: { parlementaireId, organeRef: code },
-      },
-      create: mandatData,
-      update: {
-        qualite: org.qualite || 'Membre',
-        dateFin: org.dateFin ? new Date(org.dateFin) : null,
-      },
-    });
-  }
-
   // Mandat parlementaire (mandature dérivée de la série électorale).
   const ctx = deriveMandatContextSenat(s.serie);
+
+  // Mandats de commission depuis sourceData.organismes.
+  // `SenatOrganisme` n'expose que { code, type, libelle, ordre } : ni qualité ni
+  // dates. On ancre donc le mandat sur le début de la mandature du sénateur
+  // (stable et idempotent) plutôt que sur la date du run.
+  const organismes = s.sourceData.organismes || [];
+  for (const org of organismes) {
+    if (org.type !== 'COMMISSION' || !org.code) continue;
+    const commissionId = commissionByOrganeRef.get(org.code);
+    if (!commissionId) continue;
+
+    // `Mandat` n'a PAS de contrainte unique (parlementaireId, organeRef) : on
+    // résout à la main plutôt que via un upsert sur une clé inexistante (qui
+    // faisait planter le sync dès que le lookup commission aboutissait).
+    const existingMandat = await prisma.mandat.findFirst({
+      where: { parlementaireId, organeRef: org.code },
+      select: { id: true },
+    });
+
+    if (existingMandat) {
+      await prisma.mandat.update({
+        where: { id: existingMandat.id },
+        data: { commissionId, institution: org.libelle },
+      });
+    } else {
+      await prisma.mandat.create({
+        data: {
+          typeOrgane: 'COMMISSION',
+          institution: org.libelle,
+          qualite: 'Membre',
+          dateDebut: ctx.dateDebut,
+          dateFin: null,
+          organeRef: org.code,
+          parlementaireId,
+          commissionId,
+        },
+      });
+    }
+  }
   const { created: mandatCreated } = await upsertMandatParlementaire(prisma, {
     personneId: parlementaireId,
     chambre: s.chambre,
