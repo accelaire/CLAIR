@@ -72,6 +72,38 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
     });
 
     // ===========================================================================
+    // GET /legislatures - Législatures disponibles (sélecteur de période)
+    // ===========================================================================
+    fastify.get('/legislatures', {
+      schema: {
+        tags: [chambreLabel],
+        summary: 'Législatures disponibles',
+        description: `Liste des législatures pour lesquelles des mandats existent${forcedChambre ? ` (${chambreLabel.toLowerCase()})` : ''}, de la plus récente à la plus ancienne, avec le nombre de mandats.`,
+      },
+      handler: async (_request, _reply) => {
+        const legislatures = await service.getLegislatures(forcedChambre);
+        return { data: legislatures };
+      },
+    });
+
+    // ===========================================================================
+    // GET /sessions - Sessions Sénat disponibles (axe temporel de la chambre haute)
+    // ===========================================================================
+    fastify.get('/sessions', {
+      schema: {
+        tags: [chambreLabel],
+        summary: 'Sessions disponibles (Sénat)',
+        description:
+          "Sessions ordinaires (1er oct. → 30 sept.) pour lesquelles la composition du Sénat est connue de façon fiable, de la plus récente à la plus ancienne. Le Sénat n'ayant pas de législature (renouvellement par moitiés), la session est le seul axe décrivant la chambre à un instant donné. Vide pour l'Assemblée (utiliser /legislatures).",
+      },
+      handler: async (_request, _reply) => {
+        if (forcedChambre === 'assemblee') return { data: [] };
+        const sessions = await service.getSessionsSenat();
+        return { data: sessions };
+      },
+    });
+
+    // ===========================================================================
     // GET /compare - Comparer des parlementaires
     // ===========================================================================
     fastify.get('/compare', {

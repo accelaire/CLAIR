@@ -51,10 +51,11 @@ function SenateursPageContent() {
   const router = useRouter();
 
   // Sync filters with URL for back button preservation
-  const [filters, setFilter, , clearAll] = useUrlFilters<{
+  const [filters, setFilter, setFilters, clearAll] = useUrlFilters<{
     search: string;
     groupe: string;
-  }>(['search', 'groupe']);
+    session: string;
+  }>(['search', 'groupe', 'session']);
 
   const [compareMode, setCompareMode] = useState(false);
   const [preselectionHandled, setPreselectionHandled] = useState(false);
@@ -107,7 +108,13 @@ function SenateursPageContent() {
     queryKey: ['senateurs', { ...filters }],
     queryFn: ({ pageParam = 1 }) =>
       api.get('/senateurs', {
-        params: { search: filters.search || undefined, groupe: filters.groupe || undefined, page: pageParam, limit: 24 },
+        params: {
+          search: filters.search || undefined,
+          groupe: filters.groupe || undefined,
+          session: filters.session || undefined,
+          page: pageParam,
+          limit: 24,
+        },
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
@@ -119,6 +126,18 @@ function SenateursPageContent() {
     queryKey: ['groupes-senat'],
     queryFn: () => api.get('/senateurs/groupes').then((res) => res.data.data),
   });
+
+  // Sessions disponibles. Le Sénat n'a pas de législature : la session (1er oct. →
+  // 30 sept.) est le seul axe décrivant la chambre à un instant donné. L'API ne
+  // renvoie que les sessions dont la composition est réellement connue.
+  const { data: sessionsData } = useQuery<Array<{ session: string; count: number }>>({
+    queryKey: ['senateurs-sessions'],
+    queryFn: () => api.get('/senateurs/sessions').then((res) => res.data.data),
+  });
+  const sessions = sessionsData ?? [];
+  const sessionCourante = sessions[0]?.session ?? '';
+  const selectedSession = filters.session || sessionCourante;
+  const showSessionFilter = sessions.length > 1;
 
   // Hook pour le scroll infini
   const { loadMoreRef } = useInfiniteScroll({
@@ -134,8 +153,9 @@ function SenateursPageContent() {
   const activeFilterCount = useMemo(() => {
     let count = 0;
     if (filters.groupe) count++;
+    if (filters.session && filters.session !== sessionCourante) count++;
     return count;
-  }, [filters.groupe]);
+  }, [filters.groupe, filters.session, sessionCourante]);
 
   const handleClearFilters = () => {
     clearAll();
@@ -161,7 +181,8 @@ function SenateursPageContent() {
         <div>
           <h1 className="text-3xl font-bold">Sénateurs</h1>
           <p className="mt-2 text-muted-foreground">
-            {total > 0 ? total.toLocaleString('fr-FR') : '—'} sénateurs sur 348 sièges — Session 2025-2026
+            {total > 0 ? total.toLocaleString('fr-FR') : '—'} sénateurs sur 348 sièges
+            {selectedSession && ` — Session ${selectedSession}`}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Source : <a href="https://data.senat.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.senat.fr</a>
@@ -216,7 +237,35 @@ function SenateursPageContent() {
           </div>
         }
       >
-        {/* Filtre par groupe */}
+        {/* Filtre par session (masqué s'il n'y a qu'une session servable) */}
+        {showSessionFilter && (
+          <div className="relative md:w-auto">
+            <select
+              value={selectedSession}
+              onChange={(e) => {
+                const value = e.target.value;
+                // La composition des groupes évolue d'une session à l'autre → reset.
+                setFilters({
+                  session: value === sessionCourante ? '' : value,
+                  groupe: '',
+                });
+              }}
+              className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              {sessions.map((s) => (
+                <option key={s.session} value={s.session}>
+                  Session {s.session}
+                  {s.session === sessionCourante ? ' (actuelle)' : ''}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          </div>
+        )}
+
+        {/* Filtre par groupe — masqué hors session courante (les groupes listés sont
+            ceux d'aujourd'hui, la liste n'est pas historisée par session). */}
+        {selectedSession === sessionCourante && (
         <div className="relative md:w-auto">
           <select
             value={filters.groupe}
@@ -232,6 +281,7 @@ function SenateursPageContent() {
           </select>
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>
+        )}
       </FilterBar>
 
       {/* Loading initial */}

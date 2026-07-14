@@ -28,7 +28,6 @@ import {
   Loader2,  AlertTriangle,
   Sparkles,
   Shield,
-  ScrollText,
   ExternalLink,
   Info,
 } from 'lucide-react';
@@ -38,6 +37,7 @@ import { scrutinHref } from '@/lib/scrutin-url';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { InterventionsList } from '@/components/parlementaire/interventions-list';
+import { MandatsBlock } from '@/components/parlementaire/mandats-timeline';
 
 export interface DeputeDetail {
   id: string;
@@ -77,7 +77,7 @@ export interface DeputeDetail {
   positionsClesIA?: string | null;
   faitsNotablesIA?: string | null;
   iaGeneratedAt?: string | null;
-  // Mandats
+  // Mandats (organes / commissions)
   mandats?: Array<{
     id: string;
     typeOrgane: string;
@@ -86,6 +86,15 @@ export interface DeputeDetail {
     dateDebut: string;
     dateFin: string | null;
     commission?: { slug: string; nom: string; chambre: string } | null;
+  }>;
+  // Mandats parlementaires (parcours par législature : groupe + circonscription)
+  mandatsParlementaires?: Array<{
+    legislature: number | null;
+    mandature: number | null;
+    dateDebut: string;
+    dateFin: string | null;
+    groupe: { slug: string; nom: string; couleur: string | null; legislature: number | null } | null;
+    circonscription: { nom: string; departement: string; numero: number } | null;
   }>;
   // Déclarations HATVP
   declarations?: Array<{
@@ -722,10 +731,13 @@ export default function PageClient({ initialData }: { initialData?: DeputeDetail
       )}
 
       {/* Mandats & Déclarations HATVP */}
-      {((depute.mandats && depute.mandats.length > 0) || (depute.declarations && depute.declarations.length > 0)) && (
-        <div className="mb-8 grid gap-6 lg:grid-cols-2">
-          {/* Mandats et fonctions */}
-          {depute.mandats && depute.mandats.length > 0 && (() => {
+      {((depute.mandats && depute.mandats.length > 0) ||
+        (depute.mandatsParlementaires && depute.mandatsParlementaires.length > 0) ||
+        (depute.declarations && depute.declarations.length > 0)) && (
+        <div className="mb-8 space-y-8">
+          {/* Mandats : frise des législatures + fonctions en commission rattachées */}
+          {((depute.mandats?.length ?? 0) > 0 ||
+            (depute.mandatsParlementaires?.length ?? 0) > 0) && (() => {
             const mandatsActifs = (depute.mandats ?? []).filter((m) => !m.dateFin);
             const mandatsAnciens = (depute.mandats ?? []).filter((m) => !!m.dateFin);
             const renderMandat = (m: NonNullable<typeof depute.mandats>[0]) => {
@@ -750,13 +762,12 @@ export default function PageClient({ initialData }: { initialData?: DeputeDetail
                 </div>
               );
             };
-            return (
-              <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <ScrollText className="h-5 w-5 text-blue-500" />
-                  <h2 className="text-xl font-semibold">Mandats et fonctions</h2>
-                </div>
-                <div className="space-y-2">
+
+            // Fonctions en commission : accordéons « Voir N de plus » / « Anciens
+            // mandats » conservés tels quels, simplement rattachés à la période.
+            const fonctions = (depute.mandats?.length ?? 0) > 0 ? (
+              <>
+                <div className="grid gap-2 sm:grid-cols-2">
                   {showAllMandats
                     ? mandatsActifs.map(renderMandat)
                     : mandatsActifs.slice(0, 4).map(renderMandat)}
@@ -791,13 +802,21 @@ export default function PageClient({ initialData }: { initialData?: DeputeDetail
                       Anciens mandats ({mandatsAnciens.length})
                     </button>
                     {showAnciensMandats && (
-                      <div className="mt-2 space-y-2 opacity-70">
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2 opacity-70">
                         {mandatsAnciens.map(renderMandat)}
                       </div>
                     )}
                   </div>
                 )}
-              </div>
+              </>
+            ) : null;
+
+            return (
+              <MandatsBlock
+                mandats={depute.mandatsParlementaires ?? []}
+                chambre="assemblee"
+                fonctionsCourantes={fonctions}
+              />
             );
           })()}
 
@@ -808,7 +827,7 @@ export default function PageClient({ initialData }: { initialData?: DeputeDetail
                 <Shield className="h-5 w-5 text-emerald-500" />
                 <h2 className="text-xl font-semibold">Transparence HATVP</h2>
               </div>
-              <div className="space-y-2">
+              <div className="grid gap-2 sm:grid-cols-2">
                 {(showAllDeclarations ? depute.declarations : depute.declarations.slice(0, 4)).map((d) => {
                   const labels: Record<string, string> = {
                     di: "Déclaration d'intérêts",

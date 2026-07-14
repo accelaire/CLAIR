@@ -47,15 +47,21 @@ interface DeputesResponse {
   };
 }
 
+const LEGISLATURE_ROMAN: Record<number, string> = {
+  15: 'XVe', 16: 'XVIe', 17: 'XVIIe', 18: 'XVIIIe',
+};
+const legislatureLabel = (n: number) => `${LEGISLATURE_ROMAN[n] ?? `${n}e`} législature`;
+
 function DeputesPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
   // Sync filters with URL for back button preservation
-  const [filters, setFilter, , clearAll] = useUrlFilters<{
+  const [filters, setFilter, setFilters, clearAll] = useUrlFilters<{
     search: string;
     groupe: string;
-  }>(['search', 'groupe']);
+    legislature: string;
+  }>(['search', 'groupe', 'legislature']);
 
   // Local state for search input with debounce
   const [searchInput, setSearchInput] = useState(filters.search);
@@ -119,7 +125,13 @@ function DeputesPageContent() {
     queryKey: ['deputes', { ...filters }],
     queryFn: ({ pageParam = 1 }) =>
       api.get('/deputes', {
-        params: { search: filters.search || undefined, groupe: filters.groupe || undefined, page: pageParam, limit: 24 },
+        params: {
+          search: filters.search || undefined,
+          groupe: filters.groupe || undefined,
+          legislature: filters.legislature || undefined,
+          page: pageParam,
+          limit: 24,
+        },
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
@@ -131,6 +143,19 @@ function DeputesPageContent() {
     queryKey: ['groupes'],
     queryFn: () => api.get('/deputes/groupes').then((res) => res.data.data),
   });
+
+  // Législatures disponibles en base (data-driven : 17e seule en prod tant que
+  // l'historique n'est pas ingéré → le sélecteur reste masqué).
+  const { data: legislaturesData } = useQuery<Array<{ legislature: number; count: number }>>({
+    queryKey: ['deputes-legislatures'],
+    queryFn: () => api.get('/deputes/legislatures').then((res) => res.data.data),
+  });
+  const legislatures = legislaturesData ?? [];
+  const legislatureCourante = legislatures[0]?.legislature ?? 17;
+  const selectedLegislature = filters.legislature
+    ? Number(filters.legislature)
+    : legislatureCourante;
+  const showLegislatureFilter = legislatures.length > 1;
 
   // Hook pour le scroll infini
   const { loadMoreRef } = useInfiniteScroll({
@@ -146,8 +171,9 @@ function DeputesPageContent() {
   const activeFilterCount = useMemo(() => {
     let count = 0;
     if (filters.groupe) count++;
+    if (filters.legislature && Number(filters.legislature) !== legislatureCourante) count++;
     return count;
-  }, [filters.groupe]);
+  }, [filters.groupe, filters.legislature, legislatureCourante]);
 
   const handleClearFilters = () => {
     clearAll();
@@ -174,7 +200,7 @@ function DeputesPageContent() {
         <div>
           <h1 className="text-3xl font-bold">Députés</h1>
           <p className="mt-2 text-muted-foreground">
-            {total > 0 ? total.toLocaleString('fr-FR') : '—'} députés sur 577 sièges — XVIIe législature
+            {total > 0 ? total.toLocaleString('fr-FR') : '—'} députés sur 577 sièges — {legislatureLabel(selectedLegislature)}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Source : <a href="https://data.assemblee-nationale.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.assemblee-nationale.fr</a>
@@ -233,22 +259,51 @@ function DeputesPageContent() {
           </div>
         }
       >
-        {/* Filtre par groupe */}
-        <div className="relative md:w-auto">
-          <select
-            value={filters.groupe}
-            onChange={(e) => setFilter('groupe', e.target.value)}
-            className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
-          >
-            <option value="">Tous les groupes</option>
-            {groupesData?.map((g: any) => (
-              <option key={g.slug} value={g.slug}>
-                {g.nom} ({g.membresCount})
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-        </div>
+        {/* Filtre par législature (masqué si une seule législature en base) */}
+        {showLegislatureFilter && (
+          <div className="relative md:w-auto">
+            <select
+              value={String(selectedLegislature)}
+              onChange={(e) => {
+                const value = e.target.value;
+                // Les groupes diffèrent par législature → on reset le groupe.
+                setFilters({
+                  legislature: Number(value) === legislatureCourante ? '' : value,
+                  groupe: '',
+                });
+              }}
+              className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              {legislatures.map((l) => (
+                <option key={l.legislature} value={l.legislature}>
+                  {legislatureLabel(l.legislature)}
+                  {l.legislature === legislatureCourante ? ' (actuelle)' : ''}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          </div>
+        )}
+
+        {/* Filtre par groupe — masqué hors législature courante (les groupes
+            listés sont ceux de la législature en cours, non historiques). */}
+        {selectedLegislature === legislatureCourante && (
+          <div className="relative md:w-auto">
+            <select
+              value={filters.groupe}
+              onChange={(e) => setFilter('groupe', e.target.value)}
+              className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Tous les groupes</option>
+              {groupesData?.map((g: any) => (
+                <option key={g.slug} value={g.slug}>
+                  {g.nom} ({g.membresCount})
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          </div>
+        )}
       </FilterBar>
 
       {/* Loading initial */}

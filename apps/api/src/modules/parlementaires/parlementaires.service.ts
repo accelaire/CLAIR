@@ -15,6 +15,72 @@ import {
 import { buildParlementaireSearchCondition } from '../../utils/search';
 import { fuzzySearchCandidates, FuzzyCandidate } from '../../utils/fuzzy-search';
 
+// =============================================================================
+// SESSIONS SÉNAT — l'axe temporel de la chambre haute
+//
+// Le Sénat n'a pas de législature : il ne se renouvelle jamais entièrement (deux
+// cohortes de mandature y coexistent en permanence). Une « mandature » est une
+// étiquette de cohorte — elle ne décrira jamais la chambre à un instant donné.
+// Seule la SESSION ordinaire (1er oct. → 30 sept.) est une fenêtre de temps, donc
+// le seul axe capable de répondre à « qui siégeait alors ? ».
+//
+// L'appartenance d'un sénateur à une session se DÉRIVE du chevauchement entre son
+// mandat et la fenêtre : rien n'est stocké sur la personne.
+// =============================================================================
+
+/** Sièges au Sénat. */
+const SENAT_SIEGES = 348;
+
+/** En deçà de cette couverture, on refuse d'exposer la session : la servir
+ *  reviendrait à présenter une demi-chambre comme si c'était le Sénat de l'époque. */
+const SENAT_COUVERTURE_MIN = 330;
+
+interface SessionWindow {
+  label: string;
+  debut: Date;
+  fin: Date;
+}
+
+/** Fenêtre d'une session ordinaire ouverte en octobre `anneeDebut`. */
+function sessionWindow(anneeDebut: number): SessionWindow {
+  return {
+    label: `${anneeDebut}-${anneeDebut + 1}`,
+    debut: new Date(Date.UTC(anneeDebut, 9, 1)), // 1er octobre
+    fin: new Date(Date.UTC(anneeDebut + 1, 8, 30)), // 30 septembre
+  };
+}
+
+function parseSessionWindow(session: string): SessionWindow | null {
+  const anneeDebut = Number(session.split('-')[0]);
+  return Number.isFinite(anneeDebut) ? sessionWindow(anneeDebut) : null;
+}
+
+/**
+ * Filtre `MandatParlementaire` correspondant à la période demandée, quel que soit
+ * l'axe : `legislature` (AN) ou `session` (Sénat, par chevauchement d'intervalle).
+ * Renvoie `null` si aucune période n'est demandée.
+ */
+function buildPeriodMandatWhere(
+  legislature?: number,
+  session?: string,
+): Prisma.MandatParlementaireWhereInput | null {
+  if (legislature !== undefined) return { legislature };
+
+  if (session) {
+    const w = parseSessionWindow(session);
+    if (!w) return null;
+    // Le mandat chevauche la session : il a commencé avant sa fin, et n'était pas
+    // déjà clos à son début.
+    return {
+      chambre: 'senat',
+      dateDebut: { lte: w.fin },
+      OR: [{ dateFin: null }, { dateFin: { gte: w.debut } }],
+    };
+  }
+
+  return null;
+}
+
 export class ParlementairesService {
   private readonly CACHE_TTL = 3600; // 1 hour (data synced daily)
   private readonly CACHE_TTL_LONG = 43200; // 12 hours
@@ -104,18 +170,25 @@ export class ParlementairesService {
       return JSON.parse(cached);
     }
 
-    const { page, limit, groupe, departement, search, actif, sort, order, legislature } = query;
+    const { page, limit, groupe, departement, search, actif, sort, order, legislature, session } = query;
     const skip = (page - 1) * limit;
 
-    // Filtre par législature : on sélectionne les personnes ayant un mandat de CETTE
-    // période (le groupe/circonscription de la période est réinjecté au shaping).
-    // Sans législature : comportement courant (parlementaires actifs).
+    // Filtre de PÉRIODE, deux axes selon la chambre :
+    //  - AN    : `legislature` (15/16/17) — la cohorte EST la période.
+    //  - Sénat : `session` (1er oct. → 30 sept.) — le Sénat ne se renouvelant jamais
+    //            entièrement, seule une fenêtre de temps décrit la chambre à un
+    //            instant donné. L'appartenance se dérive du CHEVAUCHEMENT avec
+    //            l'intervalle du mandat : aucune session n'est stockée sur la personne.
+    // Dans les deux cas, le groupe/circonscription de la période sont réinjectés au
+    // shaping. Sans filtre de période : comportement courant (parlementaires actifs).
+    const periodMandatWhere = buildPeriodMandatWhere(legislature, session);
+
     const where: Prisma.ParlementaireWhereInput = {
-      ...(legislature !== undefined
+      ...(periodMandatWhere
         ? {
             mandatsParlementaires: {
               some: {
-                legislature,
+                ...periodMandatWhere,
                 ...(groupe && { groupe: { slug: groupe } }),
                 ...(departement && { circonscription: { departement } }),
               },
@@ -197,12 +270,13 @@ export class ParlementairesService {
       hasPrev: page > 1,
     };
 
-    // Groupe/circonscription de la législature filtrée, réinjectés au shaping
-    // (sinon la liste afficherait le groupe COURANT pour une période passée).
+    // Groupe/circonscription de la période filtrée, réinjectés au shaping (sinon la
+    // liste afficherait le groupe COURANT pour une période passée). Une seule requête
+    // pour toute la page : pas de N+1.
     const periodByPerson = new Map<string, { groupe: unknown; circonscription: unknown }>();
-    if (legislature !== undefined && parlementaires.length > 0) {
+    if (periodMandatWhere && parlementaires.length > 0) {
       const periodMandats = await this.prisma.mandatParlementaire.findMany({
-        where: { personneId: { in: parlementaires.map((p) => p.id) }, legislature },
+        where: { personneId: { in: parlementaires.map((p) => p.id) }, ...periodMandatWhere },
         select: {
           personneId: true,
           groupe: { select: { id: true, slug: true, chambre: true, nom: true, nomComplet: true, couleur: true, position: true } },
@@ -221,6 +295,7 @@ export class ParlementairesService {
         ...p,
         ...(period && { groupe: period.groupe, circonscription: period.circonscription }),
         legislature,
+        session,
         _count: undefined,
         votesCount: p._count.votes,
         interventionsCount: p._count.interventions,
@@ -841,6 +916,96 @@ export class ParlementairesService {
       membresCount: g._count.parlementaires,
       _count: undefined,
     }));
+
+    await this.redis.setex(cacheKey, this.CACHE_TTL_LONG, JSON.stringify(result));
+
+    return result;
+  }
+
+  // ===========================================================================
+  // LÉGISLATURES DISPONIBLES (pour le sélecteur de période côté front)
+  // Data-driven : ne renvoie que les législatures effectivement présentes en
+  // base (mandats_parlementaires). En prod, seule la courante existe tant que
+  // l'historique 15e/16e n'a pas été ingéré → le front masque le sélecteur.
+  // ===========================================================================
+  async getLegislatures(chambre?: Chambre) {
+    const cacheKey = `legislatures:${chambre || 'all'}`;
+
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    const grouped = await this.prisma.mandatParlementaire.groupBy({
+      by: ['legislature'],
+      where: {
+        legislature: { not: null },
+        ...(chambre && { chambre }),
+      },
+      _count: { _all: true },
+      orderBy: { legislature: 'desc' },
+    });
+
+    const result = grouped.map((g) => ({
+      legislature: g.legislature as number,
+      count: g._count._all,
+    }));
+
+    await this.redis.setex(cacheKey, this.CACHE_TTL_LONG, JSON.stringify(result));
+
+    return result;
+  }
+
+  // ===========================================================================
+  // SESSIONS SÉNAT DISPONIBLES (pour le sélecteur de période côté front)
+  //
+  // Data-driven, et volontairement CONSERVATEUR : on n'expose qu'une session dont
+  // la couverture en mandats est plausible (≥ SENAT_COUVERTURE_MIN). Aujourd'hui,
+  // les mandats de la série 1 démarrent au 01/10/2023 (leur mandat 2017-2023 n'est
+  // pas en base) : toute session antérieure ne contiendrait que la série 2, soit
+  // ~179/348 sénateurs. Mieux vaut ne pas offrir la session que mentir sur la
+  // composition de la chambre.
+  //
+  // Le jour où l'historique sénatorial est ingéré, les sessions correspondantes
+  // apparaissent d'elles-mêmes — aucun code à changer.
+  //
+  // Perf : la table des mandats Sénat fait quelques centaines de lignes → on charge
+  // les intervalles une fois et on compte en mémoire, puis on cache (une session ne
+  // change qu'une fois par an).
+  // ===========================================================================
+  async getSessionsSenat() {
+    const cacheKey = 'sessions:senat';
+
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    const mandats = await this.prisma.mandatParlementaire.findMany({
+      where: { chambre: 'senat' },
+      select: { dateDebut: true, dateFin: true },
+    });
+
+    const result: Array<{ session: string; count: number }> = [];
+
+    if (mandats.length > 0) {
+      const now = new Date();
+      const premiereAnnee = Math.min(...mandats.map((m) => m.dateDebut.getUTCFullYear()));
+
+      for (let annee = premiereAnnee; annee <= now.getUTCFullYear(); annee++) {
+        const w = sessionWindow(annee);
+        if (w.debut > now) continue; // session pas encore ouverte
+
+        const count = mandats.filter(
+          (m) => m.dateDebut <= w.fin && (m.dateFin === null || m.dateFin >= w.debut),
+        ).length;
+
+        if (count >= SENAT_COUVERTURE_MIN) {
+          result.push({ session: w.label, count: Math.min(count, SENAT_SIEGES) });
+        }
+      }
+      result.reverse(); // la plus récente d'abord
+    }
 
     await this.redis.setex(cacheKey, this.CACHE_TTL_LONG, JSON.stringify(result));
 

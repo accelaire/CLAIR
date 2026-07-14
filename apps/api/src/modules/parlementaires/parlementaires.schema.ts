@@ -45,6 +45,13 @@ export const parlementairesListQuerySchema = z.object({
     .int()
     .optional()
     .describe('Filtrer les parlementaires ayant siégé sous cette législature AN (15,16,17). Renvoie le groupe/circonscription de cette période. Défaut: législature courante (actifs).'),
+  session: z
+    .string()
+    .regex(/^\d{4}-\d{4}$/, 'Format attendu: "2024-2025"')
+    .optional()
+    .describe(
+      "Sénat : filtrer les sénateurs ayant siégé pendant cette session ordinaire (1er oct. → 30 sept.). L'appartenance est dérivée du chevauchement avec l'intervalle du mandat ; le groupe/circonscription de la période sont renvoyés. Cf. /senateurs/sessions pour les sessions disponibles.",
+    ),
   actif: z.coerce.boolean().optional().default(true).describe('Filtrer les actifs'),
   sort: z
     .enum(['nom', 'prenom', 'presence', 'loyaute', 'activite', 'amendements', 'interventions'])
