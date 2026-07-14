@@ -137,7 +137,7 @@ function extractMandatsSenat(sourceData: any): ExtractedMandat[] {
 export async function enrichParlementairesIA(
   options: EnrichmentOptions = {}
 ): Promise<EnrichmentResult> {
-  const { limit, dryRun = false, concurrency = 2, force = false, randomSample } = options;
+  const { limit, dryRun = false, concurrency = 2, force = false, randomSample, skipRecentDays = 3 } = options;
 
   const result: EnrichmentResult = {
     enriched: 0, skipped: 0, errors: 0, totalTokensIn: 0, totalTokensOut: 0,
@@ -162,14 +162,23 @@ export async function enrichParlementairesIA(
   const bypassHash = force || randomSample != null;
 
   // Optional random sample: pick N active parlementaires at random (ORDER BY random()),
-  // so repeated runs spread coverage instead of always re-hitting the same alphabetical head.
+  // excluding those already refreshed in the last `skipRecentDays` days so a daily rotation
+  // converges over the whole parc instead of re-hitting fresh fiches (waste of Tavily quota).
+  // skipRecentDays = 0 disables the exclusion (pure random over all active).
   let sampleIds: string[] | null = null;
   if (randomSample != null) {
     const rows = await prisma.$queryRaw<Array<{ id: string }>>`
-      SELECT id FROM parlementaires WHERE actif = true ORDER BY random() LIMIT ${randomSample}
+      SELECT id FROM parlementaires
+      WHERE actif = true
+        AND (ia_generated_at IS NULL OR ia_generated_at < now() - make_interval(days => ${skipRecentDays}::int))
+      ORDER BY random()
+      LIMIT ${randomSample}
     `;
     sampleIds = rows.map((r) => r.id);
-    logger.info({ requested: randomSample, selected: sampleIds.length }, 'Random parlementaire sample selected');
+    logger.info(
+      { requested: randomSample, selected: sampleIds.length, skipRecentDays },
+      'Random parlementaire sample selected'
+    );
   }
 
   // Default working set: new fiches only (or all active with --force).

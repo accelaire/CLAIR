@@ -39,6 +39,8 @@ export interface EnrichmentOptions {
   force?: boolean;
   /** Parlementaires only: regenerate a random sample of N active fiches (ORDER BY random()). */
   randomSample?: number;
+  /** Parlementaires + randomSample only: exclude fiches enrichies dans les N derniers jours (défaut 3). */
+  skipRecentDays?: number;
 }
 
 // =============================================================================

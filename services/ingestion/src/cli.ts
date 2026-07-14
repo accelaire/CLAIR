@@ -777,6 +777,7 @@ program
   .option('--parlementaires', 'Enrichir uniquement les fiches parlementaires (Wikipedia + Tavily + Mistral)')
   .option('--groupe-amendements', 'Enrichir les descriptions d\'amendements par groupe pour les sujets')
   .option('--random <number>', 'Parlementaires uniquement : régénérer un échantillon aléatoire de N fiches actives (rafraîchit aussi la date)', parseInt)
+  .option('--skip-recent-days <number>', 'Avec --random : exclure les fiches déjà rafraîchies dans les N derniers jours (défaut 3, 0 pour désactiver)', parseInt)
   .option('-l, --limit <number>', 'Nombre max d\'entités à traiter', parseInt)
   .option('--dry-run', 'Mode simulation (calcule mais n\'écrit pas)')
   .option('--force', 'Ignorer le hash, regénérer tout')
@@ -791,6 +792,7 @@ program
         force: options.force,
         concurrency: options.concurrency,
         randomSample: options.random,
+        skipRecentDays: options.skipRecentDays,
       };
 
       // --random cible exclusivement les parlementaires (pas de cascade complète)
