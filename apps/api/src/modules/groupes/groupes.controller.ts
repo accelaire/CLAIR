@@ -17,7 +17,11 @@ export const groupesRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       tags: ['Groupes politiques'],
       summary: 'Liste des groupes politiques',
-      description: 'Retourne tous les groupes politiques actifs avec statistiques',
+      description:
+        "Retourne les groupes politiques actifs d'une période, avec statistiques. " +
+        "Un sigle de groupe n'existe qu'à un instant donné (RE, LAREM et GDR-NUPES " +
+        'coexistent en base sur trois législatures) : par défaut, seule la législature ' +
+        "courante de l'Assemblée est renvoyée. Le Sénat n'a pas de législature.",
       querystring: {
         type: 'object',
         properties: {
@@ -26,12 +30,19 @@ export const groupesRoutes: FastifyPluginAsync = async (fastify) => {
             enum: ['assemblee', 'senat'],
             description: 'Filtrer par chambre',
           },
+          legislature: {
+            type: 'integer',
+            description: "Législature AN (15, 16, 17). Défaut : la plus récente en base.",
+          },
         },
       },
     },
     handler: async (request, _reply) => {
-      const { chambre } = request.query as { chambre?: Chambre };
-      const groupes = await service.getGroupes(chambre);
+      const { chambre, legislature } = request.query as { chambre?: Chambre; legislature?: string };
+      const groupes = await service.getGroupes(
+        chambre,
+        legislature !== undefined ? Number(legislature) : undefined,
+      );
       return { data: groupes };
     },
   });
@@ -59,11 +70,28 @@ export const groupesRoutes: FastifyPluginAsync = async (fastify) => {
           },
         },
       },
+      querystring: {
+        type: 'object',
+        properties: {
+          legislature: {
+            type: 'integer',
+            description:
+              "Législature AN du groupe (15, 16, 17). Défaut : la plus récente. Un même sigle " +
+              'désigne un groupe différent selon la législature ; les membres et les stats ' +
+              'renvoyés sont ceux de la période demandée.',
+          },
+        },
+      },
     },
     handler: async (request, _reply) => {
       const { chambre, slug } = request.params as { chambre: Chambre; slug: string };
+      const { legislature } = request.query as { legislature?: string };
 
-      const groupe = await service.getGroupeBySlug(chambre, slug);
+      const groupe = await service.getGroupeBySlug(
+        chambre,
+        slug,
+        legislature !== undefined ? Number(legislature) : undefined,
+      );
 
       if (!groupe) {
         throw new ApiError(404, 'Groupe non trouvé');

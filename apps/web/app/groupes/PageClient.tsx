@@ -8,12 +8,15 @@ import { Search, ChevronDown, Users, Loader2, Building2, ArrowRight } from 'luci
 import { api } from '@/lib/api';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
 import { getGroupColor } from '@/lib/colors';
+import { legislatureLabel } from '@/lib/periodes';
 import { HemicycleChart } from '@/components/charts/HemicycleChart';
 
 interface GroupePolitique {
   id: string;
   slug: string;
   chambre: 'assemblee' | 'senat';
+  /** Législature AN du groupe. Null au Sénat. */
+  legislature: number | null;
   nom: string;
   nomComplet: string | null;
   couleur: string | null;
@@ -44,7 +47,10 @@ function GroupeCard({ groupe }: { groupe: GroupePolitique }) {
 
   return (
     <Link
-      href={`/groupes/${groupe.chambre}/${groupe.slug}`}
+      // Un sigle désigne un groupe différent selon la législature : le lien la porte.
+      href={`/groupes/${groupe.chambre}/${groupe.slug}${
+        groupe.legislature != null ? `?legislature=${groupe.legislature}` : ''
+      }`}
       className="group relative flex flex-col rounded-xl border bg-card p-4 transition-all hover:shadow-lg hover:border-primary/30 overflow-hidden"
     >
       {/* Bande de couleur */}
@@ -125,16 +131,34 @@ function GroupesPageContent() {
   const [filters, setFilter] = useUrlFilters<{
     search: string;
     chambre: string;
-  }>(['search', 'chambre']);
+    legislature: string;
+  }>(['search', 'chambre', 'legislature']);
+
+  // Législatures réellement disponibles en base. Le sélecteur ne s'affiche que
+  // s'il y en a plusieurs : en prod, tant que l'historique n'est pas ingéré, il
+  // n'y en a qu'une et le filtre resterait sans objet.
+  const { data: legislaturesData } = useQuery<{ data: { legislature: number; count: number }[] }>({
+    queryKey: ['deputes-legislatures'],
+    queryFn: () => api.get('/deputes/legislatures').then((res) => res.data),
+  });
+  const legislatures = legislaturesData?.data ?? [];
+  const legislatureCourante = legislatures[0]?.legislature;
+  const selectedLegislature = filters.legislature
+    ? Number(filters.legislature)
+    : legislatureCourante;
+  // Le Sénat n'a pas de législature : le filtre ne le concerne pas.
+  const showLegislatureFilter = legislatures.length > 1 && filters.chambre !== 'senat';
 
   // Fetch groupes
   const { data, isLoading, error } = useQuery<{ data: GroupePolitique[] }>({
-    queryKey: ['groupes', filters.chambre],
+    queryKey: ['groupes', filters.chambre, filters.legislature],
     queryFn: () => {
       const endpoint = filters.chambre
         ? `/${filters.chambre === 'assemblee' ? 'deputes' : 'senateurs'}/groupes`
         : '/parlementaires/groupes';
-      return api.get(endpoint).then((res) => res.data);
+      return api
+        .get(endpoint, { params: { legislature: filters.legislature || undefined } })
+        .then((res) => res.data);
     },
   });
 
@@ -210,6 +234,25 @@ function GroupesPageContent() {
           </select>
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>
+
+        {/* Filtre législature (Assemblée uniquement — le Sénat n'en a pas) */}
+        {showLegislatureFilter && (
+          <div className="relative">
+            <select
+              value={String(selectedLegislature ?? '')}
+              onChange={(e) => setFilter('legislature', e.target.value)}
+              className="appearance-none rounded-lg border bg-background px-4 py-2.5 pr-10 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              aria-label="Législature"
+            >
+              {legislatures.map((l) => (
+                <option key={l.legislature} value={l.legislature}>
+                  {legislatureLabel(l.legislature)}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          </div>
+        )}
       </div>
 
       {/* Loading */}

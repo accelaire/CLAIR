@@ -15,7 +15,11 @@ import { api } from '@/lib/api';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
 import { getGroupColor } from '@/lib/colors';
 import { ChambreToggle } from '@/components/classements/ChambreToggle';
-import { SortSelect, PARLEMENTAIRE_SORT_OPTIONS } from '@/components/classements/SortSelect';
+import {
+  SortSelect,
+  PARLEMENTAIRE_SORT_OPTIONS,
+  PERIODE_STATS_OPTIONS,
+} from '@/components/classements/SortSelect';
 import { TopFlopCards } from '@/components/classements/TopFlopCards';
 import { ShareButton } from '@/components/ShareButton';
 import { ClassementsTable } from '@/components/classements/ClassementsTable';
@@ -126,8 +130,9 @@ function ParlementairesTab() {
     page: string;
     highlight: string;
     rank: string;
-  }>(['chambre', 'sort', 'order', 'groupe', 'page', 'highlight', 'rank'], {
-    defaults: { sort: 'presence', order: 'desc', page: '1' },
+    periode: string;
+  }>(['chambre', 'sort', 'order', 'groupe', 'page', 'highlight', 'rank', 'periode'], {
+    defaults: { sort: 'presence', order: 'desc', page: '1', periode: 'mandat' },
   });
 
   const searchParams = useSearchParams();
@@ -135,6 +140,10 @@ function ParlementairesTab() {
 
   const sort = filters.sort || 'presence';
   const order = filters.order || 'desc';
+  // Période des stats classées. « mandat » (défaut) : le mandat en cours — seul
+  // tri qui compare les élus à dénominateur égal. « carriere » : tous les mandats
+  // cumulés, ce qui avantage mécaniquement les réélus.
+  const periode = filters.periode || 'mandat';
   const highlight = filters.highlight || undefined;
   const rank = filters.rank ? parseInt(filters.rank, 10) : null;
   // Page effective : param explicite > déduit du rang (deep-link) > 1
@@ -155,6 +164,7 @@ function ParlementairesTab() {
         params: {
           sort,
           order,
+          periode,
           chambre: filters.chambre || undefined,
           groupe: filters.groupe || undefined,
         },
@@ -171,17 +181,30 @@ function ParlementairesTab() {
     return () => {
       cancelled = true;
     };
-  }, [highlight, filters.rank, sort, order, filters.chambre, filters.groupe, setFilters]);
+  }, [highlight, filters.rank, sort, order, periode, filters.chambre, filters.groupe, setFilters]);
+
+  // Le choix mandat/carrière n'a de sens que s'il existe un historique : sans
+  // législature antérieure en base, les deux valeurs sont identiques pour tout le
+  // monde. Il ne s'applique qu'aux TAUX (présence, loyauté) — les compteurs
+  // d'interventions et d'amendements sont des totaux de carrière dans les deux cas.
+  const { data: legislaturesData } = useQuery<{ data: { legislature: number }[] }>({
+    queryKey: ['deputes-legislatures'],
+    queryFn: () => api.get('/deputes/legislatures').then((res) => res.data),
+  });
+  const sortEstUnTaux = sort === 'presence' || sort === 'loyaute';
+  const showPeriodeSelect =
+    sortEstUnTaux && (legislaturesData?.data?.length ?? 0) > 1 && filters.chambre !== 'senat';
 
   // Fetch parlementaires
   const { data: parlementairesData, isLoading } = useQuery<ParlementairesResponse>({
-    queryKey: ['classements-parlementaires', { chambre: filters.chambre, sort, order, groupe: filters.groupe, page }],
+    queryKey: ['classements-parlementaires', { chambre: filters.chambre, sort, order, periode, groupe: filters.groupe, page }],
     queryFn: () =>
       api.get('/parlementaires', {
         params: {
           chambre: filters.chambre || undefined,
           sort,
           order,
+          periode,
           groupe: filters.groupe || undefined,
           page,
           limit: PAGE_SIZE,
@@ -194,13 +217,14 @@ function ParlementairesTab() {
   const showTopFlop = page === 1 && !filters.groupe;
 
   const { data: flopData } = useQuery<ParlementairesResponse>({
-    queryKey: ['classements-flop', { chambre: filters.chambre, sort }],
+    queryKey: ['classements-flop', { chambre: filters.chambre, sort, periode }],
     queryFn: () =>
       api.get('/parlementaires', {
         params: {
           chambre: filters.chambre || undefined,
           sort,
           order: 'asc',
+          periode,
           page: 1,
           limit: 5,
         },
@@ -250,6 +274,13 @@ function ParlementairesTab() {
               onChange={(v) => setFilters({ sort: v, order: 'desc', page: '1', rank: '' })}
               options={PARLEMENTAIRE_SORT_OPTIONS}
             />
+            {showPeriodeSelect && (
+              <SortSelect
+                value={periode}
+                onChange={(v) => setFilters({ periode: v, page: '1', rank: '' })}
+                options={PERIODE_STATS_OPTIONS}
+              />
+            )}
           </div>
           <div className="hidden h-5 w-px shrink-0 bg-border sm:block" />
           {/* Group pills — single scrollable row */}

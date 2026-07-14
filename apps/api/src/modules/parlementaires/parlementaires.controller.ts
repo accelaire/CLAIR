@@ -63,10 +63,25 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
       schema: {
         tags: [chambreLabel],
         summary: 'Liste des groupes politiques',
-        description: `Retourne tous les groupes politiques actifs${forcedChambre ? ` de ${chambreLabel.toLowerCase()}` : ''} avec le nombre de membres`,
+        description:
+          `Retourne les groupes politiques${forcedChambre ? ` de ${chambreLabel.toLowerCase()}` : ''} d'une période, avec leur effectif. ` +
+          "Un sigle de groupe n'existe qu'à un instant donné : par défaut, seule la législature courante de l'Assemblée est renvoyée. Le Sénat n'a pas de législature.",
+        querystring: {
+          type: 'object',
+          properties: {
+            legislature: {
+              type: 'integer',
+              description: 'Législature AN (15, 16, 17). Défaut : la plus récente en base.',
+            },
+          },
+        },
       },
-      handler: async (_request, _reply) => {
-        const groupes = await service.getGroupes(forcedChambre);
+      handler: async (request, _reply) => {
+        const { legislature } = request.query as { legislature?: string };
+        const groupes = await service.getGroupes(
+          forcedChambre,
+          legislature !== undefined ? Number(legislature) : undefined,
+        );
         return { data: groupes };
       },
     });
@@ -273,6 +288,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           order: query.order,
           chambre,
           groupe: query.groupe,
+          periode: query.periode,
         });
 
         return { data: result };

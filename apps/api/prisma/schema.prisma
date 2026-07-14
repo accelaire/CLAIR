@@ -59,6 +59,18 @@ model Parlementaire {
   statsQuestions      Int?      @map("stats_questions")     // Nombre de questions posées
   statsCalculatedAt   DateTime? @map("stats_calculated_at") // Date du dernier calcul
 
+  // Stats de CARRIÈRE : tous les mandats cumulés (les stats_* ci-dessus ne portent
+  // que le mandat en cours). Deux jeux de colonnes car les classements doivent
+  // pouvoir trier sur l'un OU l'autre — et un tri Prisma exige une colonne scalaire.
+  // Comparer des élus entre eux suppose la même période (défaut = mandat en cours) ;
+  // la carrière répond à une autre question : « qui a le plus siégé, tout compris ».
+  // Voir SPEC-MULTI-LEGISLATURES.md (ticket #13).
+  statsCarrierePresence     Int? @map("stats_carriere_presence")
+  statsCarriereLoyaute      Int? @map("stats_carriere_loyaute")
+  statsCarriereParticipation Int? @map("stats_carriere_participation")
+  statsCarriereInterventions Int? @map("stats_carriere_interventions")
+  statsCarriereAmendements  Int? @map("stats_carriere_amendements")
+
   // Enrichissement IA (fiches parlementaires enrichies)
   resumeIA          String?   @map("resume_ia")
   parcoursIA        String?   @map("parcours_ia")

@@ -32,6 +32,7 @@ describe('ParlementairesService', () => {
       actif: true,
       sort: 'nom' as const,
       order: 'asc' as const,
+      periode: 'mandat' as const,
     };
 
     it('devrait retourner la liste paginée des parlementaires', async () => {

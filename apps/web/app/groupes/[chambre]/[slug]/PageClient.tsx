@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
@@ -35,6 +35,7 @@ import {
 import { api } from '@/lib/api';
 import { scrutinHref } from '@/lib/scrutin-url';
 import { getGroupColor } from '@/lib/colors';
+import { legislatureLabel } from '@/lib/periodes';
 import { SortSelect, MEMBRE_SORT_OPTIONS } from '@/components/classements/SortSelect';
 import { FicheCompareCallout } from '@/components/FicheCompareCallout';
 
@@ -57,6 +58,8 @@ export interface GroupeDetail {
   id: string;
   slug: string;
   chambre: 'assemblee' | 'senat';
+  /** Législature AN du groupe. Null au Sénat (pas de législature). */
+  legislature: number | null;
   nom: string;
   nomComplet: string | null;
   couleur: string | null;
@@ -382,8 +385,13 @@ function MembresList({ membres, chambre }: { membres: Membre[]; chambre: string 
 export default function PageClient({ initialData }: { initialData?: { data: GroupeDetail } }) {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const chambre = params.chambre as string;
   const slug = params.slug as string;
+  // Un sigle désigne un groupe différent selon la législature : sans la propager,
+  // le fetch client écraserait au bout de quelques secondes les données SSR de la
+  // période demandée par celles de la législature la plus récente.
+  const legislature = searchParams.get('legislature') ?? undefined;
 
   const membreLabel = chambre === 'assemblee' ? 'député' : 'sénateur';
 
@@ -392,8 +400,11 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
 
   // Fetch groupe detail
   const { data, isLoading, error } = useQuery<{ data: GroupeDetail }>({
-    queryKey: ['groupe', chambre, slug],
-    queryFn: () => api.get(`/groupes/${chambre}/${slug}`).then((res) => res.data),
+    queryKey: ['groupe', chambre, slug, legislature],
+    queryFn: () =>
+      api
+        .get(`/groupes/${chambre}/${slug}`, { params: { legislature } })
+        .then((res) => res.data),
     enabled: !!chambre && !!slug,
     initialData,
   });
@@ -503,6 +514,14 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
               >
                 {chambre === 'assemblee' ? 'AN' : 'Sénat'}
               </span>
+              {/* Période : un même sigle désigne un groupe différent d'une
+                  législature à l'autre. Sans elle, impossible de savoir quelle
+                  composition on regarde. */}
+              {groupe.legislature != null && (
+                <span className="text-xs sm:text-sm px-2 sm:px-3 py-0.5 sm:py-1 rounded-full bg-muted text-muted-foreground shrink-0">
+                  {legislatureLabel(groupe.legislature)}
+                </span>
+              )}
             </div>
 
             {groupe.nomComplet && groupe.nomComplet !== groupe.nom && (

@@ -3,7 +3,7 @@
 // Gère les groupes politiques de l'Assemblée nationale et du Sénat
 // =============================================================================
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { Redis } from 'ioredis';
 
 export type Chambre = 'assemblee' | 'senat';
@@ -12,6 +12,8 @@ export interface GroupeWithStats {
   id: string;
   slug: string;
   chambre: Chambre;
+  /** Législature AN du groupe. Null au Sénat (pas de législature). */
+  legislature: number | null;
   nom: string;
   nomComplet: string | null;
   couleur: string | null;
@@ -67,24 +69,71 @@ export class GroupesService {
   // LISTE DES GROUPES
   // ===========================================================================
 
-  async getGroupes(chambre?: Chambre): Promise<GroupeWithStats[]> {
-    const cacheKey = `groupes:list:${chambre || 'all'}`;
+  /**
+   * Législature AN la plus récente présente en base. Dérivée des données (et non
+   * figée dans une constante) : la liste des groupes suit automatiquement le
+   * changement de législature.
+   */
+  private async getLegislatureCouranteAN(): Promise<number | null> {
+    const cacheKey = 'groupes:legislature-courante:assemblee';
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return cached === 'null' ? null : Number(cached);
+
+    const plusRecent = await this.prisma.groupePolitique.findFirst({
+      where: { chambre: 'assemblee', legislature: { not: null } },
+      orderBy: { legislature: 'desc' },
+      select: { legislature: true },
+    });
+
+    const legislature = plusRecent?.legislature ?? null;
+    await this.redis.setex(cacheKey, this.CACHE_TTL_LONG, String(legislature));
+    return legislature;
+  }
+
+  /**
+   * Liste des groupes d'une période.
+   *
+   * Un sigle de groupe n'existe qu'à un instant donné : `RE`, `LAREM` et
+   * `GDR-NUPES` cohabitent en base sur trois législatures. Sans filtre, la liste
+   * mélangeait 36 groupes AN, dont des groupes dissous présentés comme actuels.
+   * Par défaut on renvoie donc la législature courante ; le Sénat, qui n'a pas de
+   * législature, n'est pas concerné.
+   */
+  async getGroupes(chambre?: Chambre, legislature?: number): Promise<GroupeWithStats[]> {
+    const legislatureAN = legislature ?? (await this.getLegislatureCouranteAN());
+    const cacheKey = `groupes:list:${chambre || 'all'}:${legislatureAN ?? 'na'}`;
 
     const cached = await this.redis.get(cacheKey);
     if (cached) {
       return JSON.parse(cached);
     }
 
+    // L'AN est périodisée par législature, le Sénat non : quand aucune chambre
+    // n'est demandée, on borne la seule Assemblée.
+    const periode: Prisma.GroupePolitiqueWhereInput =
+      chambre === 'senat'
+        ? { chambre: 'senat' }
+        : chambre === 'assemblee'
+          ? { chambre: 'assemblee', legislature: legislatureAN }
+          : {
+              OR: [
+                { chambre: 'senat' },
+                { chambre: 'assemblee', legislature: legislatureAN },
+              ],
+            };
+
     // Récupérer les groupes avec leurs stats pré-calculées
     const groupes = await this.prisma.groupePolitique.findMany({
       where: {
         actif: true,
-        ...(chambre && { chambre }),
+        ...periode,
       },
       include: {
+        // Effectif compté sur les MANDATS du groupe : les parlementaires dont
+        // c'est le groupe *courant* sont zéro pour un groupe dissous.
         _count: {
           select: {
-            parlementaires: true,
+            mandatsParlementaires: true,
           },
         },
       },
@@ -95,6 +144,7 @@ export class GroupesService {
       id: g.id,
       slug: g.slug,
       chambre: g.chambre as Chambre,
+      legislature: g.legislature,
       nom: g.nom,
       nomComplet: g.nomComplet,
       couleur: g.couleur,
@@ -102,9 +152,9 @@ export class GroupesService {
       position: g.position,
       ordre: g.ordre,
       actif: g.actif,
-      membresCount: g._count.parlementaires,
+      membresCount: g._count.mandatsParlementaires,
       // Utiliser les stats pré-calculées (statsMembresActifs) ou fallback au count
-      membresActifsCount: g.statsMembresActifs ?? g._count.parlementaires,
+      membresActifsCount: g.statsMembresActifs ?? g._count.mandatsParlementaires,
       // Stats pré-calculées depuis l'ingestion
       statsPresenceMoyenne: g.statsPresenceMoyenne,
       statsPresenceSolennelMoyenne: g.statsPresenceSolennelMoyenne,
@@ -121,8 +171,12 @@ export class GroupesService {
   // DÉTAIL D'UN GROUPE
   // ===========================================================================
 
-  async getGroupeBySlug(chambre: Chambre, slug: string): Promise<GroupeDetail | null> {
-    const cacheKey = `groupe:${chambre}:${slug}`;
+  async getGroupeBySlug(
+    chambre: Chambre,
+    slug: string,
+    legislature?: number
+  ): Promise<GroupeDetail | null> {
+    const cacheKey = `groupe:${chambre}:${slug}:${legislature ?? 'courante'}`;
 
     const cached = await this.redis.get(cacheKey);
     if (cached) {
@@ -131,41 +185,48 @@ export class GroupesService {
 
     const groupe = await this.prisma.groupePolitique.findFirst({
       // Multi-législatures : un même slug peut exister sur plusieurs législatures (AN).
-      // On résout la plus récente (= législature courante). Sénat : legislature null.
-      where: { slug, chambre },
+      // Sans `legislature`, on résout la plus récente. Sénat : legislature null.
+      where: { slug, chambre, ...(legislature !== undefined && { legislature }) },
       orderBy: { legislature: 'desc' },
-      include: {
-        parlementaires: {
-          where: { actif: true },
+    });
+
+    if (!groupe) return null;
+
+    // Les membres sont les titulaires des MANDATS rattachés à ce groupe, et non
+    // les parlementaires dont c'est le groupe *actuel* : sans quoi un groupe
+    // dissous (LAREM, GDR-NUPES) afficherait zéro membre, puisque plus personne
+    // n'y siège aujourd'hui. La circonscription affichée est celle du mandat.
+    const mandats = await this.prisma.mandatParlementaire.findMany({
+      where: { groupeId: groupe.id },
+      select: {
+        statsPresence: true,
+        statsLoyaute: true,
+        circonscription: { select: { departement: true, numero: true, nom: true } },
+        personne: {
           select: {
             id: true,
             slug: true,
             nom: true,
             prenom: true,
             photoUrl: true,
-            statsPresence: true,
-            statsLoyaute: true,
-            circonscription: {
-              select: {
-                departement: true,
-                numero: true,
-                nom: true,
-              },
-            },
-          },
-          orderBy: { nom: 'asc' },
-        },
-        _count: {
-          select: {
-            parlementaires: true,
+            circonscription: { select: { departement: true, numero: true, nom: true } },
           },
         },
       },
+      orderBy: { personne: { nom: 'asc' } },
     });
 
-    if (!groupe) return null;
-
-    const membres = groupe.parlementaires;
+    const membres = mandats.map((m) => ({
+      id: m.personne.id,
+      slug: m.personne.slug,
+      nom: m.personne.nom,
+      prenom: m.personne.prenom,
+      photoUrl: m.personne.photoUrl,
+      circonscription: m.circonscription ?? m.personne.circonscription,
+      // Stats DU MANDAT (période du groupe), pas la carrière entière de la personne.
+      statsPresence: m.statsPresence,
+      statsLoyaute: m.statsLoyaute,
+    }));
 
     // Utiliser les stats pré-calculées du groupe (ou fallback sur le calcul à la volée)
     const presenceMoyenne = groupe.statsPresenceMoyenne ?? this.calculateAverage(membres, 'statsPresence');
@@ -175,11 +236,14 @@ export class GroupesService {
     let rang: number | null = null;
     let totalGroupes: number | null = null;
     if (slug !== 'ni') {
+      // Le rang se compare aux groupes de LA MÊME législature : sans ce filtre,
+      // un groupe de la 17e serait classé face aux groupes des 15e et 16e.
       const allGroupes = await this.prisma.groupePolitique.findMany({
         where: {
           chambre,
           actif: true,
           slug: { not: 'ni' },
+          legislature: groupe.legislature,
         },
         select: {
           slug: true,
@@ -196,12 +260,10 @@ export class GroupesService {
       totalGroupes = allGroupes.length;
     }
 
-    // Calculer le total des amendements
-    const amendementsSum = await this.prisma.parlementaire.aggregate({
-      where: {
-        groupeId: groupe.id,
-        actif: true,
-      },
+    // Total des amendements : agrégé sur les mandats du groupe (même raison que
+    // les membres — les membres actuels d'un groupe dissous n'existent pas).
+    const amendementsSum = await this.prisma.mandatParlementaire.aggregate({
+      where: { groupeId: groupe.id },
       _sum: {
         statsAmendements: true,
       },
@@ -212,6 +274,7 @@ export class GroupesService {
       id: groupe.id,
       slug: groupe.slug,
       chambre: groupe.chambre as Chambre,
+      legislature: groupe.legislature,
       nom: groupe.nom,
       nomComplet: groupe.nomComplet,
       couleur: groupe.couleur,
@@ -219,7 +282,7 @@ export class GroupesService {
       position: groupe.position,
       ordre: groupe.ordre,
       actif: groupe.actif,
-      membresCount: groupe._count.parlementaires,
+      membresCount: membres.length,
       membresActifsCount: groupe.statsMembresActifs ?? membres.length,
       rang,
       totalGroupes,
@@ -356,10 +419,17 @@ export class GroupesService {
       ? await this.prisma.$queryRaw<{ position: string; count: bigint }[]>`
           SELECT v.position, COUNT(*) as count
           FROM votes v
-          JOIN parlementaires p ON v.parlementaire_id = p.id
           JOIN scrutins s ON v.scrutin_id = s.id
-          WHERE p.groupe_id = ${groupe.id}
-            AND p.actif = true
+          JOIN mandats_parlementaires m
+            ON m.personne_id = v.parlementaire_id
+            AND m.chambre = s.chambre
+            AND (
+                  (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
+                   AND m.legislature = s.legislature)
+               OR (s.chambre = 'senat' AND m.date_debut <= s.date
+                   AND (m.date_fin IS NULL OR m.date_fin >= s.date))
+                )
+          WHERE m.groupe_id = ${groupe.id}
             AND s.demandeur_texte IS NOT NULL
             AND (
               s.demandeur_texte ILIKE ${'%' + groupe.nom + '%'}
@@ -370,9 +440,17 @@ export class GroupesService {
       : await this.prisma.$queryRaw<{ position: string; count: bigint }[]>`
           SELECT v.position, COUNT(*) as count
           FROM votes v
-          JOIN parlementaires p ON v.parlementaire_id = p.id
-          WHERE p.groupe_id = ${groupe.id}
-            AND p.actif = true
+          JOIN scrutins s ON v.scrutin_id = s.id
+          JOIN mandats_parlementaires m
+            ON m.personne_id = v.parlementaire_id
+            AND m.chambre = s.chambre
+            AND (
+                  (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
+                   AND m.legislature = s.legislature)
+               OR (s.chambre = 'senat' AND m.date_debut <= s.date
+                   AND (m.date_fin IS NULL OR m.date_fin >= s.date))
+                )
+          WHERE m.groupe_id = ${groupe.id}
           GROUP BY v.position
         `;
 
@@ -417,13 +495,23 @@ export class GroupesService {
           }[]
         >`
           WITH recent_scrutins AS (
+            -- chambre + legislature sont indispensables en aval : cette CTE sert
+            -- de table de scrutins a la jointure du mandat d'epoque.
             SELECT DISTINCT s.id, s.numero, s.titre, s.date, s.sort, s.type_vote, s.session,
+                   s.chambre, s.legislature,
                    s.nombre_pour, s.nombre_contre, s.nombre_abstention
             FROM scrutins s
             JOIN votes v ON v.scrutin_id = s.id
-            JOIN parlementaires p ON v.parlementaire_id = p.id
-            WHERE p.groupe_id = ${groupe.id}
-              AND p.actif = true
+            JOIN mandats_parlementaires m
+              ON m.personne_id = v.parlementaire_id
+              AND m.chambre = s.chambre
+              AND (
+                    (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
+                     AND m.legislature = s.legislature)
+                 OR (s.chambre = 'senat' AND m.date_debut <= s.date
+                     AND (m.date_fin IS NULL OR m.date_fin >= s.date))
+                  )
+            WHERE m.groupe_id = ${groupe.id}
               AND s.chambre = ${chambre}
               AND s.demandeur_texte IS NOT NULL
               AND (
@@ -442,9 +530,16 @@ export class GroupesService {
               SUM(CASE WHEN v.position = 'absent' THEN 1 ELSE 0 END) as absent
             FROM recent_scrutins s
             JOIN votes v ON v.scrutin_id = s.id
-            JOIN parlementaires p ON v.parlementaire_id = p.id
-            WHERE p.groupe_id = ${groupe.id}
-              AND p.actif = true
+            JOIN mandats_parlementaires m
+              ON m.personne_id = v.parlementaire_id
+              AND m.chambre = s.chambre
+              AND (
+                    (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
+                     AND m.legislature = s.legislature)
+                 OR (s.chambre = 'senat' AND m.date_debut <= s.date
+                     AND (m.date_fin IS NULL OR m.date_fin >= s.date))
+                  )
+            WHERE m.groupe_id = ${groupe.id}
             GROUP BY s.id
           )
           SELECT
@@ -477,13 +572,23 @@ export class GroupesService {
           }[]
         >`
           WITH recent_scrutins AS (
+            -- chambre + legislature sont indispensables en aval : cette CTE sert
+            -- de table de scrutins a la jointure du mandat d'epoque.
             SELECT DISTINCT s.id, s.numero, s.titre, s.date, s.sort, s.type_vote, s.session,
+                   s.chambre, s.legislature,
                    s.nombre_pour, s.nombre_contre, s.nombre_abstention
             FROM scrutins s
             JOIN votes v ON v.scrutin_id = s.id
-            JOIN parlementaires p ON v.parlementaire_id = p.id
-            WHERE p.groupe_id = ${groupe.id}
-              AND p.actif = true
+            JOIN mandats_parlementaires m
+              ON m.personne_id = v.parlementaire_id
+              AND m.chambre = s.chambre
+              AND (
+                    (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
+                     AND m.legislature = s.legislature)
+                 OR (s.chambre = 'senat' AND m.date_debut <= s.date
+                     AND (m.date_fin IS NULL OR m.date_fin >= s.date))
+                  )
+            WHERE m.groupe_id = ${groupe.id}
               AND s.chambre = ${chambre}
             ORDER BY s.date DESC
             LIMIT 20
@@ -497,9 +602,16 @@ export class GroupesService {
               SUM(CASE WHEN v.position = 'absent' THEN 1 ELSE 0 END) as absent
             FROM recent_scrutins s
             JOIN votes v ON v.scrutin_id = s.id
-            JOIN parlementaires p ON v.parlementaire_id = p.id
-            WHERE p.groupe_id = ${groupe.id}
-              AND p.actif = true
+            JOIN mandats_parlementaires m
+              ON m.personne_id = v.parlementaire_id
+              AND m.chambre = s.chambre
+              AND (
+                    (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
+                     AND m.legislature = s.legislature)
+                 OR (s.chambre = 'senat' AND m.date_debut <= s.date
+                     AND (m.date_fin IS NULL OR m.date_fin >= s.date))
+                  )
+            WHERE m.groupe_id = ${groupe.id}
             GROUP BY s.id
           )
           SELECT
@@ -734,9 +846,16 @@ export class GroupesService {
             SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) as abstention
           FROM scrutin_tags st
           JOIN votes v ON v.scrutin_id = st.scrutin_id
-          JOIN parlementaires p ON v.parlementaire_id = p.id
-          WHERE p.groupe_id = ${groupe.id}
-            AND p.actif = true
+          JOIN mandats_parlementaires m
+            ON m.personne_id = v.parlementaire_id
+            AND m.chambre = s.chambre
+            AND (
+                  (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
+                   AND m.legislature = s.legislature)
+               OR (s.chambre = 'senat' AND m.date_debut <= s.date
+                   AND (m.date_fin IS NULL OR m.date_fin >= s.date))
+                )
+          WHERE m.groupe_id = ${groupe.id}
           GROUP BY st.tag, v.scrutin_id
         ),
         position_majoritaire AS (

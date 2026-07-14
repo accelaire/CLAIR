@@ -13,6 +13,11 @@ import {
   Chambre,
 } from './parlementaires.schema';
 import { buildParlementaireSearchCondition } from '../../utils/search';
+import {
+  CTE_GROUP_MAJORITY_EPOQUE,
+  joinMandatEpoque,
+  scrutinsDesMandats,
+} from '../../utils/groupe-epoque';
 import { fuzzySearchCandidates, FuzzyCandidate } from '../../utils/fuzzy-search';
 
 // =============================================================================
@@ -94,15 +99,29 @@ export class ParlementairesService {
   // TRI PARTAGÉ (liste + rang) — garantit un ordre identique entre les deux
   // ===========================================================================
 
+  /**
+   * Tri des listes et classements.
+   *
+   * `periode` choisit le jeu de colonnes de stats :
+   *  - `mandat` (défaut) : le mandat EN COURS. C'est le seul tri qui compare des
+   *    élus entre eux à dénominateur égal.
+   *  - `carriere` : tous les mandats cumulés. Répond à une autre question — « qui
+   *    a le plus siégé, tout compris » — et avantage mécaniquement les réélus.
+   *
+   * Les compteurs bruts (interventions, amendements) sont des totaux de carrière
+   * dans les deux cas : ils ne dépendent d'aucun dénominateur de scrutins.
+   */
   private buildParlementaireOrderBy(
     sort: string,
-    order: 'asc' | 'desc'
+    order: 'asc' | 'desc',
+    periode: 'mandat' | 'carriere' = 'mandat'
   ): Prisma.ParlementaireOrderByWithRelationInput[] {
+    const carriere = periode === 'carriere';
     const primaryMap: Record<string, Prisma.ParlementaireOrderByWithRelationInput> = {
       nom: { nom: order },
       prenom: { prenom: order },
-      presence: { statsPresence: order },
-      loyaute: { statsLoyaute: order },
+      presence: carriere ? { statsCarrierePresence: order } : { statsPresence: order },
+      loyaute: carriere ? { statsCarriereLoyaute: order } : { statsLoyaute: order },
       activite: { statsInterventions: order },
       amendements: { statsAmendements: order },
       interventions: { statsInterventions: order },
@@ -128,10 +147,16 @@ export class ParlementairesService {
    */
   async getParlementaireRank(
     slug: string,
-    opts: { sort: string; order: 'asc' | 'desc'; chambre?: Chambre; groupe?: string }
+    opts: {
+      sort: string;
+      order: 'asc' | 'desc';
+      chambre?: Chambre;
+      groupe?: string;
+      periode?: 'mandat' | 'carriere';
+    }
   ): Promise<{ rank: number | null; total: number }> {
-    const { sort, order, chambre, groupe } = opts;
-    const cacheKey = `parlementaires:rank:${JSON.stringify({ slug, sort, order, chambre, groupe })}`;
+    const { sort, order, chambre, groupe, periode } = opts;
+    const cacheKey = `parlementaires:rank:${JSON.stringify({ slug, sort, order, chambre, groupe, periode })}`;
 
     const cached = await this.redis.get(cacheKey);
     if (cached) {
@@ -146,7 +171,7 @@ export class ParlementairesService {
 
     const rows = await this.prisma.parlementaire.findMany({
       where,
-      orderBy: this.buildParlementaireOrderBy(sort, order),
+      orderBy: this.buildParlementaireOrderBy(sort, order, periode),
       select: { slug: true },
     });
 
@@ -170,7 +195,7 @@ export class ParlementairesService {
       return JSON.parse(cached);
     }
 
-    const { page, limit, groupe, departement, search, actif, sort, order, legislature, session } = query;
+    const { page, limit, groupe, departement, search, actif, sort, order, legislature, session, periode } = query;
     const skip = (page - 1) * limit;
 
     // Filtre de PÉRIODE, deux axes selon la chambre :
@@ -203,7 +228,7 @@ export class ParlementairesService {
       ...(search && buildParlementaireSearchCondition(search)),
     };
 
-    const orderBy = this.buildParlementaireOrderBy(sort, order);
+    const orderBy = this.buildParlementaireOrderBy(sort, order, periode);
 
     const parlementaireInclude = {
       groupe: {
@@ -457,6 +482,9 @@ export class ParlementairesService {
         statsPresenceSolennel: true,
         statsLoyaute: true,
         statsParticipation: true,
+        statsCarrierePresence: true,
+        statsCarriereLoyaute: true,
+        statsCarriereParticipation: true,
         statsInterventions: true,
         statsAmendements: true,
         statsAmendementsAdoptes: true,
@@ -465,13 +493,19 @@ export class ParlementairesService {
       },
     });
 
-    // Si les stats sont pré-calculées, les utiliser directement
+    // La FICHE présente la CARRIÈRE : tous les mandats de la personne, cumulés.
+    // C'est le portrait d'un élu, pas une comparaison — contrairement aux listes
+    // et classements, qui trient sur le mandat en cours pour que tous les élus
+    // partagent le même dénominateur de scrutins (cf. buildParlementaireOrderBy).
+    // Repli sur les colonnes du mandat courant tant que le batch de stats n'a pas
+    // encore rempli les colonnes de carrière (déploiement, base fraîche).
     if (parlementaire?.statsCalculatedAt) {
       const stats = {
-        presence: parlementaire.statsPresence ?? 0,
+        presence: parlementaire.statsCarrierePresence ?? parlementaire.statsPresence ?? 0,
         presenceSolennel: parlementaire.statsPresenceSolennel ?? null,
-        loyaute: parlementaire.statsLoyaute ?? 0,
-        participation: parlementaire.statsParticipation ?? 0,
+        loyaute: parlementaire.statsCarriereLoyaute ?? parlementaire.statsLoyaute ?? 0,
+        participation:
+          parlementaire.statsCarriereParticipation ?? parlementaire.statsParticipation ?? 0,
         interventions: parlementaire.statsInterventions ?? 0,
         amendements: {
           proposes: parlementaire.statsAmendements ?? 0,
@@ -558,16 +592,34 @@ export class ParlementairesService {
     return since;
   }
 
+  /**
+   * Scrutins sur lesquels le parlementaire pouvait voter : ceux des périodes de
+   * ses mandats. Repli sur `date >= since` (toute la chambre) s'il n'a aucun
+   * mandat connu.
+   */
+  private async getScrutinsPerimetre(
+    parlementaireId: string,
+    chambre: Chambre,
+    since: Date
+  ): Promise<Prisma.ScrutinWhereInput> {
+    const mandats = await this.prisma.mandatParlementaire.findMany({
+      where: { personneId: parlementaireId, chambre },
+      select: { legislature: true, dateDebut: true, dateFin: true },
+    });
+
+    return scrutinsDesMandats(chambre, mandats) ?? { chambre, date: { gte: since } };
+  }
+
   private async calculatePresence(parlementaireId: string, chambre: Chambre, since: Date): Promise<number> {
+    const perimetre = await this.getScrutinsPerimetre(parlementaireId, chambre, since);
+
     const [totalScrutins, participations] = await Promise.all([
-      this.prisma.scrutin.count({
-        where: { chambre, date: { gte: since } },
-      }),
+      this.prisma.scrutin.count({ where: perimetre }),
       this.prisma.vote.count({
         where: {
           parlementaireId,
           position: { not: 'absent' },
-          scrutin: { chambre, date: { gte: since } },
+          scrutin: perimetre,
         },
       }),
     ]);
@@ -577,44 +629,52 @@ export class ParlementairesService {
 
   private async calculateLoyaute(parlementaireId: string, chambre: Chambre, since: Date): Promise<number> {
     try {
-      const parlementaire = await this.prisma.parlementaire.findUnique({
-        where: { id: parlementaireId },
-        select: { groupeId: true },
-      });
-
-      if (!parlementaire?.groupeId) return 0;
-
-      // Optimized: Use raw SQL to calculate loyalty without loading all votes in memory
-      // This prevents OOM kills on Railway when multiple users load detail pages
-      // Note: Use actual PostgreSQL table/column names (snake_case) not Prisma model names
-      const result = await this.prisma.$queryRaw<{ loyal_count: bigint; total_count: bigint }[]>`
+      // La loyauté se mesure contre le groupe où le parlementaire siégeait AU
+      // MOMENT de chaque scrutin, et contre la majorité de CE groupe à ce
+      // moment-là. Prendre son groupe actuel comme référence unique comparait
+      // ses votes de la 16e à la position d'un groupe de la 17e.
+      //
+      // Raw SQL (et non un chargement en mémoire) : évite les OOM sur Railway
+      // quand plusieurs fiches sont ouvertes en même temps.
+      const result = await this.prisma.$queryRawUnsafe<{ loyal_count: bigint; total_count: bigint }[]>(
+        `
         WITH parlementaire_votes AS (
-          SELECT v.id, v.position, v.scrutin_id
+          SELECT v.scrutin_id, v.position,
+                 COALESCE(m.groupe_id, p.groupe_id) AS groupe_id
           FROM votes v
-          JOIN scrutins s ON v.scrutin_id = s.id
-          WHERE v.parlementaire_id = ${parlementaireId}
+          JOIN scrutins s ON s.id = v.scrutin_id
+          JOIN parlementaires p ON p.id = v.parlementaire_id
+          ${joinMandatEpoque('v', 's', 'm')}
+          WHERE v.parlementaire_id = $1
             AND v.position != 'absent'
-            AND s.chambre = ${chambre}
-            AND s.date >= ${since}
+            AND s.chambre = $2
+            AND s.date >= $3
         ),
         group_majority AS (
           SELECT
-            v.scrutin_id,
-            v.position,
-            COUNT(*) as vote_count,
-            ROW_NUMBER() OVER (PARTITION BY v.scrutin_id ORDER BY COUNT(*) DESC) as rn
-          FROM votes v
-          JOIN parlementaires p ON v.parlementaire_id = p.id
-          WHERE p.groupe_id = ${parlementaire.groupeId}
-            AND v.position != 'absent'
-          GROUP BY v.scrutin_id, v.position
+            gv.scrutin_id,
+            gv.position,
+            ROW_NUMBER() OVER (PARTITION BY gv.scrutin_id ORDER BY COUNT(*) DESC) as rn
+          FROM votes gv
+          JOIN scrutins gs ON gs.id = gv.scrutin_id
+          JOIN parlementaires gp ON gp.id = gv.parlementaire_id
+          ${joinMandatEpoque('gv', 'gs', 'gm')}
+          JOIN parlementaire_votes pv
+            ON pv.scrutin_id = gv.scrutin_id
+           AND pv.groupe_id = COALESCE(gm.groupe_id, gp.groupe_id)
+          WHERE gv.position != 'absent'
+          GROUP BY gv.scrutin_id, gv.position
         )
         SELECT
-          COUNT(CASE WHEN pv.position = gm.position THEN 1 END)::bigint as loyal_count,
+          COUNT(CASE WHEN pv.position = gm2.position THEN 1 END)::bigint as loyal_count,
           COUNT(*)::bigint as total_count
         FROM parlementaire_votes pv
-        LEFT JOIN group_majority gm ON pv.scrutin_id = gm.scrutin_id AND gm.rn = 1
-      `;
+        LEFT JOIN group_majority gm2 ON pv.scrutin_id = gm2.scrutin_id AND gm2.rn = 1
+        `,
+        parlementaireId,
+        chambre,
+        since,
+      );
 
       const { loyal_count, total_count } = result[0] || { loyal_count: 0n, total_count: 0n };
 
@@ -733,18 +793,7 @@ export class ParlementairesService {
     }
 
     const votesQuery = `
-      WITH group_majority AS (
-        SELECT
-          gv.scrutin_id,
-          gv.position as majority_position,
-          COUNT(*) as vote_count,
-          ROW_NUMBER() OVER (PARTITION BY gv.scrutin_id ORDER BY COUNT(*) DESC) as rn
-        FROM votes gv
-        JOIN parlementaires p ON gv.parlementaire_id = p.id
-        WHERE p.groupe_id = '${groupeIdParam}'
-          AND gv.position != 'absent'
-        GROUP BY gv.scrutin_id, gv.position
-      )
+      WITH ${CTE_GROUP_MAJORITY_EPOQUE(parlementaireId, groupeIdParam)}
       SELECT
         v.id,
         v.position,
@@ -771,18 +820,7 @@ export class ParlementairesService {
     `;
 
     const countQuery = `
-      WITH group_majority AS (
-        SELECT
-          gv.scrutin_id,
-          gv.position as majority_position,
-          COUNT(*) as vote_count,
-          ROW_NUMBER() OVER (PARTITION BY gv.scrutin_id ORDER BY COUNT(*) DESC) as rn
-        FROM votes gv
-        JOIN parlementaires p ON gv.parlementaire_id = p.id
-        WHERE p.groupe_id = '${groupeIdParam}'
-          AND gv.position != 'absent'
-        GROUP BY gv.scrutin_id, gv.position
-      )
+      WITH ${CTE_GROUP_MAJORITY_EPOQUE(parlementaireId, groupeIdParam)}
       SELECT COUNT(*)::int as total
       FROM votes v
       JOIN scrutins s ON v.scrutin_id = s.id
@@ -897,28 +935,62 @@ export class ParlementairesService {
   // GROUPES POLITIQUES
   // ===========================================================================
 
-  async getGroupes(chambre?: Chambre) {
-    const cacheKey = `groupes:${chambre || 'all'}`;
+  /**
+   * Groupes politiques d'une période.
+   *
+   * Un sigle de groupe n'a de sens qu'à un instant donné : RE, LAREM et GDR-NUPES
+   * coexistent en base sur trois législatures. Sans borne, la liste en mélangeait
+   * 36 à l'Assemblée, dont des groupes dissous présentés comme actuels.
+   *
+   * Les effectifs viennent des MANDATS du groupe (et non des parlementaires dont
+   * c'est le groupe courant), sans quoi tout groupe dissous afficherait 0 membre.
+   *
+   * Défaut : la législature la plus récente en base — dérivée des données, donc
+   * sans constante à maintenir au changement de législature.
+   */
+  async getGroupes(chambre?: Chambre, legislature?: number) {
+    const legislatureAN =
+      legislature ??
+      (
+        await this.prisma.groupePolitique.findFirst({
+          where: { chambre: 'assemblee', legislature: { not: null } },
+          orderBy: { legislature: 'desc' },
+          select: { legislature: true },
+        })
+      )?.legislature ??
+      null;
+
+    const cacheKey = `groupes:${chambre || 'all'}:${legislatureAN ?? 'na'}`;
 
     const cached = await this.redis.get(cacheKey);
     if (cached) {
       return JSON.parse(cached);
     }
 
+    // Le Sénat n'a pas de législature : seule l'Assemblée est bornée.
+    const periode: Prisma.GroupePolitiqueWhereInput =
+      chambre === 'senat'
+        ? { chambre: 'senat' }
+        : chambre === 'assemblee'
+          ? { chambre: 'assemblee', legislature: legislatureAN }
+          : {
+              OR: [
+                { chambre: 'senat' },
+                { chambre: 'assemblee', legislature: legislatureAN },
+              ],
+            };
+
     const groupes = await this.prisma.groupePolitique.findMany({
-      where: {
-        actif: true,
-        ...(chambre && { chambre }),
-      },
+      where: { actif: true, ...periode },
       include: {
-        _count: { select: { parlementaires: { where: { actif: true } } } },
+        _count: { select: { mandatsParlementaires: true } },
       },
       orderBy: { ordre: 'asc' },
     });
 
     const result = groupes.map((g) => ({
       ...g,
-      membresCount: g._count.parlementaires,
+      membresCount: g._count.mandatsParlementaires,
       _count: undefined,
     }));
 

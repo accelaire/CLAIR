@@ -33,6 +33,19 @@ export function SortSelect({ value, onChange, options, className = '' }: SortSel
   );
 }
 
+/**
+ * Période des stats sur laquelle porte le classement.
+ *
+ * « Mandat en cours » est le défaut car c'est le seul tri qui compare les élus à
+ * dénominateur égal : sur la carrière, un député de trois mandats est noté sur
+ * bien plus de scrutins qu'un primo-élu. La carrière répond à une autre question,
+ * « qui a le plus siégé, tout compris » — légitime, mais ce n'est pas la même.
+ */
+export const PERIODE_STATS_OPTIONS: SortOption[] = [
+  { value: 'mandat', label: 'Mandat en cours' },
+  { value: 'carriere', label: 'Carrière complète' },
+];
+
 export const PARLEMENTAIRE_SORT_OPTIONS: SortOption[] = [
   { value: 'presence', label: 'Présence' },
   { value: 'loyaute', label: 'Loyauté' },
