@@ -2968,11 +2968,28 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
 
       // Fiches parlementaires enrichies (Wikipedia + Tavily + Mistral)
       const { enrichParlementairesIA } = await import('./parlementaire-enrichment.js');
+
+      // 1) Backfill : fiches jamais enrichies (resumeIA null), typiquement les nouveaux élus.
       const iaParl = await enrichParlementairesIA({ concurrency: 2 });
       logger.info({
         enriched: iaParl.enriched, skipped: iaParl.skipped, errors: iaParl.errors,
         tokensIn: iaParl.totalTokensIn, tokensOut: iaParl.totalTokensOut,
       }, 'Parlementaires IA enrichment completed');
+
+      // 2) Rotation : le backfill ne retouche jamais une fiche déjà enrichie, donc la date
+      // affichée vieillit indéfiniment. On régénère chaque jour un échantillon aléatoire parmi
+      // les fiches non rafraîchies depuis 25 jours.
+      // Budget : Tavily = 1 appel par fiche, quota 1000/mois partagé avec sujet-links-generator
+      // → 25/jour (750/mois) couvre les ~950 fiches en ~5 semaines en gardant une marge.
+      const iaParlRefresh = await enrichParlementairesIA({
+        concurrency: 2,
+        randomSample: 25,
+        skipRecentDays: 25,
+      });
+      logger.info({
+        enriched: iaParlRefresh.enriched, errors: iaParlRefresh.errors,
+        tokensIn: iaParlRefresh.totalTokensIn, tokensOut: iaParlRefresh.totalTokensOut,
+      }, 'Parlementaires IA rotation refresh completed');
     } catch (error: any) {
       logger.error({ error: error.message }, 'IA enrichment failed (non-blocking)');
     }
