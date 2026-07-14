@@ -173,6 +173,49 @@ export class AssembleeNationaleScrutinsClient {
     logger.debug({ destPath }, 'File downloaded');
   }
 
+  /** Chiffres romains de la législature (XV, XVI, XVII…) : l'AN suffixe certaines
+   *  archives historiques avec, sans convention stable d'une législature à l'autre. */
+  private static toRoman(n: number): string {
+    const table: [number, string][] = [[10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
+    let rest = n;
+    let out = '';
+    for (const [value, symbol] of table) {
+      while (rest >= value) {
+        out += symbol;
+        rest -= value;
+      }
+    }
+    return out;
+  }
+
+  /** Télécharge la première archive disponible : l'AN nomme le fichier
+   *  `Scrutins.json.zip` (16e, 17e) ou `Scrutins_XV.json.zip` (15e). */
+  private async downloadScrutinsArchive(destPath: string): Promise<string> {
+    const dir = `${this.baseUrl}/${this.legislature}/loi/scrutins`;
+    const candidates = [
+      `${dir}/Scrutins.json.zip`,
+      `${dir}/Scrutins_${AssembleeNationaleScrutinsClient.toRoman(this.legislature)}.json.zip`,
+    ];
+
+    for (const url of candidates) {
+      try {
+        logger.info({ url }, 'Downloading scrutins archive...');
+        await this.downloadFile(url, destPath);
+        return url;
+      } catch (error: any) {
+        if (error.response?.status === 404) {
+          logger.warn({ url }, 'Archive absente (404), essai du nom suivant');
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw new Error(
+      `Aucune archive de scrutins trouvée pour la législature ${this.legislature} (essayé: ${candidates.join(', ')})`,
+    );
+  }
+
   private async extractZip(zipPath: string, extractDir: string): Promise<void> {
     logger.debug({ zipPath, extractDir }, 'Extracting zip...');
 
@@ -197,7 +240,6 @@ export class AssembleeNationaleScrutinsClient {
   // ===========================================================================
 
   async getScrutins(options: { limit?: number } = {}): Promise<ScrutinWithVotes[]> {
-    const zipUrl = `${this.baseUrl}/${this.legislature}/loi/scrutins/Scrutins.json.zip`;
     const tempDir = path.join(os.tmpdir(), 'clair-scrutins-an');
     const zipPath = path.join(tempDir, 'scrutins.zip');
     const extractDir = path.join(tempDir, 'extracted');
@@ -206,8 +248,7 @@ export class AssembleeNationaleScrutinsClient {
       await fs.promises.rm(tempDir, { recursive: true, force: true });
       await fs.promises.mkdir(tempDir, { recursive: true });
 
-      logger.info({ url: zipUrl }, 'Downloading scrutins archive...');
-      await this.downloadFile(zipUrl, zipPath);
+      await this.downloadScrutinsArchive(zipPath);
 
       const stats = await fs.promises.stat(zipPath);
       logger.info({ sizeMB: (stats.size / 1024 / 1024).toFixed(2) }, 'Archive downloaded');

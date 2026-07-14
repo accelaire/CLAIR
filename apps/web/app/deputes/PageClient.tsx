@@ -10,6 +10,7 @@ import { useDebouncedCallback } from 'use-debounce';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
+import { legislatureLabel } from '@/lib/periodes';
 import {
   useComparisonSelection,
   ComparisonSelectionBar,
@@ -46,11 +47,6 @@ interface DeputesResponse {
     hasNext: boolean;
   };
 }
-
-const LEGISLATURE_ROMAN: Record<number, string> = {
-  15: 'XVe', 16: 'XVIe', 17: 'XVIIe', 18: 'XVIIIe',
-};
-const legislatureLabel = (n: number) => `${LEGISLATURE_ROMAN[n] ?? `${n}e`} législature`;
 
 function DeputesPageContent() {
   const searchParams = useSearchParams();

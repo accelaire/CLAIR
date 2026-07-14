@@ -1,12 +1,14 @@
 import Link from 'next/link';
 import { CheckCircle, XCircle, Calendar, Tag } from 'lucide-react';
 import { scrutinHref } from '@/lib/scrutin-url';
+import { scrutinPeriodeBadge } from '@/lib/periodes';
 
 export interface ScrutinListItem {
   id: string;
   numero: number;
   chambre: string;
   session?: string | null;
+  legislature?: number | null;
   date: string;
   titre: string;
   sort: string;
@@ -44,13 +46,11 @@ const formatDate = (d: string) =>
     year: 'numeric',
   });
 
-const formatSenatSession = (session: string): string => {
-  const year = parseInt(session, 10);
-  return Number.isNaN(year) ? session : `${year}-${year + 1}`;
-};
-
 export function ScrutinListCard({ scrutin }: { scrutin: ScrutinListItem }) {
   const href = scrutinHref(scrutin);
+  // Le numéro seul est ambigu : il est réinitialisé à chaque session (Sénat) et
+  // à chaque législature (Assemblée). La période est ce qui le désambiguïse.
+  const periode = scrutinPeriodeBadge(scrutin);
 
   return (
     <Link
@@ -70,9 +70,9 @@ export function ScrutinListCard({ scrutin }: { scrutin: ScrutinListItem }) {
             >
               {chambreLabels[scrutin.chambre] || 'Assemblée nationale'}
             </span>
-            {scrutin.chambre === 'senat' && scrutin.session && (
+            {periode && (
               <span className="px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground rounded">
-                {formatSenatSession(scrutin.session)}
+                {periode}
               </span>
             )}
             {scrutin.importance >= 4 && (

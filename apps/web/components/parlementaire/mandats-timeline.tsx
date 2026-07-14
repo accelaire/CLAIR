@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import Link from 'next/link';
 import { ScrollText } from 'lucide-react';
+import { legislatureLabel, mandatureLabel } from '@/lib/periodes';
 
 export interface MandatParlementaireItem {
   legislature: number | null;
@@ -11,17 +12,12 @@ export interface MandatParlementaireItem {
   circonscription: { nom: string; departement: string; numero: number } | null;
 }
 
-const ROMAN: Record<number, string> = {
-  11: 'XIe', 12: 'XIIe', 13: 'XIIIe', 14: 'XIVe',
-  15: 'XVe', 16: 'XVIe', 17: 'XVIIe', 18: 'XVIIIe', 19: 'XIXe',
-};
-
 function periodeLabel(m: MandatParlementaireItem, chambre: 'assemblee' | 'senat'): string {
   if (chambre === 'assemblee' && m.legislature != null) {
-    return `${ROMAN[m.legislature] ?? `${m.legislature}e`} législature`;
+    return legislatureLabel(m.legislature);
   }
   if (m.mandature != null) {
-    return `Mandature ${m.mandature}`;
+    return mandatureLabel(m.mandature);
   }
   return 'Mandat';
 }

@@ -91,6 +91,7 @@ export interface ScrutinDetail {
   numero: number;
   chambre: string;
   session: string;
+  legislature?: number | null;
   date: string;
   titre: string;
   sort: string;
@@ -517,6 +518,8 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
             <ScrutinSidebar
               chambre={scrutin.chambre}
               date={scrutin.date}
+              session={scrutin.session}
+              legislature={scrutin.legislature}
               typeVote={scrutin.typeVote}
               sort={scrutin.sort}
               tags={scrutin.tags}

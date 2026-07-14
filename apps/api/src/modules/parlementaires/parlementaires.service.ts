@@ -380,6 +380,11 @@ export class ParlementairesService {
                   id: true,
                   numero: true,
                   chambre: true,
+                  // Le numéro ne suffit pas à identifier un scrutin (réinitialisé
+                  // à chaque session au Sénat, à chaque législature à l'AN) : sans
+                  // la période, les liens résolvent vers un homonyme.
+                  session: true,
+                  legislature: true,
                   date: true,
                   titre: true,
                   sort: true,

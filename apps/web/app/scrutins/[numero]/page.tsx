@@ -23,13 +23,19 @@ async function getScrutin(numero: string, searchParams: ScrutinSearchParams) {
   return fetchFromApi<{ data: ScrutinDetail }>(`/scrutins/${numero}?${query}`);
 }
 
-// URL canonique : on garde les URLs AN « propres » (sans query) déjà indexées,
-// et on désambiguïse les scrutins du Sénat avec chambre + session.
+// URL canonique : toujours chambre + session, dans les deux chambres.
+//
+// Le numéro de scrutin n'est unique nulle part (réinitialisé à chaque session au
+// Sénat, à chaque législature à l'Assemblée) : le n°4000 existe en 15e, 16e ET
+// 17e. Une canonique « propre » /scrutins/4000 ferait donc déclarer la même URL
+// à trois pages distinctes, pointant qui plus est vers un contenu arbitraire
+// (l'API résout un numéro nu vers le scrutin le plus récent).
+//
+// Les URLs propres déjà indexées continuent de répondre et déclarent cette
+// canonique explicite : les moteurs consolident vers elle. C'est précisément
+// l'usage prévu du canonical pour passer d'URLs ambiguës à des URLs explicites.
 function scrutinCanonicalUrl(data: ScrutinDetail): string {
-  if (data.chambre === 'senat') {
-    return `${BASE_URL}/scrutins/${data.numero}?${scrutinQuery(data)}`;
-  }
-  return `${BASE_URL}/scrutins/${data.numero}`;
+  return `${BASE_URL}/scrutins/${data.numero}?${scrutinQuery(data)}`;
 }
 
 export async function generateMetadata({

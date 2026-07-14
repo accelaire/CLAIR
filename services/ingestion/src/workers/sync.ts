@@ -1223,11 +1223,12 @@ async function syncSingleSenateur(
 // =============================================================================
 
 export async function syncScrutins(
-  options: { limit?: number; fromNumero?: number } = {}
+  options: { limit?: number; fromNumero?: number; legislature?: number } = {}
 ): Promise<{ scrutins: number; votes: number }> {
-  logger.info({ limit: options.limit }, 'Starting scrutins AN sync (from Assemblée Nationale API)...');
+  const legislature = options.legislature ?? LEGISLATURE_AN_COURANTE;
+  logger.info({ limit: options.limit, legislature }, 'Starting scrutins AN sync (from Assemblée Nationale API)...');
 
-  const scrutinsClient = new AssembleeNationaleScrutinsClient(17);
+  const scrutinsClient = new AssembleeNationaleScrutinsClient(legislature);
   const scrutinsData = await scrutinsClient.getScrutins({ limit: options.limit });
 
   // Charger les parlementaires AN pour le mapping acteurRef -> parlementaireId
@@ -1245,8 +1246,9 @@ export async function syncScrutins(
   let votesCreated = 0;
 
   const chambre = 'assemblee';
-  // Pour l'AN, la session est la législature (17e par défaut)
-  const session = process.env.ASSEMBLEE_NATIONALE_LEGISLATURE || '17';
+  // Pour l'AN, la session est la législature : elle fait partie de la clé unique
+  // (numero, chambre, session), ce qui isole les scrutins de chaque législature.
+  const session = String(legislature);
 
   for (const data of scrutinsData) {
     try {
@@ -1266,6 +1268,7 @@ export async function syncScrutins(
         numero: scrutin.numero,
         chambre,
         session,
+        legislature,
         date: scrutin.date,
         titre: scrutin.titre,
         typeVote: scrutin.typeVote,

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
 import { getDossierEtat } from '@/lib/dossiers';
+import { scrutinPeriodeLabel } from '@/lib/periodes';
 
 interface DossierLegislatif {
   id: string;
@@ -26,6 +27,9 @@ interface DossierLegislatif {
 interface ScrutinSidebarProps {
   chambre: string;
   date: string;
+  /** Session (Sénat) ou numéro de législature (Assemblée). */
+  session?: string | null;
+  legislature?: number | null;
   typeVote: string;
   sort: string;
   tags: string[];
@@ -58,6 +62,8 @@ const formatDossierTitre = (titre: string, procedureLibelle?: string | null): st
 export function ScrutinSidebar({
   chambre,
   date,
+  session,
+  legislature,
   typeVote,
   sort,
   tags,
@@ -68,6 +74,9 @@ export function ScrutinSidebar({
   formatDemandeurs,
 }: ScrutinSidebarProps) {
   const isAdopted = sort === 'adopte';
+  // Le numéro de scrutin étant réinitialisé à chaque période, la période est ce
+  // qui distingue deux scrutins de même numéro.
+  const periode = scrutinPeriodeLabel({ chambre, session, legislature });
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('fr-FR', {
@@ -87,6 +96,9 @@ export function ScrutinSidebar({
           <Calendar className="h-4 w-4 text-muted-foreground" />
           {formatDate(date)}
         </p>
+        {periode && (
+          <p className="text-xs text-muted-foreground mt-1 pl-[22px]">{periode}</p>
+        )}
       </div>
 
       {/* Chambre */}

@@ -26,6 +26,13 @@ function truncateContenu(intervention: { contenu: string; [key: string]: any }) 
 }
 
 // Fix AN sourceUrl format: VTANR5L17V4946 -> 4946
+/** Borne haute inclusive : `dateTo` désigne un jour entier, pas son instant zéro. */
+const endOfDay = (date: Date): Date => {
+  const d = new Date(date);
+  d.setUTCHours(23, 59, 59, 999);
+  return d;
+};
+
 const fixSourceUrl = (sourceUrl: string | null, chambre: string, numero: number): string | null => {
   if (!sourceUrl) return null;
   // Fix AN URLs with wrong format (VTANR5L17Vxxxx instead of just xxxx)
@@ -131,11 +138,15 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         }
       }
 
-      // Combine date conditions properly (don't overwrite gte with lte)
+      // Combine date conditions properly (don't overwrite gte with lte).
+      // `dateTo` est une date (sans heure) : on borne à la fin de la journée,
+      // sinon tout scrutin horodaté après minuit ce jour-là serait exclu — ce
+      // qui coupait notamment le dernier jour des scrutins Sénat (stockés à
+      // 22:00 UTC = minuit à Paris).
       const dateCondition = (dateFrom || dateTo) ? {
         date: {
           ...(dateFrom && { gte: dateFrom }),
-          ...(dateTo && { lte: dateTo }),
+          ...(dateTo && { lte: endOfDay(dateTo) }),
         },
       } : {};
 
@@ -253,6 +264,65 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       const data = rows.map((r) => ({ year: r.year, count: Number(r.count) }));
+      const response = { data };
+
+      await fastify.redis.setex(cacheKey, 86400, JSON.stringify(response));
+      return response;
+    },
+  });
+
+  // ===========================================================================
+  // GET /api/v1/scrutins/periodes - Périodes institutionnelles disponibles
+  // ===========================================================================
+  fastify.get('/periodes', {
+    schema: {
+      tags: ['Scrutins'],
+      summary: 'Périodes institutionnelles disponibles',
+      description:
+        "Retourne les périodes pour lesquelles des scrutins existent : législature à l'AN, session ordinaire au Sénat. " +
+        'Les bornes de dates sont calculées sur les scrutins réellement en base : filtrer sur [dateDebut, dateFin] ' +
+        'renvoie donc exactement les scrutins de la période. Une période absente de la base n\'est pas exposée.',
+    },
+    handler: async (request, _reply) => {
+      const { chambre } = z
+        .object({ chambre: z.enum(['assemblee', 'senat']).optional() })
+        .parse(request.query);
+
+      const cacheKey = `scrutins:periodes:v2:${chambre ?? 'all'}`;
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+
+      // Bornes renvoyées en jours ('YYYY-MM-DD') et non en instants : un instant
+      // ISO serait réinterprété dans le fuseau du navigateur et décalerait la
+      // borne d'un jour (les scrutins Sénat sont horodatés à 22:00 UTC).
+      const rows = await fastify.prisma.$queryRaw<
+        {
+          chambre: string;
+          legislature: number | null;
+          session: string;
+          date_debut: string;
+          date_fin: string;
+          count: bigint;
+        }[]
+      >`
+        SELECT chambre, legislature, session,
+               MIN(date)::date::text AS date_debut,
+               MAX(date)::date::text AS date_fin,
+               COUNT(*) AS count
+        FROM scrutins
+        WHERE (${chambre ?? null}::text IS NULL OR chambre = ${chambre ?? null}::text)
+        GROUP BY chambre, legislature, session
+        ORDER BY MAX(date) DESC
+      `;
+
+      const data = rows.map((r) => ({
+        chambre: r.chambre,
+        legislature: r.legislature,
+        session: r.session,
+        dateDebut: r.date_debut,
+        dateFin: r.date_fin,
+        count: Number(r.count),
+      }));
       const response = { data };
 
       await fastify.redis.setex(cacheKey, 86400, JSON.stringify(response));

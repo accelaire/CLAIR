@@ -84,7 +84,7 @@ program
   .option('--texte-ids <ids>', 'IDs texte AMELI à cibler (séparés par des virgules, avec --se -a)')
   .option('--no-actions', 'Ne pas synchroniser les actions de lobbying (avec --lo)')
   .option('-l, --limit <number>', 'Limiter le nombre d\'éléments à synchroniser', parseInt)
-  .option('--legislature <number>', 'Législature AN à ingérer (15,16,17 — défaut: courante). Avec -p --an', parseInt)
+  .option('--legislature <number>', 'Législature AN à ingérer (15,16,17 — défaut: courante). Avec -p --an ou -s --an', parseInt)
   .option('--dry-run', 'Mode simulation (affiche ce qui serait fait sans modifier)')
   // Opérations de liaison (combiner avec --in ou --am)
   .option('--link', 'Lier les scrutins aux interventions (--in) ou amendements (--am)')
@@ -183,9 +183,9 @@ program
         if (chambre === 'se') {
           await syncScrutinsSenat({ limit: options.limit });
         } else if (chambre === 'an') {
-          await syncScrutins({ limit: options.limit });
+          await syncScrutins({ limit: options.limit, legislature: options.legislature });
         } else {
-          await syncScrutins({ limit: options.limit });
+          await syncScrutins({ limit: options.limit, legislature: options.legislature });
           await syncScrutinsSenat({ limit: options.limit });
         }
       } else if (options.interventions) {

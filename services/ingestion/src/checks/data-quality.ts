@@ -3,6 +3,19 @@
 // =============================================================================
 
 import { PrismaClient } from '@prisma/client';
+import { LEGISLATURE_AN_COURANTE } from '../workers/mandats';
+
+// =============================================================================
+// Périmètre des taux de liaison
+// =============================================================================
+//
+// Dossiers et amendements ne sont ingérés que pour la législature courante (AN)
+// et le Sénat. Les scrutins des législatures historiques (15, 16) existent en
+// base sans dossier ni amendement associé : les compter au dénominateur ferait
+// mesurer le *périmètre d'ingestion* au lieu de la *qualité de liaison*.
+// On restreint donc ces deux taux au périmètre où les sources liées existent.
+// Voir SPEC-MULTI-LEGISLATURES.md (ticket #13).
+const SCRUTINS_PERIMETRE_LIE = `(s.chambre = 'senat' OR s.legislature = ${LEGISLATURE_AN_COURANTE})`;
 
 // =============================================================================
 // Types
@@ -193,7 +206,7 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     type: 'threshold',
     label: 'Taux de liaison scrutins-amendements AN (%)',
     min: 80,
-    query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (linked * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM "_AmendementToScrutin" ast WHERE ast."B" = s.id)) AS linked FROM scrutins s WHERE s.chambre = 'assemblee' AND s.titre ILIKE '%amendement%') sub`,
+    query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (linked * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM "_AmendementToScrutin" ast WHERE ast."B" = s.id)) AS linked FROM scrutins s WHERE s.chambre = 'assemblee' AND s.legislature = ${LEGISLATURE_AN_COURANTE} AND s.titre ILIKE '%amendement%') sub`,
   },
   senat_amendment_link_rate: {
     type: 'threshold',
@@ -205,7 +218,7 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     type: 'threshold',
     label: 'Taux de liaison scrutins-dossiers (%)',
     min: 90,
-    query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (linked * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE dossier_id IS NOT NULL) AS linked FROM scrutins) sub`,
+    query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (linked * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE s.dossier_id IS NOT NULL) AS linked FROM scrutins s WHERE ${SCRUTINS_PERIMETRE_LIE}) sub`,
   },
   amendement_dossier_link_rate: {
     type: 'threshold',
@@ -292,6 +305,7 @@ export async function runMultiAmendmentCheck(prisma: PrismaClient): Promise<Mult
     LEFT JOIN "_AmendementToScrutin" ast ON ast."B" = s.id
     LEFT JOIN amendements a ON a.id = ast."A"
     WHERE s.titre ILIKE '%amendements identiques%'
+      AND ${SCRUTINS_PERIMETRE_LIE}
     GROUP BY s.id, s.titre, s.chambre
   `);
 
