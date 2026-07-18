@@ -1281,10 +1281,6 @@ export async function syncScrutinsSenat(
         sourceData: scrutin.sourceData as object,
       };
 
-      const amendementsRelation = amendementIds.length > 0
-        ? amendementIds.map(id => ({ id }))
-        : [];
-
       const existing = await prisma.scrutin.findUnique({
         where: { numero_chambre_session: { numero: scrutin.numero, chambre, session: sessionYear } },
       });
@@ -1296,6 +1292,11 @@ export async function syncScrutinsSenat(
           where: { numero_chambre_session: { numero: scrutin.numero, chambre, session: sessionYear } },
           data: {
             ...scrutinBaseData,
+            // Ne JAMAIS écraser un lien dossier existant avec null : DOSLEG ne fournit un
+            // dossierRef que pour une minorité de scrutins, l'essentiel du rattachement
+            // vient d'étapes séparées (title matching, CTE). Sans ce garde-fou, chaque
+            // re-sync effaçait les liens jusqu'au prochain passage de ces étapes.
+            dossierId: dossierId ?? existing.dossierId,
             // NEVER override amendment links here — DOSLEG numero matching is imprecise
             // (amendementByNumero is non-unique: same numero exists on different textes).
             // Precise amendment linking is handled by enrichScrutinsSenatAmendements() (HTML scraping)
