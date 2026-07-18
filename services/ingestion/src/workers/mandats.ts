@@ -130,6 +130,97 @@ export function deriveMandatContextSenat(serie: string | null, at: Date = new Da
   };
 }
 
+/**
+ * Série électorale inférée d'une date de début de mandat qui tombe pile sur un
+ * renouvellement (1er octobre d'une année de renouvellement). `null` si la date
+ * n'est pas un renouvellement « propre » (remplacement en cours de mandat, etc.).
+ *
+ * Sert pour les anciens sénateurs (source ODSEN), dont la source n'expose pas la
+ * série : un mandat plein 2017-10-01 ⇒ série 1, 2020-10-01 ⇒ série 2, etc.
+ */
+export function inferSerieSenatDepuisDate(dateDebut: Date): string | null {
+  const y = dateDebut.getUTCFullYear();
+  if ((y - 2011) % 3 !== 0) return null; // pas une année de renouvellement (cycle de 3 ans)
+  // Prise de fonction : tout début du 1er au 3 octobre du renouvellement (la source
+  // enregistre tantôt le 1er, tantôt le 2 octobre selon la 1re séance).
+  if (dateDebut.getUTCMonth() !== 9 || dateDebut.getUTCDate() > 3) return null;
+  return ((y - 2011) / 3) % 2 === 0 ? '1' : '2';
+}
+
+/** Année du dernier renouvellement sénatorial (cycle de 3 ans ancré sur 2011, prise
+ *  de fonction 1er oct.) à une date donnée, SÉRIE-INDÉPENDANTE. Sert de mandature
+ *  stable pour les mandats sans série connue (anciens purs) : ne dépend d'aucune
+ *  inférence, donc la clé naturelle ne dérive pas d'un run à l'autre. */
+export function renouvellementSenatAvant(date: Date): number {
+  const y = date.getUTCFullYear();
+  let m = y - ((((y - 2011) % 3) + 3) % 3); // année ≡ 2011 (mod 3), ≤ y
+  if (senatMandatureDebut(m) > date) m -= 3; // avant le 1er oct. → cycle précédent
+  return m;
+}
+
+/** Ramène une fin de mandat tombant pile sur un renouvellement (1er oct.) à la veille
+ *  (30 sept.), pour lever le chevauchement d'un jour sortant/entrant. Sinon inchangée. */
+export function normaliseFinRenouvellementSenat(dateFin: Date): Date {
+  const y = dateFin.getUTCFullYear();
+  const estRenouvellement = (y - 2011) % 3 === 0;
+  if (estRenouvellement && dateFin.getTime() === senatMandatureDebut(y).getTime()) {
+    return new Date(dateFin.getTime() - 24 * 60 * 60 * 1000);
+  }
+  return dateFin;
+}
+
+/** Entrée d'un mandat sénatorial issu de l'open data ODSEN (fichier ELUSEN). */
+export interface OdsenMandatInput {
+  dateDebut: Date; // eludatdeb (réelle)
+  dateFin: Date | null; // eludatfin — `null` si vide dans l'export
+  serie: string | null; // série connue (sénateur déjà en base) ou inférée
+}
+
+/**
+ * Contexte d'un mandat sénatorial dérivé des VRAIES dates ODSEN, en corrigeant la
+ * fraîcheur de l'export ELUSEN (voir mémoire « source anciens sénateurs ») : l'export
+ * est figé avant le renouvellement de sept. 2023, si bien qu'un mandat de série 1
+ * élu en 2017 y apparaît encore « ouvert » alors qu'il s'est terminé le 30 sept. 2023.
+ *
+ * Règle : un mandat sans date de fin dont la mandature est ANTÉRIEURE à la mandature
+ * courante de sa série est en réalité clos → on le ferme à sa fin de droit. Seul le
+ * mandat de la mandature courante reste ouvert (`dateFin: null`).
+ *
+ * Mandature = renouvellement SÉRIE-INDÉPENDANT à la date de début (`renouvellementSenatAvant`).
+ * Ce worker n'importe que des mandats CLOS historiques ; le sync `senateurs.json` garde
+ * les mandats courants ouverts, de mandature toujours différente ⇒ pas de collision.
+ * La série ne pilote donc PAS la clé (elle dépendrait de l'inférence / de la présence en
+ * base et dériverait entre deux runs) : elle ne sert qu'à décider la clôture ci-dessous.
+ */
+export function deriveMandatContextSenatOdsen(
+  input: OdsenMandatInput,
+  at: Date = new Date(),
+): MandatContext {
+  const mandature = renouvellementSenatAvant(input.dateDebut);
+
+  // Convention Sénat : la fin d'un mandat = la prise de fonction du successeur (1er
+  // octobre du renouvellement). Sans normalisation, sortant et entrant se chevauchent
+  // d'un jour et toute la cohorte est comptée deux fois à la session du renouvellement.
+  // On ramène donc une fin tombant pile sur un renouvellement à la veille (30 sept.),
+  // ce qui aligne aussi sur `senatMandatFinTheorique`.
+  let dateFin = input.dateFin ? normaliseFinRenouvellementSenat(input.dateFin) : null;
+  if (dateFin === null) {
+    const mandatureCourante = input.serie ? deriveMandatureSenat(input.serie, at) : null;
+    // Série inconnue OU mandat d'une mandature révolue ⇒ clos à sa fin de droit.
+    if (mandatureCourante === null || mandature < mandatureCourante) {
+      dateFin = senatMandatFinTheorique(mandature);
+    }
+  }
+
+  return {
+    legislature: null,
+    mandature,
+    serie: input.serie,
+    dateDebut: input.dateDebut,
+    dateFin,
+  };
+}
+
 /** Une législature AN est-elle la législature courante (affichée) ? */
 export function isLegislatureCourante(legislature: number): boolean {
   return legislature === LEGISLATURE_AN_COURANTE;

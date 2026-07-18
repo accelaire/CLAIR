@@ -15,6 +15,7 @@ import { SenatScrutinsClient } from '../sources/senat/scrutins-client';
 import { DILAInterventionsClient } from '../sources/dila/interventions-client';
 import { SenatInterventionsClient } from '../sources/senat/interventions-client';
 import { SenatDossiersClient } from '../sources/senat/dossiers-client';
+import { syncSenateursHistoriques } from './senat-histo';
 import { logger } from '../utils/logger';
 import { extractCommissionSaisines } from '../utils/dossier-commissions';
 import {
@@ -2451,6 +2452,7 @@ export interface SmartSyncOptions {
   includeDossiers?: boolean;
   includeLobbying?: boolean;
   includeCommissions?: boolean;
+  includeSenatHisto?: boolean; // Anciens sénateurs (ODSEN)
   includeReunions?: boolean;
   includeSenatReunions?: boolean;
   includeSenatAgenda?: boolean;
@@ -2506,6 +2508,9 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       // 2. Parlementaires (nécessaires pour les autres sources)
       'assemblee_nationale:deputes',
       'senat:senateurs',
+      // 2b. Anciens sénateurs (ODSEN) : après senateurs.json (réconcilie ses mandats
+      //     courants), avant les scrutins (les votes historiques ont besoin du roster)
+      'senat:senateurs_histo',
       // 3. Scrutins et votes
       'assemblee_nationale:scrutins',
       'senat:scrutins',
@@ -2537,6 +2542,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     sourcesToCheck = options.sources || [
       'assemblee_nationale:deputes',
       'senat:senateurs',
+      ...(options.includeSenatHisto ? ['senat:senateurs_histo'] : []),
       ...(options.includeCommissions ? ['assemblee_nationale:commissions'] : []),
       ...(options.includeScrutins ? ['assemblee_nationale:scrutins', 'senat:scrutins'] : []),
       ...(options.includeAmendements ? ['assemblee_nationale:amendements', 'senat:amendements'] : []),
@@ -2618,6 +2624,15 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
           case 'senat:senateurs':
             syncResult = await syncSenateurs(false);
             break;
+
+          case 'senat:senateurs_histo': {
+            const histoResult = await syncSenateursHistoriques();
+            syncResult = {
+              created: histoResult.personnesCreees + histoResult.mandatsCrees,
+              updated: histoResult.personnesEnrichies + histoResult.mandatsMisAJour,
+            };
+            break;
+          }
 
           case 'assemblee_nationale:commissions': {
             const commissionsResult = await syncCommissions();

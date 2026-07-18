@@ -10,7 +10,9 @@ import { describe, it, expect } from 'vitest';
 import {
   deriveMandatContextAN,
   deriveMandatContextSenat,
+  deriveMandatContextSenatOdsen,
   deriveMandatureSenat,
+  inferSerieSenatDepuisDate,
   senatMandatFinTheorique,
   senatMandatureDebut,
   isLegislatureCourante,
@@ -81,6 +83,91 @@ describe('deriveMandatContextSenat', () => {
     expect(apres.mandature).toBe(2026);
     expect(apres.mandature).not.toBe(avant.mandature);
     expect(apres.dateDebut.toISOString()).toBe('2026-10-01T00:00:00.000Z');
+  });
+});
+
+describe('inferSerieSenatDepuisDate (anciens sénateurs, série absente de la source)', () => {
+  it('infère la série d’un mandat plein (prise de fonction 1er-3 octobre d’un renouvellement)', () => {
+    expect(inferSerieSenatDepuisDate(new Date('2017-10-01T00:00:00Z'))).toBe('1');
+    expect(inferSerieSenatDepuisDate(new Date('2017-10-02T00:00:00Z'))).toBe('1'); // 1re séance le 2 oct.
+    expect(inferSerieSenatDepuisDate(new Date('2023-10-01T00:00:00Z'))).toBe('1');
+    expect(inferSerieSenatDepuisDate(new Date('2020-10-01T00:00:00Z'))).toBe('2');
+    expect(inferSerieSenatDepuisDate(new Date('2014-10-01T00:00:00Z'))).toBe('2');
+  });
+
+  it('renvoie null pour un début qui n’est pas une prise de fonction de renouvellement', () => {
+    expect(inferSerieSenatDepuisDate(new Date('2019-03-15T00:00:00Z'))).toBeNull(); // remplacement
+    expect(inferSerieSenatDepuisDate(new Date('2017-10-20T00:00:00Z'))).toBeNull(); // trop tard en oct.
+    expect(inferSerieSenatDepuisDate(new Date('2018-10-01T00:00:00Z'))).toBeNull(); // pas une année de renouvellement
+  });
+});
+
+describe('deriveMandatContextSenatOdsen (dates réelles ODSEN + correction fraîcheur ELUSEN)', () => {
+  const maintenant = new Date('2026-07-14T00:00:00Z');
+
+  it('conserve une date de fin réelle telle quelle', () => {
+    const ctx = deriveMandatContextSenatOdsen(
+      { dateDebut: new Date('2014-10-01T00:00:00Z'), dateFin: new Date('2020-09-30T00:00:00Z'), serie: '2' },
+      maintenant,
+    );
+    expect(ctx).toMatchObject({ legislature: null, mandature: 2014, serie: '2' });
+    expect(ctx.dateFin?.toISOString()).toBe('2020-09-30T00:00:00.000Z');
+  });
+
+  it('normalise une fin tombant sur un renouvellement (1er oct.) à la veille (30 sept.)', () => {
+    // Convention Sénat : la fin réelle du sortant = la prise de fonction de l'entrant.
+    const ctx = deriveMandatContextSenatOdsen(
+      { dateDebut: new Date('2017-10-01T00:00:00Z'), dateFin: new Date('2023-10-01T00:00:00Z'), serie: '1' },
+      maintenant,
+    );
+    expect(ctx.dateFin?.toISOString()).toBe('2023-09-30T00:00:00.000Z');
+  });
+
+  it('CLÔT un mandat série 1 « ouvert » périmé (export figé avant sept. 2023) à sa fin de droit', () => {
+    // ELUSEN montre le mandat 2017 encore ouvert ; il s'est en réalité terminé le 30 sept. 2023.
+    const ctx = deriveMandatContextSenatOdsen(
+      { dateDebut: new Date('2017-10-01T00:00:00Z'), dateFin: null, serie: '1' },
+      maintenant,
+    );
+    expect(ctx.mandature).toBe(2017);
+    expect(ctx.dateFin?.toISOString()).toBe('2023-09-30T00:00:00.000Z');
+  });
+
+  it('laisse ouvert le mandat de la mandature COURANTE (série 2, 2020)', () => {
+    const ctx = deriveMandatContextSenatOdsen(
+      { dateDebut: new Date('2020-10-01T00:00:00Z'), dateFin: null, serie: '2' },
+      maintenant,
+    );
+    expect(ctx.mandature).toBe(2020);
+    expect(ctx.dateFin).toBeNull();
+  });
+
+  it('série inconnue : mandature stable via le renouvellement série-indépendant (pas l’année brute)', () => {
+    // Remplacement au 1er oct. 2021 (hors année de renouvellement) → cohorte 2020, PAS 2021.
+    const ctx = deriveMandatContextSenatOdsen(
+      { dateDebut: new Date('2021-10-01T00:00:00Z'), dateFin: new Date('2024-08-16T00:00:00Z'), serie: null },
+      maintenant,
+    );
+    expect(ctx.mandature).toBe(2020);
+  });
+
+  it('rattache un remplacement en cours de mandat à sa cohorte (renouvellement précédent)', () => {
+    // Remplacement démarré le 15 mars 2019 → cohorte (mandature) 2017, date réelle conservée.
+    const ctx = deriveMandatContextSenatOdsen(
+      { dateDebut: new Date('2019-03-15T00:00:00Z'), dateFin: new Date('2023-09-30T00:00:00Z'), serie: '1' },
+      maintenant,
+    );
+    expect(ctx.mandature).toBe(2017);
+    expect(ctx.dateDebut.toISOString()).toBe('2019-03-15T00:00:00.000Z'); // date RÉELLE conservée
+  });
+
+  it('série inconnue : mandature = année de début et mandat ouvert clos à sa fin de droit', () => {
+    const ctx = deriveMandatContextSenatOdsen(
+      { dateDebut: new Date('2017-10-01T00:00:00Z'), dateFin: null, serie: null },
+      maintenant,
+    );
+    expect(ctx.mandature).toBe(2017);
+    expect(ctx.dateFin?.toISOString()).toBe('2023-09-30T00:00:00.000Z');
   });
 });
 

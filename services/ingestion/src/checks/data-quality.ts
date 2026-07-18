@@ -17,6 +17,14 @@ import { LEGISLATURE_AN_COURANTE } from '../workers/mandats';
 // Voir SPEC-MULTI-LEGISLATURES.md (ticket #13).
 const SCRUTINS_PERIMETRE_LIE = `(s.chambre = 'senat' OR s.legislature = ${LEGISLATURE_AN_COURANTE})`;
 
+// Sessions Sénat pour lesquelles on ingère ET enrichit les amendements (période courante).
+// Les scrutins historiques (< cette borne) n'ont AUCUN amendement en base — la source ne
+// remonte pas si loin — donc les compter fausserait le taux de liaison. Borne PLANCHER
+// stable : contrairement à `LEGISLATURE_AN_COURANTE`, elle ne s'incrémente jamais (les
+// sessions futures 2025, 2026… sont toutes >= à ce plancher). Les dossiers, eux, se lient
+// sur tout l'historique (DOSLEG remonte à 2020) : leur taux n'a pas besoin de ce périmètre.
+const SENAT_SESSION_AMENDEMENTS_MIN = '2024';
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -212,7 +220,7 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     type: 'threshold',
     label: 'Taux de liaison scrutins-amendements Sénat (%)',
     min: 45,
-    query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (linked * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM "_AmendementToScrutin" ast WHERE ast."B" = s.id)) AS linked FROM scrutins s WHERE s.chambre = 'senat' AND s.titre ILIKE '%amendement%') sub`,
+    query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (linked * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM "_AmendementToScrutin" ast WHERE ast."B" = s.id)) AS linked FROM scrutins s WHERE s.chambre = 'senat' AND s.session >= '${SENAT_SESSION_AMENDEMENTS_MIN}' AND s.titre ILIKE '%amendement%') sub`,
   },
   scrutin_dossier_link_rate: {
     type: 'threshold',

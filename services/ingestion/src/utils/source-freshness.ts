@@ -82,6 +82,14 @@ export const SOURCES: Record<string, SourceConfig> = {
     dataType: 'senateurs',
     url: 'https://www.senat.fr/api-senat/senateurs.json',
   },
+  'senat:senateurs_histo': {
+    source: 'senat',
+    dataType: 'senateurs_histo',
+    // Open data ODSEN (anciens sénateurs + mandats historiques). ELUSEN sert de signal
+    // de fraîcheur : re-daté quotidiennement, donc le sync (idempotent) repasse chaque
+    // jour et rattrape tout rafraîchissement de la source (nouveaux renouvellements…).
+    url: 'https://data.senat.fr/data/senateurs/ODSEN_ELUSEN.csv',
+  },
   'senat:scrutins': {
     source: 'senat',
     dataType: 'scrutins',

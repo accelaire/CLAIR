@@ -47,6 +47,7 @@ import {
   calculateAllGroupeThematiques,
 } from './workers/stats-calculator.js';
 import { backfillMandatsParlementaires } from './workers/backfill-mandats.js';
+import { syncSenateursHistoriques } from './workers/senat-histo.js';
 import { logger } from './utils/logger';
 
 const program = new Command();
@@ -356,6 +357,7 @@ program
   .option('--in, --interventions', 'Inclure les interventions (DILA + Sénat)')
   .option('--lo, --lobbying', 'Inclure les lobbyistes')
   .option('--co, --commissions', 'Inclure les commissions parlementaires')
+  .option('--senat-histo', 'Inclure les anciens sénateurs (open data ODSEN)')
   .option('--re, --reunions', 'Inclure les réunions/agenda parlementaire (AN)')
   .option('--senat-reunions', 'Inclure les réunions Sénat (scraping HTML comptes rendus)')
   .option('--senat-agenda', 'Inclure l\'agenda Sénat (séances publiques à venir via API senat.fr)')
@@ -377,6 +379,7 @@ program
         includeInterventions: options.interventions,
         includeLobbying: options.lobbying,
         includeCommissions: options.commissions,
+        includeSenatHisto: options.senatHisto,
         includeReunions: options.reunions,
         includeSenatReunions: options.senatReunions,
         includeSenatAgenda: options.senatAgenda,
@@ -613,6 +616,34 @@ program
       process.exit(0);
     } catch (error: any) {
       logger.error({ error: error.message }, 'backfill-mandats failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: sync-senateurs-histo
+// =============================================================================
+program
+  .command('sync-senateurs-histo')
+  .description('Anciens sénateurs (open data ODSEN) : identités + mandats historiques clos + groupe d\'époque')
+  .option('--depuis <date>', 'Plancher du périmètre (YYYY-MM-DD, défaut 2020-10-01)')
+  .action(async (options) => {
+    try {
+      const perimetreDebut = options.depuis ? new Date(`${options.depuis}T00:00:00Z`) : undefined;
+      if (perimetreDebut && isNaN(perimetreDebut.getTime())) {
+        throw new Error(`Date --depuis invalide: ${options.depuis}`);
+      }
+      logger.info({ perimetreDebut }, 'Starting sync sénateurs historiques (ODSEN)...');
+      const result = await syncSenateursHistoriques({ perimetreDebut });
+      console.log('\n📊 Sénateurs historiques (ODSEN) :');
+      console.log(`   Personnes créées (anciens)  : ${result.personnesCreees}`);
+      console.log(`   Personnes enrichies (bio)   : ${result.personnesEnrichies}`);
+      console.log(`   Mandats créés               : ${result.mandatsCrees}`);
+      console.log(`   Mandats mis à jour          : ${result.mandatsMisAJour}`);
+      console.log(`   Sénateurs hors périmètre    : ${result.senateursIgnores}`);
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'sync-senateurs-histo failed');
       process.exit(1);
     }
   });
