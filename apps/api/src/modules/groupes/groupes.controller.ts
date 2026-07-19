@@ -34,14 +34,25 @@ export const groupesRoutes: FastifyPluginAsync = async (fastify) => {
             type: 'integer',
             description: "Législature AN (15, 16, 17). Défaut : la plus récente en base.",
           },
+          session: {
+            type: 'string',
+            description:
+              "Session Sénat (année de début, ex. \"2020\"). Défaut : la session courante. " +
+              "L'effectif renvoyé est celui de la composition du groupe à cette session.",
+          },
         },
       },
     },
     handler: async (request, _reply) => {
-      const { chambre, legislature } = request.query as { chambre?: Chambre; legislature?: string };
+      const { chambre, legislature, session } = request.query as {
+        chambre?: Chambre;
+        legislature?: string;
+        session?: string;
+      };
       const groupes = await service.getGroupes(
         chambre,
         legislature !== undefined ? Number(legislature) : undefined,
+        session,
       );
       return { data: groupes };
     },
@@ -80,17 +91,24 @@ export const groupesRoutes: FastifyPluginAsync = async (fastify) => {
               'désigne un groupe différent selon la législature ; les membres et les stats ' +
               'renvoyés sont ceux de la période demandée.',
           },
+          session: {
+            type: 'string',
+            description:
+              "Session Sénat (année de début, ex. \"2020\"). Défaut : la session courante. " +
+              'Renvoie la composition et les stats du groupe telles qu’à cette session.',
+          },
         },
       },
     },
     handler: async (request, _reply) => {
       const { chambre, slug } = request.params as { chambre: Chambre; slug: string };
-      const { legislature } = request.query as { legislature?: string };
+      const { legislature, session } = request.query as { legislature?: string; session?: string };
 
       const groupe = await service.getGroupeBySlug(
         chambre,
         slug,
         legislature !== undefined ? Number(legislature) : undefined,
+        session,
       );
 
       if (!groupe) {

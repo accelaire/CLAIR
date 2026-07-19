@@ -1,7 +1,7 @@
 import { ReactNode } from 'react';
 import Link from 'next/link';
 import { ScrollText } from 'lucide-react';
-import { legislatureLabel, mandatureLabel } from '@/lib/periodes';
+import { legislatureLabel, mandatureLabel, sessionForDate } from '@/lib/periodes';
 
 export interface MandatParlementaireItem {
   legislature: number | null;
@@ -71,6 +71,17 @@ export function MandatsBlock({
         {mandats.map((m, i) => {
           const couleur = m.groupe?.couleur || '#888';
           const enCours = !m.dateFin;
+          // Le lien groupe porte la période de CE mandat, pour atterrir sur la
+          // composition d'époque et non sur celle d'aujourd'hui.
+          //  - AN : la législature du mandat (la cohorte EST la période).
+          //  - Sénat : une mandature couvre ~6 sessions ; on vise la session de DÉBUT
+          //    du mandat (le groupe tel qu'à l'entrée). Le mandat en cours reste sans
+          //    paramètre = page live (session courante).
+          const groupeHref = m.groupe
+            ? chambre === 'assemblee'
+              ? `${groupeBase}/${m.groupe.slug}${m.legislature != null ? `?legislature=${m.legislature}` : ''}`
+              : `${groupeBase}/${m.groupe.slug}${enCours ? '' : `?session=${sessionForDate(new Date(m.dateDebut))}`}`
+            : null;
           return (
             <li key={`${m.legislature ?? m.mandature ?? 'm'}-${i}`} className="relative">
               {/* Pastille sur le rail, couleur du groupe de la période */}
@@ -92,7 +103,7 @@ export function MandatsBlock({
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
                   {m.groupe && (
                     <Link
-                      href={`${groupeBase}/${m.groupe.slug}`}
+                      href={groupeHref!}
                       className="inline-flex items-center gap-1.5 hover:text-foreground hover:underline"
                     >
                       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: couleur }} />

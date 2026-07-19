@@ -948,7 +948,7 @@ export class ParlementairesService {
    * Défaut : la législature la plus récente en base — dérivée des données, donc
    * sans constante à maintenir au changement de législature.
    */
-  async getGroupes(chambre?: Chambre, legislature?: number) {
+  async getGroupes(chambre?: Chambre, legislature?: number, session?: string) {
     const legislatureAN =
       legislature ??
       (
@@ -960,7 +960,24 @@ export class ParlementairesService {
       )?.legislature ??
       null;
 
-    const cacheKey = `groupes:${chambre || 'all'}:${legislatureAN ?? 'na'}`;
+    // Sénat : session demandée, ou courante par défaut (dérivée du scrutin le plus récent).
+    const sessionCouranteSenat =
+      chambre === 'assemblee'
+        ? null
+        : (
+            await this.prisma.scrutin.findFirst({
+              where: { chambre: 'senat' },
+              orderBy: { date: 'desc' },
+              select: { session: true },
+            })
+          )?.session ?? null;
+    const sessionSenat = chambre === 'assemblee' ? undefined : session ?? sessionCouranteSenat ?? undefined;
+    // Effectif Sénat : session passée → chevauchement d'intervalle ; session courante
+    // → « siège actuellement » (dateFin null). Sinon `_count` mélangerait les époques.
+    const senatWhereSession =
+      sessionSenat && sessionSenat !== (sessionCouranteSenat ?? undefined) ? sessionSenat : undefined;
+
+    const cacheKey = `groupes:${chambre || 'all'}:${legislatureAN ?? 'na'}:${sessionSenat ?? 'na'}`;
 
     const cached = await this.redis.get(cacheKey);
     if (cached) {
@@ -988,9 +1005,33 @@ export class ParlementairesService {
       orderBy: { ordre: 'asc' },
     });
 
+    // Effectif Sénat borné à la période (le `_count` global cumulerait toutes les
+    // époques). L'AN reste sur son `_count` (ligne déjà propre à sa législature).
+    const senatIds = groupes.filter((g) => g.chambre === 'senat').map((g) => g.id);
+    const senatCounts = new Map<string, number>();
+    if (senatIds.length > 0) {
+      const base: Prisma.MandatParlementaireWhereInput = { groupeId: { in: senatIds } };
+      let where: Prisma.MandatParlementaireWhereInput;
+      if (senatWhereSession) {
+        const y = parseInt(senatWhereSession, 10);
+        const debut = new Date(Date.UTC(y, 9, 1));
+        const fin = new Date(Date.UTC(y + 1, 8, 30, 23, 59, 59));
+        where = { ...base, dateDebut: { lte: fin }, OR: [{ dateFin: null }, { dateFin: { gte: debut } }] };
+      } else {
+        where = { ...base, dateFin: null };
+      }
+      const counts = await this.prisma.mandatParlementaire.groupBy({
+        by: ['groupeId'],
+        where,
+        _count: { _all: true },
+      });
+      for (const c of counts) if (c.groupeId) senatCounts.set(c.groupeId, c._count._all);
+    }
+
     const result = groupes.map((g) => ({
       ...g,
-      membresCount: g._count.mandatsParlementaires,
+      membresCount:
+        g.chambre === 'senat' ? senatCounts.get(g.id) ?? 0 : g._count.mandatsParlementaires,
       _count: undefined,
     }));
 
@@ -1031,6 +1072,39 @@ export class ParlementairesService {
     await this.redis.setex(cacheKey, this.CACHE_TTL_LONG, JSON.stringify(result));
 
     return result;
+  }
+
+  /**
+   * Le tri « carrière » a-t-il un sens dans cette chambre ? Il ne diffère du tri
+   * « mandat en cours » que s'il existe un élu EN FONCTION dont la carrière dépasse
+   * le mandat courant, c.-à-d. réélu (≥ 2 mandats dans SA chambre — la carrière est
+   * agrégée par chambre, cf. stats-calculator). Sans réélu, les colonnes
+   * `stats_carriere_*` et `stats_*` sont identiques et le sélecteur ne départagerait
+   * rien : on le masque, exactement comme le sélecteur de législature côté AN.
+   *
+   * Data-driven : dès que l'historique (anciens mandats) est ingéré, le sélecteur
+   * apparaît de lui-même. `m.chambre = p.chambre` gère aussi le cas « toutes chambres »
+   * (chambre indéfinie) sans compter un mandat d'AN comme un réélu du Sénat.
+   */
+  async hasCarriereHistorique(chambre?: Chambre): Promise<boolean> {
+    const cacheKey = `carriere-historique:${chambre ?? 'all'}`;
+    const cached = await this.redis.get(cacheKey);
+    if (cached !== null) return cached === '1';
+
+    const rows = await this.prisma.$queryRaw<{ present: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1 FROM parlementaires p
+        WHERE p.actif = true
+          ${chambre ? Prisma.sql`AND p.chambre = ${chambre}` : Prisma.empty}
+          AND (
+            SELECT COUNT(*) FROM mandats_parlementaires m
+            WHERE m.personne_id = p.id AND m.chambre = p.chambre
+          ) > 1
+      ) AS present
+    `;
+    const present = rows[0]?.present ?? false;
+    await this.redis.setex(cacheKey, this.CACHE_TTL_LONG, present ? '1' : '0');
+    return present;
   }
 
   // ===========================================================================

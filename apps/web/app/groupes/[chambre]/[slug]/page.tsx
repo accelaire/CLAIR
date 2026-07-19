@@ -14,6 +14,8 @@ const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
 // plus récente où ce sigle a existé.
 interface GroupeSearchParams {
   legislature?: string;
+  // Sénat : session (année de début, ex. "2020"). Sélectionne la composition d'époque.
+  session?: string;
 }
 
 async function getGroupe(
@@ -21,19 +23,23 @@ async function getGroupe(
   slug: string,
   searchParams: GroupeSearchParams = {},
 ) {
-  const query = searchParams.legislature
-    ? `?legislature=${encodeURIComponent(searchParams.legislature)}`
-    : '';
+  const params = new URLSearchParams();
+  if (searchParams.legislature) params.set('legislature', searchParams.legislature);
+  if (searchParams.session) params.set('session', searchParams.session);
+  const query = params.toString() ? `?${params.toString()}` : '';
   return fetchFromApi<{ data: GroupeDetail }>(
     `/groupes/${chambre}/${slug}${query}`,
   );
 }
 
-/** URL canonique : porte la législature, sans quoi trois groupes distincts
- *  partageraient la même URL. */
+/** URL canonique : porte la période (législature AN / session Sénat), sans quoi
+ *  plusieurs compositions distinctes partageraient la même URL. */
 function groupeCanonicalUrl(data: GroupeDetail): string {
   const base = `${BASE_URL}/groupes/${data.chambre}/${data.slug}`;
-  return data.legislature != null ? `${base}?legislature=${data.legislature}` : base;
+  if (data.legislature != null) return `${base}?legislature=${data.legislature}`;
+  // Sénat : on ne canonicalise la session que si ce n'est pas la session courante.
+  if (data.session && !data.sessionCourante) return `${base}?session=${data.session}`;
+  return base;
 }
 
 export async function generateMetadata({

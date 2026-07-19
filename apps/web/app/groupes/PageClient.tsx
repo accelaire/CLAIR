@@ -8,7 +8,7 @@ import { Search, ChevronDown, Users, Loader2, Building2, ArrowRight } from 'luci
 import { api } from '@/lib/api';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
 import { getGroupColor } from '@/lib/colors';
-import { legislatureLabel } from '@/lib/periodes';
+import { legislatureLabel, sessionLabel } from '@/lib/periodes';
 import { HemicycleChart } from '@/components/charts/HemicycleChart';
 
 interface GroupePolitique {
@@ -41,16 +41,22 @@ const positionLabels: Record<string, string> = {
   extreme_droite: 'Extrême droite',
 };
 
-function GroupeCard({ groupe }: { groupe: GroupePolitique }) {
+function GroupeCard({ groupe, session }: { groupe: GroupePolitique; session?: string }) {
   const color = getGroupColor(groupe.nom, groupe.couleur, groupe.position);
   const chambreRoute = groupe.chambre === 'assemblee' ? 'deputes' : 'senateurs';
 
+  // Le lien porte la période : législature pour l'AN, session choisie pour le Sénat
+  // (pour atterrir sur la même composition d'époque que celle affichée dans la liste).
+  const periodeQuery =
+    groupe.legislature != null
+      ? `?legislature=${groupe.legislature}`
+      : groupe.chambre === 'senat' && session
+        ? `?session=${session}`
+        : '';
+
   return (
     <Link
-      // Un sigle désigne un groupe différent selon la législature : le lien la porte.
-      href={`/groupes/${groupe.chambre}/${groupe.slug}${
-        groupe.legislature != null ? `?legislature=${groupe.legislature}` : ''
-      }`}
+      href={`/groupes/${groupe.chambre}/${groupe.slug}${periodeQuery}`}
       className="group relative flex flex-col rounded-xl border bg-card p-4 transition-all hover:shadow-lg hover:border-primary/30 overflow-hidden"
     >
       {/* Bande de couleur */}
@@ -132,7 +138,8 @@ function GroupesPageContent() {
     search: string;
     chambre: string;
     legislature: string;
-  }>(['search', 'chambre', 'legislature']);
+    session: string;
+  }>(['search', 'chambre', 'legislature', 'session']);
 
   // Législatures réellement disponibles en base. Le sélecteur ne s'affiche que
   // s'il y en a plusieurs : en prod, tant que l'historique n'est pas ingéré, il
@@ -146,18 +153,50 @@ function GroupesPageContent() {
   const selectedLegislature = filters.legislature
     ? Number(filters.legislature)
     : legislatureCourante;
-  // Le Sénat n'a pas de législature : le filtre ne le concerne pas.
-  const showLegislatureFilter = legislatures.length > 1 && filters.chambre !== 'senat';
+  // Le sélecteur vit dans l'en-tête de la section Assemblée (rendue seulement pour
+  // l'AN ou « toutes chambres ») : la condition de chambre est donc implicite.
+  const showLegislatureFilter = legislatures.length > 1;
+
+  // Sessions Sénat réellement en base (pour le sélecteur de composition d'époque).
+  // Data-driven, comme les législatures : masqué tant qu'il n'y en a qu'une. Chargé
+  // aussi en vue « toutes chambres » pour piloter l'en-tête de la section Sénat.
+  const { data: sessionsData } = useQuery<{ data: { session: string; count: number }[] }>({
+    queryKey: ['scrutins-periodes', 'senat'],
+    queryFn: () => api.get('/scrutins/periodes', { params: { chambre: 'senat' } }).then((res) => res.data),
+    enabled: filters.chambre !== 'assemblee',
+  });
+  // Sessions triées de la plus récente à la plus ancienne.
+  const sessions = [...(sessionsData?.data ?? [])].sort((a, b) => Number(b.session) - Number(a.session));
+  const sessionCourante = sessions[0]?.session;
+  const selectedSession = filters.session || sessionCourante;
+  const showSessionFilter = sessions.length > 1;
+
+  // « Voir tous les élus » mène à la liste parlementaire de la période choisie
+  // (même axe que le sélecteur voisin). On ne porte le paramètre que hors période
+  // courante, pour garder l'URL propre quand rien n'est changé.
+  const anListHref =
+    selectedLegislature && selectedLegislature !== legislatureCourante
+      ? `/deputes?legislature=${selectedLegislature}`
+      : '/deputes';
+  const senatListHref =
+    selectedSession && selectedSession !== sessionCourante
+      ? `/senateurs?session=${selectedSession}`
+      : '/senateurs';
 
   // Fetch groupes
   const { data, isLoading, error } = useQuery<{ data: GroupePolitique[] }>({
-    queryKey: ['groupes', filters.chambre, filters.legislature],
+    queryKey: ['groupes', filters.chambre, filters.legislature, filters.session],
     queryFn: () => {
       const endpoint = filters.chambre
         ? `/${filters.chambre === 'assemblee' ? 'deputes' : 'senateurs'}/groupes`
         : '/parlementaires/groupes';
       return api
-        .get(endpoint, { params: { legislature: filters.legislature || undefined } })
+        .get(endpoint, {
+          params: {
+            legislature: filters.legislature || undefined,
+            session: filters.session || undefined,
+          },
+        })
         .then((res) => res.data);
     },
   });
@@ -234,25 +273,6 @@ function GroupesPageContent() {
           </select>
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>
-
-        {/* Filtre législature (Assemblée uniquement — le Sénat n'en a pas) */}
-        {showLegislatureFilter && (
-          <div className="relative">
-            <select
-              value={String(selectedLegislature ?? '')}
-              onChange={(e) => setFilter('legislature', e.target.value)}
-              className="appearance-none rounded-lg border bg-background px-4 py-2.5 pr-10 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              aria-label="Législature"
-            >
-              {legislatures.map((l) => (
-                <option key={l.legislature} value={l.legislature}>
-                  {legislatureLabel(l.legislature)}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-          </div>
-        )}
       </div>
 
       {/* Loading */}
@@ -283,13 +303,38 @@ function GroupesPageContent() {
                     {filters.search ? `${assemblee.length}/${allAssemblee.length} groupes` : `${allAssemblee.length} groupes`}, {(filters.search ? totalMembresAN : totalMembresANAll).toLocaleString('fr-FR')} députés
                   </span>
                 </div>
-                <Link
-                  href="/deputes"
-                  className="text-sm text-primary hover:underline flex items-center gap-1 self-start sm:self-auto"
-                >
-                  Voir tous les députés
-                  <ArrowRight className="h-3 w-3" />
-                </Link>
+                <div className="flex items-center gap-3 self-start sm:self-auto">
+                  {/* Sélecteur de législature : change la composition de CETTE section. */}
+                  {showLegislatureFilter && (
+                    <div className="relative">
+                      <select
+                        value={String(selectedLegislature ?? '')}
+                        onChange={(e) =>
+                          setFilter(
+                            'legislature',
+                            Number(e.target.value) === legislatureCourante ? '' : e.target.value,
+                          )
+                        }
+                        className="appearance-none rounded-lg border bg-background py-1.5 pl-3 pr-8 text-xs sm:text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                        aria-label="Législature"
+                      >
+                        {legislatures.map((l) => (
+                          <option key={l.legislature} value={l.legislature}>
+                            {legislatureLabel(l.legislature)}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                    </div>
+                  )}
+                  <Link
+                    href={anListHref}
+                    className="text-sm text-primary hover:underline flex items-center gap-1 shrink-0"
+                  >
+                    Voir tous les députés
+                    <ArrowRight className="h-3 w-3" />
+                  </Link>
+                </div>
               </div>
 
               {/* Hémicycle AN */}
@@ -311,7 +356,7 @@ function GroupesPageContent() {
               {assemblee.length > 0 ? (
                 <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {assemblee.map((groupe) => (
-                    <GroupeCard key={groupe.id} groupe={groupe} />
+                    <GroupeCard key={groupe.id} groupe={groupe} session={filters.session || undefined} />
                   ))}
                 </div>
               ) : filters.search && (
@@ -333,13 +378,36 @@ function GroupesPageContent() {
                     {filters.search ? `${senat.length}/${allSenat.length} groupes` : `${allSenat.length} groupes`}, {(filters.search ? totalMembresSenat : totalMembresSenatAll).toLocaleString('fr-FR')} sénateurs
                   </span>
                 </div>
-                <Link
-                  href="/senateurs"
-                  className="text-sm text-primary hover:underline flex items-center gap-1 self-start sm:self-auto"
-                >
-                  Voir tous les sénateurs
-                  <ArrowRight className="h-3 w-3" />
-                </Link>
+                <div className="flex items-center gap-3 self-start sm:self-auto">
+                  {/* Sélecteur de session : la composition du Sénat change d'une année
+                      sur l'autre (renouvellements, remplacements). */}
+                  {showSessionFilter && (
+                    <div className="relative">
+                      <select
+                        value={String(selectedSession ?? '')}
+                        onChange={(e) =>
+                          setFilter('session', e.target.value === sessionCourante ? '' : e.target.value)
+                        }
+                        className="appearance-none rounded-lg border bg-background py-1.5 pl-3 pr-8 text-xs sm:text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                        aria-label="Session sénatoriale"
+                      >
+                        {sessions.map((s) => (
+                          <option key={s.session} value={s.session}>
+                            {sessionLabel(s.session)}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                    </div>
+                  )}
+                  <Link
+                    href={senatListHref}
+                    className="text-sm text-primary hover:underline flex items-center gap-1 shrink-0"
+                  >
+                    Voir tous les sénateurs
+                    <ArrowRight className="h-3 w-3" />
+                  </Link>
+                </div>
               </div>
 
               {/* Hémicycle Sénat */}
@@ -361,7 +429,7 @@ function GroupesPageContent() {
               {senat.length > 0 ? (
                 <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {senat.map((groupe) => (
-                    <GroupeCard key={groupe.id} groupe={groupe} />
+                    <GroupeCard key={groupe.id} groupe={groupe} session={filters.session || undefined} />
                   ))}
                 </div>
               ) : filters.search && (

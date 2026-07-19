@@ -73,14 +73,21 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
               type: 'integer',
               description: 'Législature AN (15, 16, 17). Défaut : la plus récente en base.',
             },
+            session: {
+              type: 'string',
+              description:
+                'Session Sénat (année de début, ex. "2020"). Défaut : la session courante. ' +
+                "L'effectif renvoyé est la composition du groupe à cette session.",
+            },
           },
         },
       },
       handler: async (request, _reply) => {
-        const { legislature } = request.query as { legislature?: string };
+        const { legislature, session } = request.query as { legislature?: string; session?: string };
         const groupes = await service.getGroupes(
           forcedChambre,
           legislature !== undefined ? Number(legislature) : undefined,
+          session,
         );
         return { data: groupes };
       },
@@ -115,6 +122,26 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
         if (forcedChambre === 'assemblee') return { data: [] };
         const sessions = await service.getSessionsSenat();
         return { data: sessions };
+      },
+    });
+
+    // ===========================================================================
+    // GET /historique-carriere - Le tri « carrière » est-il pertinent ?
+    // ===========================================================================
+    fastify.get('/historique-carriere', {
+      schema: {
+        tags: [chambreLabel],
+        summary: 'Historique de carrière disponible',
+        description:
+          "Indique si le tri « carrière complète » diffère du tri « mandat en cours » " +
+          `dans cette chambre${forcedChambre ? ` (${chambreLabel.toLowerCase()})` : ''} : ` +
+          'vrai seulement s\'il existe un élu en fonction réélu (≥ 2 mandats). Sert à ' +
+          'afficher le sélecteur de période des classements uniquement quand il départage ' +
+          'réellement les élus.',
+      },
+      handler: async (_request, _reply) => {
+        const present = await service.hasCarriereHistorique(forcedChambre);
+        return { data: { present } };
       },
     });
 

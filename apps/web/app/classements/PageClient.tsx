@@ -183,17 +183,21 @@ function ParlementairesTab() {
     };
   }, [highlight, filters.rank, sort, order, periode, filters.chambre, filters.groupe, setFilters]);
 
-  // Le choix mandat/carrière n'a de sens que s'il existe un historique : sans
-  // législature antérieure en base, les deux valeurs sont identiques pour tout le
-  // monde. Il ne s'applique qu'aux TAUX (présence, loyauté) — les compteurs
-  // d'interventions et d'amendements sont des totaux de carrière dans les deux cas.
-  const { data: legislaturesData } = useQuery<{ data: { legislature: number }[] }>({
-    queryKey: ['deputes-legislatures'],
-    queryFn: () => api.get('/deputes/legislatures').then((res) => res.data),
+  // Le choix mandat/carrière n'a de sens que s'il existe un historique : sans réélu
+  // en base, les deux valeurs sont identiques pour tout le monde. Il ne s'applique
+  // qu'aux TAUX (présence, loyauté) — les compteurs d'interventions et d'amendements
+  // sont des totaux de carrière dans les deux cas. Le signal est data-driven ET par
+  // chambre (l'API le calcule sur les réélus de la chambre affichée), ce qui couvre
+  // aussi le Sénat, dont la carrière est désormais calculée comme à l'Assemblée.
+  const histoCarriereEndpoint = filters.chambre
+    ? `/${filters.chambre === 'assemblee' ? 'deputes' : 'senateurs'}/historique-carriere`
+    : '/parlementaires/historique-carriere';
+  const { data: histoCarriereData } = useQuery<{ data: { present: boolean } }>({
+    queryKey: ['historique-carriere', filters.chambre || 'all'],
+    queryFn: () => api.get(histoCarriereEndpoint).then((res) => res.data),
   });
   const sortEstUnTaux = sort === 'presence' || sort === 'loyaute';
-  const showPeriodeSelect =
-    sortEstUnTaux && (legislaturesData?.data?.length ?? 0) > 1 && filters.chambre !== 'senat';
+  const showPeriodeSelect = sortEstUnTaux && (histoCarriereData?.data?.present ?? false);
 
   // Fetch parlementaires
   const { data: parlementairesData, isLoading } = useQuery<ParlementairesResponse>({

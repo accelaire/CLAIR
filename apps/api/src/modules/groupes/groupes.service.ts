@@ -34,6 +34,10 @@ export interface GroupeDetail extends GroupeWithStats {
   rang: number | null; // Rang par nombre de membres dans la chambre (hors NI)
   totalGroupes: number | null; // Nombre total de groupes dans la chambre (hors NI)
   totauxAmendements: number; // Total des amendements déposés par le groupe
+  /** Sénat : session affichée (ex. "2020"). Null pour l'AN (période = législature). */
+  session: string | null;
+  /** Sénat : la session affichée est-elle la session courante ? (badge « à jour ») */
+  sessionCourante: boolean;
   membres: {
     id: string;
     slug: string;
@@ -56,6 +60,15 @@ export interface GroupeDetail extends GroupeWithStats {
   };
 }
 
+/** Bornes d'une session sénatoriale « YYYY » → [1er oct. YYYY, 30 sept. YYYY+1]. */
+function sessionBornes(session: string): { debut: Date; fin: Date } {
+  const y = parseInt(session, 10);
+  return {
+    debut: new Date(Date.UTC(y, 9, 1)),
+    fin: new Date(Date.UTC(y + 1, 8, 30, 23, 59, 59)),
+  };
+}
+
 export class GroupesService {
   private readonly CACHE_TTL = 3600; // 1 hour
   private readonly CACHE_TTL_LONG = 43200; // 12 hours
@@ -64,6 +77,52 @@ export class GroupesService {
     private prisma: PrismaClient,
     private redis: Redis
   ) {}
+
+  /**
+   * Filtre Prisma sur les mandats d'un groupe pour la période AFFICHÉE.
+   *
+   * - AN : la ligne de groupe est déjà propre à sa législature (`RE 17e` ≠ `LAREM 15e`),
+   *   donc `{ groupeId }` scope de lui-même — rien à ajouter.
+   * - Sénat : une SEULE ligne par sigle, la périodisation vit dans les intervalles de
+   *   mandat. On borne donc explicitement, sinon l'effectif/les membres mélangent les
+   *   époques (`ump` = 210 mandats cumulés vs 128 en cours) :
+   *     • `session` fournie → mandats chevauchant la session ;
+   *     • sinon → mandats EN COURS (`dateFin` null) = composition courante.
+   */
+  private mandatsPeriodeWhere(
+    groupe: { id: string; chambre: string },
+    session?: string
+  ): Prisma.MandatParlementaireWhereInput {
+    if (groupe.chambre !== 'senat') return { groupeId: groupe.id };
+    if (session) {
+      const { debut, fin } = sessionBornes(session);
+      return {
+        groupeId: groupe.id,
+        dateDebut: { lte: fin },
+        OR: [{ dateFin: null }, { dateFin: { gte: debut } }],
+      };
+    }
+    return { groupeId: groupe.id, dateFin: null };
+  }
+
+  /**
+   * Session sénatoriale courante, dérivée des données (session du scrutin le plus
+   * récent). Sert de défaut et d'étiquette « période courante » — jamais une constante.
+   */
+  private async getSessionCouranteSenat(): Promise<string | null> {
+    const cacheKey = 'groupes:session-courante:senat';
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return cached === 'null' ? null : cached;
+
+    const plusRecent = await this.prisma.scrutin.findFirst({
+      where: { chambre: 'senat' },
+      orderBy: { date: 'desc' },
+      select: { session: true },
+    });
+    const session = plusRecent?.session ?? null;
+    await this.redis.setex(cacheKey, this.CACHE_TTL_LONG, String(session));
+    return session;
+  }
 
   // ===========================================================================
   // LISTE DES GROUPES
@@ -99,9 +158,16 @@ export class GroupesService {
    * Par défaut on renvoie donc la législature courante ; le Sénat, qui n'a pas de
    * législature, n'est pas concerné.
    */
-  async getGroupes(chambre?: Chambre, legislature?: number): Promise<GroupeWithStats[]> {
+  async getGroupes(chambre?: Chambre, legislature?: number, session?: string): Promise<GroupeWithStats[]> {
     const legislatureAN = legislature ?? (await this.getLegislatureCouranteAN());
-    const cacheKey = `groupes:list:${chambre || 'all'}:${legislatureAN ?? 'na'}`;
+    // Sénat : session demandée, ou courante par défaut (dérivée des données).
+    const sessionCouranteSenat = chambre === 'assemblee' ? null : await this.getSessionCouranteSenat();
+    const sessionSenat = chambre === 'assemblee' ? undefined : session ?? sessionCouranteSenat ?? undefined;
+    // Effectif : session passée → chevauchement ; session courante → « siège
+    // actuellement » (dateFin null). Cf. mandatsPeriodeWhere.
+    const senatWhereSession =
+      sessionSenat && sessionSenat !== (sessionCouranteSenat ?? undefined) ? sessionSenat : undefined;
+    const cacheKey = `groupes:list:${chambre || 'all'}:${legislatureAN ?? 'na'}:${sessionSenat ?? 'na'}`;
 
     const cached = await this.redis.get(cacheKey);
     if (cached) {
@@ -140,6 +206,27 @@ export class GroupesService {
       orderBy: [{ chambre: 'asc' }, { ordre: 'asc' }],
     });
 
+    // Effectif Sénat borné à la période (le `_count` global mélangerait les époques :
+    // `ump` = 210 cumulés vs 128 en cours). L'AN reste sur son `_count` (ligne déjà
+    // propre à sa législature).
+    const senatIds = groupes.filter((g) => g.chambre === 'senat').map((g) => g.id);
+    const senatCounts = new Map<string, number>();
+    if (senatIds.length > 0) {
+      const base: Prisma.MandatParlementaireWhereInput = { groupeId: { in: senatIds } };
+      const where: Prisma.MandatParlementaireWhereInput = senatWhereSession
+        ? (() => {
+            const { debut, fin } = sessionBornes(senatWhereSession);
+            return { ...base, dateDebut: { lte: fin }, OR: [{ dateFin: null }, { dateFin: { gte: debut } }] };
+          })()
+        : { ...base, dateFin: null };
+      const counts = await this.prisma.mandatParlementaire.groupBy({
+        by: ['groupeId'],
+        where,
+        _count: { _all: true },
+      });
+      for (const c of counts) if (c.groupeId) senatCounts.set(c.groupeId, c._count._all);
+    }
+
     const result: GroupeWithStats[] = groupes.map((g) => ({
       id: g.id,
       slug: g.slug,
@@ -152,9 +239,12 @@ export class GroupesService {
       position: g.position,
       ordre: g.ordre,
       actif: g.actif,
-      membresCount: g._count.mandatsParlementaires,
-      // Utiliser les stats pré-calculées (statsMembresActifs) ou fallback au count
-      membresActifsCount: g.statsMembresActifs ?? g._count.mandatsParlementaires,
+      membresCount: g.chambre === 'senat' ? senatCounts.get(g.id) ?? 0 : g._count.mandatsParlementaires,
+      // Sénat : effectif de la période ; AN : stats pré-calculées ou fallback au count.
+      membresActifsCount:
+        g.chambre === 'senat'
+          ? senatCounts.get(g.id) ?? 0
+          : g.statsMembresActifs ?? g._count.mandatsParlementaires,
       // Stats pré-calculées depuis l'ingestion
       statsPresenceMoyenne: g.statsPresenceMoyenne,
       statsPresenceSolennelMoyenne: g.statsPresenceSolennelMoyenne,
@@ -174,9 +264,21 @@ export class GroupesService {
   async getGroupeBySlug(
     chambre: Chambre,
     slug: string,
-    legislature?: number
+    legislature?: number,
+    session?: string
   ): Promise<GroupeDetail | null> {
-    const cacheKey = `groupe:${chambre}:${slug}:${legislature ?? 'courante'}`;
+    // Sénat : à défaut de session demandée, on affiche la session COURANTE (dérivée
+    // des données). L'AN ignore ce paramètre (sa période est la législature).
+    const sessionCourante = chambre === 'senat' ? await this.getSessionCouranteSenat() : null;
+    const sessionAffichee = chambre === 'senat' ? session ?? sessionCourante ?? undefined : undefined;
+    const estSessionCourante = chambre !== 'senat' || sessionAffichee === (sessionCourante ?? undefined);
+    // Vue historique = Sénat sur une session passée. Le WHERE mandats vaut alors le
+    // chevauchement de la session ; la vue courante retombe sur « siège actuellement »
+    // (dateFin null, via mandatsPeriodeWhere(undefined)).
+    const historique = chambre === 'senat' && !estSessionCourante && !!sessionAffichee;
+    const whereSession = historique ? sessionAffichee : undefined;
+
+    const cacheKey = `groupe:${chambre}:${slug}:${legislature ?? 'courante'}:${sessionAffichee ?? 'na'}`;
 
     const cached = await this.redis.get(cacheKey);
     if (cached) {
@@ -192,12 +294,12 @@ export class GroupesService {
 
     if (!groupe) return null;
 
-    // Les membres sont les titulaires des MANDATS rattachés à ce groupe, et non
-    // les parlementaires dont c'est le groupe *actuel* : sans quoi un groupe
-    // dissous (LAREM, GDR-NUPES) afficherait zéro membre, puisque plus personne
-    // n'y siège aujourd'hui. La circonscription affichée est celle du mandat.
+    // Les membres sont les titulaires des MANDATS rattachés à ce groupe SUR LA PÉRIODE
+    // affichée (cf. mandatsPeriodeWhere), et non les parlementaires dont c'est le groupe
+    // *actuel* : sans quoi un groupe dissous (LAREM) afficherait zéro membre, et un
+    // groupe Sénat mélangerait les époques. La circonscription affichée est celle du mandat.
     const mandats = await this.prisma.mandatParlementaire.findMany({
-      where: { groupeId: groupe.id },
+      where: this.mandatsPeriodeWhere(groupe, whereSession),
       select: {
         statsPresence: true,
         statsLoyaute: true,
@@ -228,9 +330,20 @@ export class GroupesService {
       statsLoyaute: m.statsLoyaute,
     }));
 
-    // Utiliser les stats pré-calculées du groupe (ou fallback sur le calcul à la volée)
-    const presenceMoyenne = groupe.statsPresenceMoyenne ?? this.calculateAverage(membres, 'statsPresence');
-    const loyauteMoyenne = groupe.statsLoyauteMoyenne ?? this.calculateAverage(membres, 'statsLoyaute');
+    // Vue historique (Sénat, session passée) : les stats pré-calculées du groupe
+    // portent sur la session COURANTE — on ne peut donc pas les afficher ici. On
+    // recalcule à la volée sur la période demandée (moyennes = stats des mandats de
+    // la période ; cohésion = requête bornée sur les scrutins de la session).
+    const presenceMoyenne = historique
+      ? this.calculateAverage(membres, 'statsPresence')
+      : groupe.statsPresenceMoyenne ?? this.calculateAverage(membres, 'statsPresence');
+    const loyauteMoyenne = historique
+      ? this.calculateAverage(membres, 'statsLoyaute')
+      : groupe.statsLoyauteMoyenne ?? this.calculateAverage(membres, 'statsLoyaute');
+    const cohesion = historique
+      ? await this.calculateSenatGroupeCohesionSession(groupe.id, sessionAffichee!)
+      : groupe.statsCohesion;
+    const presenceSolennelMoyenne = historique ? null : groupe.statsPresenceSolennelMoyenne;
 
     // Calculer le rang par nombre de membres (hors NI)
     let rang: number | null = null;
@@ -260,10 +373,9 @@ export class GroupesService {
       totalGroupes = allGroupes.length;
     }
 
-    // Total des amendements : agrégé sur les mandats du groupe (même raison que
-    // les membres — les membres actuels d'un groupe dissous n'existent pas).
+    // Total des amendements : agrégé sur les mandats du groupe de la PÉRIODE affichée.
     const amendementsSum = await this.prisma.mandatParlementaire.aggregate({
-      where: { groupeId: groupe.id },
+      where: this.mandatsPeriodeWhere(groupe, whereSession),
       _sum: {
         statsAmendements: true,
       },
@@ -283,15 +395,17 @@ export class GroupesService {
       ordre: groupe.ordre,
       actif: groupe.actif,
       membresCount: membres.length,
-      membresActifsCount: groupe.statsMembresActifs ?? membres.length,
+      membresActifsCount: historique ? membres.length : groupe.statsMembresActifs ?? membres.length,
       rang,
       totalGroupes,
       totauxAmendements,
-      // Stats pré-calculées
-      statsPresenceMoyenne: groupe.statsPresenceMoyenne,
-      statsPresenceSolennelMoyenne: groupe.statsPresenceSolennelMoyenne,
-      statsLoyauteMoyenne: groupe.statsLoyauteMoyenne,
-      statsCohesion: groupe.statsCohesion,
+      session: sessionAffichee ?? null,
+      sessionCourante: estSessionCourante,
+      // Stats de la période affichée (courante = pré-calculées ; historique = à la volée)
+      statsPresenceMoyenne: historique ? presenceMoyenne : groupe.statsPresenceMoyenne,
+      statsPresenceSolennelMoyenne: presenceSolennelMoyenne,
+      statsLoyauteMoyenne: historique ? loyauteMoyenne : groupe.statsLoyauteMoyenne,
+      statsCohesion: cohesion,
       membres: membres.map((m) => ({
         id: m.id,
         slug: m.slug,
@@ -304,7 +418,7 @@ export class GroupesService {
       })),
       stats: {
         presenceMoyenne,
-        presenceSolennelMoyenne: groupe.statsPresenceSolennelMoyenne ?? null,
+        presenceSolennelMoyenne: presenceSolennelMoyenne ?? null,
         loyauteMoyenne,
         participationMoyenne: presenceMoyenne,
       },
@@ -313,6 +427,39 @@ export class GroupesService {
     await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
 
     return result;
+  }
+
+  /**
+   * Cohésion d'un groupe Sénat sur une session PASSÉE, calculée à la volée (la valeur
+   * pré-calculée du batch porte sur la session courante). Requête bornée : un groupe ×
+   * une session de scrutins. Cohésion = moyenne, par scrutin, de la part de la position
+   * dominante parmi les membres du groupe d'époque (via l'intervalle de mandat).
+   */
+  private async calculateSenatGroupeCohesionSession(
+    groupeId: string,
+    session: string
+  ): Promise<number | null> {
+    const { debut, fin } = sessionBornes(session);
+    const rows = await this.prisma.$queryRaw<{ cohesion: number | null }[]>`
+      WITH gv AS (
+        SELECT v.scrutin_id, v.position
+        FROM votes v
+        JOIN scrutins s ON s.id = v.scrutin_id AND s.chambre = 'senat'
+          AND s.date >= ${debut} AND s.date <= ${fin}
+        JOIN mandats_parlementaires m ON m.personne_id = v.parlementaire_id
+          AND m.chambre = 'senat' AND m.groupe_id = ${groupeId}
+          AND m.date_debut <= s.date AND (m.date_fin IS NULL OR m.date_fin >= s.date)
+        WHERE v.position IN ('pour', 'contre', 'abstention')
+      ),
+      par_scrutin AS (
+        SELECT scrutin_id, SUM(cnt) AS total, MAX(cnt) AS dominant
+        FROM (SELECT scrutin_id, position, COUNT(*) AS cnt FROM gv GROUP BY scrutin_id, position) x
+        GROUP BY scrutin_id
+      )
+      SELECT ROUND(AVG(100.0 * dominant / total))::int AS cohesion
+      FROM par_scrutin WHERE total > 0
+    `;
+    return rows[0]?.cohesion ?? null;
   }
 
   /**

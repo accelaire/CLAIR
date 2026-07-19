@@ -48,6 +48,16 @@ export function sessionLabel(session: string): string {
 }
 
 /**
+ * Session ordinaire du Sénat contenant une date, exprimée par son année de début
+ * (« 2020 »). La session court du 1er octobre au 30 septembre : à partir d'octobre
+ * on est dans la session de l'année courante, avant on est encore dans la précédente.
+ */
+export function sessionForDate(date: Date): string {
+  const y = date.getUTCFullYear();
+  return String(date.getUTCMonth() >= 9 ? y : y - 1);
+}
+
+/**
  * Période d'un scrutin, telle qu'affichable à côté de son numéro.
  *
  * Le numéro de scrutin n'est unique dans aucune des deux chambres (réinitialisé

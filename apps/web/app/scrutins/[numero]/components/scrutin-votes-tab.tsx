@@ -36,6 +36,9 @@ interface ScrutinVotesTabProps {
   votesByGroupe: Record<string, { pour: number; contre: number; abstention: number; absent: number }>;
   totalVotes: number;
   chambre: string;
+  /** URL de la page groupe (scopée à la période du scrutin) par nom de groupe.
+   *  Permet d'atteindre la composition du groupe TELLE QU'À ce scrutin. */
+  groupeHrefByNom?: Record<string, string>;
 }
 
 export function ScrutinVotesTab({
@@ -46,6 +49,7 @@ export function ScrutinVotesTab({
   votesByGroupe,
   totalVotes,
   chambre,
+  groupeHrefByNom,
 }: ScrutinVotesTabProps) {
   const [expandedPosition, setExpandedPosition] = useState<string | null>('pour');
   const [groupeFilter, setGroupeFilter] = useState<string | null>(null);
@@ -166,34 +170,50 @@ export function ScrutinVotesTab({
                 .map(([groupeNom, votes]) => {
                   const total = votes.pour + votes.contre + votes.abstention;
                   const isSelected = groupeFilter === groupeNom;
+                  const groupeHref = groupeHrefByNom?.[groupeNom];
 
                   return (
-                    <button
+                    <div
                       key={groupeNom}
-                      onClick={() => setGroupeFilter(isSelected ? null : groupeNom)}
-                      className={`w-full px-4 py-3 text-left hover:bg-muted/50 transition-colors ${
-                        isSelected ? 'bg-primary/5' : ''
-                      }`}
+                      className={`px-4 py-3 ${isSelected ? 'bg-primary/5' : ''}`}
                     >
                       <div className="flex items-center justify-between mb-1.5">
-                        <span className="font-medium text-sm truncate pr-2">{groupeNom}</span>
-                        <span className="text-xs text-muted-foreground">{total} votes</span>
-                      </div>
-                      <div className="h-2 rounded-full overflow-hidden bg-muted flex">
-                        {total > 0 && (
-                          <>
-                            <div className="bg-green-500" style={{ width: `${(votes.pour / total) * 100}%` }} />
-                            <div className="bg-amber-400" style={{ width: `${(votes.abstention / total) * 100}%` }} />
-                            <div className="bg-red-500" style={{ width: `${(votes.contre / total) * 100}%` }} />
-                          </>
+                        {/* Le nom mène à la composition du groupe À CETTE période ; la
+                            barre en dessous filtre le détail des votes. */}
+                        {groupeHref ? (
+                          <Link
+                            href={groupeHref}
+                            className="font-medium text-sm truncate pr-2 hover:text-primary hover:underline"
+                          >
+                            {groupeNom}
+                          </Link>
+                        ) : (
+                          <span className="font-medium text-sm truncate pr-2">{groupeNom}</span>
                         )}
+                        <span className="text-xs text-muted-foreground shrink-0">{total} votes</span>
                       </div>
-                      <div className="flex gap-3 mt-1.5 text-xs">
-                        <span className="text-green-600">{votes.pour} pour</span>
-                        <span className="text-amber-600">{votes.abstention} abst.</span>
-                        <span className="text-red-600">{votes.contre} contre</span>
-                      </div>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => setGroupeFilter(isSelected ? null : groupeNom)}
+                        className="block w-full text-left rounded hover:bg-muted/50 transition-colors -mx-1 px-1 py-0.5"
+                        aria-label={`Filtrer les votes du groupe ${groupeNom}`}
+                      >
+                        <div className="h-2 rounded-full overflow-hidden bg-muted flex">
+                          {total > 0 && (
+                            <>
+                              <div className="bg-green-500" style={{ width: `${(votes.pour / total) * 100}%` }} />
+                              <div className="bg-amber-400" style={{ width: `${(votes.abstention / total) * 100}%` }} />
+                              <div className="bg-red-500" style={{ width: `${(votes.contre / total) * 100}%` }} />
+                            </>
+                          )}
+                        </div>
+                        <div className="flex gap-3 mt-1.5 text-xs">
+                          <span className="text-green-600">{votes.pour} pour</span>
+                          <span className="text-amber-600">{votes.abstention} abst.</span>
+                          <span className="text-red-600">{votes.contre} contre</span>
+                        </div>
+                      </button>
+                    </div>
                   );
                 })}
             </div>

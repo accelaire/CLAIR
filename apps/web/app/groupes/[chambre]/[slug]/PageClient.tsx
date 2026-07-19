@@ -35,7 +35,7 @@ import {
 import { api } from '@/lib/api';
 import { scrutinHref } from '@/lib/scrutin-url';
 import { getGroupColor } from '@/lib/colors';
-import { legislatureLabel } from '@/lib/periodes';
+import { legislatureLabel, sessionLabel } from '@/lib/periodes';
 import { SortSelect, MEMBRE_SORT_OPTIONS } from '@/components/classements/SortSelect';
 import { FicheCompareCallout } from '@/components/FicheCompareCallout';
 
@@ -60,6 +60,10 @@ export interface GroupeDetail {
   chambre: 'assemblee' | 'senat';
   /** Législature AN du groupe. Null au Sénat (pas de législature). */
   legislature: number | null;
+  /** Sénat : session affichée (ex. "2020"). Null pour l'AN. */
+  session: string | null;
+  /** Sénat : la session affichée est-elle la session courante ? */
+  sessionCourante: boolean;
   nom: string;
   nomComplet: string | null;
   couleur: string | null;
@@ -392,6 +396,9 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
   // le fetch client écraserait au bout de quelques secondes les données SSR de la
   // période demandée par celles de la législature la plus récente.
   const legislature = searchParams.get('legislature') ?? undefined;
+  // Sénat : la session (ex. "2020") sélectionne la composition d'époque. Même raison
+  // que la législature — sans la propager, le fetch client écraserait le SSR.
+  const session = searchParams.get('session') ?? undefined;
 
   const membreLabel = chambre === 'assemblee' ? 'député' : 'sénateur';
 
@@ -400,10 +407,10 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
 
   // Fetch groupe detail
   const { data, isLoading, error } = useQuery<{ data: GroupeDetail }>({
-    queryKey: ['groupe', chambre, slug, legislature],
+    queryKey: ['groupe', chambre, slug, legislature, session],
     queryFn: () =>
       api
-        .get(`/groupes/${chambre}/${slug}`, { params: { legislature } })
+        .get(`/groupes/${chambre}/${slug}`, { params: { legislature, session } })
         .then((res) => res.data),
     enabled: !!chambre && !!slug,
     initialData,
@@ -520,6 +527,21 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
               {groupe.legislature != null && (
                 <span className="text-xs sm:text-sm px-2 sm:px-3 py-0.5 sm:py-1 rounded-full bg-muted text-muted-foreground shrink-0">
                   {legislatureLabel(groupe.legislature)}
+                </span>
+              )}
+              {/* Sénat : la composition change de session en session. Le badge indique
+                  laquelle on regarde ; en vue historique, il le signale clairement pour
+                  ne pas laisser croire que c'est la composition actuelle. */}
+              {groupe.session != null && (
+                <span
+                  className={`text-xs sm:text-sm px-2 sm:px-3 py-0.5 sm:py-1 rounded-full shrink-0 ${
+                    groupe.sessionCourante
+                      ? 'bg-muted text-muted-foreground'
+                      : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                  }`}
+                >
+                  {sessionLabel(groupe.session)}
+                  {!groupe.sessionCourante && ' · composition d’époque'}
                 </span>
               )}
             </div>
