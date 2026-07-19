@@ -513,15 +513,20 @@ program
   .option('-c, --chambre <chambre>', 'Chambre spécifique (assemblee ou senat)')
   .option('--parlementaires-only', 'Calculer uniquement les stats des parlementaires')
   .option('--groupes-only', 'Calculer uniquement les stats des groupes')
+  .option('--include-frozen', 'Recalculer aussi les législatures figées (nécessaire après une ingestion historique)')
   .action(async (options) => {
     try {
-      logger.info({ chambre: options.chambre || 'all' }, 'Starting stats calculation');
+      logger.info(
+        { chambre: options.chambre || 'all', includeFrozen: !!options.includeFrozen },
+        'Starting stats calculation'
+      );
       let totalErrors = 0;
+      const statsOptions = { includeFrozen: !!options.includeFrozen };
 
       // Stats parlementaires (sauf si --groupes-only)
       if (!options.groupesOnly) {
         console.log('\n📊 Calcul des statistiques parlementaires...\n');
-        const parlResult = await calculateAllStats(options.chambre);
+        const parlResult = await calculateAllStats(options.chambre, statsOptions);
         console.log(`✅ Stats calculées pour ${parlResult.updated}/${parlResult.total} parlementaires`);
         if (parlResult.errors > 0) {
           console.log(`⚠️  ${parlResult.errors} erreurs`);
@@ -533,7 +538,7 @@ program
       // Stats groupes (sauf si --parlementaires-only)
       if (!options.parlementairesOnly) {
         console.log('\n📊 Calcul des statistiques des groupes politiques...\n');
-        const groupeResult = await calculateAllGroupeStats(options.chambre);
+        const groupeResult = await calculateAllGroupeStats(options.chambre, statsOptions);
         console.log(`✅ Stats calculées pour ${groupeResult.updated}/${groupeResult.total} groupes`);
         if (groupeResult.errors > 0) {
           console.log(`⚠️  ${groupeResult.errors} erreurs`);
@@ -543,13 +548,13 @@ program
 
         // Alliances entre groupes
         console.log('\n🤝 Calcul des alliances entre groupes...\n');
-        const alliancesResult = await calculateAllGroupeAlliances(options.chambre);
+        const alliancesResult = await calculateAllGroupeAlliances(options.chambre, statsOptions);
         console.log(`✅ ${alliancesResult.total} paires d'alliances calculées`);
         console.log(`⏱️  Durée: ${alliancesResult.duration}`);
 
         // Stats thématiques pour radar chart
         console.log('\n🎯 Calcul des positions thématiques...\n');
-        const thematiquesResult = await calculateAllGroupeThematiques(options.chambre);
+        const thematiquesResult = await calculateAllGroupeThematiques(options.chambre, statsOptions);
         console.log(`✅ ${thematiquesResult.total} stats thématiques calculées`);
         console.log(`⏱️  Durée: ${thematiquesResult.duration}`);
       }

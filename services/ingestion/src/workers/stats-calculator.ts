@@ -6,6 +6,22 @@
 import { PrismaClient } from '@prisma/client';
 import pLimit from 'p-limit';
 import { logger } from '../utils/logger';
+import { LEGISLATURE_AN_COURANTE } from './mandats';
+
+/**
+ * Options communes des calculs de stats.
+ * `includeFrozen` : recalculer AUSSI les législatures AN figées (< LEGISLATURE_AN_COURANTE).
+ * Une législature révolue ne bouge plus après son one-shot d'ingestion : le batch de nuit
+ * la saute par défaut (perf). On ne la repasse que juste après une ingestion historique.
+ */
+export interface StatsOptions {
+  includeFrozen?: boolean;
+}
+
+/** Un groupe AN d'une législature révolue est figé ; le Sénat (legislature NULL) ne l'est jamais. */
+function estGroupeFige(g: { legislature: number | null }): boolean {
+  return g.legislature !== null && g.legislature < LEGISLATURE_AN_COURANTE;
+}
 
 const prisma = new PrismaClient();
 
@@ -55,71 +71,97 @@ export async function reconcileActifFromMandats(): Promise<{ corrected: number }
  * VERSION OPTIMISÉE: Une seule requête SQL pour calculer toutes les stats
  */
 export async function calculateAllStats(
-  chambre?: 'assemblee' | 'senat'
+  chambre?: 'assemblee' | 'senat',
+  options: StatsOptions = {}
 ): Promise<StatsCalculationResult> {
   const startTime = Date.now();
   // Pour le filtre SQL: si chambre est null, on matche tout
   const chambreFilter = chambre || '%';
+  const includeFrozen = options.includeFrozen ?? false;
+  // Seuil de législature couvert par le recalcul per-mandat : sans `includeFrozen`,
+  // on ne touche que la législature courante (les révolues sont figées). Avec, on
+  // descend à 0 pour ré-embrasser tout l'historique. Le Sénat (legislature NULL)
+  // n'est jamais figé — il passe dans les deux cas.
+  const seuilLegislature = includeFrozen ? 0 : LEGISLATURE_AN_COURANTE;
 
-  logger.info({ chambre: chambre || 'all' }, 'Starting stats calculation (SQL optimized)...');
+  logger.info(
+    { chambre: chambre || 'all', includeFrozen },
+    'Starting stats calculation (SQL optimized)...'
+  );
 
   try {
     // Étape 1: Calculer les stats de base (présence, participation, interventions, amendements)
     // en une seule requête SQL massive avec CTEs
     logger.info('Calculating base stats (votes, interventions, amendments)...');
 
-    // Dénominateur de la présence : les scrutins des PÉRIODES DE MANDAT du
-    // parlementaire, et non tous les scrutins de la chambre. Depuis l'ingestion
-    // des législatures historiques, compter tous les scrutins pénalisait les
-    // députés d'une seule législature (présence 89% → 65%) pour des scrutins où
-    // ils ne siégeaient pas encore. Un élu à plusieurs mandats cumule ses
-    // périodes. Voir SPEC-MULTI-LEGISLATURES.md (ticket #13).
+    // Présence de CARRIÈRE : « couverture par personne ». Numérateur et dénominateur
+    // sont bornés au MÊME ensemble — les scrutins couverts par au moins un mandat de la
+    // personne — pour que le taux reste ≤ 100 %.
     //
-    // Perf : on compte les scrutins PAR PÉRIODE, puis on somme par mandat. Un
-    // produit parlementaire × scrutin ferait plusieurs millions de lignes.
+    // Un scrutin est « couvert » par un mandat quand la personne siégeait au moment du
+    // scrutin (mandat d'époque) :
+    //   AN   : m.legislature = s.legislature ET s.date ∈ [date_debut, date_fin]
+    //          (le fenêtrage par dates isole les mandats partiels : un député parti en
+    //           cours de législature ne se voit pas attribuer les scrutins postérieurs).
+    //          Garde-fou `s.legislature IS NOT NULL` : les scrutins legacy sans
+    //          législature ne sont couverts par aucun mandat.
+    //   Sénat: s.date ∈ [date_debut, date_fin] (pas de législature au Sénat).
+    //
+    // Le dénominateur compte les scrutins DISTINCTS couverts (le DISTINCT absorbe les
+    // mandats qui se chevauchent — clos + rouvert au retour d'un ministre — qui
+    // couvriraient sinon deux fois le même scrutin). Une personne à mandats dans les
+    // deux chambres somme ses scrutins couverts AN + Sénat en une seule ligne, cohérent
+    // avec le numérateur qui compte lui aussi tous chambres confondues.
     const baseStatsUpdated = await prisma.$executeRaw`
-      WITH scrutins_par_legislature AS (
-        SELECT legislature,
-               COUNT(*) as total,
-               COUNT(*) FILTER (WHERE type_vote = 'solennel') as total_solennel
-        FROM scrutins
-        WHERE chambre = 'assemblee' AND legislature IS NOT NULL
-        GROUP BY legislature
-      ),
-      counts_assemblee AS (
-        SELECT m.personne_id,
-               SUM(sl.total)::bigint as total,
-               SUM(sl.total_solennel)::bigint as total_solennel
+      WITH scrutins_couverts AS (
+        -- Une ligne par (personne, scrutin couvert) : le DISTINCT dédoublonne les
+        -- chevauchements de mandats sur un même scrutin.
+        SELECT DISTINCT m.personne_id, s.id AS scrutin_id, s.type_vote
         FROM mandats_parlementaires m
-        JOIN scrutins_par_legislature sl ON sl.legislature = m.legislature
-        WHERE m.chambre = 'assemblee'
-        GROUP BY m.personne_id
-      ),
-      counts_senat AS (
-        -- Le Sénat n'a pas de législature : le mandat est un intervalle de dates.
-        SELECT m.personne_id,
-               COUNT(*)::bigint as total,
-               COUNT(*) FILTER (WHERE s.type_vote = 'solennel')::bigint as total_solennel
-        FROM mandats_parlementaires m
-        JOIN scrutins s ON s.chambre = 'senat'
-          AND s.date >= m.date_debut
-          AND (m.date_fin IS NULL OR s.date <= m.date_fin)
-        WHERE m.chambre = 'senat'
-        GROUP BY m.personne_id
+        JOIN scrutins s ON s.chambre = m.chambre
+          AND (
+                (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
+                 AND m.legislature = s.legislature
+                 AND s.date >= m.date_debut
+                 AND (m.date_fin IS NULL OR s.date <= m.date_fin))
+             OR (s.chambre = 'senat'
+                 AND s.date >= m.date_debut
+                 AND (m.date_fin IS NULL OR s.date <= m.date_fin))
+              )
       ),
       scrutin_counts AS (
-        SELECT * FROM counts_assemblee
-        UNION ALL
-        SELECT * FROM counts_senat
+        -- Dénominateur carrière : une seule ligne par personne (SUM des deux chambres).
+        SELECT personne_id,
+               COUNT(*)::bigint as total,
+               COUNT(*) FILTER (WHERE type_vote = 'solennel')::bigint as total_solennel
+        FROM scrutins_couverts
+        GROUP BY personne_id
       ),
       vote_stats AS (
+        -- Numérateur borné au MÊME ensemble : seuls comptent les votes émis sur un
+        -- scrutin couvert par un mandat de la personne (même prédicat que ci-dessus).
+        -- Tout vote hors fenêtre (mandat mal daté / manquant) est exclu, ce qui garantit
+        -- numérateur ≤ dénominateur → présence ≤ 100 %.
         SELECT
           v.parlementaire_id,
           COUNT(*) FILTER (WHERE v.position != 'absent') as votes_non_absent,
           COUNT(*) FILTER (WHERE v.position != 'absent' AND s.type_vote = 'solennel') as votes_solennel_non_absent
         FROM votes v
         JOIN scrutins s ON v.scrutin_id = s.id
-        WHERE s.chambre LIKE ${chambreFilter}
+        WHERE EXISTS (
+          SELECT 1 FROM mandats_parlementaires m
+          WHERE m.personne_id = v.parlementaire_id
+            AND m.chambre = s.chambre
+            AND (
+                  (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
+                   AND m.legislature = s.legislature
+                   AND s.date >= m.date_debut
+                   AND (m.date_fin IS NULL OR s.date <= m.date_fin))
+               OR (s.chambre = 'senat'
+                   AND s.date >= m.date_debut
+                   AND (m.date_fin IS NULL OR s.date <= m.date_fin))
+                )
+        )
         GROUP BY v.parlementaire_id
       ),
       intervention_stats AS (
@@ -268,11 +310,29 @@ export async function calculateAllStats(
     //
     // On calcule ici les mêmes indicateurs, mais rapportés à chaque mandat : sa
     // période sert de dénominateur, et son propre groupe de référence.
-    logger.info('Calculating per-mandate stats...');
+    //
+    // Périmètre : `mandats_cibles` filtre en amont les mandats à recalculer. Les
+    // législatures AN révolues sont figées (leurs stats ne bougent plus après leur
+    // ingestion) → sautées par défaut, sauf `includeFrozen`. Le Sénat (legislature
+    // NULL) et la législature courante passent toujours. Restreindre l'ensemble ICI
+    // reste correct pour la loyauté : un scrutin n'appartient qu'à une seule
+    // législature, donc tous les mandats qui le couvrent partagent le même statut
+    // figé/actif — la position majoritaire du groupe est toujours calculée sur
+    // l'intégralité des mandats d'un scrutin donné.
+    logger.info({ includeFrozen }, 'Calculating per-mandate stats...');
 
     const mandatStatsUpdated = await prisma.$executeRaw`
-      WITH votes_mandat AS (
-        -- Chaque vote est rattaché au mandat qui couvrait le scrutin.
+      WITH mandats_cibles AS (
+        SELECT m.id, m.chambre, m.legislature, m.date_debut, m.date_fin,
+               m.personne_id, m.groupe_id
+        FROM mandats_parlementaires m
+        WHERE m.chambre LIKE ${chambreFilter}
+          AND (m.legislature IS NULL OR m.legislature >= ${seuilLegislature})
+      ),
+      votes_mandat AS (
+        -- Chaque vote est rattaché au mandat qui couvrait le scrutin (mandat d'époque).
+        -- AN : fenêtrage par dates EN PLUS de la législature — un député parti en cours
+        -- de législature ne se voit pas attribuer les scrutins postérieurs à son départ.
         SELECT
           m.id as mandat_id,
           m.groupe_id,
@@ -281,39 +341,42 @@ export async function calculateAllStats(
           s.type_vote
         FROM votes v
         JOIN scrutins s ON s.id = v.scrutin_id
-        JOIN mandats_parlementaires m
+        JOIN mandats_cibles m
           ON m.personne_id = v.parlementaire_id
           AND m.chambre = s.chambre
           AND (
                 (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
-                 AND m.legislature = s.legislature)
+                 AND m.legislature = s.legislature
+                 AND s.date >= m.date_debut
+                 AND (m.date_fin IS NULL OR s.date <= m.date_fin))
              OR (s.chambre = 'senat' AND m.date_debut <= s.date
                  AND (m.date_fin IS NULL OR m.date_fin >= s.date))
               )
         WHERE v.position != 'absent'
           AND s.chambre LIKE ${chambreFilter}
       ),
-      -- Dénominateurs : scrutins de la période du mandat.
-      scrutins_par_legislature AS (
-        SELECT legislature,
-               COUNT(*) as total,
-               COUNT(*) FILTER (WHERE type_vote = 'solennel') as total_solennel
-        FROM scrutins
-        WHERE chambre = 'assemblee' AND legislature IS NOT NULL
-        GROUP BY legislature
-      ),
+      -- Dénominateurs : scrutins de la FENÊTRE du mandat (dates + législature pour l'AN).
+      -- LEFT JOIN pour que chaque mandat ciblé apparaisse même sans scrutin couvert
+      -- (total=0) : il reçoit alors interventions/amendements sans rester à NULL.
       denom_assemblee AS (
-        SELECT m.id as mandat_id, sl.total, sl.total_solennel
-        FROM mandats_parlementaires m
-        JOIN scrutins_par_legislature sl ON sl.legislature = m.legislature
+        SELECT m.id as mandat_id,
+               COUNT(s.id)::bigint as total,
+               COUNT(s.id) FILTER (WHERE s.type_vote = 'solennel')::bigint as total_solennel
+        FROM mandats_cibles m
+        LEFT JOIN scrutins s ON s.chambre = 'assemblee'
+          AND s.legislature IS NOT NULL
+          AND s.legislature = m.legislature
+          AND s.date >= m.date_debut
+          AND (m.date_fin IS NULL OR s.date <= m.date_fin)
         WHERE m.chambre = 'assemblee'
+        GROUP BY m.id
       ),
       denom_senat AS (
         SELECT m.id as mandat_id,
-               COUNT(*)::bigint as total,
-               COUNT(*) FILTER (WHERE s.type_vote = 'solennel')::bigint as total_solennel
-        FROM mandats_parlementaires m
-        JOIN scrutins s ON s.chambre = 'senat'
+               COUNT(s.id)::bigint as total,
+               COUNT(s.id) FILTER (WHERE s.type_vote = 'solennel')::bigint as total_solennel
+        FROM mandats_cibles m
+        LEFT JOIN scrutins s ON s.chambre = 'senat'
           AND s.date >= m.date_debut
           AND (m.date_fin IS NULL OR s.date <= m.date_fin)
         WHERE m.chambre = 'senat'
@@ -330,6 +393,38 @@ export async function calculateAllStats(
                COUNT(*) FILTER (WHERE type_vote = 'solennel') as votes_solennel
         FROM votes_mandat
         GROUP BY mandat_id
+      ),
+      -- Interventions du mandat : rattachées par personne + chambre + fenêtre de dates
+      -- (la table interventions n'a pas de législature ; la fenêtre suffit).
+      interventions_mandat AS (
+        SELECT m.id as mandat_id,
+               COUNT(i.id) as total_interventions,
+               COUNT(i.id) FILTER (WHERE i.type = 'question') as total_questions
+        FROM mandats_cibles m
+        JOIN interventions i
+          ON i.parlementaire_id = m.personne_id
+          AND i.chambre = m.chambre
+          AND i.date >= m.date_debut
+          AND (m.date_fin IS NULL OR i.date <= m.date_fin)
+        GROUP BY m.id
+      ),
+      -- Amendements du mandat : AN par législature (plus fiable que la date de dépôt) ;
+      -- Sénat par fenêtre de dates sur la date de dépôt.
+      amendements_mandat AS (
+        SELECT m.id as mandat_id,
+               COUNT(a.id) as total_amendements,
+               COUNT(a.id) FILTER (WHERE a.sort IN ('Adopté', 'adopte', 'adopte_modifie')) as total_adoptes
+        FROM mandats_cibles m
+        JOIN amendements a
+          ON a.parlementaire_id = m.personne_id
+          AND a.chambre = m.chambre
+          AND (
+                (m.chambre = 'assemblee' AND a.legislature = m.legislature)
+             OR (m.chambre = 'senat' AND a.date_depot IS NOT NULL
+                 AND a.date_depot >= m.date_debut
+                 AND (m.date_fin IS NULL OR a.date_depot <= m.date_fin))
+              )
+        GROUP BY m.id
       ),
       -- Loyauté : position majoritaire du groupe DU MANDAT, scrutin par scrutin.
       group_majority AS (
@@ -363,10 +458,16 @@ export async function calculateAllStats(
         stats_loyaute = CASE
           WHEN l.total_votes > 0 THEN ROUND((l.loyal_votes::float / l.total_votes) * 100)
           ELSE NULL END,
+        stats_interventions = COALESCE(im.total_interventions, 0),
+        stats_questions = COALESCE(im.total_questions, 0),
+        stats_amendements = COALESCE(am.total_amendements, 0),
+        stats_amendements_adoptes = COALESCE(am.total_adoptes, 0),
         stats_calculated_at = NOW()
       FROM denom d
       LEFT JOIN num n ON n.mandat_id = d.mandat_id
       LEFT JOIN loyaute l ON l.mandat_id = d.mandat_id
+      LEFT JOIN interventions_mandat im ON im.mandat_id = d.mandat_id
+      LEFT JOIN amendements_mandat am ON am.mandat_id = d.mandat_id
       WHERE mp.id = d.mandat_id
     `;
 
@@ -794,20 +895,30 @@ export interface GroupeStatsResult {
  * À appeler APRÈS calculateAllStats() pour bénéficier des stats individuelles
  */
 export async function calculateAllGroupeStats(
-  chambre?: 'assemblee' | 'senat'
+  chambre?: 'assemblee' | 'senat',
+  options: StatsOptions = {}
 ): Promise<GroupeStatsResult> {
   const startTime = Date.now();
+  const includeFrozen = options.includeFrozen ?? false;
 
-  logger.info({ chambre: chambre || 'all' }, 'Starting groupe stats calculation...');
+  logger.info({ chambre: chambre || 'all', includeFrozen }, 'Starting groupe stats calculation...');
 
   // Récupérer tous les groupes actifs
-  const groupes = await prisma.groupePolitique.findMany({
+  const tousGroupes = await prisma.groupePolitique.findMany({
     where: {
       actif: true,
       ...(chambre && { chambre }),
     },
-    select: { id: true, slug: true, chambre: true },
+    select: { id: true, slug: true, chambre: true, legislature: true },
   });
+
+  // Les groupes AN des législatures révolues sont figés : leurs stats ne changent
+  // plus une fois ingérés. Le batch de nuit les saute (perf) sauf `includeFrozen`.
+  const groupes = includeFrozen ? tousGroupes : tousGroupes.filter((g) => !estGroupeFige(g));
+  const skipped = tousGroupes.length - groupes.length;
+  if (skipped > 0) {
+    logger.info({ skipped }, 'Groupes figés sautés (législatures AN révolues)');
+  }
 
   let updated = 0;
   let errors = 0;
@@ -948,7 +1059,9 @@ async function calculateGroupeCohesion(
         AND m.chambre = s.chambre
         AND (
               (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
-               AND m.legislature = s.legislature)
+               AND m.legislature = s.legislature
+               AND s.date >= m.date_debut
+               AND (m.date_fin IS NULL OR s.date <= m.date_fin))
            OR (s.chambre = 'senat' AND m.date_debut <= s.date
                AND (m.date_fin IS NULL OR m.date_fin >= s.date))
             )
@@ -999,7 +1112,9 @@ async function calculateGroupeVotesAggregation(
       AND m.chambre = s.chambre
       AND (
             (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
-             AND m.legislature = s.legislature)
+             AND m.legislature = s.legislature
+             AND s.date >= m.date_debut
+             AND (m.date_fin IS NULL OR s.date <= m.date_fin))
          OR (s.chambre = 'senat' AND m.date_debut <= s.date
              AND (m.date_fin IS NULL OR m.date_fin >= s.date))
           )
@@ -1026,20 +1141,31 @@ async function calculateGroupeVotesAggregation(
  * Exécuté après calculateAllGroupeStats()
  */
 export async function calculateAllGroupeAlliances(
-  chambre?: 'assemblee' | 'senat'
+  chambre?: 'assemblee' | 'senat',
+  options: StatsOptions = {}
 ): Promise<{ total: number; duration: string }> {
   const startTime = Date.now();
+  const includeFrozen = options.includeFrozen ?? false;
 
-  logger.info({ chambre: chambre || 'all' }, 'Starting groupe alliances calculation...');
+  logger.info({ chambre: chambre || 'all', includeFrozen }, 'Starting groupe alliances calculation...');
 
   // Récupérer tous les groupes actifs
-  const groupes = await prisma.groupePolitique.findMany({
+  const tousGroupes = await prisma.groupePolitique.findMany({
     where: {
       actif: true,
       ...(chambre && { chambre }),
     },
     select: { id: true, slug: true, chambre: true, legislature: true },
   });
+
+  // Les alliances d'une législature AN révolue sont figées : on saute ces groupes
+  // par défaut (perf). Les écarter avant l'appariement évite aussi de recalculer
+  // leurs paires internes. La purge inter-périodes ci-dessous reste inconditionnelle.
+  const groupes = includeFrozen ? tousGroupes : tousGroupes.filter((g) => !estGroupeFige(g));
+  const skipped = tousGroupes.length - groupes.length;
+  if (skipped > 0) {
+    logger.info({ skipped }, 'Groupes figés sautés pour les alliances (législatures AN révolues)');
+  }
 
   // Les alliances s'apparient PAR PÉRIODE, et non par chambre : deux groupes de
   // législatures différentes n'ont jamais voté ensemble. Sans cette clé, on
@@ -1143,7 +1269,9 @@ async function calculateAndStoreAlliance(
         AND m.chambre = s.chambre
         AND (
               (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
-               AND m.legislature = s.legislature)
+               AND m.legislature = s.legislature
+               AND s.date >= m.date_debut
+               AND (m.date_fin IS NULL OR s.date <= m.date_fin))
            OR (s.chambre = 'senat' AND m.date_debut <= s.date
                AND (m.date_fin IS NULL OR m.date_fin >= s.date))
             )
@@ -1166,7 +1294,9 @@ async function calculateAndStoreAlliance(
         AND m.chambre = s.chambre
         AND (
               (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
-               AND m.legislature = s.legislature)
+               AND m.legislature = s.legislature
+               AND s.date >= m.date_debut
+               AND (m.date_fin IS NULL OR s.date <= m.date_fin))
            OR (s.chambre = 'senat' AND m.date_debut <= s.date
                AND (m.date_fin IS NULL OR m.date_fin >= s.date))
             )
@@ -1262,19 +1392,28 @@ const THEMATIQUES = [
  * Calcule et stocke les stats thématiques pour TOUS les groupes
  */
 export async function calculateAllGroupeThematiques(
-  chambre?: 'assemblee' | 'senat'
+  chambre?: 'assemblee' | 'senat',
+  options: StatsOptions = {}
 ): Promise<{ total: number; duration: string }> {
   const startTime = Date.now();
+  const includeFrozen = options.includeFrozen ?? false;
 
-  logger.info({ chambre: chambre || 'all' }, 'Starting groupe thematiques calculation...');
+  logger.info({ chambre: chambre || 'all', includeFrozen }, 'Starting groupe thematiques calculation...');
 
-  const groupes = await prisma.groupePolitique.findMany({
+  const tousGroupes = await prisma.groupePolitique.findMany({
     where: {
       actif: true,
       ...(chambre && { chambre }),
     },
-    select: { id: true, slug: true, chambre: true },
+    select: { id: true, slug: true, chambre: true, legislature: true },
   });
+
+  // Positions thématiques d'une législature AN révolue = figées → sautées par défaut.
+  const groupes = includeFrozen ? tousGroupes : tousGroupes.filter((g) => !estGroupeFige(g));
+  const skipped = tousGroupes.length - groupes.length;
+  if (skipped > 0) {
+    logger.info({ skipped }, 'Groupes figés sautés pour les thématiques (législatures AN révolues)');
+  }
 
   let totalStats = 0;
   const totalGroupes = groupes.length;
@@ -1338,7 +1477,9 @@ async function calculateAndStoreGroupeThematiques(groupeId: string, chambre: str
           AND m.chambre = s.chambre
           AND (
                 (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
-                 AND m.legislature = s.legislature)
+                 AND m.legislature = s.legislature
+                 AND s.date >= m.date_debut
+                 AND (m.date_fin IS NULL OR s.date <= m.date_fin))
              OR (s.chambre = 'senat' AND m.date_debut <= s.date
                  AND (m.date_fin IS NULL OR m.date_fin >= s.date))
               )
