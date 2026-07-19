@@ -93,6 +93,9 @@ export interface SyncSenateursHistoriquesResult {
   personnesEnrichies: number;
   mandatsCrees: number;
   mandatsMisAJour: number;
+  /** Mandats OUVERTS (roster courant, propriété du sync) dont la `dateDebut` a été
+   *  corrigée avec la vraie date d'entrée ELUSEN (remplaçants, retours de ministre). */
+  mandatsRaffines: number;
   senateursIgnores: number;
 }
 
@@ -145,6 +148,7 @@ export async function syncSenateursHistoriques(
     personnesEnrichies: 0,
     mandatsCrees: 0,
     mandatsMisAJour: 0,
+    mandatsRaffines: 0,
     senateursIgnores: 0,
   };
 
@@ -155,13 +159,23 @@ export async function syncSenateursHistoriques(
     // seulement à décider la clôture des mandats périmés et à afficher la série.
     const serie = existant?.serie ?? inferSerie(mandatsRaw);
 
-    // Mandats CLOS chevauchant le périmètre (les ouverts sont au sync courant).
-    const mandatsAImporter = mandatsRaw
+    const ctxDerives = mandatsRaw
       .filter((m) => m.dateDebut !== null)
-      .map((m) => deriveMandatContextSenatOdsen({ dateDebut: m.dateDebut!, dateFin: m.dateFin, serie }, now))
-      .filter((ctx) => ctx.dateFin !== null && overlapMs(ctx.dateDebut, ctx.dateFin, perimetreDebut, now) > 0);
+      .map((m) => deriveMandatContextSenatOdsen({ dateDebut: m.dateDebut!, dateFin: m.dateFin, serie }, now));
 
-    if (mandatsAImporter.length === 0) {
+    // Mandats CLOS chevauchant le périmètre : importés (les ouverts sont au sync courant).
+    const mandatsAImporter = ctxDerives.filter(
+      (ctx) => ctx.dateFin !== null && overlapMs(ctx.dateDebut, ctx.dateFin, perimetreDebut, now) > 0,
+    );
+
+    // Mandat COURANT réel selon la source (dateFin null = vraie date d'entrée) : ne sert
+    // pas à créer une ligne (le roster courant appartient au sync) mais à RAFFINER la
+    // dateDebut du mandat ouvert existant, souvent posée au début de cohorte par le sync
+    // faute de date (remplaçants, retours de ministre entrés en cours de mandature).
+    const mandatCourantSource = ctxDerives.find((ctx) => ctx.dateFin === null) ?? null;
+
+    // Rien à importer et rien à raffiner (personne absente = pas de mandat ouvert) → ignore.
+    if (mandatsAImporter.length === 0 && !(existant && mandatCourantSource)) {
       result.senateursIgnores++;
       continue;
     }
@@ -219,6 +233,23 @@ export async function syncSenateursHistoriques(
       });
       if (created) result.mandatsCrees++;
       else result.mandatsMisAJour++;
+    }
+
+    // 3) Raffinement de la dateDebut du mandat OUVERT (propriété du sync) ----
+    // On corrige uniquement, jamais de création : si aucun mandat ouvert n'existe, la
+    // personne n'est pas au roster courant et il n'y a rien à raffiner.
+    if (mandatCourantSource) {
+      const ouvert = await prisma.mandatParlementaire.findFirst({
+        where: { personneId, chambre: 'senat', dateFin: null },
+        select: { id: true, dateDebut: true },
+      });
+      if (ouvert && ouvert.dateDebut.getTime() !== mandatCourantSource.dateDebut.getTime()) {
+        await prisma.mandatParlementaire.update({
+          where: { id: ouvert.id },
+          data: { dateDebut: mandatCourantSource.dateDebut },
+        });
+        result.mandatsRaffines++;
+      }
     }
   }
 

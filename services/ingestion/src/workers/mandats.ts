@@ -114,6 +114,38 @@ export function deriveMandatContextAN(legislature: number): MandatContext {
   };
 }
 
+/** Borne basse plausible d'un mandat AN : début de la Ve République. */
+const AN_MANDAT_DATE_MIN = new Date('1958-01-01');
+
+/** Écarte une date de mandat source aberrante (avant 1958 ou plus d'un an dans le futur) :
+ *  on préfère alors le fallback (bornes de législature) à une date corrompue. */
+function clampMandatDateAN(date: Date | null, at: Date): Date | null {
+  if (!date) return null;
+  const maxPlausible = new Date(at);
+  maxPlausible.setFullYear(maxPlausible.getFullYear() + 1);
+  if (date < AN_MANDAT_DATE_MIN || date > maxPlausible) return null;
+  return date;
+}
+
+/**
+ * Surcharge un contexte de mandat AN (bornes de législature) par les VRAIES dates du
+ * mandat source quand elles sont présentes et plausibles. Sans dateFin source, on
+ * retombe sur `ctx.dateFin` (fin de législature en historique, null en courant) : un
+ * député parti en cours de législature ne doit pas être daté sur toute la période.
+ */
+export function mandatContextANDepuisSource(
+  ctx: MandatContext,
+  mandatDateDebut: Date | null,
+  mandatDateFin: Date | null,
+  at: Date = new Date(),
+): MandatContext {
+  return {
+    ...ctx,
+    dateDebut: clampMandatDateAN(mandatDateDebut, at) ?? ctx.dateDebut,
+    dateFin: clampMandatDateAN(mandatDateFin, at) ?? ctx.dateFin,
+  };
+}
+
 /**
  * Dérive le contexte de mandat d'un sénateur depuis sa série électorale, à la date
  * d'observation `at` (par défaut : maintenant). Le mandat en cours est ouvert
@@ -238,26 +270,49 @@ export interface UpsertMandatInput {
 }
 
 /**
- * Upsert idempotent d'un `MandatParlementaire` sur la clé naturelle
- * [personne, chambre, legislature, mandature].
+ * Upsert idempotent d'un `MandatParlementaire`.
  *
  * N'écrit QUE les champs d'identité/contexte (groupe/circo/dates). Les
  * statistiques sont volontairement laissées intactes : elles sont calculées
  * séparément (stats-calculator) et ne doivent jamais être remises à null par
  * un simple run d'ingestion.
+ *
+ * La contrainte DB [personne, chambre, legislature, mandature] tolère plusieurs
+ * lignes par mandature au Sénat (`legislature` NULL ⇒ NULLS DISTINCT). C'est
+ * VOULU : une même cohorte peut porter plusieurs périodes de service (retour de
+ * ministre). Le vrai dédoublonnage est donc applicatif, ci-dessous, et repose sur
+ * la SÉPARATION DES RESPONSABILITÉS entre les deux sources Sénat :
+ *   - le sync `senateurs.json` possède le mandat COURANT (ouvert, `dateFin` null) ;
+ *   - le worker ODSEN possède les mandats CLOS historiques (`dateFin` non null).
+ * Aucun des deux ne touche jamais une ligne qui appartient à l'autre.
  */
 export async function upsertMandatParlementaire(
+  prisma: PrismaLike,
+  input: UpsertMandatInput,
+): Promise<{ created: boolean }> {
+  if (input.chambre === 'assemblee') {
+    return upsertMandatAN(prisma, input);
+  }
+  // Le contexte discrimine le propriétaire : `dateFin` null ⇒ mandat courant (sync),
+  // sinon ⇒ mandat clos historique (ODSEN).
+  return input.ctx.dateFin === null
+    ? upsertMandatSenatCourant(prisma, input)
+    : upsertMandatSenatClos(prisma, input);
+}
+
+/** AN : une seule période de service par (personne, législature) — la mandature est
+ *  toujours null. On matche donc sur la seule législature et on réécrit les dates,
+ *  désormais fournies par la source (idempotent). */
+async function upsertMandatAN(
   prisma: PrismaLike,
   input: UpsertMandatInput,
 ): Promise<{ created: boolean }> {
   const { personneId, chambre, ctx } = input;
 
   const existing = await prisma.mandatParlementaire.findFirst({
-    where: { personneId, chambre, legislature: ctx.legislature, mandature: ctx.mandature },
+    where: { personneId, chambre, legislature: ctx.legislature },
     select: { id: true },
   });
-
-  let created: boolean;
 
   if (existing) {
     await prisma.mandatParlementaire.update({
@@ -271,13 +326,105 @@ export async function upsertMandatParlementaire(
         commissionPermanente: input.commissionPermanente,
       },
     });
-    created = false;
+    return { created: false };
+  }
+
+  await prisma.mandatParlementaire.create({
+    data: mandatCreateData(input, ctx.dateDebut),
+  });
+  return { created: true };
+}
+
+/**
+ * Sénat, chemin SYNC (`senateurs.json`) : le mandat reçu est COURANT (`dateFin` null).
+ * On ne raisonne PAS sur la mandature dérivée pour matcher (le retour de ministre
+ * partage la cohorte de sa ligne close), mais sur le mandat OUVERT de la personne.
+ */
+async function upsertMandatSenatCourant(
+  prisma: PrismaLike,
+  input: UpsertMandatInput,
+): Promise<{ created: boolean }> {
+  const { personneId, ctx } = input;
+
+  const ouvert = await prisma.mandatParlementaire.findFirst({
+    where: { personneId, chambre: 'senat', dateFin: null },
+    select: { id: true, mandature: true },
+  });
+
+  let created: boolean;
+
+  if (ouvert) {
+    const memeMandatureOuPosterieure =
+      ouvert.mandature === null || ctx.mandature === null || ouvert.mandature >= ctx.mandature;
+
+    if (memeMandatureOuPosterieure) {
+      // Même période de service : on rafraîchit le contexte d'époque SANS toucher aux
+      // dates. `dateDebut` a pu être raffinée par ODSEN avec la vraie date d'entrée
+      // (remplaçant, retour de ministre) ; l'écraser au début de cohorte la perdrait.
+      await prisma.mandatParlementaire.update({
+        where: { id: ouvert.id },
+        data: {
+          serie: ctx.serie,
+          mandature: ctx.mandature,
+          groupeId: input.groupeId,
+          circonscriptionId: input.circonscriptionId,
+          commissionPermanente: input.commissionPermanente,
+        },
+      });
+      created = false;
+    } else {
+      // Renouvellement (sénateur réélu sur une NOUVELLE mandature, ex. sept. 2026) :
+      // on clôt l'ancienne période à sa fin de droit et on en ouvre une nouvelle,
+      // pour conserver l'historique de groupe/circo d'époque au lieu de l'écraser.
+      await prisma.mandatParlementaire.update({
+        where: { id: ouvert.id },
+        data: { dateFin: senatMandatFinTheorique(ouvert.mandature!) },
+      });
+      await prisma.mandatParlementaire.create({
+        data: mandatCreateData(input, ctx.dateDebut),
+      });
+      created = true;
+    }
   } else {
+    // Aucune période ouverte : création. La date de début fallback évite de chevaucher
+    // une période close récente (retour de ministre qui reprend son siège après une
+    // parenthèse : sa ligne close finit après le début de cohorte).
+    const dateDebut = await dateDebutCreationSenat(prisma, personneId, ctx.dateDebut);
     await prisma.mandatParlementaire.create({
+      data: mandatCreateData(input, dateDebut),
+    });
+    created = true;
+  }
+
+  // Filet : des périodes ouvertes de mandature strictement antérieure resteraient
+  // ouvertes si un run précédent avait raté le renouvellement → on les clôt.
+  if (ctx.mandature !== null) {
+    await cloturerMandatsSenatAnterieurs(prisma, personneId, ctx.mandature);
+  }
+
+  return { created };
+}
+
+/**
+ * Sénat, chemin ODSEN : le mandat reçu est CLOS (`dateFin` non null). On matche une
+ * période close par sa date de début réelle ; on ne touche JAMAIS une ligne ouverte
+ * (le roster courant appartient au sync).
+ */
+async function upsertMandatSenatClos(
+  prisma: PrismaLike,
+  input: UpsertMandatInput,
+): Promise<{ created: boolean }> {
+  const { personneId, ctx } = input;
+
+  const existing = await prisma.mandatParlementaire.findFirst({
+    where: { personneId, chambre: 'senat', dateDebut: ctx.dateDebut, dateFin: { not: null } },
+    select: { id: true },
+  });
+
+  if (existing) {
+    await prisma.mandatParlementaire.update({
+      where: { id: existing.id },
       data: {
-        personneId,
-        chambre,
-        legislature: ctx.legislature,
         mandature: ctx.mandature,
         serie: ctx.serie,
         dateDebut: ctx.dateDebut,
@@ -287,17 +434,58 @@ export async function upsertMandatParlementaire(
         commissionPermanente: input.commissionPermanente,
       },
     });
-    created = true;
+    return { created: false };
   }
 
-  // Renouvellement Sénat : le mandat qui vient d'être ouvert sur une nouvelle
-  // mandature rend caducs les mandats antérieurs restés ouverts → on les CLÔT
-  // (jamais de suppression, jamais d'écrasement de leur groupe/circo d'époque).
-  if (chambre === 'senat' && ctx.mandature !== null) {
-    await cloturerMandatsSenatAnterieurs(prisma, personneId, ctx.mandature);
+  await prisma.mandatParlementaire.create({
+    data: mandatCreateData(input, ctx.dateDebut),
+  });
+  return { created: true };
+}
+
+/** Payload de création d'un mandat : le contexte, avec la `dateDebut` déjà résolue
+ *  (fallback anti-chevauchement pour le chemin sync). */
+function mandatCreateData(
+  input: UpsertMandatInput,
+  dateDebut: Date,
+): Prisma.MandatParlementaireUncheckedCreateInput {
+  const { personneId, chambre, ctx } = input;
+  return {
+    personneId,
+    chambre,
+    legislature: ctx.legislature,
+    mandature: ctx.mandature,
+    serie: ctx.serie,
+    dateDebut,
+    dateFin: ctx.dateFin,
+    groupeId: input.groupeId,
+    circonscriptionId: input.circonscriptionId,
+    commissionPermanente: input.commissionPermanente,
+  };
+}
+
+/** Date de début d'un mandat courant créé de zéro. Si la personne a une période close
+ *  récente qui déborde le début de cohorte (retour de ministre), on démarre le
+ *  lendemain de cette fin pour ne pas chevaucher ; sinon on prend le début de cohorte. */
+async function dateDebutCreationSenat(
+  prisma: PrismaLike,
+  personneId: string,
+  fallback: Date,
+): Promise<Date> {
+  const clos = await prisma.mandatParlementaire.findMany({
+    where: { personneId, chambre: 'senat', dateFin: { not: null } },
+    select: { dateFin: true },
+  });
+
+  let plusRecente: Date | null = null;
+  for (const m of clos) {
+    if (m.dateFin && (plusRecente === null || m.dateFin > plusRecente)) plusRecente = m.dateFin;
   }
 
-  return { created };
+  if (plusRecente && plusRecente >= fallback) {
+    return new Date(plusRecente.getTime() + 24 * 60 * 60 * 1000);
+  }
+  return fallback;
 }
 
 /** Clôt les mandats sénatoriaux d'une personne antérieurs à `mandatureCourante`

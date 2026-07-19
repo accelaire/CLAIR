@@ -123,6 +123,10 @@ export interface TransformedParlementaire {
   // Sénat spécifique
   serie: string | null;
   commissionPermanente: string | null;
+  // Dates réelles du mandat de député (AMO10/AMO30), pour dater le mandat au lieu des
+  // bornes de législature. `null` si absentes/nil ; `mandatDateFin` null = mandat en cours.
+  mandatDateDebut: Date | null;
+  mandatDateFin: Date | null;
   // Source
   sourceData: ANActeur;
 }
@@ -467,6 +471,16 @@ export class AssembleeNationaleDeputesClient {
     // Construire le slug
     const slug = this.buildSlug(ident.prenom, ident.nom);
 
+    // Dates réelles du mandat (le nil XML arrive en objet, d'où `xmlStringOrNull`).
+    const parseMandatDate = (v: unknown): Date | null => {
+      const s = xmlStringOrNull(v);
+      if (!s) return null;
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? null : d;
+    };
+    const mandatDateDebut = parseMandatDate(mandatDepute.dateDebut);
+    const mandatDateFin = parseMandatDate(mandatDepute.dateFin);
+
     // Extraire la circonscription depuis le mandat
     const election = mandatDepute.election;
     const departement = xmlStringOrNull(election?.lieu?.numDepartement);
@@ -506,6 +520,8 @@ export class AssembleeNationaleDeputesClient {
       numCirco,
       serie: null, // Sénateurs uniquement
       commissionPermanente: null, // Sénateurs uniquement
+      mandatDateDebut,
+      mandatDateFin,
       sourceData: acteur,
     };
   }

@@ -13,10 +13,123 @@ import {
   deriveMandatContextSenatOdsen,
   deriveMandatureSenat,
   inferSerieSenatDepuisDate,
+  mandatContextANDepuisSource,
   senatMandatFinTheorique,
   senatMandatureDebut,
   isLegislatureCourante,
+  upsertMandatParlementaire,
+  type MandatContext,
 } from './mandats';
+
+// =============================================================================
+// Mock Prisma minimal — table `mandatParlementaire` en mémoire.
+//
+// L'upsert n'utilise que findFirst / findMany / update / create ; le mock couvre
+// exactement les clauses `where` employées (égalité de champs, `dateFin: null`,
+// `dateFin: { not: null }`, `mandature: { lt }`, `dateDebut: Date`).
+// =============================================================================
+
+interface MandatRow {
+  id: string;
+  personneId: string;
+  chambre: string;
+  legislature: number | null;
+  mandature: number | null;
+  serie: string | null;
+  dateDebut: Date;
+  dateFin: Date | null;
+  groupeId: string | null;
+  circonscriptionId: string | null;
+  commissionPermanente: string | null;
+}
+
+function matchWhere(row: MandatRow, where: Record<string, unknown>): boolean {
+  for (const [key, cond] of Object.entries(where)) {
+    const value = (row as unknown as Record<string, unknown>)[key];
+    if (key === 'dateFin') {
+      if (cond === null) {
+        if (value !== null) return false;
+      } else if (cond && typeof cond === 'object' && 'not' in cond) {
+        if (value === null) return false; // { not: null }
+      }
+    } else if (key === 'mandature' && cond && typeof cond === 'object' && 'lt' in cond) {
+      const lt = (cond as { lt: number }).lt;
+      if (!(row.mandature !== null && row.mandature < lt)) return false;
+    } else if (cond instanceof Date) {
+      if (!(value instanceof Date) || value.getTime() !== cond.getTime()) return false;
+    } else if (value !== cond) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function makeMockPrisma(seed: Partial<MandatRow>[] = []) {
+  let seq = 0;
+  const rows: MandatRow[] = seed.map((r) => ({
+    id: r.id ?? `seed-${seq++}`,
+    personneId: r.personneId ?? 'P',
+    chambre: r.chambre ?? 'senat',
+    legislature: r.legislature ?? null,
+    mandature: r.mandature ?? null,
+    serie: r.serie ?? null,
+    dateDebut: r.dateDebut ?? new Date('2020-10-01T00:00:00Z'),
+    dateFin: r.dateFin ?? null,
+    groupeId: r.groupeId ?? null,
+    circonscriptionId: r.circonscriptionId ?? null,
+    commissionPermanente: r.commissionPermanente ?? null,
+  }));
+
+  const prisma = {
+    mandatParlementaire: {
+      findFirst: async ({ where }: { where: Record<string, unknown> }) =>
+        rows.find((r) => matchWhere(r, where)) ?? null,
+      findMany: async ({ where }: { where: Record<string, unknown> }) =>
+        rows.filter((r) => matchWhere(r, where)),
+      update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+        const row = rows.find((r) => r.id === where.id)!;
+        Object.assign(row, data);
+        return row;
+      },
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        const row: MandatRow = { ...(data as unknown as MandatRow), id: `new-${seq++}` };
+        rows.push(row);
+        return row;
+      },
+    },
+  };
+
+  return { prisma: prisma as never, rows };
+}
+
+const senatInput = (ctx: MandatContext, extra: Partial<{ groupeId: string }> = {}) => ({
+  personneId: 'P',
+  chambre: 'senat',
+  ctx,
+  groupeId: extra.groupeId ?? null,
+  circonscriptionId: null,
+  commissionPermanente: null,
+});
+
+const ctxSenatCourant = (mandature: number | null, dateDebut: string): MandatContext => ({
+  legislature: null,
+  mandature,
+  serie: '2',
+  dateDebut: new Date(dateDebut),
+  dateFin: null,
+});
+
+const ctxSenatClos = (
+  mandature: number | null,
+  dateDebut: string,
+  dateFin: string,
+): MandatContext => ({
+  legislature: null,
+  mandature,
+  serie: '2',
+  dateDebut: new Date(dateDebut),
+  dateFin: new Date(dateFin),
+});
 
 describe('Sénat — calendrier des renouvellements', () => {
   it('place la prise de fonction au 1er octobre', () => {
@@ -180,5 +293,203 @@ describe('AN — législatures (non-régression)', () => {
   it('identifie la législature courante', () => {
     expect(isLegislatureCourante(17)).toBe(true);
     expect(isLegislatureCourante(16)).toBe(false);
+  });
+});
+
+describe('mandatContextANDepuisSource (dates réelles du mandat AN vs bornes de législature)', () => {
+  const at = new Date('2026-07-14T00:00:00Z');
+
+  it('surcharge les bornes de législature par les vraies dates du mandat source', () => {
+    // Député 15e parti le 1er oct. 2019 : dateFin réelle, pas la fin de législature.
+    const ctx = mandatContextANDepuisSource(
+      deriveMandatContextAN(15),
+      new Date('2017-06-21T00:00:00Z'),
+      new Date('2019-10-01T00:00:00Z'),
+      at,
+    );
+    expect(ctx.dateDebut.toISOString()).toBe('2017-06-21T00:00:00.000Z');
+    expect(ctx.dateFin?.toISOString()).toBe('2019-10-01T00:00:00.000Z');
+  });
+
+  it('retombe sur les bornes de législature quand la source ne fournit pas de dates', () => {
+    const ctx = mandatContextANDepuisSource(deriveMandatContextAN(15), null, null, at);
+    expect(ctx.dateDebut.toISOString()).toBe('2017-06-21T00:00:00.000Z');
+    expect(ctx.dateFin?.toISOString()).toBe('2022-06-21T00:00:00.000Z'); // fin 15e
+  });
+
+  it('garde la fin de législature quand le mandat historique n’a pas de dateFin source', () => {
+    const ctx = mandatContextANDepuisSource(
+      deriveMandatContextAN(16),
+      new Date('2022-06-22T00:00:00Z'),
+      null,
+      at,
+    );
+    expect(ctx.dateFin?.toISOString()).toBe('2024-06-09T00:00:00.000Z'); // dissolution 16e
+  });
+
+  it('laisse le mandat courant ouvert (dateFin null) tout en datant l’entrée réelle', () => {
+    const ctx = mandatContextANDepuisSource(
+      deriveMandatContextAN(17),
+      new Date('2024-09-01T00:00:00Z'), // entrée en cours de législature (remplaçant)
+      null,
+      at,
+    );
+    expect(ctx.dateDebut.toISOString()).toBe('2024-09-01T00:00:00.000Z');
+    expect(ctx.dateFin).toBeNull();
+  });
+
+  it('ignore une date source aberrante (avant 1958 ou trop loin dans le futur) au profit du fallback', () => {
+    const ctx = mandatContextANDepuisSource(
+      deriveMandatContextAN(15),
+      new Date('1900-01-01T00:00:00Z'), // aberrante → fallback début 15e
+      new Date('2999-01-01T00:00:00Z'), // aberrante → fallback fin 15e
+      at,
+    );
+    expect(ctx.dateDebut.toISOString()).toBe('2017-06-21T00:00:00.000Z');
+    expect(ctx.dateFin?.toISOString()).toBe('2022-06-21T00:00:00.000Z');
+  });
+});
+
+describe('upsertMandatParlementaire — AN (match par personne+législature)', () => {
+  it('réécrit les dates du mandat existant (idempotent depuis la source), mandature ignorée', async () => {
+    const { prisma, rows } = makeMockPrisma([
+      {
+        personneId: 'P',
+        chambre: 'assemblee',
+        legislature: 15,
+        dateDebut: new Date('2017-06-21T00:00:00Z'),
+        dateFin: new Date('2022-06-21T00:00:00Z'),
+      },
+    ]);
+    const ctx: MandatContext = {
+      legislature: 15,
+      mandature: null,
+      serie: null,
+      dateDebut: new Date('2017-06-21T00:00:00Z'),
+      dateFin: new Date('2019-10-01T00:00:00Z'), // vraie fin (départ anticipé)
+    };
+    const { created } = await upsertMandatParlementaire(prisma, {
+      personneId: 'P',
+      chambre: 'assemblee',
+      ctx,
+      groupeId: 'g',
+      circonscriptionId: null,
+      commissionPermanente: null,
+    });
+    expect(created).toBe(false);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.dateFin?.toISOString()).toBe('2019-10-01T00:00:00.000Z');
+  });
+});
+
+describe('upsertMandatParlementaire — Sénat chemin SYNC (mandat courant, dateFin null)', () => {
+  it('retour de ministre : crée une NOUVELLE ligne ouverte sans toucher la close, débutant le lendemain', async () => {
+    // Sénateur élu 2020, parti au gouvernement (mandat CLOS le 16 août 2024), de retour.
+    const { prisma, rows } = makeMockPrisma([
+      {
+        id: 'clos',
+        mandature: 2020,
+        dateDebut: new Date('2020-10-01T00:00:00Z'),
+        dateFin: new Date('2024-08-16T00:00:00Z'),
+        groupeId: 'g-epoque',
+      },
+    ]);
+    const { created } = await upsertMandatParlementaire(
+      prisma,
+      senatInput(ctxSenatCourant(2020, '2020-10-01T00:00:00Z'), { groupeId: 'g-actuel' }),
+    );
+    expect(created).toBe(true);
+    expect(rows).toHaveLength(2);
+
+    const clos = rows.find((r) => r.id === 'clos')!;
+    expect(clos.dateFin?.toISOString()).toBe('2024-08-16T00:00:00.000Z'); // close intacte
+    expect(clos.groupeId).toBe('g-epoque');
+
+    const ouvert = rows.find((r) => r.id !== 'clos')!;
+    expect(ouvert.dateFin).toBeNull();
+    expect(ouvert.dateDebut.toISOString()).toBe('2024-08-17T00:00:00.000Z'); // lendemain de la fin close
+    expect(ouvert.groupeId).toBe('g-actuel');
+  });
+
+  it('mandat ouvert existant : rafraîchit groupe/mandature SANS écraser dateDebut/dateFin', async () => {
+    // dateDebut raffinée par ODSEN (remplaçant entré en cours de mandature).
+    const { prisma, rows } = makeMockPrisma([
+      {
+        id: 'ouvert',
+        mandature: 2020,
+        dateDebut: new Date('2020-11-05T00:00:00Z'),
+        dateFin: null,
+        groupeId: 'g-old',
+      },
+    ]);
+    const { created } = await upsertMandatParlementaire(
+      prisma,
+      senatInput(ctxSenatCourant(2020, '2020-10-01T00:00:00Z'), { groupeId: 'g-new' }),
+    );
+    expect(created).toBe(false);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.dateDebut.toISOString()).toBe('2020-11-05T00:00:00.000Z'); // inchangée
+    expect(rows[0]!.dateFin).toBeNull();
+    expect(rows[0]!.groupeId).toBe('g-new');
+  });
+
+  it('renouvellement : clôt l’ancien mandat à sa fin de droit et ouvre le nouveau', async () => {
+    const { prisma, rows } = makeMockPrisma([
+      {
+        id: 'ouvert-2020',
+        mandature: 2020,
+        dateDebut: new Date('2020-10-01T00:00:00Z'),
+        dateFin: null,
+      },
+    ]);
+    const { created } = await upsertMandatParlementaire(
+      prisma,
+      senatInput(ctxSenatCourant(2026, '2026-10-01T00:00:00Z')),
+    );
+    expect(created).toBe(true);
+    expect(rows).toHaveLength(2);
+
+    const ancien = rows.find((r) => r.id === 'ouvert-2020')!;
+    expect(ancien.dateFin?.toISOString()).toBe('2026-09-30T00:00:00.000Z'); // fin de droit 2020
+
+    const nouveau = rows.find((r) => r.id !== 'ouvert-2020')!;
+    expect(nouveau.mandature).toBe(2026);
+    expect(nouveau.dateFin).toBeNull();
+    expect(nouveau.dateDebut.toISOString()).toBe('2026-10-01T00:00:00.000Z');
+  });
+});
+
+describe('upsertMandatParlementaire — Sénat chemin ODSEN (mandat clos, dateFin non null)', () => {
+  it('ne matche JAMAIS une ligne ouverte : crée une nouvelle ligne close', async () => {
+    const { prisma, rows } = makeMockPrisma([
+      { id: 'ouvert', mandature: 2020, dateDebut: new Date('2020-10-01T00:00:00Z'), dateFin: null },
+    ]);
+    const { created } = await upsertMandatParlementaire(
+      prisma,
+      senatInput(ctxSenatClos(2020, '2020-10-01T00:00:00Z', '2026-09-30T00:00:00Z')),
+    );
+    expect(created).toBe(true);
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r) => r.id === 'ouvert')!.dateFin).toBeNull(); // ligne ouverte intacte
+  });
+
+  it('matche une ligne close par sa date de début et met à jour son contexte', async () => {
+    const { prisma, rows } = makeMockPrisma([
+      {
+        id: 'clos',
+        mandature: 2017,
+        dateDebut: new Date('2017-10-01T00:00:00Z'),
+        dateFin: new Date('2023-09-30T00:00:00Z'),
+        groupeId: 'g1',
+      },
+    ]);
+    const ctx = ctxSenatClos(2017, '2017-10-01T00:00:00Z', '2023-09-30T00:00:00Z');
+    const { created } = await upsertMandatParlementaire(
+      prisma,
+      senatInput(ctx, { groupeId: 'g2' }),
+    );
+    expect(created).toBe(false);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.groupeId).toBe('g2');
   });
 });

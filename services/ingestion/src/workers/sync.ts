@@ -20,10 +20,12 @@ import { logger } from '../utils/logger';
 import { extractCommissionSaisines } from '../utils/dossier-commissions';
 import {
   LEGISLATURE_AN_COURANTE,
+  LEGISLATURE_FIN,
   MandatContext,
   deriveMandatContextAN,
   deriveMandatContextSenat,
   isLegislatureCourante,
+  mandatContextANDepuisSource,
   senatMandatFinTheorique,
   upsertMandatParlementaire,
 } from './mandats';
@@ -636,20 +638,71 @@ export async function syncDeputes(
     if (result.mandatCreated) mandatsCreated++;
   }
 
-  // Backfill commission mandats : uniquement pour la législature courante.
-  // Les commissions en base sont celles du mandat courant ; les rejouer pour une
-  // législature historique produirait des mandats de commission incohérents.
+  // Sortants + backfill commissions : uniquement pour la législature courante.
+  // Rejouer ces passes pour une législature historique désactiverait à tort des
+  // personnes du mandat courant / produirait des mandats de commission incohérents.
+  let sortants = 0;
   if (isCurrent) {
+    // AMO10 ne liste QUE les députés en exercice : un partant (ministre, démission,
+    // décès) disparaît de la source sans passer `actif=false` → passe sortants.
+    sortants = await cloturerDeputesSortants(parlementaires.map((p) => p.uid));
+
     logger.info('Backfilling commission mandats for existing deputes...');
     const backfilled = await backfillCommissionMandats(organeRefToCommissionId);
     logger.info({ backfilled }, 'Commission mandats backfill completed');
   }
 
   logger.info(
-    { created, updated, mandatsCreated, legislature: ctxLegislature, total: parlementaires.length },
+    { created, updated, mandatsCreated, sortants, legislature: ctxLegislature, total: parlementaires.length },
     'Parlementaires AN sync completed',
   );
   return { created, updated };
+}
+
+/** Effectif plancher attendu de l'Assemblée (577 sièges). En dessous, on considère le
+ *  fetch source comme dégradé et on REFUSE de désactiver qui que ce soit. */
+const AN_EFFECTIF_MIN = 550;
+
+/**
+ * Sortants AN : députés actifs en base absents de la source (nommés au gouvernement,
+ * démissions, décès en cours de législature). Symétrique de `cloturerSenateursSortants` :
+ * on ne supprime JAMAIS, on désactive la personne et on clôt son mandat AN ouvert. Sans
+ * cette passe, les partants restent `actif=true` et polluent les classements publics.
+ */
+async function cloturerDeputesSortants(sourceUids: string[]): Promise<number> {
+  // Garde-fou : un fetch partiel/dégradé ne doit pas désactiver l'Assemblée en masse.
+  if (sourceUids.length < AN_EFFECTIF_MIN) {
+    logger.warn(
+      { recus: sourceUids.length, minimum: AN_EFFECTIF_MIN },
+      'Effectif AN source anormalement bas — passe sortants ANNULÉE',
+    );
+    return 0;
+  }
+
+  const sortants = await prisma.parlementaire.findMany({
+    where: { chambre: 'assemblee', actif: true, sourceId: { notIn: sourceUids } },
+    select: { id: true },
+  });
+  if (sortants.length === 0) return 0;
+
+  const ids = sortants.map((p) => p.id);
+  const now = new Date();
+  // Départ en cours de législature → date d'observation. Cas théorique où le run passe
+  // après la fin de la législature courante → on borne à cette fin.
+  const finLegislature = LEGISLATURE_FIN[LEGISLATURE_AN_COURANTE];
+  const dateFin = finLegislature && now >= finLegislature ? finLegislature : now;
+
+  await prisma.parlementaire.updateMany({ where: { id: { in: ids } }, data: { actif: false } });
+  const clos = await prisma.mandatParlementaire.updateMany({
+    where: { personneId: { in: ids }, chambre: 'assemblee', dateFin: null },
+    data: { dateFin },
+  });
+
+  logger.info(
+    { sortants: ids.length, mandatsClos: clos.count },
+    'Députés sortants désactivés et mandats clos',
+  );
+  return ids.length;
 }
 
 // =============================================================================
@@ -772,11 +825,14 @@ async function syncSingleParlementaireAN(
     person = 'created';
   }
 
-  // Mandat de la période ingérée (groupe/circo de CETTE législature).
+  // Mandat de la période ingérée (groupe/circo de CETTE législature), daté par les
+  // VRAIES bornes du mandat source quand elles sont disponibles : un député parti en
+  // cours de législature ne doit pas être noté « présent sur toute la législature ».
+  const mandatCtx = mandatContextANDepuisSource(ctx, p.mandatDateDebut, p.mandatDateFin);
   const { created: mandatCreated } = await upsertMandatParlementaire(prisma, {
     personneId,
     chambre: p.chambre,
-    ctx,
+    ctx: mandatCtx,
     groupeId: groupeId ?? null,
     circonscriptionId: circonscriptionId ?? null,
     commissionPermanente: null,
