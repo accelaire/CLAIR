@@ -20,6 +20,37 @@ export interface StatsCalculationResult {
 }
 
 /**
+ * Réconcilie `parlementaires.actif` avec la réalité des mandats :
+ *   actif ⇔ il existe un mandat EN COURS (date_fin NULL).
+ *
+ * Les upserts d'ingestion posent `actif=true` à la création mais ne le rabaissent
+ * pas quand un mandat se clôt en cours de route. Cas typique côté Sénat : un
+ * sénateur devenu ministre cède son siège à son suppléant (une `date_fin` est
+ * posée sur son mandat) mais restait `actif=true`. Côté AN le souci ne se voit pas :
+ * les mandats se clôturent proprement en fin de législature.
+ *
+ * Idempotent, et ne touche QUE les lignes réellement incohérentes (le `WHERE`
+ * compare `actif` au prédicat). Prépare la Phase 5 (où `actif` devient dérivé).
+ */
+export async function reconcileActifFromMandats(): Promise<{ corrected: number }> {
+  const corrected = await prisma.$executeRaw`
+    UPDATE parlementaires p
+    SET actif = EXISTS (
+      SELECT 1 FROM mandats_parlementaires m
+      WHERE m.personne_id = p.id AND m.date_fin IS NULL
+    )
+    WHERE p.actif <> EXISTS (
+      SELECT 1 FROM mandats_parlementaires m
+      WHERE m.personne_id = p.id AND m.date_fin IS NULL
+    )
+  `;
+  if (corrected > 0) {
+    logger.info({ corrected }, 'Reconciled parlementaires.actif from current mandates');
+  }
+  return { corrected };
+}
+
+/**
  * Calcule et stocke les stats pour tous les parlementaires d'une chambre
  * VERSION OPTIMISÉE: Une seule requête SQL pour calculer toutes les stats
  */

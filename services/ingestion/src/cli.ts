@@ -41,6 +41,7 @@ import {
   syncSenatAgenda,
 } from './workers/sync.js';
 import {
+  reconcileActifFromMandats,
   calculateAllStats,
   calculateAllGroupeStats,
   calculateAllGroupeAlliances,
@@ -482,6 +483,23 @@ program
       process.exit(0);
     } catch (error: any) {
       logger.error({ error: error.message }, 'Status check failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: reconcile-actif
+// =============================================================================
+program
+  .command('reconcile-actif')
+  .description("Réaligner parlementaires.actif sur « a un mandat en cours » (date_fin NULL)")
+  .action(async () => {
+    try {
+      const { corrected } = await reconcileActifFromMandats();
+      console.log(`✅ ${corrected} parlementaire(s) réaligné(s) (actif ⇔ mandat en cours)`);
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'reconcile-actif failed');
       process.exit(1);
     }
   });

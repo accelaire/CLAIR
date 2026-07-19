@@ -2948,11 +2948,19 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     logger.info('Recalculating parlementaire stats after sync...');
     try {
       const {
+        reconcileActifFromMandats,
         calculateAllStats,
         calculateAllGroupeStats,
         calculateAllGroupeAlliances,
         calculateAllGroupeThematiques,
       } = await import('./stats-calculator.js');
+
+      // Réconcilier `actif` AVANT les stats : les classements et les stats de groupe
+      // se fondent sur `actif`, qui doit refléter « a un mandat en cours » (un élu
+      // dont le mandat s'est clos en cours de route — sénateur devenu ministre — ne
+      // doit plus compter comme siégeant).
+      const actifResult = await reconcileActifFromMandats();
+      logger.info({ corrected: actifResult.corrected }, 'Actif reconciliation completed');
 
       // Stats des parlementaires
       const statsResult = await calculateAllStats();
