@@ -140,11 +140,29 @@ export const groupesRoutes: FastifyPluginAsync = async (fastify) => {
           },
         },
       },
+      querystring: {
+        type: 'object',
+        properties: {
+          legislature: {
+            type: 'integer',
+            description:
+              "Législature AN du groupe (15, 16, 17). Défaut : la plus récente. Un même sigle " +
+              'désigne un groupe différent selon la législature ; sans ce paramètre, les stats ' +
+              "renvoyées seraient toujours celles de la législature la plus récente, même en " +
+              'vue historique (Sénat : ignoré, pas de législature).',
+          },
+        },
+      },
     },
     handler: async (request, _reply) => {
       const { chambre, slug } = request.params as { chambre: Chambre; slug: string };
+      const { legislature } = request.query as { legislature?: string };
 
-      const stats = await service.getGroupeStats(chambre, slug);
+      const stats = await service.getGroupeStats(
+        chambre,
+        slug,
+        legislature !== undefined ? Number(legislature) : undefined,
+      );
 
       if (!stats) {
         throw new ApiError(404, 'Groupe non trouvé');
@@ -182,14 +200,37 @@ export const groupesRoutes: FastifyPluginAsync = async (fastify) => {
             type: 'boolean',
             description: 'Filtrer uniquement les scrutins initiés par ce groupe',
           },
+          legislature: {
+            type: 'integer',
+            description:
+              "Législature AN du groupe (15, 16, 17). Défaut : la plus récente. Sans ce " +
+              "paramètre, une page groupe en vue historique (ex. RN 16e) afficherait les " +
+              'votes du groupe de la législature courante (17e) au lieu de ceux de la période demandée.',
+          },
+          session: {
+            type: 'string',
+            description:
+              "Sénat uniquement (année de début, ex. \"2020\"). Défaut : la session courante. " +
+              "Si une session passée est demandée, les scrutins et votes agrégés sont bornés à " +
+              "l'intervalle de cette session ; sinon (absente ou courante), l'agrégat porte sur " +
+              "tout l'historique du groupe, comme avant.",
+          },
         },
       },
     },
     handler: async (request, _reply) => {
       const { chambre, slug } = request.params as { chambre: Chambre; slug: string };
-      const { groupeInitie } = request.query as { groupeInitie?: boolean };
+      const { groupeInitie, legislature, session } = request.query as {
+        groupeInitie?: boolean;
+        legislature?: string;
+        session?: string;
+      };
 
-      const votingStats = await service.getGroupeVotingStats(chambre, slug, { groupeInitie });
+      const votingStats = await service.getGroupeVotingStats(chambre, slug, {
+        groupeInitie,
+        legislature: legislature !== undefined ? Number(legislature) : undefined,
+        session,
+      });
 
       if (!votingStats) {
         throw new ApiError(404, 'Groupe non trouvé');
@@ -220,11 +261,29 @@ export const groupesRoutes: FastifyPluginAsync = async (fastify) => {
           },
         },
       },
+      querystring: {
+        type: 'object',
+        properties: {
+          legislature: {
+            type: 'integer',
+            description:
+              "Législature AN du groupe (15, 16, 17). Défaut : la plus récente. Les alliances " +
+              'sont pré-calculées PAR législature en base ; sans ce paramètre, une vue historique ' +
+              'AN afficherait les alliances de la législature courante. Sénat : ignoré — les ' +
+              'alliances ne portent que sur la session courante (pas de recalcul à la volée).',
+          },
+        },
+      },
     },
     handler: async (request, _reply) => {
       const { chambre, slug } = request.params as { chambre: Chambre; slug: string };
+      const { legislature } = request.query as { legislature?: string };
 
-      const alliances = await service.getGroupeAlliances(chambre, slug);
+      const alliances = await service.getGroupeAlliances(
+        chambre,
+        slug,
+        legislature !== undefined ? Number(legislature) : undefined,
+      );
 
       if (!alliances) {
         throw new ApiError(404, 'Groupe non trouvé');
@@ -262,14 +321,28 @@ export const groupesRoutes: FastifyPluginAsync = async (fastify) => {
             type: 'boolean',
             description: 'Filtrer uniquement les scrutins initiés par ce groupe',
           },
+          legislature: {
+            type: 'integer',
+            description:
+              "Législature AN du groupe (15, 16, 17). Défaut : la plus récente. Les stats " +
+              'thématiques sont pré-calculées PAR ligne de groupe (donc par législature) ; sans ' +
+              'ce paramètre, une vue historique AN afficherait les thématiques du groupe de la ' +
+              'législature courante. Sénat : ignoré — même limitation que pour les alliances.',
+          },
         },
       },
     },
     handler: async (request, _reply) => {
       const { chambre, slug } = request.params as { chambre: Chambre; slug: string };
-      const { groupeInitie } = request.query as { groupeInitie?: boolean };
+      const { groupeInitie, legislature } = request.query as {
+        groupeInitie?: boolean;
+        legislature?: string;
+      };
 
-      const thematiques = await service.getGroupeThematiques(chambre, slug, { groupeInitie });
+      const thematiques = await service.getGroupeThematiques(chambre, slug, {
+        groupeInitie,
+        legislature: legislature !== undefined ? Number(legislature) : undefined,
+      });
 
       if (!thematiques) {
         throw new ApiError(404, 'Groupe non trouvé');

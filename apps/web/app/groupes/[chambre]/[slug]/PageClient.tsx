@@ -416,26 +416,30 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
     initialData,
   });
 
-  // Fetch voting stats (avec filtre groupeInitie)
+  // Fetch voting stats (avec filtre groupeInitie). legislature/session propagées :
+  // sans elles, ce widget afficherait toujours les votes de la période la plus
+  // récente, même sur une page en vue historique (cf. getGroupeVotingStats).
   const { data: votingData, isLoading: votingLoading } = useQuery<{ data: VotingStats }>({
-    queryKey: ['groupe-votes', chambre, slug, groupeInitie],
+    queryKey: ['groupe-votes', chambre, slug, groupeInitie, legislature, session],
     queryFn: () => api.get(`/groupes/${chambre}/${slug}/votes`, {
-      params: groupeInitie ? { groupeInitie: true } : undefined,
+      params: { ...(groupeInitie ? { groupeInitie: true } : undefined), legislature, session },
     }).then((res) => res.data),
     enabled: !!chambre && !!slug,
   });
 
-  // Fetch alliances
+  // Fetch alliances. legislature propagée (AN uniquement, pré-calculée par
+  // législature) : le Sénat n'a pas de recalcul par session, la vue historique
+  // masque ce bloc côté rendu (cf. plus bas).
   const { data: alliancesData, isLoading: alliancesLoading } = useQuery<{ data: AlliancesData }>({
-    queryKey: ['groupe-alliances', chambre, slug],
-    queryFn: () => api.get(`/groupes/${chambre}/${slug}/alliances`).then((res) => res.data),
+    queryKey: ['groupe-alliances', chambre, slug, legislature],
+    queryFn: () => api.get(`/groupes/${chambre}/${slug}/alliances`, { params: { legislature } }).then((res) => res.data),
     enabled: !!chambre && !!slug,
   });
 
-  // Fetch thematiques
+  // Fetch thematiques. Même raison que les alliances.
   const { data: thematiquesData, isLoading: thematiquesLoading } = useQuery<{ data: ThematiquesData }>({
-    queryKey: ['groupe-thematiques', chambre, slug],
-    queryFn: () => api.get(`/groupes/${chambre}/${slug}/thematiques`).then((res) => res.data),
+    queryKey: ['groupe-thematiques', chambre, slug, legislature],
+    queryFn: () => api.get(`/groupes/${chambre}/${slug}/thematiques`, { params: { legislature } }).then((res) => res.data),
     enabled: !!chambre && !!slug,
   });
 
@@ -467,6 +471,13 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
       </div>
     );
   }
+
+  // Sénat, session PASSÉE : les alliances et thématiques ne sont pré-calculées que
+  // pour la session courante (pas de recalcul à la volée raisonnable), donc les
+  // blocs seraient trompeurs (données de la session courante affichées sous une
+  // page de session passée). On les masque et on l'explique. Les votes restent
+  // affichés : ils sont désormais bornés à la session par l'API.
+  const senatHistorique = groupe.session != null && !groupe.sessionCourante;
 
   return (
     <div className="container mx-auto px-4 py-8 overflow-x-hidden">
@@ -773,7 +784,11 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
           <h2 className="text-xl font-semibold">Alliances et oppositions</h2>
         </div>
 
-        {alliancesLoading ? (
+        {senatHistorique ? (
+          <p className="text-sm text-muted-foreground py-4">
+            Données disponibles uniquement pour la session en cours.
+          </p>
+        ) : alliancesLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
           </div>
@@ -828,7 +843,11 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
           <h2 className="text-xl font-semibold">Cohésion par thématique</h2>
         </div>
 
-        {thematiquesLoading ? (
+        {senatHistorique ? (
+          <p className="text-sm text-muted-foreground py-4">
+            Données disponibles uniquement pour la session en cours.
+          </p>
+        ) : thematiquesLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
           </div>

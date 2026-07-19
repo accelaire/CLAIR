@@ -475,8 +475,10 @@ export class GroupesService {
   // STATISTIQUES DES GROUPES
   // ===========================================================================
 
-  async getGroupeStats(chambre: Chambre, slug: string) {
-    const cacheKey = `groupe:stats:${chambre}:${slug}`;
+  async getGroupeStats(chambre: Chambre, slug: string, legislature?: number) {
+    // Cache par législature : sans ça, la page 16e et la page 17e du même sigle
+    // partageraient la même entrée et l'une écraserait l'autre.
+    const cacheKey = `groupe:stats:${chambre}:${slug}:${legislature ?? 'courante'}`;
 
     const cached = await this.redis.get(cacheKey);
     if (cached) {
@@ -485,8 +487,8 @@ export class GroupesService {
 
     const groupe = await this.prisma.groupePolitique.findFirst({
       // Multi-législatures : un même slug peut exister sur plusieurs législatures (AN).
-      // On résout la plus récente (= législature courante). Sénat : legislature null.
-      where: { slug, chambre },
+      // Sans `legislature`, on résout la plus récente. Sénat : legislature null.
+      where: { slug, chambre, ...(legislature !== undefined && { legislature }) },
       orderBy: { legislature: 'desc' },
       select: { id: true },
     });
@@ -541,9 +543,27 @@ export class GroupesService {
   // Optimisé avec une seule requête SQL pour éviter les O(n) queries
   // ===========================================================================
 
-  async getGroupeVotingStats(chambre: Chambre, slug: string, options?: { groupeInitie?: boolean }) {
+  async getGroupeVotingStats(
+    chambre: Chambre,
+    slug: string,
+    options?: { groupeInitie?: boolean; legislature?: number; session?: string }
+  ) {
     const groupeInitie = options?.groupeInitie ?? false;
-    const cacheKey = `groupe:voting-stats:${chambre}:${slug}${groupeInitie ? ':initie' : ''}`;
+    const legislature = options?.legislature;
+
+    // Sénat uniquement : si une session PASSÉE est demandée (différente de la
+    // courante, dérivée des données), on borne les requêtes de scrutins à
+    // l'intervalle de cette session. Sinon (AN, ou session absente/courante),
+    // comportement inchangé.
+    const sessionCouranteSenat = chambre === 'senat' ? await this.getSessionCouranteSenat() : null;
+    const sessionHistorique =
+      chambre === 'senat' && options?.session && options.session !== (sessionCouranteSenat ?? undefined)
+        ? options.session
+        : undefined;
+
+    // Cache par législature (AN) et par session historique (Sénat) : sans ça, la
+    // vue courante et une vue d'époque du même sigle partageraient l'entrée.
+    const cacheKey = `groupe:voting-stats:${chambre}:${slug}:${legislature ?? 'courante'}:${sessionHistorique ?? 'na'}${groupeInitie ? ':initie' : ''}`;
 
     const cached = await this.redis.get(cacheKey);
     if (cached) {
@@ -552,13 +572,22 @@ export class GroupesService {
 
     const groupe = await this.prisma.groupePolitique.findFirst({
       // Multi-législatures : un même slug peut exister sur plusieurs législatures (AN).
-      // On résout la plus récente (= législature courante). Sénat : legislature null.
-      where: { slug, chambre },
+      // Sans `legislature`, on résout la plus récente. Sénat : legislature null.
+      where: { slug, chambre, ...(legislature !== undefined && { legislature }) },
       orderBy: { legislature: 'desc' },
       select: { id: true, nom: true, nomComplet: true, statsCohesion: true },
     });
 
     if (!groupe) return null;
+
+    // Fragment de bornage temporel (Sénat, session passée uniquement) injecté dans
+    // les requêtes SQL brutes ci-dessous. Vide sinon (AN, ou session courante/absente).
+    const sessionSql = sessionHistorique
+      ? (() => {
+          const { debut, fin } = sessionBornes(sessionHistorique);
+          return Prisma.sql`AND s.date >= ${debut} AND s.date <= ${fin}`;
+        })()
+      : Prisma.empty;
 
     // Requête SQL optimisée: agrège tous les votes du groupe en UNE seule requête
     // Si groupeInitie=true, on filtre sur les scrutins où demandeur_texte contient le nom du groupe
@@ -582,6 +611,7 @@ export class GroupesService {
               s.demandeur_texte ILIKE ${'%' + groupe.nom + '%'}
               OR s.demandeur_texte ILIKE ${'%' + (groupe.nomComplet || groupe.nom) + '%'}
             )
+            ${sessionSql}
           GROUP BY v.position
         `
       : await this.prisma.$queryRaw<{ position: string; count: bigint }[]>`
@@ -598,6 +628,7 @@ export class GroupesService {
                    AND (m.date_fin IS NULL OR m.date_fin >= s.date))
                 )
           WHERE m.groupe_id = ${groupe.id}
+          ${sessionSql}
           GROUP BY v.position
         `;
 
@@ -665,6 +696,7 @@ export class GroupesService {
                 s.demandeur_texte ILIKE ${'%' + groupeNom + '%'}
                 OR s.demandeur_texte ILIKE ${'%' + groupeNomComplet + '%'}
               )
+              ${sessionSql}
             ORDER BY s.date DESC
             LIMIT 20
           ),
@@ -737,6 +769,7 @@ export class GroupesService {
                   )
             WHERE m.groupe_id = ${groupe.id}
               AND s.chambre = ${chambre}
+              ${sessionSql}
             ORDER BY s.date DESC
             LIMIT 20
           ),
@@ -838,8 +871,12 @@ export class GroupesService {
   // ALLIANCES ENTRE GROUPES (pré-calculées)
   // ===========================================================================
 
-  async getGroupeAlliances(chambre: Chambre, slug: string) {
-    const cacheKey = `groupe:alliances:${chambre}:${slug}`;
+  async getGroupeAlliances(chambre: Chambre, slug: string, legislature?: number) {
+    // Cache par législature : les alliances AN sont pré-calculées PAR législature en
+    // base, donc la 16e et la 17e doivent avoir des entrées distinctes. Sénat : pas
+    // de recalcul par session (données pré-calculées sur la session courante
+    // uniquement), le front masque ce bloc en vue historique.
+    const cacheKey = `groupe:alliances:${chambre}:${slug}:${legislature ?? 'courante'}`;
 
     const cached = await this.redis.get(cacheKey);
     if (cached) {
@@ -848,8 +885,8 @@ export class GroupesService {
 
     const groupe = await this.prisma.groupePolitique.findFirst({
       // Multi-législatures : un même slug peut exister sur plusieurs législatures (AN).
-      // On résout la plus récente (= législature courante). Sénat : legislature null.
-      where: { slug, chambre },
+      // Sans `legislature`, on résout la plus récente. Sénat : legislature null.
+      where: { slug, chambre, ...(legislature !== undefined && { legislature }) },
       orderBy: { legislature: 'desc' },
       select: { id: true, nom: true, couleur: true },
     });
@@ -923,9 +960,17 @@ export class GroupesService {
   // STATS PAR THÉMATIQUE (pré-calculées pour radar chart)
   // ===========================================================================
 
-  async getGroupeThematiques(chambre: Chambre, slug: string, options?: { groupeInitie?: boolean }) {
+  async getGroupeThematiques(
+    chambre: Chambre,
+    slug: string,
+    options?: { groupeInitie?: boolean; legislature?: number }
+  ) {
     const groupeInitie = options?.groupeInitie ?? false;
-    const cacheKey = `groupe:thematiques:${chambre}:${slug}${groupeInitie ? ':initie' : ''}`;
+    const legislature = options?.legislature;
+    // Cache par législature : les thématiques AN sont pré-calculées PAR ligne de
+    // groupe (donc par législature). Sénat : pas de paramètre session ici, cf.
+    // getGroupeAlliances — le front masque ce bloc en vue historique.
+    const cacheKey = `groupe:thematiques:${chambre}:${slug}:${legislature ?? 'courante'}${groupeInitie ? ':initie' : ''}`;
 
     const cached = await this.redis.get(cacheKey);
     if (cached) {
@@ -934,8 +979,8 @@ export class GroupesService {
 
     const groupe = await this.prisma.groupePolitique.findFirst({
       // Multi-législatures : un même slug peut exister sur plusieurs législatures (AN).
-      // On résout la plus récente (= législature courante). Sénat : legislature null.
-      where: { slug, chambre },
+      // Sans `legislature`, on résout la plus récente. Sénat : legislature null.
+      where: { slug, chambre, ...(legislature !== undefined && { legislature }) },
       orderBy: { legislature: 'desc' },
       select: { id: true, nom: true, nomComplet: true, couleur: true },
     });
