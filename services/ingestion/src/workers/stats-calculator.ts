@@ -130,8 +130,12 @@ export async function calculateAllStats(
         LEFT JOIN vote_stats vs ON vs.parlementaire_id = p.id
         LEFT JOIN intervention_stats ist ON ist.parlementaire_id = p.id
         LEFT JOIN amendement_stats ast ON ast.parlementaire_id = p.id
-        WHERE p.actif = true
-          AND p.chambre LIKE ${chambreFilter}
+        -- Carrière calculée pour TOUTE personne ayant au moins un mandat, anciens
+        -- inclus (actif=false) : leur fiche affiche toujours la carrière (règle produit).
+        -- Les classements restent bornés à actif=true en aval, donc les anciens n'y
+        -- entrent pas. Un multi-mandat (sénateur revenu) cumule bien tous ses mandats.
+        WHERE p.chambre LIKE ${chambreFilter}
+          AND EXISTS (SELECT 1 FROM mandats_parlementaires mm WHERE mm.personne_id = p.id)
       )
       -- Ces agrégats couvrent TOUS les mandats : ils alimentent donc les colonnes
       -- de CARRIERE. Les taux (presence, loyaute, participation) sont recopies
@@ -218,7 +222,6 @@ export async function calculateAllStats(
       END
       FROM parlementaire_loyalty pl
       WHERE parlementaires.id = pl.parlementaire_id
-        AND parlementaires.actif = true
         AND parlementaires.groupe_id IS NOT NULL
         AND parlementaires.chambre LIKE ${chambreFilter}
     `;
@@ -812,10 +815,24 @@ export async function calculateAllGroupeStats(
  * Calcule et stocke les stats pour un groupe politique
  * Utilise les stats pré-calculées des parlementaires pour éviter les requêtes lourdes
  */
+/** Début (1er oct.) de la session sénatoriale courante, par calcul de calendrier. */
+function debutSessionSenatCourante(now: Date = new Date()): Date {
+  const y = now.getUTCFullYear();
+  const anneeDebut = now.getUTCMonth() >= 9 ? y : y - 1; // mois >= 9 = octobre et après
+  return new Date(Date.UTC(anneeDebut, 9, 1));
+}
+
 async function calculateAndStoreGroupeStats(
   groupe: { id: string; slug: string; chambre: string }
 ) {
   const { id, chambre } = groupe;
+
+  // Sénat : une SEULE ligne par sigle (périodisation dans les intervalles de mandat).
+  // Les stats pré-calculées alimentent la vue COURANTE des pages groupe → on borne à
+  // la session courante (mandats en cours + scrutins depuis le 1er oct.). Sans ça, dès
+  // l'ingestion de l'historique, `ump` mélangerait les sénateurs 2017-2023 partis avec
+  // les actuels. L'AN, périodisée par ligne, n'a pas besoin de cette borne.
+  const sessionSenatDebut = chambre === 'senat' ? debutSessionSenatCourante() : undefined;
 
   // Agrégation sur les MANDATS rattachés au groupe, et non sur les membres
   // actuels : un groupe est propre à une législature (RE, LAREM et GDR-NUPES
@@ -826,6 +843,8 @@ async function calculateAndStoreGroupeStats(
     where: {
       groupeId: id,
       statsCalculatedAt: { not: null },
+      // Sénat courant = mandats en cours (les anciens sont hors composition actuelle).
+      ...(chambre === 'senat' && { dateFin: null }),
     },
     _count: { id: true },
     _avg: {
@@ -846,11 +865,9 @@ async function calculateAndStoreGroupeStats(
   const statsLoyauteMoyenne = Math.round(memberStats._avg.statsLoyaute || 0);
   const statsParticipation = memberStats._sum.statsParticipation || 0;
 
-  // Calculer la cohésion du groupe sur TOUS les scrutins
-  const statsCohesion = await calculateGroupeCohesion(id, chambre);
-
-  // Calculer l'agrégation des votes (pour le camembert)
-  const votesAggregation = await calculateGroupeVotesAggregation(id);
+  // Cohésion + agrégation des votes, bornées à la session courante pour le Sénat.
+  const statsCohesion = await calculateGroupeCohesion(id, chambre, sessionSenatDebut);
+  const votesAggregation = await calculateGroupeVotesAggregation(id, sessionSenatDebut);
 
   // Mettre à jour le groupe avec les stats pré-calculées
   await prisma.groupePolitique.update({
@@ -880,7 +897,13 @@ async function calculateAndStoreGroupeStats(
  * ce groupe n'existe que là), et rend la cohésion des groupes dissous calculable
  * — passer par `parlementaires.groupe_id` la laissait à 0.
  */
-async function calculateGroupeCohesion(groupeId: string, chambre: string): Promise<number> {
+async function calculateGroupeCohesion(
+  groupeId: string,
+  chambre: string,
+  sessionSenatDebut?: Date
+): Promise<number> {
+  // Sénat : borne à la session courante (les stats pré-calculées = vue courante).
+  const borneSession = sessionSenatDebut ?? new Date(0);
   const result = await prisma.$queryRaw<{ avg_cohesion: number | null }[]>`
     WITH groupe_votes AS (
       SELECT
@@ -900,6 +923,7 @@ async function calculateGroupeCohesion(groupeId: string, chambre: string): Promi
             )
       WHERE m.groupe_id = ${groupeId}
         AND s.chambre = ${chambre}
+        AND (s.chambre = 'assemblee' OR s.date >= ${borneSession})
         AND v.position != 'absent'
       GROUP BY v.scrutin_id, v.position
     ),
@@ -922,7 +946,10 @@ async function calculateGroupeCohesion(groupeId: string, chambre: string): Promi
 /**
  * Calcule l'agrégation des votes pour un groupe (pour le camembert)
  */
-async function calculateGroupeVotesAggregation(groupeId: string): Promise<{
+async function calculateGroupeVotesAggregation(
+  groupeId: string,
+  sessionSenatDebut?: Date
+): Promise<{
   pour: number;
   contre: number;
   abstention: number;
@@ -930,6 +957,8 @@ async function calculateGroupeVotesAggregation(groupeId: string): Promise<{
 }> {
   // Appartenance lue sur le mandat couvrant le scrutin (cf. calculateGroupeCohesion) :
   // les votes comptés sont ceux émis SOUS ce groupe, pas ceux de ses membres actuels.
+  // Sénat : borné à la session courante (vue courante des pages groupe).
+  const borneSession = sessionSenatDebut ?? new Date(0);
   const result = await prisma.$queryRaw<{ position: string; count: bigint }[]>`
     SELECT v.position, COUNT(*) as count
     FROM votes v
@@ -944,6 +973,7 @@ async function calculateGroupeVotesAggregation(groupeId: string): Promise<{
              AND (m.date_fin IS NULL OR m.date_fin >= s.date))
           )
     WHERE m.groupe_id = ${groupeId}
+      AND (s.chambre = 'assemblee' OR s.date >= ${borneSession})
     GROUP BY v.position
   `;
 
@@ -1008,7 +1038,10 @@ export async function calculateAllGroupeAlliances(
         const g2 = groupesInChambre[j]!;
 
         try {
-          await calculateAndStoreAlliance(g1.id, g2.id, g1.chambre);
+          // Sénat : borne à la session courante (alliances = vue courante), comme les
+          // autres stats de groupe. L'AN est déjà borné par la clé de période.
+          const borneSenat = g1.chambre === 'senat' ? debutSessionSenatCourante() : undefined;
+          await calculateAndStoreAlliance(g1.id, g2.id, g1.chambre, borneSenat);
           totalPairs++;
           processedInChambre++;
 
@@ -1051,13 +1084,20 @@ export async function calculateAllGroupeAlliances(
 /**
  * Calcule l'alliance entre deux groupes
  */
-async function calculateAndStoreAlliance(groupeId1: string, groupeId2: string, chambre: string): Promise<void> {
+async function calculateAndStoreAlliance(
+  groupeId1: string,
+  groupeId2: string,
+  chambre: string,
+  sessionSenatDebut?: Date
+): Promise<void> {
   // Requête SQL optimisée pour calculer le taux d'accord entre deux groupes
   // Compare la position majoritaire de chaque groupe sur chaque scrutin
   // Appartenance lue sur le mandat couvrant le scrutin (groupe d'époque) : cela
   // borne chaque groupe aux scrutins de SA période. Passer par
   // `parlementaires.groupe_id` attribuait à un groupe les votes que ses membres
   // actuels ont émis sous d'autres législatures, dans d'autres groupes.
+  // Sénat : borne supplémentaire à la session courante (vue courante des alliances).
+  const borneSession = sessionSenatDebut ?? new Date(0);
   const result = await prisma.$queryRaw<{ votes_communs: bigint; votes_totaux: bigint }[]>`
     WITH groupe1_positions AS (
       SELECT
@@ -1078,6 +1118,7 @@ async function calculateAndStoreAlliance(groupeId1: string, groupeId2: string, c
             )
       WHERE m.groupe_id = ${groupeId1}
         AND s.chambre = ${chambre}
+        AND (s.chambre = 'assemblee' OR s.date >= ${borneSession})
         AND v.position != 'absent'
       GROUP BY v.scrutin_id, v.position
     ),
@@ -1100,6 +1141,7 @@ async function calculateAndStoreAlliance(groupeId1: string, groupeId2: string, c
             )
       WHERE m.groupe_id = ${groupeId2}
         AND s.chambre = ${chambre}
+        AND (s.chambre = 'assemblee' OR s.date >= ${borneSession})
         AND v.position != 'absent'
       GROUP BY v.scrutin_id, v.position
     ),
