@@ -33,9 +33,6 @@ import { fuzzySearchCandidates, FuzzyCandidate } from '../../utils/fuzzy-search'
 // mandat et la fenêtre : rien n'est stocké sur la personne.
 // =============================================================================
 
-/** Sièges au Sénat. */
-const SENAT_SIEGES = 348;
-
 /** En deçà de cette couverture, on refuse d'exposer la session : la servir
  *  reviendrait à présenter une demi-chambre comme si c'était le Sénat de l'époque. */
 const SENAT_COUVERTURE_MIN = 330;
@@ -1152,7 +1149,9 @@ export class ParlementairesService {
         ).length;
 
         if (count >= SENAT_COUVERTURE_MIN) {
-          result.push({ session: w.label, count: Math.min(count, SENAT_SIEGES) });
+          // Non cappé : `count` est le nombre de mandats chevauchant la session,
+          // qui dépasse légitimement 348 dès qu'il y a eu démission + remplacement.
+          result.push({ session: w.label, count });
         }
       }
       result.reverse(); // la plus récente d'abord

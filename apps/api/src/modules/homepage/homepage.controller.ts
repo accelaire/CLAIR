@@ -17,6 +17,10 @@ const dossierChambre = (legislature: number) => legislature === 0 ? 'senat' : 'a
 interface HomepageStats {
   deputes: number;
   senateurs: number;
+  /** Toutes législatures/sessions confondues (mandats clos inclus) — met en avant
+   *  la profondeur d'archive derrière le compte des seuls élus en exercice. */
+  deputesTotal: number;
+  senateursTotal: number;
   scrutins: number;
   dossiers: number;
   lobbyistes: number;
@@ -48,6 +52,8 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
       const [
         deputesCount,
         senateursCount,
+        deputesTotalCount,
+        senateursTotalCount,
         scrutinsCount,
         lobbyistesCount,
         actionsCount,
@@ -57,6 +63,9 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
       ] = await Promise.all([
         fastify.prisma.parlementaire.count({ where: { chambre: 'assemblee', actif: true } }),
         fastify.prisma.parlementaire.count({ where: { chambre: 'senat', actif: true } }),
+        // Sans filtre `actif` : inclut les mandats clos (profondeur d'archive).
+        fastify.prisma.parlementaire.count({ where: { chambre: 'assemblee' } }),
+        fastify.prisma.parlementaire.count({ where: { chambre: 'senat' } }),
         fastify.prisma.scrutin.count(),
         fastify.prisma.lobbyiste.count(),
         fastify.prisma.actionLobby.count(),
@@ -206,6 +215,8 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
       const stats: HomepageStats = {
         deputes: deputesCount,
         senateurs: senateursCount,
+        deputesTotal: deputesTotalCount,
+        senateursTotal: senateursTotalCount,
         scrutins: scrutinsCount,
         dossiers: dossiersCount,
         lobbyistes: lobbyistesCount,

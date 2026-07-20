@@ -148,7 +148,12 @@ function SenateursPageContent() {
 
   // Flatten all pages data
   const senateurs = data?.pages.flatMap((page) => page.data) ?? [];
-  const total = Math.min(data?.pages[0]?.meta.total ?? 0, 348);
+  // Pas de cap : hors session courante l'API renvoie tous les mandats chevauchant
+  // la fenêtre (démissions et remplaçants compris), donc potentiellement > 348.
+  const total = data?.pages[0]?.meta.total ?? 0;
+  const estSessionCourante = selectedSession === sessionCourante;
+  // `sessions` est trié décroissant : l'entrée suivante est la précédente.
+  const sessionPrecedente = sessions[1]?.session ?? null;
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
@@ -181,12 +186,27 @@ function SenateursPageContent() {
         <div>
           <h1 className="text-3xl font-bold">Sénateurs</h1>
           <p className="mt-2 text-muted-foreground">
-            {total > 0 ? total.toLocaleString('fr-FR') : '—'} sénateurs sur 348 sièges
+            {estSessionCourante
+              ? `${total > 0 ? total.toLocaleString('fr-FR') : '—'} sénateurs sur 348 sièges`
+              : `${total > 0 ? total.toLocaleString('fr-FR') : '—'} sénateurs ont siégé`}
             {selectedSession && ` — Session ${selectedSession}`}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Source : <a href="https://data.senat.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.senat.fr</a>
             {' · '}<Link href="/comprendre/parlementaire" className="underline hover:text-foreground">Comprendre les stats</Link>
+            {/* CTA archives : saut direct vers la session précédente, sur la ligne
+                de liens secondaires (wrappe proprement sur mobile). */}
+            {estSessionCourante && sessionPrecedente && (
+              <>
+                {' · '}
+                <button
+                  onClick={() => setFilters({ session: sessionPrecedente, groupe: '' })}
+                  className="underline hover:text-foreground"
+                >
+                  Voir les archives
+                </button>
+              </>
+            )}
           </p>
         </div>
 

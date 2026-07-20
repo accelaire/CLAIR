@@ -7,13 +7,14 @@ import Image from 'next/image';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Search, Users, Vote, Building2, FileText, Loader2, X,
-  Landmark, BookOpen, Tag, ChevronRight,
+  Landmark, BookOpen, Tag, ChevronRight, History,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { scrutinHref } from '@/lib/scrutin-url';
 import { getDossierEtat } from '@/lib/dossiers';
 import { useDebouncedCallback } from 'use-debounce';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
+import { legislatureLabel } from '@/lib/periodes';
 
 // =============================================================================
 // Types
@@ -55,6 +56,16 @@ interface SearchResult {
   status?: string;
   dossierCount?: number;
   scrutinCount?: number;
+  // Parlementaires : mandat clos + contexte du dernier mandat (groupe d'époque).
+  ancien?: boolean;
+  sexe?: string | null;
+  dernierMandat?: {
+    chambre?: string;
+    legislature?: number | null;
+    mandature?: number | null;
+    dateDebut?: string;
+    dateFin?: string | null;
+  } | null;
 }
 
 interface SearchCounts {
@@ -71,7 +82,12 @@ interface SearchCounts {
 
 interface AllSearchResponse {
   sections: Record<string, SearchResult[]>;
-  meta: { query: string; counts: SearchCounts };
+  meta: {
+    query: string;
+    counts: SearchCounts;
+    inclureAnciens?: boolean;
+    anciensDisponibles?: number;
+  };
 }
 
 interface FilteredSearchResponse {
@@ -79,6 +95,8 @@ interface FilteredSearchResponse {
   meta: {
     query: string;
     counts: SearchCounts;
+    inclureAnciens?: boolean;
+    anciensDisponibles?: number;
     hasNext?: boolean;
     page?: number;
     total?: number;
@@ -161,6 +179,34 @@ function getResultLink(result: SearchResult): string {
   }
 }
 
+/**
+ * Libellé d'un mandat clos. L'AN se date par sa législature, le Sénat n'a pas de
+ * cohorte équivalente : on s'y rabat sur l'année de fin de mandat.
+ * Voir SPEC-MULTI-LEGISLATURES.md (ticket #13).
+ */
+function ancienLabel(result: SearchResult): string {
+  const senat = result.chambre === 'senat';
+  // Accord en genre : `sexe` est renseigné pour l'intégralité du corpus. Sans lui,
+  // on retombe sur une formule neutre plutôt que sur un masculin par défaut.
+  const titre =
+    result.sexe === 'F'
+      ? (senat ? 'Ancienne sénatrice' : 'Ancienne députée')
+      : result.sexe === 'M'
+        ? (senat ? 'Ancien sénateur' : 'Ancien député')
+        : 'Mandat clos';
+  const mandat = result.dernierMandat;
+  if (!mandat) return titre;
+
+  if (mandat.legislature != null) {
+    return `${titre} · ${legislatureLabel(mandat.legislature)}`;
+  }
+  if (mandat.dateFin) {
+    const annee = new Date(mandat.dateFin).getUTCFullYear();
+    if (Number.isFinite(annee)) return `${titre} · jusqu'en ${annee}`;
+  }
+  return titre;
+}
+
 function getDisplayType(result: SearchResult): string {
   if (result._type === 'depute' || result._type === 'senateur') {
     return result.chambre === 'senat' ? 'senateur' : 'depute';
@@ -203,7 +249,14 @@ function ResultCard({ result }: { result: SearchResult }) {
         <div className="flex-1 min-w-0">
           {isParlementaire && (
             <>
-              <h3 className="font-semibold">{result.nomComplet || `${result.prenom} ${result.nom}`}</h3>
+              <h3 className="font-semibold flex flex-wrap items-center gap-2">
+                {result.nomComplet || `${result.prenom} ${result.nom}`}
+                {result.ancien && (
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                    {ancienLabel(result)}
+                  </span>
+                )}
+              </h3>
               {result.groupe && (
                 <p className="text-sm text-muted-foreground flex items-center gap-1">
                   <span className="h-2 w-2 rounded-full" style={{ backgroundColor: result.groupeCouleur || '#888' }} />
@@ -271,7 +324,14 @@ function ResultCard({ result }: { result: SearchResult }) {
 
           {result._type === 'commission' && (
             <>
-              <h3 className="font-semibold line-clamp-2">{result.nomCourt || result.nom}</h3>
+              <h3 className="font-semibold line-clamp-2 flex flex-wrap items-center gap-2">
+                {result.nomCourt || result.nom}
+                {result.actif === false && (
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                    Dissoute
+                  </span>
+                )}
+              </h3>
               <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
                 <span>{result.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale'}</span>
                 {result.type && (<><span>&bull;</span><span className="capitalize">{result.type.replace(/_/g, ' ')}</span></>)}
@@ -311,35 +371,60 @@ export default function RecherchePage() {
   const [query, setQuery] = useState(initialQuery);
   const [debouncedQuery, setDebouncedQuery] = useState(initialQuery);
   const [filter, setFilter] = useState<FilterType>('all');
+  // Défaut : la recherche décrit le Parlement d'aujourd'hui. Les mandats clos
+  // s'ajoutent sur demande et l'état reste partageable via l'URL.
+  const [inclureAnciens, setInclureAnciens] = useState(
+    searchParams.get('anciens') === '1',
+  );
+
+  const buildUrl = (value: string, anciens: boolean) => {
+    const params = new URLSearchParams();
+    if (value) params.set('q', value);
+    if (anciens) params.set('anciens', '1');
+    const qs = params.toString();
+    return qs ? `/recherche?${qs}` : '/recherche';
+  };
 
   const debouncedSetQuery = useDebouncedCallback((value: string) => {
     setDebouncedQuery(value);
-    if (value) {
-      router.replace(`/recherche?q=${encodeURIComponent(value)}`, { scroll: false });
-    } else {
-      router.replace('/recherche', { scroll: false });
-    }
+    router.replace(buildUrl(value, inclureAnciens), { scroll: false });
   }, 300);
 
   useEffect(() => {
     debouncedSetQuery(query);
   }, [query, debouncedSetQuery]);
 
+  const toggleAnciens = (next: boolean) => {
+    setInclureAnciens(next);
+    router.replace(buildUrl(debouncedQuery, next), { scroll: false });
+  };
+
   const enabled = debouncedQuery.length >= 2;
 
   // ---- Query: type=all (sections preview) ----
   const allQuery = useQuery<AllSearchResponse>({
-    queryKey: ['search', debouncedQuery, 'all'],
-    queryFn: () => api.get('/search', { params: { q: debouncedQuery, type: 'all' } }).then(r => r.data),
+    queryKey: ['search', debouncedQuery, 'all', inclureAnciens],
+    queryFn: () =>
+      api
+        .get('/search', {
+          params: { q: debouncedQuery, type: 'all', inclureAnciens: String(inclureAnciens) },
+        })
+        .then(r => r.data),
     enabled: enabled && filter === 'all',
   });
 
   // ---- Query: specific filter (paginated) ----
   const filteredQuery = useInfiniteQuery<FilteredSearchResponse>({
-    queryKey: ['search-filtered', debouncedQuery, filter],
+    queryKey: ['search-filtered', debouncedQuery, filter, inclureAnciens],
     queryFn: ({ pageParam = 1 }) =>
       api.get('/search', {
-        params: { q: debouncedQuery, type: filter, limit: PAGE_SIZE, page: pageParam },
+        params: {
+          q: debouncedQuery,
+          type: filter,
+          limit: PAGE_SIZE,
+          page: pageParam,
+          inclureAnciens: String(inclureAnciens),
+        },
       }).then(r => r.data),
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? (lastPage.meta.page ?? 1) + 1 : undefined,
@@ -364,6 +449,11 @@ export default function RecherchePage() {
     allQuery.data?.meta.counts ?? filteredQuery.data?.pages[0]?.meta.counts;
 
   const filteredResults = filteredQuery.data?.pages.flatMap(p => p.data) ?? [];
+
+  const anciensDisponibles =
+    allQuery.data?.meta.anciensDisponibles ??
+    filteredQuery.data?.pages[0]?.meta.anciensDisponibles ??
+    0;
 
   const getChipCount = (value: FilterType): number | undefined => {
     if (!counts) return undefined;
@@ -406,6 +496,46 @@ export default function RecherchePage() {
           )}
         </div>
       </div>
+
+      {/* Anciens parlementaires — hors des chips de type, c'est un axe orthogonal */}
+      {enabled && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={inclureAnciens}
+            onClick={() => toggleAnciens(!inclureAnciens)}
+            className="group inline-flex items-center gap-2.5 text-sm"
+          >
+            <span
+              className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${
+                inclureAnciens ? 'bg-primary' : 'bg-muted-foreground/30 group-hover:bg-muted-foreground/40'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                  inclureAnciens ? 'translate-x-4' : 'translate-x-0.5'
+                }`}
+              />
+            </span>
+            <span className="flex items-center gap-1.5">
+              <History className="h-3.5 w-3.5 text-muted-foreground" />
+              Inclure les anciens parlementaires et commissions
+            </span>
+          </button>
+          {!inclureAnciens && anciensDisponibles > 0 && (
+            <button
+              onClick={() => toggleAnciens(true)}
+              className="text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              {anciensDisponibles.toLocaleString('fr-FR')} résultat
+              {anciensDisponibles > 1 ? 's' : ''} archivé
+              {anciensDisponibles > 1 ? 's' : ''} correspond
+              {anciensDisponibles > 1 ? 'ent' : ''} aussi
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2">

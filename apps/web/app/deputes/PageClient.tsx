@@ -162,7 +162,13 @@ function DeputesPageContent() {
 
   // Flatten all pages data
   const deputes = data?.pages.flatMap((page) => page.data) ?? [];
-  const total = Math.min(data?.pages[0]?.meta.total ?? 0, 577);
+  // Pas de cap : sur une législature close l'API renvoie TOUS les titulaires d'un
+  // mandat (sortants et remplaçants compris), soit plus que le nombre de sièges.
+  // Capper afficherait « 577 sur 577 » là où 618 personnes ont siégé.
+  const total = data?.pages[0]?.meta.total ?? 0;
+  const estLegislatureCourante = selectedLegislature === legislatureCourante;
+  // `legislatures` est trié décroissant : l'entrée suivante est la précédente.
+  const legislaturePrecedente = legislatures[1]?.legislature ?? null;
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
@@ -196,12 +202,35 @@ function DeputesPageContent() {
         <div>
           <h1 className="text-3xl font-bold">Députés</h1>
           <p className="mt-2 text-muted-foreground">
-            {total > 0 ? total.toLocaleString('fr-FR') : '—'} députés sur 577 sièges — {legislatureLabel(selectedLegislature)}
+            {estLegislatureCourante ? (
+              <>
+                {total > 0 ? total.toLocaleString('fr-FR') : '—'} députés sur 577 sièges — {legislatureLabel(selectedLegislature)}
+              </>
+            ) : (
+              <>
+                {total > 0 ? total.toLocaleString('fr-FR') : '—'} députés ont siégé — {legislatureLabel(selectedLegislature)}
+              </>
+            )}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Source : <a href="https://data.assemblee-nationale.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.assemblee-nationale.fr</a>
             {' · '}<Link href="/comprendre/parlementaire" className="underline hover:text-foreground">Comprendre les stats</Link>
             {' · '}<Link href="/guide/decouvrir-mon-depute" className="underline hover:text-foreground">Guide</Link>
+            {/* CTA archives : saut direct vers la législature précédente. Placé sur
+                la ligne de liens secondaires (qui wrappe proprement sur mobile) et
+                sans numéro de législature, deux chiffres romains côte à côte étant
+                illisibles. */}
+            {estLegislatureCourante && legislaturePrecedente != null && (
+              <>
+                {' · '}
+                <button
+                  onClick={() => setFilters({ legislature: String(legislaturePrecedente), groupe: '' })}
+                  className="underline hover:text-foreground"
+                >
+                  Voir les archives
+                </button>
+              </>
+            )}
           </p>
         </div>
 
