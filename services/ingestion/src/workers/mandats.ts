@@ -14,10 +14,6 @@
 
 import type { PrismaClient, Prisma } from '@prisma/client';
 
-/** Législature AN « courante » : celle dont l'ingestion alimente la table
- *  `parlementaires` (groupe/circo/actif affichés). Les autres sont historiques. */
-export const LEGISLATURE_AN_COURANTE = 17;
-
 /** Début de législature (1re séance). Sert de `dateDebut` aux mandats AN. */
 export const LEGISLATURE_DEBUT: Record<number, Date> = {
   15: new Date('2017-06-21'),
@@ -32,6 +28,36 @@ export const LEGISLATURE_FIN: Record<number, Date | null> = {
   16: new Date('2024-06-09'),
   17: null,
 };
+
+/**
+ * Législature AN courante : DÉRIVÉE du calendrier ci-dessus, jamais figée — même
+ * principe que la mandature Sénat plus bas. C'est celle qui a commencé et n'est
+ * pas close.
+ *
+ * Conséquence : à la prochaine législature, la SEULE chose à faire est d'ajouter
+ * son début dans `LEGISLATURE_DEBUT` et de dater la fin de la précédente dans
+ * `LEGISLATURE_FIN` — ce qu'il faut faire de toute façon pour borner les mandats.
+ * Il n'y a plus de numéro à mettre à jour séparément (ni ici, ni en variable
+ * d'environnement), donc plus de dérive possible entre les deux.
+ *
+ * Entre une dissolution et la 1re séance suivante, aucune législature n'est
+ * ouverte : on retient alors la dernière ayant siégé.
+ */
+export function deriveLegislatureCourante(now: Date = new Date()): number {
+  const numeros = Object.keys(LEGISLATURE_DEBUT).map(Number);
+  const commencees = numeros.filter((n) => LEGISLATURE_DEBUT[n]! <= now);
+  if (commencees.length === 0) return Math.min(...numeros);
+
+  const ouvertes = commencees.filter((n) => {
+    const fin = LEGISLATURE_FIN[n];
+    return fin === null || fin === undefined || fin >= now;
+  });
+  return Math.max(...(ouvertes.length > 0 ? ouvertes : commencees));
+}
+
+/** Législature AN « courante » : celle dont l'ingestion alimente la table
+ *  `parlementaires` (groupe/circo/actif affichés). Les autres sont historiques. */
+export const LEGISLATURE_AN_COURANTE = deriveLegislatureCourante();
 
 // =============================================================================
 // Sénat — calendrier des renouvellements (cohorte « mandature »)

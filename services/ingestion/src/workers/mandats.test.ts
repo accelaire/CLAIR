@@ -17,6 +17,8 @@ import {
   senatMandatFinTheorique,
   senatMandatureDebut,
   isLegislatureCourante,
+  deriveLegislatureCourante,
+  LEGISLATURE_AN_COURANTE,
   upsertMandatParlementaire,
   type MandatContext,
 } from './mandats';
@@ -293,6 +295,32 @@ describe('AN — législatures (non-régression)', () => {
   it('identifie la législature courante', () => {
     expect(isLegislatureCourante(17)).toBe(true);
     expect(isLegislatureCourante(16)).toBe(false);
+  });
+});
+
+describe('deriveLegislatureCourante (dérivée du calendrier, jamais figée)', () => {
+  it('retient la législature ouverte au moment donné', () => {
+    expect(deriveLegislatureCourante(new Date('2018-01-01'))).toBe(15);
+    expect(deriveLegislatureCourante(new Date('2023-01-01'))).toBe(16);
+    expect(deriveLegislatureCourante(new Date('2026-07-21'))).toBe(17);
+  });
+
+  it('retient la dernière ayant siégé entre dissolution et 1re séance', () => {
+    // 16e dissoute le 2024-06-09, 17e ouverte le 2024-07-18 : aucune n'est ouverte.
+    expect(deriveLegislatureCourante(new Date('2024-06-20'))).toBe(16);
+  });
+
+  it('bascule au premier jour de la nouvelle législature', () => {
+    expect(deriveLegislatureCourante(new Date('2024-07-17'))).toBe(16);
+    expect(deriveLegislatureCourante(new Date('2024-07-18'))).toBe(17);
+  });
+
+  it('ignore une législature dont le début est encore à venir', () => {
+    expect(deriveLegislatureCourante(new Date('2017-01-01'))).toBe(15);
+  });
+
+  it('vaut la constante exportée (pas de dérive entre les deux)', () => {
+    expect(LEGISLATURE_AN_COURANTE).toBe(deriveLegislatureCourante());
   });
 });
 

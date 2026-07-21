@@ -5,6 +5,7 @@
 import axios from 'axios';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { logger } from './logger';
+import { LEGISLATURE_AN_COURANTE } from '../workers/mandats';
 
 const prisma = new PrismaClient();
 
@@ -31,7 +32,10 @@ export interface FreshnessCheckResult {
 // SOURCES CONFIGURATION
 // =============================================================================
 
-const LEGISLATURE = process.env.ASSEMBLEE_NATIONALE_LEGISLATURE || '17';
+// Dérivée du calendrier des législatures (`workers/mandats`), et NON d'une variable
+// d'environnement : les checks de fraîcheur doivent viser exactement la législature
+// que le sync ingère. Deux réglages séparés finissaient tôt ou tard par diverger.
+const LEGISLATURE = String(LEGISLATURE_AN_COURANTE);
 
 export const SOURCES: Record<string, SourceConfig> = {
   // ==========================================================================
