@@ -4,6 +4,7 @@
 // Contient ~10 800 organes ; après filtrage commissions/dérivés → ~2 990
 // =============================================================================
 
+import { LEGISLATURE_AN_COURANTE } from '../../workers/mandats';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -102,7 +103,7 @@ export class AssembleeNationaleOrganesClient {
   private legislature: number;
   private baseUrl: string;
 
-  constructor(legislature: number = 17) {
+  constructor(legislature: number = LEGISLATURE_AN_COURANTE) {
     this.legislature = legislature;
     this.baseUrl = 'https://data.assemblee-nationale.fr/static/openData/repository';
     logger.info({ legislature }, 'AssembleeNationaleOrganesClient initialized');

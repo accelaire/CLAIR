@@ -13,6 +13,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as readline from 'readline';
 import { logger } from '../../utils/logger';
+import { SENAT_SESSION_MIN } from '../../workers/mandats';
 import { cleanWindows1252Artifacts } from '../../utils/text-cleaning';
 
 const execAsync = promisify(exec);
@@ -218,7 +219,9 @@ export class DoslegClient {
     votes: TransformedDoslegVote[];
     amendementLinks: DoslegAmendementLink[];
   }> {
-    const sessionStart = options.sessionStart || 2020;
+    // Le dump est téléchargé en entier quoi qu'il arrive : ces bornes ne sont
+    // qu'un filtre de parsing, elles n'économisent aucun appel réseau.
+    const sessionStart = options.sessionStart || SENAT_SESSION_MIN;
     const sessionEnd = options.sessionEnd || new Date().getFullYear();
 
     let sqlPath: string;

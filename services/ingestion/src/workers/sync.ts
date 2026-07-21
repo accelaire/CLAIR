@@ -21,6 +21,9 @@ import { extractCommissionSaisines } from '../utils/dossier-commissions';
 import {
   LEGISLATURE_AN_COURANTE,
   LEGISLATURE_FIN,
+  SENAT_SESSION_MIN,
+  senatSessionQuotidienDepuis,
+  sessionSenatCourante,
   MandatContext,
   deriveMandatContextAN,
   deriveMandatContextSenat,
@@ -1417,8 +1420,8 @@ export async function syncScrutinsSenat(
     enrichDossiers?: boolean;
   } = {}
 ): Promise<{ scrutins: number; votes: number; dossiersLinked: number }> {
-  // Le client DOSLEG utilise maintenant les envvars SENAT_SESSION_START/END par défaut
-  // On peut override avec session/sessions si spécifié
+  // Le client DOSLEG couvre par défaut SENAT_SESSION_MIN → année courante.
+  // On peut restreindre à une/des sessions via options.session / options.sessions.
   logger.info({ limit: options.limit, enrichDossiers: options.enrichDossiers ?? true }, 'Starting scrutins Sénat sync (DOSLEG)...');
 
   const scrutinsClient = new SenatScrutinsClient();
@@ -2682,7 +2685,12 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
             break;
 
           case 'senat:senateurs_histo': {
-            const histoResult = await syncSenateursHistoriques();
+            // Idem : le quotidien ne couvre que la fenêtre récente (il y réconcilie
+            // et affine les mandats courants). Le rattrapage 2006+ est un one-shot
+            // via `sync-senateurs-histo --depuis`.
+            const histoResult = await syncSenateursHistoriques({
+              perimetreDebut: new Date(Date.UTC(senatSessionQuotidienDepuis(), 9, 1)),
+            });
             syncResult = {
               created: histoResult.personnesCreees + histoResult.mandatsCrees,
               updated: histoResult.personnesEnrichies + histoResult.mandatsMisAJour,
@@ -2704,7 +2712,17 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
           }
 
           case 'senat:scrutins': {
-            const senatScrutinsResult = await syncScrutinsSenat({ limit: options.scrutinsLimit });
+            // Fenêtre courte : l'historique (jusqu'à SENAT_SESSION_MIN) est un
+            // one-shot, il ne bouge plus et n'a pas à être réingéré chaque nuit.
+            const depuis = senatSessionQuotidienDepuis();
+            const sessions = Array.from(
+              { length: sessionSenatCourante() - depuis + 1 },
+              (_, i) => String(depuis + i),
+            );
+            const senatScrutinsResult = await syncScrutinsSenat({
+              limit: options.scrutinsLimit,
+              sessions,
+            });
             syncResult = { created: senatScrutinsResult.scrutins, updated: 0 };
             break;
           }
@@ -3301,7 +3319,7 @@ export async function syncAmendements(
 ): Promise<{ created: number; updated: number; linked: number }> {
   const { AssembleeNationaleClient } = await import('../sources/assemblee-nationale/client.js');
 
-  const legislature = options.legislature || 17;
+  const legislature = options.legislature || LEGISLATURE_AN_COURANTE;
   logger.info({ legislature, limit: options.limit }, 'Starting amendements AN sync...');
 
   const amendementClient = new AssembleeNationaleClient(legislature);
@@ -3998,8 +4016,9 @@ export async function syncDossiers(
 // SYNC DOSSIERS SÉNAT (via DOSLEG)
 // =============================================================================
 
-const SENAT_DOSSIERS_SESSION_START = parseInt(process.env.SENAT_SESSION_START || '2020', 10);
-const SENAT_DOSSIERS_SESSION_END = parseInt(process.env.SENAT_SESSION_END || String(new Date().getFullYear()), 10);
+// Même fenêtre que les scrutins Sénat : plancher partagé, plafond = année courante.
+const SENAT_DOSSIERS_SESSION_START = SENAT_SESSION_MIN;
+const SENAT_DOSSIERS_SESSION_END = new Date().getFullYear();
 
 export async function syncDossiersSenat(
   options: { limit?: number; linkScrutins?: boolean } = {}
@@ -5046,7 +5065,7 @@ export async function enrichScrutinsANAmendements(
         try {
           // Construire l'URL de la page du scrutin
           // Note: l'URL correcte utilise le numéro simple, pas l'UID complet
-          const legislature = scrutin.session || '17';
+          const legislature = scrutin.session || String(LEGISLATURE_AN_COURANTE);
           const url = `https://www.assemblee-nationale.fr/dyn/${legislature}/scrutins/${scrutin.numero}`;
 
           // Fetch la page HTML

@@ -2,6 +2,7 @@
 // Client Assemblée Nationale Open Data - Récupération des députés
 // =============================================================================
 
+import { LEGISLATURE_AN_COURANTE } from '../../workers/mandats';
 import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -169,7 +170,7 @@ export class AssembleeNationaleDeputesClient {
    *   « tous acteurs/mandats » (l'AMO10 figé d'une législature close ne contient
    *   plus d'acteurs) et accepte les mandats terminés (sinon 0 député parsé).
    */
-  constructor(legislature: number = 17, options: { historical?: boolean } = {}) {
+  constructor(legislature: number = LEGISLATURE_AN_COURANTE, options: { historical?: boolean } = {}) {
     this.legislature = legislature;
     this.historical = options.historical ?? false;
     this.baseUrl = 'https://data.assemblee-nationale.fr/static/openData/repository';

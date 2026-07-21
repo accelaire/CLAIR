@@ -16,6 +16,11 @@ import {
   mandatContextANDepuisSource,
   senatMandatFinTheorique,
   senatMandatureDebut,
+  renouvellementSenatAvant,
+  normaliseFinRenouvellementSenat,
+  sessionSenatCourante,
+  senatSessionQuotidienDepuis,
+  SENAT_SESSION_MIN,
   isLegislatureCourante,
   deriveLegislatureCourante,
   LEGISLATURE_AN_COURANTE,
@@ -142,6 +147,68 @@ describe('Sénat — calendrier des renouvellements', () => {
     // Mandat ouvert en 2020 → fin de droit le 30 sept. 2026 (veille du 1er oct. 2026).
     expect(senatMandatFinTheorique(2020).toISOString()).toBe('2026-09-30T00:00:00.000Z');
     expect(senatMandatFinTheorique(2023).toISOString()).toBe('2029-09-30T00:00:00.000Z');
+  });
+
+  // L'ère des TIERS (avant 2011) n'a pas de pas régulier : la réforme de 2003 a
+  // décalé le renouvellement de 2007 à 2008. Un modulo 3 fabriquerait des
+  // mandatures 2002/2005 inexistantes.
+  it('lit le calendrier réel des tiers avant 2011 (pas de modulo)', () => {
+    expect(renouvellementSenatAvant(new Date('2006-05-01'))).toBe(2004);
+    expect(renouvellementSenatAvant(new Date('2003-01-01'))).toBe(2001);
+    expect(renouvellementSenatAvant(new Date('2007-12-31'))).toBe(2004); // pas de renouvellement en 2007
+    expect(renouvellementSenatAvant(new Date('2008-10-02'))).toBe(2008);
+    expect(renouvellementSenatAvant(new Date('2010-06-01'))).toBe(2008);
+  });
+
+  it('ne fabrique jamais une mandature 2002 / 2005 / 2007', () => {
+    const inexistantes = [2002, 2005, 2007];
+    for (let annee = 2001; annee <= 2012; annee++) {
+      for (const mois of [0, 5, 9, 11]) {
+        const m = renouvellementSenatAvant(new Date(Date.UTC(annee, mois, 15)));
+        expect(inexistantes).not.toContain(m);
+      }
+    }
+  });
+
+  it('bascule des tiers aux moitiés au 1er octobre 2011', () => {
+    expect(renouvellementSenatAvant(new Date('2011-09-30'))).toBe(2008);
+    expect(renouvellementSenatAvant(new Date('2011-10-01'))).toBe(2011);
+  });
+
+  it('clôt les mandats de l\'ère des tiers sur le calendrier réel', () => {
+    // Faits : la série élue en 2001 est renouvelée en 2011, celle de 2004 en 2014,
+    // celle de 2008 en 2017. Un « +9 ans » mécanique se tromperait sur 2001 et 2004.
+    expect(senatMandatFinTheorique(2001).toISOString()).toBe('2011-09-30T00:00:00.000Z');
+    expect(senatMandatFinTheorique(2004).toISOString()).toBe('2014-09-30T00:00:00.000Z');
+    expect(senatMandatFinTheorique(2008).toISOString()).toBe('2017-09-30T00:00:00.000Z');
+  });
+
+  it('normalise une fin tombant sur un renouvellement de l\'ère des tiers', () => {
+    // 1er oct. 2008 = prise de fonction du successeur → ramené au 30 sept.
+    expect(normaliseFinRenouvellementSenat(new Date('2008-10-01')).toISOString())
+      .toBe('2008-09-30T00:00:00.000Z');
+    // 1er oct. 2007 n'est PAS un renouvellement : inchangé.
+    expect(normaliseFinRenouvellementSenat(new Date('2007-10-01')).toISOString())
+      .toBe('2007-10-01T00:00:00.000Z');
+  });
+});
+
+describe('fenêtre du sync quotidien vs plancher historique', () => {
+  it('situe la session courante sur la bascule du 1er octobre', () => {
+    expect(sessionSenatCourante(new Date('2026-09-30T00:00:00Z'))).toBe(2025);
+    expect(sessionSenatCourante(new Date('2026-10-01T00:00:00Z'))).toBe(2026);
+  });
+
+  it('borne le quotidien à la session courante + la précédente', () => {
+    expect(senatSessionQuotidienDepuis(new Date('2026-07-21T00:00:00Z'))).toBe(2024);
+    expect(senatSessionQuotidienDepuis(new Date('2026-11-01T00:00:00Z'))).toBe(2025);
+  });
+
+  it("ne fait JAMAIS descendre le quotidien jusqu'au plancher historique", () => {
+    // Le batch de 5h ne doit pas réingérer ~4 700 scrutins chaque nuit : seul le
+    // one-shot (`--depuis`, `--sessions`) descend jusqu'à SENAT_SESSION_MIN.
+    expect(senatSessionQuotidienDepuis(new Date('2026-07-21T00:00:00Z')))
+      .toBeGreaterThan(SENAT_SESSION_MIN);
   });
 });
 

@@ -7,6 +7,7 @@
 import axios from 'axios';
 import { logger } from '../../utils/logger';
 import { DoslegClient, TransformedDoslegScrutin, TransformedDoslegVote } from './dosleg-client';
+import { SENAT_SESSION_MIN } from '../../workers/mandats';
 
 // =============================================================================
 // TYPES - Structure des données Sénat Scrutins
@@ -50,8 +51,12 @@ export interface ScrutinSenatWithVotes {
 // CONFIG
 // =============================================================================
 
-const SENAT_SESSION_START = parseInt(process.env.SENAT_SESSION_START || '2020', 10);
-const SENAT_SESSION_END = parseInt(process.env.SENAT_SESSION_END || String(new Date().getFullYear()), 10);
+// Fenêtre de sessions : plancher = début de l'historique disponible (constante
+// partagée), plafond = année courante. Aucune variable d'environnement : deux
+// réglages séparés finissaient par diverger, et un plafond figé faisait rater
+// silencieusement les sessions suivantes.
+const SENAT_SESSION_START = SENAT_SESSION_MIN;
+const SENAT_SESSION_END = new Date().getFullYear();
 
 // =============================================================================
 // HELPERS

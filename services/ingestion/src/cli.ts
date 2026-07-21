@@ -49,6 +49,7 @@ import {
 } from './workers/stats-calculator.js';
 import { backfillMandatsParlementaires } from './workers/backfill-mandats.js';
 import { syncSenateursHistoriques } from './workers/senat-histo.js';
+import { SENAT_SESSION_MIN } from './workers/mandats.js';
 import { logger } from './utils/logger';
 
 const program = new Command();
@@ -87,6 +88,7 @@ program
   .option('--no-actions', 'Ne pas synchroniser les actions de lobbying (avec --lo)')
   .option('-l, --limit <number>', 'Limiter le nombre d\'éléments à synchroniser', parseInt)
   .option('--legislature <number>', 'Législature AN à ingérer (15,16,17 — défaut: courante). Avec -p --an ou -s --an', parseInt)
+  .option('--sessions <annees>', `Sessions Sénat à ingérer, séparées par des virgules (ex: 2006,2007). Défaut: ${SENAT_SESSION_MIN} → courante. Avec -s --se, permet un backfill par tranches (mémoire).`)
   .option('--dry-run', 'Mode simulation (affiche ce qui serait fait sans modifier)')
   // Opérations de liaison (combiner avec --in ou --am)
   .option('--link', 'Lier les scrutins aux interventions (--in) ou amendements (--am)')
@@ -95,6 +97,12 @@ program
   .action(async (options) => {
     try {
       logger.info({ options }, 'Starting sync command');
+
+      // Sessions Sénat explicites (backfill par tranches) ; sinon le client couvre
+      // SENAT_SESSION_MIN → année courante.
+      const sessionsSenat: string[] | undefined = options.sessions
+        ? String(options.sessions).split(',').map((s: string) => s.trim()).filter(Boolean)
+        : undefined;
 
       const chambre: 'an' | 'se' | null =
         options.assembleeNationale ? 'an' : options.senat ? 'se' : null;
@@ -183,12 +191,12 @@ program
         }
       } else if (options.scrutins) {
         if (chambre === 'se') {
-          await syncScrutinsSenat({ limit: options.limit });
+          await syncScrutinsSenat({ limit: options.limit, sessions: sessionsSenat });
         } else if (chambre === 'an') {
           await syncScrutins({ limit: options.limit, legislature: options.legislature });
         } else {
           await syncScrutins({ limit: options.limit, legislature: options.legislature });
-          await syncScrutinsSenat({ limit: options.limit });
+          await syncScrutinsSenat({ limit: options.limit, sessions: sessionsSenat });
         }
       } else if (options.interventions) {
         if (chambre === 'se') {
@@ -649,7 +657,11 @@ program
 program
   .command('sync-senateurs-histo')
   .description('Anciens sénateurs (open data ODSEN) : identités + mandats historiques clos + groupe d\'époque')
-  .option('--depuis <date>', 'Plancher du périmètre (YYYY-MM-DD, défaut 2020-10-01)')
+  .option(
+    '--depuis <date>',
+    `Plancher du périmètre (YYYY-MM-DD). Défaut: ouverture de la session ${SENAT_SESSION_MIN} ` +
+      `(historique complet). Le smart-sync quotidien, lui, se limite à la fenêtre récente.`,
+  )
   .action(async (options) => {
     try {
       const perimetreDebut = options.depuis ? new Date(`${options.depuis}T00:00:00Z`) : undefined;

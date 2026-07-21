@@ -85,16 +85,91 @@ const SENAT_ANCRE_RENOUVELLEMENT: Record<string, number> = { '1': 2023, '2': 202
 
 export const SENAT_DEBUT_FALLBACK = new Date('2020-10-01'); // plancher si série inconnue
 
+/**
+ * Première session couverte par l'historique Sénat. Plancher commun aux scrutins
+ * (le dump DOSLEG démarre à la session 2006-2007) et à l'annuaire ODSEN, qui
+ * couvre la chambre entière bien avant. Source unique : ne pas redéclarer ailleurs.
+ */
+export const SENAT_SESSION_MIN = 2006;
+
+/** Année de la session sénatoriale en cours (1er oct. → 30 sept.). */
+export function sessionSenatCourante(now: Date = new Date()): number {
+  const annee = now.getUTCFullYear();
+  return now.getUTCMonth() >= 9 ? annee : annee - 1; // mois 9 = octobre
+}
+
+/**
+ * Plancher du sync QUOTIDIEN : session en cours + la précédente (corrections
+ * tardives de la source).
+ *
+ * À ne pas confondre avec `SENAT_SESSION_MIN`, qui est le plancher de l'HISTORIQUE :
+ * rattraper 2006 → aujourd'hui est un one-shot (`sync-senateurs-histo --depuis`,
+ * `sync -s --senat --sessions`). Si le batch de 5h partait de 2006, il réingérerait
+ * ~4 700 scrutins et ~1,6 M de votes chaque nuit, pour un historique qui ne bouge
+ * plus — au risque de l'OOM.
+ */
+export function senatSessionQuotidienDepuis(now: Date = new Date()): number {
+  return sessionSenatCourante(now) - 1;
+}
+
+/**
+ * Renouvellements sénatoriaux ANTÉRIEURS au passage par moitiés (2011).
+ *
+ * Avant 2011 le Sénat se renouvelait par TIERS, et le calendrier n'est PAS régulier :
+ * la réforme de 2003 (mandat ramené de 9 à 6 ans) a décalé le renouvellement attendu
+ * en 2007 vers 2008. Un simple modulo 3 fabriquerait donc des mandatures 2002/2005
+ * qui n'ont jamais existé — d'où cette table explicite.
+ *
+ * Vérifié contre ODSEN_ELUSEN : les cohortes de début de mandat tombent bien sur
+ * 1998 (91 mandats), 2001 (99), 2004 (123), 2008 (117), puis 2011 (173) ; les autres
+ * années ne portent que des remplacements en cours de mandat.
+ */
+const SENAT_RENOUVELLEMENTS_PRE_2011: number[] = [
+  ...Array.from({ length: 16 }, (_, i) => 1959 + i * 3), // 1959 → 2004, tous les 3 ans
+  2008, // réforme de 2003 : renouvellement de 2007 décalé à 2008
+];
+
+/** Année de renouvellement sénatorial ? (tiers avant 2011, moitiés ensuite) */
+function estAnneeRenouvellementSenat(annee: number): boolean {
+  return annee >= 2011
+    ? (annee - 2011) % 3 === 0
+    : SENAT_RENOUVELLEMENTS_PRE_2011.includes(annee);
+}
+
+/** Renouvellement situé `crans` rangs après `annee` dans le calendrier complet
+ *  (tiers puis moitiés). Permet de naviguer sans supposer un pas régulier. */
+function renouvellementApres(annee: number, crans: number): number {
+  let courant = annee;
+  for (let i = 0; i < crans; i++) {
+    if (courant >= 2011) {
+      courant += 3;
+      continue;
+    }
+    const suivant = SENAT_RENOUVELLEMENTS_PRE_2011.find((a) => a > courant);
+    courant = suivant ?? 2011; // dernier tiers (2008) → première moitié (2011)
+  }
+  return courant;
+}
+
 /** Prise de fonction d'une mandature : 1er octobre de l'année du renouvellement. */
 export function senatMandatureDebut(mandature: number): Date {
   return new Date(Date.UTC(mandature, 9, 1)); // mois 9 = octobre
 }
 
-/** Fin de droit d'un mandat : veille du renouvellement suivant de la même série
- *  (30 septembre, 6 ans plus tard). Sert à clore un mandat sans le supprimer. */
+/**
+ * Fin de droit d'un mandat : veille du renouvellement suivant de la MÊME série.
+ *
+ * Ère des moitiés (2011+) : une série revient tous les 2 renouvellements, soit 6 ans.
+ * Ère des tiers : elle revient tous les 3 renouvellements — ce qui, via le calendrier
+ * réel, redonne exactement les faits (2001→2011, 2004→2014, 2008→2017), là où un
+ * « +9 ans » mécanique se tromperait à cause du décalage de 2008.
+ */
 export function senatMandatFinTheorique(mandature: number): Date {
-  const suivant = senatMandatureDebut(mandature + SENAT_MANDAT_DUREE_ANS);
-  return new Date(suivant.getTime() - 24 * 60 * 60 * 1000);
+  const suivant =
+    mandature >= 2011
+      ? mandature + SENAT_MANDAT_DUREE_ANS
+      : renouvellementApres(mandature, 3);
+  return new Date(senatMandatureDebut(suivant).getTime() - 24 * 60 * 60 * 1000);
 }
 
 /**
@@ -213,15 +288,19 @@ export function renouvellementSenatAvant(date: Date): number {
   const y = date.getUTCFullYear();
   let m = y - ((((y - 2011) % 3) + 3) % 3); // année ≡ 2011 (mod 3), ≤ y
   if (senatMandatureDebut(m) > date) m -= 3; // avant le 1er oct. → cycle précédent
-  return m;
+  if (m >= 2011) return m;
+
+  // Avant 2011 le pas de 3 ans ne tient plus (tiers + décalage de 2008) : on lit
+  // le calendrier réel au lieu de l'extrapoler.
+  const anterieurs = SENAT_RENOUVELLEMENTS_PRE_2011.filter((a) => senatMandatureDebut(a) <= date);
+  return anterieurs.length > 0 ? anterieurs[anterieurs.length - 1]! : SENAT_RENOUVELLEMENTS_PRE_2011[0]!;
 }
 
 /** Ramène une fin de mandat tombant pile sur un renouvellement (1er oct.) à la veille
  *  (30 sept.), pour lever le chevauchement d'un jour sortant/entrant. Sinon inchangée. */
 export function normaliseFinRenouvellementSenat(dateFin: Date): Date {
   const y = dateFin.getUTCFullYear();
-  const estRenouvellement = (y - 2011) % 3 === 0;
-  if (estRenouvellement && dateFin.getTime() === senatMandatureDebut(y).getTime()) {
+  if (estAnneeRenouvellementSenat(y) && dateFin.getTime() === senatMandatureDebut(y).getTime()) {
     return new Date(dateFin.getTime() - 24 * 60 * 60 * 1000);
   }
   return dateFin;

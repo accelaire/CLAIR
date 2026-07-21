@@ -165,6 +165,9 @@ function ScrutinsPageContent() {
           Sources : <a href="https://data.assemblee-nationale.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.assemblee-nationale.fr</a>, <a href="https://data.senat.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.senat.fr</a>
           {' · '}<Link href="/comprendre/scrutin" className="underline hover:text-foreground">Qu&apos;est-ce qu&apos;un scrutin ?</Link>
           {' · '}<Link href="/guide/decrypter-un-scrutin" className="underline hover:text-foreground">Guide</Link>
+          {/* Archives par année/mois : seule porte d'entrée vers /votes, qui n'avait
+              aucun lien interne entrant (page orpheline malgré le sitemap). */}
+          {' · '}<Link href="/votes" className="underline hover:text-foreground">Archives par année</Link>
         </p>
       </div>
 

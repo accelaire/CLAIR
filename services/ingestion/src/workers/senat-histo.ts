@@ -12,7 +12,7 @@
 //     soit déjà en base via le sync (série 2, 2020), soit en réalité clos et corrigé
 //     par `deriveMandatContextSenatOdsen`. On ne réécrit donc jamais un mandat courant.
 //
-// Périmètre par défaut : sessions 2020-2021 → présent (mandats chevauchant 2020-10-01).
+// Périmètre par défaut : première session couverte (`SENAT_SESSION_MIN`) → présent.
 // =============================================================================
 
 import { PrismaClient } from '@prisma/client';
@@ -26,13 +26,17 @@ import {
   deriveMandatContextSenatOdsen,
   inferSerieSenatDepuisDate,
   upsertMandatParlementaire,
+  SENAT_SESSION_MIN,
   type MandatContext,
 } from './mandats';
 
 const prisma = new PrismaClient();
 
-/** 1er octobre 2020 : ouverture de la session 2020-2021 (plancher du périmètre). */
-const PERIMETRE_DEBUT_DEFAUT = new Date(Date.UTC(2020, 9, 1));
+/** Ouverture de la première session couverte (1er octobre) : plancher du périmètre.
+ *  Aligné sur `SENAT_SESSION_MIN`, qui borne aussi l'ingestion des scrutins — les
+ *  deux doivent avancer ensemble, sinon on ingère des votes dont les sénateurs sont
+ *  absents de la base (votes orphelins). */
+const PERIMETRE_DEBUT_DEFAUT = new Date(Date.UTC(SENAT_SESSION_MIN, 9, 1));
 
 const MAX_DATE = new Date(8640000000000000);
 

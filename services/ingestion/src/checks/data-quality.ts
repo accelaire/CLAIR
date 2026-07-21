@@ -22,7 +22,9 @@ const SCRUTINS_PERIMETRE_LIE = `(s.chambre = 'senat' OR s.legislature = ${LEGISL
 // remonte pas si loin — donc les compter fausserait le taux de liaison. Borne PLANCHER
 // stable : contrairement à `LEGISLATURE_AN_COURANTE`, elle ne s'incrémente jamais (les
 // sessions futures 2025, 2026… sont toutes >= à ce plancher). Les dossiers, eux, se lient
-// sur tout l'historique (DOSLEG remonte à 2020) : leur taux n'a pas besoin de ce périmètre.
+// sur tout l'historique : scrutins ET dossiers Sénat sont ingérés sur la même fenêtre
+// (`SENAT_SESSION_MIN`, cf. workers/mandats), donc leur taux n'a pas besoin de ce
+// périmètre — à surveiller au premier run couvrant les sessions antérieures à 2020.
 const SENAT_SESSION_AMENDEMENTS_MIN = '2024';
 
 // =============================================================================
