@@ -679,65 +679,12 @@ export default function PageClient({ initialData }: { initialData?: DeputeDetail
         </div>
       )}
 
-      <FicheCompareCallout variant="parlementaire" chambre="assemblee" slug={depute.slug} />
-
-      {/* Fiche enrichie par IA */}
-      {depute.resumeIA && (
-        <div className="mb-8 space-y-4">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-amber-500" />
-            <h2 className="text-xl font-semibold">Fiche parlementaire</h2>
-            <span className="text-xs text-muted-foreground">
-              {depute.iaGeneratedAt && `Mise à jour le ${new Date(depute.iaGeneratedAt).toLocaleDateString('fr-FR')} - `}
-              <Link href="/methodologie#enrichissement-ia" className="inline-flex items-center gap-1 align-baseline hover:underline">
-                <Info className="h-3 w-3" />
-                Généré par IA
-              </Link>
-            </span>
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-2">
-            {/* Résumé */}
-            <div className="rounded-lg border bg-card p-5">
-              <h3 className="mb-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">En bref</h3>
-              <p className="text-sm leading-relaxed">{depute.resumeIA}</p>
-            </div>
-
-            {/* Parcours */}
-            {depute.parcoursIA && (
-              <div className="rounded-lg border bg-card p-5">
-                <h3 className="mb-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">Parcours</h3>
-                <p className="text-sm leading-relaxed">{depute.parcoursIA}</p>
-              </div>
-            )}
-
-            {/* Positions clés */}
-            {depute.positionsClesIA && (
-              <div className="rounded-lg border bg-card p-5">
-                <h3 className="mb-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">Positions clés</h3>
-                <p className="text-sm leading-relaxed">{depute.positionsClesIA}</p>
-              </div>
-            )}
-
-            {/* Faits notables */}
-            {depute.faitsNotablesIA && (
-              <div className="rounded-lg border bg-card p-5">
-                <h3 className="mb-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">Faits notables</h3>
-                <p className="text-sm leading-relaxed">{depute.faitsNotablesIA}</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Mandats & Déclarations HATVP */}
-      {((depute.mandats && depute.mandats.length > 0) ||
-        (depute.mandatsParlementaires && depute.mandatsParlementaires.length > 0) ||
-        (depute.declarations && depute.declarations.length > 0)) && (
-        <div className="mb-8 space-y-8">
+      {/* Mandats et fonctions */}
+      {((depute.mandats?.length ?? 0) > 0 ||
+        (depute.mandatsParlementaires?.length ?? 0) > 0) && (
+        <div className="mb-8">
           {/* Mandats : frise des législatures + fonctions en commission rattachées */}
-          {((depute.mandats?.length ?? 0) > 0 ||
-            (depute.mandatsParlementaires?.length ?? 0) > 0) && (() => {
+          {(() => {
             const mandatsActifs = (depute.mandats ?? []).filter((m) => !m.dateFin);
             const mandatsAnciens = (depute.mandats ?? []).filter((m) => !!m.dateFin);
             const renderMandat = (m: NonNullable<typeof depute.mandats>[0]) => {
@@ -819,69 +766,120 @@ export default function PageClient({ initialData }: { initialData?: DeputeDetail
               />
             );
           })()}
+        </div>
+      )}
 
-          {/* Déclarations HATVP */}
-          {depute.declarations && depute.declarations.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <Shield className="h-5 w-5 text-emerald-500" />
-                <h2 className="text-xl font-semibold">Transparence HATVP</h2>
+      <FicheCompareCallout variant="parlementaire" chambre="assemblee" slug={depute.slug} />
+
+      {/* Fiche enrichie par IA */}
+      {depute.resumeIA && (
+        <div className="mb-8 space-y-4">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-amber-500" />
+            <h2 className="text-xl font-semibold">Fiche parlementaire</h2>
+            <span className="text-xs text-muted-foreground">
+              {depute.iaGeneratedAt && `Mise à jour le ${new Date(depute.iaGeneratedAt).toLocaleDateString('fr-FR')} - `}
+              <Link href="/methodologie#enrichissement-ia" className="inline-flex items-center gap-1 align-baseline hover:underline">
+                <Info className="h-3 w-3" />
+                Généré par IA
+              </Link>
+            </span>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* Résumé */}
+            <div className="rounded-lg border bg-card p-5">
+              <h3 className="mb-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">En bref</h3>
+              <p className="text-sm leading-relaxed">{depute.resumeIA}</p>
+            </div>
+
+            {/* Parcours */}
+            {depute.parcoursIA && (
+              <div className="rounded-lg border bg-card p-5">
+                <h3 className="mb-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">Parcours</h3>
+                <p className="text-sm leading-relaxed">{depute.parcoursIA}</p>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {(showAllDeclarations ? depute.declarations : depute.declarations.slice(0, 4)).map((d) => {
-                  const labels: Record<string, string> = {
-                    di: "Déclaration d'intérêts",
-                    dia: "Déclaration d'intérêts et d'activités",
-                    diam: "Déclaration d'intérêts (modification)",
-                    dsp: 'Déclaration de patrimoine',
-                    dspm: 'Déclaration de patrimoine (modification)',
-                    dspfm: 'Déclaration de patrimoine (fin de mandat)',
-                  };
-                  return (
-                    <div key={d.id} className="flex items-center gap-3 rounded-lg border bg-card p-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium">{labels[d.typeDocument] || d.typeDocument}</p>
-                        {d.datePublication && (
-                          <p className="text-xs text-muted-foreground">
-                            Publiée le {new Date(d.datePublication).toLocaleDateString('fr-FR')}
-                          </p>
-                        )}
-                      </div>
-                      {d.urlDossier && (
-                        <a
-                          href={d.urlDossier}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex-shrink-0 rounded-lg border p-2 hover:bg-accent transition-colors"
-                          title="Voir sur hatvp.fr"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      )}
-                    </div>
-                  );
-                })}
+            )}
+
+            {/* Positions clés */}
+            {depute.positionsClesIA && (
+              <div className="rounded-lg border bg-card p-5">
+                <h3 className="mb-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">Positions clés</h3>
+                <p className="text-sm leading-relaxed">{depute.positionsClesIA}</p>
               </div>
-              {depute.declarations.length > 4 && (
-                <div className="mt-2">
-                  <button
-                    onClick={() => setShowAllDeclarations(!showAllDeclarations)}
-                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {showAllDeclarations ? (
-                      <>
-                        <ChevronUp className="h-3.5 w-3.5" />
-                        Réduire
-                      </>
-                    ) : (
-                      <>
-                        <ChevronDown className="h-3.5 w-3.5" />
-                        Voir {depute.declarations.length - 4} de plus
-                      </>
+            )}
+
+            {/* Faits notables */}
+            {depute.faitsNotablesIA && (
+              <div className="rounded-lg border bg-card p-5">
+                <h3 className="mb-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">Faits notables</h3>
+                <p className="text-sm leading-relaxed">{depute.faitsNotablesIA}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Déclarations HATVP */}
+      {depute.declarations && depute.declarations.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-4">
+            <Shield className="h-5 w-5 text-emerald-500" />
+            <h2 className="text-xl font-semibold">Transparence HATVP</h2>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(showAllDeclarations ? depute.declarations : depute.declarations.slice(0, 4)).map((d) => {
+              const labels: Record<string, string> = {
+                di: "Déclaration d'intérêts",
+                dia: "Déclaration d'intérêts et d'activités",
+                diam: "Déclaration d'intérêts (modification)",
+                dsp: 'Déclaration de patrimoine',
+                dspm: 'Déclaration de patrimoine (modification)',
+                dspfm: 'Déclaration de patrimoine (fin de mandat)',
+              };
+              return (
+                <div key={d.id} className="flex items-center gap-3 rounded-lg border bg-card p-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{labels[d.typeDocument] || d.typeDocument}</p>
+                    {d.datePublication && (
+                      <p className="text-xs text-muted-foreground">
+                        Publiée le {new Date(d.datePublication).toLocaleDateString('fr-FR')}
+                      </p>
                     )}
-                  </button>
+                  </div>
+                  {d.urlDossier && (
+                    <a
+                      href={d.urlDossier}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-shrink-0 rounded-lg border p-2 hover:bg-accent transition-colors"
+                      title="Voir sur hatvp.fr"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  )}
                 </div>
-              )}
+              );
+            })}
+          </div>
+          {depute.declarations.length > 4 && (
+            <div className="mt-2">
+              <button
+                onClick={() => setShowAllDeclarations(!showAllDeclarations)}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {showAllDeclarations ? (
+                  <>
+                    <ChevronUp className="h-3.5 w-3.5" />
+                    Réduire
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-3.5 w-3.5" />
+                    Voir {depute.declarations.length - 4} de plus
+                  </>
+                )}
+              </button>
             </div>
           )}
         </div>
