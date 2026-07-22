@@ -15,8 +15,23 @@ import { SenatScrutinsClient } from '../sources/senat/scrutins-client';
 import { DILAInterventionsClient } from '../sources/dila/interventions-client';
 import { SenatInterventionsClient } from '../sources/senat/interventions-client';
 import { SenatDossiersClient } from '../sources/senat/dossiers-client';
+import { syncSenateursHistoriques } from './senat-histo';
 import { logger } from '../utils/logger';
 import { extractCommissionSaisines } from '../utils/dossier-commissions';
+import {
+  LEGISLATURE_AN_COURANTE,
+  LEGISLATURE_FIN,
+  SENAT_SESSION_MIN,
+  senatSessionQuotidienDepuis,
+  sessionSenatCourante,
+  MandatContext,
+  deriveMandatContextAN,
+  deriveMandatContextSenat,
+  isLegislatureCourante,
+  mandatContextANDepuisSource,
+  senatMandatFinTheorique,
+  upsertMandatParlementaire,
+} from './mandats';
 import {
   checkSourceFreshness,
   updateSourceState,
@@ -378,6 +393,9 @@ export async function syncGroupes(): Promise<{ created: number; updated: number 
   let created = 0;
   let updated = 0;
 
+  // Groupes AN → législature courante (la boucle multi-législatures arrive en 1c).
+  const legislature = LEGISLATURE_AN_COURANTE;
+
   for (const g of groupes) {
     const data: Prisma.GroupePolitiqueCreateInput = {
       slug: g.slug,
@@ -388,16 +406,20 @@ export async function syncGroupes(): Promise<{ created: number; updated: number 
       position: g.position || 'centre',
       ordre: 0,
       actif: true,
+      legislature,
       sourceId: g.uid,
     };
 
-    const existing = await prisma.groupePolitique.findUnique({
-      where: { slug_chambre: { slug: g.slug, chambre: g.chambre } },
+    // Match par (slug, chambre, législature) : un même sigle existe sur plusieurs
+    // législatures avec des uid d'organe distincts → ne pas écraser entre législatures.
+    const existing = await prisma.groupePolitique.findFirst({
+      where: { OR: [{ sourceId: g.uid }, { slug: g.slug, chambre: g.chambre, legislature }] },
+      select: { id: true },
     });
 
     if (existing) {
       await prisma.groupePolitique.update({
-        where: { slug_chambre: { slug: g.slug, chambre: g.chambre } },
+        where: { id: existing.id },
         data,
       });
       updated++;
@@ -520,15 +542,31 @@ async function backfillCommissionMandats(
 // SYNC PARLEMENTAIRES AN (via API Assemblée Nationale)
 // =============================================================================
 
-export async function syncDeputes(fullSync: boolean = false): Promise<{ created: number; updated: number }> {
-  logger.info({ fullSync }, 'Starting parlementaires AN sync (from Assemblée Nationale API)...');
+export async function syncDeputes(
+  fullSync: boolean = false,
+  legislature: number = LEGISLATURE_AN_COURANTE,
+): Promise<{ created: number; updated: number }> {
+  const ctxLegislature = legislature;
+  const isCurrent = isLegislatureCourante(ctxLegislature);
+  logger.info({ fullSync, legislature: ctxLegislature, isCurrent }, 'Starting parlementaires AN sync (from Assemblée Nationale API)...');
 
-  const { deputes: parlementaires, groupes } = await anClient.getDeputes();
+  // Réutilise le singleton pour la législature courante ; sinon client dédié en mode
+  // historique (dataset AMO30 « tous acteurs/mandats », mandats terminés acceptés).
+  const client = isCurrent
+    ? anClient
+    : new AssembleeNationaleDeputesClient(ctxLegislature, { historical: true });
+  const { deputes: parlementaires, groupes } = await client.getDeputes();
 
-  // D'abord synchroniser les groupes
+  // D'abord synchroniser les groupes (AN → législature courante en 1b).
   for (const g of groupes) {
     const existing = await prisma.groupePolitique.findFirst({
-      where: { OR: [{ sourceId: g.uid }, { AND: [{ slug: g.slug }, { chambre: g.chambre }] }] },
+      where: {
+        OR: [
+          { sourceId: g.uid },
+          { slug: g.slug, chambre: g.chambre, legislature: ctxLegislature },
+        ],
+      },
+      select: { id: true },
     });
 
     if (!existing) {
@@ -542,6 +580,7 @@ export async function syncDeputes(fullSync: boolean = false): Promise<{ created:
           position: g.position || 'centre',
           ordre: 0,
           actif: true,
+          legislature: ctxLegislature,
           sourceId: g.uid,
         },
       });
@@ -570,13 +609,23 @@ export async function syncDeputes(fullSync: boolean = false): Promise<{ created:
 
   let created = 0;
   let updated = 0;
+  let mandatsCreated = 0;
+
+  // Contexte de mandat de la législature ingérée.
+  const ctx = deriveMandatContextAN(ctxLegislature);
 
   // Process en parallèle avec limite
   const results = await Promise.all(
     parlementaires.map((p) =>
       limit(async () => {
         try {
-          return await syncSingleParlementaireAN(p, groupeMap, circoMap, organeRefToCommissionId);
+          return await syncSingleParlementaireAN(
+            p,
+            groupeMap,
+            circoMap,
+            organeRefToCommissionId,
+            ctx,
+          );
         } catch (error: any) {
           logger.error({ slug: p.slug, error: error.message }, 'Error syncing parlementaire');
           return null;
@@ -586,17 +635,77 @@ export async function syncDeputes(fullSync: boolean = false): Promise<{ created:
   );
 
   for (const result of results) {
-    if (result === 'created') created++;
-    if (result === 'updated') updated++;
+    if (!result) continue;
+    if (result.person === 'created') created++;
+    if (result.person === 'updated') updated++;
+    if (result.mandatCreated) mandatsCreated++;
   }
 
-  // Backfill commission mandats for existing deputes
-  logger.info('Backfilling commission mandats for existing deputes...');
-  const backfilled = await backfillCommissionMandats(organeRefToCommissionId);
-  logger.info({ backfilled }, 'Commission mandats backfill completed');
+  // Sortants + backfill commissions : uniquement pour la législature courante.
+  // Rejouer ces passes pour une législature historique désactiverait à tort des
+  // personnes du mandat courant / produirait des mandats de commission incohérents.
+  let sortants = 0;
+  if (isCurrent) {
+    // AMO10 ne liste QUE les députés en exercice : un partant (ministre, démission,
+    // décès) disparaît de la source sans passer `actif=false` → passe sortants.
+    sortants = await cloturerDeputesSortants(parlementaires.map((p) => p.uid));
 
-  logger.info({ created, updated, total: parlementaires.length }, 'Parlementaires AN sync completed');
+    logger.info('Backfilling commission mandats for existing deputes...');
+    const backfilled = await backfillCommissionMandats(organeRefToCommissionId);
+    logger.info({ backfilled }, 'Commission mandats backfill completed');
+  }
+
+  logger.info(
+    { created, updated, mandatsCreated, sortants, legislature: ctxLegislature, total: parlementaires.length },
+    'Parlementaires AN sync completed',
+  );
   return { created, updated };
+}
+
+/** Effectif plancher attendu de l'Assemblée (577 sièges). En dessous, on considère le
+ *  fetch source comme dégradé et on REFUSE de désactiver qui que ce soit. */
+const AN_EFFECTIF_MIN = 550;
+
+/**
+ * Sortants AN : députés actifs en base absents de la source (nommés au gouvernement,
+ * démissions, décès en cours de législature). Symétrique de `cloturerSenateursSortants` :
+ * on ne supprime JAMAIS, on désactive la personne et on clôt son mandat AN ouvert. Sans
+ * cette passe, les partants restent `actif=true` et polluent les classements publics.
+ */
+async function cloturerDeputesSortants(sourceUids: string[]): Promise<number> {
+  // Garde-fou : un fetch partiel/dégradé ne doit pas désactiver l'Assemblée en masse.
+  if (sourceUids.length < AN_EFFECTIF_MIN) {
+    logger.warn(
+      { recus: sourceUids.length, minimum: AN_EFFECTIF_MIN },
+      'Effectif AN source anormalement bas — passe sortants ANNULÉE',
+    );
+    return 0;
+  }
+
+  const sortants = await prisma.parlementaire.findMany({
+    where: { chambre: 'assemblee', actif: true, sourceId: { notIn: sourceUids } },
+    select: { id: true },
+  });
+  if (sortants.length === 0) return 0;
+
+  const ids = sortants.map((p) => p.id);
+  const now = new Date();
+  // Départ en cours de législature → date d'observation. Cas théorique où le run passe
+  // après la fin de la législature courante → on borne à cette fin.
+  const finLegislature = LEGISLATURE_FIN[LEGISLATURE_AN_COURANTE];
+  const dateFin = finLegislature && now >= finLegislature ? finLegislature : now;
+
+  await prisma.parlementaire.updateMany({ where: { id: { in: ids } }, data: { actif: false } });
+  const clos = await prisma.mandatParlementaire.updateMany({
+    where: { personneId: { in: ids }, chambre: 'assemblee', dateFin: null },
+    data: { dateFin },
+  });
+
+  logger.info(
+    { sortants: ids.length, mandatsClos: clos.count },
+    'Députés sortants désactivés et mandats clos',
+  );
+  return ids.length;
 }
 
 // =============================================================================
@@ -607,8 +716,16 @@ async function syncSingleParlementaireAN(
   p: TransformedParlementaire,
   groupeMap: Map<string, string>,
   circoMap: Map<string, string>,
-  organeRefToCommissionId: Map<string, string>
-): Promise<'created' | 'updated' | null> {
+  organeRefToCommissionId: Map<string, string>,
+  ctx: MandatContext,
+): Promise<{ person: 'created' | 'updated'; mandatCreated: boolean } | null> {
+  // Une législature courante alimente la table `parlementaires` (groupe/circo/actif
+  // affichés). Une législature historique ne doit PAS écraser ces champs courants :
+  // l'identité (PA uid) est stable entre législatures → un re-run du 16e retrouverait
+  // la personne et écraserait son groupe/circo du 17e (bug d'écrasement). On n'écrit
+  // alors que la bio stable + le mandat de la période concernée.
+  const isCurrent = ctx.legislature != null && isLegislatureCourante(ctx.legislature);
+
   // Trouver le groupe par sourceId (uid AN) ou sigle
   let groupeId: string | undefined;
   if (p.groupeRef) {
@@ -638,8 +755,8 @@ async function syncSingleParlementaireAN(
     }
   }
 
-  const data: Prisma.ParlementaireCreateInput = {
-    slug: p.slug,
+  // Champs de bio « identité » (stables entre législatures).
+  const bioData = {
     chambre: p.chambre,
     nom: p.nom,
     prenom: p.prenom,
@@ -651,12 +768,9 @@ async function syncSingleParlementaireAN(
     twitter: p.twitter,
     facebook: p.facebook,
     email: p.email,
-    actif: true,
-    groupe: groupeId ? { connect: { id: groupeId } } : undefined,
-    circonscription: circonscriptionId ? { connect: { id: circonscriptionId } } : undefined,
     sourceId: p.uid,
     sourceData: p.sourceData as object,
-  };
+  } satisfies Partial<Prisma.ParlementaireUncheckedCreateInput>;
 
   const existing = await prisma.parlementaire.findFirst({
     where: {
@@ -672,23 +786,62 @@ async function syncSingleParlementaireAN(
         },
       ],
     },
+    select: { id: true },
   });
 
+  let personneId: string;
+  let person: 'created' | 'updated';
+
   if (existing) {
+    // Une personne déjà en base : on rafraîchit toujours la bio. Les champs de mandat
+    // courant (groupe/circo/actif/slug) ne sont touchés que par la législature courante.
     await prisma.parlementaire.update({
       where: { id: existing.id },
+      data: isCurrent
+        ? {
+            ...bioData,
+            slug: p.slug,
+            actif: true,
+            groupe: groupeId ? { connect: { id: groupeId } } : { disconnect: true },
+            circonscription: circonscriptionId
+              ? { connect: { id: circonscriptionId } }
+              : undefined,
+          }
+        : bioData,
+    });
+    personneId = existing.id;
+    person = 'updated';
+  } else {
+    // Création : la législature courante affiche groupe/circo/actif=true ; une
+    // personne connue uniquement via une législature historique est créée inactive,
+    // avec son dernier groupe/circo connus comme valeur d'affichage par défaut.
+    const created = await prisma.parlementaire.create({
       data: {
-        ...data,
+        ...bioData,
         slug: p.slug,
-        groupe: groupeId ? { connect: { id: groupeId } } : { disconnect: true },
+        actif: isCurrent,
+        groupe: groupeId ? { connect: { id: groupeId } } : undefined,
         circonscription: circonscriptionId ? { connect: { id: circonscriptionId } } : undefined,
       },
     });
-    return 'updated';
-  } else {
-    await prisma.parlementaire.create({ data });
-    return 'created';
+    personneId = created.id;
+    person = 'created';
   }
+
+  // Mandat de la période ingérée (groupe/circo de CETTE législature), daté par les
+  // VRAIES bornes du mandat source quand elles sont disponibles : un député parti en
+  // cours de législature ne doit pas être noté « présent sur toute la législature ».
+  const mandatCtx = mandatContextANDepuisSource(ctx, p.mandatDateDebut, p.mandatDateFin);
+  const { created: mandatCreated } = await upsertMandatParlementaire(prisma, {
+    personneId,
+    chambre: p.chambre,
+    ctx: mandatCtx,
+    groupeId: groupeId ?? null,
+    circonscriptionId: circonscriptionId ?? null,
+    commissionPermanente: null,
+  });
+
+  return { person, mandatCreated };
 }
 
 // =============================================================================
@@ -776,8 +929,10 @@ export async function syncSenatCommissions(): Promise<{ created: number; updated
     select: { id: true, uid: true, organeRef: true, nom: true, nomCourt: true },
   });
   const byOrganeRef = new Map<string, string>();
+  const byUid = new Map<string, string>();
   for (const c of existing) {
     if (c.organeRef) byOrganeRef.set(c.organeRef, c.id);
+    byUid.set(c.uid, c.id);
   }
 
   let created = 0;
@@ -785,9 +940,10 @@ export async function syncSenatCommissions(): Promise<{ created: number; updated
   const defaultDateDebut = new Date('2017-10-01'); // Start of current Senate term
 
   for (const [, { code, libelle }] of commissionData) {
+    const uid = `SENAT-${code}`;
     const slug = `senat-${code.toLowerCase()}`;
     const data = {
-      uid: `SENAT-${code}`,
+      uid,
       slug,
       chambre: 'senat' as const,
       type: 'permanente',
@@ -797,10 +953,15 @@ export async function syncSenatCommissions(): Promise<{ created: number; updated
       actif: true,
     };
 
-    const existingByOrganeRef = byOrganeRef.get(code);
-    if (existingByOrganeRef) {
+    // `uid` est la vraie clé unique de la table : il faut la consulter AUSSI.
+    // Un organeRef divergent (hérité du merge COMSENAT PO* → SENAT-*) faisait
+    // manquer le lookup, partait en `create` et violait la contrainte unique sur
+    // `uid` → crash de tout le sync Sénat. Le même écart cassait silencieusement
+    // le rattachement sénateur↔commission (map organeRef ≠ `code` de la source).
+    const existingId = byOrganeRef.get(code) ?? byUid.get(uid);
+    if (existingId) {
       await prisma.commission.update({
-        where: { id: existingByOrganeRef },
+        where: { id: existingId },
         data: { organeRef: code },
       });
       updated++;
@@ -888,6 +1049,7 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
 
   let created = 0;
   let updated = 0;
+  let mandatsCreated = 0;
 
   // Process en parallèle avec limite
   const results = await Promise.all(
@@ -904,12 +1066,71 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
   );
 
   for (const result of results) {
-    if (result === 'created') created++;
-    if (result === 'updated') updated++;
+    if (!result) continue;
+    if (result.person === 'created') created++;
+    if (result.person === 'updated') updated++;
+    if (result.mandatCreated) mandatsCreated++;
   }
 
-  logger.info({ created, updated, total: senateurs.length }, 'Sénateurs sync completed');
+  const sortants = await cloturerSenateursSortants(senateurs.map((s) => s.uid));
+
+  logger.info(
+    { created, updated, mandatsCreated, sortants, total: senateurs.length },
+    'Sénateurs sync completed',
+  );
   return { created, updated };
+}
+
+/** Effectif plancher attendu du Sénat (348 sièges). En dessous, on considère le
+ *  fetch source comme dégradé et on REFUSE de désactiver qui que ce soit. */
+const SENAT_EFFECTIF_MIN = 300;
+
+/**
+ * Sortants : sénateurs actifs en base absents de la source (non réélus au
+ * renouvellement, démissions, décès). On ne supprime JAMAIS : on désactive la
+ * personne et on clôt son mandat ouvert à sa fin de droit (ou à la date
+ * d'observation en cas de départ anticipé). Votes et historique restent intacts.
+ */
+async function cloturerSenateursSortants(sourceUids: string[]): Promise<number> {
+  // Garde-fou : un fetch partiel/dégradé ne doit pas désactiver le Sénat en masse.
+  if (sourceUids.length < SENAT_EFFECTIF_MIN) {
+    logger.warn(
+      { recus: sourceUids.length, minimum: SENAT_EFFECTIF_MIN },
+      'Effectif Sénat source anormalement bas — passe sortants ANNULÉE',
+    );
+    return 0;
+  }
+
+  const sortants = await prisma.parlementaire.findMany({
+    where: { chambre: 'senat', actif: true, sourceId: { notIn: sourceUids } },
+    select: { id: true },
+  });
+  if (sortants.length === 0) return 0;
+
+  const ids = sortants.map((p) => p.id);
+  const now = new Date();
+
+  await prisma.parlementaire.updateMany({ where: { id: { in: ids } }, data: { actif: false } });
+
+  const mandatsOuverts = await prisma.mandatParlementaire.findMany({
+    where: { personneId: { in: ids }, chambre: 'senat', dateFin: null },
+    select: { id: true, mandature: true },
+  });
+
+  for (const m of mandatsOuverts) {
+    const finDroit = m.mandature !== null ? senatMandatFinTheorique(m.mandature) : now;
+    await prisma.mandatParlementaire.update({
+      where: { id: m.id },
+      // Renouvellement passé → fin de droit ; départ anticipé → date d'observation.
+      data: { dateFin: now >= finDroit ? finDroit : now },
+    });
+  }
+
+  logger.info(
+    { sortants: ids.length, mandatsClos: mandatsOuverts.length },
+    'Sénateurs sortants désactivés et mandats clos',
+  );
+  return ids.length;
 }
 
 async function syncSingleSenateur(
@@ -917,7 +1138,7 @@ async function syncSingleSenateur(
   groupeMap: Map<string, string>,
   circoMap: Map<string, string>,
   commissionByOrganeRef: Map<string, string>
-): Promise<'created' | 'updated' | null> {
+): Promise<{ person: 'created' | 'updated'; mandatCreated: boolean } | null> {
   // Trouver le groupe par sigle
   let groupeId: string | undefined;
   if (s.groupeRef) {
@@ -1004,38 +1225,57 @@ async function syncSingleSenateur(
     parlementaireId = created.id;
   }
 
-  // Create/update commission mandats from sourceData.organismes
+  // Mandat parlementaire (mandature dérivée de la série électorale).
+  const ctx = deriveMandatContextSenat(s.serie);
+
+  // Mandats de commission depuis sourceData.organismes.
+  // `SenatOrganisme` n'expose que { code, type, libelle, ordre } : ni qualité ni
+  // dates. On ancre donc le mandat sur le début de la mandature du sénateur
+  // (stable et idempotent) plutôt que sur la date du run.
   const organismes = s.sourceData.organismes || [];
   for (const org of organismes) {
-    if (org.type !== 'COMMISSION') continue;
-    const code = org.organeRef || org.code;
-    if (!code) continue;
-    const commissionId = commissionByOrganeRef.get(code);
+    if (org.type !== 'COMMISSION' || !org.code) continue;
+    const commissionId = commissionByOrganeRef.get(org.code);
     if (!commissionId) continue;
 
-    const mandatData: Prisma.MandatUncheckedCreateInput = {
-      typeOrgane: 'COMMISSION',
-      qualite: org.qualite || 'Membre',
-      dateDebut: org.dateDebut ? new Date(org.dateDebut) : new Date(),
-      dateFin: org.dateFin ? new Date(org.dateFin) : null,
-      organeRef: code,
-      parlementaireId: parlementaireId,
-      commissionId: commissionId,
-    };
-
-    await prisma.mandat.upsert({
-      where: {
-        parlementaireId_organeRef: { parlementaireId, organeRef: code },
-      },
-      create: mandatData,
-      update: {
-        qualite: org.qualite || 'Membre',
-        dateFin: org.dateFin ? new Date(org.dateFin) : null,
-      },
+    // `Mandat` n'a PAS de contrainte unique (parlementaireId, organeRef) : on
+    // résout à la main plutôt que via un upsert sur une clé inexistante (qui
+    // faisait planter le sync dès que le lookup commission aboutissait).
+    const existingMandat = await prisma.mandat.findFirst({
+      where: { parlementaireId, organeRef: org.code },
+      select: { id: true },
     });
-  }
 
-  return existing ? 'updated' : 'created';
+    if (existingMandat) {
+      await prisma.mandat.update({
+        where: { id: existingMandat.id },
+        data: { commissionId, institution: org.libelle },
+      });
+    } else {
+      await prisma.mandat.create({
+        data: {
+          typeOrgane: 'COMMISSION',
+          institution: org.libelle,
+          qualite: 'Membre',
+          dateDebut: ctx.dateDebut,
+          dateFin: null,
+          organeRef: org.code,
+          parlementaireId,
+          commissionId,
+        },
+      });
+    }
+  }
+  const { created: mandatCreated } = await upsertMandatParlementaire(prisma, {
+    personneId: parlementaireId,
+    chambre: s.chambre,
+    ctx,
+    groupeId: groupeId ?? null,
+    circonscriptionId: circonscriptionId ?? null,
+    commissionPermanente: s.commissionPermanente ?? null,
+  });
+
+  return { person: existing ? 'updated' : 'created', mandatCreated };
 }
 
 // =============================================================================
@@ -1043,11 +1283,12 @@ async function syncSingleSenateur(
 // =============================================================================
 
 export async function syncScrutins(
-  options: { limit?: number; fromNumero?: number } = {}
+  options: { limit?: number; fromNumero?: number; legislature?: number } = {}
 ): Promise<{ scrutins: number; votes: number }> {
-  logger.info({ limit: options.limit }, 'Starting scrutins AN sync (from Assemblée Nationale API)...');
+  const legislature = options.legislature ?? LEGISLATURE_AN_COURANTE;
+  logger.info({ limit: options.limit, legislature }, 'Starting scrutins AN sync (from Assemblée Nationale API)...');
 
-  const scrutinsClient = new AssembleeNationaleScrutinsClient(17);
+  const scrutinsClient = new AssembleeNationaleScrutinsClient(legislature);
   const scrutinsData = await scrutinsClient.getScrutins({ limit: options.limit });
 
   // Charger les parlementaires AN pour le mapping acteurRef -> parlementaireId
@@ -1065,8 +1306,9 @@ export async function syncScrutins(
   let votesCreated = 0;
 
   const chambre = 'assemblee';
-  // Pour l'AN, la session est la législature (17e par défaut)
-  const session = process.env.ASSEMBLEE_NATIONALE_LEGISLATURE || '17';
+  // Pour l'AN, la session est la législature : elle fait partie de la clé unique
+  // (numero, chambre, session), ce qui isole les scrutins de chaque législature.
+  const session = String(legislature);
 
   for (const data of scrutinsData) {
     try {
@@ -1086,6 +1328,7 @@ export async function syncScrutins(
         numero: scrutin.numero,
         chambre,
         session,
+        legislature,
         date: scrutin.date,
         titre: scrutin.titre,
         typeVote: scrutin.typeVote,
@@ -1177,8 +1420,8 @@ export async function syncScrutinsSenat(
     enrichDossiers?: boolean;
   } = {}
 ): Promise<{ scrutins: number; votes: number; dossiersLinked: number }> {
-  // Le client DOSLEG utilise maintenant les envvars SENAT_SESSION_START/END par défaut
-  // On peut override avec session/sessions si spécifié
+  // Le client DOSLEG couvre par défaut SENAT_SESSION_MIN → année courante.
+  // On peut restreindre à une/des sessions via options.session / options.sessions.
   logger.info({ limit: options.limit, enrichDossiers: options.enrichDossiers ?? true }, 'Starting scrutins Sénat sync (DOSLEG)...');
 
   const scrutinsClient = new SenatScrutinsClient();
@@ -2268,6 +2511,7 @@ export interface SmartSyncOptions {
   includeDossiers?: boolean;
   includeLobbying?: boolean;
   includeCommissions?: boolean;
+  includeSenatHisto?: boolean; // Anciens sénateurs (ODSEN)
   includeReunions?: boolean;
   includeSenatReunions?: boolean;
   includeSenatAgenda?: boolean;
@@ -2323,6 +2567,9 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       // 2. Parlementaires (nécessaires pour les autres sources)
       'assemblee_nationale:deputes',
       'senat:senateurs',
+      // 2b. Anciens sénateurs (ODSEN) : après senateurs.json (réconcilie ses mandats
+      //     courants), avant les scrutins (les votes historiques ont besoin du roster)
+      'senat:senateurs_histo',
       // 3. Scrutins et votes
       'assemblee_nationale:scrutins',
       'senat:scrutins',
@@ -2354,6 +2601,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     sourcesToCheck = options.sources || [
       'assemblee_nationale:deputes',
       'senat:senateurs',
+      ...(options.includeSenatHisto ? ['senat:senateurs_histo'] : []),
       ...(options.includeCommissions ? ['assemblee_nationale:commissions'] : []),
       ...(options.includeScrutins ? ['assemblee_nationale:scrutins', 'senat:scrutins'] : []),
       ...(options.includeAmendements ? ['assemblee_nationale:amendements', 'senat:amendements'] : []),
@@ -2436,6 +2684,20 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
             syncResult = await syncSenateurs(false);
             break;
 
+          case 'senat:senateurs_histo': {
+            // Idem : le quotidien ne couvre que la fenêtre récente (il y réconcilie
+            // et affine les mandats courants). Le rattrapage 2006+ est un one-shot
+            // via `sync-senateurs-histo --depuis`.
+            const histoResult = await syncSenateursHistoriques({
+              perimetreDebut: new Date(Date.UTC(senatSessionQuotidienDepuis(), 9, 1)),
+            });
+            syncResult = {
+              created: histoResult.personnesCreees + histoResult.mandatsCrees,
+              updated: histoResult.personnesEnrichies + histoResult.mandatsMisAJour,
+            };
+            break;
+          }
+
           case 'assemblee_nationale:commissions': {
             const commissionsResult = await syncCommissions();
             syncResult = { created: commissionsResult.created, updated: commissionsResult.updated };
@@ -2450,7 +2712,17 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
           }
 
           case 'senat:scrutins': {
-            const senatScrutinsResult = await syncScrutinsSenat({ limit: options.scrutinsLimit });
+            // Fenêtre courte : l'historique (jusqu'à SENAT_SESSION_MIN) est un
+            // one-shot, il ne bouge plus et n'a pas à être réingéré chaque nuit.
+            const depuis = senatSessionQuotidienDepuis();
+            const sessions = Array.from(
+              { length: sessionSenatCourante() - depuis + 1 },
+              (_, i) => String(depuis + i),
+            );
+            const senatScrutinsResult = await syncScrutinsSenat({
+              limit: options.scrutinsLimit,
+              sessions,
+            });
             syncResult = { created: senatScrutinsResult.scrutins, updated: 0 };
             break;
           }
@@ -2750,11 +3022,19 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     logger.info('Recalculating parlementaire stats after sync...');
     try {
       const {
+        reconcileActifFromMandats,
         calculateAllStats,
         calculateAllGroupeStats,
         calculateAllGroupeAlliances,
         calculateAllGroupeThematiques,
       } = await import('./stats-calculator.js');
+
+      // Réconcilier `actif` AVANT les stats : les classements et les stats de groupe
+      // se fondent sur `actif`, qui doit refléter « a un mandat en cours » (un élu
+      // dont le mandat s'est clos en cours de route — sénateur devenu ministre — ne
+      // doit plus compter comme siégeant).
+      const actifResult = await reconcileActifFromMandats();
+      logger.info({ corrected: actifResult.corrected }, 'Actif reconciliation completed');
 
       // Stats des parlementaires
       const statsResult = await calculateAllStats();
@@ -3039,7 +3319,7 @@ export async function syncAmendements(
 ): Promise<{ created: number; updated: number; linked: number }> {
   const { AssembleeNationaleClient } = await import('../sources/assemblee-nationale/client.js');
 
-  const legislature = options.legislature || 17;
+  const legislature = options.legislature || LEGISLATURE_AN_COURANTE;
   logger.info({ legislature, limit: options.limit }, 'Starting amendements AN sync...');
 
   const amendementClient = new AssembleeNationaleClient(legislature);
@@ -3736,8 +4016,9 @@ export async function syncDossiers(
 // SYNC DOSSIERS SÉNAT (via DOSLEG)
 // =============================================================================
 
-const SENAT_DOSSIERS_SESSION_START = parseInt(process.env.SENAT_SESSION_START || '2020', 10);
-const SENAT_DOSSIERS_SESSION_END = parseInt(process.env.SENAT_SESSION_END || String(new Date().getFullYear()), 10);
+// Même fenêtre que les scrutins Sénat : plancher partagé, plafond = année courante.
+const SENAT_DOSSIERS_SESSION_START = SENAT_SESSION_MIN;
+const SENAT_DOSSIERS_SESSION_END = new Date().getFullYear();
 
 export async function syncDossiersSenat(
   options: { limit?: number; linkScrutins?: boolean } = {}
@@ -4784,7 +5065,7 @@ export async function enrichScrutinsANAmendements(
         try {
           // Construire l'URL de la page du scrutin
           // Note: l'URL correcte utilise le numéro simple, pas l'UID complet
-          const legislature = scrutin.session || '17';
+          const legislature = scrutin.session || String(LEGISLATURE_AN_COURANTE);
           const url = `https://www.assemblee-nationale.fr/dyn/${legislature}/scrutins/${scrutin.numero}`;
 
           // Fetch la page HTML

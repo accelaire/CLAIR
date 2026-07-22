@@ -91,6 +91,7 @@ export interface ScrutinDetail {
   numero: number;
   chambre: string;
   session: string;
+  legislature?: number | null;
   date: string;
   titre: string;
   sort: string;
@@ -270,6 +271,28 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
     }
     return groups;
   }, [data?.data.votesByPosition]);
+
+  // URL de la page groupe (scopée à la période du scrutin) pour chaque groupe du
+  // récap des votes : cliquer un groupe depuis un scrutin de la session 2020 mène à
+  // la composition de ce groupe EN 2020 (Sénat), resp. la législature (AN).
+  const groupeHrefByNom = useMemo(() => {
+    const map: Record<string, string> = {};
+    const vbg = data?.data.votesByGroupe;
+    if (!vbg) return map;
+    for (const nom of Object.keys(vbg)) {
+      const resolved = groupesMap.get(nom.toLowerCase());
+      if (!resolved) continue;
+      const qp = new URLSearchParams();
+      if (resolved.chambre === 'senat') {
+        if (data?.data.session) qp.set('session', data.data.session);
+      } else if (data?.data.legislature != null) {
+        qp.set('legislature', String(data.data.legislature));
+      }
+      const qs = qp.toString();
+      map[nom] = `/groupes/${resolved.chambre}/${resolved.slug}${qs ? `?${qs}` : ''}`;
+    }
+    return map;
+  }, [data?.data.votesByGroupe, data?.data.session, data?.data.legislature, groupesMap]);
 
   // Parlementaires map for link resolution
   const parlementairesMap = useMemo(() => {
@@ -517,6 +540,8 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
             <ScrutinSidebar
               chambre={scrutin.chambre}
               date={scrutin.date}
+              session={scrutin.session}
+              legislature={scrutin.legislature}
               typeVote={scrutin.typeVote}
               sort={scrutin.sort}
               tags={scrutin.tags}
@@ -588,6 +613,7 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
               votesByGroupe={scrutin.votesByGroupe}
               totalVotes={scrutin.totalVotes}
               chambre={chambre}
+              groupeHrefByNom={groupeHrefByNom}
             />
           )}
         </div>

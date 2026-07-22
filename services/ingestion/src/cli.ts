@@ -41,11 +41,15 @@ import {
   syncSenatAgenda,
 } from './workers/sync.js';
 import {
+  reconcileActifFromMandats,
   calculateAllStats,
   calculateAllGroupeStats,
   calculateAllGroupeAlliances,
   calculateAllGroupeThematiques,
 } from './workers/stats-calculator.js';
+import { backfillMandatsParlementaires } from './workers/backfill-mandats.js';
+import { syncSenateursHistoriques } from './workers/senat-histo.js';
+import { SENAT_SESSION_MIN } from './workers/mandats.js';
 import { logger } from './utils/logger';
 
 const program = new Command();
@@ -83,6 +87,8 @@ program
   .option('--texte-ids <ids>', 'IDs texte AMELI à cibler (séparés par des virgules, avec --se -a)')
   .option('--no-actions', 'Ne pas synchroniser les actions de lobbying (avec --lo)')
   .option('-l, --limit <number>', 'Limiter le nombre d\'éléments à synchroniser', parseInt)
+  .option('--legislature <number>', 'Législature AN à ingérer (15,16,17 — défaut: courante). Avec -p --an ou -s --an', parseInt)
+  .option('--sessions <annees>', `Sessions Sénat à ingérer, séparées par des virgules (ex: 2006,2007). Défaut: ${SENAT_SESSION_MIN} → courante. Avec -s --se, permet un backfill par tranches (mémoire).`)
   .option('--dry-run', 'Mode simulation (affiche ce qui serait fait sans modifier)')
   // Opérations de liaison (combiner avec --in ou --am)
   .option('--link', 'Lier les scrutins aux interventions (--in) ou amendements (--am)')
@@ -91,6 +97,12 @@ program
   .action(async (options) => {
     try {
       logger.info({ options }, 'Starting sync command');
+
+      // Sessions Sénat explicites (backfill par tranches) ; sinon le client couvre
+      // SENAT_SESSION_MIN → année courante.
+      const sessionsSenat: string[] | undefined = options.sessions
+        ? String(options.sessions).split(',').map((s: string) => s.trim()).filter(Boolean)
+        : undefined;
 
       const chambre: 'an' | 'se' | null =
         options.assembleeNationale ? 'an' : options.senat ? 'se' : null;
@@ -170,21 +182,21 @@ program
         await syncGroupes();
       } else if (options.parlementaires) {
         if (chambre === 'an') {
-          await syncDeputes(options.circonscriptions || false);
+          await syncDeputes(options.circonscriptions || false, options.legislature);
         } else if (chambre === 'se') {
           await syncSenateurs(false);
         } else {
-          await syncDeputes(options.circonscriptions || false);
+          await syncDeputes(options.circonscriptions || false, options.legislature);
           await syncSenateurs(false);
         }
       } else if (options.scrutins) {
         if (chambre === 'se') {
-          await syncScrutinsSenat({ limit: options.limit });
+          await syncScrutinsSenat({ limit: options.limit, sessions: sessionsSenat });
         } else if (chambre === 'an') {
-          await syncScrutins({ limit: options.limit });
+          await syncScrutins({ limit: options.limit, legislature: options.legislature });
         } else {
-          await syncScrutins({ limit: options.limit });
-          await syncScrutinsSenat({ limit: options.limit });
+          await syncScrutins({ limit: options.limit, legislature: options.legislature });
+          await syncScrutinsSenat({ limit: options.limit, sessions: sessionsSenat });
         }
       } else if (options.interventions) {
         if (chambre === 'se') {
@@ -354,6 +366,7 @@ program
   .option('--in, --interventions', 'Inclure les interventions (DILA + Sénat)')
   .option('--lo, --lobbying', 'Inclure les lobbyistes')
   .option('--co, --commissions', 'Inclure les commissions parlementaires')
+  .option('--senat-histo', 'Inclure les anciens sénateurs (open data ODSEN)')
   .option('--re, --reunions', 'Inclure les réunions/agenda parlementaire (AN)')
   .option('--senat-reunions', 'Inclure les réunions Sénat (scraping HTML comptes rendus)')
   .option('--senat-agenda', 'Inclure l\'agenda Sénat (séances publiques à venir via API senat.fr)')
@@ -375,6 +388,7 @@ program
         includeInterventions: options.interventions,
         includeLobbying: options.lobbying,
         includeCommissions: options.commissions,
+        includeSenatHisto: options.senatHisto,
         includeReunions: options.reunions,
         includeSenatReunions: options.senatReunions,
         includeSenatAgenda: options.senatAgenda,
@@ -482,6 +496,23 @@ program
   });
 
 // =============================================================================
+// COMMANDE: reconcile-actif
+// =============================================================================
+program
+  .command('reconcile-actif')
+  .description("Réaligner parlementaires.actif sur « a un mandat en cours » (date_fin NULL)")
+  .action(async () => {
+    try {
+      const { corrected } = await reconcileActifFromMandats();
+      console.log(`✅ ${corrected} parlementaire(s) réaligné(s) (actif ⇔ mandat en cours)`);
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'reconcile-actif failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
 // COMMANDE: calculate-stats
 // =============================================================================
 program
@@ -490,15 +521,20 @@ program
   .option('-c, --chambre <chambre>', 'Chambre spécifique (assemblee ou senat)')
   .option('--parlementaires-only', 'Calculer uniquement les stats des parlementaires')
   .option('--groupes-only', 'Calculer uniquement les stats des groupes')
+  .option('--include-frozen', 'Recalculer aussi les législatures figées (nécessaire après une ingestion historique)')
   .action(async (options) => {
     try {
-      logger.info({ chambre: options.chambre || 'all' }, 'Starting stats calculation');
+      logger.info(
+        { chambre: options.chambre || 'all', includeFrozen: !!options.includeFrozen },
+        'Starting stats calculation'
+      );
       let totalErrors = 0;
+      const statsOptions = { includeFrozen: !!options.includeFrozen };
 
       // Stats parlementaires (sauf si --groupes-only)
       if (!options.groupesOnly) {
         console.log('\n📊 Calcul des statistiques parlementaires...\n');
-        const parlResult = await calculateAllStats(options.chambre);
+        const parlResult = await calculateAllStats(options.chambre, statsOptions);
         console.log(`✅ Stats calculées pour ${parlResult.updated}/${parlResult.total} parlementaires`);
         if (parlResult.errors > 0) {
           console.log(`⚠️  ${parlResult.errors} erreurs`);
@@ -510,7 +546,7 @@ program
       // Stats groupes (sauf si --parlementaires-only)
       if (!options.parlementairesOnly) {
         console.log('\n📊 Calcul des statistiques des groupes politiques...\n');
-        const groupeResult = await calculateAllGroupeStats(options.chambre);
+        const groupeResult = await calculateAllGroupeStats(options.chambre, statsOptions);
         console.log(`✅ Stats calculées pour ${groupeResult.updated}/${groupeResult.total} groupes`);
         if (groupeResult.errors > 0) {
           console.log(`⚠️  ${groupeResult.errors} erreurs`);
@@ -520,13 +556,13 @@ program
 
         // Alliances entre groupes
         console.log('\n🤝 Calcul des alliances entre groupes...\n');
-        const alliancesResult = await calculateAllGroupeAlliances(options.chambre);
+        const alliancesResult = await calculateAllGroupeAlliances(options.chambre, statsOptions);
         console.log(`✅ ${alliancesResult.total} paires d'alliances calculées`);
         console.log(`⏱️  Durée: ${alliancesResult.duration}`);
 
         // Stats thématiques pour radar chart
         console.log('\n🎯 Calcul des positions thématiques...\n');
-        const thematiquesResult = await calculateAllGroupeThematiques(options.chambre);
+        const thematiquesResult = await calculateAllGroupeThematiques(options.chambre, statsOptions);
         console.log(`✅ ${thematiquesResult.total} stats thématiques calculées`);
         console.log(`⏱️  Durée: ${thematiquesResult.duration}`);
       }
@@ -586,6 +622,63 @@ program
       process.exit(0);
     } catch (error: any) {
       logger.error({ error: error.message }, 'link-scrutins-dossiers failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: backfill-mandats (Phase 0 multi-législatures)
+// =============================================================================
+program
+  .command('backfill-mandats')
+  .description('Phase 0 multi-législatures : legislature=17 sur l\'AN + bootstrap des mandats parlementaires (idempotent)')
+  .action(async () => {
+    try {
+      logger.info('Starting backfill mandats parlementaires (Phase 0)...');
+      const result = await backfillMandatsParlementaires();
+      console.log('\n📊 Backfill Phase 0 multi-législatures :');
+      console.log(`   Groupes AN (legislature=17) : ${result.groupesUpdated}`);
+      console.log(`   Scrutins AN (legislature=17): ${result.scrutinsUpdated}`);
+      console.log(`   Mandats créés               : ${result.mandatsCreated}`);
+      console.log(`   Mandats déjà présents       : ${result.mandatsSkipped}`);
+      if (result.senateursSerieInconnue > 0) {
+        console.log(`   ⚠️  Sénateurs sans mandature (série inconnue): ${result.senateursSerieInconnue}`);
+      }
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'backfill-mandats failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: sync-senateurs-histo
+// =============================================================================
+program
+  .command('sync-senateurs-histo')
+  .description('Anciens sénateurs (open data ODSEN) : identités + mandats historiques clos + groupe d\'époque')
+  .option(
+    '--depuis <date>',
+    `Plancher du périmètre (YYYY-MM-DD). Défaut: ouverture de la session ${SENAT_SESSION_MIN} ` +
+      `(historique complet). Le smart-sync quotidien, lui, se limite à la fenêtre récente.`,
+  )
+  .action(async (options) => {
+    try {
+      const perimetreDebut = options.depuis ? new Date(`${options.depuis}T00:00:00Z`) : undefined;
+      if (perimetreDebut && isNaN(perimetreDebut.getTime())) {
+        throw new Error(`Date --depuis invalide: ${options.depuis}`);
+      }
+      logger.info({ perimetreDebut }, 'Starting sync sénateurs historiques (ODSEN)...');
+      const result = await syncSenateursHistoriques({ perimetreDebut });
+      console.log('\n📊 Sénateurs historiques (ODSEN) :');
+      console.log(`   Personnes créées (anciens)  : ${result.personnesCreees}`);
+      console.log(`   Personnes enrichies (bio)   : ${result.personnesEnrichies}`);
+      console.log(`   Mandats créés               : ${result.mandatsCrees}`);
+      console.log(`   Mandats mis à jour          : ${result.mandatsMisAJour}`);
+      console.log(`   Sénateurs hors périmètre    : ${result.senateursIgnores}`);
+      process.exit(0);
+    } catch (error: any) {
+      logger.error({ error: error.message }, 'sync-senateurs-histo failed');
       process.exit(1);
     }
   });

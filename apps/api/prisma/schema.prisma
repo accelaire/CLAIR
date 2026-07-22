@@ -59,6 +59,18 @@ model Parlementaire {
   statsQuestions      Int?      @map("stats_questions")     // Nombre de questions posées
   statsCalculatedAt   DateTime? @map("stats_calculated_at") // Date du dernier calcul
 
+  // Stats de CARRIÈRE : tous les mandats cumulés (les stats_* ci-dessus ne portent
+  // que le mandat en cours). Deux jeux de colonnes car les classements doivent
+  // pouvoir trier sur l'un OU l'autre — et un tri Prisma exige une colonne scalaire.
+  // Comparer des élus entre eux suppose la même période (défaut = mandat en cours) ;
+  // la carrière répond à une autre question : « qui a le plus siégé, tout compris ».
+  // Voir SPEC-MULTI-LEGISLATURES.md (ticket #13).
+  statsCarrierePresence     Int? @map("stats_carriere_presence")
+  statsCarriereLoyaute      Int? @map("stats_carriere_loyaute")
+  statsCarriereParticipation Int? @map("stats_carriere_participation")
+  statsCarriereInterventions Int? @map("stats_carriere_interventions")
+  statsCarriereAmendements  Int? @map("stats_carriere_amendements")
+
   // Enrichissement IA (fiches parlementaires enrichies)
   resumeIA          String?   @map("resume_ia")
   parcoursIA        String?   @map("parcours_ia")
@@ -74,6 +86,7 @@ model Parlementaire {
   amendementsCoSignes  Amendement[] @relation("AmendementCosignataires")
   actionsLobby  ActionLobby[]
   mandats       Mandat[]
+  mandatsParlementaires MandatParlementaire[]
   declarations  DeclarationHATVP[]
   reunionParticipants ReunionParticipant[]
 
@@ -107,6 +120,9 @@ model GroupePolitique {
   // Chambre (les groupes AN et Sénat sont distincts)
   chambre    String  @default("assemblee") // 'assemblee' | 'senat'
 
+  // Législature AN (15,16,17). Null pour le Sénat (groupes continus, dédup applicative par sourceId).
+  legislature Int?
+
   // Stats pré-calculées (recalculées lors de l'ingestion quotidienne)
   statsMembresActifs           Int?      @map("stats_membres_actifs")            // Nombre de membres actifs
   statsPresenceMoyenne         Int?      @map("stats_presence_moyenne")          // % moyen de présence aux scrutins
@@ -123,6 +139,7 @@ model GroupePolitique {
   statsVotesAbsent      Int?      @map("stats_votes_absent")     // Total des absences
 
   parlementaires Parlementaire[]
+  mandatsParlementaires MandatParlementaire[]
   alliancesFrom  GroupeAlliance[] @relation("GroupeFrom")
   alliancesTo    GroupeAlliance[] @relation("GroupeTo")
   statsThematiques GroupeThematique[]
@@ -131,9 +148,71 @@ model GroupePolitique {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@unique([slug, chambre])
+  @@unique([slug, chambre, legislature])
   @@index([chambre])
+  @@index([legislature])
   @@map("groupes_politiques")
+}
+
+// =============================================================================
+// MANDATS PARLEMENTAIRES (le siège lui-même : une personne sur une période)
+// Sépare l'identité (Parlementaire = personne stable) du contexte de mandat
+// (groupe / circo / série / stats), pour supporter le multi-législatures AN et
+// le multi-mandatures Sénat. DISTINCT du modèle `Mandat` ci-dessous (organes).
+// =============================================================================
+
+model MandatParlementaire {
+  id     String @id @default(uuid())
+
+  // Personne titulaire (identité stable, table `parlementaires`)
+  personneId String        @map("personne_id")
+  personne   Parlementaire @relation(fields: [personneId], references: [id], onDelete: Cascade)
+
+  // Chambre du mandat (une personne peut cumuler AN puis Sénat sur des mandats distincts)
+  chambre String @default("assemblee") // 'assemblee' | 'senat'
+
+  // Périodisation (selon la chambre) :
+  legislature Int?    // AN : 15,16,17 — null pour le Sénat
+  mandature   Int?    // Sénat : année du renouvellement (2017/2020/2023/2026) — null pour l'AN
+  serie       String? // Sénat : série électorale (1,2,3)
+
+  dateDebut DateTime  @map("date_debut")
+  dateFin   DateTime? @map("date_fin") // null = mandat en cours
+
+  // Contexte de la période
+  groupeId          String?          @map("groupe_id")
+  groupe            GroupePolitique? @relation(fields: [groupeId], references: [id])
+  circonscriptionId String?          @map("circonscription_id")
+  circonscription   Circonscription? @relation(fields: [circonscriptionId], references: [id])
+  commissionPermanente String?       @map("commission_permanente")
+
+  // Stats PAR MANDAT (copiées depuis Parlementaire en Phase 0 ; recalculées en Phase 4)
+  statsPresence           Int?      @map("stats_presence")
+  statsPresenceSolennel   Int?      @map("stats_presence_solennel")
+  statsLoyaute            Int?      @map("stats_loyaute")
+  statsParticipation      Int?      @map("stats_participation")
+  statsInterventions      Int?      @map("stats_interventions")
+  statsAmendements        Int?      @map("stats_amendements")
+  statsAmendementsAdoptes Int?      @map("stats_amendements_adoptes")
+  statsQuestions          Int?      @map("stats_questions")
+  statsCalculatedAt       DateTime? @map("stats_calculated_at")
+
+  // Dédoublonnage source (ref organe-mandature AN / id mandat Sénat si dispo)
+  mandatUid  String? @unique @map("mandat_uid")
+  sourceData Json?   @map("source_data")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Garde best-effort : AN distinct par législature, Sénat par mandature.
+  // (Postgres NULLS DISTINCT → dédup réel assuré par `mandatUid` + upsert Phase 1.)
+  @@unique([personneId, chambre, legislature, mandature])
+  @@index([personneId])
+  @@index([legislature])
+  @@index([mandature])
+  @@index([chambre, legislature])
+  @@index([groupeId])
+  @@map("mandats_parlementaires")
 }
 
 // =============================================================================
@@ -369,6 +448,7 @@ model Circonscription {
   type        String @default("legislative") // 'legislative' | 'senatoriale'
 
   parlementaires Parlementaire[]
+  mandatsParlementaires MandatParlementaire[]
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -551,6 +631,9 @@ model Scrutin {
   // Session parlementaire (ex: "2024" pour 2024-2025, "17" pour 17e législature AN)
   session          String   @default("17")
 
+  // Législature AN (15,16,17) pour filtrage propre. Null pour le Sénat (périodisé par `session`).
+  legislature      Int?
+
   date             DateTime
   titre            String
   typeVote         String   @map("type_vote") // 'solennel', 'ordinaire', 'motion'
@@ -598,6 +681,7 @@ model Scrutin {
   @@unique([numero, chambre, session])
   @@index([chambre])
   @@index([session])
+  @@index([legislature])
   @@index([date])
   @@index([typeVote])
   @@index([tags])

@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
@@ -35,6 +35,7 @@ import {
 import { api } from '@/lib/api';
 import { scrutinHref } from '@/lib/scrutin-url';
 import { getGroupColor } from '@/lib/colors';
+import { legislatureLabel, sessionLabel } from '@/lib/periodes';
 import { SortSelect, MEMBRE_SORT_OPTIONS } from '@/components/classements/SortSelect';
 import { FicheCompareCallout } from '@/components/FicheCompareCallout';
 
@@ -57,6 +58,12 @@ export interface GroupeDetail {
   id: string;
   slug: string;
   chambre: 'assemblee' | 'senat';
+  /** Législature AN du groupe. Null au Sénat (pas de législature). */
+  legislature: number | null;
+  /** Sénat : session affichée (ex. "2020"). Null pour l'AN. */
+  session: string | null;
+  /** Sénat : la session affichée est-elle la session courante ? */
+  sessionCourante: boolean;
   nom: string;
   nomComplet: string | null;
   couleur: string | null;
@@ -382,8 +389,16 @@ function MembresList({ membres, chambre }: { membres: Membre[]; chambre: string 
 export default function PageClient({ initialData }: { initialData?: { data: GroupeDetail } }) {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const chambre = params.chambre as string;
   const slug = params.slug as string;
+  // Un sigle désigne un groupe différent selon la législature : sans la propager,
+  // le fetch client écraserait au bout de quelques secondes les données SSR de la
+  // période demandée par celles de la législature la plus récente.
+  const legislature = searchParams.get('legislature') ?? undefined;
+  // Sénat : la session (ex. "2020") sélectionne la composition d'époque. Même raison
+  // que la législature — sans la propager, le fetch client écraserait le SSR.
+  const session = searchParams.get('session') ?? undefined;
 
   const membreLabel = chambre === 'assemblee' ? 'député' : 'sénateur';
 
@@ -392,32 +407,39 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
 
   // Fetch groupe detail
   const { data, isLoading, error } = useQuery<{ data: GroupeDetail }>({
-    queryKey: ['groupe', chambre, slug],
-    queryFn: () => api.get(`/groupes/${chambre}/${slug}`).then((res) => res.data),
+    queryKey: ['groupe', chambre, slug, legislature, session],
+    queryFn: () =>
+      api
+        .get(`/groupes/${chambre}/${slug}`, { params: { legislature, session } })
+        .then((res) => res.data),
     enabled: !!chambre && !!slug,
     initialData,
   });
 
-  // Fetch voting stats (avec filtre groupeInitie)
+  // Fetch voting stats (avec filtre groupeInitie). legislature/session propagées :
+  // sans elles, ce widget afficherait toujours les votes de la période la plus
+  // récente, même sur une page en vue historique (cf. getGroupeVotingStats).
   const { data: votingData, isLoading: votingLoading } = useQuery<{ data: VotingStats }>({
-    queryKey: ['groupe-votes', chambre, slug, groupeInitie],
+    queryKey: ['groupe-votes', chambre, slug, groupeInitie, legislature, session],
     queryFn: () => api.get(`/groupes/${chambre}/${slug}/votes`, {
-      params: groupeInitie ? { groupeInitie: true } : undefined,
+      params: { ...(groupeInitie ? { groupeInitie: true } : undefined), legislature, session },
     }).then((res) => res.data),
     enabled: !!chambre && !!slug,
   });
 
-  // Fetch alliances
+  // Fetch alliances. legislature propagée (AN uniquement, pré-calculée par
+  // législature) : le Sénat n'a pas de recalcul par session, la vue historique
+  // masque ce bloc côté rendu (cf. plus bas).
   const { data: alliancesData, isLoading: alliancesLoading } = useQuery<{ data: AlliancesData }>({
-    queryKey: ['groupe-alliances', chambre, slug],
-    queryFn: () => api.get(`/groupes/${chambre}/${slug}/alliances`).then((res) => res.data),
+    queryKey: ['groupe-alliances', chambre, slug, legislature],
+    queryFn: () => api.get(`/groupes/${chambre}/${slug}/alliances`, { params: { legislature } }).then((res) => res.data),
     enabled: !!chambre && !!slug,
   });
 
-  // Fetch thematiques
+  // Fetch thematiques. Même raison que les alliances.
   const { data: thematiquesData, isLoading: thematiquesLoading } = useQuery<{ data: ThematiquesData }>({
-    queryKey: ['groupe-thematiques', chambre, slug],
-    queryFn: () => api.get(`/groupes/${chambre}/${slug}/thematiques`).then((res) => res.data),
+    queryKey: ['groupe-thematiques', chambre, slug, legislature],
+    queryFn: () => api.get(`/groupes/${chambre}/${slug}/thematiques`, { params: { legislature } }).then((res) => res.data),
     enabled: !!chambre && !!slug,
   });
 
@@ -449,6 +471,13 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
       </div>
     );
   }
+
+  // Sénat, session PASSÉE : les alliances et thématiques ne sont pré-calculées que
+  // pour la session courante (pas de recalcul à la volée raisonnable), donc les
+  // blocs seraient trompeurs (données de la session courante affichées sous une
+  // page de session passée). On les masque et on l'explique. Les votes restent
+  // affichés : ils sont désormais bornés à la session par l'API.
+  const senatHistorique = groupe.session != null && !groupe.sessionCourante;
 
   return (
     <div className="container mx-auto px-4 py-8 overflow-x-hidden">
@@ -503,6 +532,29 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
               >
                 {chambre === 'assemblee' ? 'AN' : 'Sénat'}
               </span>
+              {/* Période : un même sigle désigne un groupe différent d'une
+                  législature à l'autre. Sans elle, impossible de savoir quelle
+                  composition on regarde. */}
+              {groupe.legislature != null && (
+                <span className="text-xs sm:text-sm px-2 sm:px-3 py-0.5 sm:py-1 rounded-full bg-muted text-muted-foreground shrink-0">
+                  {legislatureLabel(groupe.legislature)}
+                </span>
+              )}
+              {/* Sénat : la composition change de session en session. Le badge indique
+                  laquelle on regarde ; en vue historique, il le signale clairement pour
+                  ne pas laisser croire que c'est la composition actuelle. */}
+              {groupe.session != null && (
+                <span
+                  className={`text-xs sm:text-sm px-2 sm:px-3 py-0.5 sm:py-1 rounded-full shrink-0 ${
+                    groupe.sessionCourante
+                      ? 'bg-muted text-muted-foreground'
+                      : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                  }`}
+                >
+                  {sessionLabel(groupe.session)}
+                  {!groupe.sessionCourante && ' · composition d’époque'}
+                </span>
+              )}
             </div>
 
             {groupe.nomComplet && groupe.nomComplet !== groupe.nom && (
@@ -732,7 +784,11 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
           <h2 className="text-xl font-semibold">Alliances et oppositions</h2>
         </div>
 
-        {alliancesLoading ? (
+        {senatHistorique ? (
+          <p className="text-sm text-muted-foreground py-4">
+            Données disponibles uniquement pour la session en cours.
+          </p>
+        ) : alliancesLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
           </div>
@@ -787,7 +843,11 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
           <h2 className="text-xl font-semibold">Cohésion par thématique</h2>
         </div>
 
-        {thematiquesLoading ? (
+        {senatHistorique ? (
+          <p className="text-sm text-muted-foreground py-4">
+            Données disponibles uniquement pour la session en cours.
+          </p>
+        ) : thematiquesLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
           </div>

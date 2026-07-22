@@ -6,6 +6,11 @@ import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { ApiError } from '../../utils/errors';
 import { buildTextSearchCondition } from '../../utils/search';
+import {
+  joinMandatEpoque,
+  chargerGroupesEpoque,
+  parlementaireDansGroupeAuScrutin,
+} from '../../utils/groupe-epoque';
 
 // Cache TTL
 const CACHE_TTL_1H = 3600;
@@ -26,6 +31,13 @@ function truncateContenu(intervention: { contenu: string; [key: string]: any }) 
 }
 
 // Fix AN sourceUrl format: VTANR5L17V4946 -> 4946
+/** Borne haute inclusive : `dateTo` désigne un jour entier, pas son instant zéro. */
+const endOfDay = (date: Date): Date => {
+  const d = new Date(date);
+  d.setUTCHours(23, 59, 59, 999);
+  return d;
+};
+
 const fixSourceUrl = (sourceUrl: string | null, chambre: string, numero: number): string | null => {
   if (!sourceUrl) return null;
   // Fix AN URLs with wrong format (VTANR5L17Vxxxx instead of just xxxx)
@@ -131,11 +143,15 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         }
       }
 
-      // Combine date conditions properly (don't overwrite gte with lte)
+      // Combine date conditions properly (don't overwrite gte with lte).
+      // `dateTo` est une date (sans heure) : on borne à la fin de la journée,
+      // sinon tout scrutin horodaté après minuit ce jour-là serait exclu — ce
+      // qui coupait notamment le dernier jour des scrutins Sénat (stockés à
+      // 22:00 UTC = minuit à Paris).
       const dateCondition = (dateFrom || dateTo) ? {
         date: {
           ...(dateFrom && { gte: dateFrom }),
-          ...(dateTo && { lte: dateTo }),
+          ...(dateTo && { lte: endOfDay(dateTo) }),
         },
       } : {};
 
@@ -253,6 +269,65 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       `;
 
       const data = rows.map((r) => ({ year: r.year, count: Number(r.count) }));
+      const response = { data };
+
+      await fastify.redis.setex(cacheKey, 86400, JSON.stringify(response));
+      return response;
+    },
+  });
+
+  // ===========================================================================
+  // GET /api/v1/scrutins/periodes - Périodes institutionnelles disponibles
+  // ===========================================================================
+  fastify.get('/periodes', {
+    schema: {
+      tags: ['Scrutins'],
+      summary: 'Périodes institutionnelles disponibles',
+      description:
+        "Retourne les périodes pour lesquelles des scrutins existent : législature à l'AN, session ordinaire au Sénat. " +
+        'Les bornes de dates sont calculées sur les scrutins réellement en base : filtrer sur [dateDebut, dateFin] ' +
+        'renvoie donc exactement les scrutins de la période. Une période absente de la base n\'est pas exposée.',
+    },
+    handler: async (request, _reply) => {
+      const { chambre } = z
+        .object({ chambre: z.enum(['assemblee', 'senat']).optional() })
+        .parse(request.query);
+
+      const cacheKey = `scrutins:periodes:v2:${chambre ?? 'all'}`;
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+
+      // Bornes renvoyées en jours ('YYYY-MM-DD') et non en instants : un instant
+      // ISO serait réinterprété dans le fuseau du navigateur et décalerait la
+      // borne d'un jour (les scrutins Sénat sont horodatés à 22:00 UTC).
+      const rows = await fastify.prisma.$queryRaw<
+        {
+          chambre: string;
+          legislature: number | null;
+          session: string;
+          date_debut: string;
+          date_fin: string;
+          count: bigint;
+        }[]
+      >`
+        SELECT chambre, legislature, session,
+               MIN(date)::date::text AS date_debut,
+               MAX(date)::date::text AS date_fin,
+               COUNT(*) AS count
+        FROM scrutins
+        WHERE (${chambre ?? null}::text IS NULL OR chambre = ${chambre ?? null}::text)
+        GROUP BY chambre, legislature, session
+        ORDER BY MAX(date) DESC
+      `;
+
+      const data = rows.map((r) => ({
+        chambre: r.chambre,
+        legislature: r.legislature,
+        session: r.session,
+        dateDebut: r.date_debut,
+        dateFin: r.date_fin,
+        count: Number(r.count),
+      }));
       const response = { data };
 
       await fastify.redis.setex(cacheKey, 86400, JSON.stringify(response));
@@ -470,15 +545,24 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           where: { scrutinId: scrutin.id, position: 'absent' },
           select: voteSelect,
         }),
-        // Requête SQL groupée pour votesByGroupe (évite de charger tous les votes en mémoire)
-        fastify.prisma.$queryRaw<{ groupe_nom: string | null; position: string; count: bigint }[]>`
-          SELECT gp.nom as groupe_nom, v.position, COUNT(*) as count
+        // Requête SQL groupée pour votesByGroupe (évite de charger tous les votes
+        // en mémoire). Le groupe retenu est celui du MANDAT couvrant le scrutin
+        // (cf. groupe-epoque.ts) : joindre `p.groupe_id` renverrait le groupe
+        // actuel du parlementaire, faux dès qu'on remonte d'une législature.
+        fastify.prisma.$queryRawUnsafe<{ groupe_nom: string | null; position: string; count: bigint }[]>(
+          `
+          SELECT COALESCE(gm.nom, gp.nom) as groupe_nom, v.position, COUNT(*) as count
           FROM "votes" v
+          JOIN "scrutins" s ON s.id = v.scrutin_id
           JOIN "parlementaires" p ON v.parlementaire_id = p.id
+          ${joinMandatEpoque('v', 's', 'm')}
+          LEFT JOIN "groupes_politiques" gm ON m.groupe_id = gm.id
           LEFT JOIN "groupes_politiques" gp ON p.groupe_id = gp.id
-          WHERE v.scrutin_id = ${scrutin.id}
-          GROUP BY gp.nom, v.position
-        `,
+          WHERE v.scrutin_id = $1
+          GROUP BY COALESCE(gm.nom, gp.nom), v.position
+          `,
+          scrutin.id,
+        ),
       ]);
 
       // Construire votesByGroupe à partir de la requête agrégée
@@ -491,11 +575,26 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         votesByGroupe[groupeNom][row.position as keyof typeof votesByGroupe[string]] = Number(row.count);
       }
 
+      // Chaque votant est présenté avec le groupe où il siégeait AU MOMENT du
+      // scrutin, pas celui où il siège aujourd'hui (une seule requête pour les
+      // quatre listes). Sans mandat sur la période, on garde le groupe courant.
+      const tousLesVotes = [...votesPour, ...votesContre, ...votesAbstention, ...votesAbsent];
+      const groupesEpoque = await chargerGroupesEpoque(
+        fastify.prisma,
+        scrutin,
+        tousLesVotes.map((v) => v.parlementaire.id),
+      );
+      const avecGroupeEpoque = <T extends { parlementaire: { id: string; groupe: unknown } }>(votes: T[]): T[] =>
+        votes.map((v) => {
+          const groupe = groupesEpoque.get(v.parlementaire.id);
+          return groupe ? { ...v, parlementaire: { ...v.parlementaire, groupe } } : v;
+        });
+
       const votesByPosition = {
-        pour: votesPour,
-        contre: votesContre,
-        abstention: votesAbstention,
-        absent: votesAbsent,
+        pour: avecGroupeEpoque(votesPour),
+        contre: avecGroupeEpoque(votesContre),
+        abstention: avecGroupeEpoque(votesAbstention),
+        absent: avecGroupeEpoque(votesAbsent),
       };
 
       return {
@@ -695,11 +794,13 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         whereClause.session = session;
       }
 
-      // Use findFirst instead of findUnique to avoid composite key issues
+      // Use findFirst instead of findUnique to avoid composite key issues.
+      // chambre/legislature/date situent le scrutin dans le temps : sans elles,
+      // impossible de résoudre le groupe d'époque des votants.
       const scrutin = await fastify.prisma.scrutin.findFirst({
         where: whereClause,
         orderBy: { date: 'desc' },
-        select: { id: true },
+        select: { id: true, chambre: true, legislature: true, date: true },
       });
 
       if (!scrutin) {
@@ -709,7 +810,10 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       const where = {
         scrutinId: scrutin.id,
         ...(position && { position }),
-        ...(groupe && { parlementaire: { groupe: { slug: groupe } } }),
+        // Filtrer sur le groupe d'époque : `parlementaire.groupe` désignerait le
+        // groupe actuel, ce qui ferait disparaître d'un groupe les députés qui
+        // l'ont quitté depuis — et y ferait apparaître ceux qui l'ont rejoint.
+        ...(groupe && { parlementaire: parlementaireDansGroupeAuScrutin(scrutin, groupe) }),
       };
 
       const [votes, total] = await Promise.all([
@@ -739,8 +843,19 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
 
       const totalPages = Math.ceil(total / limit);
 
+      // Groupe d'époque : le groupe stocké sur le parlementaire est le groupe
+      // courant, faux pour tout scrutin antérieur à un changement de groupe.
+      const groupesEpoque = await chargerGroupesEpoque(
+        fastify.prisma,
+        scrutin,
+        votes.map((v) => v.parlementaire.id),
+      );
+
       return {
-        data: votes,
+        data: votes.map((v) => {
+          const groupe = groupesEpoque.get(v.parlementaire.id);
+          return groupe ? { ...v, parlementaire: { ...v.parlementaire, groupe } } : v;
+        }),
         meta: {
           total,
           page,

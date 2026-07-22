@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Calendar, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import type { PeriodePreset } from '@/lib/periodes';
 
 export interface DateRange {
   from: Date | null;
@@ -28,6 +29,22 @@ export interface DateRangePickerProps {
   startLabel?: string;
   /** Nombre de résultats sur la période active, affiché en badge sur le bouton. */
   resultCount?: number | null;
+  /**
+   * Périodes institutionnelles proposées en raccourci (législatures AN, sessions
+   * Sénat). Une période étant un intervalle de dates, le raccourci se résout en
+   * une simple plage : aucun paramètre d'API supplémentaire n'est nécessaire.
+   * Les périodes sont regroupées par `groupe` dans l'ordre reçu.
+   */
+  periodPresets?: PeriodePreset[];
+  /**
+   * Appelé — **à la place de `onChange`** — quand une période institutionnelle est
+   * choisie. La page doit alors écrire elle-même la plage de dates ET ses autres
+   * filtres (typiquement la chambre : une législature n'existe qu'à l'Assemblée,
+   * une session ordinaire qu'au Sénat) en une seule mise à jour d'URL. Deux
+   * écritures séparées se courent après : la seconde repart d'un `searchParams`
+   * périmé et écrase la première.
+   */
+  onPeriodSelect?: (periode: PeriodePreset) => void;
 }
 
 interface PresetOption {
@@ -126,6 +143,8 @@ export function DateRangePicker({
   maxDate,
   startLabel,
   resultCount,
+  periodPresets,
+  onPeriodSelect,
 }: DateRangePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [viewDate, setViewDate] = useState(() => value.from || new Date());
@@ -218,6 +237,27 @@ export function DateRangePicker({
     return { quickPresets: quick, yearPresets: years };
   }, [minDate, effectiveMax, startLabel, yearPresetMinYear, maxYear]);
 
+  // Périodes institutionnelles regroupées par intitulé, dans l'ordre reçu.
+  const periodGroups = useMemo(() => {
+    const groups = new Map<string, PeriodePreset[]>();
+    for (const p of periodPresets ?? []) {
+      const existing = groups.get(p.groupe);
+      if (existing) existing.push(p);
+      else groups.set(p.groupe, [p]);
+    }
+    return Array.from(groups.entries());
+  }, [periodPresets]);
+
+  // Période dont les bornes correspondent exactement à la sélection : permet
+  // d'afficher « XVIe législature » plutôt que la plage de dates brute.
+  const activePeriod = useMemo(
+    () =>
+      periodPresets?.find(
+        (p) => isSameDay(p.from, value.from) && isSameDay(p.to, value.to)
+      ) ?? null,
+    [periodPresets, value.from, value.to]
+  );
+
   const days = useMemo(
     () => getDaysInMonth(viewDate.getFullYear(), viewDate.getMonth()),
     [viewDate]
@@ -289,6 +329,7 @@ export function DateRangePicker({
   const displayValue = useMemo(() => {
     const { from, to } = value;
     if (!from && !to) return null;
+    if (activePeriod) return activePeriod.label;
     if (from && to) {
       const sameYear = from.getFullYear() === to.getFullYear();
       // Année calendaire complète (ou année en cours jusqu'à aujourd'hui)
@@ -306,7 +347,7 @@ export function DateRangePicker({
       return `Depuis le ${formatDayYear(from)}`;
     }
     return null;
-  }, [value, startLabel, minDate, effectiveMax]);
+  }, [value, startLabel, minDate, effectiveMax, activePeriod]);
 
   return (
     <div className="relative" ref={containerRef}>
@@ -355,7 +396,7 @@ export function DateRangePicker({
           <div className="flex">
             {/* Presets */}
             {showPresets && (
-              <div className="border-r bg-muted/30 p-2 min-w-[150px] max-h-[340px] overflow-y-auto">
+              <div className="border-r bg-muted/30 p-2 min-w-[175px] max-h-[340px] overflow-y-auto">
                 <div className="text-xs font-medium text-muted-foreground px-2 py-1 mb-1">
                   Raccourcis
                 </div>
@@ -368,6 +409,32 @@ export function DateRangePicker({
                   >
                     {preset.label}
                   </button>
+                ))}
+                {periodGroups.map(([groupe, periodes]) => (
+                  <div key={groupe}>
+                    <div className="text-xs font-medium text-muted-foreground px-2 py-1 mb-1 mt-2 border-t pt-2">
+                      {groupe}
+                    </div>
+                    {periodes.map((periode) => (
+                      <button
+                        key={periode.key}
+                        type="button"
+                        onClick={() => {
+                          if (onPeriodSelect) onPeriodSelect(periode);
+                          else onChange({ from: periode.from, to: periode.to });
+                          setIsOpen(false);
+                        }}
+                        className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-sm rounded hover:bg-muted transition-colors ${
+                          activePeriod?.key === periode.key ? 'bg-primary/10 text-primary font-medium' : ''
+                        }`}
+                      >
+                        <span className="truncate">{periode.label}</span>
+                        <span className="text-xs text-muted-foreground flex-shrink-0">
+                          {periode.count.toLocaleString('fr-FR')}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 ))}
                 {yearPresets.length > 0 && (
                   <>

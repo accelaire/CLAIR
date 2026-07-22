@@ -3,6 +3,7 @@
 // Source: seances_publique_excel.csv (encodage Latin-1, séparateur ';')
 // =============================================================================
 
+import { LEGISLATURE_AN_COURANTE } from '../../workers/mandats';
 import axios from 'axios';
 import { logger } from '../../utils/logger';
 
@@ -26,7 +27,7 @@ export interface TransformedSeanceODJ {
 export class SeancesODJClient {
   private readonly csvUrl: string;
 
-  constructor(legislature: number = 17) {
+  constructor(legislature: number = LEGISLATURE_AN_COURANTE) {
     this.csvUrl = `https://data.assemblee-nationale.fr/static/openData/repository/${legislature}/vp/seances/seances_publique_excel.csv`;
     logger.info({ legislature }, 'SeancesODJClient initialized');
   }

@@ -1,13 +1,17 @@
 /**
  * Construction des URLs vers les pages de détail de scrutin.
  *
- * Au Sénat, le numéro de scrutin n'est PAS unique : il est réinitialisé à chaque
- * session parlementaire. La clé unique réelle est `(numero, chambre, session)`
- * (cf. `@@unique([numero, chambre, session])` dans le schéma Prisma).
+ * Un numéro de scrutin n'est unique dans AUCUNE des deux chambres :
+ *  - au Sénat, il est réinitialisé à chaque session parlementaire ;
+ *  - à l'Assemblée, il est réinitialisé à chaque législature (le n°4000 existe
+ *    en 15e, 16e ET 17e).
  *
- * Tout lien vers un scrutin du Sénat DOIT donc transporter `chambre` ET `session`,
- * sinon l'API résout vers un scrutin arbitraire — par défaut celui de l'Assemblée
- * nationale, qui partage le même numéro (bug feedback : scrutin Sénat n°54 →
+ * La clé unique réelle est `(numero, chambre, session)` (cf.
+ * `@@unique([numero, chambre, session])` dans le schéma Prisma), où `session`
+ * porte la session au Sénat et le numéro de législature à l'Assemblée.
+ *
+ * Tout lien vers un scrutin DOIT donc transporter `chambre` ET `session`, sinon
+ * l'API résout vers un scrutin arbitraire (bug feedback : scrutin Sénat n°54 →
  * scrutin AN n°54).
  *
  * Ce module est l'unique source de vérité pour ces URLs : l'utiliser partout
@@ -20,8 +24,8 @@ export interface ScrutinLinkRef {
 }
 
 /**
- * Query string (sans le `?` initial) identifiant un scrutin de façon non ambiguë.
- * Toujours `chambre=…`, plus `session=…` quand il s'agit du Sénat.
+ * Query string (sans le `?` initial) identifiant un scrutin de façon non ambiguë :
+ * `chambre=…` et `session=…`, dans les deux chambres.
  */
 export function scrutinQuery({
   chambre,
@@ -29,7 +33,7 @@ export function scrutinQuery({
 }: Pick<ScrutinLinkRef, 'chambre' | 'session'>): string {
   const ch = chambre || 'assemblee';
   const params = new URLSearchParams({ chambre: ch });
-  if (ch === 'senat' && session) {
+  if (session) {
     params.set('session', session);
   }
   return params.toString();

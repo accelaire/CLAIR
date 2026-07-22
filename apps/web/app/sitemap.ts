@@ -1,4 +1,5 @@
 import { MetadataRoute } from 'next';
+import { scrutinHref } from '@/lib/scrutin-url';
 
 // force-dynamic: the sitemap fetches live data from the API at request time
 // so it is always up-to-date after the daily ingestion cron (05:00 Railway).
@@ -29,6 +30,8 @@ interface SenateurItem {
 
 interface ScrutinItem {
   numero: number;
+  chambre: string;
+  session: string | null;
   date: string;
 }
 
@@ -224,9 +227,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.8,
   }));
 
-  // Scrutins pages
+  // Scrutins pages. Le numéro n'est unique dans aucune des deux chambres : sans
+  // chambre + session, plusieurs scrutins distincts partageraient la même URL.
   const scrutinPages: MetadataRoute.Sitemap = scrutins.map((scrutin) => ({
-    url: `${BASE_URL}/scrutins/${scrutin.numero}`,
+    url: `${BASE_URL}${scrutinHref(scrutin)}`,
     lastModified: scrutin.date,
     changeFrequency: 'monthly' as const,
     priority: 0.7,

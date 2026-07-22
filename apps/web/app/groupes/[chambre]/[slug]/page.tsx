@@ -9,18 +9,47 @@ import type { GroupeDetail } from './PageClient';
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
 
-async function getGroupe(chambre: string, slug: string) {
+// Un sigle de groupe désigne un groupe différent selon la législature (RE, LAREM,
+// GDR-NUPES…). `legislature` sélectionne la période ; sans elle, l'API résout la
+// plus récente où ce sigle a existé.
+interface GroupeSearchParams {
+  legislature?: string;
+  // Sénat : session (année de début, ex. "2020"). Sélectionne la composition d'époque.
+  session?: string;
+}
+
+async function getGroupe(
+  chambre: string,
+  slug: string,
+  searchParams: GroupeSearchParams = {},
+) {
+  const params = new URLSearchParams();
+  if (searchParams.legislature) params.set('legislature', searchParams.legislature);
+  if (searchParams.session) params.set('session', searchParams.session);
+  const query = params.toString() ? `?${params.toString()}` : '';
   return fetchFromApi<{ data: GroupeDetail }>(
-    `/groupes/${chambre}/${slug}`,
+    `/groupes/${chambre}/${slug}${query}`,
   );
+}
+
+/** URL canonique : porte la période (législature AN / session Sénat), sans quoi
+ *  plusieurs compositions distinctes partageraient la même URL. */
+function groupeCanonicalUrl(data: GroupeDetail): string {
+  const base = `${BASE_URL}/groupes/${data.chambre}/${data.slug}`;
+  if (data.legislature != null) return `${base}?legislature=${data.legislature}`;
+  // Sénat : on ne canonicalise la session que si ce n'est pas la session courante.
+  if (data.session && !data.sessionCourante) return `${base}?session=${data.session}`;
+  return base;
 }
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: { chambre: string; slug: string };
+  searchParams: GroupeSearchParams;
 }): Promise<Metadata> {
-  const response = await getGroupe(params.chambre, params.slug);
+  const response = await getGroupe(params.chambre, params.slug, searchParams);
   const data = response?.data;
   if (!data) return {};
 
@@ -30,7 +59,7 @@ export async function generateMetadata({
   const preposition =
     data.chambre === 'senat' ? 'au Sénat' : "à l'Assemblée nationale";
   const description = `Groupe ${data.nomComplet || data.nom} ${preposition}. ${data.membresActifsCount} membres. Votes, positions et statistiques sur CLAIR.vote.`;
-  const url = `${BASE_URL}/groupes/${data.chambre}/${data.slug}`;
+  const url = groupeCanonicalUrl(data);
 
   return {
     title,
@@ -52,10 +81,12 @@ export async function generateMetadata({
 
 export default async function GroupeDetailPage({
   params,
+  searchParams,
 }: {
   params: { chambre: string; slug: string };
+  searchParams: GroupeSearchParams;
 }) {
-  const response = await getGroupe(params.chambre, params.slug);
+  const response = await getGroupe(params.chambre, params.slug, searchParams);
   const data = response?.data;
 
   const chambreLabel =

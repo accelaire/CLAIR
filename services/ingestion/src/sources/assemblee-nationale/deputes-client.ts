@@ -2,6 +2,7 @@
 // Client Assemblée Nationale Open Data - Récupération des députés
 // =============================================================================
 
+import { LEGISLATURE_AN_COURANTE } from '../../workers/mandats';
 import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -123,6 +124,10 @@ export interface TransformedParlementaire {
   // Sénat spécifique
   serie: string | null;
   commissionPermanente: string | null;
+  // Dates réelles du mandat de député (AMO10/AMO30), pour dater le mandat au lieu des
+  // bornes de législature. `null` si absentes/nil ; `mandatDateFin` null = mandat en cours.
+  mandatDateDebut: Date | null;
+  mandatDateFin: Date | null;
   // Source
   sourceData: ANActeur;
 }
@@ -144,14 +149,32 @@ export interface TransformedGroupe {
 // CLIENT
 // =============================================================================
 
+/**
+ * Normalise une valeur de champ XML→JSON en string non vide, ou null.
+ * Les champs nil XML arrivent sous forme d'objet `{ '@xsi:nil': 'true' }` (truthy) :
+ * sans ce garde, ils passeraient `|| null` et casseraient l'écriture Prisma.
+ * Fréquent dans l'AMO30 historique (15e/16e) où de nombreux champs sont vides.
+ */
+function xmlStringOrNull(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() !== '' ? v : null;
+}
+
 export class AssembleeNationaleDeputesClient {
   private legislature: number;
   private baseUrl: string;
+  private historical: boolean;
 
-  constructor(legislature: number = 17) {
+  /**
+   * @param legislature Numéro de législature (15, 16, 17…).
+   * @param options.historical Législature close : utilise le dataset AMO30
+   *   « tous acteurs/mandats » (l'AMO10 figé d'une législature close ne contient
+   *   plus d'acteurs) et accepte les mandats terminés (sinon 0 député parsé).
+   */
+  constructor(legislature: number = LEGISLATURE_AN_COURANTE, options: { historical?: boolean } = {}) {
     this.legislature = legislature;
+    this.historical = options.historical ?? false;
     this.baseUrl = 'https://data.assemblee-nationale.fr/static/openData/repository';
-    logger.info({ legislature }, 'AssembleeNationaleDeputesClient initialized');
+    logger.info({ legislature, historical: this.historical }, 'AssembleeNationaleDeputesClient initialized');
   }
 
   // ===========================================================================
@@ -301,7 +324,11 @@ export class AssembleeNationaleDeputesClient {
   // ===========================================================================
 
   async getDeputes(): Promise<{ deputes: TransformedParlementaire[]; groupes: TransformedGroupe[] }> {
-    const zipUrl = `${this.baseUrl}/${this.legislature}/amo/deputes_actifs_mandats_actifs_organes/AMO10_deputes_actifs_mandats_actifs_organes.json.zip`;
+    // Législature courante : AMO10 (députés actifs). Législature close : AMO30
+    // (tous acteurs/mandats/organes), car l'AMO10 figé ne contient plus d'acteurs.
+    const zipUrl = this.historical
+      ? `${this.baseUrl}/${this.legislature}/amo/tous_acteurs_mandats_organes_xi_legislature/AMO30_tous_acteurs_tous_mandats_tous_organes_historique.json.zip`
+      : `${this.baseUrl}/${this.legislature}/amo/deputes_actifs_mandats_actifs_organes/AMO10_deputes_actifs_mandats_actifs_organes.json.zip`;
     const tempDir = path.join(os.tmpdir(), 'clair-deputes-an');
     const zipPath = path.join(tempDir, 'deputes.zip');
     const extractDir = path.join(tempDir, 'extracted');
@@ -402,20 +429,26 @@ export class AssembleeNationaleDeputesClient {
       ? acteur.mandats.mandat
       : acteur.mandats?.mandat ? [acteur.mandats.mandat] : [];
 
-    const mandatDepute = mandats.find(
-      (m) => m.typeOrgane === 'ASSEMBLEE' &&
-             m.legislature === String(this.legislature) &&
-             !m.dateFin
-    );
+    // En courant : on exige un mandat ACTIF (sans dateFin). En historique (législature
+    // close), tous les mandats sont terminés → on accepte un mandat terminé de cette
+    // législature, sinon aucun député ne serait parsé.
+    const legStr = String(this.legislature);
+    const isAssembleeLeg = (m: any) => m.typeOrgane === 'ASSEMBLEE' && m.legislature === legStr;
+    const isGpLeg = (m: any) => m.typeOrgane === 'GP' && m.legislature === legStr;
 
-    if (!mandatDepute) return null; // Pas de mandat actif
+    const mandatDepute = this.historical
+      ? mandats.find(isAssembleeLeg)
+      : mandats.find((m) => isAssembleeLeg(m) && !m.dateFin);
 
-    // Trouver le groupe politique actif
-    const mandatGroupe = mandats.find(
-      (m) => m.typeOrgane === 'GP' &&
-             m.legislature === String(this.legislature) &&
-             !m.dateFin
-    );
+    if (!mandatDepute) return null; // Pas de mandat (actif en courant / dans la législature en historique)
+
+    // Groupe politique : actif en courant ; en historique, le dernier groupe de la
+    // législature (mandat GP au dateDebut le plus récent).
+    const mandatGroupe = this.historical
+      ? mandats
+          .filter(isGpLeg)
+          .sort((a, b) => String(b.dateDebut || '').localeCompare(String(a.dateDebut || '')))[0]
+      : mandats.find((m) => isGpLeg(m) && !m.dateFin);
 
     let groupeSigle: string | null = null;
     let groupeRef: string | null = null;
@@ -439,9 +472,19 @@ export class AssembleeNationaleDeputesClient {
     // Construire le slug
     const slug = this.buildSlug(ident.prenom, ident.nom);
 
+    // Dates réelles du mandat (le nil XML arrive en objet, d'où `xmlStringOrNull`).
+    const parseMandatDate = (v: unknown): Date | null => {
+      const s = xmlStringOrNull(v);
+      if (!s) return null;
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? null : d;
+    };
+    const mandatDateDebut = parseMandatDate(mandatDepute.dateDebut);
+    const mandatDateFin = parseMandatDate(mandatDepute.dateFin);
+
     // Extraire la circonscription depuis le mandat
     const election = mandatDepute.election;
-    const departement = election?.lieu?.numDepartement || null;
+    const departement = xmlStringOrNull(election?.lieu?.numDepartement);
     const numCirco = election?.lieu?.numCirco ? parseInt(election.lieu.numCirco, 10) : null;
 
     // Date de naissance
@@ -461,13 +504,13 @@ export class AssembleeNationaleDeputesClient {
       prenom: ident.prenom,
       sexe: ident.civ === 'Mme' ? 'F' : 'M',
       dateNaissance,
-      lieuNaissance: acteur.etatCivil?.infoNaissance?.villeNais || null,
+      lieuNaissance: xmlStringOrNull(acteur.etatCivil?.infoNaissance?.villeNais),
       profession:
         typeof acteur.profession?.libelleCourant === 'string'
           ? acteur.profession.libelleCourant
           : null,
-      email: emailAddr?.valElec || null,
-      twitter: twitterAddr?.valElec?.replace('@', '') || null,
+      email: xmlStringOrNull(emailAddr?.valElec),
+      twitter: xmlStringOrNull(twitterAddr?.valElec)?.replace('@', '') || null,
       facebook: null, // Non disponible pour AN
       // Format: https://www2.assemblee-nationale.fr/static/tribun/17/photos/793872.jpg
       // L'UID est au format "PA793872", on extrait le numéro
@@ -478,6 +521,8 @@ export class AssembleeNationaleDeputesClient {
       numCirco,
       serie: null, // Sénateurs uniquement
       commissionPermanente: null, // Sénateurs uniquement
+      mandatDateDebut,
+      mandatDateFin,
       sourceData: acteur,
     };
   }

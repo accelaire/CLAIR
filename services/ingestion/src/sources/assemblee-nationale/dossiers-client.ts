@@ -2,6 +2,7 @@
 // Client Assemblée Nationale Open Data - Dossiers Législatifs
 // =============================================================================
 
+import { LEGISLATURE_AN_COURANTE } from '../../workers/mandats';
 import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -114,7 +115,7 @@ export class DossiersLegislatifsClient {
   private legislature: number;
   private baseUrl: string;
 
-  constructor(legislature: number = 17) {
+  constructor(legislature: number = LEGISLATURE_AN_COURANTE) {
     this.legislature = legislature;
     this.baseUrl = 'https://data.assemblee-nationale.fr/static/openData/repository';
     logger.info({ legislature }, 'DossiersLegislatifsClient initialized');

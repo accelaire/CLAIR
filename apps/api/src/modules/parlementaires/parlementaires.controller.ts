@@ -63,11 +63,85 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
       schema: {
         tags: [chambreLabel],
         summary: 'Liste des groupes politiques',
-        description: `Retourne tous les groupes politiques actifs${forcedChambre ? ` de ${chambreLabel.toLowerCase()}` : ''} avec le nombre de membres`,
+        description:
+          `Retourne les groupes politiques${forcedChambre ? ` de ${chambreLabel.toLowerCase()}` : ''} d'une période, avec leur effectif. ` +
+          "Un sigle de groupe n'existe qu'à un instant donné : par défaut, seule la législature courante de l'Assemblée est renvoyée. Le Sénat n'a pas de législature.",
+        querystring: {
+          type: 'object',
+          properties: {
+            legislature: {
+              type: 'integer',
+              description: 'Législature AN (15, 16, 17). Défaut : la plus récente en base.',
+            },
+            session: {
+              type: 'string',
+              description:
+                'Session Sénat (année de début, ex. "2020"). Défaut : la session courante. ' +
+                "L'effectif renvoyé est la composition du groupe à cette session.",
+            },
+          },
+        },
+      },
+      handler: async (request, _reply) => {
+        const { legislature, session } = request.query as { legislature?: string; session?: string };
+        const groupes = await service.getGroupes(
+          forcedChambre,
+          legislature !== undefined ? Number(legislature) : undefined,
+          session,
+        );
+        return { data: groupes };
+      },
+    });
+
+    // ===========================================================================
+    // GET /legislatures - Législatures disponibles (sélecteur de période)
+    // ===========================================================================
+    fastify.get('/legislatures', {
+      schema: {
+        tags: [chambreLabel],
+        summary: 'Législatures disponibles',
+        description: `Liste des législatures pour lesquelles des mandats existent${forcedChambre ? ` (${chambreLabel.toLowerCase()})` : ''}, de la plus récente à la plus ancienne, avec le nombre de mandats.`,
       },
       handler: async (_request, _reply) => {
-        const groupes = await service.getGroupes(forcedChambre);
-        return { data: groupes };
+        const legislatures = await service.getLegislatures(forcedChambre);
+        return { data: legislatures };
+      },
+    });
+
+    // ===========================================================================
+    // GET /sessions - Sessions Sénat disponibles (axe temporel de la chambre haute)
+    // ===========================================================================
+    fastify.get('/sessions', {
+      schema: {
+        tags: [chambreLabel],
+        summary: 'Sessions disponibles (Sénat)',
+        description:
+          "Sessions ordinaires (1er oct. → 30 sept.) pour lesquelles la composition du Sénat est connue de façon fiable, de la plus récente à la plus ancienne. Le Sénat n'ayant pas de législature (renouvellement par moitiés), la session est le seul axe décrivant la chambre à un instant donné. Vide pour l'Assemblée (utiliser /legislatures).",
+      },
+      handler: async (_request, _reply) => {
+        if (forcedChambre === 'assemblee') return { data: [] };
+        const sessions = await service.getSessionsSenat();
+        return { data: sessions };
+      },
+    });
+
+    // ===========================================================================
+    // GET /historique-carriere - Le tri « carrière » est-il pertinent ?
+    // ===========================================================================
+    fastify.get('/historique-carriere', {
+      schema: {
+        tags: [chambreLabel],
+        summary: 'Historique de carrière disponible',
+        description:
+          "Indique si le tri « carrière complète » diffère du tri « mandat en cours » " +
+          `dans cette chambre${forcedChambre ? ` (${chambreLabel.toLowerCase()})` : ''} : ` +
+          'vrai seulement s\'il existe un élu en fonction réélu (≥ 2 mandats). Sert à ' +
+          'afficher le sélecteur de période des classements uniquement quand il départage ' +
+          'réellement les élus.',
+      },
+      handler: async (_request, _reply) => {
+        const present = await service.hasCarriereHistorique(forcedChambre);
+        return { data: { present } };
       },
     });
 
@@ -241,6 +315,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           order: query.order,
           chambre,
           groupe: query.groupe,
+          periode: query.periode,
         });
 
         return { data: result };

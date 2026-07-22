@@ -14,6 +14,9 @@ import { FAQAccordion } from '@/components/ui/faq-accordion';
 interface Stats {
   deputes: number;
   senateurs: number;
+  /** Toutes législatures/sessions confondues (mandats clos inclus). */
+  deputesTotal?: number;
+  senateursTotal?: number;
   scrutins: number;
   dossiers: number;
   lobbyistes: number;
@@ -96,8 +99,8 @@ const faqItems = [
 ];
 
 const statItems = [
-  { key: 'deputes', label: 'Députés', href: '/deputes' },
-  { key: 'senateurs', label: 'Sénateurs', href: '/senateurs' },
+  { key: 'deputes', label: 'Députés', href: '/deputes', totalKey: 'deputesTotal' },
+  { key: 'senateurs', label: 'Sénateurs', href: '/senateurs', totalKey: 'senateursTotal' },
   { key: 'scrutins', label: 'Scrutins', href: '/scrutins' },
   { key: 'dossiers', label: 'Dossiers', href: '/dossiers' },
   { key: 'interventions', label: 'Interventions', href: '/deputes' },
@@ -370,8 +373,10 @@ export default function HomePage() {
   const upcoming = homepageData?.upcoming;
 
   // Animated counters
-  const deputesCount = useCountUp(Math.min(stats?.deputes ?? 0, 577));
-  const senateursCount = useCountUp(Math.min(stats?.senateurs ?? 0, 348));
+  // Compteurs non cappés : ce sont les mandats en cours (577 / 348 aujourd'hui).
+  // Un écart doit se voir — une vacance de siège est une information, pas un bug.
+  const deputesCount = useCountUp(stats?.deputes ?? 0);
+  const senateursCount = useCountUp(stats?.senateurs ?? 0);
   const scrutinsCount = useCountUp(stats?.scrutins);
   const dossiersCount = useCountUp(stats?.dossiers);
   const lobbyistesCount = useCountUp(stats?.lobbyistes);
@@ -382,6 +387,12 @@ export default function HomePage() {
   const formatStat = (n: number) => {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace('.', ',')}M`;
     return n.toLocaleString('fr-FR');
+  };
+
+  // Total toutes législatures ; absent tant que l'API n'a pas la clé (cache tiède).
+  const totalFor = (key: string): number | null => {
+    const value = (stats as unknown as Record<string, number | undefined>)?.[key];
+    return typeof value === 'number' && value > 0 ? value : null;
   };
 
   const counters: Record<string, number> = {
@@ -463,6 +474,13 @@ export default function HomePage() {
                       {stats?.[item.key] ? formatStat(counters[item.key]) : '—'}
                     </span>
                     <span className="text-sm text-white/80 mt-0.5">{item.label}</span>
+                    {/* Profondeur d'archive : signale que les mandats clos sont
+                        consultables, sans alourdir la carte. */}
+                    {'totalKey' in item && totalFor(item.totalKey) != null && (
+                      <span className="text-[11px] text-white/60 mt-0.5 tabular-nums">
+                        {totalFor(item.totalKey)!.toLocaleString('fr-FR')} au total
+                      </span>
+                    )}
                   </Link>
                 ))}
               </div>

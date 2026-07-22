@@ -12,6 +12,14 @@ import { z } from 'zod';
 export const chambreEnum = z.enum(['assemblee', 'senat']);
 export type Chambre = z.infer<typeof chambreEnum>;
 
+/**
+ * Période des statistiques utilisées pour trier listes et classements.
+ * `mandat` : le mandat en cours — comparer des élus entre eux exige le même
+ * dénominateur de scrutins. `carriere` : tous les mandats cumulés.
+ */
+export const periodeStatsEnum = z.enum(['mandat', 'carriere']);
+export type PeriodeStats = z.infer<typeof periodeStatsEnum>;
+
 // =============================================================================
 // PARAMS & QUERY SCHEMAS
 // =============================================================================
@@ -40,12 +48,29 @@ export const parlementairesListQuerySchema = z.object({
   groupe: z.string().optional().describe('Filtrer par slug de groupe politique'),
   departement: z.string().optional().describe('Filtrer par numéro de département'),
   search: z.string().optional().describe('Recherche par nom/prénom'),
+  legislature: z.coerce
+    .number()
+    .int()
+    .optional()
+    .describe('Filtrer les parlementaires ayant siégé sous cette législature AN (15,16,17). Renvoie le groupe/circonscription de cette période. Défaut: législature courante (actifs).'),
+  session: z
+    .string()
+    .regex(/^\d{4}-\d{4}$/, 'Format attendu: "2024-2025"')
+    .optional()
+    .describe(
+      "Sénat : filtrer les sénateurs ayant siégé pendant cette session ordinaire (1er oct. → 30 sept.). L'appartenance est dérivée du chevauchement avec l'intervalle du mandat ; le groupe/circonscription de la période sont renvoyés. Cf. /senateurs/sessions pour les sessions disponibles.",
+    ),
   actif: z.coerce.boolean().optional().default(true).describe('Filtrer les actifs'),
   sort: z
     .enum(['nom', 'prenom', 'presence', 'loyaute', 'activite', 'amendements', 'interventions'])
     .default('nom')
     .describe('Champ de tri'),
   order: z.enum(['asc', 'desc']).default('asc').describe('Ordre de tri'),
+  periode: periodeStatsEnum
+    .default('mandat')
+    .describe(
+      "Période des stats servant au tri. 'mandat' (défaut) : le mandat en cours — seul tri qui compare les élus à dénominateur égal. 'carriere' : tous les mandats cumulés, ce qui avantage mécaniquement les réélus.",
+    ),
 });
 
 export const parlementaireRankQuerySchema = z.object({
@@ -54,6 +79,9 @@ export const parlementaireRankQuerySchema = z.object({
     .default('presence')
     .describe('Champ de tri du classement (doit refléter celui de la liste)'),
   order: z.enum(['asc', 'desc']).default('desc').describe('Ordre de tri'),
+  periode: periodeStatsEnum
+    .default('mandat')
+    .describe('Période des stats (doit refléter celle de la liste, sinon le rang ne tombe pas sur la bonne page)'),
   chambre: chambreEnum.optional().describe('Chambre du classement (défaut: celle du parlementaire)'),
   groupe: z.string().optional().describe('Restreindre le classement à un slug de groupe'),
 });

@@ -7,6 +7,7 @@ import { Search, ChevronDown, Loader2, ArrowRight, Vote } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
+import { toPeriodePresets, type PeriodeApi } from '@/lib/periodes';
 import { useUrlFilters, useUrlDateRange } from '@/hooks/useUrlFilters';
 import { FilterBar } from '@/components/FilterBar';
 import {
@@ -61,11 +62,13 @@ const capitalize = (str: string): string => {
 
 function ScrutinsPageContent() {
   // Sync filters with URL for back button preservation
-  const [filters, setFilter, , clearAll] = useUrlFilters<{
+  const [filters, setFilter, setFilters, clearAll] = useUrlFilters<{
     search: string;
     chambre: string;
     type: string;
     tag: string;
+    dateFrom: string;
+    dateTo: string;
   }>(['search', 'chambre', 'type', 'tag']);
 
   const [dateRange, setDateRange] = useUrlDateRange();
@@ -103,6 +106,22 @@ function ScrutinsPageContent() {
     queryKey: ['scrutins-tags'],
     queryFn: () => api.get('/scrutins/tags').then((res) => res.data.data),
   });
+
+  // Périodes institutionnelles disponibles. Suit la chambre sélectionnée : on ne
+  // propose que les législatures (AN) ou que les sessions (Sénat) quand une
+  // chambre est active, les deux sinon.
+  const { data: periodesData } = useQuery<{ data: PeriodeApi[] }>({
+    queryKey: ['scrutins-periodes', filters.chambre],
+    queryFn: () =>
+      api
+        .get('/scrutins/periodes', { params: { chambre: filters.chambre || undefined } })
+        .then((res) => res.data),
+  });
+
+  const periodPresets = useMemo(
+    () => toPeriodePresets(periodesData?.data ?? []),
+    [periodesData]
+  );
 
   // Fetch trending dossiers
   const { data: trendingData } = useQuery<{ data: TrendingDossier[] }>({
@@ -146,6 +165,9 @@ function ScrutinsPageContent() {
           Sources : <a href="https://data.assemblee-nationale.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.assemblee-nationale.fr</a>, <a href="https://data.senat.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">data.senat.fr</a>
           {' · '}<Link href="/comprendre/scrutin" className="underline hover:text-foreground">Qu&apos;est-ce qu&apos;un scrutin ?</Link>
           {' · '}<Link href="/guide/decrypter-un-scrutin" className="underline hover:text-foreground">Guide</Link>
+          {/* Archives par année/mois : seule porte d'entrée vers /votes, qui n'avait
+              aucun lien interne entrant (page orpheline malgré le sitemap). */}
+          {' · '}<Link href="/votes" className="underline hover:text-foreground">Archives par année</Link>
         </p>
       </div>
 
@@ -257,6 +279,16 @@ function ScrutinsPageContent() {
           value={dateRange}
           onChange={setDateRange}
           placeholder="Période"
+          periodPresets={periodPresets}
+          onPeriodSelect={(periode) =>
+            // Une seule écriture d'URL : la plage de dates ET la chambre, qu'une
+            // législature (Assemblée) ou une session (Sénat) implique forcément.
+            setFilters({
+              chambre: periode.chambre,
+              ...dateRangeToParams({ from: periode.from, to: periode.to }),
+            })
+          }
+          resultCount={total}
         />
       </FilterBar>
 

@@ -30,7 +30,6 @@ import {
   Loader2,  AlertTriangle,
   Sparkles,
   Shield,
-  ScrollText,
   ExternalLink,
   Info,
 } from 'lucide-react';
@@ -40,6 +39,7 @@ import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
 import { InterventionsList } from '@/components/parlementaire/interventions-list';
+import { MandatsBlock } from '@/components/parlementaire/mandats-timeline';
 
 export interface SenateurDetail {
   id: string;
@@ -90,6 +90,15 @@ export interface SenateurDetail {
     dateDebut: string;
     dateFin: string | null;
     commission?: { slug: string; nom: string; chambre: string } | null;
+  }>;
+  // Mandats parlementaires (parcours par mandature : groupe + circonscription)
+  mandatsParlementaires?: Array<{
+    legislature: number | null;
+    mandature: number | null;
+    dateDebut: string;
+    dateFin: string | null;
+    groupe: { slug: string; nom: string; couleur: string | null; legislature: number | null } | null;
+    circonscription: { nom: string; departement: string; numero: number } | null;
   }>;
   // Déclarations HATVP
   declarations?: Array<{
@@ -804,6 +813,92 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
         </div>
       )}
 
+      {/* Mandats et fonctions */}
+      {((senateur.mandats?.length ?? 0) > 0 ||
+        (senateur.mandatsParlementaires?.length ?? 0) > 0) && (
+        <div className="mb-8">
+          {/* Mandats : frise des mandatures + fonctions en commission rattachées */}
+          {(() => {
+            const mandatsActifs = (senateur.mandats ?? []).filter((m) => !m.dateFin);
+            const mandatsAnciens = (senateur.mandats ?? []).filter((m) => !!m.dateFin);
+            const visibleMandats = showAllMandats ? mandatsActifs : mandatsActifs.slice(0, 4);
+            const renderMandat = (m: NonNullable<typeof senateur.mandats>[0]) => {
+              const commissionLabel = m.commission?.nom || m.institution || m.typeOrgane;
+              const commissionHref = m.commission ? `/commissions/${m.commission.slug}` : null;
+              return (
+                <div key={m.id} className="flex items-start gap-3 rounded-lg border bg-card p-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{m.qualite || 'Membre'}</p>
+                    {commissionHref ? (
+                      <Link href={commissionHref} className="text-sm text-primary hover:underline line-clamp-2">
+                        {commissionLabel}
+                      </Link>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">{commissionLabel}</p>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground text-right flex-shrink-0">
+                    <p>{new Date(m.dateDebut).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}</p>
+                    <p>{m.dateFin ? new Date(m.dateFin).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' }) : 'en cours'}</p>
+                  </div>
+                </div>
+              );
+            };
+
+            // Accordéons « Voir N de plus » / « Anciens mandats » conservés tels quels.
+            const fonctions = (senateur.mandats?.length ?? 0) > 0 ? (
+              <>
+                <div className="grid gap-2 sm:grid-cols-2">{visibleMandats.map(renderMandat)}</div>
+                {mandatsActifs.length > 4 && (
+                  <div className="mt-2">
+                    <button
+                      onClick={() => setShowAllMandats((v) => !v)}
+                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showAllMandats ? (
+                        <>
+                          <ChevronUp className="h-3.5 w-3.5" />
+                          Réduire
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="h-3.5 w-3.5" />
+                          Voir {mandatsActifs.length - 4} de plus
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+                {mandatsAnciens.length > 0 && (
+                  <div className="mt-3">
+                    <button
+                      onClick={() => setShowAnciensMandats((v) => !v)}
+                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showAnciensMandats ? 'rotate-180' : ''}`} />
+                      Anciens mandats ({mandatsAnciens.length})
+                    </button>
+                    {showAnciensMandats && (
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2 opacity-70">
+                        {mandatsAnciens.map(renderMandat)}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : null;
+
+            return (
+              <MandatsBlock
+                mandats={senateur.mandatsParlementaires ?? []}
+                chambre="senat"
+                fonctionsCourantes={fonctions}
+              />
+            );
+          })()}
+        </div>
+      )}
+
       <FicheCompareCallout variant="parlementaire" chambre="senat" slug={senateur.slug} />
 
       {/* Fiche enrichie par IA */}
@@ -851,160 +946,79 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
         </div>
       )}
 
-      {/* Mandats & Déclarations HATVP */}
-      {((senateur.mandats && senateur.mandats.length > 0) || (senateur.declarations && senateur.declarations.length > 0)) && (
-        <div className="mb-8 grid gap-6 lg:grid-cols-2">
-          {senateur.mandats && senateur.mandats.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <ScrollText className="h-5 w-5 text-blue-500" />
-                <h2 className="text-xl font-semibold">Mandats et fonctions</h2>
-              </div>
-              <div className="space-y-2">
-                {(() => {
-                  const mandatsActifs = (senateur.mandats ?? []).filter((m) => !m.dateFin);
-                  const mandatsAnciens = (senateur.mandats ?? []).filter((m) => !!m.dateFin);
-                  const visibleMandats = showAllMandats ? mandatsActifs : mandatsActifs.slice(0, 4);
-                  const renderMandat = (m: NonNullable<typeof senateur.mandats>[0]) => {
-                    const commissionLabel = m.commission?.nom || m.institution || m.typeOrgane;
-                    const commissionHref = m.commission ? `/commissions/${m.commission.slug}` : null;
+      {/* Déclarations HATVP */}
+      {senateur.declarations && senateur.declarations.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-4">
+            <Shield className="h-5 w-5 text-emerald-500" />
+            <h2 className="text-xl font-semibold">Transparence HATVP</h2>
+          </div>
+          <div className="space-y-2">
+            {(() => {
+              const visibleDeclarations = showAllDeclarations
+                ? (senateur.declarations ?? [])
+                : (senateur.declarations ?? []).slice(0, 4);
+              return (
+                <>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                  {visibleDeclarations.map((d) => {
+                    const labels: Record<string, string> = {
+                      di: "Déclaration d'intérêts",
+                      dia: "Déclaration d'intérêts et d'activités",
+                      diam: "Déclaration d'intérêts (modification)",
+                      dsp: 'Déclaration de patrimoine',
+                      dspm: 'Déclaration de patrimoine (modification)',
+                      dspfm: 'Déclaration de patrimoine (fin de mandat)',
+                    };
                     return (
-                      <div key={m.id} className="flex items-start gap-3 rounded-lg border bg-card p-3">
+                      <div key={d.id} className="flex items-center gap-3 rounded-lg border bg-card p-3">
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium">{m.qualite || 'Membre'}</p>
-                          {commissionHref ? (
-                            <Link href={commissionHref} className="text-sm text-primary hover:underline line-clamp-2">
-                              {commissionLabel}
-                            </Link>
-                          ) : (
-                            <p className="text-sm text-muted-foreground">{commissionLabel}</p>
+                          <p className="text-sm font-medium">{labels[d.typeDocument] || d.typeDocument}</p>
+                          {d.datePublication && (
+                            <p className="text-xs text-muted-foreground">
+                              Publiée le {new Date(d.datePublication).toLocaleDateString('fr-FR')}
+                            </p>
                           )}
                         </div>
-                        <div className="text-xs text-muted-foreground text-right flex-shrink-0">
-                          <p>{new Date(m.dateDebut).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}</p>
-                          <p>{m.dateFin ? new Date(m.dateFin).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' }) : 'en cours'}</p>
-                        </div>
+                        {d.urlDossier && (
+                          <a
+                            href={d.urlDossier}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-shrink-0 rounded-lg border p-2 hover:bg-accent transition-colors"
+                            title="Voir sur hatvp.fr"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        )}
                       </div>
                     );
-                  };
-                  return (
-                    <>
-                      <div className="space-y-2">{visibleMandats.map(renderMandat)}</div>
-                      {mandatsActifs.length > 4 && (
-                        <div className="mt-2">
-                          <button
-                            onClick={() => setShowAllMandats((v) => !v)}
-                            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                          >
-                            {showAllMandats ? (
-                              <>
-                                <ChevronUp className="h-3.5 w-3.5" />
-                                Réduire
-                              </>
-                            ) : (
-                              <>
-                                <ChevronDown className="h-3.5 w-3.5" />
-                                Voir {mandatsActifs.length - 4} de plus
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      )}
-                      {mandatsAnciens.length > 0 && (
-                        <div className="mt-3">
-                          <button
-                            onClick={() => setShowAnciensMandats((v) => !v)}
-                            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                          >
-                            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showAnciensMandats ? 'rotate-180' : ''}`} />
-                            Anciens mandats ({mandatsAnciens.length})
-                          </button>
-                          {showAnciensMandats && (
-                            <div className="mt-2 space-y-2 opacity-70">
-                              {mandatsAnciens.map(renderMandat)}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-          )}
-
-          {senateur.declarations && senateur.declarations.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <Shield className="h-5 w-5 text-emerald-500" />
-                <h2 className="text-xl font-semibold">Transparence HATVP</h2>
-              </div>
-              <div className="space-y-2">
-                {(() => {
-                  const visibleDeclarations = showAllDeclarations
-                    ? (senateur.declarations ?? [])
-                    : (senateur.declarations ?? []).slice(0, 4);
-                  return (
-                    <>
-                      {visibleDeclarations.map((d) => {
-                        const labels: Record<string, string> = {
-                          di: "Déclaration d'intérêts",
-                          dia: "Déclaration d'intérêts et d'activités",
-                          diam: "Déclaration d'intérêts (modification)",
-                          dsp: 'Déclaration de patrimoine',
-                          dspm: 'Déclaration de patrimoine (modification)',
-                          dspfm: 'Déclaration de patrimoine (fin de mandat)',
-                        };
-                        return (
-                          <div key={d.id} className="flex items-center gap-3 rounded-lg border bg-card p-3">
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium">{labels[d.typeDocument] || d.typeDocument}</p>
-                              {d.datePublication && (
-                                <p className="text-xs text-muted-foreground">
-                                  Publiée le {new Date(d.datePublication).toLocaleDateString('fr-FR')}
-                                </p>
-                              )}
-                            </div>
-                            {d.urlDossier && (
-                              <a
-                                href={d.urlDossier}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex-shrink-0 rounded-lg border p-2 hover:bg-accent transition-colors"
-                                title="Voir sur hatvp.fr"
-                              >
-                                <ExternalLink className="h-4 w-4" />
-                              </a>
-                            )}
-                          </div>
-                        );
-                      })}
-                      {(senateur.declarations ?? []).length > 4 && (
-                        <div className="mt-2">
-                          <button
-                            onClick={() => setShowAllDeclarations((v) => !v)}
-                            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                          >
-                            {showAllDeclarations ? (
-                              <>
-                                <ChevronUp className="h-3.5 w-3.5" />
-                                Réduire
-                              </>
-                            ) : (
-                              <>
-                                <ChevronDown className="h-3.5 w-3.5" />
-                                Voir {(senateur.declarations ?? []).length - 4} de plus
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-          )}
+                  })}
+                  </div>
+                  {(senateur.declarations ?? []).length > 4 && (
+                    <div className="mt-2">
+                      <button
+                        onClick={() => setShowAllDeclarations((v) => !v)}
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {showAllDeclarations ? (
+                          <>
+                            <ChevronUp className="h-3.5 w-3.5" />
+                            Réduire
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="h-3.5 w-3.5" />
+                            Voir {(senateur.declarations ?? []).length - 4} de plus
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
         </div>
       )}
 
