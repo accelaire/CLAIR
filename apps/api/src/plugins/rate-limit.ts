@@ -229,6 +229,13 @@ const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
         url: request.url,
         status: reply.statusCode,
         durationMs: duration,
+        // Suivi de l'egress facturé : Railway mesure les octets en sortie de
+        // conteneur, donc avant la compression de son edge. Ces deux champs
+        // permettent de vérifier que le proxy transmet bien Accept-Encoding et
+        // que @fastify/compress s'active réellement en production.
+        acceptEncoding: request.headers['accept-encoding'] || 'none',
+        contentEncoding: reply.getHeader('content-encoding') || 'none',
+        bytes: reply.getHeader('content-length') || 'unknown',
       },
       'Direct API access',
     );

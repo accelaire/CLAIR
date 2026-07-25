@@ -4,6 +4,7 @@
 
 import 'dotenv/config';
 import Fastify from 'fastify';
+import compress from '@fastify/compress';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import swagger from '@fastify/swagger';
@@ -59,6 +60,23 @@ async function buildApp() {
   // ==========================================================================
   // PLUGINS GLOBAUX
   // ==========================================================================
+
+  // Compression des réponses.
+  //
+  // Le proxy edge de Railway gzippe déjà ce qu'il envoie au client, mais il
+  // facture l'egress mesuré EN SORTIE DE CONTENEUR, donc avant sa propre
+  // compression. Compresser ici divise la ligne facturée par ~8 sur les
+  // réponses JSON volumineuses (mesuré : /scrutins?limit=50 passe de 725 Ko à
+  // 47 Ko, /parlementaires?limit=100 de 1,34 Mo à 192 Ko).
+  //
+  // Doit être enregistré avant les routes pour que le hook onSend s'applique
+  // globalement. Volontairement limité à gzip/deflate : brotli compresse mieux
+  // mais coûte plus de CPU, et l'edge ne sert de toute façon que du gzip.
+  await app.register(compress, {
+    global: true,
+    encodings: ['gzip', 'deflate'],
+    threshold: 1024,
+  });
 
   // Sécurité
   await app.register(helmet, {
