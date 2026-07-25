@@ -18,6 +18,10 @@ export async function fetchFromApi<T>(
       next: { revalidate },
       headers: {
         'User-Agent': 'CLAIR-Web-SSR/1.0',
+        // Sans Origin, l'API classe l'appel SSR en « accès direct » et le
+        // plafonne à 10 req/min au lieu de 200. Le SSR n'y échappait jusqu'ici
+        // que parce que les IP Vercel tournent, chacune ayant son propre seau.
+        Origin: process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote',
       },
     });
     if (!res.ok) {

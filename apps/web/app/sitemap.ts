@@ -1,9 +1,12 @@
 import { MetadataRoute } from 'next';
 import { scrutinHref } from '@/lib/scrutin-url';
 
-// force-dynamic: the sitemap fetches live data from the API at request time
-// so it is always up-to-date after the daily ingestion cron (05:00 Railway).
-export const dynamic = 'force-dynamic';
+// Le sitemap est régénéré au plus une fois par heure. Il était auparavant en
+// force-dynamic, donc reconstruit à chaque requête sur /sitemap.xml : chaque
+// hit relançait une pagination complète de toutes les entités et saturait le
+// rate-limit de l'API. Une heure suffit largement, l'ingestion ne tourne
+// qu'une fois par jour (04:00 UTC).
+export const revalidate = 3600;
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -56,36 +59,92 @@ interface SujetItem {
   updatedAt?: string;
 }
 
+/** Nombre de reprises sur 429 avant d'abandonner une page. */
+const MAX_429_RETRIES = 2;
+
+/** Plafond d'attente entre deux reprises, pour rester sous le timeout Vercel. */
+const MAX_RETRY_WAIT_MS = 10_000;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Récupère une page en réessayant sur 429.
+ *
+ * Le rate-limit de l'API accorde 200 req/min aux appels portant un Origin de
+ * confiance contre 10 req/min aux autres. Sans cet en-tête, la pagination du
+ * sitemap se faisait couper au bout de dix pages.
+ */
+async function fetchPage(url: string): Promise<Response | null> {
+  for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
+    const response = await fetch(url, {
+      headers: {
+        // Node envoie "undici" par défaut, que le plugin rate-limit bloque
+        // (voir apps/web/lib/api-server.ts).
+        'User-Agent': 'CLAIR-Web-Sitemap/1.0',
+        Origin: BASE_URL,
+      },
+    });
+
+    if (response.status !== 429) return response;
+
+    if (attempt === MAX_429_RETRIES) {
+      console.error(`[sitemap] 429 persistant après ${attempt + 1} tentatives — ${url}`);
+      return response;
+    }
+
+    const retryAfter = Number(response.headers.get('retry-after'));
+    const waitMs = Math.min(
+      Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** attempt,
+      MAX_RETRY_WAIT_MS,
+    );
+    console.warn(`[sitemap] 429, reprise dans ${waitMs}ms — ${url}`);
+    await sleep(waitMs);
+  }
+
+  return null;
+}
+
 async function fetchAllPages<T>(endpoint: string): Promise<T[]> {
   const items: T[] = [];
   let page = 1;
   const limit = 100;
+  // Une sortie de boucle avant la dernière page produit un sitemap tronqué.
+  // On le signale explicitement au lieu de le laisser passer en silence.
+  let truncated = false;
 
   try {
     while (true) {
       const url = `${API_URL}/api/v1${endpoint}?page=${page}&limit=${limit}`;
-      // User-Agent override is required — Node's default "undici" is blocked
-      // by the API rate-limit plugin (see apps/web/lib/api-server.ts).
-      const response = await fetch(url, {
-        headers: { 'User-Agent': 'CLAIR-Web-Sitemap/1.0' },
-      });
+      const response = await fetchPage(url);
 
-      if (!response.ok) {
+      if (!response || !response.ok) {
         console.error(
-          `[sitemap] ${response.status} ${response.statusText} — ${url}`,
+          `[sitemap] ${response?.status ?? 'no response'} ${response?.statusText ?? ''} — ${url}`,
         );
+        truncated = true;
         break;
       }
 
       const data: PaginatedResponse<T> = await response.json();
-      if (!data.data || !Array.isArray(data.data)) break;
+      if (!data.data || !Array.isArray(data.data)) {
+        truncated = true;
+        break;
+      }
       items.push(...data.data);
 
-      if (!data.meta || page >= data.meta.totalPages) break;
+      if (!data.meta) break;
+      if (page >= data.meta.totalPages) break;
       page++;
     }
   } catch (error) {
     console.error(`[sitemap] fetch failed — ${endpoint}`, error);
+    truncated = true;
+  }
+
+  if (truncated) {
+    console.error(
+      `[sitemap] TRUNCATED ${endpoint} — ${items.length} entrées récupérées, arrêt page ${page}`,
+    );
   }
 
   return items;
