@@ -168,7 +168,7 @@ function DeputesPageContent() {
   });
 
   // Flatten all pages data
-  const deputes = data?.pages.flatMap((page) => page.data) ?? [];
+  const deputes = useMemo(() => data?.pages.flatMap((page) => page.data) ?? [], [data]);
   // Pas de cap : sur une législature close l'API renvoie TOUS les titulaires d'un
   // mandat (sortants et remplaçants compris), soit plus que le nombre de sièges.
   // Capper afficherait « 577 sur 577 » là où 618 personnes ont siégé.

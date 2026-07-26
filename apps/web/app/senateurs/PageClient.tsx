@@ -154,7 +154,7 @@ function SenateursPageContent() {
   });
 
   // Flatten all pages data
-  const senateurs = data?.pages.flatMap((page) => page.data) ?? [];
+  const senateurs = useMemo(() => data?.pages.flatMap((page) => page.data) ?? [], [data]);
   // Pas de cap : hors session courante l'API renvoie tous les mandats chevauchant
   // la fenêtre (démissions et remplaçants compris), donc potentiellement > 348.
   const total = data?.pages[0]?.meta.total ?? 0;

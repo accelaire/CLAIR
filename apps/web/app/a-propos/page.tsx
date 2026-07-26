@@ -41,8 +41,8 @@ export default function AProposPage() {
             Nous ne portons aucun jugement politique. Nous présentons les faits tels qu&apos;ils
             sont publiés par les institutions : Assemblée nationale, Sénat, Haute Autorité
             pour la Transparence de la Vie Publique (HATVP), et Direction de l&apos;Information
-            Légale et Administrative (DILA). D'autres sources officielles viendront s'ajouter
-            au fur et à mesure de l'avancée du projet.
+            Légale et Administrative (DILA). D&apos;autres sources officielles viendront s&apos;ajouter
+            au fur et à mesure de l&apos;avancée du projet.
           </p>
         </div>
       </div>

@@ -252,7 +252,10 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
     fetchNextPage,
   });
 
-  const allInterventions = interventionsData?.pages.flatMap((page) => page.data) ?? [];
+  const allInterventions = useMemo(
+    () => interventionsData?.pages.flatMap((page) => page.data) ?? [],
+    [interventionsData]
+  );
   const totalInterventions = data?.data.totalInterventions ?? 0;
 
   // Groupes map for link resolution

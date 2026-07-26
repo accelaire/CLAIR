@@ -831,7 +831,7 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
         ) : (
           <div className="rounded-xl border bg-card p-8 text-center text-muted-foreground">
             <Users2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p>Aucune donnée d'alliance disponible.</p>
+            <p>Aucune donnée d&apos;alliance disponible.</p>
           </div>
         )}
       </section>

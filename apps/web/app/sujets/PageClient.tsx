@@ -237,7 +237,7 @@ function SujetsPageContent() {
     },
   });
 
-  const sujets = data ?? [];
+  const sujets = useMemo(() => data ?? [], [data]);
 
   // Helper: tri par dateDernierVote desc (plus récent en premier)
   const sortByLastVote = (a: Sujet, b: Sujet) => {

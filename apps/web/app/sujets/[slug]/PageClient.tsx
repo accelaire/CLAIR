@@ -857,7 +857,7 @@ function StatsPanel({ slug, dossiers }: { slug: string; dossiers: SujetDossier[]
     queryFn: () => api.get(`/sujets/${slug}/stats`).then((res) => res.data),
   });
 
-  const groupeStats = statsData?.data ?? [];
+  const groupeStats = useMemo(() => statsData?.data ?? [], [statsData]);
   const groupeDescriptions = statsData?.groupeAmendementDescriptions ?? {};
   const hasDescriptions = Object.keys(groupeDescriptions).length > 0;
 
