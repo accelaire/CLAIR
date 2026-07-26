@@ -26,14 +26,10 @@ const nextConfig = {
       },
     ],
   },
-  async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/:path*`,
-      },
-    ];
-  },
+  // Plus de rewrite `/api/:path*` vers l'API : le proxy
+  // `app/api/v1/[...path]/route.ts` le remplace. Un rewrite ne peut pas ajouter
+  // d'en-tête à la requête sortante, il ne pouvait donc pas porter le secret
+  // interne — c'est précisément ce qu'il fallait pour authentifier le frontend.
 };
 
 module.exports = nextConfig;

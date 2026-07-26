@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import type { FastifyRequest } from 'fastify';
-import { isInternalRequest, hasInternalSecret, INTERNAL_HEADER } from './internal-auth';
+import {
+  isInternalRequest,
+  hasInternalSecret,
+  getForwardedClientIp,
+  INTERNAL_HEADER,
+  CLIENT_IP_HEADER,
+} from './internal-auth';
 
 const ORIGINAL_SECRET = process.env.CLAIR_INTERNAL_SECRET;
 const ORIGINAL_LEGACY = process.env.CACHE_WARM_TOKEN;
@@ -78,6 +84,35 @@ describe('isInternalRequest', () => {
   it('ne retombe plus sur CACHE_WARM_TOKEN', () => {
     process.env.CACHE_WARM_TOKEN = 'ancien-token';
     expect(isInternalRequest(req({ [INTERNAL_HEADER]: 'ancien-token' }))).toBe(false);
+  });
+});
+
+describe('getForwardedClientIp', () => {
+  it('renvoie l\'IP du visiteur quand le secret est valide', () => {
+    process.env.CLAIR_INTERNAL_SECRET = 'secret-interne';
+    const r = req({ [INTERNAL_HEADER]: 'secret-interne', [CLIENT_IP_HEADER]: '203.0.113.7' });
+    expect(getForwardedClientIp(r)).toBe('203.0.113.7');
+  });
+
+  it('ignore l\'IP relayée sans secret valide — sinon n\'importe qui choisirait son compteur', () => {
+    process.env.CLAIR_INTERNAL_SECRET = 'secret-interne';
+    expect(getForwardedClientIp(req({ [CLIENT_IP_HEADER]: '203.0.113.7' }))).toBeNull();
+    expect(
+      getForwardedClientIp(
+        req({ [INTERNAL_HEADER]: 'mauvais', [CLIENT_IP_HEADER]: '203.0.113.7' }),
+      ),
+    ).toBeNull();
+  });
+
+  it('renvoie null pour du trafic interne sans IP relayée (SSR, sitemap, ingestion)', () => {
+    process.env.CLAIR_INTERNAL_SECRET = 'secret-interne';
+    expect(getForwardedClientIp(req({ [INTERNAL_HEADER]: 'secret-interne' }))).toBeNull();
+  });
+
+  it('traite une IP vide ou blanche comme absente', () => {
+    process.env.CLAIR_INTERNAL_SECRET = 'secret-interne';
+    const r = req({ [INTERNAL_HEADER]: 'secret-interne', [CLIENT_IP_HEADER]: '   ' });
+    expect(getForwardedClientIp(r)).toBeNull();
   });
 });
 

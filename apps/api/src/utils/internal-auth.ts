@@ -30,6 +30,20 @@ import type { FastifyRequest } from 'fastify';
 /** En-tête portant le secret interne. */
 export const INTERNAL_HEADER = 'x-clair-internal';
 
+/**
+ * IP réelle du visiteur, posée par le proxy du frontend (`/api/v1/[...path]`).
+ *
+ * Sans elle, router le navigateur à travers le front transformerait celui-ci en
+ * relais anonyme illimité : il suffirait d'appeler clair.vote/api/v1/… en boucle
+ * pour contourner toute limite. Le proxy transmet donc l'IP du visiteur, et
+ * l'API plafonne ce trafic sur cette IP plutôt que de l'exempter.
+ *
+ * ⚠️ N'a de sens QUE sur une requête déjà authentifiée par le secret interne.
+ * Le proxy l'écrase systématiquement à partir de la connexion réelle, un client
+ * ne peut donc pas la choisir pour se fabriquer un compteur neuf.
+ */
+export const CLIENT_IP_HEADER = 'x-clair-client-ip';
+
 /** Secret attendu, partagé à l'identique par l'API, l'ingestion et le frontend. */
 function getInternalSecret(): string {
   return (process.env.CLAIR_INTERNAL_SECRET || '').trim();
@@ -64,4 +78,18 @@ export function isInternalRequest(request: FastifyRequest): boolean {
 /** Le secret est-il configuré ? Sert à alerter au démarrage. */
 export function hasInternalSecret(): boolean {
   return getInternalSecret().length > 0;
+}
+
+/**
+ * IP du visiteur relayée par le proxy du frontend, ou `null`.
+ *
+ * Renvoie `null` si la requête n'est pas authentifiée comme interne : l'en-tête
+ * est alors sans valeur, n'importe qui pourrait l'inventer.
+ */
+export function getForwardedClientIp(request: FastifyRequest): string | null {
+  if (!isInternalRequest(request)) return null;
+
+  const raw = request.headers[CLIENT_IP_HEADER];
+  const ip = typeof raw === 'string' ? raw.trim() : '';
+  return ip.length > 0 ? ip : null;
 }
