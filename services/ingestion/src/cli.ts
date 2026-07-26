@@ -438,15 +438,19 @@ program
       console.log('\n⏳ Attente 120s avant rechargement du cache (stabilisation DB)...');
       await new Promise(r => setTimeout(r, 120_000));
       const apiUrl = process.env.API_URL || 'http://localhost:3001';
-      const warmToken = process.env.CACHE_WARM_TOKEN?.trim();
-      if (warmToken) {
+      // Secret interne partagé avec l'API et le frontend. CACHE_WARM_TOKEN est
+      // l'ancien nom, gardé en repli le temps de la bascule des variables.
+      const internalSecret = (
+        process.env.CLAIR_INTERNAL_SECRET || process.env.CACHE_WARM_TOKEN || ''
+      ).trim();
+      if (internalSecret) {
         try {
           // Invalidation
           console.log('\n🔄 Invalidation du cache homepage...');
           const invalidate = await fetch(`${apiUrl}/api/v1/homepage/warm`, {
             method: 'POST',
             headers: {
-              'x-warm-token': warmToken,
+              'x-clair-internal': internalSecret,
               'user-agent': 'clair-ingestion/1.0',
             },
           });
@@ -456,7 +460,10 @@ program
             // Rebuild — identique à un user qui arrive sur la homepage
             console.log('  ✅ Cache invalidé, reconstruction...');
             const rebuild = await fetch(`${apiUrl}/api/v1/homepage`, {
-              headers: { 'user-agent': 'clair-ingestion/1.0' },
+              headers: {
+                'x-clair-internal': internalSecret,
+                'user-agent': 'clair-ingestion/1.0',
+              },
             });
             if (rebuild.ok) {
               console.log('  ✅ Cache homepage rechargé');
@@ -468,7 +475,7 @@ program
           console.log(`  ⚠️  Cache warm indisponible: ${e.message}`);
         }
       } else {
-        console.log('\n⚠️  CACHE_WARM_TOKEN non configuré — cache homepage non rechargé');
+        console.log('\n⚠️  CLAIR_INTERNAL_SECRET non configuré — cache homepage non rechargé');
       }
 
       process.exit(0);

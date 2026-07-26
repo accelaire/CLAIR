@@ -1,5 +1,6 @@
 import { MetadataRoute } from 'next';
 import { scrutinHref } from '@/lib/scrutin-url';
+import { internalHeaders } from '@/lib/internal-headers';
 
 // Régénération quotidienne, calée sur l'ingestion (04:00 UTC) : rien ne change
 // entre deux passages, donc rien ne justifie de reconstruire plus souvent.
@@ -95,12 +96,12 @@ function escapeXmlUrl(url: string): string {
     .replace(/>/g, '&gt;');
 }
 
-const SITEMAP_HEADERS = {
-  // Node envoie "undici" par défaut, que le plugin rate-limit bloque
-  // (voir apps/web/lib/api-server.ts).
-  'User-Agent': 'CLAIR-Web-Sitemap/1.0',
-  Origin: BASE_URL,
-};
+// La troncature du sitemap est déjà réglée en amont : une régénération par jour
+// et 2 requêtes au lieu de ~300, donc le rate-limit n'est plus une menace ici.
+// Ce qui change, c'est le laissez-passer : ces 2 requêtes s'annonçaient avec un
+// en-tête `Origin` que n'importe quel client peut copier. Le secret interne, lui,
+// ne quitte jamais le serveur.
+const SITEMAP_HEADERS = internalHeaders('CLAIR-Web-Sitemap/1.0');
 
 /**
  * Récupère en une seule requête tout ce qu'il faut pour construire le sitemap.

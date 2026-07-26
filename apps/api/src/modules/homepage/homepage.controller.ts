@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { FastifyPluginAsync } from 'fastify';
+import { isInternalRequest } from '../../utils/internal-auth';
 
 // Cache 27h — survit au sync (CRON 5h, durée max ~2h) + marge
 // Le cache est renouvelé activement par l'ingestion après chaque sync
@@ -271,11 +272,15 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
       description: 'Appelé par le service d\'ingestion après la synchronisation quotidienne',
     },
     handler: async (request, reply) => {
-      // Protégé par un token partagé entre l'API et le scheduler
-      const token = process.env.CACHE_WARM_TOKEN?.trim();
-      const provided = (request.headers['x-warm-token'] as string)?.trim();
-      if (!token || provided !== token) {
-        fastify.log.warn({ hasToken: !!token, hasProvided: !!provided }, 'Cache warm 403');
+      // Protégé par le secret interne partagé entre l'API et le scheduler.
+      // C'est ce même secret qui identifie le frontend (voir utils/internal-auth.ts) ;
+      // la comparaison est en temps constant et accepte encore l'ancien
+      // en-tête `x-warm-token` le temps de la bascule.
+      if (!isInternalRequest(request)) {
+        fastify.log.warn(
+          { ip: request.ip, ua: request.headers['user-agent'] || 'none' },
+          'Cache warm 403',
+        );
         return reply.status(403).send({ error: 'Forbidden' });
       }
 

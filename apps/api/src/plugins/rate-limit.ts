@@ -3,6 +3,7 @@
 // =============================================================================
 //
 // - Rate limiting Redis-backed (partagé entre instances, persiste au redeploy)
+// - Trafic interne CLAIR (secret partagé) exempté de toute limite
 // - 10 req/min pour les accès directs à l'API, illimité pour le frontend
 // - Blocage des User-Agents suspects (scripts basiques)
 // - Auto-ban des IPs après trop de violations 429
@@ -12,6 +13,7 @@
 import { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import fp from 'fastify-plugin';
 import rateLimit from '@fastify/rate-limit';
+import { isInternalRequest, hasInternalSecret } from '../utils/internal-auth';
 
 // =============================================================================
 // CONFIGURATION
@@ -63,6 +65,13 @@ function isExcludedPath(url: string): boolean {
 /**
  * Check if a request originates from a trusted frontend.
  * We check both Origin and Referer headers against CORS_ORIGIN env var.
+ *
+ * ⚠️ Falsifiable : `Origin` et `Referer` sont choisis par le client, n'importe
+ * qui peut se réclamer du frontend et passer de 10 à 200 req/min. C'est toléré
+ * tant que le navigateur appelle l'API en direct — il ne peut porter aucun
+ * secret. La sortie prévue est de router le navigateur via clair.vote/api/v1,
+ * qui lui peut s'authentifier avec le secret interne (voir internal-auth.ts) ;
+ * cette fonction disparaîtra alors avec getTrustedOrigins().
  */
 function isTrustedFrontend(request: FastifyRequest): boolean {
   const trustedOrigins = getTrustedOrigins();
@@ -100,11 +109,21 @@ function getTrustedOrigins(): string[] {
 // =============================================================================
 
 const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
+  // Sans secret configuré, le SSR, le sitemap et le scheduler d'ingestion
+  // retombent dans le tier anonyme et se font throttler en silence. C'est
+  // exactement ce qui tronquait le sitemap : on veut le voir au démarrage.
+  if (!hasInternalSecret()) {
+    fastify.log.warn(
+      'CLAIR_INTERNAL_SECRET absent — le trafic interne (SSR, sitemap, ingestion) sera rate-limité comme un client anonyme',
+    );
+  }
+
   // ===========================================================================
   // 1. BLOCKED USER-AGENTS (runs first)
   // ===========================================================================
   fastify.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     if (isExcludedPath(request.url)) return;
+    if (isInternalRequest(request)) return; // Trafic interne CLAIR
 
     const ua = (request.headers['user-agent'] || '').toLowerCase().trim();
 
@@ -126,6 +145,7 @@ const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
   // ===========================================================================
   fastify.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     if (isExcludedPath(request.url)) return;
+    if (isInternalRequest(request)) return; // Trafic interne CLAIR
 
     const ip = request.ip;
     const banKey = `ratelimit:ban:${ip}`;
@@ -159,7 +179,12 @@ const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
     skipOnError: true, // If Redis is down, don't block
     allowList: (request: FastifyRequest) => {
       // Health checks (Railway healthcheck) and cache warming (lightMyRequest) bypass rate limiting
-      return isExcludedPath(request.url) || request.ip === '127.0.0.1';
+      // Le trafic interne CLAIR (SSR, sitemap, ingestion) est exempté par secret partagé
+      return (
+        isExcludedPath(request.url) ||
+        request.ip === '127.0.0.1' ||
+        isInternalRequest(request)
+      );
     },
     errorResponseBuilder: (_request: FastifyRequest, context) => ({
       statusCode: 429,
@@ -212,17 +237,23 @@ const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
   });
 
   // ===========================================================================
-  // 5. ENHANCED LOGGING for non-frontend requests
+  // 5. ENHANCED LOGGING for everything that isn't internal traffic
   // ===========================================================================
+  //
+  // Le trafic « frontend » était auparavant exclu de ce log, ce qui rendait le
+  // volume navigateur totalement invisible : impossible de dimensionner quoi que
+  // ce soit à partir des seuls accès directs. On loge désormais les deux, et le
+  // champ `tier` permet de les distinguer. Seul l'interne est muet, il est déjà
+  // connu et représenterait du bruit à chaque page rendue côté serveur.
   fastify.addHook('onResponse', async (request: FastifyRequest, reply: FastifyReply) => {
     if (isExcludedPath(request.url)) return;
-    if (isTrustedFrontend(request)) return;
+    if (isInternalRequest(request)) return;
 
-    // Log all non-frontend API access for monitoring
     const duration = reply.elapsedTime.toFixed(0);
     request.log.info(
       {
         type: 'api_access',
+        tier: isTrustedFrontend(request) ? 'frontend' : 'anonymous',
         ip: request.ip,
         ua: request.headers['user-agent'] || 'none',
         method: request.method,
@@ -235,6 +266,12 @@ const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
         // que @fastify/compress s'active réellement en production.
         acceptEncoding: request.headers['accept-encoding'] || 'none',
         contentEncoding: reply.getHeader('content-encoding') || 'none',
+        // ⚠️ Vaut 'unknown' dès que la réponse est compressée : la compression
+        // bascule en chunked et supprime `content-length`. Depuis que gzip est
+        // actif, c'est le cas de la quasi-totalité des réponses, donc ce champ
+        // ne mesure plus l'egress. Le compter réellement demanderait un
+        // compteur d'octets sur le flux ; à faire seulement si l'on remet un
+        // budget au poids à l'ordre du jour.
         bytes: reply.getHeader('content-length') || 'unknown',
       },
       'Direct API access',
