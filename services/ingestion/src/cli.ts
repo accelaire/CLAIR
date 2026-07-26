@@ -53,6 +53,14 @@ import { SENAT_SESSION_MIN } from './workers/mandats.js';
 import { logger } from './utils/logger';
 import { errorMessage } from './utils/errors';
 
+/**
+ * Plafond de chaque appel de rechargement du cache homepage.
+ *
+ * Large — la reconstruction agrège beaucoup de données — mais fini : c'est
+ * l'absence de borne qui laissait le conteneur cron vivant indéfiniment.
+ */
+const CACHE_WARM_TIMEOUT_MS = 120_000;
+
 const program = new Command();
 
 program
@@ -449,6 +457,13 @@ program
       // Cooldown 120s pour laisser Postgres souffler après le sync
       // Étape 1 : invalider le cache (POST /warm)
       // Étape 2 : reconstruire via GET /homepage (comme un user normal)
+      //
+      // ⚠️ Ces deux fetch DOIVENT être bornés dans le temps. Sans timeout, un
+      // appel qui ne répond jamais empêche d'atteindre le process.exit() qui
+      // suit, et le conteneur cron reste alors vivant à ne rien faire jusqu'au
+      // déploiement suivant — observé les 19, 20, 21 et 24 juillet 2026, où le
+      // dernier log est « Invalidation du cache homepage » suivi de plus rien,
+      // pour ~90 Mo retenus pendant des heures.
       console.log('\n⏳ Attente 120s avant rechargement du cache (stabilisation DB)...');
       await new Promise(r => setTimeout(r, 120_000));
       const apiUrl = process.env.API_URL || 'http://localhost:3001';
@@ -464,6 +479,7 @@ program
               'x-clair-internal': internalSecret,
               'user-agent': 'clair-ingestion/1.0',
             },
+            signal: AbortSignal.timeout(CACHE_WARM_TIMEOUT_MS),
           });
           if (!invalidate.ok) {
             console.log(`  ⚠️  Invalidation échouée: status ${invalidate.status}`);
@@ -475,6 +491,7 @@ program
                 'x-clair-internal': internalSecret,
                 'user-agent': 'clair-ingestion/1.0',
               },
+              signal: AbortSignal.timeout(CACHE_WARM_TIMEOUT_MS),
             });
             if (rebuild.ok) {
               console.log('  ✅ Cache homepage rechargé');
