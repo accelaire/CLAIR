@@ -1,12 +1,21 @@
 import { MetadataRoute } from 'next';
 import { scrutinHref } from '@/lib/scrutin-url';
 
-// Le sitemap est régénéré au plus une fois par heure. Il était auparavant en
-// force-dynamic, donc reconstruit à chaque requête sur /sitemap.xml : chaque
-// hit relançait une pagination complète de toutes les entités et saturait le
-// rate-limit de l'API. Une heure suffit largement, l'ingestion ne tourne
-// qu'une fois par jour (04:00 UTC).
-export const revalidate = 3600;
+// Régénération quotidienne, calée sur l'ingestion (04:00 UTC) : rien ne change
+// entre deux passages, donc rien ne justifie de reconstruire plus souvent.
+//
+// C'était auparavant force-dynamic, donc reconstruit à CHAQUE requête sur
+// /sitemap.xml, chaque hit relançant une pagination complète de toutes les
+// entités. C'est ce qui saturait le rate-limit et tronquait le sitemap.
+//
+// Une régénération parcourt ~300 pages d'API pour environ 39 Mo. À l'heure ça
+// ferait ~940 Mo/jour ; à la journée c'est négligeable.
+export const revalidate = 86400;
+
+// ~300 requêtes séquentielles vers l'API : au-delà du timeout par défaut d'une
+// fonction Vercel, la régénération serait tuée en cours de route et publierait
+// un sitemap tronqué.
+export const maxDuration = 300;
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
