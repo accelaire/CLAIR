@@ -14,7 +14,12 @@ import {
   type ParlementairePromptData,
 } from '../llm/prompts.js';
 import { fetchWikipediaBio } from '../sources/wikipedia/client.js';
-import { tavilySearch, isTavilyAvailable } from '../sources/tavily/client.js';
+import {
+  tavilySearch,
+  isTavilyAvailable,
+  getTavilyStatus,
+  fetchTavilyCredits,
+} from '../sources/tavily/client.js';
 
 // Réseaux sociaux / sites non pertinents exclus des recherches Tavily de bios.
 const TAVILY_SOCIAL_EXCLUDE = [
@@ -164,9 +169,29 @@ export async function enrichParlementairesIA(
   const mistral = new CLAIRMistralClient();
   const limiter = pLimit(concurrency);
 
-  const tavilyEnabled = isTavilyAvailable();
+  // Garde-fou en amont : Tavily est une dépendance dure de cet enrichissement,
+  // pas un bonus. Le plan est à 1000 crédits par mois et la rotation quotidienne
+  // en consomme ~25/jour — soit 750/mois pour les seuls parlementaires. Mieux
+  // vaut ne pas démarrer que produire des fiches non sourcées.
+  if (!isTavilyAvailable()) {
+    logger.error('TAVILY_API_KEY absente — enrichissement parlementaires annulé');
+    return result;
+  }
+
+  const credits = await fetchTavilyCredits();
+  if (credits && credits.remaining === 0) {
+    logger.error(
+      { used: credits.used, limit: credits.limit },
+      'Crédits Tavily épuisés — enrichissement parlementaires annulé',
+    );
+    return result;
+  }
+
   logger.info(
-    { dryRun, concurrency, limit, force, tavilyEnabled },
+    {
+      dryRun, concurrency, limit, force,
+      tavilyCreditsRestants: credits?.remaining ?? 'inconnu',
+    },
     'Starting parlementaires IA enrichment...'
   );
 
@@ -287,13 +312,29 @@ export async function enrichParlementairesIA(
           const role = parl.chambre === 'senat' ? 'sénateur' : 'député';
           const wikiBio = await fetchWikipediaBio(parl.prenom, parl.nom, { role });
 
-          // Fetch Tavily results (optional)
-          const tavilyResults = tavilyEnabled
-            ? await tavilySearch(
-                `${parl.prenom} ${parl.nom} ${role} France actualité politique`,
-                { excludeDomains: TAVILY_SOCIAL_EXCLUDE, maxResults: 3 },
-              )
-            : null;
+          // Recherche Tavily — obligatoire, pas optionnelle.
+          //
+          // Un résultat `null` signifie que la source n'a pas répondu (quota,
+          // clé refusée, réseau), pas qu'elle n'a rien trouvé — l'absence de
+          // résultat est un tableau vide. Produire la fiche quand même
+          // reviendrait à publier un texte non sourcé en le datant comme frais,
+          // ce qui s'est produit 76 fois entre le 24 et le 26 juillet 2026.
+          // On saute la fiche : elle garde son contenu et sa date précédents,
+          // et sera reprise au prochain passage.
+          const tavilyResults = await tavilySearch(
+            `${parl.prenom} ${parl.nom} ${role} France actualité politique`,
+            { excludeDomains: TAVILY_SOCIAL_EXCLUDE, maxResults: 3 },
+          );
+
+          if (tavilyResults === null) {
+            const { reason } = getTavilyStatus();
+            logger.warn(
+              { parlementaireId: parl.id, raison: reason ?? 'erreur' },
+              'Tavily indisponible — fiche non enrichie',
+            );
+            result.skipped++;
+            return;
+          }
 
           // Build prompt data
           const circoStr = parl.circonscription
