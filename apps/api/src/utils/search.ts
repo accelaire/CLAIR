@@ -2,6 +2,7 @@
 // Utilitaires de recherche multi-mots
 // =============================================================================
 
+import type { Prisma } from '@prisma/client';
 import { findDepartementCodesBySearchTerm } from './geo-france';
 
 /**
@@ -19,7 +20,7 @@ export function buildParlementaireSearchCondition(search: string) {
 
   // Cas simple: un seul mot - chercher dans nom, prénom, slug ou géographie
   if (words.length === 1) {
-    const orConditions: any[] = [
+    const orConditions: Prisma.ParlementaireWhereInput[] = [
       { nom: { contains: searchTerm, mode: 'insensitive' as const } },
       { prenom: { contains: searchTerm, mode: 'insensitive' as const } },
       { slug: { contains: searchTerm, mode: 'insensitive' as const } },
@@ -41,7 +42,7 @@ export function buildParlementaireSearchCondition(search: string) {
   // Ex: "Marine Le Pen" → (prenom contains "Marine" AND nom contains "Le Pen")
   //                    OR (prenom contains "Marine Le" AND nom contains "Pen")
   //                    OR slug contains "marine-le-pen"
-  const orConditions: any[] = [];
+  const orConditions: Prisma.ParlementaireWhereInput[] = [];
 
   // Essayer toutes les combinaisons de split (prénom | nom)
   for (let i = 1; i < words.length; i++) {
@@ -140,7 +141,7 @@ export function buildMultiFieldSearchCondition(fields: string[], search: string)
   // Multi-mots:
   // Option 1: Tous les mots dans UN des champs
   // Option 2: Chaque mot dans au moins un des champs
-  const orConditions: any[] = [];
+  const orConditions: Record<string, unknown>[] = [];
 
   // Option 1: tous les mots dans un seul champ
   for (const field of fields) {

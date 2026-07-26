@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Share2, Check, Link as LinkIcon } from 'lucide-react';
+import { Share2, Check } from 'lucide-react';
 import { signalStrongAction } from '@/components/feedback/FeedbackWidget';
 
 interface ShareButtonProps {

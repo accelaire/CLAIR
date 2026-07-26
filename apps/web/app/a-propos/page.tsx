@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Users, Vote, Briefcase, Database, Github, Twitter, Mail } from 'lucide-react';
+import { Users, Vote, Briefcase, Database, Github, Mail } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'À propos',

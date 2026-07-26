@@ -277,7 +277,7 @@ export class ParlementairesService {
         actif,
         limit,
         skip,
-      }, parlementaireInclude, orderBy);
+      }, parlementaireInclude);
       parlementaires = fuzzyResult.parlementaires;
       total = fuzzyResult.total;
     }
@@ -1216,8 +1216,7 @@ export class ParlementairesService {
       limit: number;
       skip: number;
     },
-    include: any,
-    _orderBy: any
+    include: Prisma.ParlementaireInclude,
   ) {
     const candidates = await this.getFuzzyCandidates({
       chambre: filters.chambre,
@@ -1229,7 +1228,7 @@ export class ParlementairesService {
     const fuzzyResults = fuzzySearchCandidates(search, candidates);
 
     if (fuzzyResults.length === 0) {
-      return { parlementaires: [] as any[], total: 0 };
+      return { parlementaires: [], total: 0 };
     }
 
     const matchingIds = fuzzyResults.map((r) => r.id);

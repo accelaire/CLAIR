@@ -401,7 +401,7 @@ function ParlementairesTab() {
 // =============================================================================
 
 function GroupesTab() {
-  const [filters, setFilter, setFilters] = useUrlFilters<{
+  const [filters, setFilter] = useUrlFilters<{
     chambre: string;
     groupeSort: string;
   }>(['chambre', 'groupeSort'], {
@@ -500,7 +500,6 @@ function GroupesTab() {
           {sortedGroupes.map((groupe, index) => {
             const color = getGroupColor(groupe.nom, groupe.couleur, groupe.position);
             const mainStat = getStatValue(groupe);
-            const isPercent = groupeSort !== 'membres';
 
             return (
               <Link

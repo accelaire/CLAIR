@@ -5,6 +5,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ParlementairesService } from './parlementaires.service';
 import { createMockPrismaClient, createMockRedisClient } from '../../test/mocks';
+import type { PrismaClient } from '@prisma/client';
+import type { Redis } from 'ioredis';
 import {
   mockParlementaireWithRelations,
   mockParlementaireList,
@@ -19,7 +21,10 @@ describe('ParlementairesService', () => {
   beforeEach(() => {
     mockPrisma = createMockPrismaClient();
     mockRedis = createMockRedisClient();
-    service = new ParlementairesService(mockPrisma as any, mockRedis as any);
+    service = new ParlementairesService(
+      mockPrisma as unknown as PrismaClient,
+      mockRedis as unknown as Redis,
+    );
 
     // Clear Redis mock store between tests
     mockRedis._clear();

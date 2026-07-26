@@ -284,7 +284,7 @@ export function extractAmendmentNumbers(titre: string): string[] {
   const regex = /n°\s+([A-Za-z]*-?\d+)/g;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(titre)) !== null) {
-    matches.push(match[1]);
+    if (match[1]) matches.push(match[1]);
   }
   return matches;
 }
@@ -363,15 +363,15 @@ export async function runMultiAmendmentCheck(prisma: PrismaClient): Promise<Mult
   for (const row of rows) {
     const nums = extractAmendmentNumbers(row.titre);
     if (nums.length < 2) continue;
-    if (!byChambre[row.chambre]) {
-      byChambre[row.chambre] = { total: 0, correct: 0, incorrect: 0 };
-    }
-    byChambre[row.chambre].total++;
+    const stats = byChambre[row.chambre] ?? { total: 0, correct: 0, incorrect: 0 };
+    stats.total++;
+    byChambre[row.chambre] = stats;
   }
   for (const m of mismatches) {
-    if (byChambre[m.chambre]) byChambre[m.chambre].incorrect++;
+    const stats = byChambre[m.chambre];
+    if (stats) stats.incorrect++;
   }
-  for (const [chambre, stats] of Object.entries(byChambre)) {
+  for (const stats of Object.values(byChambre)) {
     stats.correct = stats.total - stats.incorrect;
   }
 
@@ -599,8 +599,7 @@ export function printReport(report: QualityReport): void {
   if (ma.mismatches.length > 0) {
     console.log();
     const limit = Math.min(ma.mismatches.length, 5);
-    for (let i = 0; i < limit; i++) {
-      const m = ma.mismatches[i];
+    for (const m of ma.mismatches.slice(0, limit)) {
       console.log(`    \x1b[33m⚠\x1b[0m  [${m.chambre}] scrutin ${m.scrutinId.slice(0, 8)}...`);
       if (m.missingNumeros.length > 0) {
         console.log(`       Manquants: ${m.missingNumeros.join(', ')}`);

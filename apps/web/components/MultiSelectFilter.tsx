@@ -53,7 +53,7 @@ export function MultiSelectFilter({
   );
 
   const clear = useCallback(
-    (e: React.MouseEvent) => {
+    (e: React.SyntheticEvent) => {
       e.stopPropagation();
       onChange([]);
     },
@@ -93,7 +93,7 @@ export function MultiSelectFilter({
           role="button"
           tabIndex={0}
           onClick={clear}
-          onKeyDown={(e) => { if (e.key === 'Enter') clear(e as any); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') clear(e); }}
           className="absolute right-8 top-1/2 -translate-y-1/2 rounded-full p-0.5 hover:bg-muted z-10"
         >
           <X className="h-3.5 w-3.5 text-muted-foreground" />

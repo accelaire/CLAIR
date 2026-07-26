@@ -9,7 +9,6 @@ import * as os from 'os';
 import { createReadStream } from 'fs';
 import * as readline from 'readline';
 import { logger } from '../../utils/logger';
-import { DoslegClient } from './dosleg-client';
 
 // =============================================================================
 // TYPES
@@ -65,13 +64,13 @@ export interface TransformedDossierSenat {
 // HELPERS
 // =============================================================================
 
-function parseDate(dateStr: string | null): Date | null {
+function parseDate(dateStr: string | null | undefined): Date | null {
   if (!dateStr || dateStr === '\\N' || dateStr.trim() === '') return null;
   const d = new Date(dateStr);
   return isNaN(d.getTime()) ? null : d;
 }
 
-function cleanString(s: string | null): string | null {
+function cleanString(s: string | null | undefined): string | null {
   if (!s || s === '\\N') return null;
   return s.trim() || null;
 }
@@ -158,9 +157,6 @@ export class SenatDossiersClient {
 
     logger.info({ sessionStart, sessionEnd, limit: options.limit }, 'Fetching dossiers from DOSLEG...');
 
-    // Use the existing DoslegClient to download and extract
-    const doslegClient = new DoslegClient();
-
     // We need to access the SQL file directly, so let's do our own download
     const sqlPath = await this.downloadAndExtract();
 
@@ -175,15 +171,12 @@ export class SenatDossiersClient {
       });
 
       let currentTable: string | null = null;
-      let loiCount = 0;
-      let texteCount = 0;
-      let lectureCount = 0;
 
       for await (const line of rl) {
         // Detect COPY statement
         if (line.startsWith('COPY ')) {
           const match = line.match(/COPY (\w+)/);
-          if (match) {
+          if (match?.[1]) {
             currentTable = match[1];
           }
           continue;
@@ -212,7 +205,7 @@ export class SenatDossiersClient {
             // Filter by session (extract year from signet like "ppl24-661" or "pjl99-342")
             if (signet) {
               const yearMatch = signet.match(/(\d{2})-/);
-              if (yearMatch) {
+              if (yearMatch?.[1]) {
                 let year = parseInt(yearMatch[1], 10);
                 // Convert 2-digit year to 4-digit (assume 20xx for years < 50, 19xx otherwise)
                 year = year < 50 ? 2000 + year : 1900 + year;
@@ -223,7 +216,7 @@ export class SenatDossiersClient {
             lois.set(loicod, {
               loicod,
               signet,
-              typloicod: cleanString(fields[1]),
+              typloicod: cleanString(fields[1]) || '',
               etaloicod: cleanString(fields[2]),
               numero: cleanString(fields[4]),
               loient: cleanString(fields[6]), // index 6, not 7 (after signet)
@@ -235,7 +228,6 @@ export class SenatDossiersClient {
               dateLoi: parseDate(fields[14]),
               urlAN: fields.length > 32 ? cleanString(fields[32]) : null,
             });
-            loiCount++;
           }
 
           // Parse texte table (to get the ref like "ppl24-661")
@@ -256,7 +248,6 @@ export class SenatDossiersClient {
               texurl: cleanString(fields[8]),
               lecassidt: cleanString(fields[4]),
             });
-            texteCount++;
           }
 
           // Parse lecture table (to link texte to loi)
@@ -272,10 +263,9 @@ export class SenatDossiersClient {
               loicod,
               typleccod: cleanString(fields[2]) || '',
             });
-            lectureCount++;
           }
 
-        } catch (e: any) {
+        } catch (e) {
           // Skip malformed lines
         }
       }
@@ -289,7 +279,7 @@ export class SenatDossiersClient {
       // Build dossiers from loi table
       const dossiers: TransformedDossierSenat[] = [];
 
-      for (const [loicod, loi] of lois) {
+      for (const loi of lois.values()) {
         // Use signet as the ref (e.g., "pjl24-661") - skip if no signet
         if (!loi.signet) continue;
         const ref = loi.signet.trim().toLowerCase();

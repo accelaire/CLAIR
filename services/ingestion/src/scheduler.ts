@@ -5,6 +5,7 @@
 import cron, { ScheduledTask } from 'node-cron';
 import { smartSync, syncScrutins, syncScrutinsSenat, syncLobbyistes, syncInterventions } from './workers/sync.js';
 import { logger } from './utils/logger';
+import { errorMessage } from './utils/errors';
 
 // =============================================================================
 // CONFIGURATION DES HORAIRES
@@ -138,8 +139,8 @@ export async function startScheduler(): Promise<void> {
           await config.handler();
           const duration = ((Date.now() - startTime) / 1000).toFixed(2);
           logger.info({ name, duration: `${duration}s` }, 'Scheduled job completed');
-        } catch (error: any) {
-          logger.error({ name, error: error.message }, 'Scheduled job failed');
+        } catch (error) {
+          logger.error({ name, error: errorMessage(error) }, 'Scheduled job failed');
         }
       },
       {

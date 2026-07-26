@@ -291,11 +291,12 @@ async function main() {
 
   const scrutins = await Promise.all([
     prisma.scrutin.upsert({
-      where: { numero_chambre: { numero: 4001, chambre: 'assemblee' } },
+      where: { numero_chambre_session: { numero: 4001, chambre: 'assemblee', session: '17' } },
       update: {},
       create: {
         numero: 4001,
         chambre: 'assemblee',
+        session: '17',
         date: new Date('2025-12-09'),
         titre: 'Projet de loi de financement de la sécurité sociale pour 2026',
         typeVote: 'solennel',
@@ -309,11 +310,12 @@ async function main() {
       },
     }),
     prisma.scrutin.upsert({
-      where: { numero_chambre: { numero: 4000, chambre: 'assemblee' } },
+      where: { numero_chambre_session: { numero: 4000, chambre: 'assemblee', session: '17' } },
       update: {},
       create: {
         numero: 4000,
         chambre: 'assemblee',
+        session: '17',
         date: new Date('2025-12-01'),
         titre: 'Motion de censure déposée par le groupe LFI',
         typeVote: 'motion',
@@ -327,11 +329,12 @@ async function main() {
       },
     }),
     prisma.scrutin.upsert({
-      where: { numero_chambre: { numero: 3999, chambre: 'assemblee' } },
+      where: { numero_chambre_session: { numero: 3999, chambre: 'assemblee', session: '17' } },
       update: {},
       create: {
         numero: 3999,
         chambre: 'assemblee',
+        session: '17',
         date: new Date('2025-11-28'),
         titre: 'Proposition de loi sur la transition énergétique',
         typeVote: 'ordinaire',
@@ -355,9 +358,10 @@ async function main() {
 
   const lobbyistes = await Promise.all([
     prisma.lobbyiste.upsert({
-      where: { siren: '123456789' },
+      where: { identifiantNational: '123456789' },
       update: {},
       create: {
+        identifiantNational: '123456789',
         siren: '123456789',
         nom: 'TotalEnergies',
         type: 'entreprise',
@@ -368,9 +372,10 @@ async function main() {
       },
     }),
     prisma.lobbyiste.upsert({
-      where: { siren: '987654321' },
+      where: { identifiantNational: '987654321' },
       update: {},
       create: {
+        identifiantNational: '987654321',
         siren: '987654321',
         nom: 'Greenpeace France',
         type: 'association',
@@ -381,9 +386,10 @@ async function main() {
       },
     }),
     prisma.lobbyiste.upsert({
-      where: { siren: '456789123' },
+      where: { identifiantNational: '456789123' },
       update: {},
       create: {
+        identifiantNational: '456789123',
         siren: '456789123',
         nom: 'MEDEF',
         type: 'organisation_pro',

@@ -12,6 +12,7 @@ import { createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
 import axios from 'axios';
 import { logger } from '../../utils/logger.js';
+import { errorMessage } from '../../utils/errors.js';
 
 // =============================================================================
 // MAPPING codeType → type Commission
@@ -146,9 +147,9 @@ export class AssembleeNationaleOrganesClient {
       await execAsync(`unzip -q -o "${zipPath}" -d "${extractDir}"`, {
         maxBuffer: 1024 * 1024 * 200, // 200 MB — AMO30 est volumineux
       });
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'unzip failed');
-      throw new Error(`Zip extraction failed: ${error.message}`);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'unzip failed');
+      throw new Error(`Zip extraction failed: ${errorMessage(error)}`);
     }
   }
 
@@ -275,9 +276,9 @@ export class AssembleeNationaleOrganesClient {
               'AMO30 parsing progress',
             );
           }
-        } catch (e: any) {
+        } catch (e) {
           parseErrors++;
-          logger.warn({ file: jsonFile, error: e.message }, 'Failed to parse organe file');
+          logger.warn({ file: jsonFile, error: errorMessage(e) }, 'Failed to parse organe file');
         }
       }
 

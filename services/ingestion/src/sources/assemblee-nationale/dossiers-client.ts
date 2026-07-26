@@ -10,6 +10,7 @@ import * as os from 'os';
 import { createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
 import { logger } from '../../utils/logger';
+import { errorMessage } from '../../utils/errors';
 
 // =============================================================================
 // TYPES BRUTS (structure JSON de l'AN)
@@ -158,9 +159,9 @@ export class DossiersLegislatifsClient {
       await execAsync(`unzip -q -o "${zipPath}" -d "${extractDir}"`, {
         maxBuffer: 1024 * 1024 * 100, // 100 MB buffer
       });
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'unzip failed');
-      throw new Error(`Zip extraction failed: ${error.message}`);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'unzip failed');
+      throw new Error(`Zip extraction failed: ${errorMessage(error)}`);
     }
 
     const files = await fs.promises.readdir(extractDir);
@@ -254,8 +255,8 @@ export class DossiersLegislatifsClient {
           if (processed % 100 === 0) {
             logger.debug({ processed, total: filesToProcess.length }, 'Parsing progress');
           }
-        } catch (e: any) {
-          logger.warn({ file: jsonFile, error: e.message }, 'Failed to parse dossier file');
+        } catch (e) {
+          logger.warn({ file: jsonFile, error: errorMessage(e) }, 'Failed to parse dossier file');
         }
       }
 
@@ -316,8 +317,8 @@ export class DossiersLegislatifsClient {
         texteRefs,
         sourceData: raw,
       };
-    } catch (e: any) {
-      logger.warn({ uid: raw.uid, error: e.message }, 'Error transforming dossier');
+    } catch (e) {
+      logger.warn({ uid: raw.uid, error: errorMessage(e) }, 'Error transforming dossier');
       return null;
     }
   }

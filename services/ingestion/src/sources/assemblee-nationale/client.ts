@@ -9,8 +9,8 @@ import * as path from 'path';
 import * as os from 'os';
 import { createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
-import { createGunzip } from 'zlib';
 import { logger } from '../../utils/logger';
+import { errorMessage } from '../../utils/errors';
 
 // =============================================================================
 // TYPES
@@ -122,9 +122,9 @@ export class AssembleeNationaleClient {
       await execAsync(`unzip -q -o "${zipPath}" -d "${extractDir}"`, {
         maxBuffer: 1024 * 1024 * 50, // 50 MB buffer
       });
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'unzip failed');
-      throw new Error(`Zip extraction failed: ${error.message}`);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'unzip failed');
+      throw new Error(`Zip extraction failed: ${errorMessage(error)}`);
     }
 
     // List extracted files
@@ -201,8 +201,8 @@ export class AssembleeNationaleClient {
           if (processed % 1000 === 0) {
             logger.debug({ processed, total: filesToProcess.length }, 'Parsing progress');
           }
-        } catch (e: any) {
-          logger.warn({ file: jsonFile, error: e.message }, 'Failed to parse amendement file');
+        } catch (e) {
+          logger.warn({ file: jsonFile, error: errorMessage(e) }, 'Failed to parse amendement file');
         }
       }
 
@@ -295,7 +295,7 @@ export class AssembleeNationaleClient {
     };
 
     // Safe string extraction (some fields can be objects with @xsi:nil)
-    const safeString = (val: any): string | null => {
+    const safeString = (val: unknown): string | null => {
       if (typeof val === 'string') return val;
       return null;
     };

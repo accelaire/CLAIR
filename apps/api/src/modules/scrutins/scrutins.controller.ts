@@ -3,6 +3,7 @@
 // =============================================================================
 
 import { FastifyPluginAsync } from 'fastify';
+import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { ApiError } from '../../utils/errors';
 import { buildTextSearchCondition } from '../../utils/search';
@@ -19,7 +20,7 @@ const CACHE_TTL_1H = 3600;
 const CONTENU_PREVIEW_LENGTH = 500;
 
 /** Tronque le contenu et ajoute hasMore si nécessaire */
-function truncateContenu(intervention: { contenu: string; [key: string]: any }) {
+function truncateContenu(intervention: { contenu: string; [key: string]: unknown }) {
   const { contenu, ...rest } = intervention;
   return {
     ...rest,
@@ -645,7 +646,11 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, _reply) => {
       const { numero } = z.object({ numero: z.coerce.number().int().positive() }).parse(request.params);
-      const { page = 1, limit = 10, chambre = 'assemblee', session, sort = 'asc', search } = request.query as any;
+      const { page = 1, limit = 10, chambre = 'assemblee', session, sort = 'asc', search } =
+        request.query as {
+          page?: number; limit?: number; chambre?: string;
+          session?: string; sort?: 'asc' | 'desc'; search?: string;
+        };
       const skip = (page - 1) * limit;
 
       // Build where clause with optional session
@@ -666,7 +671,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Interventions de la séance (même date + chambre)
       const searchTerm = search?.trim();
-      const interventionWhere: any = { date: scrutin.date, chambre: scrutin.chambre };
+      const interventionWhere: Prisma.InterventionWhereInput = { date: scrutin.date, chambre: scrutin.chambre };
       if (searchTerm) {
         interventionWhere.OR = [
           { contenu: { contains: searchTerm, mode: 'insensitive' } },
@@ -790,7 +795,11 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, _reply) => {
       const { numero } = z.object({ numero: z.coerce.number().int().positive() }).parse(request.params);
-      const { page = 1, limit = 50, chambre = 'assemblee', session, position, groupe } = request.query as any;
+      const { page = 1, limit = 50, chambre = 'assemblee', session, position, groupe } =
+        request.query as {
+          page?: number; limit?: number; chambre?: string;
+          session?: string; position?: string; groupe?: string;
+        };
       const skip = (page - 1) * limit;
 
       // Build where clause with optional session

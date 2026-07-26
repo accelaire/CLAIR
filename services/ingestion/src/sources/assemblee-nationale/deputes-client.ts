@@ -10,6 +10,7 @@ import * as os from 'os';
 import { createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
 import { logger } from '../../utils/logger';
+import { errorMessage } from '../../utils/errors';
 
 // =============================================================================
 // TYPES - Structure des données AN
@@ -214,9 +215,9 @@ export class AssembleeNationaleDeputesClient {
       await execAsync(`unzip -q -o "${zipPath}" -d "${extractDir}"`, {
         maxBuffer: 1024 * 1024 * 100,
       });
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'unzip failed');
-      throw new Error(`Zip extraction failed: ${error.message}`);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'unzip failed');
+      throw new Error(`Zip extraction failed: ${errorMessage(error)}`);
     }
   }
 
@@ -360,7 +361,9 @@ export class AssembleeNationaleDeputesClient {
             if (data.organe) {
               organeMap.set(data.organe.uid, data.organe);
             }
-          } catch (e) {}
+          } catch {
+            // Fichier organe illisible ou JSON invalide → on ignore cet organe
+          }
         }
       }
 
@@ -396,8 +399,8 @@ export class AssembleeNationaleDeputesClient {
               }
             }
           }
-        } catch (e: any) {
-          logger.warn({ file, error: e.message }, 'Error parsing acteur');
+        } catch (e) {
+          logger.warn({ file, error: errorMessage(e) }, 'Error parsing acteur');
         }
       }
 
@@ -433,8 +436,8 @@ export class AssembleeNationaleDeputesClient {
     // close), tous les mandats sont terminés → on accepte un mandat terminé de cette
     // législature, sinon aucun député ne serait parsé.
     const legStr = String(this.legislature);
-    const isAssembleeLeg = (m: any) => m.typeOrgane === 'ASSEMBLEE' && m.legislature === legStr;
-    const isGpLeg = (m: any) => m.typeOrgane === 'GP' && m.legislature === legStr;
+    const isAssembleeLeg = (m: ANMandat) => m.typeOrgane === 'ASSEMBLEE' && m.legislature === legStr;
+    const isGpLeg = (m: ANMandat) => m.typeOrgane === 'GP' && m.legislature === legStr;
 
     const mandatDepute = this.historical
       ? mandats.find(isAssembleeLeg)

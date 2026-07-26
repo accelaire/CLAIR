@@ -12,6 +12,7 @@ import { pipeline } from 'stream/promises';
 import { createReadStream } from 'fs';
 import * as readline from 'readline';
 import { logger } from '../../utils/logger';
+import { errorMessage, errorProp } from '../../utils/errors';
 
 // =============================================================================
 // TYPES
@@ -118,7 +119,7 @@ export function normalizeSenatNumero(numero: string): string {
   return numero.replace(/\s+rect\b.*$/i, '').trim();
 }
 
-function parseDate(dateStr: string | null): Date | null {
+function parseDate(dateStr: string | null | undefined): Date | null {
   if (!dateStr || dateStr === '\\N') return null;
   const d = new Date(dateStr);
   return isNaN(d.getTime()) ? null : d;
@@ -229,9 +230,9 @@ export class SenatAmendementsClient {
       logger.info({ sqlPath }, 'SQL file extracted');
       return sqlPath;
 
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Extraction failed');
-      throw new Error(`ZIP extraction failed: ${error.message}`);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Extraction failed');
+      throw new Error(`ZIP extraction failed: ${errorMessage(error)}`);
     }
   }
 
@@ -267,7 +268,7 @@ export class SenatAmendementsClient {
       // Detect COPY statements
       if (line.startsWith('COPY ')) {
         const match = line.match(/COPY (\w+)/);
-        if (match) {
+        if (match?.[1]) {
           currentTable = match[1];
         }
         continue;
@@ -357,10 +358,10 @@ export class SenatAmendementsClient {
           sortMap.set(id, { lib, cod });
         }
 
-      } catch (e: any) {
+      } catch (e) {
         // Skip malformed lines
         if (lineCount % 100000 === 0) {
-          logger.warn({ line: lineCount, error: e.message }, 'Parse error');
+          logger.warn({ line: lineCount, error: errorMessage(e) }, 'Parse error');
         }
       }
     }
@@ -750,7 +751,7 @@ export class SenatAmendementsClient {
 
         // Parse auteur: "M. JADOT" → nom=JADOT
         let auteurNom: string | null = null;
-        let auteurPrenom: string | null = null;
+        const auteurPrenom: string | null = null;
         const auteurMatch = auteur.match(/^(?:M\.|Mme|Mlle)\s+(.+)$/i);
         if (auteurMatch) {
           auteurNom = auteurMatch[1]!.trim();
@@ -793,11 +794,11 @@ export class SenatAmendementsClient {
       logger.debug({ texteId, texteNum, session, count: results.length }, 'CSV parsed');
       return results;
 
-    } catch (error: any) {
-      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+    } catch (error) {
+      if (errorProp(error, 'code') === 'ECONNABORTED' || errorMessage(error).includes('timeout')) {
         logger.warn({ texteId, texteNum, session }, 'CSV fetch timeout');
       } else {
-        logger.warn({ texteId, texteNum, session, error: error.message }, 'CSV fetch error');
+        logger.warn({ texteId, texteNum, session, error: errorMessage(error) }, 'CSV fetch error');
       }
       return [];
     }

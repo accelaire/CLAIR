@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { logger } from '../../utils/logger.js';
+import { errorMessage } from '../../utils/errors.js';
 
 const TAVILY_API_URL = 'https://api.tavily.com/search';
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -74,8 +75,8 @@ export async function tavilySearch(
       content: r.content,
       score: r.score,
     }));
-  } catch (error: any) {
-    logger.warn({ error: error.message, query }, 'Tavily search failed');
+  } catch (error) {
+    logger.warn({ error: errorMessage(error), query }, 'Tavily search failed');
     return null;
   }
 }

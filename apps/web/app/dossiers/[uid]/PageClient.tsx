@@ -6,7 +6,7 @@ import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   FileText, Calendar, Vote, CheckCircle, XCircle, ExternalLink,
-  ArrowLeft, ArrowRight, Loader2, Scale, ChevronDown, X, Users, Layers, BookOpen, Gavel, Filter, Info,
+  ArrowLeft, ArrowRight, Loader2, Scale, ChevronDown, Users, Layers, BookOpen, Gavel, Filter, Info,
 } from 'lucide-react';
 import { FilterBar } from '@/components/FilterBar';
 import { api } from '@/lib/api';
@@ -121,7 +121,7 @@ interface PaginatedResponse<T> {
 // Helpers
 // ---------------------------------------------------------------------------
 
-import { DOSSIER_ETAT_CONFIG, getDossierEtat } from '@/lib/dossiers';
+import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
 
 const etatLabels = DOSSIER_ETAT_CONFIG;
 

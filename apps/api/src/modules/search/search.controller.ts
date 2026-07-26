@@ -1,4 +1,5 @@
-import { FastifyPluginAsync } from 'fastify';
+import { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { buildParlementaireSearchCondition } from '../../utils/search';
 import { fuzzySearchCandidates, FuzzyCandidate, fuzzySearchGeneric, GenericFuzzyCandidate } from '../../utils/fuzzy-search';
@@ -21,8 +22,42 @@ const searchQuerySchema = z.object({
 });
 
 interface CategorySearchResult {
-  data: any[];
+  data: unknown[];
   total: number;
+}
+
+/** Rangée d'un `select` Prisma dont la forme n'est pas connue statiquement. */
+type SearchRow = Record<string, unknown> & { id: string };
+
+/** Sous-ensemble d'un delegate Prisma utilisé par les helpers génériques. */
+interface PrismaSearchDelegate {
+  findMany(args: Record<string, unknown>): Promise<SearchRow[]>;
+  count(args: Record<string, unknown>): Promise<number>;
+}
+
+/**
+ * Accès à un delegate Prisma par nom de modèle. Les helpers de recherche sont
+ * génériques (même pipeline pour groupes/commissions/sujets) : le modèle n'est
+ * connu qu'à l'exécution, d'où l'indirection.
+ */
+function prismaDelegate(fastify: FastifyInstance, model: string): PrismaSearchDelegate {
+  const delegates = fastify.prisma as unknown as Record<string, PrismaSearchDelegate>;
+  const delegate = delegates[model];
+  if (!delegate) throw new Error(`Modèle Prisma inconnu: ${model}`);
+  return delegate;
+}
+
+/** Trie `rows` selon l'ordre des ids fourni (pertinence fuzzy). */
+function sortByIdOrder<T extends { id: string }>(rows: T[], order: Map<string, number>): void {
+  rows.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+}
+
+/**
+ * Vue « recherche générique » d'un delegate Prisma concret. Les delegates générés
+ * ont des signatures surchargées qui ne s'unifient pas avec PrismaSearchDelegate.
+ */
+function asSearchDelegate(delegate: unknown): PrismaSearchDelegate {
+  return delegate as PrismaSearchDelegate;
 }
 
 export const searchRoutes: FastifyPluginAsync = async (fastify) => {
@@ -97,7 +132,10 @@ const parlementaireSelect = {
   },
 };
 
-const transformParlementaire = (d: any) => {
+/** Parlementaire tel que projeté par `parlementaireSelect`. */
+type ParlementaireSearchRow = Prisma.ParlementaireGetPayload<{ select: typeof parlementaireSelect }>;
+
+const transformParlementaire = (d: ParlementaireSearchRow) => {
   const dernierMandat = d.mandatsParlementaires?.[0];
   // Pour un ancien, le contexte pertinent est celui de son dernier mandat, pas
   // l'état courant de la fiche.
@@ -141,7 +179,7 @@ const sujetSelect = {
 };
 
 async function searchWithDatabase(
-  fastify: any,
+  fastify: FastifyInstance,
   q: string,
   type: string,
   limit: number,
@@ -166,7 +204,7 @@ async function searchWithDatabase(
     searchParlementaires(fastify, searchTerm, 'senat', pg('senateurs').skip, pg('senateurs').take, inclureAnciens)
       .then(r => { searchResults.senateurs = r; }),
     searchExact(
-      fastify.prisma.scrutin,
+      asSearchDelegate(fastify.prisma.scrutin),
       { titre: { contains: searchTerm, mode: 'insensitive' as const } },
       {
         id: true, numero: true, chambre: true, session: true, date: true,
@@ -175,10 +213,10 @@ async function searchWithDatabase(
       },
       [{ date: 'desc' }, { numero: 'desc' }],
       pg('scrutins').skip, pg('scrutins').take,
-      (s: any) => ({ ...s, _type: 'scrutin' as const }),
+      (s: SearchRow) => ({ ...s, _type: 'scrutin' as const }),
     ).then(r => { searchResults.scrutins = r; }),
     searchExact(
-      fastify.prisma.lobbyiste,
+      asSearchDelegate(fastify.prisma.lobbyiste),
       {
         OR: [
           { nom: { contains: searchTerm, mode: 'insensitive' as const } },
@@ -188,10 +226,10 @@ async function searchWithDatabase(
       { id: true, nom: true, type: true, secteur: true, budgetAnnuel: true, nbLobbyistes: true, ville: true },
       undefined,
       pg('lobbyistes').skip, pg('lobbyistes').take,
-      (l: any) => ({ ...l, _type: 'lobbyiste' as const }),
+      (l: SearchRow) => ({ ...l, _type: 'lobbyiste' as const }),
     ).then(r => { searchResults.lobbyistes = r; }),
     searchExact(
-      fastify.prisma.dossierLegislatif,
+      asSearchDelegate(fastify.prisma.dossierLegislatif),
       {
         OR: [
           { titre: { contains: searchTerm, mode: 'insensitive' as const } },
@@ -202,7 +240,7 @@ async function searchWithDatabase(
       { id: true, uid: true, titre: true, legislature: true, etat: true, procedureLibelle: true, loiNumero: true },
       { updatedAt: 'desc' },
       pg('dossiers').skip, pg('dossiers').take,
-      (d: any) => ({ ...d, _type: 'dossier' as const }),
+      (d: SearchRow) => ({ ...d, _type: 'dossier' as const }),
     ).then(r => { searchResults.dossiers = r; }),
     searchGroupes(fastify, searchTerm, pg('groupes').take, pg('groupes').skip)
       .then(r => { searchResults.groupes = r; }),
@@ -284,13 +322,13 @@ async function searchWithDatabase(
 // =============================================================================
 
 async function searchExact(
-  model: any,
-  where: any,
-  select: any,
-  orderBy: any,
+  model: PrismaSearchDelegate,
+  where: Record<string, unknown>,
+  select: Record<string, unknown>,
+  orderBy: Record<string, unknown> | Record<string, unknown>[] | undefined,
   skip: number,
   take: number,
-  transform: (row: any) => any,
+  transform: (row: SearchRow) => unknown,
 ): Promise<CategorySearchResult> {
   const [rows, total] = await Promise.all([
     model.findMany({ where, select, ...(orderBy && { orderBy }), skip, take }),
@@ -315,7 +353,7 @@ interface NamedMatch {
  * Renvoie nom/prénom pour permettre à l'appelant de trier l'ensemble fusionné.
  */
 async function matchParlementaireRecords(
-  fastify: any,
+  fastify: FastifyInstance,
   searchTerm: string,
   chambre: string,
   actif: boolean,
@@ -338,7 +376,7 @@ async function matchParlementaireRecords(
 }
 
 async function searchParlementaires(
-  fastify: any,
+  fastify: FastifyInstance,
   searchTerm: string,
   chambre: string,
   skip: number,
@@ -366,7 +404,7 @@ async function searchParlementaires(
     select: parlementaireSelect,
   });
   const order = new Map(pageIds.map((id: string, idx: number) => [id, idx]));
-  rows.sort((a: any, b: any) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+  sortByIdOrder(rows, order);
 
   return { data: rows.map(transformParlementaire), total };
 }
@@ -376,20 +414,20 @@ async function searchParlementaires(
 // =============================================================================
 
 async function fuzzyFallbackGeneric(
-  fastify: any,
+  fastify: FastifyInstance,
   model: string,
   searchTerm: string,
-  candidateSelect: any,
-  labelsExtractor: (row: any) => string[],
-  dataSelect: any,
+  candidateSelect: Record<string, unknown>,
+  labelsExtractor: (row: SearchRow) => string[],
+  dataSelect: Record<string, unknown>,
   take: number,
   skip: number,
 ): Promise<CategorySearchResult> {
-  const allCandidates = await (fastify.prisma as any)[model].findMany({
+  const allCandidates = await prismaDelegate(fastify, model).findMany({
     where: { actif: true },
     select: candidateSelect,
   });
-  const candidates: GenericFuzzyCandidate[] = allCandidates.map((r: any) => ({
+  const candidates: GenericFuzzyCandidate[] = allCandidates.map((r) => ({
     id: r.id,
     labels: labelsExtractor(r),
   }));
@@ -401,13 +439,13 @@ async function fuzzyFallbackGeneric(
   if (pageSlice.length === 0) return { data: [], total: allFuzzy.length };
 
   const ids = pageSlice.map(r => r.id);
-  const rows = await (fastify.prisma as any)[model].findMany({
+  const rows = await prismaDelegate(fastify, model).findMany({
     where: { id: { in: ids } },
     select: dataSelect,
   });
 
-  const idOrder = new Map(ids.map((id: string, idx: number) => [id, idx]));
-  rows.sort((a: any, b: any) => (idOrder.get(a.id) ?? 0) - (idOrder.get(b.id) ?? 0));
+  const idOrder = new Map(ids.map((id, idx) => [id, idx]));
+  sortByIdOrder(rows, idOrder);
   return { data: rows, total: allFuzzy.length };
 }
 
@@ -415,7 +453,7 @@ async function fuzzyFallbackGeneric(
 // Recherche groupes politiques
 // =============================================================================
 
-async function searchGroupes(fastify: any, searchTerm: string, limit: number, skip: number): Promise<CategorySearchResult> {
+async function searchGroupes(fastify: FastifyInstance, searchTerm: string, limit: number, skip: number): Promise<CategorySearchResult> {
   const where = {
     actif: true,
     OR: [
@@ -430,16 +468,16 @@ async function searchGroupes(fastify: any, searchTerm: string, limit: number, sk
   ]);
 
   if (dbTotal > 0) {
-    return { data: rows.map((g: any) => ({ ...g, _type: 'groupe' as const })), total: dbTotal };
+    return { data: rows.map((g) => ({ ...g, _type: 'groupe' as const })), total: dbTotal };
   }
 
   const fuzzy = await fuzzyFallbackGeneric(
     fastify, 'groupePolitique', searchTerm,
     { id: true, nom: true, nomComplet: true },
-    (g: any) => [g.nom, g.nomComplet].filter(Boolean),
+    (g) => [g.nom, g.nomComplet].filter(Boolean) as string[],
     groupeSelect, limit, skip,
   );
-  return { data: fuzzy.data.map((g: any) => ({ ...g, _type: 'groupe' as const })), total: fuzzy.total };
+  return { data: fuzzy.data.map((g) => ({ ...(g as SearchRow), _type: 'groupe' as const })), total: fuzzy.total };
 }
 
 // =============================================================================
@@ -451,7 +489,7 @@ async function searchGroupes(fastify: any, searchTerm: string, limit: number, sk
  * fuzzy en dernier recours. Symétrique de `matchParlementaireRecords`.
  */
 async function matchCommissionRecords(
-  fastify: any,
+  fastify: FastifyInstance,
   searchTerm: string,
   actif: boolean,
 ): Promise<Array<{ id: string; nom: string }>> {
@@ -484,7 +522,7 @@ async function matchCommissionRecords(
 }
 
 async function searchCommissions(
-  fastify: any,
+  fastify: FastifyInstance,
   searchTerm: string,
   limit: number,
   skip: number,
@@ -509,16 +547,16 @@ async function searchCommissions(
     select: commissionSelect,
   });
   const order = new Map(pageIds.map((id: string, idx: number) => [id, idx]));
-  rows.sort((a: any, b: any) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+  sortByIdOrder(rows, order);
 
-  return { data: rows.map((c: any) => ({ ...c, _type: 'commission' as const })), total };
+  return { data: rows.map((c) => ({ ...c, _type: 'commission' as const })), total };
 }
 
 // =============================================================================
 // Recherche sujets
 // =============================================================================
 
-async function searchSujets(fastify: any, searchTerm: string, limit: number, skip: number): Promise<CategorySearchResult> {
+async function searchSujets(fastify: FastifyInstance, searchTerm: string, limit: number, skip: number): Promise<CategorySearchResult> {
   const where = {
     actif: true,
     OR: [
@@ -533,30 +571,31 @@ async function searchSujets(fastify: any, searchTerm: string, limit: number, ski
   ]);
 
   if (dbTotal > 0) {
-    return { data: rows.map((s: any) => ({ ...s, _type: 'sujet' as const })), total: dbTotal };
+    return { data: rows.map((s) => ({ ...s, _type: 'sujet' as const })), total: dbTotal };
   }
 
   const fuzzy = await fuzzyFallbackGeneric(
     fastify, 'sujet', searchTerm,
     { id: true, label: true, description: true },
-    (s: any) => [s.label, s.description].filter(Boolean),
+    (s) => [s.label, s.description].filter(Boolean) as string[],
     sujetSelect, limit, skip,
   );
-  return { data: fuzzy.data.map((s: any) => ({ ...s, _type: 'sujet' as const })), total: fuzzy.total };
+  return { data: fuzzy.data.map((s) => ({ ...(s as SearchRow), _type: 'sujet' as const })), total: fuzzy.total };
 }
 
 // =============================================================================
 // Suggestions
 // =============================================================================
 
-async function suggestFromDatabase(fastify: any, q: string, limit: number) {
+async function suggestFromDatabase(fastify: FastifyInstance, q: string, limit: number) {
   const searchTerm = q.toLowerCase().trim();
   const select = {
-    slug: true, chambre: true, nom: true, prenom: true,
+    // `id` est requis par le tri de pertinence du fallback fuzzy plus bas.
+    id: true, slug: true, chambre: true, nom: true, prenom: true,
     groupe: { select: { nom: true } },
   };
 
-  let [parlementaires, scrutins] = await Promise.all([
+  const [exactParlementaires, scrutins] = await Promise.all([
     fastify.prisma.parlementaire.findMany({
       where: { ...buildParlementaireSearchCondition(searchTerm), actif: true },
       select,
@@ -569,6 +608,8 @@ async function suggestFromDatabase(fastify: any, q: string, limit: number) {
       take: Math.max(2, limit - 3),
     }),
   ]);
+
+  let parlementaires = exactParlementaires;
 
   if (parlementaires.length === 0) {
     const candidates: FuzzyCandidate[] = await fastify.prisma.parlementaire.findMany({
@@ -583,20 +624,20 @@ async function suggestFromDatabase(fastify: any, q: string, limit: number) {
         select,
       });
       const idOrder = new Map(matchingIds.map((id: string, idx: number) => [id, idx]));
-      parlementaires.sort((a: any, b: any) => (idOrder.get(a.id) ?? 0) - (idOrder.get(b.id) ?? 0));
+      sortByIdOrder(parlementaires, idOrder);
     }
   }
 
   return {
     data: [
-      ...parlementaires.map((d: any) => ({
+      ...parlementaires.map((d) => ({
         type: d.chambre === 'senat' ? 'senateur' : 'depute',
         value: `${d.prenom} ${d.nom}`,
         slug: d.slug,
         chambre: d.chambre,
         meta: d.groupe?.nom,
       })),
-      ...scrutins.map((s: any) => ({
+      ...scrutins.map((s) => ({
         type: 'scrutin',
         value: s.titre.length > 60 ? s.titre.substring(0, 60) + '...' : s.titre,
         numero: s.numero,

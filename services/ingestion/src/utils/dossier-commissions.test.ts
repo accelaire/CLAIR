@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { extractCommissionSaisines } from './dossier-commissions';
 
 describe('extractCommissionSaisines', () => {
-  const makeDossier = (actes: any) => ({
+  const makeDossier = (actes: unknown) => ({
     actesLegislatifs: actes,
   });
 

@@ -4,6 +4,8 @@
 
 import Fastify, { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
+import type { PrismaClient } from '@prisma/client';
+import type { Redis } from 'ioredis';
 import { createMockPrismaClient, createMockRedisClient, type MockPrismaClient, type MockRedisClient } from '../mocks';
 
 export type TestApp = FastifyInstance & {
@@ -29,16 +31,14 @@ export async function buildTestApp(options: BuildTestAppOptions = {}): Promise<T
   // Mock Prisma plugin
   await app.register(
     fp(async (fastify) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      fastify.decorate('prisma', mockPrisma as any);
+      fastify.decorate('prisma', mockPrisma as unknown as PrismaClient);
     }, { name: 'prisma' })
   );
 
   // Mock Redis plugin
   await app.register(
     fp(async (fastify) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      fastify.decorate('redis', mockRedis as any);
+      fastify.decorate('redis', mockRedis as unknown as Redis);
       fastify.decorate('cache', {
         get: async (key: string) => {
           const value = await mockRedis.get(key);

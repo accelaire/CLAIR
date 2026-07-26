@@ -49,8 +49,8 @@ describe('TfidfVectorizer', () => {
     const queryRare = vec.transform(['rare']);
     const queryCommon = vec.transform(['common']);
     // doc 0 has "rare" → higher similarity with queryRare
-    const simRare = cosineSimilarity(matrix[0], queryRare[0]);
-    const simCommon = cosineSimilarity(matrix[0], queryCommon[0]);
+    const simRare = cosineSimilarity(matrix[0]!, queryRare[0]!);
+    const simCommon = cosineSimilarity(matrix[0]!, queryCommon[0]!);
     expect(simRare).toBeGreaterThan(simCommon);
   });
 
@@ -64,8 +64,8 @@ describe('TfidfVectorizer', () => {
 
     // Results should be identical
     for (let i = 0; i < matrix1.length; i++) {
-      for (const [idx, val] of matrix1[i]) {
-        expect(Math.abs(val - (matrix2[i].get(idx) || 0))).toBeLessThan(1e-10);
+      for (const [idx, val] of matrix1[i]!) {
+        expect(Math.abs(val - (matrix2[i]!.get(idx) || 0))).toBeLessThan(1e-10);
       }
     }
   });
@@ -100,7 +100,7 @@ describe('bestMatch', () => {
       'immigration asile refugies',
     ]);
     const query = vec.transform(['immigration integration accueil']);
-    const result = bestMatch(query[0], corpus);
+    const result = bestMatch(query[0]!, corpus);
     expect(result.index).toBe(0); // Most similar to first doc
     expect(result.score).toBeGreaterThan(0);
   });
@@ -115,7 +115,7 @@ describe('bestMatch', () => {
     const vec = new TfidfVectorizer();
     const corpus = vec.fitTransform(['alpha beta gamma', 'delta epsilon']);
     const query = vec.transform(['alpha beta gamma']);
-    const result = bestMatch(query[0], corpus);
+    const result = bestMatch(query[0]!, corpus);
     expect(result.index).toBe(0);
     expect(result.score).toBeGreaterThan(0.99);
   });

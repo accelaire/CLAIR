@@ -13,6 +13,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as readline from 'readline';
 import { logger } from '../../utils/logger';
+import { errorMessage } from '../../utils/errors';
 import { SENAT_SESSION_MIN } from '../../workers/mandats';
 import { cleanWindows1252Artifacts } from '../../utils/text-cleaning';
 
@@ -137,7 +138,7 @@ function extractAmendementNumbers(scrint: string): string[] {
 /**
  * Parse une date depuis le format PostgreSQL timestamp
  */
-function parseTimestamp(ts: string | null): Date | null {
+function parseTimestamp(ts: string | null | undefined): Date | null {
   if (!ts || ts === '\\N') return null;
   const d = new Date(ts);
   return isNaN(d.getTime()) ? null : d;
@@ -227,8 +228,8 @@ export class DoslegClient {
     let sqlPath: string;
     try {
       sqlPath = await this.downloadAndExtract();
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Failed to download DOSLEG');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Failed to download DOSLEG');
       throw error;
     }
 
@@ -258,7 +259,7 @@ export class DoslegClient {
         // Detect COPY statement
         if (line.startsWith('COPY ')) {
           const match = line.match(/COPY (\w+)/);
-          if (match) {
+          if (match?.[1]) {
             currentTable = match[1];
           }
           continue;
@@ -355,10 +356,10 @@ export class DoslegClient {
             }
           }
 
-        } catch (e: any) {
+        } catch (e) {
           // Skip malformed lines
           if (lineCount % 100000 === 0) {
-            logger.debug({ line: lineCount, error: e.message }, 'Parse error (continuing)');
+            logger.debug({ line: lineCount, error: errorMessage(e) }, 'Parse error (continuing)');
           }
         }
 

@@ -13,6 +13,9 @@ import { pipeline } from 'stream/promises';
 import { parse } from 'csv-parse/sync';
 import { logger } from '../../utils/logger';
 
+/** Ligne d'un CSV HATVP parsé avec `columns: true` (toutes les valeurs sont des chaînes). */
+type CsvRow = Record<string, string>;
+
 // =============================================================================
 // TYPES - Structure des données HATVP
 // =============================================================================
@@ -221,9 +224,9 @@ export class HATVPClient {
         skip_empty_lines: true,
         relax_quotes: true,
         relax_column_count: true,
-      }) as any[];
+      }) as CsvRow[];
 
-      const lobbyisteIds = new Set(lobbyistesRaw.slice(0, limit || undefined).map((r: any) => r.representants_id));
+      const lobbyisteIds = new Set(lobbyistesRaw.slice(0, limit || undefined).map((r: CsvRow) => r.representants_id));
 
       // 2. Parse secteurs d'activité
       logger.info('Parsing secteurs_activites.csv...');
@@ -237,15 +240,15 @@ export class HATVPClient {
         skip_empty_lines: true,
         relax_quotes: true,
         relax_column_count: true,
-      }) as any[];
+      }) as CsvRow[];
 
       // Group secteurs by lobbyiste
       const secteursByLobbyiste = new Map<string, string[]>();
       for (const row of secteursRaw) {
         if (!lobbyisteIds.has(row.representants_id)) continue;
-        const list = secteursByLobbyiste.get(row.representants_id) || [];
+        const list = secteursByLobbyiste.get(row.representants_id ?? '') || [];
         if (row.secteur_activite) list.push(row.secteur_activite);
-        secteursByLobbyiste.set(row.representants_id, list);
+        secteursByLobbyiste.set((row.representants_id ?? ''), list);
       }
 
       // 3. Parse collaborateurs (pour compter nb lobbyistes)
@@ -260,31 +263,31 @@ export class HATVPClient {
         skip_empty_lines: true,
         relax_quotes: true,
         relax_column_count: true,
-      }) as any[];
+      }) as CsvRow[];
 
       // Count collaborateurs by lobbyiste
       const collabCountByLobbyiste = new Map<string, number>();
       for (const row of collabRaw) {
         if (!lobbyisteIds.has(row.representants_id)) continue;
-        const count = collabCountByLobbyiste.get(row.representants_id) || 0;
-        collabCountByLobbyiste.set(row.representants_id, count + 1);
+        const count = collabCountByLobbyiste.get(row.representants_id ?? '') || 0;
+        collabCountByLobbyiste.set((row.representants_id ?? ''), count + 1);
       }
 
       // Build lobbyistes with enriched data
       const lobbyistes = lobbyistesRaw
-        .filter((row: any) => lobbyisteIds.has(row.representants_id))
-        .map((row: any) => ({
-          id: row.representants_id,
-          denomination: row.denomination,
-          identifiantNational: row.identifiant_national,
-          typeIdentifiant: row.type_identifiant_national,
+        .filter((row: CsvRow) => lobbyisteIds.has(row.representants_id))
+        .map((row: CsvRow) => ({
+          id: row.representants_id ?? '',
+          denomination: row.denomination ?? '',
+          identifiantNational: row.identifiant_national ?? '',
+          typeIdentifiant: row.type_identifiant_national ?? '',
           categorie: row.label_categorie_organisation || 'Autre',
           adresse: row.adresse || null,
           codePostal: row.code_postal || null,
           ville: row.ville || null,
           siteWeb: row.site_web || null,
-          secteurs: secteursByLobbyiste.get(row.representants_id) || [],
-          nbCollaborateurs: collabCountByLobbyiste.get(row.representants_id) || 0,
+          secteurs: secteursByLobbyiste.get(row.representants_id ?? '') || [],
+          nbCollaborateurs: collabCountByLobbyiste.get(row.representants_id ?? '') || 0,
         }));
 
       logger.info({ count: lobbyistes.length }, 'Lobbyistes loaded from CSV');
@@ -301,11 +304,11 @@ export class HATVPClient {
         skip_empty_lines: true,
         relax_quotes: true,
         relax_column_count: true,
-      }) as any[];
+      }) as CsvRow[];
 
       const exercices = exercicesRaw
-        .filter((row: any) => lobbyisteIds.has(row.representants_id))
-        .map((row: any) => {
+        .filter((row: CsvRow) => lobbyisteIds.has(row.representants_id))
+        .map((row: CsvRow) => {
           // Le budget est en fourchette: utiliser la borne inférieure (montant_depense_inf)
           // ou parser le texte "≥ X € et < Y €"
           let montantDepense: number | null = null;
@@ -314,7 +317,7 @@ export class HATVPClient {
           } else if (row.montant_depense && typeof row.montant_depense === 'string') {
             // Try to extract first number from text like "≥ 75 000 € et < 100 000 €"
             const match = row.montant_depense.replace(/\s/g, '').match(/(\d+)/);
-            if (match) montantDepense = parseInt(match[1], 10);
+            if (match?.[1]) montantDepense = parseInt(match[1], 10);
           }
 
           // Nombre de salariés peut être un float comme "1.0"
@@ -324,8 +327,8 @@ export class HATVPClient {
           }
 
           return {
-            exerciceId: row.exercices_id,
-            lobbyisteId: row.representants_id,
+            exerciceId: row.exercices_id ?? '',
+            lobbyisteId: row.representants_id ?? '',
             dateDebut: row.date_debut || null,
             dateFin: row.date_fin || null,
             montantDepense,
@@ -339,7 +342,7 @@ export class HATVPClient {
       // Create maps for linking
       const exerciceToLobbyiste = new Map<string, string>();
       for (const ex of exercices) {
-        exerciceToLobbyiste.set(ex.exerciceId, ex.lobbyisteId);
+        exerciceToLobbyiste.set((ex.exerciceId ?? ''), (ex.lobbyisteId ?? ''));
       }
       const exerciceIds = new Set(exercices.map((e) => e.exerciceId));
 
@@ -355,7 +358,7 @@ export class HATVPClient {
         skip_empty_lines: true,
         relax_quotes: true,
         relax_column_count: true,
-      }) as any[];
+      }) as CsvRow[];
 
       // 6. Domaines d'intervention par activité
       logger.info('Parsing domaines_intervention.csv...');
@@ -369,26 +372,26 @@ export class HATVPClient {
         skip_empty_lines: true,
         relax_quotes: true,
         relax_column_count: true,
-      }) as any[];
+      }) as CsvRow[];
 
       const domainesByActivite = new Map<string, string[]>();
       for (const row of domainesRaw) {
-        const list = domainesByActivite.get(row.activite_id) || [];
+        const list = domainesByActivite.get(row.activite_id ?? '') || [];
         if (row.domaines_intervention_actions_menees) {
           list.push(row.domaines_intervention_actions_menees);
         }
-        domainesByActivite.set(row.activite_id, list);
+        domainesByActivite.set((row.activite_id ?? ''), list);
       }
 
       const activites = activitesRaw
-        .filter((row: any) => exerciceIds.has(row.exercices_id))
-        .map((row: any) => ({
-          activiteId: row.activite_id,
-          exerciceId: row.exercices_id,
-          lobbyisteId: exerciceToLobbyiste.get(row.exercices_id) || '',
+        .filter((row: CsvRow) => exerciceIds.has(row.exercices_id ?? ''))
+        .map((row: CsvRow) => ({
+          activiteId: row.activite_id ?? '',
+          exerciceId: row.exercices_id ?? '',
+          lobbyisteId: exerciceToLobbyiste.get(row.exercices_id ?? '') || '',
           objet: row.objet_activite || '',
           datePublication: row.date_publication_activite || null,
-          domaines: domainesByActivite.get(row.activite_id) || [],
+          domaines: domainesByActivite.get(row.activite_id ?? '') || [],
         }));
 
       logger.info({ count: activites.length }, 'Activites loaded from CSV');
@@ -405,7 +408,7 @@ export class HATVPClient {
         skip_empty_lines: true,
         relax_quotes: true,
         relax_column_count: true,
-      }) as any[];
+      }) as CsvRow[];
 
       // Map action_id -> activite_id(s)
       const actionToActivite = new Map<string, string>();
@@ -429,14 +432,14 @@ export class HATVPClient {
         skip_empty_lines: true,
         relax_quotes: true,
         relax_column_count: true,
-      }) as any[];
+      }) as CsvRow[];
 
       const typeActionsByActionId = new Map<string, string[]>();
       for (const row of actionsMeneesRaw) {
         const actionId = row.action_representation_interet_id;
-        const list = typeActionsByActionId.get(actionId) || [];
+        const list = typeActionsByActionId.get(actionId ?? '') || [];
         if (row.action_menee) list.push(row.action_menee);
-        typeActionsByActionId.set(actionId, list);
+        typeActionsByActionId.set((actionId ?? ''), list);
       }
 
       // 9. Ministères/responsables publics (cibles)
@@ -451,19 +454,19 @@ export class HATVPClient {
         skip_empty_lines: true,
         relax_quotes: true,
         relax_column_count: true,
-      }) as any[];
+      }) as CsvRow[];
 
       const ciblesByActionId = new Map<string, Array<{ type: string; nom: string | null }>>();
       for (const row of ministeresRaw) {
         const actionId = row.action_representation_interet_id;
-        const list = ciblesByActionId.get(actionId) || [];
+        const list = ciblesByActionId.get(actionId ?? '') || [];
         if (row.responsable_public || row.departement_ministeriel) {
           list.push({
-            type: row.responsable_public || row.departement_ministeriel,
+            type: row.responsable_public || row.departement_ministeriel || '',
             nom: row.responsable_public_ou_dpt_ministeriel_autre || null,
           });
         }
-        ciblesByActionId.set(actionId, list);
+        ciblesByActionId.set((actionId ?? ''), list);
       }
 
       // 10. Décisions concernées
@@ -478,14 +481,14 @@ export class HATVPClient {
         skip_empty_lines: true,
         relax_quotes: true,
         relax_column_count: true,
-      }) as any[];
+      }) as CsvRow[];
 
       const decisionsByActionId = new Map<string, string[]>();
       for (const row of decisionsRaw) {
         const actionId = row.action_representation_interet_id;
-        const list = decisionsByActionId.get(actionId) || [];
+        const list = decisionsByActionId.get(actionId ?? '') || [];
         if (row.decision_concernee) list.push(row.decision_concernee);
-        decisionsByActionId.set(actionId, list);
+        decisionsByActionId.set((actionId ?? ''), list);
       }
 
       // Build action details
@@ -586,7 +589,7 @@ export class HATVPClient {
     budgetAnnuel: number | null;
     nbLobbyistes: number | null;
     siteWeb: string | null;
-    sourceData: any;
+    sourceData: HATVPRepresentant;
   } {
     // Déterminer le type basé sur la catégorie
     const categorieMap: Record<string, string> = {

@@ -9,30 +9,58 @@ import {
   buildMultiFieldSearchCondition,
 } from './search';
 
+// Vue structurelle relâchée des conditions Prisma générées : les tests inspectent
+// la forme de l'objet (nom.contains, circonscription.departement.in, AND/OR imbriqués),
+// ce que les types Prisma (unions StringFilter) n'expriment pas directement.
+interface ProbeFilter {
+  contains?: string;
+  in?: string[];
+  mode?: string;
+}
+
+interface ProbeCondition {
+  nom?: ProbeFilter;
+  prenom?: ProbeFilter;
+  slug?: ProbeFilter;
+  titre?: ProbeFilter;
+  description?: ProbeFilter;
+  resume?: ProbeFilter;
+  departement?: ProbeFilter;
+  circonscription?: ProbeCondition;
+  OR?: ProbeCondition[];
+  AND?: ProbeCondition[];
+}
+
+/** Lit les branches OR d'une condition générée, sous forme inspectable. */
+function branches(condition: unknown): ProbeCondition[] {
+  return ((condition as ProbeCondition).OR ?? []) as ProbeCondition[];
+}
+
+
 describe('buildParlementaireSearchCondition', () => {
   describe('Recherche simple (un mot)', () => {
     it('devrait créer une condition OR pour un seul mot', () => {
       const result = buildParlementaireSearchCondition('dupont');
 
       expect(result).toHaveProperty('OR');
-      expect(result.OR).toBeInstanceOf(Array);
-      expect(result.OR.length).toBeGreaterThan(0);
+      expect(branches(result)).toBeInstanceOf(Array);
+      expect(branches(result).length).toBeGreaterThan(0);
     });
 
     it('devrait chercher dans nom, prénom, slug et circonscription', () => {
       const result = buildParlementaireSearchCondition('dupont');
 
-      const hasNomCondition = result.OR.some(
-        (c: any) => c.nom?.contains === 'dupont'
+      const hasNomCondition = branches(result).some(
+        (c: ProbeCondition) => c.nom?.contains === 'dupont'
       );
-      const hasPrenomCondition = result.OR.some(
-        (c: any) => c.prenom?.contains === 'dupont'
+      const hasPrenomCondition = branches(result).some(
+        (c: ProbeCondition) => c.prenom?.contains === 'dupont'
       );
-      const hasSlugCondition = result.OR.some(
-        (c: any) => c.slug?.contains === 'dupont'
+      const hasSlugCondition = branches(result).some(
+        (c: ProbeCondition) => c.slug?.contains === 'dupont'
       );
-      const hasCirconscriptionCondition = result.OR.some(
-        (c: any) => c.circonscription?.nom?.contains === 'dupont'
+      const hasCirconscriptionCondition = branches(result).some(
+        (c: ProbeCondition) => c.circonscription?.nom?.contains === 'dupont'
       );
 
       expect(hasNomCondition).toBe(true);
@@ -44,15 +72,15 @@ describe('buildParlementaireSearchCondition', () => {
     it('devrait être insensible à la casse', () => {
       const result = buildParlementaireSearchCondition('Dupont');
 
-      const nomCondition = result.OR.find((c: any) => c.nom?.contains);
-      expect(nomCondition.nom.mode).toBe('insensitive');
+      const nomCondition = branches(result).find((c: ProbeCondition) => c.nom?.contains);
+      expect(nomCondition!.nom!.mode).toBe('insensitive');
     });
 
     it('devrait trimmer les espaces', () => {
       const result = buildParlementaireSearchCondition('  dupont  ');
 
-      const nomCondition = result.OR.find((c: any) => c.nom?.contains);
-      expect(nomCondition.nom.contains).toBe('dupont');
+      const nomCondition = branches(result).find((c: ProbeCondition) => c.nom?.contains);
+      expect(nomCondition!.nom!.contains).toBe('dupont');
     });
   });
 
@@ -61,8 +89,8 @@ describe('buildParlementaireSearchCondition', () => {
       const result = buildParlementaireSearchCondition('jean dupont');
 
       // Devrait avoir des combinaisons AND pour prénom + nom
-      const hasAndConditions = result.OR.some(
-        (c: any) => c.AND && Array.isArray(c.AND)
+      const hasAndConditions = branches(result).some(
+        (c: ProbeCondition) => c.AND && Array.isArray(c.AND)
       );
       expect(hasAndConditions).toBe(true);
     });
@@ -71,11 +99,11 @@ describe('buildParlementaireSearchCondition', () => {
       const result = buildParlementaireSearchCondition('Marine Le Pen');
 
       // Devrait avoir plusieurs combinaisons possibles
-      expect(result.OR.length).toBeGreaterThan(3);
+      expect(branches(result).length).toBeGreaterThan(3);
 
       // Devrait inclure la recherche dans le slug
-      const hasSlugSearch = result.OR.some(
-        (c: any) => c.slug?.contains === 'marine-le-pen'
+      const hasSlugSearch = branches(result).some(
+        (c: ProbeCondition) => c.slug?.contains === 'marine-le-pen'
       );
       expect(hasSlugSearch).toBe(true);
     });
@@ -84,11 +112,11 @@ describe('buildParlementaireSearchCondition', () => {
       const result = buildParlementaireSearchCondition('dupont jean');
 
       // Chercher une condition où nom=dupont et prenom=jean
-      const hasInverseCondition = result.OR.some(
-        (c: any) =>
+      const hasInverseCondition = branches(result).some(
+        (c: ProbeCondition) =>
           c.AND &&
-          c.AND.some((a: any) => a.nom?.contains === 'dupont') &&
-          c.AND.some((a: any) => a.prenom?.contains === 'jean')
+          c.AND.some((a: ProbeCondition) => a.nom?.contains === 'dupont') &&
+          c.AND.some((a: ProbeCondition) => a.prenom?.contains === 'jean')
       );
       expect(hasInverseCondition).toBe(true);
     });
@@ -97,10 +125,10 @@ describe('buildParlementaireSearchCondition', () => {
       const result = buildParlementaireSearchCondition('jean claude dupont');
 
       // Devrait avoir une condition qui vérifie chaque mot individuellement
-      const hasFallback = result.OR.some(
-        (c: any) =>
+      const hasFallback = branches(result).some(
+        (c: ProbeCondition) =>
           c.AND &&
-          c.AND.every((a: any) => a.OR) // Chaque mot cherché dans nom OU prénom
+          c.AND.every((a: ProbeCondition) => a.OR) // Chaque mot cherché dans nom OU prénom
       );
       expect(hasFallback).toBe(true);
     });
@@ -110,8 +138,8 @@ describe('buildParlementaireSearchCondition', () => {
     it('devrait ajouter une condition géographique pour Paris', () => {
       const result = buildParlementaireSearchCondition('paris');
 
-      const hasGeoCondition = result.OR.some(
-        (c: any) =>
+      const hasGeoCondition = branches(result).some(
+        (c: ProbeCondition) =>
           c.circonscription?.departement?.in &&
           c.circonscription.departement.in.includes('75')
       );
@@ -121,21 +149,21 @@ describe('buildParlementaireSearchCondition', () => {
     it('devrait ajouter les départements de Bretagne', () => {
       const result = buildParlementaireSearchCondition('bretagne');
 
-      const geoCondition = result.OR.find(
-        (c: any) => c.circonscription?.departement?.in
+      const geoCondition = branches(result).find(
+        (c: ProbeCondition) => c.circonscription?.departement?.in
       );
       expect(geoCondition).toBeDefined();
-      expect(geoCondition.circonscription.departement.in).toContain('22');
-      expect(geoCondition.circonscription.departement.in).toContain('29');
-      expect(geoCondition.circonscription.departement.in).toContain('35');
-      expect(geoCondition.circonscription.departement.in).toContain('56');
+      expect(geoCondition!.circonscription!.departement!.in).toContain('22');
+      expect(geoCondition!.circonscription!.departement!.in).toContain('29');
+      expect(geoCondition!.circonscription!.departement!.in).toContain('35');
+      expect(geoCondition!.circonscription!.departement!.in).toContain('56');
     });
 
     it('devrait ne pas ajouter de condition géo pour un nom propre', () => {
       const result = buildParlementaireSearchCondition('melenchon');
 
-      const hasGeoCondition = result.OR.some(
-        (c: any) => c.circonscription?.departement?.in
+      const hasGeoCondition = branches(result).some(
+        (c: ProbeCondition) => c.circonscription?.departement?.in
       );
       expect(hasGeoCondition).toBe(false);
     });
@@ -191,11 +219,11 @@ describe('buildMultiFieldSearchCondition', () => {
       const result = buildMultiFieldSearchCondition(['titre', 'description'], 'budget');
 
       expect(result).toHaveProperty('OR');
-      expect(result.OR).toHaveLength(2);
-      expect(result.OR[0]).toEqual({
+      expect(branches(result)).toHaveLength(2);
+      expect(branches(result)[0]).toEqual({
         titre: { contains: 'budget', mode: 'insensitive' },
       });
-      expect(result.OR[1]).toEqual({
+      expect(branches(result)[1]).toEqual({
         description: { contains: 'budget', mode: 'insensitive' },
       });
     });
@@ -212,7 +240,7 @@ describe('buildMultiFieldSearchCondition', () => {
       // Option 1: tous les mots dans 'titre' (AND)
       // Option 2: tous les mots dans 'description' (AND)
       // Option 3: chaque mot dans au moins un champ
-      expect(result.OR.length).toBe(3);
+      expect(branches(result).length).toBe(3);
     });
 
     it("devrait permettre que chaque mot soit dans n'importe quel champ", () => {
@@ -222,11 +250,11 @@ describe('buildMultiFieldSearchCondition', () => {
       );
 
       // La dernière condition devrait être le fallback flexible
-      const flexibleCondition = result.OR[2];
+      const flexibleCondition = branches(result)[2];
       expect(flexibleCondition).toHaveProperty('AND');
 
       // Chaque mot peut être dans titre OU description
-      flexibleCondition.AND.forEach((wordCondition: any) => {
+      flexibleCondition!.AND!.forEach((wordCondition: ProbeCondition) => {
         expect(wordCondition).toHaveProperty('OR');
         expect(wordCondition.OR).toHaveLength(2);
       });
@@ -240,7 +268,7 @@ describe('buildMultiFieldSearchCondition', () => {
         'test'
       );
 
-      expect(result.OR).toHaveLength(3);
+      expect(branches(result)).toHaveLength(3);
     });
   });
 });

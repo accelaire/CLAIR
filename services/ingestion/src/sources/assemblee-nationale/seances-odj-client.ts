@@ -6,6 +6,7 @@
 import { LEGISLATURE_AN_COURANTE } from '../../workers/mandats';
 import axios from 'axios';
 import { logger } from '../../utils/logger';
+import { errorMessage } from '../../utils/errors';
 
 // =============================================================================
 // TYPES
@@ -87,7 +88,8 @@ export class SeancesODJClient {
           hour12: false,
         }).format(probe);
         const parisOffset = parseInt(parisHourStr, 10) - probe.getUTCHours(); // +1 or +2
-        const [h, m] = heure.split(':').map(Number);
+        const [h, m = 0] = heure.split(':').map(Number);
+        if (h === undefined || isNaN(h)) continue;
         const dateDebut = new Date(Date.UTC(
           parseInt(date.slice(0, 4), 10),
           parseInt(date.slice(5, 7), 10) - 1,
@@ -107,8 +109,8 @@ export class SeancesODJClient {
         const odjComplet = odjItems.join('\n').substring(0, 5000);
 
         results.push({ date, heure, dateDebut, odjItems, odjResume, odjComplet });
-      } catch (err: any) {
-        logger.warn({ line, error: err.message }, 'Failed to parse séance ODJ line');
+      } catch (err) {
+        logger.warn({ line, error: errorMessage(err) }, 'Failed to parse séance ODJ line');
       }
     }
 

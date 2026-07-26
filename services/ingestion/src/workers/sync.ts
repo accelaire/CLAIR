@@ -17,6 +17,8 @@ import { SenatInterventionsClient } from '../sources/senat/interventions-client'
 import { SenatDossiersClient } from '../sources/senat/dossiers-client';
 import { syncSenateursHistoriques } from './senat-histo';
 import { logger } from '../utils/logger';
+import { errorMessage } from '../utils/errors';
+import { asArray, isRecord, readString } from '../utils/json';
 import { extractCommissionSaisines } from '../utils/dossier-commissions';
 import {
   LEGISLATURE_AN_COURANTE,
@@ -349,7 +351,7 @@ export async function syncReunions(options: { limit?: number } = {}): Promise<{
         const isPastAndExisting = existing && reunionData.dateDebut < new Date();
         if (r.participants.length > 0 && !isPastAndExisting) {
           const seen = new Set<string>();
-          const participantRecords: Array<{ reunionId: string; parlementaireId: string; presence: string | null }> = [];
+          const participantRecords: Array<{ reunionId: string; parlementaireId: string; presence: string }> = [];
           for (const p of r.participants) {
             const parlementaireId = parlementaireByRef.get(p.acteurRef);
             if (!parlementaireId || seen.has(parlementaireId)) continue;
@@ -365,8 +367,8 @@ export async function syncReunions(options: { limit?: number } = {}): Promise<{
             participantsLinked += participantRecords.length;
           }
         }
-      } catch (error: any) {
-        logger.warn({ uid: r.uid, error: error.message }, 'Error syncing reunion');
+      } catch (error) {
+        logger.warn({ uid: r.uid, error: errorMessage(error) }, 'Error syncing reunion');
       }
     }
 
@@ -451,7 +453,7 @@ async function syncMandatsFromSourceData(
   if (!sourceData || typeof sourceData !== 'object') return 0;
 
   const data = sourceData as Record<string, unknown>;
-  const mandatsRaw = (data as any).mandats?.mandat;
+  const mandatsRaw = isRecord(data.mandats) ? data.mandats.mandat : undefined;
   if (!mandatsRaw) return 0;
 
   const mandats = Array.isArray(mandatsRaw) ? mandatsRaw : [mandatsRaw];
@@ -623,11 +625,10 @@ export async function syncDeputes(
             p,
             groupeMap,
             circoMap,
-            organeRefToCommissionId,
             ctx,
           );
-        } catch (error: any) {
-          logger.error({ slug: p.slug, error: error.message }, 'Error syncing parlementaire');
+        } catch (error) {
+          logger.error({ slug: p.slug, error: errorMessage(error) }, 'Error syncing parlementaire');
           return null;
         }
       })
@@ -716,7 +717,6 @@ async function syncSingleParlementaireAN(
   p: TransformedParlementaire,
   groupeMap: Map<string, string>,
   circoMap: Map<string, string>,
-  organeRefToCommissionId: Map<string, string>,
   ctx: MandatContext,
 ): Promise<{ person: 'created' | 'updated'; mandatCreated: boolean } | null> {
   // Une législature courante alimente la table `parlementaires` (groupe/circo/actif
@@ -848,16 +848,6 @@ async function syncSingleParlementaireAN(
 // SYNC SÉNATS - CommissionsSenate depuis API Sénat
 // =============================================================================
 
-const SENAT_CODE_TO_TYPE: Record<string, string> = {
-  COMAFCL: 'permanente',
-  COMAFETR: 'permanente',
-  COMCAEE: 'permanente',
-  COMLOIS: 'permanente',
-  COMSOCIALE: 'permanente',
-  COMFINC: 'permanente',
-  COMEUROPE: 'permanente', // Commission des affaires européennes
-};
-
 /**
  * Sync Senate commissions from the Senate API data embedded in senateurs.
  * Also backfills organeRef on existing Senate commissions.
@@ -914,11 +904,12 @@ export async function syncSenatCommissions(): Promise<{ created: number; updated
   for (const p of senateurs) {
     const data = p.sourceData as Record<string, unknown> | null;
     if (!data) continue;
-    const organismes = (data as any).organismes || [];
-    for (const org of organismes) {
-      if (org.type !== 'COMMISSION') continue;
-      if (!commissionData.has(org.code)) {
-        commissionData.set(org.code, { code: org.code, libelle: org.libelle });
+    for (const org of asArray(data.organismes)) {
+      if (!isRecord(org) || org.type !== 'COMMISSION') continue;
+      const code = readString(org, 'code');
+      if (!code) continue;
+      if (!commissionData.has(code)) {
+        commissionData.set(code, { code, libelle: readString(org, 'libelle') ?? '' });
       }
     }
   }
@@ -1057,8 +1048,8 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
       limit(async () => {
         try {
           return await syncSingleSenateur(s, groupeMap, circoMap, commissionByOrganeRef);
-        } catch (error: any) {
-          logger.error({ slug: s.slug, error: error.message }, 'Error syncing sénateur');
+        } catch (error) {
+          logger.error({ slug: s.slug, error: errorMessage(error) }, 'Error syncing sénateur');
           return null;
         }
       })
@@ -1389,8 +1380,8 @@ export async function syncScrutins(
         votesCreated += voteRecords.length;
       }
 
-    } catch (error: any) {
-      logger.warn({ numero: data.scrutin.numero, error: error.message }, 'Error syncing scrutin');
+    } catch (error) {
+      logger.warn({ numero: data.scrutin.numero, error: errorMessage(error) }, 'Error syncing scrutin');
     }
 
     // Pause tous les 100 scrutins pour laisser le GC respirer
@@ -1580,8 +1571,8 @@ export async function syncScrutinsSenat(
         votesCreated += voteRecords.length;
       }
 
-    } catch (error: any) {
-      logger.warn({ numero: data.scrutin.numero, error: error.message }, 'Error syncing scrutin Sénat');
+    } catch (error) {
+      logger.warn({ numero: data.scrutin.numero, error: errorMessage(error) }, 'Error syncing scrutin Sénat');
     }
 
     // Pause tous les 100 scrutins pour laisser le GC respirer
@@ -1737,8 +1728,8 @@ export async function syncInterventions(
         createdNonParlementaire++;
       }
 
-    } catch (error: any) {
-      logger.warn({ seance: intervention.seanceId, error: error.message }, 'Error syncing intervention');
+    } catch (error) {
+      logger.warn({ seance: intervention.seanceId, error: errorMessage(error) }, 'Error syncing intervention');
     }
   }
 
@@ -1881,8 +1872,8 @@ export async function syncInterventionsSenat(
         createdNonParlementaire++;
       }
 
-    } catch (error: any) {
-      logger.warn({ seance: intervention.seanceId, error: error.message }, 'Error syncing intervention Sénat');
+    } catch (error) {
+      logger.warn({ seance: intervention.seanceId, error: errorMessage(error) }, 'Error syncing intervention Sénat');
     }
   }
 
@@ -2248,8 +2239,8 @@ export async function syncSenatReunions(options: { maxWeeks?: number } = {}): Pr
       }
 
       // Match participants — only for new reunions (compte-rendu passé = données finales)
-      if (!existing && (r as any).participantNames?.length > 0) {
-        const participantNames = (r as any).participantNames as string[];
+      if (!existing && r.participantNames.length > 0) {
+        const participantNames = r.participantNames;
         const seen = new Set<string>();
         const records: Array<{ reunionId: string; parlementaireId: string; presence: string }> = [];
 
@@ -2265,8 +2256,8 @@ export async function syncSenatReunions(options: { maxWeeks?: number } = {}): Pr
           participantsLinked += records.length;
         }
       }
-    } catch (err: any) {
-      logger.warn({ uid: r.uid, error: err.message }, 'Error syncing Sénat reunion');
+    } catch (err) {
+      logger.warn({ uid: r.uid, error: errorMessage(err) }, 'Error syncing Sénat reunion');
     }
   }
 
@@ -2332,8 +2323,8 @@ export async function syncSenatAgenda(): Promise<{ created: number; updated: num
         await prisma.reunion.create({ data: reunionData });
         created++;
       }
-    } catch (err: any) {
-      logger.warn({ uid: s.uid, error: err.message }, 'Error syncing Sénat agenda séance');
+    } catch (err) {
+      logger.warn({ uid: s.uid, error: errorMessage(err) }, 'Error syncing Sénat agenda séance');
     }
   }
 
@@ -2397,8 +2388,8 @@ export async function syncSeancesODJ(): Promise<{
         });
         updated++;
       }
-    } catch (err: any) {
-      logger.warn({ date: seance.date, heure: seance.heure, error: err.message }, 'Error processing séance ODJ row');
+    } catch (err) {
+      logger.warn({ date: seance.date, heure: seance.heure, error: errorMessage(err) }, 'Error processing séance ODJ row');
     }
   }
 
@@ -2484,8 +2475,8 @@ export async function fullSync(): Promise<void> {
       deputes: deputes.created + deputes.updated,
       senateurs: senateurs.created + senateurs.updated,
     }, 'Full sync completed successfully');
-  } catch (error: any) {
-    logger.error({ error: error.message }, 'Full sync failed');
+  } catch (error) {
+    logger.error({ error: errorMessage(error) }, 'Full sync failed');
     throw error;
   }
 }
@@ -2839,20 +2830,20 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
 
         logger.info({ sourceKey, ...syncResult }, 'Source sync completed');
 
-      } catch (error: any) {
+      } catch (error) {
         await prisma.syncLog.update({
           where: { id: syncLog.id },
           data: {
             statut: 'failed',
             completedAt: new Date(),
-            error: error.message,
+            error: errorMessage(error),
           },
         });
         throw error;
       }
 
-    } catch (error: any) {
-      logger.error({ sourceKey, error: error.message }, 'Error syncing source');
+    } catch (error) {
+      logger.error({ sourceKey, error: errorMessage(error) }, 'Error syncing source');
       results.results[sourceKey] = { created: 0, updated: 0 };
     }
   }
@@ -2872,8 +2863,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         bySeanceRef: linkResult.bySeanceRef,
         byDate: linkResult.byDate,
       }, 'Interventions linking completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Interventions linking failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Interventions linking failed (non-blocking)');
     }
   }
 
@@ -2906,8 +2897,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         notFound: enrichSenatResult.notFound,
         errors: enrichSenatResult.errors,
       }, 'Sénat scrutins enrichment completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Scrutins-Amendements enrichment failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Scrutins-Amendements enrichment failed (non-blocking)');
     }
   }
 
@@ -2920,8 +2911,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.info({
         linked: linkResult.linked,
       }, 'Sénat scrutins-dossiers linking completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sénat scrutins-dossiers linking failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sénat scrutins-dossiers linking failed (non-blocking)');
     }
 
     // TF-IDF matching for ALL orphan scrutins (AN + Sénat) — high recall
@@ -2932,8 +2923,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         linked: tfidfResult.linked,
         skipped: tfidfResult.skipped,
       }, 'TF-IDF scrutin-dossier linking completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'TF-IDF scrutin-dossier linking failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'TF-IDF scrutin-dossier linking failed (non-blocking)');
     }
 
     // AN scrutins-dossiers title matching — safety net for remaining orphans
@@ -2943,8 +2934,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.info({
         linked: anLinkResult.linked,
       }, 'AN scrutins-dossiers title linking completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'AN scrutins-dossiers title linking failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'AN scrutins-dossiers title linking failed (non-blocking)');
     }
 
     // Texte_numero linking — structural match via shared texte reference
@@ -2954,8 +2945,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.info({
         linked: texteNumResult.linked,
       }, 'Texte_numero orphan linking completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Texte_numero orphan linking failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Texte_numero orphan linking failed (non-blocking)');
     }
 
     // Loi_titre matching — last resort matching against promulgated law title
@@ -2965,8 +2956,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.info({
         linked: loiTitreResult.linked,
       }, 'Loi_titre orphan linking completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Loi_titre orphan linking failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Loi_titre orphan linking failed (non-blocking)');
     }
   }
 
@@ -2980,8 +2971,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         linked: linkAmResult.linked,
         notFound: linkAmResult.notFound,
       }, 'Scrutins-amendements linking completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Scrutins-amendements linking failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Scrutins-amendements linking failed (non-blocking)');
     }
 
     // Propagate dossier_id from scrutins to amendements (only fills NULL, never resets)
@@ -2991,8 +2982,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.info({
         linked: amdtLinkResult.linked,
       }, 'Amendements-dossiers linking via scrutins completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Amendements-dossiers linking via scrutins failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Amendements-dossiers linking via scrutins failed (non-blocking)');
     }
 
     // Link amendements to dossiers via texte_ref (catches non-voted amendements)
@@ -3001,8 +2992,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.info({
         linked: texteRefResult.linked,
       }, 'Amendements-dossiers linking via texteRef completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Amendements-dossiers linking via texteRef failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Amendements-dossiers linking via texteRef failed (non-blocking)');
     }
 
     // Propagate dossier_id between sibling amendments on same texte_ref (safe: unanimous only)
@@ -3011,8 +3002,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.info({
         linked: siblingResult.linked,
       }, 'Sibling texte_ref dossier propagation completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sibling texte_ref dossier propagation failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sibling texte_ref dossier propagation failed (non-blocking)');
     }
 
   }
@@ -3067,8 +3058,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         total: thematiquesResult.total,
         duration: thematiquesResult.duration,
       }, 'Groupe thematiques calculation completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Stats calculation failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Stats calculation failed (non-blocking)');
       // Ne pas faire échouer le sync complet si le calcul des stats échoue
     }
   }
@@ -3083,8 +3074,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         updated: sujetResult.updated,
         totalDossiers: sujetResult.totalDossiers,
       }, 'Incremental sujet generation completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sujet generation failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sujet generation failed (non-blocking)');
     }
   }
 
@@ -3098,8 +3089,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         deleted: linksResult.deleted,
         dropped: linksResult.dropped,
       }, 'Sujet links generation completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sujet links generation failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sujet links generation failed (non-blocking)');
     }
   }
 
@@ -3116,8 +3107,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         created: ctxResult.created,
         deleted: ctxResult.deleted,
       }, 'Sujet context links generation completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sujet context links generation failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sujet context links generation failed (non-blocking)');
     }
   }
 
@@ -3153,8 +3144,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         updated: sujetsResult,
         duration: `${((Date.now() - refreshStart) / 1000).toFixed(1)}s`,
       }, 'Sujets stats refresh completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sujets stats refresh failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sujets stats refresh failed (non-blocking)');
     }
   }
 
@@ -3172,8 +3163,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         await prisma.$executeRawUnsafe(`VACUUM ANALYZE ${table}`);
       }
       logger.info({ duration: `${((Date.now() - vacuumStart) / 1000).toFixed(1)}s` }, 'VACUUM ANALYZE completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'VACUUM ANALYZE failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'VACUUM ANALYZE failed (non-blocking)');
     }
   }
 
@@ -3186,8 +3177,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         matched: declResult.matched, created: declResult.created,
         unmatched: declResult.unmatched, errors: declResult.errors,
       }, 'HATVP declarations sync completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'HATVP declarations sync failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'HATVP declarations sync failed (non-blocking)');
     }
   }
 
@@ -3213,8 +3204,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       `;
       await prismaLocal.$disconnect();
       logger.info('Sujet statuses refreshed from dossier etats');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sujet status refresh failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sujet status refresh failed (non-blocking)');
     }
   }
 
@@ -3271,8 +3262,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         enriched: iaParlRefresh.enriched, errors: iaParlRefresh.errors,
         tokensIn: iaParlRefresh.totalTokensIn, tokensOut: iaParlRefresh.totalTokensOut,
       }, 'Parlementaires IA rotation refresh completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'IA enrichment failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'IA enrichment failed (non-blocking)');
     }
   }
 
@@ -3304,8 +3295,8 @@ export async function checkSourcesStatus(): Promise<void> {
         previousLastModified: freshness.previousLastModified,
         lastSyncAt: freshness.lastSyncAt,
       }, freshness.hasChanged ? 'Source HAS CHANGED' : 'Source unchanged');
-    } catch (error: any) {
-      logger.error({ source: sourceKey, error: error.message }, 'Error checking source');
+    } catch (error) {
+      logger.error({ source: sourceKey, error: errorMessage(error) }, 'Error checking source');
     }
   }
 }
@@ -3428,8 +3419,8 @@ export async function syncAmendements(
         }
 
         if (parlementaireId) linked++;
-      } catch (error: any) {
-        logger.warn({ uid: raw.uid, error: error.message }, 'Error syncing amendement');
+      } catch (error) {
+        logger.warn({ uid: raw.uid, error: errorMessage(error) }, 'Error syncing amendement');
       }
     }
 
@@ -3566,8 +3557,8 @@ export async function syncAmendementsSenat(
         }
 
         if (parlementaireId) linked++;
-      } catch (error: any) {
-        logger.warn({ uid: amd.uid, error: error.message }, 'Error syncing amendement Sénat');
+      } catch (error) {
+        logger.warn({ uid: amd.uid, error: errorMessage(error) }, 'Error syncing amendement Sénat');
       }
     }
 
@@ -3840,8 +3831,8 @@ export async function syncAmendementsSenatCsv(
       }
 
       totalAmendements += amendments.length;
-    } catch (error: any) {
-      logger.warn({ texteId: texte.texteId, error: error.message }, 'Error processing texte CSV');
+    } catch (error) {
+      logger.warn({ texteId: texte.texteId, error: errorMessage(error) }, 'Error processing texte CSV');
     }
 
     // Release references for GC
@@ -3988,8 +3979,8 @@ export async function syncDossiers(
         }
       }
 
-    } catch (e: any) {
-      logger.warn({ uid: dossier.uid, error: e.message }, 'Failed to upsert dossier');
+    } catch (e) {
+      logger.warn({ uid: dossier.uid, error: errorMessage(e) }, 'Failed to upsert dossier');
     }
   }
 
@@ -4078,8 +4069,8 @@ export async function syncDossiersSenat(
       // Store ref -> dossierId mapping
       refToDossierId.set(dossier.ref, dossierId);
 
-    } catch (e: any) {
-      logger.warn({ uid: dossier.uid, error: e.message }, 'Failed to upsert dossier Sénat');
+    } catch (e) {
+      logger.warn({ uid: dossier.uid, error: errorMessage(e) }, 'Failed to upsert dossier Sénat');
     }
   }
 
@@ -4301,12 +4292,20 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
 
     let jaccardRejected = 0;
 
-    for (let i = 0; i < orphans.length; i++) {
-      const match = bestMatch(scrutinVectors[i], dossierVectors);
+    for (const [i, orphan] of orphans.entries()) {
+      const scrutinVector = scrutinVectors[i];
+      const scrutinTokens = scrutinTokenSets[i];
+      if (!scrutinVector || !scrutinTokens) continue;
+
+      const match = bestMatch(scrutinVector, dossierVectors);
       if (match.index >= 0 && match.score >= MIN_TFIDF_SIMILARITY) {
+        const dossier = dossiers[match.index];
+        const dossierTokens = dossierTokenSets[match.index];
+        if (!dossier || !dossierTokens) continue;
+
         // Jaccard post-validation: skip for high-confidence TF-IDF matches
         if (match.score < HIGH_CONFIDENCE_TFIDF) {
-          const jaccard = jaccardSimilarity(scrutinTokenSets[i], dossierTokenSets[match.index]);
+          const jaccard = jaccardSimilarity(scrutinTokens, dossierTokens);
           if (jaccard < MIN_JACCARD_SIMILARITY) {
             jaccardRejected++;
             continue;
@@ -4314,8 +4313,8 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
         }
 
         updates.push({
-          scrutinId: orphans[i].id,
-          dossierId: dossiers[match.index].id,
+          scrutinId: orphan.id,
+          dossierId: dossier.id,
           score: match.score,
         });
       }
@@ -4331,8 +4330,8 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
       const p10 = scores[Math.floor(scores.length * 0.1)] || 0;
       const p50 = scores[Math.floor(scores.length * 0.5)] || 0;
       const p90 = scores[Math.floor(scores.length * 0.9)] || 0;
-      const min = scores[0];
-      const max = scores[scores.length - 1];
+      const min = scores[0] ?? 0;
+      const max = scores[scores.length - 1] ?? 0;
       logger.info({
         chambre, count: updates.length,
         min: min.toFixed(3), p10: p10.toFixed(3),
@@ -4476,20 +4475,25 @@ function extractTexteRefsFromSourceData(sourceData: unknown): string[] {
   if (!sourceData || typeof sourceData !== 'object') return [];
   const refs: string[] = [];
 
-  function walk(node: any) {
-    if (!node || typeof node !== 'object') return;
+  function walk(node: unknown) {
     if (Array.isArray(node)) { node.forEach(walk); return; }
+    if (!isRecord(node)) return;
 
-    if (node.texteAssocie) {
-      if (typeof node.texteAssocie === 'string') {
-        refs.push(node.texteAssocie);
-      } else if (Array.isArray(node.texteAssocie)) {
-        for (const t of node.texteAssocie) {
+    const texteAssocie = node.texteAssocie;
+    if (texteAssocie) {
+      if (typeof texteAssocie === 'string') {
+        refs.push(texteAssocie);
+      } else if (Array.isArray(texteAssocie)) {
+        for (const t of texteAssocie) {
           if (typeof t === 'string') refs.push(t);
-          else if (t?.refTexteAssocie) refs.push(t.refTexteAssocie);
+          else {
+            const ref = readString(t, 'refTexteAssocie');
+            if (ref) refs.push(ref);
+          }
         }
-      } else if (node.texteAssocie.refTexteAssocie) {
-        refs.push(node.texteAssocie.refTexteAssocie);
+      } else {
+        const ref = readString(texteAssocie, 'refTexteAssocie');
+        if (ref) refs.push(ref);
       }
     }
     if (typeof node.texteAdopte === 'string') {
@@ -4497,17 +4501,14 @@ function extractTexteRefsFromSourceData(sourceData: unknown): string[] {
     }
 
     // Recurse into nested actes
-    if (node.actesLegislatifs?.acteLegislatif) {
-      const nested = node.actesLegislatifs.acteLegislatif;
-      (Array.isArray(nested) ? nested : [nested]).forEach(walk);
-    }
+    const nested = isRecord(node.actesLegislatifs) ? node.actesLegislatifs.acteLegislatif : undefined;
+    if (nested) asArray(nested).forEach(walk);
   }
 
-  const sd = sourceData as any;
-  if (sd.actesLegislatifs?.acteLegislatif) {
-    const actes = sd.actesLegislatifs.acteLegislatif;
-    (Array.isArray(actes) ? actes : [actes]).forEach(walk);
-  }
+  const actes = isRecord(sourceData) && isRecord(sourceData.actesLegislatifs)
+    ? sourceData.actesLegislatifs.acteLegislatif
+    : undefined;
+  if (actes) asArray(actes).forEach(walk);
 
   return [...new Set(refs)];
 }
@@ -5127,8 +5128,8 @@ export async function enrichScrutinsANAmendements(
           }
           logger.debug({ scrutinNumero: scrutin.numero, amendementCount: foundAmendementIds.length, dryRun }, 'Amendments linked');
           return { status: 'enriched' as const };
-        } catch (error: any) {
-          logger.warn({ scrutinNumero: scrutin.numero, error: error.message }, 'Error enriching scrutin');
+        } catch (error) {
+          logger.warn({ scrutinNumero: scrutin.numero, error: errorMessage(error) }, 'Error enriching scrutin');
           return { status: 'error' as const };
         }
       })
@@ -5265,8 +5266,8 @@ export async function enrichScrutinsSenatAmendements(
         texteNumToInternalId.set(num, existing);
       }
       logger.info({ uniqueNums: texteNumToInternalId.size }, 'Texte number mapping loaded from AMELI');
-    } catch (error: any) {
-      logger.warn({ error: error.message }, 'Failed to load texte mapping - will fallback to dossier-based matching only');
+    } catch (error) {
+      logger.warn({ error: errorMessage(error) }, 'Failed to load texte mapping - will fallback to dossier-based matching only');
     }
   }
 
@@ -5321,7 +5322,7 @@ export async function enrichScrutinsSenatAmendements(
 
             // Build where clause: require texteRef match OR dossier match
             // NEVER fall back to date-based matching — better no link than a wrong link
-            const where: any = {
+            const where: Prisma.AmendementWhereInput = {
               chambre: 'senat' as const,
               numero: baseNumero,
             };
@@ -5388,8 +5389,8 @@ export async function enrichScrutinsSenatAmendements(
           }, 'Amendments linked');
           return { status: 'enriched' as const };
 
-        } catch (error: any) {
-          logger.warn({ scrutinNumero: scrutin.numero, error: error.message }, 'Error enriching Sénat scrutin');
+        } catch (error) {
+          logger.warn({ scrutinNumero: scrutin.numero, error: errorMessage(error) }, 'Error enriching Sénat scrutin');
           return { status: 'error' as const };
         }
       })
@@ -5576,8 +5577,8 @@ export async function syncLobbyistes(
           });
         }
       }
-    } catch (error: any) {
-      logger.warn({ lobbyiste: csvLobbyiste.denomination, error: error.message }, 'Error syncing lobbyiste');
+    } catch (error) {
+      logger.warn({ lobbyiste: csvLobbyiste.denomination, error: errorMessage(error) }, 'Error syncing lobbyiste');
     }
   }
 
@@ -5673,7 +5674,7 @@ export async function syncLobbyistes(
     const existingActions = await prisma.actionLobby.findMany({
       select: { id: true, lobbyisteId: true, descriptionId: true, cible: true, cibleTypeId: true, texteVise: true, texteViseNom: true },
     });
-    const existingActionMap = new Map<string, { id: string; cible: string | null; cibleTypeId: string | null; texteVise: string | null; texteViseNom: string | null }>();
+    const existingActionMap = new Map<string, { id: string; cible: string | null; cibleTypeId: number | null; texteVise: string | null; texteViseNom: string | null }>();
     for (const ea of existingActions) {
       if (ea.descriptionId) {
         existingActionMap.set(`${ea.lobbyisteId}::${ea.descriptionId}`, ea);
@@ -5683,8 +5684,8 @@ export async function syncLobbyistes(
     logger.info({ count: existingActionMap.size }, 'Existing actions loaded');
 
     // 2. Single pass: collect batch operations (zero DB queries)
-    const toCreate: Array<{ id: string; lobbyisteId: string; descriptionId: string; dateDebut: Date; cible: string | null; cibleTypeId: string | null; texteVise: string | null; texteViseNom: string | null }> = [];
-    const toUpdate: Array<{ id: string; descriptionId: string; cible: string | null; cibleTypeId: string | null; texteVise: string | null; texteViseNom: string | null }> = [];
+    const toCreate: Array<{ id: string; lobbyisteId: string; descriptionId: number; dateDebut: Date; cible: string | null; cibleTypeId: number | null; texteVise: string | null; texteViseNom: string | null }> = [];
+    const toUpdate: Array<{ id: string; descriptionId: number; cible: string | null; cibleTypeId: number | null; texteVise: string | null; texteViseNom: string | null }> = [];
     const pivotActionIds: string[] = [];
     const pivotPairs: Array<{ actionId: string; secteurId: string }> = [];
     const validActionKeys = new Set<string>();

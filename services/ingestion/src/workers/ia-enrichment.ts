@@ -19,6 +19,7 @@ import {
   buildGroupeAmendementPrompt,
 } from '../llm/prompts.js';
 import { logger } from '../utils/logger.js';
+import { errorMessage } from '../utils/errors.js';
 
 const prisma = new PrismaClient();
 
@@ -132,9 +133,9 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
           });
 
           result.enriched++;
-        } catch (error: any) {
+        } catch (error) {
           result.errors++;
-          logger.warn({ scrutinId: scrutin.id, error: error.message }, 'Failed to enrich scrutin');
+          logger.warn({ scrutinId: scrutin.id, error: errorMessage(error) }, 'Failed to enrich scrutin');
         }
       })
     );
@@ -340,9 +341,9 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
           });
 
           result.enriched++;
-        } catch (error: any) {
+        } catch (error) {
           result.errors++;
-          logger.warn({ dossierId: dossier.id, error: error.message }, 'Failed to enrich dossier');
+          logger.warn({ dossierId: dossier.id, error: errorMessage(error) }, 'Failed to enrich dossier');
         }
       })
     );
@@ -571,9 +572,9 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
           });
 
           result.enriched++;
-        } catch (error: any) {
+        } catch (error) {
           result.errors++;
-          logger.warn({ sujetId: sujet.id, error: error.message }, 'Failed to enrich sujet');
+          logger.warn({ sujetId: sujet.id, error: errorMessage(error) }, 'Failed to enrich sujet');
         }
       })
     );
@@ -772,9 +773,9 @@ export async function enrichSujetGroupeAmendements(options: EnrichmentOptions = 
             logger.warn({ sujetId: sujet.id }, 'Failed to parse groupe amendement descriptions');
             result.errors++;
           }
-        } catch (error: any) {
+        } catch (error) {
           result.errors++;
-          logger.warn({ sujetId: sujet.id, error: error.message }, 'Failed to enrich groupe amendement descriptions');
+          logger.warn({ sujetId: sujet.id, error: errorMessage(error) }, 'Failed to enrich groupe amendement descriptions');
         }
       })
     );

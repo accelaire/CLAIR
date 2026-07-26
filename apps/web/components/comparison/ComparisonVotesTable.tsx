@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Vote, Filter, ChevronDown, Loader2, Calendar } from 'lucide-react';
+import { Vote, Filter, Loader2, Calendar } from 'lucide-react';
 import { api } from '@/lib/api';
 import { scrutinHref } from '@/lib/scrutin-url';
 

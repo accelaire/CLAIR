@@ -1,0 +1,17 @@
+{
+  // Scripts utilitaires hors workspace (audits ponctuels, seed de logos) + seed Prisma.
+  // Ils ne sont pas buildés : ce projet sert uniquement à les type-checker. Sans lui
+  // ils dérivent silencieusement du schéma — c'est ainsi que seed.ts avait gardé une
+  // clé unique `numero_chambre` qui n'existe plus.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": ".",
+    // Les scripts s'exécutent avec le client Prisma d'apps/api
+    // (cf. « cd apps/api && pnpm exec tsx ../../scripts/… » dans leurs en-têtes).
+    "paths": {
+      "@prisma/client": ["./apps/api/node_modules/@prisma/client"]
+    }
+  },
+  "include": ["scripts/**/*.ts", "apps/api/prisma/**/*.ts"]
+}

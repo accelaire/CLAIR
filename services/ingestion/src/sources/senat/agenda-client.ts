@@ -5,6 +5,7 @@
 
 import axios, { AxiosInstance } from 'axios';
 import { logger } from '../../utils/logger';
+import { errorMessage } from '../../utils/errors';
 
 // =============================================================================
 // CONFIG
@@ -194,8 +195,8 @@ export class SenatAgendaClient {
         const events = Object.values(data).flatMap((day) => day.events || []);
         allEvents.push(...events);
         logger.debug({ week, eventsCount: events.length }, 'Week fetched');
-      } catch (err: any) {
-        logger.warn({ week, error: err.message }, 'Failed to fetch agenda week');
+      } catch (err) {
+        logger.warn({ week, error: errorMessage(err) }, 'Failed to fetch agenda week');
       }
       await sleep(REQUEST_DELAY_MS);
     }

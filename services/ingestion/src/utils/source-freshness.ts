@@ -5,6 +5,7 @@
 import axios from 'axios';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { logger } from './logger';
+import { errorMessage, httpStatus } from './errors';
 import { LEGISLATURE_AN_COURANTE } from '../workers/mandats';
 
 const prisma = new PrismaClient();
@@ -179,7 +180,7 @@ export async function checkSourceFreshness(
   }
 
   const { source, dataType } = config;
-  let url = config.url;
+  const url = config.url;
 
   // Récupérer l'état précédent
   const previousState = await prisma.sourceState.findUnique({
@@ -191,7 +192,7 @@ export async function checkSourceFreshness(
   let currentLastModified: Date | null = null;
 
   try {
-    let response = await axios.head(url, {
+    const response = await axios.head(url, {
       timeout: 30000,
       headers: {
         'User-Agent': 'CLAIR-Bot/1.0 (https://github.com/clair)',
@@ -211,11 +212,11 @@ export async function checkSourceFreshness(
       { sourceKey, currentEtag, currentLastModified },
       'Source headers fetched'
     );
-  } catch (error: any) {
+  } catch (error) {
     // Pour DILA: si 404 sur l'année courante, essayer l'année précédente
     if (
       sourceKey === 'dila:interventions' &&
-      error.response?.status === 404
+      httpStatus(error) === 404
     ) {
       const previousYearUrl = url.replace(
         `/${new Date().getFullYear()}/`,
@@ -247,9 +248,9 @@ export async function checkSourceFreshness(
           { sourceKey, currentEtag, currentLastModified, url: previousYearUrl },
           'Source headers fetched (fallback year)'
         );
-      } catch (fallbackError: any) {
+      } catch (fallbackError) {
         logger.error(
-          { sourceKey, error: fallbackError.message },
+          { sourceKey, error: errorMessage(fallbackError) },
           'Failed to check source freshness (fallback also failed)'
         );
         return {
@@ -263,7 +264,7 @@ export async function checkSourceFreshness(
       }
     } else {
       logger.error(
-        { sourceKey, error: error.message },
+        { sourceKey, error: errorMessage(error) },
         'Failed to check source freshness'
       );
       // En cas d'erreur, on considère que la source a changé (pour ne pas bloquer)
@@ -406,8 +407,8 @@ export async function checkAllSourcesFreshness(): Promise<string[]> {
       if (result.hasChanged) {
         changedSources.push(sourceKey);
       }
-    } catch (error: any) {
-      logger.error({ sourceKey, error: error.message }, 'Error checking source');
+    } catch (error) {
+      logger.error({ sourceKey, error: errorMessage(error) }, 'Error checking source');
       // En cas d'erreur, on inclut la source pour ne pas bloquer
       changedSources.push(sourceKey);
     }

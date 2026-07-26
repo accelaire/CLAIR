@@ -23,6 +23,8 @@ const TAVILY_SOCIAL_EXCLUDE = [
 ];
 import { DECLARATION_TYPES } from '../sources/hatvp/declarations-client.js';
 import { logger } from '../utils/logger.js';
+import { isRecord, readString, type JsonRecord } from '../utils/json.js';
+import { errorMessage } from '../utils/errors.js';
 import type { EnrichmentResult, EnrichmentOptions } from './ia-enrichment.js';
 
 const prisma = new PrismaClient();
@@ -91,43 +93,54 @@ interface ExtractedMandat {
   organeRef?: string | null;
 }
 
-function extractMandatsAN(sourceData: any): ExtractedMandat[] {
-  const mandats = sourceData?.mandats?.mandat;
+function extractMandatsAN(sourceData: unknown): ExtractedMandat[] {
+  const mandats = isRecord(sourceData) && isRecord(sourceData.mandats)
+    ? sourceData.mandats.mandat
+    : undefined;
   if (!Array.isArray(mandats)) return [];
 
   return mandats
-    .filter((m: any) => INTERESTING_TYPE_ORGANES.has(m.typeOrgane))
-    .map((m: any) => ({
-      typeOrgane: m.typeOrgane,
-      institution: TYPE_ORGANE_LABELS[m.typeOrgane] || m.typeOrgane,
-      qualite: m.infosQualite?.libQualite || 'Membre',
-      dateDebut: m.dateDebut,
-      dateFin: m.dateFin || null,
-      sourceUid: m.uid || null,
-      organeRef: m.organes?.organeRef || null,
-    }))
+    .filter((m: unknown): m is JsonRecord =>
+      isRecord(m) && INTERESTING_TYPE_ORGANES.has(readString(m, 'typeOrgane') ?? '')
+    )
+    .map((m) => {
+      const typeOrgane = readString(m, 'typeOrgane') ?? '';
+      return {
+        typeOrgane,
+        institution: TYPE_ORGANE_LABELS[typeOrgane] || typeOrgane,
+        qualite: readString(m.infosQualite, 'libQualite') || 'Membre',
+        dateDebut: readString(m, 'dateDebut') ?? '',
+        dateFin: readString(m, 'dateFin') || null,
+        sourceUid: readString(m, 'uid') || undefined,
+        organeRef: readString(m.organes, 'organeRef') || null,
+      };
+    })
     .sort((a: ExtractedMandat, b: ExtractedMandat) =>
       (b.dateDebut || '').localeCompare(a.dateDebut || '')
     );
 }
 
-function extractMandatsSenat(sourceData: any): ExtractedMandat[] {
-  const organismes = sourceData?.organismes;
+function extractMandatsSenat(sourceData: unknown): ExtractedMandat[] {
+  const organismes = isRecord(sourceData) ? sourceData.organismes : undefined;
   if (!Array.isArray(organismes)) return [];
 
   return organismes
-    .filter((o: any) => {
-      const type = o.type;
+    .filter((o: unknown): o is JsonRecord => {
+      if (!isRecord(o)) return false;
+      const type = readString(o, 'type') ?? '';
       return INTERESTING_TYPE_ORGANES.has(type) || type === 'COMMISSION' || type === 'DELEGATION/OFFICE';
     })
-    .map((o: any) => ({
-      typeOrgane: o.type,
-      institution: o.libelle || TYPE_ORGANE_LABELS[o.type] || o.type,
-      qualite: 'Membre', // Sénat data doesn't include qualite per organisme
-      dateDebut: new Date().toISOString().split('T')[0], // Current membership (no start date in Sénat data)
-      dateFin: null,
-      sourceUid: `senat-${o.code}`,
-    }));
+    .map((o) => {
+      const type = readString(o, 'type') ?? '';
+      return {
+        typeOrgane: type,
+        institution: readString(o, 'libelle') || TYPE_ORGANE_LABELS[type] || type,
+        qualite: 'Membre', // Sénat data doesn't include qualite per organisme
+        dateDebut: new Date().toISOString().slice(0, 10), // Current membership (no start date in Sénat data)
+        dateFin: null,
+        sourceUid: `senat-${readString(o, 'code') ?? ''}`,
+      };
+    });
 }
 
 // =============================================================================
@@ -223,8 +236,8 @@ export async function enrichParlementairesIA(
         try {
           // Extract mandats from sourceData
           const mandats = parl.chambre === 'senat'
-            ? extractMandatsSenat(parl.sourceData as any)
-            : extractMandatsAN(parl.sourceData as any);
+            ? extractMandatsSenat(parl.sourceData)
+            : extractMandatsAN(parl.sourceData);
 
           // Fetch lobbying actions targeting this parlementaire
           const lobbyActions = await prisma.actionLobby.findMany({
@@ -393,10 +406,10 @@ export async function enrichParlementairesIA(
               'Parlementaires enrichment progress'
             );
           }
-        } catch (error: any) {
+        } catch (error) {
           result.errors++;
           logger.warn(
-            { parlId: parl.id, nom: parl.nom, error: error.message },
+            { parlId: parl.id, nom: parl.nom, error: errorMessage(error) },
             'Failed to enrich parlementaire'
           );
         }
@@ -468,9 +481,9 @@ async function persistMandats(parlementaireId: string, mandats: ExtractedMandat[
           organeRef: m.organeRef || undefined,
         },
       });
-    } catch (error: any) {
+    } catch (error) {
       // Skip duplicate / invalid date errors silently
-      logger.debug({ sourceUid: m.sourceUid, error: error.message }, 'Mandat upsert failed');
+      logger.debug({ sourceUid: m.sourceUid, error: errorMessage(error) }, 'Mandat upsert failed');
     }
   }
 }

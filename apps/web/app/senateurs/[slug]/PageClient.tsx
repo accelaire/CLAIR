@@ -33,6 +33,7 @@ import {
   ExternalLink,
   Info,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { api } from '@/lib/api';
 import { scrutinHref } from '@/lib/scrutin-url';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
@@ -141,7 +142,7 @@ function StatCard({
 }: {
   label: string;
   value: number | string;
-  icon: any;
+  icon: LucideIcon;
   suffix?: string;
   tooltip?: string;
   tooltipHref?: string;

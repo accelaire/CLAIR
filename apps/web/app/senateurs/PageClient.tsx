@@ -16,6 +16,13 @@ import {
 } from '@/components/comparison';
 import { FilterBar } from '@/components/FilterBar';
 
+/** Groupe politique tel qu'exposé par l'endpoint groupes (filtre de la liste). */
+interface GroupeOption {
+  slug: string;
+  nom: string;
+  membresCount: number;
+}
+
 interface Senateur {
   id: string;
   slug: string;
@@ -122,7 +129,7 @@ function SenateursPageContent() {
   });
 
   // Fetch groupes pour le filtre
-  const { data: groupesData } = useQuery({
+  const { data: groupesData } = useQuery<GroupeOption[]>({
     queryKey: ['groupes-senat'],
     queryFn: () => api.get('/senateurs/groupes').then((res) => res.data.data),
   });
@@ -293,7 +300,7 @@ function SenateursPageContent() {
             className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">Tous les groupes</option>
-            {groupesData?.map((g: any) => (
+            {groupesData?.map((g) => (
               <option key={g.slug} value={g.slug}>
                 {g.nom} ({g.membresCount})
               </option>

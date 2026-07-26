@@ -5,6 +5,7 @@
 
 import axios from 'axios';
 import { logger } from '../../utils/logger';
+import { errorMessage } from '../../utils/errors';
 
 // =============================================================================
 // TYPES - Structure des données Sénat
@@ -145,8 +146,8 @@ export class SenatSenateursClient {
         groupes: Array.from(groupesMap.values()),
       };
 
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Failed to fetch sénateurs');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Failed to fetch sénateurs');
       throw error;
     }
   }

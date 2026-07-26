@@ -401,7 +401,10 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
       },
       handler: async (request, _reply) => {
         const { slug } = parlementaireParamsSchema.parse(request.params);
-        const { page = 1, limit = 20, sort, dateFrom, dateTo, votedOnly } = request.query as any;
+        const { page = 1, limit = 20, sort, dateFrom, dateTo, votedOnly } = request.query as {
+        page?: number; limit?: number; sort?: string;
+        dateFrom?: string; dateTo?: string; votedOnly?: boolean;
+      };
 
         const parlementaire = await fastify.prisma.parlementaire.findUnique({
           where: { slug },
@@ -533,7 +536,9 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
       },
       handler: async (request, _reply) => {
         const { slug } = parlementaireParamsSchema.parse(request.params);
-        const { page = 1, limit = 10, type, dateFrom, dateTo } = request.query as any;
+        const { page = 1, limit = 10, type, dateFrom, dateTo } = request.query as {
+        page?: number; limit?: number; type?: string; dateFrom?: string; dateTo?: string;
+      };
 
         const parlementaire = await fastify.prisma.parlementaire.findUnique({
           where: { slug },
@@ -628,11 +633,15 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
         });
 
         // 4. Group by seanceId
+        // Formes réellement poussées dans les groupes (dérivées des requêtes ci-dessus).
+        type SeanceIntervention = Omit<(typeof interventions)[number], 'seanceId'> & { hasMore: boolean };
+        type SeanceScrutin = Omit<(typeof scrutins)[number], 'seanceRef'>;
+
         const seanceMap = new Map<string, {
           seanceId: string;
           date: string;
-          interventions: any[];
-          scrutins: any[];
+          interventions: SeanceIntervention[];
+          scrutins: SeanceScrutin[];
         }>();
 
         // Init with seance order from pagination
@@ -668,7 +677,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
             const matchByDate = new Date(s.date).toDateString() === new Date(group.date).toDateString();
             if (matchByRef || matchByDate) {
               // Avoid duplicate scrutins in same group
-              if (!group.scrutins.some((gs: any) => gs.id === s.id)) {
+              if (!group.scrutins.some((gs) => gs.id === s.id)) {
                 const { seanceRef: _r, ...scrutinData } = s;
                 group.scrutins.push(scrutinData);
               }
@@ -678,7 +687,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
 
         // Sort scrutins by numero within each seance
         for (const group of seanceMap.values()) {
-          group.scrutins.sort((a: any, b: any) => a.numero - b.numero);
+          group.scrutins.sort((a, b) => a.numero - b.numero);
         }
 
         // 5. Count total distinct seances for pagination

@@ -54,7 +54,7 @@ interface GenerateSujetsResult {
  */
 function extractRefFromSenatUrl(url: string): string | null {
   const match = url.match(/dossier-legislatif\/(.+?)\.html/);
-  return match ? match[1].toLowerCase() : null;
+  return match?.[1] ? match[1].toLowerCase() : null;
 }
 
 /**
@@ -64,7 +64,7 @@ function extractRefFromSenatUrl(url: string): string | null {
  */
 function extractANUidFromUrl(url: string): string | null {
   const match = url.match(/(DLR5L\d+N\d+)/);
-  return match ? match[1] : null;
+  return match?.[1] ?? null;
 }
 
 /**
@@ -248,16 +248,17 @@ export async function generateSujets(options: {
     }
 
     // Signal 3: loiNumero identique
-    for (const [loiNumero, group] of dossiersByLoiNumero) {
-      if (group.length < 2) continue;
+    for (const group of dossiersByLoiNumero.values()) {
+      const first = group[0];
+      if (group.length < 2 || !first) continue;
 
       // Only merge if the group spans both chambers
       const hasAN = group.some(d => d.uid.startsWith('DLR'));
       const hasSenat = group.some(d => d.uid.startsWith('SENAT'));
       if (!hasAN || !hasSenat) continue;
 
-      for (let i = 1; i < group.length; i++) {
-        uf.union(group[0].id, group[i].id);
+      for (const member of group.slice(1)) {
+        uf.union(first.id, member.id);
         loiNumeroCount++;
       }
     }
@@ -327,7 +328,7 @@ export async function generateSujets(options: {
 
       if (existingSujetIds.size === 1) {
         // One existing sujet + orphan dossiers → attach orphans
-        const sujetId = [...existingSujetIds][0];
+        const sujetId = [...existingSujetIds][0]!;
         if (!dryRun) {
           for (const d of orphans) {
             await prisma.$executeRawUnsafe(
@@ -354,7 +355,7 @@ export async function generateSujets(options: {
       const matchMethod = isMultiChambre ? 'cross_ref' : 'solo';
       const label = pickBestLabel(members);
       let baseSlug = slugify(label);
-      if (!baseSlug) baseSlug = `sujet-${members[0].uid.toLowerCase()}`;
+      if (!baseSlug) baseSlug = `sujet-${members[0]?.uid.toLowerCase() ?? 'inconnu'}`;
 
       let slug = baseSlug;
       let suffix = 2;
@@ -482,13 +483,9 @@ function computeDates(members: DossierRow[]): { dateDebut: Date | null; dateFin:
     else if (d.dateAdoption) endDates.push(new Date(d.dateAdoption));
   }
 
-  const dateDebut = allDates.length > 0
-    ? allDates.sort((a, b) => a.getTime() - b.getTime())[0]
-    : null;
+  const dateDebut = allDates.sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
 
-  const dateFin = endDates.length > 0
-    ? endDates.sort((a, b) => b.getTime() - a.getTime())[0]
-    : null;
+  const dateFin = endDates.sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
 
   return { dateDebut, dateFin };
 }
@@ -503,8 +500,9 @@ function pickBestLabel(members: DossierRow[]): string {
     .map(d => d.titreCourt)
     .filter((t): t is string => t !== null && t.length > 0);
 
-  if (titresCourts.length > 0) {
-    return cleanLabel(titresCourts.sort((a, b) => a.length - b.length)[0]);
+  const shortestTitreCourt = titresCourts.sort((a, b) => a.length - b.length)[0];
+  if (shortestTitreCourt) {
+    return cleanLabel(shortestTitreCourt);
   }
 
   // Fallback to shortest titre
@@ -512,11 +510,12 @@ function pickBestLabel(members: DossierRow[]): string {
     .map(d => d.titre)
     .filter((t): t is string => t !== null && t.length > 0);
 
-  if (titres.length > 0) {
-    return cleanLabel(titres.sort((a, b) => a.length - b.length)[0]);
+  const shortestTitre = titres.sort((a, b) => a.length - b.length)[0];
+  if (shortestTitre) {
+    return cleanLabel(shortestTitre);
   }
 
-  return members[0].uid;
+  return members[0]?.uid ?? '';
 }
 
 /**

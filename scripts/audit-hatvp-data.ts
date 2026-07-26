@@ -317,7 +317,7 @@ async function auditFraicheur() {
   // 2. Dernière action créée
   const derniereAction = await prisma.actionLobby.findFirst({
     orderBy: { createdAt: 'desc' },
-    select: { createdAt: true, description: true },
+    select: { createdAt: true },
   });
 
   log({
@@ -329,7 +329,7 @@ async function auditFraicheur() {
   // 3. Action la plus récente par dateDebut
   const actionPlusRecente = await prisma.actionLobby.findFirst({
     orderBy: { dateDebut: 'desc' },
-    select: { dateDebut: true, description: true },
+    select: { dateDebut: true },
   });
 
   log({

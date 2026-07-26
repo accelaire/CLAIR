@@ -49,14 +49,14 @@ export class TfidfVectorizer {
     // Build vocabulary (sorted for determinism)
     const terms = [...df.keys()].sort();
     this.vocabulary = new Map<string, number>();
-    for (let i = 0; i < terms.length; i++) {
-      this.vocabulary.set(terms[i], i);
+    for (const [i, term] of terms.entries()) {
+      this.vocabulary.set(term, i);
     }
 
     // Compute smooth IDF: log((1 + n) / (1 + df)) + 1
     this.idf = new Float64Array(terms.length);
-    for (let i = 0; i < terms.length; i++) {
-      const termDf = df.get(terms[i])!;
+    for (const [i, term] of terms.entries()) {
+      const termDf = df.get(term) ?? 0;
       this.idf[i] = Math.log((1 + n) / (1 + termDf)) + 1;
     }
 
@@ -90,7 +90,7 @@ export class TfidfVectorizer {
       // Compute TF-IDF with sublinear TF
       let norm = 0;
       for (const [idx, count] of tf) {
-        const tfidf = (1 + Math.log(count)) * this.idf[idx];
+        const tfidf = (1 + Math.log(count)) * (this.idf[idx] ?? 0);
         row.set(idx, tfidf);
         norm += tfidf * tfidf;
       }
@@ -151,8 +151,8 @@ export function bestMatch(
   let bestIndex = -1;
   let bestScore = -1;
 
-  for (let i = 0; i < corpus.length; i++) {
-    const score = cosineSimilarity(query, corpus[i]);
+  for (const [i, row] of corpus.entries()) {
+    const score = cosineSimilarity(query, row);
     if (score > bestScore) {
       bestScore = score;
       bestIndex = i;

@@ -1,3 +1,5 @@
+import { asArray, isRecord, readString } from './json';
+
 export interface CommissionSaisine {
   organeRef: string;
   role: 'fond' | 'avis';
@@ -10,27 +12,29 @@ export interface CommissionSaisine {
  * Piège : `acteLegislatif` peut être un objet OU un tableau selon
  * le nombre d'enfants. On normalise systématiquement en tableau.
  */
-export function extractCommissionSaisines(sourceData: any): CommissionSaisine[] {
+export function extractCommissionSaisines(sourceData: unknown): CommissionSaisine[] {
   const results: CommissionSaisine[] = [];
-  const actes = sourceData?.actesLegislatifs;
-  if (!actes) return results;
+  const actes = isRecord(sourceData) ? sourceData.actesLegislatifs : undefined;
+  if (!isRecord(actes)) return results;
 
-  function walk(node: any): void {
+  function walk(node: unknown): void {
     if (!node) return;
 
-    const items = Array.isArray(node) ? node : [node];
+    for (const item of asArray(node)) {
+      if (!isRecord(item)) continue;
 
-    for (const item of items) {
-      const code: string = item.codeActe || '';
+      const code = readString(item, 'codeActe') ?? '';
+      const organeRef = readString(item, 'organeRef');
 
-      if (/^[A-Z0-9]+-COM-FOND$/.test(code) && item.organeRef) {
-        results.push({ organeRef: item.organeRef, role: 'fond' });
-      } else if (/^[A-Z0-9]+-COM-AVIS$/.test(code) && item.organeRef) {
-        results.push({ organeRef: item.organeRef, role: 'avis' });
+      if (organeRef && /^[A-Z0-9]+-COM-FOND$/.test(code)) {
+        results.push({ organeRef, role: 'fond' });
+      } else if (organeRef && /^[A-Z0-9]+-COM-AVIS$/.test(code)) {
+        results.push({ organeRef, role: 'avis' });
       }
 
-      if (item.actesLegislatifs) {
-        walk(item.actesLegislatifs.acteLegislatif);
+      const enfants = item.actesLegislatifs;
+      if (isRecord(enfants)) {
+        walk(enfants.acteLegislatif);
       }
     }
   }

@@ -120,7 +120,7 @@ export function errorHandler(
 
   // Prisma errors
   if (error.name === 'PrismaClientKnownRequestError') {
-    const prismaError = error as any;
+    const prismaError = error as { code?: string };
     
     if (prismaError.code === 'P2002') {
       return reply.status(409).send({

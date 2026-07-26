@@ -6,7 +6,8 @@
 
 import axios from 'axios';
 import { logger } from '../../utils/logger';
-import { DoslegClient, TransformedDoslegScrutin, TransformedDoslegVote } from './dosleg-client';
+import { errorMessage } from '../../utils/errors';
+import { DoslegClient, TransformedDoslegVote } from './dosleg-client';
 import { SENAT_SESSION_MIN } from '../../workers/mandats';
 
 // =============================================================================
@@ -84,8 +85,8 @@ async function fetchDossierRef(scrutinUrl: string): Promise<string | null> {
     }
 
     return null;
-  } catch (error: any) {
-    logger.debug({ url: scrutinUrl, error: error.message }, 'Failed to fetch dossier ref');
+  } catch (error) {
+    logger.debug({ url: scrutinUrl, error: errorMessage(error) }, 'Failed to fetch dossier ref');
     return null;
   }
 }
@@ -305,15 +306,15 @@ export class SenatScrutinsClient {
           if (result) {
             results.push(result);
           }
-        } catch (error: any) {
-          logger.warn({ scrutinId, error: error.message }, 'Error fetching scrutin');
+        } catch (error) {
+          logger.warn({ scrutinId, error: errorMessage(error) }, 'Error fetching scrutin');
         }
       }
 
       return results;
 
-    } catch (error: any) {
-      logger.error({ session, error: error.message }, 'Failed to fetch scrutins list');
+    } catch (error) {
+      logger.error({ session, error: errorMessage(error) }, 'Failed to fetch scrutins list');
       throw error;
     }
   }
@@ -327,7 +328,7 @@ export class SenatScrutinsClient {
     const htmlUrl = `${baseUrl}/scrutin-public/${session}/${scrutinId}.html`;
 
     const match = scrutinId.match(/scr\d+-(\d+)/);
-    if (!match) return null;
+    if (!match?.[1]) return null;
     const numero = parseInt(match[1], 10);
 
     try {
@@ -376,8 +377,8 @@ export class SenatScrutinsClient {
         },
         votes,
       };
-    } catch (error: any) {
-      logger.debug({ scrutinId, error: error.message }, 'Scrutin fetch failed');
+    } catch (error) {
+      logger.debug({ scrutinId, error: errorMessage(error) }, 'Scrutin fetch failed');
       return null;
     }
   }
@@ -408,12 +409,15 @@ export class SenatScrutinsClient {
     // Extract date
     let date: Date | null = null;
     const dateMatch = decoded.match(/(\d{1,2})\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})/i);
-    if (dateMatch) {
+    if (dateMatch?.[1] && dateMatch[2] && dateMatch[3]) {
       const months: Record<string, number> = {
         janvier: 0, février: 1, mars: 2, avril: 3, mai: 4, juin: 5,
         juillet: 6, août: 7, septembre: 8, octobre: 9, novembre: 10, décembre: 11
       };
-      date = new Date(parseInt(dateMatch[3]), months[dateMatch[2].toLowerCase()], parseInt(dateMatch[1]));
+      const month = months[dateMatch[2].toLowerCase()];
+      if (month !== undefined) {
+        date = new Date(parseInt(dateMatch[3]), month, parseInt(dateMatch[1]));
+      }
     }
 
     if (!date) {

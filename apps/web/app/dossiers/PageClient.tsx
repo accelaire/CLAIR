@@ -39,7 +39,7 @@ interface DossiersResponse {
   };
 }
 
-import { DOSSIER_ETAT_CONFIG, getDossierEtat } from '@/lib/dossiers';
+import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
 
 const etatLabels = DOSSIER_ETAT_CONFIG;
 

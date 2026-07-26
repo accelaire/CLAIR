@@ -51,6 +51,7 @@ import { backfillMandatsParlementaires } from './workers/backfill-mandats.js';
 import { syncSenateursHistoriques } from './workers/senat-histo.js';
 import { SENAT_SESSION_MIN } from './workers/mandats.js';
 import { logger } from './utils/logger';
+import { errorMessage } from './utils/errors';
 
 const program = new Command();
 
@@ -304,8 +305,8 @@ program
 
       logger.info('Sync command completed successfully');
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sync command failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sync command failed');
       process.exit(1);
     }
   });
@@ -323,8 +324,8 @@ program
       await fullSync();
       logger.info('Backfill completed successfully');
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Backfill failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Backfill failed');
       process.exit(1);
     }
   });
@@ -346,8 +347,8 @@ program
 
       logger.info('All tests passed!');
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Test failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Test failed');
       process.exit(1);
     }
   });
@@ -468,16 +469,16 @@ program
               console.log(`  ⚠️  Rebuild échoué: status ${rebuild.status}`);
             }
           }
-        } catch (e: any) {
-          console.log(`  ⚠️  Cache warm indisponible: ${e.message}`);
+        } catch (e) {
+          console.log(`  ⚠️  Cache warm indisponible: ${errorMessage(e)}`);
         }
       } else {
         console.log('\n⚠️  CLAIR_INTERNAL_SECRET non configuré — cache homepage non rechargé');
       }
 
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Smart sync failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Smart sync failed');
       process.exit(1);
     }
   });
@@ -493,8 +494,8 @@ program
       console.log('\n📡 Vérification des sources...\n');
       await checkSourcesStatus();
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Status check failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Status check failed');
       process.exit(1);
     }
   });
@@ -510,8 +511,8 @@ program
       const { corrected } = await reconcileActifFromMandats();
       console.log(`✅ ${corrected} parlementaire(s) réaligné(s) (actif ⇔ mandat en cours)`);
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'reconcile-actif failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'reconcile-actif failed');
       process.exit(1);
     }
   });
@@ -573,8 +574,8 @@ program
 
       console.log('\n');
       process.exit(totalErrors > 0 ? 1 : 0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Stats calculation failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Stats calculation failed');
       process.exit(1);
     }
   });
@@ -606,8 +607,8 @@ program
       // Keep the process running
       console.log('\n✅ Scheduler démarré. Ctrl+C pour arrêter.\n');
 
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Scheduler failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Scheduler failed');
       process.exit(1);
     }
   });
@@ -624,8 +625,8 @@ program
       const result = await linkANScrutinsByTitle();
       console.log(`\nScrutins liés aux dossiers: ${result.linked}`);
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'link-scrutins-dossiers failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'link-scrutins-dossiers failed');
       process.exit(1);
     }
   });
@@ -649,8 +650,8 @@ program
         console.log(`   ⚠️  Sénateurs sans mandature (série inconnue): ${result.senateursSerieInconnue}`);
       }
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'backfill-mandats failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'backfill-mandats failed');
       process.exit(1);
     }
   });
@@ -681,8 +682,8 @@ program
       console.log(`   Mandats mis à jour          : ${result.mandatsMisAJour}`);
       console.log(`   Sénateurs hors périmètre    : ${result.senateursIgnores}`);
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'sync-senateurs-histo failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-senateurs-histo failed');
       process.exit(1);
     }
   });
@@ -701,8 +702,8 @@ program
       console.log(`   Liés: ${result.linked}`);
       console.log(`   Ignorés (score trop bas): ${result.skipped}`);
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'link-scrutins-tfidf failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'link-scrutins-tfidf failed');
       process.exit(1);
     }
   });
@@ -719,8 +720,8 @@ program
       const result = await linkOrphanScrutinsByTexteNumero();
       console.log(`\nScrutins liés par texte_numero: ${result.linked}`);
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'link-by-texte-numero failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'link-by-texte-numero failed');
       process.exit(1);
     }
   });
@@ -737,8 +738,8 @@ program
       const result = await linkOrphansByLoiTitre();
       console.log(`\nScrutins liés par loi_titre: ${result.linked}`);
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'link-by-loi-titre failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'link-by-loi-titre failed');
       process.exit(1);
     }
   });
@@ -758,8 +759,8 @@ program
       const result3 = await propagateDossierIdBySiblingTexteRef();
       console.log(`Amendements liés via sibling texteRef (safe): ${result3.linked}`);
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'link-amendements-dossiers failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'link-amendements-dossiers failed');
       process.exit(1);
     }
   });
@@ -790,8 +791,8 @@ program
       console.log(`   Scrutins couverts: ${result.totalScrutins}`);
 
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sujet generation failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sujet generation failed');
       process.exit(1);
     }
   });
@@ -821,8 +822,8 @@ program
       console.log(`   Écartés (URL morte): ${result.dropped}`);
 
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sujet links generation failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sujet links generation failed');
       process.exit(1);
     }
   });
@@ -856,8 +857,8 @@ program
       console.log(`   Liens supprimés: ${result.deleted}`);
 
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sujet context links generation failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sujet context links generation failed');
       process.exit(1);
     }
   });
@@ -947,8 +948,8 @@ program
       }
 
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'IA enrichment failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'IA enrichment failed');
       process.exit(1);
     }
   });
@@ -973,8 +974,8 @@ program
       } finally {
         await prisma.$disconnect();
       }
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Quality check failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Quality check failed');
       process.exit(1);
     }
   });
@@ -999,8 +1000,8 @@ program
       } finally {
         await prisma.$disconnect();
       }
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'IA quality check failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'IA quality check failed');
       process.exit(1);
     }
   });

@@ -3,7 +3,7 @@
 import { Suspense, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Search, Vote, Loader2, Layers, Sparkles, ChevronDown, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Search, Vote, Loader2, Layers, Sparkles, ChevronDown, CheckCircle2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
 

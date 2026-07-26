@@ -26,11 +26,6 @@ interface GroupePolitique {
   membresCount: number;
 }
 
-const chambreLabels: Record<string, string> = {
-  assemblee: 'Assemblée nationale',
-  senat: 'Sénat',
-};
-
 const positionLabels: Record<string, string> = {
   extreme_gauche: 'Extrême gauche',
   gauche: 'Gauche',
@@ -43,7 +38,6 @@ const positionLabels: Record<string, string> = {
 
 function GroupeCard({ groupe, session }: { groupe: GroupePolitique; session?: string }) {
   const color = getGroupColor(groupe.nom, groupe.couleur, groupe.position);
-  const chambreRoute = groupe.chambre === 'assemblee' ? 'deputes' : 'senateurs';
 
   // Le lien porte la période : législature pour l'AN, session choisie pour le Sénat
   // (pour atterrir sur la même composition d'époque que celle affichée dans la liste).
@@ -346,7 +340,6 @@ function GroupesPageContent() {
                   <HemicycleChart
                     groupes={allAssemblee}
                     chambre="assemblee"
-                    height={280}
                     highlightedSlugs={highlightedAssembleeSlugs}
                     onGroupClick={(g) => router.push(`/groupes/assemblee/${g.slug}`)}
                   />
@@ -419,7 +412,6 @@ function GroupesPageContent() {
                   <HemicycleChart
                     groupes={allSenat}
                     chambre="senat"
-                    height={280}
                     highlightedSlugs={highlightedSenatSlugs}
                     onGroupClick={(g) => router.push(`/groupes/senat/${g.slug}`)}
                   />

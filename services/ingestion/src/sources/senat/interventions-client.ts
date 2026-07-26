@@ -10,6 +10,7 @@ import * as os from 'os';
 import { createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
 import { logger } from '../../utils/logger';
+import { errorMessage } from '../../utils/errors';
 import { removeOrateurPrefix } from '../../utils/text-cleaning';
 
 // Helper pour décoder les entités HTML
@@ -55,7 +56,7 @@ export interface TransformedInterventionSenat {
 // HELPERS
 // =============================================================================
 
-function generateSeanceUrl(seanceRef: string, date: Date): string {
+function generateSeanceUrl(date: Date): string {
   // Format URL Sénat pour les comptes rendus analytiques
   // Ex: https://www.senat.fr/cra/s20250217/s20250217.html
   const year = date.getFullYear();
@@ -117,9 +118,9 @@ export class SenatInterventionsClient {
       logger.info({ count: allFiles.length }, 'XML files extracted');
       return allFiles;
 
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Extraction failed');
-      throw new Error(`ZIP extraction failed: ${error.message}`);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Extraction failed');
+      throw new Error(`ZIP extraction failed: ${errorMessage(error)}`);
     }
   }
 
@@ -168,9 +169,10 @@ export class SenatInterventionsClient {
         .map(f => {
           const match = path.basename(f).match(/^d(\d{4})(\d{2})(\d{2})\.xml$/i);
           if (match) {
-            const year = parseInt(match[1], 10);
-            const month = parseInt(match[2], 10);
-            const day = parseInt(match[3], 10);
+            const [, yyyy = '', mm = '', dd = ''] = match;
+            const year = parseInt(yyyy, 10);
+            const month = parseInt(mm, 10);
+            const day = parseInt(dd, 10);
             return { path: f, date: new Date(year, month - 1, day), year };
           }
           return null;
@@ -194,8 +196,8 @@ export class SenatInterventionsClient {
             logger.debug({ processed, interventions: allInterventions.length }, 'Progress...');
           }
 
-        } catch (error: any) {
-          logger.warn({ file: xmlFile, error: error.message }, 'Error parsing compte rendu');
+        } catch (error) {
+          logger.warn({ file: xmlFile, error: errorMessage(error) }, 'Error parsing compte rendu');
         }
       }
 
@@ -217,7 +219,7 @@ export class SenatInterventionsClient {
     try {
       const content = await fs.promises.readFile(xmlPath, 'utf-8');
       const seanceId = path.basename(xmlPath, '.xml');
-      const baseUrl = generateSeanceUrl(seanceId, seanceDate);
+      const baseUrl = generateSeanceUrl(seanceDate);
 
       // Structure du CRI Sénat :
       // - <p id="par_N"> avec <cri:orateurnom> = début d'une prise de parole
@@ -230,10 +232,13 @@ export class SenatInterventionsClient {
 
       let match;
       while ((match = paragraphRegex.exec(content)) !== null) {
+        const parId = match[1];
+        const paraContent = match[2];
+        if (!parId || paraContent === undefined) continue;
         allParagraphs.push({
-          parId: match[1],
-          content: match[2],
-          hasOrateur: match[2].includes('cri:orateurnom'),
+          parId,
+          content: paraContent,
+          hasOrateur: paraContent.includes('cri:orateurnom'),
         });
       }
 
@@ -316,7 +321,7 @@ export class SenatInterventionsClient {
           const qualiteParts: string[] = [];
           let qualiteMatch;
           while ((qualiteMatch = qualiteRegex.exec(para.content)) !== null) {
-            qualiteParts.push(qualiteMatch[1]);
+            qualiteParts.push(qualiteMatch[1] ?? '');
           }
           if (qualiteParts.length > 0) {
             let qualiteRaw = decodeHtmlEntities(qualiteParts.join('')).trim();
@@ -331,7 +336,7 @@ export class SenatInterventionsClient {
           const parts = nom.split(/\s+/);
           if (parts.length >= 2) {
             prenom = parts.slice(0, -1).join(' ');
-            nom = parts[parts.length - 1];
+            nom = parts[parts.length - 1] ?? '';
           }
 
           if (!nom || nom.length < 2) {
@@ -363,8 +368,8 @@ export class SenatInterventionsClient {
       // Finaliser le dernier locuteur
       finalizeSpeaker();
 
-    } catch (error: any) {
-      logger.warn({ file: xmlPath, error: error.message }, 'Error parsing XML');
+    } catch (error) {
+      logger.warn({ file: xmlPath, error: errorMessage(error) }, 'Error parsing XML');
     }
 
     return interventions;
