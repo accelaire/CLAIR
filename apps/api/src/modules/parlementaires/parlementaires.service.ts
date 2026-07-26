@@ -319,6 +319,10 @@ export class ParlementairesService {
         legislature,
         session,
         _count: undefined,
+        // sourceData est le blob brut de l'API source : 65 % du poids d'une
+        // fiche de député, pour une donnée inutilisée en liste. Elle reste
+        // disponible sur le détail.
+        sourceData: undefined,
         votesCount: p._count.votes,
         interventionsCount: p._count.interventions,
         amendementsCount: p._count.amendements,
@@ -896,6 +900,8 @@ export class ParlementairesService {
     // Transformer les résultats avec les stats pré-calculées
     const result = parlementaires.map((p) => ({
       ...p,
+      // sourceData retiré : voir getParlementaires. Reste sur le détail.
+      sourceData: undefined,
       stats: p.statsCalculatedAt
         ? {
             presence: p.statsPresence ?? 0,

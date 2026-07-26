@@ -121,6 +121,10 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           })),
           _count: undefined,
           secteurs: undefined,
+          // sourceData retiré des listes par cohérence avec scrutins et
+          // parlementaires. Il est null en base aujourd'hui, mais rien ne
+          // garantit qu'il le restera.
+          sourceData: undefined,
         })),
         meta: {
           total,

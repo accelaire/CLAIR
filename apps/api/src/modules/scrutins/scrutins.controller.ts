@@ -185,6 +185,10 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           ...s,
           votesCount: s._count.votes,
           _count: undefined,
+          // sourceData est le blob brut de l'API source : ~37 Ko par scrutin,
+          // soit 96 % du poids de la réponse, pour une donnée que personne ne
+          // consomme dans une liste. Elle reste disponible sur le détail.
+          sourceData: undefined,
         })),
         meta: {
           total,
@@ -373,7 +377,8 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         take: limit,
       });
 
-      const response = { data: scrutins };
+      // sourceData retiré : voir la liste principale des scrutins.
+      const response = { data: scrutins.map((s) => ({ ...s, sourceData: undefined })) };
 
       // Cache for 12 hours
       await fastify.redis.setex(cacheKey, 43200, JSON.stringify(response));
