@@ -2523,7 +2523,19 @@ export interface SmartSyncResult {
   sourcesChecked: string[];
   sourcesChanged: string[];
   sourcesSkipped: string[];
-  results: Record<string, { created: number; updated: number; skipped?: boolean }>;
+  /**
+   * Sources dont la synchronisation a levé une exception.
+   *
+   * Sans cette liste, un échec était indiscernable d'un succès à zéro item : le
+   * catch écrivait `{ created: 0, updated: 0 }` et la source restait dans
+   * `sourcesChanged`, donc le récapitulatif l'affichait en ✅. Les amendements
+   * AN ont ainsi échoué sept jours sur huit sans que rien ne le signale.
+   */
+  sourcesFailed: string[];
+  results: Record<
+    string,
+    { created: number; updated: number; skipped?: boolean; failed?: boolean; error?: string }
+  >;
   duration: string;
 }
 
@@ -2537,6 +2549,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     sourcesChecked: [],
     sourcesChanged: [],
     sourcesSkipped: [],
+    sourcesFailed: [],
     results: {},
     duration: '0s',
   };
@@ -2843,8 +2856,20 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       }
 
     } catch (error) {
-      logger.error({ sourceKey, error: errorMessage(error) }, 'Error syncing source');
-      results.results[sourceKey] = { created: 0, updated: 0 };
+      const message = errorMessage(error);
+      logger.error({ sourceKey, error: message }, 'Error syncing source');
+
+      // La source avait été poussée dans sourcesChanged avant d'être
+      // synchronisée : on l'en retire pour qu'elle ne compte pas comme un
+      // succès, ni dans le récapitulatif, ni dans les `has*Changed` qui
+      // décident de rejouer les étapes de liaison en aval.
+      const changedIndex = results.sourcesChanged.indexOf(sourceKey);
+      if (changedIndex !== -1) {
+        results.sourcesChanged.splice(changedIndex, 1);
+      }
+
+      results.sourcesFailed.push(sourceKey);
+      results.results[sourceKey] = { created: 0, updated: 0, failed: true, error: message };
     }
   }
 

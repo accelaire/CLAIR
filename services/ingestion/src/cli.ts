@@ -405,12 +405,18 @@ program
         sources: options.sources?.split(',').map((s: string) => s.trim()),
       });
 
-      logger.info({
+      const syncSummary = {
         duration: result.duration,
         sourcesChecked: result.sourcesChecked.length,
         sourcesChanged: result.sourcesChanged.length,
         sourcesSkipped: result.sourcesSkipped.length,
-      }, 'Smart sync completed');
+        sourcesFailed: result.sourcesFailed,
+      };
+      if (result.sourcesFailed.length > 0) {
+        logger.error(syncSummary, 'Smart sync completed with failures');
+      } else {
+        logger.info(syncSummary, 'Smart sync completed');
+      }
 
       // Afficher le résumé
       if (result.sourcesChanged.length > 0) {
@@ -427,6 +433,13 @@ program
         console.log('\n⏭️  Sources inchangées (skipped):');
         for (const source of result.sourcesSkipped) {
           console.log(`  ⚪ ${source}`);
+        }
+      }
+
+      if (result.sourcesFailed.length > 0) {
+        console.log('\n❌ Sources en échec:');
+        for (const source of result.sourcesFailed) {
+          console.log(`  ❌ ${source}: ${result.results[source]?.error ?? 'erreur inconnue'}`);
         }
       }
 
@@ -476,7 +489,21 @@ program
         console.log('\n⚠️  CLAIR_INTERNAL_SECRET non configuré — cache homepage non rechargé');
       }
 
-      process.exit(0);
+      // Code de sortie : non nul UNIQUEMENT si tout a échoué.
+      //
+      // Le cron Railway est en ON_FAILURE avec restartPolicyMaxRetries=10. Sur
+      // un échec partiel, sortir en 1 relancerait jusqu'à dix syncs complets de
+      // ~70 min — qui rejoueraient dix-huit sources déjà réussies pour en
+      // retenter une seule, et qui marteleraient les serveurs sources (l'AN
+      // nous renvoyait déjà 2 040 HTTP 503 sur un seul run). Le remède serait
+      // pire que le mal.
+      //
+      // Un échec partiel se signale donc par le récapitulatif ❌ et par un
+      // logger.error sur stderr, que Railway classe en erreur. Le retry doit
+      // vivre au niveau de la source, pas du run entier.
+      const toutAEchoue =
+        result.sourcesFailed.length > 0 && result.sourcesChanged.length === 0;
+      process.exit(toutAEchoue ? 1 : 0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'Smart sync failed');
       process.exit(1);
