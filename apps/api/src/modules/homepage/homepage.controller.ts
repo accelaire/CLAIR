@@ -273,9 +273,8 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, reply) => {
       // Protégé par le secret interne partagé entre l'API et le scheduler.
-      // C'est ce même secret qui identifie le frontend (voir utils/internal-auth.ts) ;
-      // la comparaison est en temps constant et accepte encore l'ancien
-      // en-tête `x-warm-token` le temps de la bascule.
+      // C'est ce même secret qui identifie le frontend (voir utils/internal-auth.ts),
+      // avec une comparaison en temps constant.
       if (!isInternalRequest(request)) {
         fastify.log.warn(
           { ip: request.ip, ua: request.headers['user-agent'] || 'none' },

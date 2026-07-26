@@ -70,23 +70,14 @@ describe('isInternalRequest', () => {
     expect(isInternalRequest(req({ origin: 'https://clair.vote' }))).toBe(false);
   });
 
-  describe('compatibilité pendant la bascule', () => {
-    it('accepte encore l\'ancien en-tête x-warm-token', () => {
-      process.env.CLAIR_INTERNAL_SECRET = 'secret-interne';
-      expect(isInternalRequest(req({ 'x-warm-token': 'secret-interne' }))).toBe(true);
-    });
+  it('n\'accepte plus l\'ancien en-tête x-warm-token', () => {
+    process.env.CLAIR_INTERNAL_SECRET = 'secret-interne';
+    expect(isInternalRequest(req({ 'x-warm-token': 'secret-interne' }))).toBe(false);
+  });
 
-    it('retombe sur CACHE_WARM_TOKEN si la nouvelle variable est absente', () => {
-      process.env.CACHE_WARM_TOKEN = 'ancien-token';
-      expect(isInternalRequest(req({ [INTERNAL_HEADER]: 'ancien-token' }))).toBe(true);
-    });
-
-    it('donne la priorité à CLAIR_INTERNAL_SECRET quand les deux existent', () => {
-      process.env.CLAIR_INTERNAL_SECRET = 'nouveau';
-      process.env.CACHE_WARM_TOKEN = 'ancien';
-      expect(isInternalRequest(req({ [INTERNAL_HEADER]: 'nouveau' }))).toBe(true);
-      expect(isInternalRequest(req({ [INTERNAL_HEADER]: 'ancien' }))).toBe(false);
-    });
+  it('ne retombe plus sur CACHE_WARM_TOKEN', () => {
+    process.env.CACHE_WARM_TOKEN = 'ancien-token';
+    expect(isInternalRequest(req({ [INTERNAL_HEADER]: 'ancien-token' }))).toBe(false);
   });
 });
 

@@ -12,6 +12,10 @@
 // entre les services, comparée en temps constant. Pas de délivrance, pas de
 // stockage, pas de quota — ce n'est pas un système de clés API.
 //
+// Le secret doit valoir la MÊME chose sur les trois services (Railway CLAIR,
+// Railway Ingestion, Vercel). Toute divergence est silencieuse côté appelant :
+// la requête part et retombe simplement dans le tier anonyme à 10 req/min.
+//
 // Ce secret ne doit JAMAIS être exposé au navigateur : il n'a sa place que dans
 // du code qui s'exécute sur un serveur (fonctions serveur Next, CLI ingestion),
 // jamais dans un composant client ni dans une variable NEXT_PUBLIC_*.
@@ -26,25 +30,9 @@ import type { FastifyRequest } from 'fastify';
 /** En-tête portant le secret interne. */
 export const INTERNAL_HEADER = 'x-clair-internal';
 
-/**
- * Ancien en-tête de POST /homepage/warm.
- *
- * Conservé le temps que le scheduler d'ingestion déployé rattrape la bascule :
- * API et Ingestion sont deux services Railway distincts, rien ne garantit
- * qu'ils redémarrent ensemble. À retirer une fois les deux à jour.
- */
-const LEGACY_HEADER = 'x-warm-token';
-
-/**
- * Secret attendu.
- *
- * `CACHE_WARM_TOKEN` est l'ancien nom de la variable, gardé en repli pour que
- * le renommage côté Railway puisse se faire sans coordination avec le déploiement.
- * À retirer en même temps que LEGACY_HEADER.
- */
+/** Secret attendu, partagé à l'identique par l'API, l'ingestion et le frontend. */
 function getInternalSecret(): string {
-  const value = process.env.CLAIR_INTERNAL_SECRET || process.env.CACHE_WARM_TOKEN || '';
-  return value.trim();
+  return (process.env.CLAIR_INTERNAL_SECRET || '').trim();
 }
 
 /**
@@ -66,7 +54,7 @@ export function isInternalRequest(request: FastifyRequest): boolean {
   const secret = getInternalSecret();
   if (!secret) return false;
 
-  const raw = request.headers[INTERNAL_HEADER] ?? request.headers[LEGACY_HEADER];
+  const raw = request.headers[INTERNAL_HEADER];
   const provided = typeof raw === 'string' ? raw.trim() : '';
   if (!provided) return false;
 

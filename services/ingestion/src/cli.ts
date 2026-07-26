@@ -438,11 +438,8 @@ program
       console.log('\n⏳ Attente 120s avant rechargement du cache (stabilisation DB)...');
       await new Promise(r => setTimeout(r, 120_000));
       const apiUrl = process.env.API_URL || 'http://localhost:3001';
-      // Secret interne partagé avec l'API et le frontend. CACHE_WARM_TOKEN est
-      // l'ancien nom, gardé en repli le temps de la bascule des variables.
-      const internalSecret = (
-        process.env.CLAIR_INTERNAL_SECRET || process.env.CACHE_WARM_TOKEN || ''
-      ).trim();
+      // Secret interne partagé avec l'API et le frontend
+      const internalSecret = (process.env.CLAIR_INTERNAL_SECRET || '').trim();
       if (internalSecret) {
         try {
           // Invalidation
