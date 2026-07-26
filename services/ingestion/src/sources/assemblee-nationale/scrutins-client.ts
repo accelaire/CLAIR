@@ -3,14 +3,12 @@
 // =============================================================================
 
 import { LEGISLATURE_AN_COURANTE } from '../../workers/mandats';
-import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { createWriteStream } from 'fs';
-import { pipeline } from 'stream/promises';
 import { logger } from '../../utils/logger';
 import { errorMessage, httpStatus } from '../../utils/errors';
+import { downloadWithRetry } from '../../utils/download';
 
 // =============================================================================
 // TYPES - Structure des données AN Scrutins
@@ -155,24 +153,15 @@ export class AssembleeNationaleScrutinsClient {
   // DOWNLOAD & EXTRACT HELPERS
   // ===========================================================================
 
+  /**
+   * Toutes les archives AN viennent du même CDN, qui throttle sévèrement les
+   * tirages répétés (mesuré le 2026-07-26 : 45x plus lent au 2e tirage
+   * consécutif de la même archive). Un run télécharge plusieurs de ces archives
+   * d'affilée, d'où des coupures dont le message « aborted » ne disait rien.
+   * `downloadWithRetry` reprend avec backoff et journalise le contexte réel.
+   */
   private async downloadFile(url: string, destPath: string): Promise<void> {
-    logger.debug({ url, destPath }, 'Downloading file...');
-
-    const response = await axios({
-      method: 'GET',
-      url,
-      responseType: 'stream',
-      timeout: 180000,
-      headers: {
-        'User-Agent': 'CLAIR-Bot/1.0 (https://github.com/clair)',
-        Accept: 'application/zip',
-      },
-    });
-
-    const writer = createWriteStream(destPath);
-    await pipeline(response.data, writer);
-
-    logger.debug({ destPath }, 'File downloaded');
+    await downloadWithRetry(url, destPath, { accept: 'application/zip' });
   }
 
   /** Chiffres romains de la législature (XV, XVI, XVII…) : l'AN suffixe certaines
