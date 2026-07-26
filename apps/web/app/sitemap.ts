@@ -7,28 +7,14 @@ import { scrutinHref } from '@/lib/scrutin-url';
 // C'était auparavant force-dynamic, donc reconstruit à CHAQUE requête sur
 // /sitemap.xml, chaque hit relançant une pagination complète de toutes les
 // entités. C'est ce qui saturait le rate-limit et tronquait le sitemap.
-//
-// Une régénération parcourt ~300 pages d'API pour environ 39 Mo. À l'heure ça
-// ferait ~940 Mo/jour ; à la journée c'est négligeable.
 export const revalidate = 86400;
 
-// ~300 requêtes séquentielles vers l'API : au-delà du timeout par défaut d'une
-// fonction Vercel, la régénération serait tuée en cours de route et publierait
-// un sitemap tronqué.
-export const maxDuration = 300;
+// Une seule requête vers /api/v1/sitemap, mais elle rapporte ~2,5 Mo : on garde
+// une marge confortable sur le timeout de la fonction de régénération.
+export const maxDuration = 60;
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-interface PaginatedResponse<T> {
-  data: T[];
-  meta?: {
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  };
-}
 
 interface DeputeItem {
   slug: string;
@@ -68,95 +54,102 @@ interface SujetItem {
   updatedAt?: string;
 }
 
-/** Nombre de reprises sur 429 avant d'abandonner une page. */
-const MAX_429_RETRIES = 2;
-
-/** Plafond d'attente entre deux reprises, pour rester sous le timeout Vercel. */
-const MAX_RETRY_WAIT_MS = 10_000;
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * Récupère une page en réessayant sur 429.
- *
- * Le rate-limit de l'API accorde 200 req/min aux appels portant un Origin de
- * confiance contre 10 req/min aux autres. Sans cet en-tête, la pagination du
- * sitemap se faisait couper au bout de dix pages.
- */
-async function fetchPage(url: string): Promise<Response | null> {
-  for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
-    const response = await fetch(url, {
-      headers: {
-        // Node envoie "undici" par défaut, que le plugin rate-limit bloque
-        // (voir apps/web/lib/api-server.ts).
-        'User-Agent': 'CLAIR-Web-Sitemap/1.0',
-        Origin: BASE_URL,
-      },
-    });
-
-    if (response.status !== 429) return response;
-
-    if (attempt === MAX_429_RETRIES) {
-      console.error(`[sitemap] 429 persistant après ${attempt + 1} tentatives — ${url}`);
-      return response;
-    }
-
-    const retryAfter = Number(response.headers.get('retry-after'));
-    const waitMs = Math.min(
-      Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** attempt,
-      MAX_RETRY_WAIT_MS,
-    );
-    console.warn(`[sitemap] 429, reprise dans ${waitMs}ms — ${url}`);
-    await sleep(waitMs);
-  }
-
-  return null;
+interface SitemapData {
+  deputes: DeputeItem[];
+  senateurs: SenateurItem[];
+  scrutins: ScrutinItem[];
+  lobbyistes: LobbyisteItem[];
+  dossiers: DossierItem[];
+  sujets: SujetItem[];
 }
 
-async function fetchAllPages<T>(endpoint: string): Promise<T[]> {
-  const items: T[] = [];
-  let page = 1;
-  const limit = 100;
-  // Une sortie de boucle avant la dernière page produit un sitemap tronqué.
-  // On le signale explicitement au lieu de le laisser passer en silence.
-  let truncated = false;
+const EMPTY_SITEMAP_DATA: SitemapData = {
+  deputes: [],
+  senateurs: [],
+  scrutins: [],
+  lobbyistes: [],
+  dossiers: [],
+  sujets: [],
+};
+
+/**
+ * Échappe les caractères réservés XML dans une URL de sitemap.
+ *
+ * Next 14 sérialise les URLs telles quelles, sans échappement. Or les liens de
+ * scrutin transportent obligatoirement `?chambre=…&session=…` (un numéro de
+ * scrutin n'est unique dans aucune des deux chambres, cf. lib/scrutin-url.ts),
+ * donc un `&` brut. Résultat : le sitemap n'était pas du XML bien formé et
+ * était rejeté en entier par les moteurs — sur les 29 738 URLs, pas une seule
+ * n'était exploitable.
+ *
+ * L'échappement ne change aucune adresse : `&amp;` se décode en `&`.
+ *
+ * La négative lookahead évite de doubler l'échappement si une entité est déjà
+ * présente, et si une version future de Next se met à échapper elle-même il
+ * faudra retirer cet appel.
+ */
+function escapeXmlUrl(url: string): string {
+  return url
+    .replace(/&(?!(?:amp|lt|gt|quot|apos);)/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+const SITEMAP_HEADERS = {
+  // Node envoie "undici" par défaut, que le plugin rate-limit bloque
+  // (voir apps/web/lib/api-server.ts).
+  'User-Agent': 'CLAIR-Web-Sitemap/1.0',
+  Origin: BASE_URL,
+};
+
+/**
+ * Récupère en une seule requête tout ce qu'il faut pour construire le sitemap.
+ *
+ * La version paginée précédente tirait ~300 requêtes, dont 218 pour les seuls
+ * scrutins. Elle saturait le rate-limit à mi-parcours (200 req/min) et
+ * publiait un sitemap tronqué : 11 801 scrutins indexés sur 21 731.
+ */
+async function fetchSitemapData(): Promise<SitemapData> {
+  const url = `${API_URL}/api/v1/sitemap`;
 
   try {
-    while (true) {
-      const url = `${API_URL}/api/v1${endpoint}?page=${page}&limit=${limit}`;
-      const response = await fetchPage(url);
+    const response = await fetch(url, { headers: SITEMAP_HEADERS });
 
-      if (!response || !response.ok) {
-        console.error(
-          `[sitemap] ${response?.status ?? 'no response'} ${response?.statusText ?? ''} — ${url}`,
-        );
-        truncated = true;
-        break;
-      }
-
-      const data: PaginatedResponse<T> = await response.json();
-      if (!data.data || !Array.isArray(data.data)) {
-        truncated = true;
-        break;
-      }
-      items.push(...data.data);
-
-      if (!data.meta) break;
-      if (page >= data.meta.totalPages) break;
-      page++;
+    if (!response.ok) {
+      console.error(`[sitemap] ${response.status} ${response.statusText} — ${url}`);
+      return EMPTY_SITEMAP_DATA;
     }
+
+    const data = (await response.json()) as Partial<SitemapData>;
+    return { ...EMPTY_SITEMAP_DATA, ...data };
   } catch (error) {
-    console.error(`[sitemap] fetch failed — ${endpoint}`, error);
-    truncated = true;
+    console.error(`[sitemap] fetch failed — ${url}`, error);
+    return EMPTY_SITEMAP_DATA;
   }
+}
 
-  if (truncated) {
-    console.error(
-      `[sitemap] TRUNCATED ${endpoint} — ${items.length} entrées récupérées, arrêt page ${page}`,
-    );
+/**
+ * Les groupes restent servis par leur liste publique : elle ne retourne que la
+ * législature/session courante, et on ne veut pas dupliquer cette logique dans
+ * l'endpoint sitemap. Une requête, quelques dizaines d'entrées.
+ */
+async function fetchGroupes(): Promise<GroupeItem[]> {
+  const url = `${API_URL}/api/v1/groupes?page=1&limit=100`;
+
+  try {
+    const response = await fetch(url, { headers: SITEMAP_HEADERS });
+
+    if (!response.ok) {
+      console.error(`[sitemap] ${response.status} ${response.statusText} — ${url}`);
+      return [];
+    }
+
+    const body = (await response.json()) as { data?: GroupeItem[] };
+    return Array.isArray(body.data) ? body.data : [];
+  } catch (error) {
+    console.error(`[sitemap] fetch failed — ${url}`, error);
+    return [];
   }
-
-  return items;
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
@@ -269,15 +262,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ];
 
   // Fetch dynamic content
-  const [deputes, senateurs, scrutins, lobbyistes, groupes, dossiers, sujets] = await Promise.all([
-    fetchAllPages<DeputeItem>('/deputes'),
-    fetchAllPages<SenateurItem>('/senateurs'),
-    fetchAllPages<ScrutinItem>('/scrutins'),
-    fetchAllPages<LobbyisteItem>('/lobbying'),
-    fetchAllPages<GroupeItem>('/groupes'),
-    fetchAllPages<DossierItem>('/dossiers'),
-    fetchAllPages<SujetItem>('/sujets'),
-  ]);
+  const [data, groupes] = await Promise.all([fetchSitemapData(), fetchGroupes()]);
+  const { deputes, senateurs, scrutins, lobbyistes, dossiers, sujets } = data;
 
   // Deputes pages
   const deputePages: MetadataRoute.Sitemap = deputes.map((depute) => ({
@@ -379,5 +365,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...groupePages,
     ...dossierPages,
     ...sujetPages,
-  ];
+  ].map((entry) => ({ ...entry, url: escapeXmlUrl(entry.url) }));
 }
