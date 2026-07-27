@@ -18,6 +18,12 @@ export interface SourceConfig {
   source: string;
   dataType: string;
   url: string;
+  /**
+   * Source sans signal de fraîcheur exploitable en amont (ni ETag ni
+   * Last-Modified). On saute le HEAD et on sync systématiquement, au lieu de
+   * laisser le check échouer chaque nuit sur une URL qui ne répondra jamais.
+   */
+  alwaysSync?: boolean;
 }
 
 export interface FreshnessCheckResult {
@@ -129,7 +135,12 @@ export const SOURCES: Record<string, SourceConfig> = {
   'senat:reunions': {
     source: 'senat',
     dataType: 'reunions',
+    // Le Sénat bloque le listing de ce répertoire (403 systématique, y compris
+    // depuis un navigateur) : c'est pour ça que le client génère les dates de
+    // lundi au lieu de scraper un index. Aucune URL en amont n'expose d'ETag ni
+    // de Last-Modified pour les comptes rendus de commission, donc pas de check.
     url: 'https://www.senat.fr/compte-rendu-commissions/',
+    alwaysSync: true,
   },
   'senat:videos': {
     source: 'senat',
@@ -186,6 +197,19 @@ export async function checkSourceFreshness(
   const previousState = await prisma.sourceState.findUnique({
     where: { source_dataType: { source, dataType } },
   });
+
+  // Sources sans signal de fraîcheur : inutile de tenter un HEAD qui échouera.
+  if (config.alwaysSync) {
+    logger.info({ sourceKey }, 'Source sans signal de fraîcheur, sync systématique');
+    return {
+      hasChanged: true,
+      currentEtag: null,
+      currentLastModified: null,
+      previousEtag: previousState?.lastEtag || null,
+      previousLastModified: previousState?.lastModified || null,
+      lastSyncAt: previousState?.lastSyncAt || null,
+    };
+  }
 
   // Faire une requête HEAD pour obtenir les headers
   let currentEtag: string | null = null;

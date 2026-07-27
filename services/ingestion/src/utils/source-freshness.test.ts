@@ -110,6 +110,20 @@ describe('SOURCES Configuration', () => {
     });
   });
 
+  describe('Sources sans signal de fraîcheur', () => {
+    it('devrait marquer les réunions Sénat en sync systématique', () => {
+      // Le Sénat renvoie 403 sur le listing du répertoire des comptes rendus :
+      // sans ce drapeau, le check échouait chaque nuit en ERROR pour retomber
+      // malgré tout sur un sync complet.
+      expect(SOURCES['senat:reunions']!.alwaysSync).toBe(true);
+    });
+
+    it('ne devrait pas marquer les sources qui exposent ETag/Last-Modified', () => {
+      expect(SOURCES['assemblee_nationale:scrutins']!.alwaysSync).toBeUndefined();
+      expect(SOURCES['senat:dossiers']!.alwaysSync).toBeUndefined();
+    });
+  });
+
   describe('Exhaustivité', () => {
     it('devrait avoir au moins 8 sources configurées', () => {
       const sourceCount = Object.keys(SOURCES).length;
