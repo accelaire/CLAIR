@@ -488,7 +488,7 @@ describe('ParlementairesService', () => {
       expect(restants).toEqual([]);
     });
 
-    it('ne purge pas les votes d’un autre parlementaire', async () => {
+    it('ne purge pas les votes d’un autre parlementaire (cas témoin)', async () => {
       mockQueries([voteRow()], 1);
       const AUTRE = '11111111-2222-3333-4444-555555555555';
       await service.getParlementaireVotes(PARL, GROUPE, baseQuery);
@@ -502,6 +502,131 @@ describe('ParlementairesService', () => {
       );
       expect(restants).toHaveLength(1);
       expect(restants[0]).toContain(AUTRE);
+    });
+  });
+
+  // ===========================================================================
+  // AMENDEMENTS D'UN PARLEMENTAIRE
+  // ===========================================================================
+
+  describe('getParlementaireAmendements', () => {
+    const PARL = 'ac08f258-d040-4a0b-93c0-ebbe55dc9aec';
+    const baseQuery = { page: 1, limit: 20 };
+
+    /** Page d'ids (SQL brut) + total (SQL brut) ; le détail vient de Prisma. */
+    const mockQueries = (ids: string[], total: number) => {
+      const sql: string[] = [];
+      mockPrisma.$queryRawUnsafe.mockImplementation((q: string) => {
+        sql.push(q);
+        return Promise.resolve(
+          q.includes('COUNT(*)::int as total') ? [{ total }] : ids.map((id) => ({ id })),
+        );
+      });
+      // Prisma renvoie volontairement dans le désordre : `IN` ne trie pas.
+      mockPrisma.amendement.findMany.mockImplementation(({ where }: never) =>
+        Promise.resolve(
+          [...((where as { id: { in: string[] } }).id.in)]
+            .reverse()
+            .map((id) => ({ id, numero: `n-${id}` })),
+        ),
+      );
+      return sql;
+    };
+
+    it('remet la page dans l’ordre décidé par le SQL, pas celui de Prisma', async () => {
+      mockQueries(['a', 'b', 'c'], 3);
+
+      const result = await service.getParlementaireAmendements(PARL, baseQuery);
+
+      expect(result.data.map((a: { id: string }) => a.id)).toEqual(['a', 'b', 'c']);
+    });
+
+    it('remplace le OR par une UNION de deux branches indexables', async () => {
+      const sql = mockQueries(['a'], 1);
+
+      await service.getParlementaireAmendements(PARL, baseQuery);
+
+      const [pageSql] = sql;
+      expect(pageSql).toContain('UNION');
+      expect(pageSql).toContain('SELECT id FROM amendements WHERE parlementaire_id = $1');
+      expect(pageSql).toContain('SELECT "A" AS id FROM "_AmendementCosignataires" WHERE "B" = $1');
+      expect(pageSql).not.toMatch(/parlementaire_id = \$1\s+OR/);
+    });
+
+    it('départage le tri par id, sans quoi la pagination saute des lignes', async () => {
+      const sql = mockQueries(['a'], 1);
+
+      await service.getParlementaireAmendements(PARL, baseQuery);
+
+      expect(sql[0]).toContain('a.numero_ordre DESC NULLS LAST, a.id ASC');
+    });
+
+    it('compte à part, pour garder le total sur une page hors bornes', async () => {
+      // `COUNT(*) OVER ()` ne renvoie aucune ligne quand la page est vide :
+      // le total serait tombé à 0 alors que le jeu en compte 17 902.
+      mockQueries([], 17902);
+
+      const result = await service.getParlementaireAmendements(PARL, { page: 9999, limit: 20 });
+
+      expect(result.data).toEqual([]);
+      expect(result.meta.total).toBe(17902);
+      expect(mockPrisma.amendement.findMany).not.toHaveBeenCalled();
+    });
+
+    it('lie les filtres en paramètres et non par interpolation', async () => {
+      const sql = mockQueries(['a'], 1);
+
+      await service.getParlementaireAmendements(PARL, {
+        ...baseQuery,
+        sort: 'Rejeté',
+        dateFrom: '2024-01-01',
+        dateTo: '2024-12-31',
+        votedOnly: true,
+      });
+
+      expect(sql[0]).toContain('a.sort = $2');
+      expect(sql[0]).toContain('a.date_depot >= $3');
+      expect(sql[0]).toContain('a.date_depot <= $4');
+      expect(sql[0]).toContain('EXISTS (SELECT 1 FROM "_AmendementToScrutin"');
+      const params = mockPrisma.$queryRawUnsafe.mock.calls[0].slice(1);
+      expect(params[0]).toBe(PARL);
+      expect(params[1]).toBe('Rejeté');
+      expect(params[2]).toBeInstanceOf(Date);
+    });
+
+    it('n’ajoute aucune clause WHERE quand aucun filtre n’est passé', async () => {
+      const sql = mockQueries(['a'], 1);
+
+      await service.getParlementaireAmendements(PARL, baseQuery);
+
+      expect(sql[0]).not.toContain('WHERE a.');
+    });
+
+    it('sert le cache sans retoucher à la base', async () => {
+      mockQueries(['a'], 1);
+      await service.getParlementaireAmendements(PARL, baseQuery);
+      mockPrisma.$queryRawUnsafe.mockClear();
+      mockPrisma.amendement.findMany.mockClear();
+
+      const result = await service.getParlementaireAmendements(PARL, baseQuery);
+
+      expect(mockPrisma.$queryRawUnsafe).not.toHaveBeenCalled();
+      expect(mockPrisma.amendement.findMany).not.toHaveBeenCalled();
+      expect(result.data).toHaveLength(1);
+    });
+
+    it('calcule la pagination à partir du total', async () => {
+      mockQueries(['a'], 45);
+
+      const result = await service.getParlementaireAmendements(PARL, { page: 2, limit: 20 });
+
+      expect(result.meta).toMatchObject({
+        total: 45,
+        page: 2,
+        totalPages: 3,
+        hasNext: true,
+        hasPrev: true,
+      });
     });
   });
 });

@@ -83,6 +83,42 @@ function buildPeriodMandatWhere(
   return null;
 }
 
+/** Champs d'un amendement renvoyés par la liste d'un parlementaire. */
+const AMENDEMENT_SELECT = {
+  id: true,
+  uid: true,
+  numero: true,
+  legislature: true,
+  chambre: true,
+  texteRef: true,
+  articleVise: true,
+  dispositif: true,
+  exposeSommaire: true,
+  auteurLibelle: true,
+  sort: true,
+  dateDepot: true,
+  dateSort: true,
+  scrutins: {
+    select: {
+      id: true,
+      numero: true,
+      chambre: true,
+      session: true,
+      titre: true,
+      date: true,
+      sort: true,
+    },
+    take: 1,
+  },
+  dossier: {
+    select: {
+      uid: true,
+      titre: true,
+      titreCourt: true,
+    },
+  },
+} satisfies Prisma.AmendementSelect;
+
 export class ParlementairesService {
   private readonly CACHE_TTL = 3600; // 1 hour (data synced daily)
   private readonly CACHE_TTL_LONG = 43200; // 12 hours
@@ -921,6 +957,148 @@ export class ParlementairesService {
 
     const result = {
       data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrev: page > 1,
+      },
+    };
+
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+
+    return result;
+  }
+
+  // ===========================================================================
+  // AMENDEMENTS D'UN PARLEMENTAIRE
+  // ===========================================================================
+
+  /**
+   * Amendements déposés OU cosignés par un parlementaire.
+   *
+   * Le périmètre est une union de deux ensembles : `amendements.parlementaire_id`
+   * (l'auteur) et la table de cosignatures. Exprimé en `OR` dans un seul WHERE —
+   * ce que produit naturellement Prisma —, Postgres ne peut se servir d'aucun des
+   * deux index et parcourt les 197 000 amendements en séquentiel ; le coût estimé
+   * déclenchait même la compilation JIT, 250 ms perdus avant la première ligne.
+   *
+   * En UNION, chaque branche redevient une simple recherche indexée. On ne
+   * ramène ainsi que les identifiants de la page, dont Prisma charge ensuite le
+   * détail avec ses relations — deux allers-retours courts plutôt qu'un long.
+   */
+  async getParlementaireAmendements(
+    parlementaireId: string,
+    query: {
+      page: number;
+      limit: number;
+      sort?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      votedOnly?: boolean;
+    }
+  ) {
+    const { page, limit, sort, dateFrom, dateTo, votedOnly } = query;
+    const offset = (page - 1) * limit;
+
+    const cacheKey = `parlementaire:amendements:${parlementaireId}:${JSON.stringify({
+      page,
+      limit,
+      sort,
+      dateFrom,
+      dateTo,
+      votedOnly,
+    })}`;
+
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    const conditions: string[] = [];
+    const params: (string | Date)[] = [parlementaireId];
+    let paramIndex = 2;
+
+    if (sort) {
+      conditions.push(`a.sort = $${paramIndex}`);
+      params.push(sort);
+      paramIndex++;
+    }
+    if (dateFrom) {
+      conditions.push(`a.date_depot >= $${paramIndex}`);
+      params.push(new Date(dateFrom));
+      paramIndex++;
+    }
+    if (dateTo) {
+      conditions.push(`a.date_depot <= $${paramIndex}`);
+      params.push(new Date(dateTo));
+      paramIndex++;
+    }
+    if (votedOnly) {
+      conditions.push(`EXISTS (SELECT 1 FROM "_AmendementToScrutin" ats WHERE ats."A" = a.id)`);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const CANDIDATS = `
+      WITH candidats AS (
+        SELECT id FROM amendements WHERE parlementaire_id = $1
+        UNION
+        SELECT "A" AS id FROM "_AmendementCosignataires" WHERE "B" = $1
+      )`;
+
+    // Le tri porte sur trois colonnes dont deux acceptent NULL : des ex æquo
+    // parfaits existent (même dépôt, même dossier, même rang). Sans départage,
+    // deux exécutions les ordonnent différemment et la pagination peut répéter
+    // ou sauter une ligne d'une page à l'autre. `id` rend l'ordre total.
+    const ORDRE = `ORDER BY a.date_depot DESC NULLS LAST, a.dossier_id ASC,
+                            a.numero_ordre DESC NULLS LAST, a.id ASC`;
+
+    // Comptage séparé plutôt qu'un `COUNT(*) OVER ()` : la fenêtre ne renvoie
+    // aucune ligne — donc aucun total — dès que la page demandée est au-delà de
+    // la fin, et l'interface afficherait « 0 résultat » sur un jeu non vide.
+    const pageQuery = `
+      ${CANDIDATS}
+      SELECT a.id
+      FROM amendements a
+      JOIN candidats c ON c.id = a.id
+      ${whereClause}
+      ${ORDRE}
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+
+    const countQuery = `
+      ${CANDIDATS}
+      SELECT COUNT(*)::int as total
+      FROM amendements a
+      JOIN candidats c ON c.id = a.id
+      ${whereClause}
+    `;
+
+    const [rows, countResult] = await Promise.all([
+      this.prisma.$queryRawUnsafe<{ id: string }[]>(pageQuery, ...params),
+      this.prisma.$queryRawUnsafe<{ total: number }[]>(countQuery, ...params),
+    ]);
+
+    const total = countResult[0]?.total ?? 0;
+    const totalPages = Math.ceil(total / limit);
+
+    let amendements: unknown[] = [];
+    if (rows.length > 0) {
+      const ids = rows.map((r) => r.id);
+      const charges = await this.prisma.amendement.findMany({
+        where: { id: { in: ids } },
+        select: AMENDEMENT_SELECT,
+      });
+      // `IN` ne garantit aucun ordre : on rétablit celui décidé par le tri SQL.
+      const parId = new Map(charges.map((a) => [a.id, a]));
+      amendements = ids.map((id) => parId.get(id)).filter(Boolean);
+    }
+
+    const result = {
+      data: amendements,
       meta: {
         total,
         page,
