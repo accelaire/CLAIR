@@ -302,4 +302,206 @@ describe('ParlementairesService', () => {
       expect(result.loyaute).toBe(0);
     });
   });
+
+  // ===========================================================================
+  // VOTES D'UN PARLEMENTAIRE
+  // ===========================================================================
+
+  describe('getParlementaireVotes', () => {
+    const PARL = 'ac08f258-d040-4a0b-93c0-ebbe55dc9aec';
+    const GROUPE = '4a306451-bd1f-4879-b9d1-56cc19bdd862';
+    const baseQuery = { page: 1, limit: 20, dissidentOnly: false };
+
+    /** Une ligne telle que la renvoie le SQL brut. */
+    const voteRow = (overrides: Record<string, unknown> = {}) => ({
+      id: 'vote-1',
+      position: 'contre',
+      groupe_position: 'pour',
+      scrutin_id: 'scrutin-1',
+      scrutin_numero: 1234,
+      scrutin_chambre: 'assemblee',
+      scrutin_session: null,
+      scrutin_date: new Date('2024-03-14'),
+      scrutin_titre: 'Titre du scrutin',
+      scrutin_sort: 'adopte',
+      scrutin_type_vote: 'ordinaire',
+      scrutin_tags: ['sante'],
+      scrutin_importance: 3,
+      scrutin_nombre_pour: 100,
+      scrutin_nombre_contre: 50,
+      scrutin_nombre_abstention: 10,
+      ...overrides,
+    });
+
+    /**
+     * Les deux requêtes lancées en Promise.all : page puis comptage.
+     * Le discriminant vise `COUNT(*)::int as total` et non `COUNT(*)` : la CTE
+     * de majorité compte elle aussi, et confondrait les deux requêtes.
+     */
+    const mockQueries = (rows: unknown[], total: number) => {
+      const sql: string[] = [];
+      mockPrisma.$queryRawUnsafe.mockImplementation((q: string) => {
+        sql.push(q);
+        return Promise.resolve(q.includes('COUNT(*)::int as total') ? [{ total }] : rows);
+      });
+      return sql;
+    };
+
+    it('retourne les votes paginés avec la position du groupe', async () => {
+      mockQueries([voteRow()], 42);
+
+      const result = await service.getParlementaireVotes(PARL, GROUPE, baseQuery);
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).toMatchObject({
+        id: 'vote-1',
+        position: 'contre',
+        groupePosition: 'pour',
+      });
+      expect(result.data[0].scrutin).toMatchObject({ id: 'scrutin-1', numero: 1234 });
+      expect(result.meta).toMatchObject({ total: 42, page: 1, totalPages: 3, hasNext: true });
+    });
+
+    it('transmet une majorité absente telle quelle (groupe ex æquo)', async () => {
+      mockQueries([voteRow({ groupe_position: null })], 1);
+
+      const result = await service.getParlementaireVotes(PARL, GROUPE, baseQuery);
+
+      // null ⇒ le front n'affiche pas de badge « dissident ».
+      expect(result.data[0].groupePosition).toBeNull();
+    });
+
+    it('retourne vide sans requête SQL si dissidentOnly et pas de groupe', async () => {
+      const result = await service.getParlementaireVotes(PARL, null, {
+        ...baseQuery,
+        dissidentOnly: true,
+      });
+
+      expect(result.data).toEqual([]);
+      expect(result.meta.total).toBe(0);
+      expect(mockPrisma.$queryRawUnsafe).not.toHaveBeenCalled();
+    });
+
+    // -------------------------------------------------------------------------
+    // Les deux régimes de requête
+    // -------------------------------------------------------------------------
+
+    it('sélectionne la page AVANT de calculer la majorité en affichage simple', async () => {
+      const sql = mockQueries([voteRow()], 1);
+
+      await service.getParlementaireVotes(PARL, GROUPE, baseQuery);
+
+      const [votes, count] = sql;
+      expect(votes).toContain('WITH page AS');
+      expect(votes).toContain('AND gv.scrutin_id IN (SELECT scrutin_id FROM page)');
+      // Le comptage n'a aucune condition sur la majorité : la CTE y serait un
+      // agrégat calculé pour rien.
+      expect(count).not.toContain('group_majority');
+    });
+
+    it('garde la CTE complète des deux côtés quand dissidentOnly filtre dessus', async () => {
+      const sql = mockQueries([voteRow()], 1);
+
+      await service.getParlementaireVotes(PARL, GROUPE, {
+        ...baseQuery,
+        dissidentOnly: true,
+      });
+
+      const [votes, count] = sql;
+      // Un filtre s'applique avant la pagination : borner la CTE à la page
+      // écarterait des votes dissidents des pages suivantes.
+      expect(votes).not.toContain('IN (SELECT scrutin_id FROM page)');
+      expect(votes).toContain('group_majority');
+      expect(count).toContain('group_majority');
+      expect(count).toContain('gm.majority_position IS NOT NULL');
+    });
+
+    it('applique les filtres position, tag et dates en paramètres liés', async () => {
+      const sql = mockQueries([voteRow()], 1);
+
+      await service.getParlementaireVotes(PARL, GROUPE, {
+        ...baseQuery,
+        position: 'contre',
+        tag: 'sante',
+        dateFrom: new Date('2024-01-01'),
+        dateTo: new Date('2024-12-31'),
+      });
+
+      expect(sql[0]).toContain('v.position = $2');
+      expect(sql[0]).toContain('$3 = ANY(s.tags)');
+      expect(sql[0]).toContain('s.date >= $4');
+      expect(sql[0]).toContain('s.date <= $5');
+      const params = mockPrisma.$queryRawUnsafe.mock.calls[0].slice(1);
+      expect(params[0]).toBe(PARL);
+      expect(params[1]).toBe('contre');
+      expect(params[2]).toBe('sante');
+    });
+
+    // -------------------------------------------------------------------------
+    // Cache
+    // -------------------------------------------------------------------------
+
+    it('sert le cache sans toucher à la base', async () => {
+      mockQueries([voteRow()], 1);
+      await service.getParlementaireVotes(PARL, GROUPE, baseQuery);
+      mockPrisma.$queryRawUnsafe.mockClear();
+
+      const result = await service.getParlementaireVotes(PARL, GROUPE, baseQuery);
+
+      expect(mockPrisma.$queryRawUnsafe).not.toHaveBeenCalled();
+      expect(result.data).toHaveLength(1);
+    });
+
+    it('sépare les entrées de cache par page et par filtre', async () => {
+      mockQueries([voteRow()], 1);
+
+      await service.getParlementaireVotes(PARL, GROUPE, baseQuery);
+      await service.getParlementaireVotes(PARL, GROUPE, { ...baseQuery, page: 2 });
+      await service.getParlementaireVotes(PARL, GROUPE, { ...baseQuery, position: 'pour' });
+      await service.getParlementaireVotes(PARL, GROUPE, { ...baseQuery, dissidentOnly: true });
+
+      const cles = [...mockRedis._store.keys()].filter((k) => k.startsWith('parlementaire:votes:'));
+      expect(cles).toHaveLength(4);
+    });
+
+    it('distingue deux groupes courants : ils servent de repli au mandat d’époque', async () => {
+      mockQueries([voteRow()], 1);
+
+      await service.getParlementaireVotes(PARL, GROUPE, baseQuery);
+      await service.getParlementaireVotes(PARL, '99999999-8888-7777-6666-555555555555', baseQuery);
+
+      const cles = [...mockRedis._store.keys()].filter((k) => k.startsWith('parlementaire:votes:'));
+      expect(cles).toHaveLength(2);
+    });
+
+    it('purge le cache des votes à l’invalidation du parlementaire', async () => {
+      mockQueries([voteRow()], 1);
+      await service.getParlementaireVotes(PARL, GROUPE, baseQuery);
+      await service.getParlementaireVotes(PARL, GROUPE, { ...baseQuery, page: 2 });
+      mockPrisma.parlementaire.findUnique.mockResolvedValue({ slug: 'un-depute' });
+
+      await service.invalidateCache(PARL);
+
+      const restants = [...mockRedis._store.keys()].filter((k) =>
+        k.startsWith(`parlementaire:votes:${PARL}:`),
+      );
+      expect(restants).toEqual([]);
+    });
+
+    it('ne purge pas les votes d’un autre parlementaire', async () => {
+      mockQueries([voteRow()], 1);
+      const AUTRE = '11111111-2222-3333-4444-555555555555';
+      await service.getParlementaireVotes(PARL, GROUPE, baseQuery);
+      await service.getParlementaireVotes(AUTRE, GROUPE, baseQuery);
+      mockPrisma.parlementaire.findUnique.mockResolvedValue({ slug: 'un-depute' });
+
+      await service.invalidateCache(PARL);
+
+      const restants = [...mockRedis._store.keys()].filter((k) =>
+        k.startsWith('parlementaire:votes:'),
+      );
+      expect(restants).toHaveLength(1);
+      expect(restants[0]).toContain(AUTRE);
+    });
+  });
 });

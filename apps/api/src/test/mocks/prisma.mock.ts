@@ -56,6 +56,7 @@ export interface MockPrismaClient {
   $disconnect: Mock;
   $transaction: Mock;
   $queryRaw: Mock;
+  $queryRawUnsafe: Mock;
   $executeRaw: Mock;
 }
 
@@ -79,6 +80,7 @@ export function createMockPrismaClient(): MockPrismaClient {
     $disconnect: vi.fn(),
     $transaction: vi.fn(),
     $queryRaw: vi.fn(),
+    $queryRawUnsafe: vi.fn(),
     $executeRaw: vi.fn(),
   };
 }

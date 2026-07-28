@@ -725,6 +725,24 @@ export class ParlementairesService {
       };
     }
 
+    // Le groupe courant entre dans la clé : il sert de repli quand le mandat
+    // d'époque est introuvable, deux valeurs donnent donc deux résultats.
+    const cacheKey = `parlementaire:votes:${parlementaireId}:${JSON.stringify({
+      groupeId,
+      page,
+      limit,
+      position,
+      tag,
+      dateFrom,
+      dateTo,
+      dissidentOnly,
+    })}`;
+
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
     // Build dynamic WHERE conditions
     const conditions: string[] = ['v.parlementaire_id = $1'];
     const countConditions: string[] = ['v.parlementaire_id = $1'];
@@ -793,13 +811,11 @@ export class ParlementairesService {
       scrutin_nombre_abstention: number;
     }
 
-    const votesQuery = `
-      WITH ${CTE_GROUP_MAJORITY_EPOQUE(parlementaireId, groupeIdParam)}
-      SELECT
+    // Colonnes du vote et de son scrutin, communes aux deux formes de requête.
+    const COLONNES_VOTE = `
         v.id,
         v.position,
-        gm.majority_position as groupe_position,
-        s.id as scrutin_id,
+        v.scrutin_id,
         s.numero as scrutin_numero,
         s.chambre as scrutin_chambre,
         s.session as scrutin_session,
@@ -811,21 +827,65 @@ export class ParlementairesService {
         s.importance as scrutin_importance,
         s.nombre_pour as scrutin_nombre_pour,
         s.nombre_contre as scrutin_nombre_contre,
-        s.nombre_abstention as scrutin_nombre_abstention
+        s.nombre_abstention as scrutin_nombre_abstention`;
+
+    // Deux régimes, selon que la majorité de groupe FILTRE ou seulement DÉCORE.
+    //
+    // `dissidentOnly` la met dans le WHERE : elle doit alors être connue pour
+    // tous les votes candidats, avant pagination. La CTE reste donc complète et
+    // la requête de comptage la porte aussi — c'est le prix du filtre, et la
+    // raison pour laquelle on ne peut pas simplement borner la CTE partout.
+    //
+    // Sinon la majorité n'est qu'une colonne affichée : on sélectionne d'abord
+    // la page (20 lignes), puis on ne calcule la majorité que pour ces
+    // scrutins-là. Le comptage, lui, n'a plus aucune raison de porter la CTE :
+    // aucune de ses conditions n'y fait référence.
+    const votesQuery = dissidentOnly
+      ? `
+      WITH ${CTE_GROUP_MAJORITY_EPOQUE(parlementaireId, groupeIdParam)}
+      SELECT
+        ${COLONNES_VOTE},
+        gm.majority_position as groupe_position
       FROM votes v
       JOIN scrutins s ON v.scrutin_id = s.id
       LEFT JOIN group_majority gm ON v.scrutin_id = gm.scrutin_id AND gm.rn = 1
       WHERE ${whereClause}
       ORDER BY s.date DESC, s.numero DESC
       LIMIT ${limit} OFFSET ${offset}
+    `
+      : `
+      WITH page AS (
+        SELECT ${COLONNES_VOTE}
+        FROM votes v
+        JOIN scrutins s ON v.scrutin_id = s.id
+        WHERE ${whereClause}
+        ORDER BY s.date DESC, s.numero DESC
+        LIMIT ${limit} OFFSET ${offset}
+      ),
+      ${CTE_GROUP_MAJORITY_EPOQUE(parlementaireId, groupeIdParam, {
+        scrutinIdsSubquery: 'SELECT scrutin_id FROM page',
+      })}
+      SELECT
+        page.*,
+        gm.majority_position as groupe_position
+      FROM page
+      LEFT JOIN group_majority gm ON gm.scrutin_id = page.scrutin_id AND gm.rn = 1
+      ORDER BY page.scrutin_date DESC, page.scrutin_numero DESC
     `;
 
-    const countQuery = `
+    const countQuery = dissidentOnly
+      ? `
       WITH ${CTE_GROUP_MAJORITY_EPOQUE(parlementaireId, groupeIdParam)}
       SELECT COUNT(*)::int as total
       FROM votes v
       JOIN scrutins s ON v.scrutin_id = s.id
       LEFT JOIN group_majority gm ON v.scrutin_id = gm.scrutin_id AND gm.rn = 1
+      WHERE ${countWhereClause}
+    `
+      : `
+      SELECT COUNT(*)::int as total
+      FROM votes v
+      JOIN scrutins s ON v.scrutin_id = s.id
       WHERE ${countWhereClause}
     `;
 
@@ -859,7 +919,7 @@ export class ParlementairesService {
       },
     }));
 
-    return {
+    const result = {
       data,
       meta: {
         total,
@@ -870,6 +930,10 @@ export class ParlementairesService {
         hasPrev: page > 1,
       },
     };
+
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+
+    return result;
   }
 
   // ===========================================================================
@@ -1263,10 +1327,29 @@ export class ParlementairesService {
         await this.redis.del(`parlementaire:${parlementaire.slug}:*`);
         await this.redis.del(`parlementaire:stats:${parlementaireId}`);
       }
+      // Les votes sont cachés par combinaison de filtres : il faut balayer, un
+      // `del` sur un motif ne supprimerait rien (Redis ne développe pas le `*`).
+      await this.deleteByPattern(`parlementaire:votes:${parlementaireId}:*`);
     }
     const keys = await this.redis.keys('parlementaires:list:*');
     if (keys.length > 0) {
       await this.redis.del(...keys);
     }
+  }
+
+  /**
+   * Supprime toutes les clés d'un motif. `scan` plutôt que `keys` : le cache des
+   * votes compte une entrée par (parlementaire × filtres × page), et `keys`
+   * bloque Redis le temps du parcours complet de l'espace de clés.
+   */
+  private async deleteByPattern(pattern: string): Promise<void> {
+    let cursor = '0';
+    do {
+      const [next, keys] = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 200);
+      cursor = next;
+      if (keys.length > 0) {
+        await this.redis.del(...keys);
+      }
+    } while (cursor !== '0');
   }
 }
