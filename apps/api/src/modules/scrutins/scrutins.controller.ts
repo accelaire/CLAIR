@@ -172,24 +172,65 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           orderBy: [{ date: 'desc' }, { numero: 'desc' }],
           skip,
           take: limit,
-          include: {
-            _count: { select: { votes: true } },
+          // `select` explicite plutôt qu'`include` : sourceData est le blob brut de
+          // l'API source (~37 Ko/scrutin), inutile en liste. L'écarter du payload
+          // en JS ne suffisait pas — Postgres lisait quand même la colonne sur
+          // disque à chaque page. Elle reste disponible sur le détail.
+          select: {
+            id: true,
+            numero: true,
+            chambre: true,
+            session: true,
+            legislature: true,
+            date: true,
+            titre: true,
+            typeVote: true,
+            sort: true,
+            nombreVotants: true,
+            nombrePour: true,
+            nombreContre: true,
+            nombreAbstention: true,
+            tags: true,
+            importance: true,
+            texteId: true,
+            texteNumero: true,
+            texteTitre: true,
+            objetLibelle: true,
+            demandeurTexte: true,
+            seanceRef: true,
+            dossierId: true,
+            resumeIA: true,
+            iaContentHash: true,
+            iaGeneratedAt: true,
+            sourceUrl: true,
+            createdAt: true,
           },
         }),
         fastify.prisma.scrutin.count({ where }),
       ]);
+
+      // Comptage des votes borné aux scrutins de la page.
+      // `_count: { select: { votes: true } }` faisait générer à Prisma un LEFT JOIN
+      // sur un GROUP BY de TOUTE la table votes (3,9 M lignes, sans filtre) à chaque
+      // appel, pour n'en conserver que les lignes affichées : 94 % du spill temporaire
+      // de la base venait de cette seule requête. Ici on borne aux ids de la page.
+      const voteCounts = scrutins.length
+        ? await fastify.prisma.vote.groupBy({
+            by: ['scrutinId'],
+            where: { scrutinId: { in: scrutins.map((s) => s.id) } },
+            _count: { _all: true },
+          })
+        : [];
+      const votesCountByScrutin = new Map(
+        voteCounts.map((v) => [v.scrutinId, v._count._all]),
+      );
 
       const totalPages = Math.ceil(total / limit);
 
       const result = {
         data: scrutins.map((s) => ({
           ...s,
-          votesCount: s._count.votes,
-          _count: undefined,
-          // sourceData est le blob brut de l'API source : ~37 Ko par scrutin,
-          // soit 96 % du poids de la réponse, pour une donnée que personne ne
-          // consomme dans une liste. Elle reste disponible sur le détail.
-          sourceData: undefined,
+          votesCount: votesCountByScrutin.get(s.id) ?? 0,
         })),
         meta: {
           total,
