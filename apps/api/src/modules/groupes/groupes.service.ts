@@ -653,33 +653,54 @@ export class GroupesService {
     const groupeNom = groupe.nom;
     const groupeNomComplet = groupe.nomComplet || groupe.nom;
 
-    const scrutinsWithVotes = groupeInitie
-      ? await this.prisma.$queryRaw<
-          {
-            id: string;
-            numero: number;
-            titre: string;
-            date: Date;
-            sort: string;
-            type_vote: string;
-            session: string | null;
-            nombre_pour: number;
-            nombre_contre: number;
-            nombre_abstention: number;
-            pour: bigint;
-            contre: bigint;
-            abstention: bigint;
-            absent: bigint;
-          }[]
-        >`
-          WITH recent_scrutins AS (
-            -- chambre + legislature sont indispensables en aval : cette CTE sert
-            -- de table de scrutins a la jointure du mandat d'epoque.
-            SELECT DISTINCT s.id, s.numero, s.titre, s.date, s.sort, s.type_vote, s.session,
-                   s.chambre, s.legislature,
-                   s.nombre_pour, s.nombre_contre, s.nombre_abstention
-            FROM scrutins s
-            JOIN votes v ON v.scrutin_id = s.id
+    // Scrutins « initiés par le groupe » : le demandeur est libellé en clair.
+    // Seul fragment qui distinguait les deux variantes de la requête ci-dessous,
+    // recopiée à l'identique sur 80 lignes — d'où l'extraction, sur le modèle de
+    // `sessionSql`.
+    const demandeurSql = groupeInitie
+      ? Prisma.sql`
+          AND s.demandeur_texte IS NOT NULL
+          AND (
+            s.demandeur_texte ILIKE ${'%' + groupeNom + '%'}
+            OR s.demandeur_texte ILIKE ${'%' + groupeNomComplet + '%'}
+          )`
+      : Prisma.empty;
+
+    const scrutinsWithVotes = await this.prisma.$queryRaw<
+      {
+        id: string;
+        numero: number;
+        titre: string;
+        date: Date;
+        sort: string;
+        type_vote: string;
+        session: string | null;
+        nombre_pour: number;
+        nombre_contre: number;
+        nombre_abstention: number;
+        pour: bigint;
+        contre: bigint;
+        abstention: bigint;
+        absent: bigint;
+      }[]
+    >`
+      WITH recent_scrutins AS (
+        -- chambre + legislature sont indispensables en aval : cette CTE sert
+        -- de table de scrutins a la jointure du mandat d'epoque.
+        --
+        -- EXISTS plutot que JOIN votes + DISTINCT : la jointure produisait une
+        -- ligne par vote du groupe sur toute son histoire (des centaines de
+        -- milliers) avant de les dedupliquer pour n'en garder que 20. Ici
+        -- Postgres remonte les scrutins du plus recent et s'arrete au vingtieme
+        -- qui concerne le groupe.
+        SELECT s.id, s.numero, s.titre, s.date, s.sort, s.type_vote, s.session,
+               s.chambre, s.legislature,
+               s.nombre_pour, s.nombre_contre, s.nombre_abstention
+        FROM scrutins s
+        WHERE s.chambre = ${chambre}
+          AND EXISTS (
+            SELECT 1
+            FROM votes v
             JOIN mandats_parlementaires m
               ON m.personne_id = v.parlementaire_id
               AND m.chambre = s.chambre
@@ -689,122 +710,48 @@ export class GroupesService {
                  OR (s.chambre = 'senat' AND m.date_debut <= s.date
                      AND (m.date_fin IS NULL OR m.date_fin >= s.date))
                   )
-            WHERE m.groupe_id = ${groupe.id}
-              AND s.chambre = ${chambre}
-              AND s.demandeur_texte IS NOT NULL
-              AND (
-                s.demandeur_texte ILIKE ${'%' + groupeNom + '%'}
-                OR s.demandeur_texte ILIKE ${'%' + groupeNomComplet + '%'}
+            WHERE v.scrutin_id = s.id
+              AND m.groupe_id = ${groupe.id}
+          )
+          ${demandeurSql}
+          ${sessionSql}
+        -- Plusieurs scrutins partagent une même date : sans départage, « les 20
+        -- derniers » n'est pas un ensemble stable d'un appel à l'autre.
+        ORDER BY s.date DESC, s.numero DESC, s.id ASC
+        LIMIT 20
+      ),
+      groupe_votes AS (
+        SELECT
+          s.id as scrutin_id,
+          SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) as pour,
+          SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) as contre,
+          SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) as abstention,
+          SUM(CASE WHEN v.position = 'absent' THEN 1 ELSE 0 END) as absent
+        FROM recent_scrutins s
+        JOIN votes v ON v.scrutin_id = s.id
+        JOIN mandats_parlementaires m
+          ON m.personne_id = v.parlementaire_id
+          AND m.chambre = s.chambre
+          AND (
+                (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
+                 AND m.legislature = s.legislature)
+             OR (s.chambre = 'senat' AND m.date_debut <= s.date
+                 AND (m.date_fin IS NULL OR m.date_fin >= s.date))
               )
-              ${sessionSql}
-            ORDER BY s.date DESC
-            LIMIT 20
-          ),
-          groupe_votes AS (
-            SELECT
-              s.id as scrutin_id,
-              SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) as pour,
-              SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) as contre,
-              SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) as abstention,
-              SUM(CASE WHEN v.position = 'absent' THEN 1 ELSE 0 END) as absent
-            FROM recent_scrutins s
-            JOIN votes v ON v.scrutin_id = s.id
-            JOIN mandats_parlementaires m
-              ON m.personne_id = v.parlementaire_id
-              AND m.chambre = s.chambre
-              AND (
-                    (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
-                     AND m.legislature = s.legislature)
-                 OR (s.chambre = 'senat' AND m.date_debut <= s.date
-                     AND (m.date_fin IS NULL OR m.date_fin >= s.date))
-                  )
-            WHERE m.groupe_id = ${groupe.id}
-            GROUP BY s.id
-          )
-          SELECT
-            rs.id, rs.numero, rs.titre, rs.date, rs.sort, rs.type_vote, rs.session,
-            rs.nombre_pour, rs.nombre_contre, rs.nombre_abstention,
-            COALESCE(gv.pour, 0) as pour,
-            COALESCE(gv.contre, 0) as contre,
-            COALESCE(gv.abstention, 0) as abstention,
-            COALESCE(gv.absent, 0) as absent
-          FROM recent_scrutins rs
-          LEFT JOIN groupe_votes gv ON rs.id = gv.scrutin_id
-          ORDER BY rs.date DESC
-        `
-      : await this.prisma.$queryRaw<
-          {
-            id: string;
-            numero: number;
-            titre: string;
-            date: Date;
-            sort: string;
-            type_vote: string;
-            session: string | null;
-            nombre_pour: number;
-            nombre_contre: number;
-            nombre_abstention: number;
-            pour: bigint;
-            contre: bigint;
-            abstention: bigint;
-            absent: bigint;
-          }[]
-        >`
-          WITH recent_scrutins AS (
-            -- chambre + legislature sont indispensables en aval : cette CTE sert
-            -- de table de scrutins a la jointure du mandat d'epoque.
-            SELECT DISTINCT s.id, s.numero, s.titre, s.date, s.sort, s.type_vote, s.session,
-                   s.chambre, s.legislature,
-                   s.nombre_pour, s.nombre_contre, s.nombre_abstention
-            FROM scrutins s
-            JOIN votes v ON v.scrutin_id = s.id
-            JOIN mandats_parlementaires m
-              ON m.personne_id = v.parlementaire_id
-              AND m.chambre = s.chambre
-              AND (
-                    (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
-                     AND m.legislature = s.legislature)
-                 OR (s.chambre = 'senat' AND m.date_debut <= s.date
-                     AND (m.date_fin IS NULL OR m.date_fin >= s.date))
-                  )
-            WHERE m.groupe_id = ${groupe.id}
-              AND s.chambre = ${chambre}
-              ${sessionSql}
-            ORDER BY s.date DESC
-            LIMIT 20
-          ),
-          groupe_votes AS (
-            SELECT
-              s.id as scrutin_id,
-              SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) as pour,
-              SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) as contre,
-              SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) as abstention,
-              SUM(CASE WHEN v.position = 'absent' THEN 1 ELSE 0 END) as absent
-            FROM recent_scrutins s
-            JOIN votes v ON v.scrutin_id = s.id
-            JOIN mandats_parlementaires m
-              ON m.personne_id = v.parlementaire_id
-              AND m.chambre = s.chambre
-              AND (
-                    (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
-                     AND m.legislature = s.legislature)
-                 OR (s.chambre = 'senat' AND m.date_debut <= s.date
-                     AND (m.date_fin IS NULL OR m.date_fin >= s.date))
-                  )
-            WHERE m.groupe_id = ${groupe.id}
-            GROUP BY s.id
-          )
-          SELECT
-            rs.id, rs.numero, rs.titre, rs.date, rs.sort, rs.type_vote, rs.session,
-            rs.nombre_pour, rs.nombre_contre, rs.nombre_abstention,
-            COALESCE(gv.pour, 0) as pour,
-            COALESCE(gv.contre, 0) as contre,
-            COALESCE(gv.abstention, 0) as abstention,
-            COALESCE(gv.absent, 0) as absent
-          FROM recent_scrutins rs
-          LEFT JOIN groupe_votes gv ON rs.id = gv.scrutin_id
-          ORDER BY rs.date DESC
-        `;
+        WHERE m.groupe_id = ${groupe.id}
+        GROUP BY s.id
+      )
+      SELECT
+        rs.id, rs.numero, rs.titre, rs.date, rs.sort, rs.type_vote, rs.session,
+        rs.nombre_pour, rs.nombre_contre, rs.nombre_abstention,
+        COALESCE(gv.pour, 0) as pour,
+        COALESCE(gv.contre, 0) as contre,
+        COALESCE(gv.abstention, 0) as abstention,
+        COALESCE(gv.absent, 0) as absent
+      FROM recent_scrutins rs
+      LEFT JOIN groupe_votes gv ON rs.id = gv.scrutin_id
+      ORDER BY rs.date DESC, rs.numero DESC, rs.id ASC
+    `;
 
     // Transformer les résultats SQL en format attendu
     const scrutinsRecents = scrutinsWithVotes.map((s) => {
