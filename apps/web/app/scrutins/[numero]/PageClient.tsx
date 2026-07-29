@@ -7,12 +7,15 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { FileText, MessageSquare, Vote, ArrowLeft, BookOpen, Info } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
+import { dossierTitreCourtLisible } from '@/lib/dossiers';
 import {
   ScrutinSidebar,
+  ScrutinDossierBanner,
   ScrutinVotesTab,
   ScrutinDebatsTab,
   ScrutinAmendementsTab,
 } from './components';
+import type { ScrutinDossier } from './components/scrutin-dossier-banner';
 
 // ── Types ──
 
@@ -32,22 +35,6 @@ interface VoteRecord {
       couleur: string | null;
     } | null;
   };
-}
-
-interface DossierLegislatif {
-  id: string;
-  uid: string;
-  titre: string;
-  titreCourt: string | null;
-  procedureLibelle: string | null;
-  urlAN: string | null;
-  urlSenat: string | null;
-  etat: string | null;
-  dateDepot: string | null;
-  loiNumero: string | null;
-  loiTitre: string | null;
-  urlLegifrance: string | null;
-  _count?: { scrutins: number; amendements: number };
 }
 
 interface AmendementDetail {
@@ -107,7 +94,7 @@ export interface ScrutinDetail {
   objetLibelle: string | null;
   demandeurTexte: string | null;
   seanceRef: string | null;
-  dossier: DossierLegislatif | null;
+  dossier: ScrutinDossier | null;
   amendements: AmendementDetail[];
   interventions: InterventionScrutin[];
   resumeIA: string | null;
@@ -508,12 +495,26 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
           <ArrowLeft className="h-4 w-4" />
         </button>
         <Link href="/scrutins" className="hover:text-foreground transition-colors flex-shrink-0">Scrutins</Link>
+        {scrutin.dossier && (
+          <>
+            <span className="hidden sm:inline flex-shrink-0">/</span>
+            <Link
+              href={`/dossiers/${scrutin.dossier.uid}`}
+              className="hidden sm:inline hover:text-foreground transition-colors truncate max-w-[16rem] md:max-w-sm"
+            >
+              {dossierTitreCourtLisible(scrutin.dossier.titreCourt) ?? scrutin.dossier.titre}
+            </Link>
+          </>
+        )}
         <span className="flex-shrink-0">/</span>
         <span className="text-foreground font-medium truncate">Scrutin n°{scrutin.numero}</span>
       </nav>
 
       {/* Title */}
-      <h1 className="text-xl md:text-2xl font-bold mb-8 leading-tight">{scrutin.titre}</h1>
+      <h1 className="text-xl md:text-2xl font-bold mb-6 leading-tight">{scrutin.titre}</h1>
+
+      {/* Dossier législatif — contexte du vote, avant tout le reste */}
+      {scrutin.dossier && <ScrutinDossierBanner dossier={scrutin.dossier} />}
 
       {/* En clair — IA summary */}
       {scrutin.resumeIA && (
@@ -549,7 +550,6 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
               sort={scrutin.sort}
               tags={scrutin.tags}
               demandeurTexte={scrutin.demandeurTexte}
-              dossier={scrutin.dossier}
               sourceUrl={scrutin.sourceUrl}
               importance={scrutin.importance}
               formatDemandeurs={formatDemandeurs}
