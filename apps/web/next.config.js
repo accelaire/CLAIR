@@ -1,6 +1,17 @@
+const { SUJET_SLUG_REDIRECTS } = require('./lib/sujet-slug-redirects');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  async redirects() {
+    // 301 sur les sujets renommés (slug technique → slug lisible). Traité à
+    // l'edge, avant tout rendu : aucune requête API pour les anciennes URLs.
+    return SUJET_SLUG_REDIRECTS.map(({ from, to }) => ({
+      source: `/sujets/${from}`,
+      destination: `/sujets/${to}`,
+      permanent: true,
+    }));
+  },
   images: {
     unoptimized: true,
     remotePatterns: [

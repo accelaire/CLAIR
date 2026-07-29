@@ -148,6 +148,38 @@ export const sujetsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ===========================================================================
+  // GET /api/v1/sujets/:slug/documents-lies - Documents sans vote liés au sujet
+  // ===========================================================================
+  fastify.get('/:slug/documents-lies', {
+    schema: {
+      tags: ['Sujets'],
+      summary: 'Documents liés à un sujet',
+      description:
+        'Rapports d\'information, missions d\'application et textes non votés citant la loi du sujet. Absents de la liste des dossiers, qui exige au moins un scrutin.',
+      params: {
+        type: 'object',
+        required: ['slug'],
+        properties: { slug: { type: 'string' } },
+      },
+    },
+    handler: async (request, _reply) => {
+      const { slug } = sujetParamsSchema.parse(request.params);
+
+      const cacheKey = `sujets:documents-lies:${slug}`;
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+
+      const documents = await service.getDocumentsLies(slug);
+      if (documents === null) throw new ApiError(404, 'Sujet non trouvé');
+
+      const result = { data: documents };
+
+      await fastify.redis.setex(cacheKey, CACHE_TTL_1H, JSON.stringify(result));
+      return result;
+    },
+  });
+
+  // ===========================================================================
   // GET /api/v1/sujets/:slug/dossiers - Dossiers d'un sujet
   // ===========================================================================
   fastify.get('/:slug/dossiers', {

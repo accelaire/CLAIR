@@ -892,6 +892,36 @@ program
   });
 
 // =============================================================================
+// COMMANDE: reslug-sujets
+// =============================================================================
+program
+  .command('reslug-sujets')
+  .description('Recalculer le slug des sujets restés sur un identifiant technique. CASSE les anciennes URLs')
+  .option('--dry-run', 'Afficher les changements sans modifier la DB')
+  .action(async (options) => {
+    try {
+      const { reslugTechnicalSujets } = await import('./workers/sujet-generator.js');
+      const result = await reslugTechnicalSujets({ dryRun: options.dryRun });
+
+      console.log(`\n🔗 Slugs techniques${options.dryRun ? ' (DRY RUN)' : ''}:`);
+      console.log(`   Examinés: ${result.examined}`);
+      console.log(`   Renommés: ${result.reslugged}`);
+      console.log(`   Laissés en l'état: ${result.skipped}`);
+      for (const c of result.changes) {
+        console.log(`   [${String(c.scrutinCount).padStart(4)} scrutins]  ${c.before}  →  ${c.after}`);
+      }
+      if (!options.dryRun && result.reslugged > 0) {
+        console.log(`\n   ⚠️  ${result.reslugged} URLs publiques ont changé. Purger Redis (sujets:*, sitemap:*).`);
+      }
+
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'reslug-sujets failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
 // COMMANDE: generate-sujet-links
 // =============================================================================
 program

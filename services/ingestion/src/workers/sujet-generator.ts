@@ -73,16 +73,26 @@ function extractANUidFromUrl(url: string): string | null {
  * tronque à 80 caractères.
  */
 function slugify(text: string): string {
-  return text
+  const full = text
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '') // strip accents
     .toLowerCase()
     .replace(/['']/g, '-')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .substring(0, 80);
+    .replace(/^-|-$/g, '');
+
+  if (full.length <= SLUG_MAX_LENGTH) return full;
+
+  // Couper sur une fronti\u00e8re de mot : une troncature brute laisse un tiret final
+  // ou un mot coup\u00e9 en deux (\u00ab \u2026discriminations-dans-les- \u00bb).
+  const cut = full.substring(0, SLUG_MAX_LENGTH);
+  const lastDash = cut.lastIndexOf('-');
+  const trimmed = lastDash > 0 ? cut.substring(0, lastDash) : cut;
+  return trimmed.replace(/-+$/, '');
 }
+
+const SLUG_MAX_LENGTH = 80;
 
 // =============================================================================
 // UNION-FIND
@@ -507,6 +517,114 @@ export async function relabelTechnicalSujets(options: { dryRun?: boolean } = {})
     );
 
     return { examined: sujets.length, relabeled: changes.length, stillTechnical, changes };
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+// =============================================================================
+// RÉPARATION DES SLUGS TECHNIQUES
+// =============================================================================
+
+/** Slug purement technique : « dlr5l17n53980 », « senat-pjl21-654 », « sujet-… ». */
+const SLUG_TECHNIQUE_RE = /^(dlr5l\d+n\d+|senat-.+|sujet-.+)$/i;
+
+/**
+ * Recalcule le slug des sujets dont l'URL est restée un identifiant technique.
+ *
+ * Le slug est figé à la création du sujet, depuis le label de l'époque. Les sujets
+ * créés quand `pickBestLabel()` renvoyait encore un UID ont donc gardé une URL
+ * illisible même après correction de leur label.
+ *
+ * Repli assumé : si le label est lui-même technique, on ne touche à rien — mieux
+ * vaut un UID qu'un slug inventé.
+ *
+ * ⚠️ Renommer un slug CASSE l'URL publique. L'appelant est responsable de la
+ * redirection : la fonction retourne les couples (avant, après) pour alimenter
+ * une table de redirection ou un audit.
+ */
+export async function reslugTechnicalSujets(options: { dryRun?: boolean } = {}): Promise<{
+  examined: number;
+  reslugged: number;
+  skipped: number;
+  changes: { before: string; after: string; label: string; scrutinCount: number }[];
+}> {
+  const { dryRun = false } = options;
+  const prisma = new PrismaClient();
+
+  try {
+    const sujets = await prisma.$queryRaw<
+      { id: string; slug: string; label: string; scrutinCount: number; actif: boolean }[]
+    >`
+      SELECT id, slug, label, scrutin_count as "scrutinCount", actif
+      FROM sujets
+      ORDER BY scrutin_count DESC, id ASC
+    `;
+
+    // Tous les slugs occupés, y compris ceux des sujets inactifs : un slug libéré
+    // par un renommage reste réservé, sinon on créerait une collision avec une
+    // ancienne URL encore indexée.
+    const usedSlugs = new Set<string>(sujets.map(s => s.slug));
+
+    const changes: { before: string; after: string; label: string; scrutinCount: number }[] = [];
+    let examined = 0;
+    let skipped = 0;
+
+    for (const sujet of sujets) {
+      if (!SLUG_TECHNIQUE_RE.test(sujet.slug)) continue;
+      // Les sujets désactivés ne sont pas servis par l'API : les renommer ne
+      // change rien pour personne, mais leur attribuerait un beau slug qu'un
+      // sujet visible devrait ensuite suffixer en « -2 ». Leur slug actuel reste
+      // réservé dans `usedSlugs`, donc aucune collision d'URL.
+      if (!sujet.actif) continue;
+      examined++;
+
+      // Label encore technique : aucun intitulé lisible à dériver.
+      if (!sujet.label || UID_AN_RE.test(sujet.label)) {
+        skipped++;
+        continue;
+      }
+
+      const baseSlug = slugify(sujet.label);
+      if (!baseSlug) {
+        skipped++;
+        continue;
+      }
+
+      let slug = baseSlug;
+      let suffix = 2;
+      while (usedSlugs.has(slug)) {
+        slug = `${baseSlug}-${suffix}`;
+        suffix++;
+      }
+
+      if (slug === sujet.slug) {
+        skipped++;
+        continue;
+      }
+
+      usedSlugs.add(slug);
+      changes.push({
+        before: sujet.slug,
+        after: slug,
+        label: sujet.label,
+        scrutinCount: sujet.scrutinCount,
+      });
+
+      if (!dryRun) {
+        await prisma.$executeRawUnsafe(
+          `UPDATE sujets SET slug = $1, updated_at = NOW() WHERE id = $2`,
+          slug, sujet.id,
+        );
+      }
+    }
+
+    logger.info(
+      { examined, reslugged: changes.length, skipped, dryRun },
+      'Technical sujet slugs repaired',
+    );
+
+    return { examined, reslugged: changes.length, skipped, changes };
   } finally {
     await prisma.$disconnect();
   }
