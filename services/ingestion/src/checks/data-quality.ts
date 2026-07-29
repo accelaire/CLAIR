@@ -160,6 +160,26 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // législature, faute de dossier ingéré pour la leur.
     query: `SELECT COUNT(*)::int AS value FROM scrutins s JOIN dossiers_legislatifs d ON s.dossier_id = d.id WHERE s.chambre = 'assemblee' AND d.uid NOT LIKE 'SENAT%' AND s.session ~ '^[0-9]+$' AND d.legislature <> s.session::int`,
   },
+  resume_contredit_statut: {
+    type: 'invariant',
+    label: 'Résumés IA contredisant le statut du sujet',
+    min: 0,
+    max: 0,
+    // Un sujet promulgué ou rejeté dont le résumé annonce une procédure encore
+    // en cours = résumé figé sur l'état d'avancement du jour de sa génération.
+    //
+    // La formulation est volontairement étroite : « en cours d'année »,
+    // « retiré en cours de route » ou « abandonné en cours de discussion » sont
+    // parfaitement valides pour un texte promulgué. Seules sont retenues les
+    // assertions portant sur l'inachèvement de la procédure elle-même.
+    //
+    // Le `.` remplace l'apostrophe : les résumés mélangent ' et ’.
+    query: `SELECT COUNT(*)::int AS value FROM sujets
+      WHERE actif = true
+        AND status IN ('promulgue', 'rejete')
+        AND resume IS NOT NULL
+        AND resume ~* '(doit encore (être )?(promulgu|examin|adopt|vot|discut|débattu|passer)|n.a pas encore été (promulgu|adopt|examin|vot)|en cours d.examen|examen (est |se poursuit)?(encore )?en cours|sera (prochainement )?examiné|en cours de promulgation|doit désormais être examiné)'`,
+  },
 
   // ---- Seuils quantitatifs (minimums) ----
   parlementaires_count: {

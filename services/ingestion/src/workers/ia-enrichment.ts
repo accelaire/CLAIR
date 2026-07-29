@@ -65,15 +65,22 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
 
   logger.info({ dryRun, concurrency, limit, force }, 'Starting scrutins IA enrichment...');
 
-  const where = force ? {} : { resumeIA: null };
-  let remaining = limit ?? Infinity;
+  // `limit` borne le nombre de fiches RÉGÉNÉRÉES, pas le nombre examinées : les
+  // fiches inchangées ne doivent pas le consommer. Le budget est décrémenté au
+  // plus près de l'appel LLM (pas de `await` entre le test et la décrémentation,
+  // donc pas de dépassement malgré la parallélisation).
+  let budget = limit ?? Infinity;
+  let offset = 0;
 
-  // No cursor needed: enriched items drop out of `where: { resumeIA: null }`
-  // so each batch naturally picks the next unenriched items
-  while (remaining > 0) {
-    const take = Math.min(BATCH_SIZE, remaining);
+  // On balaie TOUT le corpus, pas seulement les non-enrichis : c'est le hash de
+  // contenu qui décide de régénérer ou non. Filtrer sur `resumeIA: null` rendait
+  // le hash inatteignable — une fiche générée une fois ne repassait jamais, même
+  // après changement de son contenu source.
+  // Le balayage impose une pagination explicite (`offset`) et un tri TOTAL : sans
+  // départage, deux lignes de même date peuvent s'échanger entre deux pages et
+  // l'une d'elles n'est jamais examinée.
+  while (budget > 0) {
     const scrutins = await prisma.scrutin.findMany({
-      where,
       select: {
         id: true,
         titre: true,
@@ -88,8 +95,9 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
           take: 3,
         },
       },
-      orderBy: { date: 'desc' },
-      take,
+      orderBy: [{ date: 'desc' }, { id: 'asc' }],
+      skip: offset,
+      take: BATCH_SIZE,
     });
 
     if (scrutins.length === 0) break;
@@ -103,12 +111,19 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
           const contentHash = computeContentHash(
             scrutin.titre, scrutin.sort, scrutin.typeVote,
             scrutin.objetLibelle, scrutin.tags?.join(','), amendementsHash,
+            // Le titre du dossier est injecté dans le prompt : un scrutin
+            // rattaché à un autre dossier change de contexte, donc de résumé.
+            scrutin.dossier?.titre ?? '',
           );
 
           if (!force && scrutin.iaContentHash === contentHash) {
             result.skipped++;
             return;
           }
+
+          // Quota atteint : ni régénéré, ni comptabilisé comme inchangé.
+          if (budget <= 0) return;
+          budget--;
 
           if (dryRun) {
             result.enriched++;
@@ -141,10 +156,12 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
     );
 
     await Promise.all(tasks);
-    remaining -= scrutins.length;
+    // `limit` borne le nombre de fiches RÉGÉNÉRÉES, pas le nombre examinées :
+    // sinon les fiches inchangées le consommeraient sans rien produire.
+    offset += scrutins.length;
 
-    logger.info({ processed: result.enriched + result.skipped + result.errors, remaining }, 'Scrutins batch processed');
-    if (scrutins.length < take) break;
+    logger.info({ processed: result.enriched + result.skipped + result.errors, offset, budget }, 'Scrutins batch processed');
+    if (scrutins.length < BATCH_SIZE) break;
   }
 
   result.totalTokensIn = mistral.totalTokensIn;
@@ -179,14 +196,18 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
 
   logger.info({ dryRun, concurrency, limit, force }, 'Starting dossiers IA enrichment...');
 
-  const where = force
-    ? { scrutins: { some: {} } }
-    : { resumeIA: null, scrutins: { some: {} } };
+  // Voir enrichScrutinsIA : balayage complet, le hash arbitre. Le filtre sur
+  // l'existence de scrutins reste — un dossier sans vote n'a rien à résumer.
+  const where = { scrutins: { some: {} } };
 
-  let remaining = limit ?? Infinity;
+  // `limit` borne le nombre de fiches RÉGÉNÉRÉES, pas le nombre examinées : les
+  // fiches inchangées ne doivent pas le consommer. Le budget est décrémenté au
+  // plus près de l'appel LLM (pas de `await` entre le test et la décrémentation,
+  // donc pas de dépassement malgré la parallélisation).
+  let budget = limit ?? Infinity;
+  let offset = 0;
 
-  while (remaining > 0) {
-    const take = Math.min(BATCH_SIZE, remaining);
+  while (budget > 0) {
     const dossiers = await prisma.dossierLegislatif.findMany({
       where,
       select: {
@@ -198,8 +219,9 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
         etat: true,
         iaContentHash: true,
       },
-      orderBy: { createdAt: 'desc' },
-      take,
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      skip: offset,
+      take: BATCH_SIZE,
     });
 
     if (dossiers.length === 0) break;
@@ -210,7 +232,10 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
           const scrutinsClefs = await prisma.scrutin.findMany({
             where: { dossierId: dossier.id },
             select: { id: true, titre: true, sort: true, typeVote: true, resumeIA: true },
-            orderBy: [{ typeVote: 'asc' }, { importance: 'desc' }],
+            // `id` départage : le tri alimente le hash ET la sélection des 10
+            // scrutins clefs, deux ex æquo qui permutent suffiraient à faire
+            // croire à un changement de contenu.
+            orderBy: [{ typeVote: 'asc' }, { importance: 'desc' }, { id: 'asc' }],
             take: 10,
           });
 
@@ -279,18 +304,26 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
           const amendementsClefs = await prisma.amendement.findMany({
             where: { dossierId: dossier.id, exposeSommaire: { not: null } },
             select: { numero: true, exposeSommaire: true, auteurLibelle: true, sort: true },
-            orderBy: [{ sort: 'asc' }, { dateDepot: 'desc' }],
+            orderBy: [{ sort: 'asc' }, { dateDepot: 'desc' }, { id: 'asc' }],
             take: 8,
           });
 
           const ensembleForHash = positionsEnsemble.map(g => `ens:${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|');
           const articlesForHash = votesArticles.map(a => `art:${a.article.slice(0, 30)}`).join('|');
+          // Tout ce qui entre dans le prompt doit entrer dans le hash, sinon un
+          // changement de contenu source ne déclenche aucune régénération.
+          const amendementsForHash = amendementsClefs
+            .map(a => `amd:${a.numero}:${a.sort ?? ''}`)
+            .join('|');
           const hashParts = [
             dossier.titre,
+            dossier.titreCourt,
+            dossier.procedureLibelle,
             dossier.etat,
             scrutinsClefs.map(s => `${s.sort}:${s.resumeIA ?? s.titre}`).join('|'),
             ensembleForHash,
             articlesForHash,
+            amendementsForHash,
           ];
           const contentHash = computeContentHash(...hashParts);
 
@@ -298,6 +331,10 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             result.skipped++;
             return;
           }
+
+          // Quota atteint : ni régénéré, ni comptabilisé comme inchangé.
+          if (budget <= 0) return;
+          budget--;
 
           if (dryRun) {
             result.enriched++;
@@ -349,10 +386,10 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
     );
 
     await Promise.all(tasks);
-    remaining -= dossiers.length;
+    offset += dossiers.length;
 
-    logger.info({ processed: result.enriched + result.skipped + result.errors, remaining }, 'Dossiers batch processed');
-    if (dossiers.length < take) break;
+    logger.info({ processed: result.enriched + result.skipped + result.errors, offset, budget }, 'Dossiers batch processed');
+    if (dossiers.length < BATCH_SIZE) break;
   }
 
   result.totalTokensIn = mistral.totalTokensIn;
@@ -387,14 +424,17 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
 
   logger.info({ dryRun, concurrency, limit, force }, 'Starting sujets IA enrichment...');
 
-  const where = force
-    ? { dossiers: { some: {} } }
-    : { resume: null, dossiers: { some: {} } };
+  // Voir enrichScrutinsIA : balayage complet, le hash arbitre.
+  const where = { dossiers: { some: {} } };
 
-  let remaining = limit ?? Infinity;
+  // `limit` borne le nombre de fiches RÉGÉNÉRÉES, pas le nombre examinées : les
+  // fiches inchangées ne doivent pas le consommer. Le budget est décrémenté au
+  // plus près de l'appel LLM (pas de `await` entre le test et la décrémentation,
+  // donc pas de dépassement malgré la parallélisation).
+  let budget = limit ?? Infinity;
+  let offset = 0;
 
-  while (remaining > 0) {
-    const take = Math.min(BATCH_SIZE, remaining);
+  while (budget > 0) {
     const sujets = await prisma.sujet.findMany({
       where,
       select: {
@@ -405,8 +445,9 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
         status: true,
         iaContentHash: true,
       },
-      orderBy: { scrutinCount: 'desc' },
-      take,
+      orderBy: [{ scrutinCount: 'desc' }, { id: 'asc' }],
+      skip: offset,
+      take: BATCH_SIZE,
     });
 
     if (sujets.length === 0) break;
@@ -417,6 +458,9 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
           const dossiers = await prisma.dossierLegislatif.findMany({
             where: { sujetId: sujet.id },
             select: { id: true, uid: true, titre: true, etat: true, resumeIA: true },
+            // Ordre imposé : ces lignes alimentent le hash, un ordre non
+            // déterministe le ferait varier à contenu identique.
+            orderBy: { uid: 'asc' },
           });
 
           const dossierIds = dossiers.map(d => d.id);
@@ -486,11 +530,22 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
 
           const ensembleForHash = positionsEnsemble.map(g => `ens:${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|');
           const articlesForHash = votesArticles.map(a => `art:${a.article.slice(0, 30)}`).join('|');
+          // `etat` et `chambre` sont injectés par dossier dans le prompt
+          // (« Sénat [en_cours] : … ») : les omettre ici fige le résumé sur
+          // l'état d'avancement du jour de sa génération. C'est ce qui laissait
+          // des textes promulgués annoncer un examen « encore en cours ».
+          const dossiersForHash = dossiers
+            .map(d => {
+              const chambre = d.uid.startsWith('SENAT') ? 'senat' : 'assemblee';
+              return `${chambre}:${d.etat ?? ''}:${d.titre}:${d.resumeIA ?? ''}`;
+            })
+            .join('|');
           const hashParts = [
             sujet.label,
             sujet.status,
             sujet.description,
-            dossiers.map(d => `${d.titre}:${d.resumeIA ?? ''}`).join('|'),
+            sujet.category,
+            dossiersForHash,
             ensembleForHash,
             articlesForHash,
           ];
@@ -500,6 +555,10 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
             result.skipped++;
             return;
           }
+
+          // Quota atteint : ni régénéré, ni comptabilisé comme inchangé.
+          if (budget <= 0) return;
+          budget--;
 
           if (dryRun) {
             result.enriched++;
@@ -580,10 +639,10 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
     );
 
     await Promise.all(tasks);
-    remaining -= sujets.length;
+    offset += sujets.length;
 
-    logger.info({ processed: result.enriched + result.skipped + result.errors, remaining }, 'Sujets batch processed');
-    if (sujets.length < take) break;
+    logger.info({ processed: result.enriched + result.skipped + result.errors, offset, budget }, 'Sujets batch processed');
+    if (sujets.length < BATCH_SIZE) break;
   }
 
   result.totalTokensIn = mistral.totalTokensIn;
@@ -618,14 +677,17 @@ export async function enrichSujetGroupeAmendements(options: EnrichmentOptions = 
 
   logger.info({ dryRun, concurrency, limit, force }, 'Starting groupe amendement descriptions enrichment...');
 
-  const where: Prisma.SujetWhereInput = force
-    ? { dossiers: { some: { amendements: { some: {} } } } }
-    : { groupeAmendementDescriptions: { equals: Prisma.DbNull }, dossiers: { some: { amendements: { some: {} } } } };
+  // Voir enrichScrutinsIA : balayage complet, le hash arbitre.
+  const where: Prisma.SujetWhereInput = { dossiers: { some: { amendements: { some: {} } } } };
 
-  let remaining = limit ?? Infinity;
+  // `limit` borne le nombre de fiches RÉGÉNÉRÉES, pas le nombre examinées : les
+  // fiches inchangées ne doivent pas le consommer. Le budget est décrémenté au
+  // plus près de l'appel LLM (pas de `await` entre le test et la décrémentation,
+  // donc pas de dépassement malgré la parallélisation).
+  let budget = limit ?? Infinity;
+  let offset = 0;
 
-  while (remaining > 0) {
-    const take = Math.min(BATCH_SIZE, remaining);
+  while (budget > 0) {
     const sujets = await prisma.sujet.findMany({
       where,
       select: {
@@ -633,8 +695,9 @@ export async function enrichSujetGroupeAmendements(options: EnrichmentOptions = 
         label: true,
         iaGroupeAmendementHash: true,
       },
-      orderBy: { scrutinCount: 'desc' },
-      take,
+      orderBy: [{ scrutinCount: 'desc' }, { id: 'asc' }],
+      skip: offset,
+      take: BATCH_SIZE,
     });
 
     if (sujets.length === 0) break;
@@ -715,6 +778,10 @@ export async function enrichSujetGroupeAmendements(options: EnrichmentOptions = 
             return;
           }
 
+          // Quota atteint : ni régénéré, ni comptabilisé comme inchangé.
+          if (budget <= 0) return;
+          budget--;
+
           if (dryRun) {
             result.enriched++;
             return;
@@ -781,10 +848,10 @@ export async function enrichSujetGroupeAmendements(options: EnrichmentOptions = 
     );
 
     await Promise.all(tasks);
-    remaining -= sujets.length;
+    offset += sujets.length;
 
-    logger.info({ processed: result.enriched + result.skipped + result.errors, remaining }, 'Groupe amendement batch processed');
-    if (sujets.length < take) break;
+    logger.info({ processed: result.enriched + result.skipped + result.errors, offset, budget }, 'Groupe amendement batch processed');
+    if (sujets.length < BATCH_SIZE) break;
   }
 
   result.totalTokensIn = mistral.totalTokensIn;
