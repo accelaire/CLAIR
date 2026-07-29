@@ -110,6 +110,22 @@ export interface TransformedDossier {
 // CLIENT
 // =============================================================================
 
+/**
+ * Nom de l'archive des dossiers pour une législature donnée.
+ *
+ * L'AN n'a pas rétro-nommé ses anciennes archives : la 15e est publiée sous
+ * `Dossiers_Legislatifs_XV.json.zip` (suffixe en chiffres romains), alors que
+ * la 16e et la 17e utilisent le nom court. Vérifié le 2026-07-29 — la variante
+ * romaine renvoie 404 sur 16 et 17, et le nom court renvoie 404 sur 15.
+ */
+export function archiveName(legislature: number): string {
+  const ROMAN: Record<number, string> = { 15: 'XV' };
+  const suffix = ROMAN[legislature];
+  return suffix
+    ? `Dossiers_Legislatifs_${suffix}.json.zip`
+    : 'Dossiers_Legislatifs.json.zip';
+}
+
 export class DossiersLegislatifsClient {
   private legislature: number;
   private baseUrl: string;
@@ -179,7 +195,7 @@ export class DossiersLegislatifsClient {
   // ===========================================================================
 
   async getDossiers(limit?: number): Promise<TransformedDossier[]> {
-    const zipUrl = `${this.baseUrl}/${this.legislature}/loi/dossiers_legislatifs/Dossiers_Legislatifs.json.zip`;
+    const zipUrl = `${this.baseUrl}/${this.legislature}/loi/dossiers_legislatifs/${archiveName(this.legislature)}`;
     const tempDir = path.join(os.tmpdir(), 'clair-dossiers');
     const zipPath = path.join(tempDir, 'Dossiers_Legislatifs.json.zip');
     const extractDir = path.join(tempDir, 'extracted');

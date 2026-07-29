@@ -3889,12 +3889,16 @@ export async function syncAmendementsSenatCsv(
 // =============================================================================
 
 export async function syncDossiers(
-  options: { limit?: number; linkScrutins?: boolean } = {}
+  options: { limit?: number; linkScrutins?: boolean; legislature?: number } = {}
 ): Promise<{ created: number; updated: number; scrutinsLinked: number; amendementsLinked: number; commissionsLinked: number }> {
   const linkScrutins = options.linkScrutins ?? true;
-  logger.info({ limit: options.limit, linkScrutins }, 'Starting dossiers législatifs sync...');
+  // Les législatures closes (15, 16) ne sont pas dans le batch quotidien : elles
+  // s'ingèrent en one-shot, sinon leurs scrutins restent orphelins faute de
+  // dossier de leur propre législature (cf. garde-fou AN_LEGISLATURE_MATCHES).
+  const legislature = options.legislature ?? LEGISLATURE_AN_COURANTE;
+  logger.info({ limit: options.limit, linkScrutins, legislature }, 'Starting dossiers législatifs sync...');
 
-  const client = new DossiersLegislatifsClient(17);
+  const client = new DossiersLegislatifsClient(legislature);
   const dossiers = await client.getDossiers(options.limit);
 
   let created = 0;
@@ -3958,14 +3962,19 @@ export async function syncDossiers(
       // Lier les scrutins au dossier via voteRefs
       if (linkScrutins && dossier.voteRefs.length > 0) {
         for (const voteRef of dossier.voteRefs) {
-          // voteRef format: VTANR5L17V451 -> extract numero 451
-          const match = voteRef.match(/VTANR5L\d+V(\d+)/);
-          if (match && match[1]) {
-            const numero = parseInt(match[1], 10);
+          // voteRef format: VTANR5L17V451 -> législature 17, numero 451.
+          // Les deux sont nécessaires : les numéros de scrutin repartent de 1 à
+          // chaque législature, matcher sur le seul numéro rattache le scrutin
+          // n° 451 de TOUTES les législatures au dossier.
+          const match = voteRef.match(/VTANR5L(\d+)V(\d+)/);
+          if (match && match[1] && match[2]) {
+            const voteLegislature = match[1];
+            const numero = parseInt(match[2], 10);
             const result = await prisma.scrutin.updateMany({
               where: {
                 numero,
                 chambre: 'assemblee',
+                session: voteLegislature,
                 dossierId: null, // Only update if not already linked
               },
               data: { dossierId },

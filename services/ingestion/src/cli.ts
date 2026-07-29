@@ -97,7 +97,7 @@ program
   .option('--texte-ids <ids>', 'IDs texte AMELI à cibler (séparés par des virgules, avec --se -a)')
   .option('--no-actions', 'Ne pas synchroniser les actions de lobbying (avec --lo)')
   .option('-l, --limit <number>', 'Limiter le nombre d\'éléments à synchroniser', parseInt)
-  .option('--legislature <number>', 'Législature AN à ingérer (15,16,17 — défaut: courante). Avec -p --an ou -s --an', parseInt)
+  .option('--legislature <number>', 'Législature AN à ingérer (15,16,17 — défaut: courante). Avec -p --an, -s --an ou -d --an', parseInt)
   .option('--sessions <annees>', `Sessions Sénat à ingérer, séparées par des virgules (ex: 2006,2007). Défaut: ${SENAT_SESSION_MIN} → courante. Avec -s --se, permet un backfill par tranches (mémoire).`)
   .option('--dry-run', 'Mode simulation (affiche ce qui serait fait sans modifier)')
   // Opérations de liaison (combiner avec --in ou --am)
@@ -237,9 +237,9 @@ program
         if (chambre === 'se') {
           await syncDossiersSenat({ limit: options.limit });
         } else if (chambre === 'an') {
-          await syncDossiers({ limit: options.limit });
+          await syncDossiers({ limit: options.limit, legislature: options.legislature });
         } else {
-          await syncDossiers({ limit: options.limit });
+          await syncDossiers({ limit: options.limit, legislature: options.legislature });
           await syncDossiersSenat({ limit: options.limit });
         }
       } else if (options.lobbyistes) {
