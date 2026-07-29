@@ -439,6 +439,80 @@ export async function generateSujets(options: {
 }
 
 // =============================================================================
+// RÉPARATION DES LABELS TECHNIQUES
+// =============================================================================
+
+/**
+ * Recalcule le label des sujets dont l'intitulé est resté un UID technique.
+ *
+ * `generateSujets()` ne pose le label qu'à la création : les sujets déjà en base
+ * gardent celui qu'un `pickBestLabel()` antérieur leur a donné. Cette fonction
+ * les repasse avec la règle corrigée (cf. `isUsableLabel`).
+ *
+ * Le **slug n'est pas touché** : il est dans les URLs publiques et dans les
+ * sitemaps. Un sujet peut donc afficher un intitulé correct sous une URL encore
+ * technique — c'est volontaire, la réécriture des slugs est une décision à part.
+ */
+export async function relabelTechnicalSujets(options: { dryRun?: boolean } = {}): Promise<{
+  examined: number;
+  relabeled: number;
+  stillTechnical: number;
+  changes: { slug: string; before: string; after: string }[];
+}> {
+  const { dryRun = false } = options;
+  const prisma = new PrismaClient();
+
+  try {
+    const sujets = await prisma.$queryRaw<{ id: string; slug: string; label: string }[]>`
+      SELECT id, slug, label FROM sujets WHERE label ~ '^DLR5L[0-9]+N[0-9]+$'
+    `;
+
+    const changes: { slug: string; before: string; after: string }[] = [];
+    let stillTechnical = 0;
+
+    for (const sujet of sujets) {
+      const members = await prisma.$queryRaw<DossierRow[]>`
+        SELECT
+          d.id, d.uid, d.titre, d.titre_court as "titreCourt",
+          d.url_an as "urlAN", d.url_senat as "urlSenat", d.loi_numero as "loiNumero",
+          d.etat, d.date_depot as "dateDepot", d.date_adoption as "dateAdoption",
+          d.loi_date_jo as "loiDateJO", 0 as "scrutinCount", d.sujet_id as "sujetId"
+        FROM dossiers_legislatifs d WHERE d.sujet_id = ${sujet.id}
+      `;
+
+      if (members.length === 0) continue;
+
+      const label = pickBestLabel(members);
+      // Aucun dossier du groupe ne porte d'intitulé lisible : laisser en l'état
+      // plutôt que réécrire un UID par un autre.
+      if (!label || UID_AN_RE.test(label)) {
+        stillTechnical++;
+        continue;
+      }
+      if (label === sujet.label) continue;
+
+      changes.push({ slug: sujet.slug, before: sujet.label, after: label });
+
+      if (!dryRun) {
+        await prisma.$executeRawUnsafe(
+          `UPDATE sujets SET label = $1, updated_at = NOW() WHERE id = $2`,
+          label, sujet.id,
+        );
+      }
+    }
+
+    logger.info(
+      { examined: sujets.length, relabeled: changes.length, stillTechnical, dryRun },
+      'Technical sujet labels repaired',
+    );
+
+    return { examined: sujets.length, relabeled: changes.length, stillTechnical, changes };
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+// =============================================================================
 // RESYNC GLOBAL DES COMPTEURS + DÉSACTIVATION DES SUJETS VIDES
 // =============================================================================
 
@@ -539,8 +613,8 @@ function computeDates(members: DossierRow[]): { dateDebut: Date | null; dateFin:
 function pickBestLabel(members: DossierRow[]): string {
   // Prefer titreCourt if available, pick the shortest non-null one
   const titresCourts = members
-    .map(d => d.titreCourt)
-    .filter((t): t is string => t !== null && t.length > 0);
+    .filter(d => isUsableLabel(d.titreCourt, d.uid))
+    .map(d => d.titreCourt as string);
 
   const shortestTitreCourt = titresCourts.sort((a, b) => a.length - b.length)[0];
   if (shortestTitreCourt) {
@@ -549,8 +623,8 @@ function pickBestLabel(members: DossierRow[]): string {
 
   // Fallback to shortest titre
   const titres = members
-    .map(d => d.titre)
-    .filter((t): t is string => t !== null && t.length > 0);
+    .filter(d => isUsableLabel(d.titre, d.uid))
+    .map(d => d.titre as string);
 
   const shortestTitre = titres.sort((a, b) => a.length - b.length)[0];
   if (shortestTitre) {
@@ -558,6 +632,27 @@ function pickBestLabel(members: DossierRow[]): string {
   }
 
   return members[0]?.uid ?? '';
+}
+
+/** Un UID AN : « DLR5L16N45914 ». */
+const UID_AN_RE = /^DLR5L\d+N\d+$/i;
+
+/**
+ * Écarte les titres qui n'en sont pas.
+ *
+ * 1935 dossiers AN ont un `titre_court` égal à leur propre UID. Comme le label
+ * est choisi sur le critère du PLUS COURT, cet UID (13 caractères) battait
+ * systématiquement un vrai intitulé, et le sujet héritait d'un label technique
+ * du type « DLR5L15N45830 » — repris tel quel dans le slug, donc dans l'URL.
+ */
+function isUsableLabel(candidate: string | null, uid: string): boolean {
+  if (!candidate) return false;
+  const trimmed = candidate.trim();
+  if (trimmed.length === 0) return false;
+  if (trimmed.toUpperCase() === uid.toUpperCase()) return false;
+  // Un UID d'un AUTRE dossier du même sujet est tout aussi illisible.
+  if (UID_AN_RE.test(trimmed)) return false;
+  return true;
 }
 
 /**

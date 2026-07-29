@@ -864,6 +864,34 @@ program
   });
 
 // =============================================================================
+// COMMANDE: relabel-sujets
+// =============================================================================
+program
+  .command('relabel-sujets')
+  .description('Recalculer le label des sujets restés sur un UID technique (DLR5L…). Ne touche pas aux slugs')
+  .option('--dry-run', 'Afficher les changements sans modifier la DB')
+  .action(async (options) => {
+    try {
+      const { relabelTechnicalSujets } = await import('./workers/sujet-generator.js');
+      const result = await relabelTechnicalSujets({ dryRun: options.dryRun });
+
+      console.log(`\n🏷️  Labels techniques${options.dryRun ? ' (DRY RUN)' : ''}:`);
+      console.log(`   Examinés: ${result.examined}`);
+      console.log(`   Renommés: ${result.relabeled}`);
+      console.log(`   Sans intitulé exploitable: ${result.stillTechnical}`);
+      for (const c of result.changes) {
+        console.log(`   ${c.slug}`);
+        console.log(`      ${c.before}  →  ${c.after}`);
+      }
+
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'relabel-sujets failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
 // COMMANDE: generate-sujet-links
 // =============================================================================
 program
