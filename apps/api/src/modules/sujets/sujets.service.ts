@@ -235,6 +235,34 @@ export class SujetsService {
   }
 
   /**
+   * Résout le sort d'un slug de sujet désactivé.
+   *
+   * 137 sujets ont été désactivés le 2026-07-29 : ils n'existaient que parce que
+   * leurs dossiers avaient capté les scrutins d'autres législatures. Leurs URLs
+   * restent appelées, et le front servait un « introuvable » en HTTP 200 — un
+   * soft 404 que Google continue d'indexer.
+   *
+   * Renvoie le dossier de destination quand le sujet n'en portait qu'un : la page
+   * dossier reste le contenu le plus proche de ce que l'URL promettait. Au-delà
+   * d'un dossier, aucune cible n'est légitime et l'appelant doit rendre un 404.
+   */
+  async resolveArchivedSlug(slug: string) {
+    const sujet = await this.prisma.sujet.findUnique({
+      where: { slug },
+      select: {
+        actif: true,
+        dossiers: { select: { uid: true }, take: 2 },
+      },
+    });
+
+    if (!sujet || sujet.actif) return null;
+
+    return {
+      dossierUid: sujet.dossiers.length === 1 ? sujet.dossiers[0]!.uid : null,
+    };
+  }
+
+  /**
    * Documents parlementaires liés à un sujet mais dépourvus de vote.
    *
    * La liste des dossiers ne montre que ceux ayant au moins un scrutin

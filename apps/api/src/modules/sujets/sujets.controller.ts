@@ -148,6 +148,38 @@ export const sujetsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ===========================================================================
+  // GET /api/v1/sujets/:slug/archive - Sort d'un slug de sujet désactivé
+  // ===========================================================================
+  fastify.get('/:slug/archive', {
+    schema: {
+      tags: ['Sujets'],
+      summary: 'Destination d\'un sujet désactivé',
+      description:
+        'Pour un sujet désactivé, renvoie l\'UID de son dossier unique s\'il n\'en portait qu\'un (cible de redirection permanente), sinon null. 404 si le slug est inconnu ou toujours actif.',
+      params: {
+        type: 'object',
+        required: ['slug'],
+        properties: { slug: { type: 'string' } },
+      },
+    },
+    handler: async (request, _reply) => {
+      const { slug } = sujetParamsSchema.parse(request.params);
+
+      const cacheKey = `sujets:archive:${slug}`;
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+
+      const resolution = await service.resolveArchivedSlug(slug);
+      if (!resolution) throw new ApiError(404, 'Sujet non trouvé');
+
+      const result = { data: resolution };
+
+      await fastify.redis.setex(cacheKey, CACHE_TTL_1H, JSON.stringify(result));
+      return result;
+    },
+  });
+
+  // ===========================================================================
   // GET /api/v1/sujets/:slug/documents-lies - Documents sans vote liés au sujet
   // ===========================================================================
   fastify.get('/:slug/documents-lies', {

@@ -104,6 +104,22 @@ export interface DossierDetail {
     totalAdopte: number;
     totalRejete: number;
   };
+  /** Rapports et missions d'application citant la loi de ce dossier. */
+  travauxApplication: Array<{
+    uid: string;
+    titre: string;
+    procedureLibelle: string | null;
+    chambre: string;
+    urlAN: string | null;
+    urlSenat: string | null;
+  }>;
+  /** Loi que ce dossier applique, quand il s'agit d'un rapport ou d'une mission. */
+  loiAppliquee: {
+    uid: string;
+    titre: string;
+    loiNumero: string | null;
+    sujetSlug: string | null;
+  } | null;
 }
 
 interface PaginatedResponse<T> {
@@ -488,6 +504,75 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
         urlLegifrance={dossier.urlLegifrance}
         urlJournalOfficiel={dossier.urlJournalOfficiel}
       />
+
+      {/* Loi appliquée — sur un rapport/mission, le lien retour vers le texte.
+          Ces pages n'ont ni vote ni amendement : c'est leur contenu principal. */}
+      {dossier.loiAppliquee && (
+        <Link
+          href={`/dossiers/${dossier.loiAppliquee.uid}`}
+          className="mb-8 flex items-start gap-3 rounded-lg border bg-card p-4 transition-colors hover:border-primary"
+        >
+          <Scale className="mt-0.5 h-5 w-5 flex-shrink-0 text-muted-foreground" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Porte sur la loi
+              {dossier.loiAppliquee.loiNumero && ` n°${dossier.loiAppliquee.loiNumero}`}
+            </p>
+            <p className="mt-1 text-sm font-medium leading-tight">
+              {dossier.loiAppliquee.titre}
+            </p>
+            {dossier.loiAppliquee.sujetSlug && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Voir aussi l&apos;analyse complète du sujet
+              </p>
+            )}
+          </div>
+          <ArrowRight className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
+        </Link>
+      )}
+
+      {/* Travaux d'application — absents de la liste des dossiers, qui exige au
+          moins un scrutin. Sans ce bloc ils sont introuvables depuis la loi. */}
+      {dossier.travauxApplication.length > 0 && (
+        <div className="mb-8 rounded-lg border bg-card">
+          <div className="border-b px-4 py-3">
+            <h2 className="flex items-center gap-2 text-sm font-semibold">
+              <BookOpen className="h-4 w-4" />
+              Travaux d&apos;application
+              <span className="text-xs font-normal text-muted-foreground">
+                ({dossier.travauxApplication.length})
+              </span>
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Rapports et missions portant sur cette loi, sans vote propre
+            </p>
+          </div>
+          <div className="divide-y">
+            {dossier.travauxApplication.map((doc) => (
+              <Link
+                key={doc.uid}
+                href={`/dossiers/${doc.uid}`}
+                className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${doc.chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'}`}>
+                      {doc.chambre === 'senat' ? 'Sénat' : 'AN'}
+                    </span>
+                    {doc.procedureLibelle && (
+                      <span className="text-[10px] text-muted-foreground">
+                        {doc.procedureLibelle}
+                      </span>
+                    )}
+                  </div>
+                  <p className="line-clamp-2 text-sm font-medium leading-tight">{doc.titre}</p>
+                </div>
+                <ArrowRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Tabs: Amendements / Scrutins */}
       <div id="tabs-section" className="flex items-center gap-1 border-b mb-6 scroll-mt-20">
