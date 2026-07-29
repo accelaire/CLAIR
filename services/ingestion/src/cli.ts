@@ -28,6 +28,7 @@ import {
   enrichScrutinsSenatAmendements,
   syncLobbyistes,
   linkANScrutinsByTitle,
+  unlinkANScrutinsWrongLegislature,
   linkOrphanScrutinsByTFIDF,
   linkOrphanScrutinsByTexteNumero,
   linkOrphansByLoiTitre,
@@ -728,6 +729,27 @@ program
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'sync-senateurs-histo failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: unlink-wrong-legislature
+// =============================================================================
+program
+  .command('unlink-wrong-legislature')
+  .description('Casser les liens scrutin AN → dossier d\'une autre législature (réparation one-shot)')
+  .action(async () => {
+    try {
+      logger.info('Starting AN legislature guard cleanup...');
+      const result = await unlinkANScrutinsWrongLegislature();
+      console.log(`\n🔗 Garde-fou législature (AN):`);
+      console.log(`   Liens cassés: ${result.unlinked}`);
+      console.log(`   Les scrutins concernés sont redevenus orphelins.`);
+      console.log(`   Relancer generate-sujets pour purger les sujets devenus vides.`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'unlink-wrong-legislature failed');
       process.exit(1);
     }
   });

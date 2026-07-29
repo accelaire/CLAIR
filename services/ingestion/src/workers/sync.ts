@@ -2928,6 +2928,18 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
   }
 
   if (hasDossiersChanged || hasScrutinsChanged) {
+    // Casser les liens AN inter-législatures AVANT tout matching : les étapes qui
+    // suivent propagent de proche en proche, elles doivent partir d'un état sain.
+    logger.info('Unlinking AN scrutins bound to another legislature...');
+    try {
+      const guardResult = await unlinkANScrutinsWrongLegislature();
+      logger.info({
+        unlinked: guardResult.unlinked,
+      }, 'AN legislature guard completed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'AN legislature guard failed (non-blocking)');
+    }
+
     // Scrutin→dossier linking MUST run BEFORE scrutin→amendement linking
     // because the CTE requires dossier_id to avoid cross-dossier false positives.
     logger.info('Linking Sénat scrutins to dossiers...');
@@ -4153,6 +4165,50 @@ export async function linkSenatScrutinsToDossiers(): Promise<{ linked: number }>
 }
 
 // =============================================================================
+// GARDE-FOU LÉGISLATURE (AN)
+// =============================================================================
+
+/**
+ * Un scrutin AN ne peut appartenir qu'à un dossier de SA législature : un dossier
+ * de la 17e n'existait pas quand la 16e votait. Sans ce garde-fou, les scrutins
+ * dont le dossier est absent de la base (législatures non ingérées) se raccrochent
+ * au dossier textuellement le plus proche parmi ceux d'une AUTRE législature —
+ * typiquement le rapport d'information *portant sur* la loi qu'ils ont votée.
+ *
+ * `scrutins.session` est un texte ('15', '16', '17') côté AN ; on ne compare que
+ * lorsqu'il est numérique. Côté Sénat, `session` est une année et
+ * `dossiers_legislatifs.legislature` vaut 0 : le garde-fou ne s'applique pas.
+ */
+const AN_LEGISLATURE_MATCHES = Prisma.sql`
+  (s.session ~ '^[0-9]+$' AND d.legislature = s.session::int)
+`;
+
+/**
+ * Casse les liens scrutin AN → dossier d'une autre législature.
+ *
+ * Les scrutins concernés redeviennent orphelins, ce qui est l'état honnête tant
+ * que les dossiers de leur législature ne sont pas ingérés. Doit tourner AVANT
+ * les étapes de matching pour qu'elles ne repartent pas d'un état contaminé.
+ */
+export async function unlinkANScrutinsWrongLegislature(): Promise<{ unlinked: number }> {
+  const unlinked = await prisma.$executeRaw`
+    UPDATE scrutins s
+    SET dossier_id = NULL
+    FROM dossiers_legislatifs d
+    WHERE s.dossier_id = d.id
+      AND s.chambre = 'assemblee'
+      AND d.uid NOT LIKE 'SENAT%'
+      AND s.session ~ '^[0-9]+$'
+      AND d.legislature <> s.session::int
+  `;
+
+  if (unlinked > 0) {
+    logger.warn({ unlinked }, 'Unlinked AN scrutins pointing to a dossier from another legislature');
+  }
+  return { unlinked };
+}
+
+// =============================================================================
 // LINK AN SCRUTINS TO DOSSIERS BY TITLE MATCHING
 // =============================================================================
 
@@ -4191,6 +4247,7 @@ export async function linkANScrutinsByTitle(): Promise<{ linked: number }> {
         AND d.titre IS NOT NULL
         AND LENGTH(d.titre) > 15
         AND LOWER(s.titre) LIKE '%' || LOWER(d.titre) || '%'
+        AND ${AN_LEGISLATURE_MATCHES}
       GROUP BY s.id
       HAVING COUNT(DISTINCT d.id) = 1
     )
@@ -4217,6 +4274,7 @@ export async function linkANScrutinsByTitle(): Promise<{ linked: number }> {
         AND d.titre IS NOT NULL
         AND LENGTH(d.titre) > 15
         AND LOWER(s.titre) LIKE '%' || LOWER(d.titre) || '%'
+        AND ${AN_LEGISLATURE_MATCHES}
     )
     UPDATE scrutins SET dossier_id = r.dossier_id
     FROM ranked r WHERE scrutins.id = r.scrutin_id AND r.rn = 1
@@ -4265,8 +4323,8 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
       ? Prisma.sql`d.uid LIKE 'SENAT%'`
       : Prisma.sql`d.uid NOT LIKE 'SENAT%'`;
 
-    const dossiers = await prisma.$queryRaw<{ id: string; titre: string }[]>`
-      SELECT id,
+    const dossiers = await prisma.$queryRaw<{ id: string; titre: string; legislature: number }[]>`
+      SELECT id, legislature,
         CASE
           WHEN titre ~ '^[a-zàâäéèêëïîôùûüÿçœæ]' AND procedure_libelle IS NOT NULL
           THEN procedure_libelle || ' ' || titre
@@ -4283,8 +4341,8 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
     }
 
     // 2. Load orphan scrutins for this chamber
-    const orphans = await prisma.$queryRaw<{ id: string; titre: string }[]>`
-      SELECT id, titre FROM scrutins
+    const orphans = await prisma.$queryRaw<{ id: string; titre: string; session: string }[]>`
+      SELECT id, titre, session FROM scrutins
       WHERE chambre = ${chambre}
         AND dossier_id IS NULL
         AND titre IS NOT NULL AND LENGTH(titre) > 5
@@ -4315,14 +4373,41 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
     const dossierTokenSets = dossiers.map(d => tokenize(extractSubject(d.titre)));
     const scrutinTokenSets = orphans.map(s => tokenize(extractSubject(s.titre)));
 
+    // Garde-fou législature (AN uniquement) : un scrutin ne peut matcher qu'un
+    // dossier de sa propre législature. L'IDF reste global — seuls les candidats
+    // sont restreints, ce qui garde des poids stables entre législatures.
+    const candidatesByLegislature = new Map<number, number[]>();
+    if (chambre === 'assemblee') {
+      for (const [i, d] of dossiers.entries()) {
+        const bucket = candidatesByLegislature.get(d.legislature);
+        if (bucket) bucket.push(i);
+        else candidatesByLegislature.set(d.legislature, [i]);
+      }
+    }
+
     let jaccardRejected = 0;
+    let legislatureSkipped = 0;
 
     for (const [i, orphan] of orphans.entries()) {
       const scrutinVector = scrutinVectors[i];
       const scrutinTokens = scrutinTokenSets[i];
       if (!scrutinVector || !scrutinTokens) continue;
 
-      const match = bestMatch(scrutinVector, dossierVectors);
+      let candidates: number[] | undefined;
+      if (chambre === 'assemblee') {
+        const legislature = Number.parseInt(orphan.session, 10);
+        // Session non numérique ou législature absente de la base : aucun dossier
+        // légitime ne peut correspondre, on laisse le scrutin orphelin.
+        candidates = Number.isNaN(legislature)
+          ? undefined
+          : candidatesByLegislature.get(legislature);
+        if (!candidates || candidates.length === 0) {
+          legislatureSkipped++;
+          continue;
+        }
+      }
+
+      const match = bestMatch(scrutinVector, dossierVectors, candidates);
       if (match.index >= 0 && match.score >= MIN_TFIDF_SIMILARITY) {
         const dossier = dossiers[match.index];
         const dossierTokens = dossierTokenSets[match.index];
@@ -4347,6 +4432,13 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
 
     if (jaccardRejected > 0) {
       logger.info({ chambre, jaccardRejected }, 'TF-IDF matches rejected by Jaccard validation');
+    }
+
+    if (legislatureSkipped > 0) {
+      logger.info(
+        { chambre, legislatureSkipped },
+        'Orphan scrutins skipped: no dossier ingested for their legislature',
+      );
     }
 
     // Log score distribution for monitoring
@@ -5918,15 +6010,22 @@ export async function linkOrphanScrutinsByTexteNumero(): Promise<{ linked: numbe
   let totalLinked = 0;
 
   for (const chambre of ['assemblee', 'senat'] as const) {
+    // Les numéros de texte repartent de 1 à chaque législature : sans partitionner
+    // la carte texte_numero → dossier, un scrutin de la 16e hériterait du dossier
+    // d'un scrutin de la 17e portant le même numéro. Constante côté Sénat, où
+    // `session` est une année et non une législature (comportement inchangé).
+    // Le cast est nécessaire : Postgres refuse une constante nue en GROUP BY.
+    const partitionKey = chambre === 'assemblee' ? Prisma.sql`s.session` : Prisma.sql`''::text`;
+
     const result = await prisma.$executeRaw`
       WITH texte_dossier_map AS (
-        SELECT texte_numero, MIN(dossier_id) as dossier_id
-        FROM scrutins
-        WHERE chambre = ${chambre}
-          AND dossier_id IS NOT NULL
-          AND texte_numero IS NOT NULL
-        GROUP BY texte_numero
-        HAVING COUNT(DISTINCT dossier_id) = 1
+        SELECT s.texte_numero, ${partitionKey} AS partition_key, MIN(s.dossier_id) as dossier_id
+        FROM scrutins s
+        WHERE s.chambre = ${chambre}
+          AND s.dossier_id IS NOT NULL
+          AND s.texte_numero IS NOT NULL
+        GROUP BY s.texte_numero, ${partitionKey}
+        HAVING COUNT(DISTINCT s.dossier_id) = 1
       )
       UPDATE scrutins s
       SET dossier_id = tdm.dossier_id
@@ -5935,6 +6034,7 @@ export async function linkOrphanScrutinsByTexteNumero(): Promise<{ linked: numbe
         AND s.dossier_id IS NULL
         AND s.texte_numero IS NOT NULL
         AND s.texte_numero = tdm.texte_numero
+        AND ${partitionKey} = tdm.partition_key
     `;
 
     if (result > 0) {
@@ -5974,6 +6074,14 @@ export async function linkOrphansByLoiTitre(): Promise<{ linked: number }> {
     const dossierFilter = chambre === 'senat'
       ? Prisma.sql`d.uid LIKE 'SENAT%'`
       : Prisma.sql`d.uid NOT LIKE 'SENAT%'`;
+    // Garde-fou législature : no-op côté Sénat (legislature = 0, session = année).
+    const legislatureFilter = chambre === 'assemblee'
+      ? AN_LEGISLATURE_MATCHES
+      : Prisma.sql`TRUE`;
+    // Même garde-fou pour la sous-requête d'ambiguïté, qui utilise l'alias d2.
+    const legislatureFilterD2 = chambre === 'assemblee'
+      ? Prisma.sql`(s.session ~ '^[0-9]+$' AND d2.legislature = s.session::int)`
+      : Prisma.sql`TRUE`;
 
     // Pass 1: loi_titre substring match
     const loiTitreResult = await prisma.$executeRaw`
@@ -5984,13 +6092,15 @@ export async function linkOrphansByLoiTitre(): Promise<{ linked: number }> {
         AND s.dossier_id IS NULL
         AND d.loi_titre IS NOT NULL AND LENGTH(d.loi_titre) > 15
         AND ${dossierFilter}
+        AND ${legislatureFilter}
         AND LOWER(s.titre) LIKE '%' || LOWER(d.loi_titre) || '%'
         -- Only use unambiguous matches (exactly 1 dossier matches)
         AND (
           SELECT COUNT(DISTINCT d2.id)
           FROM dossiers_legislatifs d2
           WHERE d2.loi_titre IS NOT NULL AND LENGTH(d2.loi_titre) > 15
-            AND ${dossierFilter}
+            AND d2.uid ${chambre === 'senat' ? Prisma.sql`LIKE 'SENAT%'` : Prisma.sql`NOT LIKE 'SENAT%'`}
+            AND ${legislatureFilterD2}
             AND LOWER(s.titre) LIKE '%' || LOWER(d2.loi_titre) || '%'
         ) = 1
     `;
@@ -6004,9 +6114,13 @@ export async function linkOrphansByLoiTitre(): Promise<{ linked: number }> {
     // from orphan titles and match against already-linked scrutins with same phrase.
     // Covers cases like "aide à mourir (deuxième lecture)" where dossier title is "Fin de vie"
     // but existing scrutins on the same law are already linked.
+    // Un même intitulé de loi peut réapparaître d'une législature à l'autre
+    // (texte redéposé) : on partitionne la carte des pairs par session côté AN.
+    const peerPartition = chambre === 'assemblee' ? Prisma.sql`session` : Prisma.sql`''::text`;
+
     const peerResult = await prisma.$executeRaw`
       WITH orphan_phrases AS (
-        SELECT s.id,
+        SELECT s.id, ${peerPartition} AS partition_key,
           LOWER(SUBSTRING(s.titre FROM '((?:proposition|projet) de (?:loi|résolution)[^(.]+)')) as loi_phrase
         FROM scrutins s
         WHERE s.chambre = ${chambre}
@@ -6016,18 +6130,21 @@ export async function linkOrphansByLoiTitre(): Promise<{ linked: number }> {
       peer_dossier_map AS (
         SELECT
           LOWER(SUBSTRING(s2.titre FROM '((?:proposition|projet) de (?:loi|résolution)[^(.]+)')) as loi_phrase,
+          ${peerPartition} AS partition_key,
           MIN(s2.dossier_id) as dossier_id
         FROM scrutins s2
         WHERE s2.chambre = ${chambre}
           AND s2.dossier_id IS NOT NULL
           AND s2.titre ~* '(proposition|projet) de (loi|résolution)'
-        GROUP BY 1
+        GROUP BY 1, 2
         HAVING COUNT(DISTINCT s2.dossier_id) = 1
       )
       UPDATE scrutins s
       SET dossier_id = pdm.dossier_id
       FROM orphan_phrases op
-      JOIN peer_dossier_map pdm ON op.loi_phrase = pdm.loi_phrase
+      JOIN peer_dossier_map pdm
+        ON op.loi_phrase = pdm.loi_phrase
+       AND op.partition_key = pdm.partition_key
       WHERE s.id = op.id
         AND op.loi_phrase IS NOT NULL
         AND LENGTH(op.loi_phrase) > 20

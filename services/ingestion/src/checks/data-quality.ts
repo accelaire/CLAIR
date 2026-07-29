@@ -150,6 +150,16 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     max: 0,
     query: `SELECT COUNT(*)::int AS value FROM scrutins s JOIN dossiers_legislatifs d ON s.dossier_id = d.id WHERE (s.chambre = 'assemblee' AND d.uid LIKE 'SENAT%') OR (s.chambre = 'senat' AND d.uid NOT LIKE 'SENAT%')`,
   },
+  cross_legislature_links: {
+    type: 'invariant',
+    label: 'Liens scrutin-dossier inter-législatures (AN)',
+    min: 0,
+    max: 0,
+    // Un scrutin AN ne peut appartenir qu'à un dossier de sa propre législature.
+    // Non nul = le matching a rattaché des scrutins à un dossier d'une autre
+    // législature, faute de dossier ingéré pour la leur.
+    query: `SELECT COUNT(*)::int AS value FROM scrutins s JOIN dossiers_legislatifs d ON s.dossier_id = d.id WHERE s.chambre = 'assemblee' AND d.uid NOT LIKE 'SENAT%' AND s.session ~ '^[0-9]+$' AND d.legislature <> s.session::int`,
+  },
 
   // ---- Seuils quantitatifs (minimums) ----
   parlementaires_count: {

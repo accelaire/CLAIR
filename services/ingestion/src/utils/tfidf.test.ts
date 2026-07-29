@@ -111,6 +111,38 @@ describe('bestMatch', () => {
     expect(result.score).toBe(-1);
   });
 
+  it('should only consider whitelisted candidates', () => {
+    const vec = new TfidfVectorizer();
+    const corpus = vec.fitTransform([
+      'immigration integration',
+      'finance budget economie',
+      'immigration asile refugies',
+    ]);
+    const query = vec.transform(['immigration integration accueil']);
+
+    // Doc 0 is the global best match, but it is excluded from the candidates:
+    // the match must fall back to doc 2, not silently ignore the restriction.
+    const result = bestMatch(query[0]!, corpus, [1, 2]);
+    expect(result.index).toBe(2);
+    expect(result.score).toBeGreaterThan(0);
+  });
+
+  it('should return -1 when the candidate list is empty', () => {
+    const vec = new TfidfVectorizer();
+    const corpus = vec.fitTransform(['immigration integration', 'finance budget']);
+    const query = vec.transform(['immigration']);
+    const result = bestMatch(query[0]!, corpus, []);
+    expect(result.index).toBe(-1);
+  });
+
+  it('should ignore out-of-range candidate indices', () => {
+    const vec = new TfidfVectorizer();
+    const corpus = vec.fitTransform(['immigration integration', 'finance budget']);
+    const query = vec.transform(['immigration']);
+    const result = bestMatch(query[0]!, corpus, [0, 99]);
+    expect(result.index).toBe(0);
+  });
+
   it('should find exact match with score close to 1.0', () => {
     const vec = new TfidfVectorizer();
     const corpus = vec.fitTransform(['alpha beta gamma', 'delta epsilon']);

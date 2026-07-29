@@ -393,24 +393,12 @@ export async function generateSujets(options: {
       0
     );
 
-    // Refresh stats only for affected sujets (new or updated)
+    // match_method ne dépend que de la composition en dossiers : seuls les sujets
+    // touchés ici peuvent avoir changé de chambres.
     if (affectedSujetIds.size > 0) {
       const ids = [...affectedSujetIds];
       await prisma.$executeRawUnsafe(
         `UPDATE sujets s SET
-          dossier_count = (SELECT COUNT(*) FROM dossiers_legislatifs d WHERE d.sujet_id = s.id),
-          scrutin_count = (
-            SELECT COUNT(*)
-            FROM scrutins sc
-            JOIN dossiers_legislatifs d ON sc.dossier_id = d.id
-            WHERE d.sujet_id = s.id
-          ),
-          date_dernier_vote = (
-            SELECT MAX(sc.date)
-            FROM scrutins sc
-            JOIN dossiers_legislatifs d ON sc.dossier_id = d.id
-            WHERE d.sujet_id = s.id
-          ),
           match_method = CASE
             WHEN (SELECT COUNT(DISTINCT CASE WHEN d.uid LIKE 'SENAT-%' THEN 'senat' ELSE 'an' END) FROM dossiers_legislatifs d WHERE d.sujet_id = s.id) > 1
             THEN 'cross_ref' ELSE 'solo'
@@ -418,6 +406,12 @@ export async function generateSujets(options: {
         WHERE s.id = ANY($1::text[])`,
         ids,
       );
+    }
+
+    // Compteurs + activation sur TOUS les sujets : un sujet peut avoir perdu ses
+    // scrutins sans qu'aucun dossier ne bouge (dé-liaison en amont).
+    if (!dryRun) {
+      await refreshSujetStats();
     }
 
     logger.info({
@@ -439,6 +433,54 @@ export async function generateSujets(options: {
       totalDossiers,
       totalScrutins,
     };
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+// =============================================================================
+// RESYNC GLOBAL DES COMPTEURS + DÉSACTIVATION DES SUJETS VIDES
+// =============================================================================
+
+/**
+ * Recalcule les compteurs de TOUS les sujets et désactive ceux qui n'ont plus
+ * aucun scrutin.
+ *
+ * `generateSujets()` ne rafraîchit que les sujets qu'il a touchés : un sujet qui
+ * perd ses scrutins en amont (dé-liaison d'un mauvais appariement, par exemple)
+ * garde donc un `scrutin_count` périmé et reste `actif`, donnant une page vide
+ * mais crédible. L'API filtre sur `actif = true`, la désactivation suffit à la
+ * retirer du site sans casser d'URL ni supprimer d'historique.
+ */
+export async function refreshSujetStats(): Promise<{ deactivated: number; reactivated: number }> {
+  const prisma = new PrismaClient();
+
+  try {
+    await prisma.$executeRawUnsafe(`
+      UPDATE sujets s SET
+        dossier_count = (SELECT COUNT(*) FROM dossiers_legislatifs d WHERE d.sujet_id = s.id),
+        scrutin_count = (
+          SELECT COUNT(*) FROM scrutins sc
+          JOIN dossiers_legislatifs d ON sc.dossier_id = d.id
+          WHERE d.sujet_id = s.id
+        ),
+        date_dernier_vote = (
+          SELECT MAX(sc.date) FROM scrutins sc
+          JOIN dossiers_legislatifs d ON sc.dossier_id = d.id
+          WHERE d.sujet_id = s.id
+        ),
+        updated_at = NOW()
+    `);
+
+    const deactivated = await prisma.$executeRawUnsafe(
+      `UPDATE sujets SET actif = false, updated_at = NOW() WHERE actif = true AND scrutin_count = 0`,
+    );
+    const reactivated = await prisma.$executeRawUnsafe(
+      `UPDATE sujets SET actif = true, updated_at = NOW() WHERE actif = false AND scrutin_count > 0`,
+    );
+
+    logger.info({ deactivated, reactivated }, 'Sujet stats refreshed');
+    return { deactivated, reactivated };
   } finally {
     await prisma.$disconnect();
   }

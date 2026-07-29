@@ -143,15 +143,23 @@ export function cosineSimilarity(a: SparseRow, b: SparseRow): number {
 /**
  * Find the best matching document in a corpus for a given query vector.
  * Returns the index and similarity score of the best match.
+ *
+ * @param candidates Optional whitelist of corpus indices to consider. Lets the
+ *   caller keep a single global IDF (stable weights) while restricting matches
+ *   to a subset — e.g. dossiers of the same legislature as the scrutin.
  */
 export function bestMatch(
   query: SparseRow,
-  corpus: SparseMatrix
+  corpus: SparseMatrix,
+  candidates?: readonly number[]
 ): { index: number; score: number } {
   let bestIndex = -1;
   let bestScore = -1;
 
-  for (const [i, row] of corpus.entries()) {
+  const indices = candidates ?? corpus.keys();
+  for (const i of indices) {
+    const row = corpus[i];
+    if (!row) continue;
     const score = cosineSimilarity(query, row);
     if (score > bestScore) {
       bestScore = score;
