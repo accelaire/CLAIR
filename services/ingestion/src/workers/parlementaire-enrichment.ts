@@ -470,13 +470,26 @@ export async function enrichParlementairesIA(
   } else {
     // Cursor-free pagination: enriched rows drop out of `resumeIA: null`, so we re-take
     // from the top each batch (the legacy behaviour for the non-sample path).
+    //
+    // Garde anti-boucle infinie : cette pagination ne progresse QUE si les fiches
+    // traitées quittent le set `resumeIA: null`. Si un batch entier échoue sans enrichir
+    // une seule fiche (ex. quota Tavily épuisé en cours de run), les mêmes lignes sont
+    // repiochées indéfiniment. On s'arrête donc dès qu'un batch ne fait aucun progrès.
     let remaining = limit ?? Infinity;
     while (remaining > 0) {
       const take = Math.min(BATCH_SIZE, remaining);
       const records = await fetchBatch(baseWhere, take);
       if (records.length === 0) break;
+      const enrichedBefore = result.enriched;
       await Promise.all(records.map(processParl));
       remaining -= records.length;
+      if (result.enriched === enrichedBefore) {
+        logger.error(
+          { errors: result.errors, restants: records.length },
+          'Backfill parlementaires interrompu : batch sans aucun progrès (dépendance externe en échec ?)',
+        );
+        break;
+      }
       if (records.length < take) break;
     }
   }
