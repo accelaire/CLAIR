@@ -33,7 +33,10 @@ function createMockModel(): MockPrismaModel {
     deleteMany: vi.fn(),
     count: vi.fn(),
     aggregate: vi.fn(),
-    groupBy: vi.fn(),
+    // `groupBy` renvoie une liste : le défaut est le tableau vide, pas `undefined`.
+    // Sans ça, tout appel non stubé explose sur `.filter` au lieu de se comporter
+    // comme un résultat vide.
+    groupBy: vi.fn().mockResolvedValue([]),
   };
 }
 

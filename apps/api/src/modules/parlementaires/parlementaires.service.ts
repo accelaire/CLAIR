@@ -119,6 +119,88 @@ const AMENDEMENT_SELECT = {
   },
 } satisfies Prisma.AmendementSelect;
 
+// =============================================================================
+// PROJECTION DE LA LISTE DES PARLEMENTAIRES
+//
+// `select` explicite plutôt qu'`include`, pour deux raisons.
+//
+// 1. sourceData est le blob brut de l'API source (65 % du poids d'une fiche).
+//    L'écarter en JS au shaping ne suffisait pas : Postgres lisait quand même la
+//    colonne sur disque à chaque page. Elle reste servie sur le détail.
+// 2. `_count` sur les relations a été retiré — voir countRelationsForPage().
+//
+// La liste reprend TOUS les scalaires du modèle sauf sourceData : le payload
+// renvoyé est donc strictement identique à celui de la version `include`.
+// =============================================================================
+const PARLEMENTAIRE_LIST_SELECT = {
+  id: true,
+  slug: true,
+  chambre: true,
+  nom: true,
+  prenom: true,
+  sexe: true,
+  dateNaissance: true,
+  lieuNaissance: true,
+  profession: true,
+  photoUrl: true,
+  twitter: true,
+  facebook: true,
+  email: true,
+  siteWeb: true,
+  actif: true,
+  groupeId: true,
+  circonscriptionId: true,
+  serie: true,
+  commissionPermanente: true,
+  statsPresence: true,
+  statsPresenceSolennel: true,
+  statsLoyaute: true,
+  statsParticipation: true,
+  statsInterventions: true,
+  statsAmendements: true,
+  statsAmendementsAdoptes: true,
+  statsQuestions: true,
+  statsCalculatedAt: true,
+  statsCarrierePresence: true,
+  statsCarriereLoyaute: true,
+  statsCarriereParticipation: true,
+  statsCarriereInterventions: true,
+  statsCarriereAmendements: true,
+  resumeIA: true,
+  parcoursIA: true,
+  positionsClesIA: true,
+  faitsNotablesIA: true,
+  iaContentHash: true,
+  iaGeneratedAt: true,
+  sourceId: true,
+  createdAt: true,
+  updatedAt: true,
+  groupe: {
+    select: {
+      id: true,
+      slug: true,
+      chambre: true,
+      nom: true,
+      nomComplet: true,
+      couleur: true,
+      position: true,
+    },
+  },
+  circonscription: {
+    select: {
+      id: true,
+      departement: true,
+      numero: true,
+      nom: true,
+      type: true,
+    },
+  },
+} satisfies Prisma.ParlementaireSelect;
+
+type ParlementaireListRow = Prisma.ParlementaireGetPayload<{
+  select: typeof PARLEMENTAIRE_LIST_SELECT;
+}>;
+
 export class ParlementairesService {
   private readonly CACHE_TTL = 3600; // 1 hour (data synced daily)
   private readonly CACHE_TTL_LONG = 43200; // 12 hours
@@ -219,6 +301,48 @@ export class ParlementairesService {
   // LISTE DES PARLEMENTAIRES
   // ===========================================================================
 
+  /**
+   * Compteurs votes / interventions / amendements, bornés aux parlementaires de
+   * la page courante.
+   *
+   * Remplace `_count: { select: { votes, interventions, amendements } }`, qui
+   * faisait générer à Prisma trois LEFT JOIN sur des GROUP BY de la TOTALITÉ de
+   * ces tables (`WHERE $8=$9`, soit aucun filtre) à chaque appel, pour n'en
+   * conserver que les ~20 lignes affichées. Mesuré en prod le 2026-08-02 :
+   * 2,9 Go de tables balayées et 162 Mo lus sur disque PAR APPEL, 574 ms de
+   * moyenne — première source de lectures disque de toute la base, et ce qui
+   * maintenait le page cache sous pression toute la journée.
+   *
+   * Les trois comptages partent en parallèle et tiennent chacun dans un Index
+   * Only Scan sur `(parlementaire_id)` : ~17 ms de temps mur pour les trois.
+   */
+  private async countRelationsForPage(pageIds: string[]) {
+    const empty = new Map<string, number>();
+    if (pageIds.length === 0) {
+      return { votes: empty, interventions: empty, amendements: empty };
+    }
+
+    const where = { parlementaireId: { in: pageIds } };
+    const [votes, interventions, amendements] = await Promise.all([
+      this.prisma.vote.groupBy({ by: ['parlementaireId'], where, _count: { _all: true } }),
+      this.prisma.intervention.groupBy({ by: ['parlementaireId'], where, _count: { _all: true } }),
+      this.prisma.amendement.groupBy({ by: ['parlementaireId'], where, _count: { _all: true } }),
+    ]);
+
+    // parlementaireId est nullable sur Intervention et Amendement ; le `where`
+    // exclut déjà les null, le filtre ne sert qu'à satisfaire le typage.
+    const toMap = (
+      rows: { parlementaireId: string | null; _count: { _all: number } }[],
+    ): Map<string, number> =>
+      new Map(
+        rows
+          .filter((r): r is typeof r & { parlementaireId: string } => r.parlementaireId !== null)
+          .map((r) => [r.parlementaireId, r._count._all]),
+      );
+
+    return { votes: toMap(votes), interventions: toMap(interventions), amendements: toMap(amendements) };
+  }
+
   async getParlementaires(query: ParlementairesListQuery, forcedChambre?: Chambre) {
     const chambre = forcedChambre || query.chambre;
     const cacheKey = `parlementaires:list:${JSON.stringify({ ...query, chambre })}`;
@@ -263,40 +387,10 @@ export class ParlementairesService {
 
     const orderBy = this.buildParlementaireOrderBy(sort, order, periode);
 
-    const parlementaireInclude = {
-      groupe: {
-        select: {
-          id: true,
-          slug: true,
-          chambre: true,
-          nom: true,
-          nomComplet: true,
-          couleur: true,
-          position: true,
-        },
-      },
-      circonscription: {
-        select: {
-          id: true,
-          departement: true,
-          numero: true,
-          nom: true,
-          type: true,
-        },
-      },
-      _count: {
-        select: {
-          votes: true,
-          interventions: true,
-          amendements: true,
-        },
-      },
-    };
-
-    let [parlementaires, total] = await Promise.all([
+    let [parlementaires, total]: [ParlementaireListRow[], number] = await Promise.all([
       this.prisma.parlementaire.findMany({
         where,
-        include: parlementaireInclude,
+        select: PARLEMENTAIRE_LIST_SELECT,
         orderBy,
         skip,
         take: limit,
@@ -313,10 +407,15 @@ export class ParlementairesService {
         actif,
         limit,
         skip,
-      }, parlementaireInclude);
+      });
       parlementaires = fuzzyResult.parlementaires;
       total = fuzzyResult.total;
     }
+
+    // Compteurs bornés à la page — après le fallback fuzzy, qui peut remplacer
+    // entièrement le jeu de résultats.
+    const { votes: votesCount, interventions: interventionsCount, amendements: amendementsCount } =
+      await this.countRelationsForPage(parlementaires.map((p) => p.id));
 
     const totalPages = Math.ceil(total / limit);
     const meta: PaginationMeta = {
@@ -354,14 +453,11 @@ export class ParlementairesService {
         ...(period && { groupe: period.groupe, circonscription: period.circonscription }),
         legislature,
         session,
-        _count: undefined,
-        // sourceData est le blob brut de l'API source : 65 % du poids d'une
-        // fiche de député, pour une donnée inutilisée en liste. Elle reste
-        // disponible sur le détail.
-        sourceData: undefined,
-        votesCount: p._count.votes,
-        interventionsCount: p._count.interventions,
-        amendementsCount: p._count.amendements,
+        // `_count` et sourceData ne sont plus ramenés par la requête : le `select`
+        // explicite les exclut à la source, plus besoin de les neutraliser ici.
+        votesCount: votesCount.get(p.id) ?? 0,
+        interventionsCount: interventionsCount.get(p.id) ?? 0,
+        amendementsCount: amendementsCount.get(p.id) ?? 0,
         stats: p.statsCalculatedAt
           ? {
               presence: p.statsPresence ?? 0,
@@ -1458,8 +1554,7 @@ export class ParlementairesService {
       limit: number;
       skip: number;
     },
-    include: Prisma.ParlementaireInclude,
-  ) {
+  ): Promise<{ parlementaires: ParlementaireListRow[]; total: number }> {
     const candidates = await this.getFuzzyCandidates({
       chambre: filters.chambre,
       groupe: filters.groupe,
@@ -1481,7 +1576,7 @@ export class ParlementairesService {
 
     const parlementaires = await this.prisma.parlementaire.findMany({
       where: { id: { in: pageIds } },
-      include,
+      select: PARLEMENTAIRE_LIST_SELECT,
     });
 
     // Preserve fuzzy score ordering

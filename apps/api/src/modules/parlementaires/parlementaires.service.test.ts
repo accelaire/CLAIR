@@ -141,17 +141,49 @@ describe('ParlementairesService', () => {
       expect(result.meta.hasPrev).toBe(true);
     });
 
-    it('devrait transformer les _count en propriétés nommées', async () => {
+    it('devrait exposer les compteurs de relations en propriétés nommées', async () => {
       mockPrisma.parlementaire.findMany.mockResolvedValue(mockParlementaireList);
       mockPrisma.parlementaire.count.mockResolvedValue(2);
+      mockPrisma.vote.groupBy.mockResolvedValue([
+        { parlementaireId: 'parl-1', _count: { _all: 150 } },
+        { parlementaireId: 'parl-2', _count: { _all: 145 } },
+      ]);
+      mockPrisma.intervention.groupBy.mockResolvedValue([
+        { parlementaireId: 'parl-1', _count: { _all: 42 } },
+      ]);
+      mockPrisma.amendement.groupBy.mockResolvedValue([
+        { parlementaireId: 'parl-1', _count: { _all: 25 } },
+      ]);
 
       const result = await service.getParlementaires(defaultQuery);
 
       expect(result.data[0]).toHaveProperty('votesCount', 150);
       expect(result.data[0]).toHaveProperty('interventionsCount', 42);
       expect(result.data[0]).toHaveProperty('amendementsCount', 25);
-      // _count est défini à undefined (la propriété existe mais vaut undefined)
-      expect(result.data[0]._count).toBeUndefined();
+      expect(result.data[1]).toHaveProperty('votesCount', 145);
+      // Absent du groupBy = 0, jamais undefined : Postgres n'émet pas de ligne
+      // pour un parlementaire sans aucune intervention.
+      expect(result.data[1]).toHaveProperty('interventionsCount', 0);
+      expect(result.data[1]).toHaveProperty('amendementsCount', 0);
+    });
+
+    it('devrait borner les compteurs aux parlementaires de la page', async () => {
+      mockPrisma.parlementaire.findMany.mockResolvedValue(mockParlementaireList);
+      mockPrisma.parlementaire.count.mockResolvedValue(2);
+
+      await service.getParlementaires(defaultQuery);
+
+      // Le garde-fou du correctif : sans le `where`, Prisma agrège la TOTALITÉ de
+      // votes / interventions / amendements à chaque appel (cf. countRelationsForPage).
+      const pageIds = mockParlementaireList.map((p) => p.id);
+      for (const model of [mockPrisma.vote, mockPrisma.intervention, mockPrisma.amendement]) {
+        expect(model.groupBy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            by: ['parlementaireId'],
+            where: { parlementaireId: { in: pageIds } },
+          })
+        );
+      }
     });
 
     it('devrait mettre en cache le résultat', async () => {
