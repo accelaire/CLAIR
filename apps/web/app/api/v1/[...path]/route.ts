@@ -17,15 +17,44 @@
  * Les en-têtes du client ne sont PAS recopiés en bloc : on repart d'un jeu
  * choisi. Recopier aveuglément laisserait un visiteur poser son propre
  * `x-clair-client-ip` et se fabriquer un compteur neuf à chaque requête.
+ *
+ * ── Pourquoi ce proxy DOIT cacher ────────────────────────────────────────────
+ *
+ * Router le navigateur par ici a un prix qui n'existait pas quand il tapait
+ * l'API en direct : chaque octet renvoyé par cette fonction vers l'edge Vercel
+ * est facturé en « Fast Origin Transfer ». Et il est facturé en clair — `fetch`
+ * décompresse le corps reçu de l'API (voir `content-encoding` plus bas), si
+ * bien qu'une liste de 92 Ko sur le réseau en pèse 391 au compteur. Sans cache,
+ * chaque visiteur repayait ce plein tarif : le quota mensuel partait en trois
+ * jours.
+ *
+ * Le TTL edge ci-dessous est donc structurel, pas une optimisation : sur un HIT
+ * la fonction n'est pas invoquée du tout, et le transfert facturé est nul.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
-// Le proxy relaie des données qui changent, et l'API ne pose aucun Cache-Control
-// aujourd'hui : on ne met donc rien en cache, pour coller au comportement actuel.
+// La réponse dépend de l'URL et de l'IP appelante : elle ne peut pas être
+// pré-rendue au build. Le cache est posé par en-tête, à l'exécution, ce qui
+// n'entre pas en conflit avec ce réglage.
 export const dynamic = 'force-dynamic';
+
+/**
+ * Durée de vie du cache edge.
+ *
+ * La base n'est réécrite qu'une fois par jour (cron d'ingestion à 5 h) : dix
+ * minutes de fraîcheur restent très en deçà de ce que les données exigent.
+ * `stale-while-revalidate` couvre les 24 h suivantes — passé le TTL, l'edge
+ * sert la copie périmée et rafraîchit en arrière-plan, ce qui évite qu'une
+ * entrée expirée sous trafic déclenche une rafale de requêtes vers l'API.
+ */
+const EDGE_MAX_AGE_SECONDS = 600;
+const EDGE_STALE_SECONDS = 86_400;
+
+/** Méthodes sans effet de bord, seules candidates au cache partagé. */
+const SAFE_METHODS = new Set(['GET', 'HEAD']);
 
 /** En-têtes de réponse à ne jamais relayer tels quels. */
 const STRIPPED_RESPONSE_HEADERS = new Set([
@@ -40,7 +69,35 @@ const STRIPPED_RESPONSE_HEADERS = new Set([
   // Inutile en same-origin, et trompeur puisque l'origine vue par l'API est Vercel.
   'access-control-allow-origin',
   'access-control-allow-credentials',
+  // La politique de cache est décidée ici, en connaissance du contexte Vercel.
+  // Les directives de l'amont ne doivent pas s'y superposer.
+  'cache-control',
+  'expires',
+  'pragma',
+  // L'API répond `vary: Origin` pour son CORS. Relayé tel quel, il ferait varier
+  // la clé de cache edge sur un en-tête dont la réponse ne dépend pas : autant
+  // de copies distinctes du même corps, donc autant de MISS facturés. Le proxy
+  // est same-origin, cette variation n'a plus d'objet.
+  'vary',
 ]);
+
+/**
+ * Une réponse ne rejoint le cache partagé que si rien ne la rend propre à un
+ * visiteur. L'API n'expose aujourd'hui aucune route authentifiée, mais le jour
+ * où elle en exposera, ce garde-fou évite qu'une réponse personnelle soit
+ * resservie au visiteur suivant.
+ *
+ * Contrepartie assumée : sur un HIT l'API ne voit pas la requête, donc
+ * `x-clair-client-ip` ne compte que les MISS. Le rate-limit protège toujours la
+ * base — c'est son rôle — mais il ne borne plus la lecture de données déjà
+ * cachées. Ces octets-là sortent de l'edge, pas de la base.
+ */
+function isCacheable(request: NextRequest, upstream: Response): boolean {
+  if (!SAFE_METHODS.has(request.method)) return false;
+  if (upstream.status !== 200) return false;
+  if (request.headers.has('authorization') || request.headers.has('cookie')) return false;
+  return true;
+}
 
 /**
  * IP du visiteur. Sur Vercel `request.ip` est renseignée ; en local et en repli,
@@ -89,6 +146,22 @@ async function proxy(request: NextRequest, path: string[]): Promise<Response> {
       }
     });
 
+    if (isCacheable(request, upstream)) {
+      // `Vercel-CDN-Cache-Control` ne s'adresse qu'au CDN Vercel, qui le
+      // consomme sans le retransmettre. C'est lui qui porte le TTL : le mettre
+      // dans `Cache-Control` imposerait la même durée au navigateur.
+      responseHeaders.set(
+        'Vercel-CDN-Cache-Control',
+        `public, s-maxage=${EDGE_MAX_AGE_SECONDS}, stale-while-revalidate=${EDGE_STALE_SECONDS}`,
+      );
+      // Le navigateur, lui, revalide à chaque fois. Il interroge l'edge et non
+      // la fonction : côté facture c'est un HIT, et l'utilisateur ne se retrouve
+      // pas avec un onglet figé dix minutes après une mise à jour.
+      responseHeaders.set('Cache-Control', 'public, max-age=0, must-revalidate');
+    } else {
+      responseHeaders.set('Cache-Control', 'private, no-store');
+    }
+
     return new NextResponse(upstream.body, {
       status: upstream.status,
       statusText: upstream.statusText,
@@ -96,9 +169,11 @@ async function proxy(request: NextRequest, path: string[]): Promise<Response> {
     });
   } catch (error) {
     console.error(`[api-proxy] ${request.method} ${target} failed`, error);
+    // Explicitement non caché : une panne de l'API ne doit pas être figée dix
+    // minutes à l'edge, sinon elle survit à son propre rétablissement.
     return NextResponse.json(
       { error: 'Bad Gateway', code: 'UPSTREAM_UNREACHABLE', message: 'API injoignable' },
-      { status: 502 },
+      { status: 502, headers: { 'Cache-Control': 'private, no-store' } },
     );
   }
 }
