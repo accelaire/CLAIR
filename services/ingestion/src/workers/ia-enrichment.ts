@@ -268,12 +268,12 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             take: 10,
           });
 
-          type GroupeRow = { nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
-          type ArticleRow = { scrutin_id: string; article: string; sort: string; nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
+          type GroupeRow = { nom: string; nom_complet: string | null; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
+          type ArticleRow = { scrutin_id: string; article: string; sort: string; nom: string; nom_complet: string | null; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
 
           // Votes sur l'ensemble du texte (solennel OU ordinaire avec "ensemble" dans le titre)
           const positionsEnsemble = await prisma.$queryRaw<GroupeRow[]>`
-            SELECT gp.nom, gp.slug, gp.position as orientation,
+            SELECT gp.nom, gp.nom_complet, gp.slug, gp.position as orientation,
               SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END)::bigint AS pour,
               SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
               SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
@@ -284,7 +284,7 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             WHERE s.dossier_id = ${dossier.id}
               AND (s.type_vote = 'solennel' OR s.titre ILIKE '%ensemble%')
               AND v.position != 'absent'
-            GROUP BY gp.nom, gp.slug, gp.position
+            GROUP BY gp.nom, gp.nom_complet, gp.slug, gp.position
             ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                       SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
                       SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC
@@ -296,7 +296,7 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
           // s'abstenaient en bloc, et le modèle leur inventait alors un vote.
           const votesArticlesRaw = await prisma.$queryRaw<ArticleRow[]>`
             SELECT s.id as scrutin_id, s.titre as article, s.sort,
-              gp.nom, gp.slug, gp.position as orientation,
+              gp.nom, gp.nom_complet, gp.slug, gp.position as orientation,
               SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END)::bigint AS pour,
               SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
               SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
@@ -309,7 +309,7 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
               AND s.titre NOT ILIKE '%amendement%'
               AND s.titre NOT ILIKE '%ensemble%'
               AND v.position != 'absent'
-            GROUP BY s.id, s.titre, s.sort, gp.nom, gp.slug, gp.position
+            GROUP BY s.id, s.titre, s.sort, gp.nom, gp.nom_complet, gp.slug, gp.position
             HAVING SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                    SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
                    SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) > 1
@@ -375,7 +375,7 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
           }
 
           const toGroupeArray = (rows: GroupeRow[]) => rows.map(g => ({
-            nom: g.nom, slug: g.slug,
+            nom: g.nom, nomComplet: g.nom_complet, slug: g.slug,
             pour: Number(g.pour), contre: Number(g.contre), abstention: Number(g.abstention),
             orientation: g.orientation,
           }));
@@ -502,13 +502,13 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
 
           const dossierIds = dossiers.map(d => d.id);
 
-          type SujetGroupeRow = { nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
-          type SujetArticleRow = { scrutin_id: string; article: string; sort: string; nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
+          type SujetGroupeRow = { nom: string; nom_complet: string | null; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
+          type SujetArticleRow = { scrutin_id: string; article: string; sort: string; nom: string; nom_complet: string | null; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
 
           // Votes sur l'ensemble du texte (solennel OU ordinaire avec "ensemble" dans le titre)
           const positionsEnsemble = dossierIds.length > 0
             ? await prisma.$queryRaw<SujetGroupeRow[]>`
-                SELECT gp.nom, gp.slug, gp.position as orientation,
+                SELECT gp.nom, gp.nom_complet, gp.slug, gp.position as orientation,
                   SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END)::bigint AS pour,
                   SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
                   SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
@@ -519,7 +519,7 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
                 WHERE s.dossier_id = ANY(${dossierIds})
                   AND (s.type_vote = 'solennel' OR s.titre ILIKE '%ensemble%')
                   AND v.position != 'absent'
-                GROUP BY gp.nom, gp.slug, gp.position
+                GROUP BY gp.nom, gp.nom_complet, gp.slug, gp.position
                 ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                           SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
                           SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC
@@ -533,7 +533,7 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
           const votesArticlesRaw = dossierIds.length > 0
             ? await prisma.$queryRaw<SujetArticleRow[]>`
                 SELECT s.id as scrutin_id, s.titre as article, s.sort,
-                  gp.nom, gp.slug, gp.position as orientation,
+                  gp.nom, gp.nom_complet, gp.slug, gp.position as orientation,
                   SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END)::bigint AS pour,
                   SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
                   SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
@@ -546,7 +546,7 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
                   AND s.titre NOT ILIKE '%amendement%'
                   AND s.titre NOT ILIKE '%ensemble%'
                   AND v.position != 'absent'
-                GROUP BY s.id, s.titre, s.sort, gp.nom, gp.slug, gp.position
+                GROUP BY s.id, s.titre, s.sort, gp.nom, gp.nom_complet, gp.slug, gp.position
                 HAVING SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                        SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
                        SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) > 1
@@ -607,7 +607,7 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
           }
 
           const toGroupeArray = (rows: SujetGroupeRow[]) => rows.map(g => ({
-            nom: g.nom, slug: g.slug,
+            nom: g.nom, nomComplet: g.nom_complet, slug: g.slug,
             pour: Number(g.pour), contre: Number(g.contre), abstention: Number(g.abstention),
             orientation: g.orientation,
           }));

@@ -95,6 +95,10 @@ export function buildScrutinResumePrompt(data: ScrutinPromptData): string {
 interface GroupePosition {
   nom: string;
   slug: string;
+  /** Intitulé complet du groupe. Sans lui le modèle développe le sigle de
+   *  mémoire et se trompe (UDDPLR rendu « Union des démocrates et
+   *  indépendants » au lieu d'« Union des droites pour la République »). */
+  nomComplet?: string | null;
   pour: number;
   contre: number;
   abstention: number;
@@ -143,7 +147,8 @@ function formatGroupePosition(g: GroupePosition): string {
   }
 
   const orientationLabel = g.orientation ? ` [${g.orientation.replace(/_/g, ' ')}]` : '';
-  return `${g.nom}${orientationLabel} : ${g.pour} pour, ${g.contre} contre, ${g.abstention} abstention → ${tendency}`;
+  const nomAffiche = g.nomComplet && g.nomComplet !== g.nom ? `${g.nom} (${g.nomComplet})` : g.nom;
+  return `${nomAffiche}${orientationLabel} : ${g.pour} pour, ${g.contre} contre, ${g.abstention} abstention → ${tendency}`;
 }
 
 /** Position dominante d'un groupe, `null` si aucune voix. */
