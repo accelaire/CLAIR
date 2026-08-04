@@ -72,6 +72,18 @@ const COMMISSION_CODE_TYPES = [
   'COMNL', 'BUREAU', 'CONFPT',
 ] as const;
 
+/**
+ * Un amendement peut être déposé par le Gouvernement ou une commission, qui ne
+ * sont pas des parlementaires. Sans ce garde-fou, le repli par nom leur trouve
+ * un homonyme : « LE GOUVERNEMENT » a été rattaché au sénateur Alain Le Vern
+ * sur 514 amendements.
+ */
+function estAuteurNonParlementaire(libelle: string | null | undefined): boolean {
+  if (!libelle) return false;
+  return /^\s*(le\s+)?gouvernement\b|^\s*(la\s+)?commission\b|^\s*(m\.\s+)?le\s+rapporteur\b/i
+    .test(libelle.trim());
+}
+
 function slugifyCommission(nom: string, chambre: string): string {
   const base = nom
     .toLowerCase()
@@ -3366,18 +3378,30 @@ export async function syncAmendements(
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/-/g, ' ').replace(/'/g, ' ').trim();
 
-  const parlementaireNameMap = new Map<string, string>();
   const parlementaireByRef = new Map<string, string>();
+  // Un patronyme partagé par deux députés ne permet AUCUNE attribution fiable :
+  // on le retire de la map plutôt que de laisser le dernier chargé l'emporter.
+  const nameHits = new Map<string, Set<string>>();
+  const addName = (raw: string | null | undefined, id: string) => {
+    const key = normalize(raw ?? '');
+    // Les patronymes d'une ou deux lettres (« O », « Ba ») ne discriminent rien.
+    if (key.length < 3) return;
+    if (!nameHits.has(key)) nameHits.set(key, new Set());
+    nameHits.get(key)!.add(id);
+  };
+
   for (const p of parlementaires) {
-    parlementaireNameMap.set(normalize(p.nom), p.id);
     if (p.sourceId) parlementaireByRef.set(p.sourceId, p.id);
+    addName(p.nom, p.id);
+    addName(`${p.prenom} ${p.nom}`, p.id);
     const parts = p.nom.trim().split(/\s+/);
-    if (parts.length > 1) {
-      const lastName = parts[parts.length - 1];
-      if (lastName && lastName.length > 3) {
-        parlementaireNameMap.set(normalize(lastName), p.id);
-      }
-    }
+    if (parts.length > 1) addName(parts[parts.length - 1], p.id);
+  }
+
+  const parlementaireNameMap = new Map<string, string>();
+  for (const [name, ids] of nameHits) {
+    const [seul] = [...ids];
+    if (ids.size === 1 && seul) parlementaireNameMap.set(name, seul);
   }
 
   const chambre = 'assemblee';
@@ -3391,18 +3415,28 @@ export async function syncAmendements(
       try {
         const transformed = amendementClient.transformAmendement(raw);
 
-        let parlementaireId: string | null = null;
-        if (transformed.auteurLibelle) {
+        // 1. `auteurRef` est l'identifiant d'acteur AN (PA…), renseigné sur ~99 %
+        //    des amendements. C'est la seule attribution sûre.
+        let parlementaireId: string | null = transformed.auteurRef
+          ? parlementaireByRef.get(transformed.auteurRef) ?? null
+          : null;
+
+        // 2. Repli sur le nom, en ÉGALITÉ STRICTE. L'ancienne version comparait
+        //    en sous-chaîne (`libelle.includes(name)`) et retenait le premier
+        //    hit de la map : le patronyme « O » matchait « Brulebois »,
+        //    « Falcon », « Rolland »… et a capté 30 221 amendements.
+        if (!parlementaireId && transformed.auteurLibelle
+            && !estAuteurNonParlementaire(transformed.auteurLibelle)) {
           const libelleRaw = transformed.auteurLibelle
             .replace(/^(M\.|Mme|Mme\.)\s*/i, '')
             .split(',')[0];
           const libelle = normalize(libelleRaw || '');
 
-          for (const [name, id] of parlementaireNameMap) {
-            if (libelle.includes(name) || name.includes(libelle)) {
-              parlementaireId = id;
-              break;
-            }
+          if (libelle) {
+            const mots = libelle.split(/\s+/);
+            const dernier = mots[mots.length - 1];
+            parlementaireId = parlementaireNameMap.get(libelle)
+              ?? (dernier ? parlementaireNameMap.get(dernier) ?? null : null);
           }
         }
 
@@ -3529,17 +3563,20 @@ export async function syncAmendementsSenat(
         }
 
         // Sinon par nom
-        if (!parlementaireId && amd.auteurNom) {
+        if (!parlementaireId && amd.auteurNom && !estAuteurNonParlementaire(amd.auteurNom)) {
           const nomNorm = normalize(amd.auteurNom);
           parlementaireId = parlementaireByName.get(nomNorm) || null;
 
-          // Recherche partielle
+          // Repli sur le seul patronyme, en égalité stricte. Surtout PAS de
+          // comparaison en sous-chaîne : côté AN, `nom.includes(...)` avec
+          // premier-hit-gagne a capté 30 221 amendements sur un patronyme d'une
+          // lettre. Le motif est le même ici, il n'a simplement pas encore de
+          // sénateur au nom assez court pour exploser.
           if (!parlementaireId) {
-            for (const [name, id] of parlementaireByName) {
-              if (nomNorm.includes(name) || name.includes(nomNorm)) {
-                parlementaireId = id;
-                break;
-              }
+            const mots = nomNorm.split(/\s+/);
+            const dernier = mots[mots.length - 1];
+            if (dernier && dernier.length >= 3) {
+              parlementaireId = parlementaireByName.get(dernier) || null;
             }
           }
         }
@@ -3719,15 +3756,15 @@ export async function syncAmendementsSenatCsv(
     if (amd.auteurMatricule) {
       parlementaireId = parlementaireByMatricule.get(amd.auteurMatricule) || null;
     }
-    if (!parlementaireId && amd.auteurNom) {
+    if (!parlementaireId && amd.auteurNom && !estAuteurNonParlementaire(amd.auteurNom)) {
       const nomNorm = normalize(amd.auteurNom);
       parlementaireId = parlementaireByName.get(nomNorm) || null;
+      // Repli en égalité stricte sur le patronyme (cf. sync AMELI ci-dessus).
       if (!parlementaireId) {
-        for (const [name, id] of parlementaireByName) {
-          if (nomNorm.includes(name) || name.includes(nomNorm)) {
-            parlementaireId = id;
-            break;
-          }
+        const mots = nomNorm.split(/\s+/);
+        const dernier = mots[mots.length - 1];
+        if (dernier && dernier.length >= 3) {
+          parlementaireId = parlementaireByName.get(dernier) || null;
         }
       }
     }

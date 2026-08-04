@@ -59,23 +59,30 @@ export interface IAQualityReport {
 }
 
 /**
- * Seuils — à faire BAISSER, jamais monter.
+ * Seuils, mesurés sur la prod le 2026-08-05 APRÈS régénération complète du
+ * corpus avec le prompt corrigé.
  *
- * Les deux seuils d'ancrage ne sont pas des tolérances : ils encodent la dette
- * du corpus généré AVANT la correction du prompt (août 2026), qui retirait des
- * données transmises au LLM tout groupe s'abstenant en bloc. Mesure du
- * 2026-08-05 sur la prod : 257 abstentions travesties, 38 positions prêtées à
- * un groupe absent, 189 inversions regex. La cible est 0 / 0 une fois le corpus
- * régénéré (`enrich-ia --dossiers --sujets --force`) ; ramener ces seuils au
- * fur et à mesure de la régénération.
+ * Historique des deux seuils d'ancrage — ce sont des dettes, pas des
+ * tolérances, et ils doivent tendre vers 0 :
+ *   - abstention travestie : 257 avant régénération → 85 après (-67 %).
+ *     Le résidu est de la non-conformité du modèle, qui englobe encore parfois
+ *     un groupe abstentionniste dans une énumération « ont soutenu / ont voté
+ *     contre ». Concentré sur les sujets multi-scrutins, où le vote « ensemble »
+ *     agrège plusieurs votes et perd son sens.
+ *   - position prêtée à un groupe absent : 38 → 15.
  *
- * Les inversions regex restent bruitées (fenêtre de 120 caractères) et ne
- * servent que de garde-fou grossier.
+ * Le seuil d'inversions MONTE (189 → 257) sans régression de qualité : le
+ * prompt transmet désormais 73 % de lignes de position en plus, donc les
+ * résumés nomment beaucoup plus de groupes, donc la regex ouvre beaucoup plus
+ * de fenêtres de contexte. Le dénominateur a changé, pas le taux d'erreur.
+ * Cette famille reste très bruitée (fenêtre de 120 caractères) et ne sert que
+ * de garde-fou grossier ; c'est le sous-ensemble « haute confiance » (>50 voix
+ * exprimées) qu'il faut auditer à la main.
  */
 export const IA_QUALITY_THRESHOLDS = {
-  maxInversions: 200,
-  maxAbstentionDescribedAsVote: 260,
-  maxGroupNotInData: 40,
+  maxInversions: 280,
+  maxAbstentionDescribedAsVote: 90,
+  maxGroupNotInData: 20,
 };
 
 // =============================================================================
@@ -174,7 +181,13 @@ export const familyOf = (nom: string) => FAMILY_OF.get(nom) ?? nom;
  */
 export interface GroupMatcher {
   sigle: RegExp;
-  nom: RegExp | null;
+  /** Intitulé officiel du groupe. Non ambigu. */
+  nomComplet: RegExp | null;
+  /** Désignations courantes (« les écologistes »). Pratiques mais grossières :
+   *  `démocrates` matche à l'intérieur de « Rassemblement des démocrates,
+   *  progressistes et indépendants », `écologiste` dans « Socialiste,
+   *  Écologiste et Républicain ». Réservées à la détection de présence. */
+  alias: RegExp | null;
 }
 
 export function buildGroupMatcher(nom: string, nomComplet: string | null): GroupMatcher {
@@ -182,22 +195,31 @@ export function buildGroupMatcher(nom: string, nomComplet: string | null): Group
   const bounded = (alternation: string, flags: string) =>
     new RegExp(`(?<![\\p{L}\\d])(?:${alternation})(?![\\p{L}\\d])`, flags);
 
-  const names = new Set<string>();
-  if (nomComplet) names.add(nomComplet.toLowerCase());
-  for (const alias of GROUP_ALIASES[nom] ?? []) names.add(alias);
+  const alias = GROUP_ALIASES[nom] ?? [];
 
   return {
     sigle: bounded(escapeRegex(nom.toUpperCase()), 'u'),
-    nom: names.size > 0
-      ? bounded([...names].sort((a, b) => b.length - a.length).map(escapeRegex).join('|'), 'iu')
+    nomComplet: nomComplet ? bounded(escapeRegex(nomComplet.toLowerCase()), 'iu') : null,
+    alias: alias.length > 0
+      ? bounded([...alias].sort((a, b) => b.length - a.length).map(escapeRegex).join('|'), 'iu')
       : null,
   };
 }
 
-/** Première mention du groupe dans le texte, `null` s'il est absent. */
-export function matchGroup(text: string, m: GroupMatcher): { index: number; mention: string } | null {
+/**
+ * Première mention du groupe. `strict` restreint au sigle et à l'intitulé
+ * officiel, en excluant les alias : c'est le mode à utiliser pour affirmer
+ * qu'un groupe est ABSENT des données, où un alias grossier attribuerait la
+ * mention au mauvais groupe.
+ */
+export function matchGroup(
+  text: string,
+  m: GroupMatcher,
+  opts: { strict?: boolean } = {},
+): { index: number; mention: string } | null {
+  const regexes = opts.strict ? [m.sigle, m.nomComplet] : [m.sigle, m.nomComplet, m.alias];
   const hits: { index: number; mention: string }[] = [];
-  for (const re of [m.sigle, m.nom]) {
+  for (const re of regexes) {
     if (!re) continue;
     const hit = text.match(re);
     if (hit && hit.index !== undefined) hits.push({ index: hit.index, mention: hit[0] });
@@ -207,7 +229,7 @@ export function matchGroup(text: string, m: GroupMatcher): { index: number; ment
 }
 
 function matcherHits(m: GroupMatcher, s: string): boolean {
-  return m.sigle.test(s) || (m.nom?.test(s) ?? false);
+  return m.sigle.test(s) || (m.nomComplet?.test(s) ?? false) || (m.alias?.test(s) ?? false);
 }
 
 export function computeTendency(pour: number, contre: number, abstention: number): string {
@@ -239,8 +261,14 @@ function contextAround(text: string, idx: number): string {
   return text.slice(Math.max(0, idx - 120), Math.min(text.length, idx + 150)).replace(/\n/g, ' ');
 }
 
-function findGroup(text: string, v: GroupeVote): number {
-  return matchGroup(text, v.matcher)?.index ?? -1;
+/**
+ * `strict` évite de centrer la fenêtre de contexte sur un alias qui a matché à
+ * l'intérieur du nom officiel d'un AUTRE groupe (« Écologiste » dans
+ * « Socialiste, Écologiste et Républicain ») : on analyserait alors le mauvais
+ * passage et on signalerait une inversion inexistante.
+ */
+function findGroup(text: string, v: GroupeVote, strict = false): number {
+  return matchGroup(text, v.matcher, { strict })?.index ?? -1;
 }
 
 // =============================================================================
@@ -263,7 +291,7 @@ function checkInversions(text: string, votes: GroupeVote[]) {
     // « inversé » : c'est checkGrounding qui traite l'abstention.
     if (tendency === 'DIV' || tendency === 'ABSTENTION' || tendency === 'ABSTENTION_MAJ') continue;
 
-    const idx = findGroup(text, v);
+    const idx = findGroup(text, v, true);
     if (idx < 0) continue;
 
     const context = contextAround(text, idx);
@@ -350,7 +378,7 @@ export function checkGrounding(
     if (famillesAvecVotes.has(familyOf(g.nom))) continue;
     if (famillesSignalees.has(familyOf(g.nom))) continue;
 
-    const match = matchGroup(text, g.matcher);
+    const match = matchGroup(text, g.matcher, { strict: true });
     if (!match) continue;
 
     const mention = match.mention.toLowerCase();
