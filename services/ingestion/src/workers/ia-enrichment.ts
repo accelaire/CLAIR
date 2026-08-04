@@ -25,6 +25,25 @@ const prisma = new PrismaClient();
 
 const BATCH_SIZE = 100;
 
+/** Nombre d'articles transmis au LLM pour illustrer les positions nuancées. */
+const MAX_ARTICLES_PROMPT = 5;
+
+/**
+ * Score de clivage d'un scrutin : nombre de voix exprimées hors de la position
+ * majoritaire de l'hémicycle. Une abstention de groupe face à une majorité "pour"
+ * compte donc comme un clivage, contrairement à un simple écart pour/contre.
+ */
+function scoreClivage(groupes: { pour: bigint; contre: bigint; abstention: bigint }[]): number {
+  let pour = 0, contre = 0, abstention = 0;
+  for (const g of groupes) {
+    pour += Number(g.pour);
+    contre += Number(g.contre);
+    abstention += Number(g.abstention);
+  }
+  const total = pour + contre + abstention;
+  return total - Math.max(pour, contre, abstention);
+}
+
 export interface EnrichmentResult {
   enriched: number;
   skipped: number;
@@ -42,6 +61,12 @@ export interface EnrichmentOptions {
   randomSample?: number;
   /** Parlementaires + randomSample only: exclude fiches enrichies dans les N derniers jours (défaut 3). */
   skipRecentDays?: number;
+  /**
+   * Restreint le balayage à des entités précises (uid de dossier, slug de sujet).
+   * Permet de corriger une fiche fautive sans relancer tout le corpus — un
+   * `--force` global coûte plusieurs milliers d'appels LLM.
+   */
+  only?: string[];
 }
 
 // =============================================================================
@@ -180,7 +205,7 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
 // =============================================================================
 
 export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise<EnrichmentResult> {
-  const { limit, dryRun = false, concurrency = 2, force = false } = options;
+  const { limit, dryRun = false, concurrency = 2, force = false, only } = options;
 
   const result: EnrichmentResult = {
     enriched: 0, skipped: 0, errors: 0, totalTokensIn: 0, totalTokensOut: 0,
@@ -198,7 +223,11 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
 
   // Voir enrichScrutinsIA : balayage complet, le hash arbitre. Le filtre sur
   // l'existence de scrutins reste — un dossier sans vote n'a rien à résumer.
-  const where = { scrutins: { some: {} } };
+  // `only` cible des uid de dossier.
+  const where: Prisma.DossierLegislatifWhereInput = {
+    scrutins: { some: {} },
+    ...(only && only.length > 0 ? { uid: { in: only } } : {}),
+  };
 
   // `limit` borne le nombre de fiches RÉGÉNÉRÉES, pas le nombre examinées : les
   // fiches inchangées ne doivent pas le consommer. Le budget est décrémenté au
@@ -257,10 +286,14 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
               AND v.position != 'absent'
             GROUP BY gp.nom, gp.slug, gp.position
             ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
-                      SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) DESC
+                      SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
+                      SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC
           `;
 
-          // Votes sur les articles clés (top 5 articles les plus votés)
+          // Votes sur les articles clés (top 5 articles les plus votés).
+          // L'abstention compte dans le seuil et le tri : une abstention de groupe EST une
+          // position politique. L'exclure faisait disparaître du prompt les groupes qui
+          // s'abstenaient en bloc, et le modèle leur inventait alors un vote.
           const votesArticlesRaw = await prisma.$queryRaw<ArticleRow[]>`
             SELECT s.id as scrutin_id, s.titre as article, s.sort,
               gp.nom, gp.slug, gp.position as orientation,
@@ -278,9 +311,11 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
               AND v.position != 'absent'
             GROUP BY s.id, s.titre, s.sort, gp.nom, gp.slug, gp.position
             HAVING SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
-                   SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) > 5
+                   SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
+                   SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) > 1
             ORDER BY s.id, (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
-                            SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) DESC
+                            SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
+                            SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC
           `;
 
           // Regrouper par scrutin pour les articles
@@ -291,14 +326,10 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             }
             articlesMap.get(row.scrutin_id)!.groupes.push(row);
           }
-          // Prendre les 5 articles les plus clivants (plus gros écarts pour/contre)
+          // Prendre les articles les plus clivants
           const votesArticles = [...articlesMap.values()]
-            .sort((a, b) => {
-              const clivageA = a.groupes.reduce((s, g) => s + Math.abs(Number(g.pour) - Number(g.contre)), 0);
-              const clivageB = b.groupes.reduce((s, g) => s + Math.abs(Number(g.pour) - Number(g.contre)), 0);
-              return clivageB - clivageA;
-            })
-            .slice(0, 5);
+            .sort((a, b) => scoreClivage(b.groupes) - scoreClivage(a.groupes) || a.article.localeCompare(b.article))
+            .slice(0, MAX_ARTICLES_PROMPT);
 
           // Amendements clés : adoptés en priorité, puis rejetés, avec exposé sommaire
           const amendementsClefs = await prisma.amendement.findMany({
@@ -309,7 +340,9 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
           });
 
           const ensembleForHash = positionsEnsemble.map(g => `ens:${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|');
-          const articlesForHash = votesArticles.map(a => `art:${a.article.slice(0, 30)}`).join('|');
+          const articlesForHash = votesArticles
+            .map(a => `art:${a.article.slice(0, 30)}:${a.groupes.map(g => `${g.slug}:${g.pour}/${g.contre}/${g.abstention}`).join(',')}`)
+            .join('|');
           // Tout ce qui entre dans le prompt doit entrer dans le hash, sinon un
           // changement de contenu source ne déclenche aucune régénération.
           const amendementsForHash = amendementsClefs
@@ -408,7 +441,7 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
 // =============================================================================
 
 export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<EnrichmentResult> {
-  const { limit, dryRun = false, concurrency = 2, force = false } = options;
+  const { limit, dryRun = false, concurrency = 2, force = false, only } = options;
 
   const result: EnrichmentResult = {
     enriched: 0, skipped: 0, errors: 0, totalTokensIn: 0, totalTokensOut: 0,
@@ -425,7 +458,11 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
   logger.info({ dryRun, concurrency, limit, force }, 'Starting sujets IA enrichment...');
 
   // Voir enrichScrutinsIA : balayage complet, le hash arbitre.
-  const where = { dossiers: { some: {} } };
+  // `only` cible des slugs de sujet.
+  const where: Prisma.SujetWhereInput = {
+    dossiers: { some: {} },
+    ...(only && only.length > 0 ? { slug: { in: only } } : {}),
+  };
 
   // `limit` borne le nombre de fiches RÉGÉNÉRÉES, pas le nombre examinées : les
   // fiches inchangées ne doivent pas le consommer. Le budget est décrémenté au
@@ -484,11 +521,15 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
                   AND v.position != 'absent'
                 GROUP BY gp.nom, gp.slug, gp.position
                 ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
-                          SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) DESC
+                          SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
+                          SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC
               `
             : [];
 
-          // Votes sur les articles clés (top 5 les plus clivants)
+          // Votes sur les articles clés, les plus clivants d'abord.
+          // L'abstention compte dans le seuil et le tri (cf. scoreClivage) : sans ça,
+          // un groupe qui s'abstient en bloc disparaît du prompt et le modèle lui
+          // invente une position.
           const votesArticlesRaw = dossierIds.length > 0
             ? await prisma.$queryRaw<SujetArticleRow[]>`
                 SELECT s.id as scrutin_id, s.titre as article, s.sort,
@@ -507,9 +548,11 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
                   AND v.position != 'absent'
                 GROUP BY s.id, s.titre, s.sort, gp.nom, gp.slug, gp.position
                 HAVING SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
-                       SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) > 5
+                       SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
+                       SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) > 1
                 ORDER BY s.id, (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
-                                SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) DESC
+                                SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
+                                SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC
               `
             : [];
 
@@ -521,15 +564,13 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
             articlesMap.get(row.scrutin_id)!.groupes.push(row);
           }
           const votesArticles = [...articlesMap.values()]
-            .sort((a, b) => {
-              const clivageA = a.groupes.reduce((s, g) => s + Math.abs(Number(g.pour) - Number(g.contre)), 0);
-              const clivageB = b.groupes.reduce((s, g) => s + Math.abs(Number(g.pour) - Number(g.contre)), 0);
-              return clivageB - clivageA;
-            })
-            .slice(0, 5);
+            .sort((a, b) => scoreClivage(b.groupes) - scoreClivage(a.groupes) || a.article.localeCompare(b.article))
+            .slice(0, MAX_ARTICLES_PROMPT);
 
           const ensembleForHash = positionsEnsemble.map(g => `ens:${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|');
-          const articlesForHash = votesArticles.map(a => `art:${a.article.slice(0, 30)}`).join('|');
+          const articlesForHash = votesArticles
+            .map(a => `art:${a.article.slice(0, 30)}:${a.groupes.map(g => `${g.slug}:${g.pour}/${g.contre}/${g.abstention}`).join(',')}`)
+            .join('|');
           // `etat` et `chambre` sont injectés par dossier dans le prompt
           // (« Sénat [en_cours] : … ») : les omettre ici fige le résumé sur
           // l'état d'avancement du jour de sa génération. C'est ce qui laissait

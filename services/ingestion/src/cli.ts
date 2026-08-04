@@ -1003,6 +1003,7 @@ program
   .option('-l, --limit <number>', 'Nombre max d\'entités à traiter', parseInt)
   .option('--dry-run', 'Mode simulation (calcule mais n\'écrit pas)')
   .option('--force', 'Ignorer le hash, regénérer tout')
+  .option('--only <ids...>', 'Restreindre à des entités précises (uid de dossier, slug de sujet). Corrige une fiche fautive sans relancer tout le corpus')
   .option('-c, --concurrency <number>', 'Nombre d\'appels LLM en parallèle (défaut: 3)', parseInt)
   .action(async (options) => {
     try {
@@ -1015,6 +1016,7 @@ program
         concurrency: options.concurrency,
         randomSample: options.random,
         skipRecentDays: options.skipRecentDays,
+        only: options.only,
       };
 
       // --random cible exclusivement les parlementaires (pas de cascade complète)
