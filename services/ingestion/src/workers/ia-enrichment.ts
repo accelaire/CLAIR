@@ -67,6 +67,19 @@ export interface EnrichmentOptions {
    * `--force` global coûte plusieurs milliers d'appels LLM.
    */
   only?: string[];
+  /**
+   * Recalcule et stocke `iaContentHash` SANS appeler le LLM ni toucher aux
+   * textes ni à `iaGeneratedAt`.
+   *
+   * À utiliser après un changement de FORMULE de hash, quand le corpus existant
+   * est déjà correct : sans ça le passage suivant régénère tout (plusieurs
+   * heures, millions de tokens) pour réécrire des résumés équivalents.
+   *
+   * Le hash est calculé par le même chemin de code que l'enrichissement — la
+   * sortie se fait juste avant l'appel LLM — donc les deux ne peuvent pas
+   * diverger.
+   */
+  rehashOnly?: boolean;
 }
 
 // =============================================================================
@@ -205,13 +218,14 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
 // =============================================================================
 
 export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise<EnrichmentResult> {
-  const { limit, dryRun = false, concurrency = 2, force = false, only } = options;
+  const { limit, dryRun = false, concurrency = 2, force = false, only, rehashOnly = false } = options;
 
   const result: EnrichmentResult = {
     enriched: 0, skipped: 0, errors: 0, totalTokensIn: 0, totalTokensOut: 0,
   };
 
-  if (!process.env.MISTRAL_API_KEY) {
+  // Le rehash ne parle pas au LLM : la clé n'est pas requise.
+  if (!rehashOnly && !process.env.MISTRAL_API_KEY) {
     logger.warn('MISTRAL_API_KEY not set — skipping IA enrichment');
     return result;
   }
@@ -288,7 +302,7 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                       SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
                       SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC,
-                     gp.nom ASC
+                     gp.nom ASC, gp.nom_complet ASC, gp.slug ASC, gp.position ASC
           `;
 
           // Votes sur les articles clés (top 5 articles les plus votés).
@@ -320,7 +334,7 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             ORDER BY s.id, (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                             SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
                             SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC,
-                           gp.nom ASC
+                           gp.nom ASC, gp.nom_complet ASC, gp.slug ASC, gp.position ASC
           `;
 
           // Regrouper par scrutin pour les articles
@@ -371,6 +385,20 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
 
           if (!force && dossier.iaContentHash === contentHash) {
             result.skipped++;
+            return;
+          }
+
+          // Rehash : on aligne le hash sur la nouvelle formule et on s'arrête
+          // là. Ni LLM, ni réécriture du résumé, ni `iaGeneratedAt` touché —
+          // la date doit continuer de dire quand le TEXTE a été produit.
+          if (rehashOnly) {
+            if (!dryRun) {
+              await prisma.dossierLegislatif.update({
+                where: { id: dossier.id },
+                data: { iaContentHash: contentHash },
+              });
+            }
+            result.enriched++;
             return;
           }
 
@@ -450,13 +478,14 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
 // =============================================================================
 
 export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<EnrichmentResult> {
-  const { limit, dryRun = false, concurrency = 2, force = false, only } = options;
+  const { limit, dryRun = false, concurrency = 2, force = false, only, rehashOnly = false } = options;
 
   const result: EnrichmentResult = {
     enriched: 0, skipped: 0, errors: 0, totalTokensIn: 0, totalTokensOut: 0,
   };
 
-  if (!process.env.MISTRAL_API_KEY) {
+  // Le rehash ne parle pas au LLM : la clé n'est pas requise.
+  if (!rehashOnly && !process.env.MISTRAL_API_KEY) {
     logger.warn('MISTRAL_API_KEY not set — skipping IA enrichment');
     return result;
   }
@@ -532,7 +561,7 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
                 ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                           SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
                           SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC,
-                         gp.nom ASC
+                         gp.nom ASC, gp.nom_complet ASC, gp.slug ASC, gp.position ASC
               `
             : [];
 
@@ -564,7 +593,7 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
                 ORDER BY s.id, (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                                 SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
                                 SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC,
-                               gp.nom ASC
+                               gp.nom ASC, gp.nom_complet ASC, gp.slug ASC, gp.position ASC
               `
             : [];
 
@@ -611,6 +640,18 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
 
           if (!force && sujet.iaContentHash === contentHash) {
             result.skipped++;
+            return;
+          }
+
+          // Rehash : voir enrichDossiersIA. `label` n'est pas retouché non plus.
+          if (rehashOnly) {
+            if (!dryRun) {
+              await prisma.sujet.update({
+                where: { id: sujet.id },
+                data: { iaContentHash: contentHash },
+              });
+            }
+            result.enriched++;
             return;
           }
 
