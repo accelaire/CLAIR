@@ -260,7 +260,7 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
         try {
           const scrutinsClefs = await prisma.scrutin.findMany({
             where: { dossierId: dossier.id },
-            select: { id: true, titre: true, sort: true, typeVote: true, resumeIA: true },
+            select: { id: true, titre: true, sort: true, typeVote: true, resumeIA: true, iaContentHash: true },
             // `id` départage : le tri alimente le hash ET la sélection des 10
             // scrutins clefs, deux ex æquo qui permutent suffiraient à faire
             // croire à un changement de contenu.
@@ -287,7 +287,8 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             GROUP BY gp.nom, gp.nom_complet, gp.slug, gp.position
             ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                       SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
-                      SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC
+                      SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC,
+                     gp.nom ASC
           `;
 
           // Votes sur les articles clés (top 5 articles les plus votés).
@@ -313,9 +314,13 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             HAVING SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                    SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
                    SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) > 1
+            -- gp.nom departage : ces lignes alimentent le hash dans leur ordre de
+            -- retour, deux groupes ex aequo qui permutent suffiraient a faire
+            -- croire a un changement de contenu.
             ORDER BY s.id, (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                             SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
-                            SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC
+                            SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC,
+                           gp.nom ASC
           `;
 
           // Regrouper par scrutin pour les articles
@@ -353,7 +358,11 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             dossier.titreCourt,
             dossier.procedureLibelle,
             dossier.etat,
-            scrutinsClefs.map(s => `${s.sort}:${s.resumeIA ?? s.titre}`).join('|'),
+            // Le HASH suit `iaContentHash` du scrutin, pas son texte : un résumé
+            // LLM est non déterministe (température 0,3), donc le régénérer
+            // suffirait à invalider tous les dossiers qui le citent, en cascade.
+            // Le prompt, lui, reçoit bien le texte.
+            scrutinsClefs.map(s => `${s.sort}:${s.iaContentHash ?? s.titre}`).join('|'),
             ensembleForHash,
             articlesForHash,
             amendementsForHash,
@@ -494,7 +503,7 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
         try {
           const dossiers = await prisma.dossierLegislatif.findMany({
             where: { sujetId: sujet.id },
-            select: { id: true, uid: true, titre: true, etat: true, resumeIA: true },
+            select: { id: true, uid: true, titre: true, etat: true, resumeIA: true, iaContentHash: true },
             // Ordre imposé : ces lignes alimentent le hash, un ordre non
             // déterministe le ferait varier à contenu identique.
             orderBy: { uid: 'asc' },
@@ -522,7 +531,8 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
                 GROUP BY gp.nom, gp.nom_complet, gp.slug, gp.position
                 ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                           SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
-                          SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC
+                          SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC,
+                         gp.nom ASC
               `
             : [];
 
@@ -550,9 +560,11 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
                 HAVING SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                        SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
                        SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) > 1
+                -- gp.nom departage (cf. enrichDossiersIA).
                 ORDER BY s.id, (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                                 SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
-                                SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC
+                                SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC,
+                               gp.nom ASC
               `
             : [];
 
@@ -578,11 +590,16 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
           const dossiersForHash = dossiers
             .map(d => {
               const chambre = d.uid.startsWith('SENAT') ? 'senat' : 'assemblee';
-              return `${chambre}:${d.etat ?? ''}:${d.titre}:${d.resumeIA ?? ''}`;
+              return `${chambre}:${d.etat ?? ''}:${d.titre}:${d.iaContentHash ?? ''}`;
             })
             .join('|');
+          // `sujet.label` est VOLONTAIREMENT absent : l'enrichissement le réécrit
+          // lui-même avec le titre produit par le LLM. L'inclure rendait le hash
+          // auto-invalidant — calculé sur l'ancien label, stocké, puis comparé au
+          // passage suivant à un hash calculé sur le NOUVEAU label. 36 % des
+          // sujets se régénéraient ainsi à chaque nuit sans qu'aucune source
+          // n'ait bougé. Un hash de contenu ne contient que des sources.
           const hashParts = [
-            sujet.label,
             sujet.status,
             sujet.description,
             sujet.category,
