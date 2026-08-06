@@ -1285,8 +1285,36 @@ async function syncSingleSenateur(
 // SYNC SCRUTINS (via API Assemblée Nationale)
 // =============================================================================
 
+
+/**
+ * Fenêtre du sync quotidien des scrutins.
+ *
+ * Un scrutin clos ne change plus : ses votes sont figés dès la séance. Or le
+ * sync remplace intégralement les votes de chaque scrutin qu'il traite, sans
+ * comparer. Mesure du 2026-08-06 : 1 482 204 votes supprimés puis réinsérés en
+ * une nuit, dont 1 220 081 (82 %) sur des scrutins vieux de plus de trois mois,
+ * le plus ancien datant d'octobre 2024.
+ *
+ * On borne donc le passage quotidien à une fenêtre récente. Les scrutins plus
+ * anciens restent rattrapables explicitement via `sync --scrutins` (sans
+ * `sinceMonths`), qui reste non borné.
+ */
+export const SCRUTINS_DAILY_WINDOW_MONTHS = 6;
+
+/** Date plancher d'une fenêtre exprimée en mois, `null` si non bornée. */
+export function windowFloor(sinceMonths?: number): Date | null {
+  if (!sinceMonths || sinceMonths <= 0) return null;
+  const floor = new Date();
+  floor.setMonth(floor.getMonth() - sinceMonths);
+  return floor;
+}
+
 export async function syncScrutins(
-  options: { limit?: number; fromNumero?: number; legislature?: number } = {}
+  options: {
+    limit?: number; fromNumero?: number; legislature?: number;
+    /** Ne traiter que les scrutins des N derniers mois (cf. SCRUTINS_DAILY_WINDOW_MONTHS). */
+    sinceMonths?: number;
+  } = {}
 ): Promise<{ scrutins: number; votes: number }> {
   const legislature = options.legislature ?? LEGISLATURE_AN_COURANTE;
   logger.info({ limit: options.limit, legislature }, 'Starting scrutins AN sync (from Assemblée Nationale API)...');
@@ -1308,6 +1336,9 @@ export async function syncScrutins(
   let scrutinsUpdated = 0;
   let votesCreated = 0;
 
+  const floor = windowFloor(options.sinceMonths);
+  let scrutinsSkippedOld = 0;
+
   const chambre = 'assemblee';
   // Pour l'AN, la session est la législature : elle fait partie de la clé unique
   // (numero, chambre, session), ce qui isole les scrutins de chaque législature.
@@ -1316,6 +1347,12 @@ export async function syncScrutins(
   for (const data of scrutinsData) {
     try {
       const { scrutin, votes } = data;
+
+      // Hors fenêtre : on ne réécrit pas les votes d'un scrutin clos.
+      if (floor && scrutin.date && new Date(scrutin.date) < floor) {
+        scrutinsSkippedOld++;
+        continue;
+      }
 
       // Tags automatiques basés sur le titre
       const tags = extractTags(scrutin.titre);
@@ -1369,11 +1406,9 @@ export async function syncScrutins(
         scrutinsCreated++;
       }
 
-      // Synchroniser les votes individuels
-      // D'abord supprimer les votes existants pour ce scrutin
-      await prisma.vote.deleteMany({ where: { scrutinId } });
-
-      // Créer les nouveaux votes
+      // Synchroniser les votes individuels.
+      // Remplacement complet plutôt qu'upsert : c'est la seule façon simple de
+      // faire disparaître un vote retiré à la source (mise au point).
       const voteRecords = [];
       for (const vote of votes) {
         const parlementaireId = parlementaireMap.get(vote.acteurRef);
@@ -1387,10 +1422,17 @@ export async function syncScrutins(
         });
       }
 
-      if (voteRecords.length > 0) {
-        await prisma.vote.createMany({ data: voteRecords });
-        votesCreated += voteRecords.length;
-      }
+      // La suppression et la réinsertion DOIVENT être atomiques : hors
+      // transaction, le scrutin traverse un état sans aucun vote, que l'API
+      // sert telle quelle. C'est aussi l'invariant « scrutins sans votes »
+      // (tolérance zéro) que les checks qualité font respecter par ailleurs.
+      await prisma.$transaction([
+        prisma.vote.deleteMany({ where: { scrutinId } }),
+        ...(voteRecords.length > 0
+          ? [prisma.vote.createMany({ data: voteRecords })]
+          : []),
+      ]);
+      votesCreated += voteRecords.length;
 
     } catch (error) {
       logger.warn({ numero: data.scrutin.numero, error: errorMessage(error) }, 'Error syncing scrutin');
@@ -1406,6 +1448,8 @@ export async function syncScrutins(
     scrutins: { created: scrutinsCreated, updated: scrutinsUpdated },
     votes: votesCreated,
     total: scrutinsData.length,
+    skippedHorsFenetre: scrutinsSkippedOld,
+    fenetreMois: options.sinceMonths ?? null,
   }, 'Scrutins AN sync completed');
 
   return { scrutins: scrutinsCreated + scrutinsUpdated, votes: votesCreated };
@@ -1421,6 +1465,8 @@ export async function syncScrutinsSenat(
     session?: string;
     sessions?: string[];
     enrichDossiers?: boolean;
+    /** Ne traiter que les scrutins des N derniers mois (cf. SCRUTINS_DAILY_WINDOW_MONTHS). */
+    sinceMonths?: number;
   } = {}
 ): Promise<{ scrutins: number; votes: number; dossiersLinked: number }> {
   // Le client DOSLEG couvre par défaut SENAT_SESSION_MIN → année courante.
@@ -1472,11 +1518,20 @@ export async function syncScrutinsSenat(
   let votesCreated = 0;
   let dossiersLinked = 0;
 
+  const floor = windowFloor(options.sinceMonths);
+  let scrutinsSkippedOld = 0;
+
   const chambre = 'senat';
 
   for (const data of scrutinsData) {
     try {
       const { scrutin, votes } = data;
+
+      // Hors fenêtre : on ne réécrit pas les votes d'un scrutin clos.
+      if (floor && scrutin.date && new Date(scrutin.date) < floor) {
+        scrutinsSkippedOld++;
+        continue;
+      }
 
       // Utiliser la session directement du client (format "2024-2025")
       // Extraire l'année de début pour la clé unique
@@ -1562,9 +1617,8 @@ export async function syncScrutinsSenat(
         scrutinsCreated++;
       }
 
-      // Synchroniser les votes individuels
-      await prisma.vote.deleteMany({ where: { scrutinId } });
-
+      // Synchroniser les votes individuels (cf. syncScrutins pour le pourquoi
+      // du remplacement complet et de la transaction).
       const voteRecords = [];
       for (const vote of votes) {
         const parlementaireId = parlementaireMap.get(vote.matricule);
@@ -1578,10 +1632,13 @@ export async function syncScrutinsSenat(
         });
       }
 
-      if (voteRecords.length > 0) {
-        await prisma.vote.createMany({ data: voteRecords });
-        votesCreated += voteRecords.length;
-      }
+      await prisma.$transaction([
+        prisma.vote.deleteMany({ where: { scrutinId } }),
+        ...(voteRecords.length > 0
+          ? [prisma.vote.createMany({ data: voteRecords })]
+          : []),
+      ]);
+      votesCreated += voteRecords.length;
 
     } catch (error) {
       logger.warn({ numero: data.scrutin.numero, error: errorMessage(error) }, 'Error syncing scrutin Sénat');
@@ -1598,6 +1655,8 @@ export async function syncScrutinsSenat(
     votes: votesCreated,
     dossiersLinked,
     total: scrutinsData.length,
+    skippedHorsFenetre: scrutinsSkippedOld,
+    fenetreMois: options.sinceMonths ?? null,
   }, 'Scrutins Sénat sync completed');
 
   return { scrutins: scrutinsCreated + scrutinsUpdated, votes: votesCreated, dossiersLinked };
@@ -2722,7 +2781,12 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
 
           case 'assemblee_nationale:scrutins': {
             // Si --all et pas de limite explicite, on sync TOUT (undefined = pas de limite)
-            const scrutinsResult = await syncScrutins({ limit: options.scrutinsLimit });
+            // `sinceMonths` ne borne QUE le batch quotidien : `sync --scrutins`
+            // reste non borné pour les rattrapages.
+            const scrutinsResult = await syncScrutins({
+              limit: options.scrutinsLimit,
+              sinceMonths: SCRUTINS_DAILY_WINDOW_MONTHS,
+            });
             syncResult = { created: scrutinsResult.scrutins, updated: 0 };
             break;
           }
@@ -2738,6 +2802,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
             const senatScrutinsResult = await syncScrutinsSenat({
               limit: options.scrutinsLimit,
               sessions,
+              sinceMonths: SCRUTINS_DAILY_WINDOW_MONTHS,
             });
             syncResult = { created: senatScrutinsResult.scrutins, updated: 0 };
             break;
