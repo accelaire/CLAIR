@@ -110,29 +110,42 @@ const SITEMAP_HEADERS = internalHeaders('CLAIR-Web-Sitemap/1.0');
  * scrutins. Elle saturait le rate-limit à mi-parcours (200 req/min) et
  * publiait un sitemap tronqué : 11 801 scrutins indexés sur 21 731.
  */
+/**
+ * ⚠️ Cette fonction LÈVE en cas d'échec, elle ne dégrade pas.
+ *
+ * Renvoyer un jeu vide produisait un sitemap réduit aux quelques pages
+ * statiques — et `revalidate` le figeait alors pour 24 h. Une indisponibilité
+ * de quelques secondes de l'API coûtait donc une journée entière de sitemap
+ * amputé de ~29 000 URLs, sans autre trace qu'un `console.error`. C'est la
+ * panne silencieuse que ce fichier est justement censé avoir éliminée.
+ *
+ * En levant, la régénération ISR échoue et Next continue de servir la dernière
+ * version saine : le sitemap vieillit au lieu de se vider. Au build, l'échec
+ * est bruyant, ce qui est le comportement voulu — mieux vaut ne pas déployer
+ * qu'écraser un sitemap correct par un sitemap vide.
+ */
 async function fetchSitemapData(): Promise<SitemapData> {
   const url = `${API_URL}/api/v1/sitemap`;
 
-  try {
-    const response = await fetch(url, { headers: SITEMAP_HEADERS });
+  const response = await fetch(url, { headers: SITEMAP_HEADERS });
 
-    if (!response.ok) {
-      console.error(`[sitemap] ${response.status} ${response.statusText} — ${url}`);
-      return EMPTY_SITEMAP_DATA;
-    }
-
-    const data = (await response.json()) as Partial<SitemapData>;
-    return { ...EMPTY_SITEMAP_DATA, ...data };
-  } catch (error) {
-    console.error(`[sitemap] fetch failed — ${url}`, error);
-    return EMPTY_SITEMAP_DATA;
+  if (!response.ok) {
+    throw new Error(`[sitemap] ${response.status} ${response.statusText} — ${url}`);
   }
+
+  const data = (await response.json()) as Partial<SitemapData>;
+  return { ...EMPTY_SITEMAP_DATA, ...data };
 }
 
 /**
  * Les groupes restent servis par leur liste publique : elle ne retourne que la
  * législature/session courante, et on ne veut pas dupliquer cette logique dans
  * l'endpoint sitemap. Une requête, quelques dizaines d'entrées.
+ *
+ * Contrairement à `fetchSitemapData`, un échec dégrade au lieu de lever : ces
+ * quelques dizaines d'URLs ne valent pas de renoncer aux ~29 000 autres. Le
+ * revers est qu'un sitemap sans groupes reste figé 24 h, sans autre trace que
+ * cette ligne de log.
  */
 async function fetchGroupes(): Promise<GroupeItem[]> {
   const url = `${API_URL}/api/v1/groupes?page=1&limit=100`;

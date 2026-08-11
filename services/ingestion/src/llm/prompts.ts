@@ -135,7 +135,11 @@ function formatGroupePosition(g: GroupePosition): string {
   let tendency: string;
   if (expressed === 0) {
     tendency = 'Abstention totale';
-  } else if (g.abstention >= expressed) {
+  } else if (g.abstention > expressed) {
+    // Strictement supérieur. À égalité (ex. 15 pour / 0 contre / 15
+    // abstentions) l'abstention ne domine pas, et le libellé ferait écrire au
+    // modèle que le groupe s'est abstenu alors que toutes ses voix exprimées
+    // étaient favorables.
     tendency = 'Abstention majoritaire';
   } else {
     const pctPourExpr = (g.pour / expressed) * 100;
@@ -151,10 +155,18 @@ function formatGroupePosition(g: GroupePosition): string {
   return `${nomAffiche}${orientationLabel} : ${g.pour} pour, ${g.contre} contre, ${g.abstention} abstention → ${tendency}`;
 }
 
-/** Position dominante d'un groupe, `null` si aucune voix. */
+/** Position dominante d'un groupe, `null` si aucune voix ou si ex æquo. */
 function positionDominante(g: GroupePosition): 'POUR' | 'CONTRE' | 'ABSTENTION' | null {
   const max = Math.max(g.pour, g.contre, g.abstention);
   if (max === 0) return null;
+
+  // Ex æquo ⇒ aucune position dominante. Départager par l'ordre des tests
+  // ferait d'un groupe à 5 pour / 5 contre un groupe « POUR », que
+  // `formatDivergences` transmettrait ensuite au modèle comme un fait à ne pas
+  // contredire. Mieux vaut taire une divergence que d'en publier une fausse.
+  // Même règle que le badge de dissidence côté API.
+  if ([g.pour, g.contre, g.abstention].filter(n => n === max).length > 1) return null;
+
   if (g.abstention === max) return 'ABSTENTION';
   return g.pour === max ? 'POUR' : 'CONTRE';
 }

@@ -1315,7 +1315,7 @@ export async function syncScrutins(
     /** Ne traiter que les scrutins des N derniers mois (cf. SCRUTINS_DAILY_WINDOW_MONTHS). */
     sinceMonths?: number;
   } = {}
-): Promise<{ scrutins: number; votes: number }> {
+): Promise<{ scrutins: number; votes: number; votesOrphelins: number }> {
   const legislature = options.legislature ?? LEGISLATURE_AN_COURANTE;
   logger.info({ limit: options.limit, legislature }, 'Starting scrutins AN sync (from Assemblée Nationale API)...');
 
@@ -1335,6 +1335,7 @@ export async function syncScrutins(
   let scrutinsCreated = 0;
   let scrutinsUpdated = 0;
   let votesCreated = 0;
+  let votesOrphelins = 0;
 
   const floor = windowFloor(options.sinceMonths);
   let scrutinsSkippedOld = 0;
@@ -1422,6 +1423,22 @@ export async function syncScrutins(
         });
       }
 
+      // La source annonce des votes mais aucun ne se rattache à un
+      // parlementaire connu : le remplacement viderait le scrutin, proprement
+      // et sans erreur. Ce cas ne traduit jamais une réalité parlementaire,
+      // seulement un décalage de notre côté (refs d'un format inattendu, ou
+      // scrutins synchronisés avant les parlementaires après un renouvellement).
+      // On préfère conserver les votes existants et le signaler.
+      if (votes.length > 0 && voteRecords.length === 0) {
+        logger.error({
+          numero: data.scrutin.numero,
+          chambre,
+          votesSource: votes.length,
+        }, 'Aucun vote rattachable à un parlementaire connu — remplacement annulé');
+        votesOrphelins++;
+        continue;
+      }
+
       // La suppression et la réinsertion DOIVENT être atomiques : hors
       // transaction, le scrutin traverse un état sans aucun vote, que l'API
       // sert telle quelle. C'est aussi l'invariant « scrutins sans votes »
@@ -1450,9 +1467,10 @@ export async function syncScrutins(
     total: scrutinsData.length,
     skippedHorsFenetre: scrutinsSkippedOld,
     fenetreMois: options.sinceMonths ?? null,
+    votesOrphelins,
   }, 'Scrutins AN sync completed');
 
-  return { scrutins: scrutinsCreated + scrutinsUpdated, votes: votesCreated };
+  return { scrutins: scrutinsCreated + scrutinsUpdated, votes: votesCreated, votesOrphelins };
 }
 
 // =============================================================================
@@ -1468,7 +1486,7 @@ export async function syncScrutinsSenat(
     /** Ne traiter que les scrutins des N derniers mois (cf. SCRUTINS_DAILY_WINDOW_MONTHS). */
     sinceMonths?: number;
   } = {}
-): Promise<{ scrutins: number; votes: number; dossiersLinked: number }> {
+): Promise<{ scrutins: number; votes: number; dossiersLinked: number; votesOrphelins: number }> {
   // Le client DOSLEG couvre par défaut SENAT_SESSION_MIN → année courante.
   // On peut restreindre à une/des sessions via options.session / options.sessions.
   logger.info({ limit: options.limit, enrichDossiers: options.enrichDossiers ?? true }, 'Starting scrutins Sénat sync (DOSLEG)...');
@@ -1516,6 +1534,7 @@ export async function syncScrutinsSenat(
   let scrutinsCreated = 0;
   let scrutinsUpdated = 0;
   let votesCreated = 0;
+  let votesOrphelins = 0;
   let dossiersLinked = 0;
 
   const floor = windowFloor(options.sinceMonths);
@@ -1632,6 +1651,19 @@ export async function syncScrutinsSenat(
         });
       }
 
+      // Cf. syncScrutins : un scrutin dont aucun vote ne se rattache traduit un
+      // décalage de notre côté, pas une réalité parlementaire. On garde
+      // l'existant plutôt que de le vider en silence.
+      if (votes.length > 0 && voteRecords.length === 0) {
+        logger.error({
+          numero: data.scrutin.numero,
+          chambre: 'senat',
+          votesSource: votes.length,
+        }, 'Aucun vote rattachable à un parlementaire connu — remplacement annulé');
+        votesOrphelins++;
+        continue;
+      }
+
       await prisma.$transaction([
         prisma.vote.deleteMany({ where: { scrutinId } }),
         ...(voteRecords.length > 0
@@ -1657,9 +1689,10 @@ export async function syncScrutinsSenat(
     total: scrutinsData.length,
     skippedHorsFenetre: scrutinsSkippedOld,
     fenetreMois: options.sinceMonths ?? null,
+    votesOrphelins,
   }, 'Scrutins Sénat sync completed');
 
-  return { scrutins: scrutinsCreated + scrutinsUpdated, votes: votesCreated, dossiersLinked };
+  return { scrutins: scrutinsCreated + scrutinsUpdated, votes: votesCreated, dossiersLinked, votesOrphelins };
 }
 
 // =============================================================================

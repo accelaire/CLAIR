@@ -943,6 +943,13 @@ export class ParlementairesService {
       scrutin_nombre_abstention: number;
     }
 
+    // Un numéro de scrutin n'est unique que par (chambre, session) : deux
+    // scrutins de sessions différentes peuvent partager date et numéro. Sans
+    // départage, « la page N » n'est pas un ensemble stable et une ligne peut
+    // se répéter d'une page à l'autre ou n'apparaître nulle part. `scrutin_id`
+    // rend l'ordre total, comme dans GroupesService.
+    const ORDRE_VOTES = `ORDER BY s.date DESC, s.numero DESC, s.id ASC`;
+
     // Colonnes du vote et de son scrutin, communes aux deux formes de requête.
     const COLONNES_VOTE = `
         v.id,
@@ -982,7 +989,7 @@ export class ParlementairesService {
       JOIN scrutins s ON v.scrutin_id = s.id
       LEFT JOIN group_majority gm ON v.scrutin_id = gm.scrutin_id AND gm.rn = 1
       WHERE ${whereClause}
-      ORDER BY s.date DESC, s.numero DESC
+      ${ORDRE_VOTES}
       LIMIT ${limit} OFFSET ${offset}
     `
       : `
@@ -991,7 +998,7 @@ export class ParlementairesService {
         FROM votes v
         JOIN scrutins s ON v.scrutin_id = s.id
         WHERE ${whereClause}
-        ORDER BY s.date DESC, s.numero DESC
+        ${ORDRE_VOTES}
         LIMIT ${limit} OFFSET ${offset}
       ),
       ${CTE_GROUP_MAJORITY_EPOQUE(parlementaireId, groupeIdParam, {
@@ -1002,7 +1009,7 @@ export class ParlementairesService {
         gm.majority_position as groupe_position
       FROM page
       LEFT JOIN group_majority gm ON gm.scrutin_id = page.scrutin_id AND gm.rn = 1
-      ORDER BY page.scrutin_date DESC, page.scrutin_numero DESC
+      ORDER BY page.scrutin_date DESC, page.scrutin_numero DESC, page.scrutin_id ASC
     `;
 
     const countQuery = dissidentOnly
