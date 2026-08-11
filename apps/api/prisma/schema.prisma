@@ -78,6 +78,7 @@ model Parlementaire {
   faitsNotablesIA   String?   @map("faits_notables_ia")
   iaContentHash     String?   @map("ia_content_hash")
   iaGeneratedAt     DateTime? @map("ia_generated_at")
+  iaSources         Json?     @map("ia_sources") // provenance des sources web {wikipedia, wikidata: {url, fetchedAt}}
 
   // Relations
   votes         Vote[]

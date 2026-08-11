@@ -472,6 +472,7 @@ Règles :
 - Ne prends jamais parti politiquement.
 - Cite les faits vérifiables : mandats, votes notables, prises de position publiques.
 - Si des informations manquent, n'invente rien.
+- Les données CLAIR (groupe, mandats, statistiques de vote, HATVP) sont à jour quotidiennement et FONT FOI : en cas de contradiction avec une source web (Wikipédia, Wikidata), privilégie toujours les données CLAIR, notamment sur le mandat et le groupe en cours.
 - Réponds en texte brut, sans markdown.
 - Utilise un ton accessible et engageant, comme un journaliste politique de qualité.`;
 
@@ -522,9 +523,22 @@ export interface ParlementairePromptData {
   // Déclarations HATVP
   declarations: { type: string; label: string; datePublication?: string | null; urlDossier?: string | null }[];
 
-  // Sources web
+  // Sources web (contexte biographique traçable — jamais prioritaire sur nos données)
   wikipediaBio?: string | null;
-  tavilyResults?: { title: string; content: string }[];
+  wikidataFacts?: {
+    description?: string;
+    naissance?: string;
+    partis: { label: string; debut?: string; fin?: string }[];
+    fonctions: { label: string; debut?: string; fin?: string }[];
+  } | null;
+}
+
+/** Formatte une période Wikidata (début/fin par année) en suffixe lisible. */
+function periodeStr(f: { debut?: string; fin?: string }): string {
+  if (f.debut && f.fin) return ` (${f.debut}–${f.fin})`;
+  if (f.debut) return ` (depuis ${f.debut})`;
+  if (f.fin) return ` (jusqu'en ${f.fin})`;
+  return '';
 }
 
 export function buildParlementaireResumePrompt(data: ParlementairePromptData): string {
@@ -604,14 +618,21 @@ export function buildParlementaireResumePrompt(data: ParlementairePromptData): s
     parts.push(bio);
   }
 
-  // Résultats Tavily (presse / actualités)
-  if (data.tavilyResults && data.tavilyResults.length > 0) {
-    parts.push('\n--- Actualités et articles de presse ---');
-    for (const r of data.tavilyResults.slice(0, 3)) {
-      const content = r.content.length > 500
-        ? r.content.slice(0, 500) + '...'
-        : r.content;
-      parts.push(`[${r.title}] ${content}`);
+  // Faits structurés Wikidata (sourcés, vérifiables)
+  if (data.wikidataFacts) {
+    const wd = data.wikidataFacts;
+    const wdLines: string[] = [];
+    if (wd.description) wdLines.push(`Description : ${wd.description}`);
+    if (wd.naissance) wdLines.push(`Année de naissance : ${wd.naissance}`);
+    if (wd.partis.length > 0) {
+      wdLines.push('Partis politiques : ' + wd.partis.map(p => `${p.label}${periodeStr(p)}`).join(' ; '));
+    }
+    if (wd.fonctions.length > 0) {
+      wdLines.push('Fonctions occupées : ' + wd.fonctions.map(f => `${f.label}${periodeStr(f)}`).join(' ; '));
+    }
+    if (wdLines.length > 0) {
+      parts.push('\n--- Faits structurés (Wikidata, sourcés) ---');
+      parts.push(...wdLines);
     }
   }
 

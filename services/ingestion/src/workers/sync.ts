@@ -3352,10 +3352,11 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         tokensIn: iaGroupeAmendements.totalTokensIn, tokensOut: iaGroupeAmendements.totalTokensOut,
       }, 'Groupe amendement descriptions enrichment completed');
 
-      // Fiches parlementaires enrichies (Wikipedia + Tavily + Mistral)
+      // Fiches parlementaires enrichies (Wikipedia + Wikidata + Mistral)
       const { enrichParlementairesIA } = await import('./parlementaire-enrichment.js');
 
       // 1) Backfill : fiches jamais enrichies (resumeIA null), typiquement les nouveaux élus.
+      //    Sans limite : traite TOUTES les fiches non enrichies en un passage.
       const iaParl = await enrichParlementairesIA({ concurrency: 2 });
       logger.info({
         enriched: iaParl.enriched, skipped: iaParl.skipped, errors: iaParl.errors,
@@ -3365,8 +3366,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       // 2) Rotation : le backfill ne retouche jamais une fiche déjà enrichie, donc la date
       // affichée vieillit indéfiniment. On régénère chaque jour un échantillon aléatoire parmi
       // les fiches non rafraîchies depuis 25 jours.
-      // Budget : Tavily = 1 appel par fiche, quota 1000/mois partagé avec sujet-links-generator
-      // → 25/jour (750/mois) couvre les ~950 fiches en ~5 semaines en gardant une marge.
+      // Sources gratuites (Wikipedia + Wikidata, sans quota) : le seul coût est Mistral.
+      // 25/jour rafraîchit les ~950 fiches en ~38 jours ; ce plafond est ajustable librement.
       const iaParlRefresh = await enrichParlementairesIA({
         concurrency: 2,
         randomSample: 25,

@@ -1,6 +1,6 @@
 // =============================================================================
 // Enrichissement IA des fiches parlementaires
-// Pipeline : DB stats + mandats sourceData + HATVP declarations + Wikipedia + Tavily → Mistral → DB
+// Pipeline : DB stats + mandats sourceData + HATVP declarations + Wikipedia + Wikidata → Mistral → DB
 // =============================================================================
 
 import { Prisma, PrismaClient } from '@prisma/client';
@@ -14,18 +14,7 @@ import {
   type ParlementairePromptData,
 } from '../llm/prompts.js';
 import { fetchWikipediaBio } from '../sources/wikipedia/client.js';
-import {
-  tavilySearch,
-  isTavilyAvailable,
-  getTavilyStatus,
-  fetchTavilyCredits,
-} from '../sources/tavily/client.js';
-
-// Réseaux sociaux / sites non pertinents exclus des recherches Tavily de bios.
-const TAVILY_SOCIAL_EXCLUDE = [
-  'twitter.com', 'x.com', 'facebook.com', 'instagram.com',
-  'tiktok.com', 'youtube.com', 'linkedin.com',
-];
+import { fetchWikidataFacts } from '../sources/wikidata/client.js';
 import { DECLARATION_TYPES } from '../sources/hatvp/declarations-client.js';
 import { logger } from '../utils/logger.js';
 import { isRecord, readString, type JsonRecord } from '../utils/json.js';
@@ -169,29 +158,13 @@ export async function enrichParlementairesIA(
   const mistral = new CLAIRMistralClient();
   const limiter = pLimit(concurrency);
 
-  // Garde-fou en amont : Tavily est une dépendance dure de cet enrichissement,
-  // pas un bonus. Le plan est à 1000 crédits par mois et la rotation quotidienne
-  // en consomme ~25/jour — soit 750/mois pour les seuls parlementaires. Mieux
-  // vaut ne pas démarrer que produire des fiches non sourcées.
-  if (!isTavilyAvailable()) {
-    logger.error('TAVILY_API_KEY absente — enrichissement parlementaires annulé');
-    return result;
-  }
-
-  const credits = await fetchTavilyCredits();
-  if (credits && credits.remaining === 0) {
-    logger.error(
-      { used: credits.used, limit: credits.limit },
-      'Crédits Tavily épuisés — enrichissement parlementaires annulé',
-    );
-    return result;
-  }
-
+  // Plus de dépendance web dure. Le socle sourcé de chaque fiche, c'est NOTRE dossier
+  // parlementaire (mandats, votes, présence, HATVP), toujours présent. Wikipédia et
+  // Wikidata ne font qu'ajouter du contexte biographique traçable : leur absence
+  // appauvrit la fiche mais ne bloque jamais la génération (fini les 76 fiches sautées
+  // et la boucle infinie du quota Tavily épuisé).
   logger.info(
-    {
-      dryRun, concurrency, limit, force,
-      tavilyCreditsRestants: credits?.remaining ?? 'inconnu',
-    },
+    { dryRun, concurrency, limit, force },
     'Starting parlementaires IA enrichment...'
   );
 
@@ -312,29 +285,10 @@ export async function enrichParlementairesIA(
           const role = parl.chambre === 'senat' ? 'sénateur' : 'député';
           const wikiBio = await fetchWikipediaBio(parl.prenom, parl.nom, { role });
 
-          // Recherche Tavily — obligatoire, pas optionnelle.
-          //
-          // Un résultat `null` signifie que la source n'a pas répondu (quota,
-          // clé refusée, réseau), pas qu'elle n'a rien trouvé — l'absence de
-          // résultat est un tableau vide. Produire la fiche quand même
-          // reviendrait à publier un texte non sourcé en le datant comme frais,
-          // ce qui s'est produit 76 fois entre le 24 et le 26 juillet 2026.
-          // On saute la fiche : elle garde son contenu et sa date précédents,
-          // et sera reprise au prochain passage.
-          const tavilyResults = await tavilySearch(
-            `${parl.prenom} ${parl.nom} ${role} France actualité politique`,
-            { excludeDomains: TAVILY_SOCIAL_EXCLUDE, maxResults: 3 },
-          );
-
-          if (tavilyResults === null) {
-            const { reason } = getTavilyStatus();
-            logger.warn(
-              { parlementaireId: parl.id, raison: reason ?? 'erreur' },
-              'Tavily indisponible — fiche non enrichie',
-            );
-            result.skipped++;
-            return;
-          }
+          // Faits structurés Wikidata (best-effort, sourcé et traçable).
+          // Gratuit, sans quota, sans clé. En cas d'indisponibilité, on continue :
+          // la fiche reste ancrée sur nos données + Wikipédia.
+          const wikidata = await fetchWikidataFacts(parl.prenom, parl.nom);
 
           // Build prompt data
           const circoStr = parl.circonscription
@@ -379,10 +333,19 @@ export async function enrichParlementairesIA(
               urlDossier: d.urlDossier,
             })),
             wikipediaBio: wikiBio?.extract,
-            tavilyResults: tavilyResults?.map(r => ({
-              title: r.title,
-              content: r.content,
-            })),
+            wikidataFacts: wikidata && {
+              description: wikidata.description,
+              naissance: wikidata.naissance,
+              partis: wikidata.partis,
+              fonctions: wikidata.fonctions,
+            },
+          };
+
+          // Provenance des sources web utilisées — chaque fiche devient traçable.
+          const fetchedAt = new Date().toISOString();
+          const iaSources = {
+            wikipedia: wikiBio?.found ? { url: wikiBio.pageUrl, fetchedAt } : null,
+            wikidata: wikidata ? { url: wikidata.pageUrl, fetchedAt } : null,
           };
 
           const userPrompt = buildParlementaireResumePrompt(promptData);
@@ -438,6 +401,18 @@ export async function enrichParlementairesIA(
               iaGeneratedAt: new Date(),
             },
           });
+
+          // Provenance : écriture best-effort et découplée. Si la colonne ia_sources
+          // n'a pas encore été migrée, on n'échoue PAS la génération (elle s'activera
+          // d'elle-même après le ALTER). Voir migration ia_sources.
+          try {
+            await prisma.parlementaire.update({
+              where: { id: parl.id },
+              data: { iaSources },
+            });
+          } catch (e) {
+            logger.debug({ parlId: parl.id, error: errorMessage(e) }, 'Provenance ia_sources non persistée (colonne absente ?)');
+          }
 
           result.enriched++;
 
