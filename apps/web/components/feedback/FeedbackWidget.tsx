@@ -141,6 +141,10 @@ export function FeedbackWidget() {
     setShouldNudge((prev) => prev || checkNudgeConditions(panelOpen));
   }, [pathname, mounted, panelOpen, checkNudgeConditions]);
 
+  const closePanel = useCallback(() => {
+    setPanelOpen(false);
+  }, []);
+
   // Fermeture du panneau via la touche Échap
   useEffect(() => {
     if (!panelOpen) return;
@@ -149,7 +153,7 @@ export function FeedbackWidget() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [panelOpen]);
+  }, [panelOpen, closePanel]);
 
   // Focus sur le premier bouton du formulaire à l'ouverture
   useEffect(() => {
@@ -177,10 +181,6 @@ export function FeedbackWidget() {
     setSubmitting(false);
     setSubmitSuccess(false);
     setSubmitError(null);
-  }, []);
-
-  const closePanel = useCallback(() => {
-    setPanelOpen(false);
   }, []);
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {

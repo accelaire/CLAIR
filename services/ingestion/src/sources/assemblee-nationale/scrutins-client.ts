@@ -3,13 +3,12 @@
 // =============================================================================
 
 import { LEGISLATURE_AN_COURANTE } from '../../workers/mandats';
-import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { createWriteStream } from 'fs';
-import { pipeline } from 'stream/promises';
 import { logger } from '../../utils/logger';
+import { errorMessage, httpStatus } from '../../utils/errors';
+import { downloadWithRetry } from '../../utils/download';
 
 // =============================================================================
 // TYPES - Structure des données AN Scrutins
@@ -154,24 +153,15 @@ export class AssembleeNationaleScrutinsClient {
   // DOWNLOAD & EXTRACT HELPERS
   // ===========================================================================
 
+  /**
+   * Toutes les archives AN viennent du même CDN, qui throttle sévèrement les
+   * tirages répétés (mesuré le 2026-07-26 : 45x plus lent au 2e tirage
+   * consécutif de la même archive). Un run télécharge plusieurs de ces archives
+   * d'affilée, d'où des coupures dont le message « aborted » ne disait rien.
+   * `downloadWithRetry` reprend avec backoff et journalise le contexte réel.
+   */
   private async downloadFile(url: string, destPath: string): Promise<void> {
-    logger.debug({ url, destPath }, 'Downloading file...');
-
-    const response = await axios({
-      method: 'GET',
-      url,
-      responseType: 'stream',
-      timeout: 180000,
-      headers: {
-        'User-Agent': 'CLAIR-Bot/1.0 (https://github.com/clair)',
-        Accept: 'application/zip',
-      },
-    });
-
-    const writer = createWriteStream(destPath);
-    await pipeline(response.data, writer);
-
-    logger.debug({ destPath }, 'File downloaded');
+    await downloadWithRetry(url, destPath, { accept: 'application/zip' });
   }
 
   /** Chiffres romains de la législature (XV, XVI, XVII…) : l'AN suffixe certaines
@@ -203,8 +193,8 @@ export class AssembleeNationaleScrutinsClient {
         logger.info({ url }, 'Downloading scrutins archive...');
         await this.downloadFile(url, destPath);
         return url;
-      } catch (error: any) {
-        if (error.response?.status === 404) {
+      } catch (error) {
+        if (httpStatus(error) === 404) {
           logger.warn({ url }, 'Archive absente (404), essai du nom suivant');
           continue;
         }
@@ -230,9 +220,9 @@ export class AssembleeNationaleScrutinsClient {
       await execAsync(`unzip -q -o "${zipPath}" -d "${extractDir}"`, {
         maxBuffer: 1024 * 1024 * 100,
       });
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'unzip failed');
-      throw new Error(`Zip extraction failed: ${error.message}`);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'unzip failed');
+      throw new Error(`Zip extraction failed: ${errorMessage(error)}`);
     }
   }
 
@@ -289,8 +279,8 @@ export class AssembleeNationaleScrutinsClient {
             results.push(transformed);
             processed++;
           }
-        } catch (e: any) {
-          logger.warn({ file, error: e.message }, 'Error parsing scrutin');
+        } catch (e) {
+          logger.warn({ file, error: errorMessage(e) }, 'Error parsing scrutin');
         }
       }
 
@@ -364,8 +354,8 @@ export class AssembleeNationaleScrutinsClient {
         },
         votes,
       };
-    } catch (e: any) {
-      logger.warn({ scrutinId: scrutin.uid, error: e.message }, 'Error transforming scrutin');
+    } catch (e) {
+      logger.warn({ scrutinId: scrutin.uid, error: errorMessage(e) }, 'Error transforming scrutin');
       return null;
     }
   }

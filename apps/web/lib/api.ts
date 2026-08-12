@@ -1,9 +1,17 @@
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
+// Same-origin, via le proxy `app/api/v1/[...path]/route.ts`.
+//
+// Le navigateur n'appelle plus l'API en direct. Il ne peut porter aucun secret —
+// tout ce qu'il envoie est reproductible par n'importe quel client HTTP — donc
+// tant qu'il s'adressait à api.clair.vote, la seule façon de lui accorder un
+// quota confortable était de faire confiance à son en-tête `Origin`, que
+// n'importe qui pouvait copier. Le détour par le proxy déplace cette
+// authentification vers un serveur, qui lui peut détenir le secret.
+//
+// Effet de bord bienvenu : plus aucun CORS en jeu pour l'application.
 export const api = axios.create({
-  baseURL: `${API_URL}/api/v1`,
+  baseURL: '/api/v1',
   headers: {
     'Content-Type': 'application/json',
   },

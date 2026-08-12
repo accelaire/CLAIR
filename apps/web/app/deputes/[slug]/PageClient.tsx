@@ -31,6 +31,7 @@ import {
   ExternalLink,
   Info,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
 import { api } from '@/lib/api';
 import { scrutinHref } from '@/lib/scrutin-url';
@@ -136,7 +137,7 @@ function StatCard({
 }: {
   label: string;
   value: number | string | null;
-  icon: any;
+  icon: LucideIcon;
   suffix?: string;
   subtitle?: string;
   tooltip?: string;

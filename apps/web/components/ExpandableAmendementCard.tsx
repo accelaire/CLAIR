@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ChevronDown, ChevronUp, FileText, Vote } from 'lucide-react';
+import { ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import { AmendementSortBadge } from '@/components/AmendementSortBadge';
 import { scrutinHref } from '@/lib/scrutin-url';
 

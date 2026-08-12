@@ -28,6 +28,7 @@ import {
   enrichScrutinsSenatAmendements,
   syncLobbyistes,
   linkANScrutinsByTitle,
+  unlinkANScrutinsWrongLegislature,
   linkOrphanScrutinsByTFIDF,
   linkOrphanScrutinsByTexteNumero,
   linkOrphansByLoiTitre,
@@ -51,6 +52,15 @@ import { backfillMandatsParlementaires } from './workers/backfill-mandats.js';
 import { syncSenateursHistoriques } from './workers/senat-histo.js';
 import { SENAT_SESSION_MIN } from './workers/mandats.js';
 import { logger } from './utils/logger';
+import { errorMessage } from './utils/errors';
+
+/**
+ * Plafond de chaque appel de rechargement du cache homepage.
+ *
+ * Large — la reconstruction agrège beaucoup de données — mais fini : c'est
+ * l'absence de borne qui laissait le conteneur cron vivant indéfiniment.
+ */
+const CACHE_WARM_TIMEOUT_MS = 120_000;
 
 const program = new Command();
 
@@ -87,7 +97,7 @@ program
   .option('--texte-ids <ids>', 'IDs texte AMELI à cibler (séparés par des virgules, avec --se -a)')
   .option('--no-actions', 'Ne pas synchroniser les actions de lobbying (avec --lo)')
   .option('-l, --limit <number>', 'Limiter le nombre d\'éléments à synchroniser', parseInt)
-  .option('--legislature <number>', 'Législature AN à ingérer (15,16,17 — défaut: courante). Avec -p --an ou -s --an', parseInt)
+  .option('--legislature <number>', 'Législature AN à ingérer (15,16,17 — défaut: courante). Avec -p --an, -s --an ou -d --an', parseInt)
   .option('--sessions <annees>', `Sessions Sénat à ingérer, séparées par des virgules (ex: 2006,2007). Défaut: ${SENAT_SESSION_MIN} → courante. Avec -s --se, permet un backfill par tranches (mémoire).`)
   .option('--dry-run', 'Mode simulation (affiche ce qui serait fait sans modifier)')
   // Opérations de liaison (combiner avec --in ou --am)
@@ -227,9 +237,9 @@ program
         if (chambre === 'se') {
           await syncDossiersSenat({ limit: options.limit });
         } else if (chambre === 'an') {
-          await syncDossiers({ limit: options.limit });
+          await syncDossiers({ limit: options.limit, legislature: options.legislature });
         } else {
-          await syncDossiers({ limit: options.limit });
+          await syncDossiers({ limit: options.limit, legislature: options.legislature });
           await syncDossiersSenat({ limit: options.limit });
         }
       } else if (options.lobbyistes) {
@@ -304,8 +314,8 @@ program
 
       logger.info('Sync command completed successfully');
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sync command failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sync command failed');
       process.exit(1);
     }
   });
@@ -323,8 +333,8 @@ program
       await fullSync();
       logger.info('Backfill completed successfully');
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Backfill failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Backfill failed');
       process.exit(1);
     }
   });
@@ -346,8 +356,8 @@ program
 
       logger.info('All tests passed!');
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Test failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Test failed');
       process.exit(1);
     }
   });
@@ -404,12 +414,18 @@ program
         sources: options.sources?.split(',').map((s: string) => s.trim()),
       });
 
-      logger.info({
+      const syncSummary = {
         duration: result.duration,
         sourcesChecked: result.sourcesChecked.length,
         sourcesChanged: result.sourcesChanged.length,
         sourcesSkipped: result.sourcesSkipped.length,
-      }, 'Smart sync completed');
+        sourcesFailed: result.sourcesFailed,
+      };
+      if (result.sourcesFailed.length > 0) {
+        logger.error(syncSummary, 'Smart sync completed with failures');
+      } else {
+        logger.info(syncSummary, 'Smart sync completed');
+      }
 
       // Afficher le résumé
       if (result.sourcesChanged.length > 0) {
@@ -429,26 +445,42 @@ program
         }
       }
 
+      if (result.sourcesFailed.length > 0) {
+        console.log('\n❌ Sources en échec:');
+        for (const source of result.sourcesFailed) {
+          console.log(`  ❌ ${source}: ${result.results[source]?.error ?? 'erreur inconnue'}`);
+        }
+      }
+
       console.log(`\n⏱️  Durée: ${result.duration}`);
 
       // Recharger le cache homepage via l'URL publique de l'API
       // Cooldown 120s pour laisser Postgres souffler après le sync
       // Étape 1 : invalider le cache (POST /warm)
       // Étape 2 : reconstruire via GET /homepage (comme un user normal)
+      //
+      // ⚠️ Ces deux fetch DOIVENT être bornés dans le temps. Sans timeout, un
+      // appel qui ne répond jamais empêche d'atteindre le process.exit() qui
+      // suit, et le conteneur cron reste alors vivant à ne rien faire jusqu'au
+      // déploiement suivant — observé les 19, 20, 21 et 24 juillet 2026, où le
+      // dernier log est « Invalidation du cache homepage » suivi de plus rien,
+      // pour ~90 Mo retenus pendant des heures.
       console.log('\n⏳ Attente 120s avant rechargement du cache (stabilisation DB)...');
       await new Promise(r => setTimeout(r, 120_000));
       const apiUrl = process.env.API_URL || 'http://localhost:3001';
-      const warmToken = process.env.CACHE_WARM_TOKEN?.trim();
-      if (warmToken) {
+      // Secret interne partagé avec l'API et le frontend
+      const internalSecret = (process.env.CLAIR_INTERNAL_SECRET || '').trim();
+      if (internalSecret) {
         try {
           // Invalidation
           console.log('\n🔄 Invalidation du cache homepage...');
           const invalidate = await fetch(`${apiUrl}/api/v1/homepage/warm`, {
             method: 'POST',
             headers: {
-              'x-warm-token': warmToken,
+              'x-clair-internal': internalSecret,
               'user-agent': 'clair-ingestion/1.0',
             },
+            signal: AbortSignal.timeout(CACHE_WARM_TIMEOUT_MS),
           });
           if (!invalidate.ok) {
             console.log(`  ⚠️  Invalidation échouée: status ${invalidate.status}`);
@@ -456,7 +488,11 @@ program
             // Rebuild — identique à un user qui arrive sur la homepage
             console.log('  ✅ Cache invalidé, reconstruction...');
             const rebuild = await fetch(`${apiUrl}/api/v1/homepage`, {
-              headers: { 'user-agent': 'clair-ingestion/1.0' },
+              headers: {
+                'x-clair-internal': internalSecret,
+                'user-agent': 'clair-ingestion/1.0',
+              },
+              signal: AbortSignal.timeout(CACHE_WARM_TIMEOUT_MS),
             });
             if (rebuild.ok) {
               console.log('  ✅ Cache homepage rechargé');
@@ -464,16 +500,30 @@ program
               console.log(`  ⚠️  Rebuild échoué: status ${rebuild.status}`);
             }
           }
-        } catch (e: any) {
-          console.log(`  ⚠️  Cache warm indisponible: ${e.message}`);
+        } catch (e) {
+          console.log(`  ⚠️  Cache warm indisponible: ${errorMessage(e)}`);
         }
       } else {
-        console.log('\n⚠️  CACHE_WARM_TOKEN non configuré — cache homepage non rechargé');
+        console.log('\n⚠️  CLAIR_INTERNAL_SECRET non configuré — cache homepage non rechargé');
       }
 
-      process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Smart sync failed');
+      // Code de sortie : non nul UNIQUEMENT si tout a échoué.
+      //
+      // Le cron Railway est en ON_FAILURE avec restartPolicyMaxRetries=10. Sur
+      // un échec partiel, sortir en 1 relancerait jusqu'à dix syncs complets de
+      // ~70 min — qui rejoueraient dix-huit sources déjà réussies pour en
+      // retenter une seule, et qui marteleraient les serveurs sources (l'AN
+      // nous renvoyait déjà 2 040 HTTP 503 sur un seul run). Le remède serait
+      // pire que le mal.
+      //
+      // Un échec partiel se signale donc par le récapitulatif ❌ et par un
+      // logger.error sur stderr, que Railway classe en erreur. Le retry doit
+      // vivre au niveau de la source, pas du run entier.
+      const toutAEchoue =
+        result.sourcesFailed.length > 0 && result.sourcesChanged.length === 0;
+      process.exit(toutAEchoue ? 1 : 0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Smart sync failed');
       process.exit(1);
     }
   });
@@ -489,8 +539,8 @@ program
       console.log('\n📡 Vérification des sources...\n');
       await checkSourcesStatus();
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Status check failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Status check failed');
       process.exit(1);
     }
   });
@@ -506,8 +556,8 @@ program
       const { corrected } = await reconcileActifFromMandats();
       console.log(`✅ ${corrected} parlementaire(s) réaligné(s) (actif ⇔ mandat en cours)`);
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'reconcile-actif failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'reconcile-actif failed');
       process.exit(1);
     }
   });
@@ -569,8 +619,8 @@ program
 
       console.log('\n');
       process.exit(totalErrors > 0 ? 1 : 0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Stats calculation failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Stats calculation failed');
       process.exit(1);
     }
   });
@@ -602,8 +652,8 @@ program
       // Keep the process running
       console.log('\n✅ Scheduler démarré. Ctrl+C pour arrêter.\n');
 
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Scheduler failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Scheduler failed');
       process.exit(1);
     }
   });
@@ -620,8 +670,8 @@ program
       const result = await linkANScrutinsByTitle();
       console.log(`\nScrutins liés aux dossiers: ${result.linked}`);
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'link-scrutins-dossiers failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'link-scrutins-dossiers failed');
       process.exit(1);
     }
   });
@@ -645,8 +695,8 @@ program
         console.log(`   ⚠️  Sénateurs sans mandature (série inconnue): ${result.senateursSerieInconnue}`);
       }
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'backfill-mandats failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'backfill-mandats failed');
       process.exit(1);
     }
   });
@@ -677,8 +727,29 @@ program
       console.log(`   Mandats mis à jour          : ${result.mandatsMisAJour}`);
       console.log(`   Sénateurs hors périmètre    : ${result.senateursIgnores}`);
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'sync-senateurs-histo failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-senateurs-histo failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: unlink-wrong-legislature
+// =============================================================================
+program
+  .command('unlink-wrong-legislature')
+  .description('Casser les liens scrutin AN → dossier d\'une autre législature (réparation one-shot)')
+  .action(async () => {
+    try {
+      logger.info('Starting AN legislature guard cleanup...');
+      const result = await unlinkANScrutinsWrongLegislature();
+      console.log(`\n🔗 Garde-fou législature (AN):`);
+      console.log(`   Liens cassés: ${result.unlinked}`);
+      console.log(`   Les scrutins concernés sont redevenus orphelins.`);
+      console.log(`   Relancer generate-sujets pour purger les sujets devenus vides.`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'unlink-wrong-legislature failed');
       process.exit(1);
     }
   });
@@ -697,8 +768,8 @@ program
       console.log(`   Liés: ${result.linked}`);
       console.log(`   Ignorés (score trop bas): ${result.skipped}`);
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'link-scrutins-tfidf failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'link-scrutins-tfidf failed');
       process.exit(1);
     }
   });
@@ -715,8 +786,8 @@ program
       const result = await linkOrphanScrutinsByTexteNumero();
       console.log(`\nScrutins liés par texte_numero: ${result.linked}`);
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'link-by-texte-numero failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'link-by-texte-numero failed');
       process.exit(1);
     }
   });
@@ -733,8 +804,8 @@ program
       const result = await linkOrphansByLoiTitre();
       console.log(`\nScrutins liés par loi_titre: ${result.linked}`);
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'link-by-loi-titre failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'link-by-loi-titre failed');
       process.exit(1);
     }
   });
@@ -754,8 +825,8 @@ program
       const result3 = await propagateDossierIdBySiblingTexteRef();
       console.log(`Amendements liés via sibling texteRef (safe): ${result3.linked}`);
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'link-amendements-dossiers failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'link-amendements-dossiers failed');
       process.exit(1);
     }
   });
@@ -786,8 +857,66 @@ program
       console.log(`   Scrutins couverts: ${result.totalScrutins}`);
 
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sujet generation failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sujet generation failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: relabel-sujets
+// =============================================================================
+program
+  .command('relabel-sujets')
+  .description('Recalculer le label des sujets restés sur un UID technique (DLR5L…). Ne touche pas aux slugs')
+  .option('--dry-run', 'Afficher les changements sans modifier la DB')
+  .action(async (options) => {
+    try {
+      const { relabelTechnicalSujets } = await import('./workers/sujet-generator.js');
+      const result = await relabelTechnicalSujets({ dryRun: options.dryRun });
+
+      console.log(`\n🏷️  Labels techniques${options.dryRun ? ' (DRY RUN)' : ''}:`);
+      console.log(`   Examinés: ${result.examined}`);
+      console.log(`   Renommés: ${result.relabeled}`);
+      console.log(`   Sans intitulé exploitable: ${result.stillTechnical}`);
+      for (const c of result.changes) {
+        console.log(`   ${c.slug}`);
+        console.log(`      ${c.before}  →  ${c.after}`);
+      }
+
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'relabel-sujets failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: reslug-sujets
+// =============================================================================
+program
+  .command('reslug-sujets')
+  .description('Recalculer le slug des sujets restés sur un identifiant technique. CASSE les anciennes URLs')
+  .option('--dry-run', 'Afficher les changements sans modifier la DB')
+  .action(async (options) => {
+    try {
+      const { reslugTechnicalSujets } = await import('./workers/sujet-generator.js');
+      const result = await reslugTechnicalSujets({ dryRun: options.dryRun });
+
+      console.log(`\n🔗 Slugs techniques${options.dryRun ? ' (DRY RUN)' : ''}:`);
+      console.log(`   Examinés: ${result.examined}`);
+      console.log(`   Renommés: ${result.reslugged}`);
+      console.log(`   Laissés en l'état: ${result.skipped}`);
+      for (const c of result.changes) {
+        console.log(`   [${String(c.scrutinCount).padStart(4)} scrutins]  ${c.before}  →  ${c.after}`);
+      }
+      if (!options.dryRun && result.reslugged > 0) {
+        console.log(`\n   ⚠️  ${result.reslugged} URLs publiques ont changé. Purger Redis (sujets:*, sitemap:*).`);
+      }
+
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'reslug-sujets failed');
       process.exit(1);
     }
   });
@@ -817,8 +946,8 @@ program
       console.log(`   Écartés (URL morte): ${result.dropped}`);
 
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sujet links generation failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sujet links generation failed');
       process.exit(1);
     }
   });
@@ -852,8 +981,8 @@ program
       console.log(`   Liens supprimés: ${result.deleted}`);
 
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sujet context links generation failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sujet context links generation failed');
       process.exit(1);
     }
   });
@@ -874,6 +1003,8 @@ program
   .option('-l, --limit <number>', 'Nombre max d\'entités à traiter', parseInt)
   .option('--dry-run', 'Mode simulation (calcule mais n\'écrit pas)')
   .option('--force', 'Ignorer le hash, regénérer tout')
+  .option('--only <ids...>', 'Restreindre à des entités précises (uid de dossier, slug de sujet). Corrige une fiche fautive sans relancer tout le corpus')
+  .option('--rehash', 'Recalculer et stocker le hash de contenu SANS appeler le LLM ni modifier les textes. À utiliser après un changement de formule de hash sur un corpus déjà correct')
   .option('-c, --concurrency <number>', 'Nombre d\'appels LLM en parallèle (défaut: 3)', parseInt)
   .action(async (options) => {
     try {
@@ -886,6 +1017,8 @@ program
         concurrency: options.concurrency,
         randomSample: options.random,
         skipRecentDays: options.skipRecentDays,
+        only: options.only,
+        rehashOnly: options.rehash,
       };
 
       // --random cible exclusivement les parlementaires (pas de cascade complète)
@@ -943,8 +1076,8 @@ program
       }
 
       process.exit(0);
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'IA enrichment failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'IA enrichment failed');
       process.exit(1);
     }
   });
@@ -969,8 +1102,8 @@ program
       } finally {
         await prisma.$disconnect();
       }
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Quality check failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Quality check failed');
       process.exit(1);
     }
   });
@@ -995,8 +1128,8 @@ program
       } finally {
         await prisma.$disconnect();
       }
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'IA quality check failed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'IA quality check failed');
       process.exit(1);
     }
   });

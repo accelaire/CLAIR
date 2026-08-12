@@ -1,6 +1,8 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": [".env"],
+  "//": "globalEnv : variables lues PENDANT le build, que Turborepo doit transmettre aux tâches. Sans cette déclaration, Vercel les définit sur le projet mais elles n'arrivent jamais au code. CLAIR_INTERNAL_SECRET est indispensable au prérendu du sitemap : sans lui l'appel à l'API n'est pas authentifié comme interne et retombe dans le tier anonyme à 10 req/min. Les NEXT_PUBLIC_* sont déjà reconnues par l'inférence de framework, inutile de les lister.",
+  "globalEnv": ["API_URL", "CLAIR_INTERNAL_SECRET"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

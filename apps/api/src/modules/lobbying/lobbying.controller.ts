@@ -3,6 +3,7 @@
 // =============================================================================
 
 import { FastifyPluginAsync } from 'fastify';
+import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { ApiError } from '../../utils/errors';
 import { buildTextSearchCondition } from '../../utils/search';
@@ -69,7 +70,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         ? secteurs.split(',').map((s) => s.trim()).filter(Boolean)
         : [];
 
-      const where: any = {
+      const where: Prisma.LobbyisteWhereInput = {
         ...(type && { type }),
         ...(secteur && { secteur: { contains: secteur, mode: 'insensitive' as const } }),
         ...(search && buildTextSearchCondition('nom', search)),
@@ -81,7 +82,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
       };
 
       // Build orderBy based on sort field
-      let orderBy: any;
+      let orderBy: Prisma.LobbyisteOrderByWithRelationInput;
       switch (sort) {
         case 'budget':
           orderBy = { budgetAnnuel: { sort: order, nulls: order === 'desc' ? 'last' : 'first' } };
@@ -121,6 +122,10 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
           })),
           _count: undefined,
           secteurs: undefined,
+          // sourceData retiré des listes par cohérence avec scrutins et
+          // parlementaires. Il est null en base aujourd'hui, mais rien ne
+          // garantit qu'il le restera.
+          sourceData: undefined,
         })),
         meta: {
           total,
@@ -358,7 +363,9 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, _reply) => {
       const { id } = lobbyisteParamsSchema.parse(request.params);
-      const { page = 1, limit = 20, cible } = request.query as any;
+      const { page = 1, limit = 20, cible } = request.query as {
+        page?: number; limit?: number; cible?: string;
+      };
       const skip = (page - 1) * limit;
 
       const lobbyiste = await fastify.prisma.lobbyiste.findUnique({
@@ -496,7 +503,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         ? secteurs.split(',').map((s) => s.trim()).filter(Boolean)
         : [];
 
-      const where: any = {};
+      const where: Prisma.ActionLobbyWhereInput = {};
 
       if (cible) {
         where.cible = cible;
@@ -541,7 +548,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         }
       }
 
-      const orderBy: any = sort === 'lobbyiste'
+      const orderBy: Prisma.ActionLobbyOrderByWithRelationInput = sort === 'lobbyiste'
         ? { lobbyiste: { nom: order } }
         : { dateDebut: order };
 
@@ -637,7 +644,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
         ? secteurs.split(',').map((s) => s.trim()).filter(Boolean)
         : [];
 
-      const where: any = {};
+      const where: Prisma.ActionLobbyWhereInput = {};
       if (secteur) {
         where.lobbyiste = { secteur: { contains: secteur, mode: 'insensitive' } };
       }

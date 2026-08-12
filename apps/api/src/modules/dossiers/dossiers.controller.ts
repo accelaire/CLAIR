@@ -3,6 +3,7 @@
 // =============================================================================
 
 import { FastifyPluginAsync } from 'fastify';
+import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { dossiersListQuerySchema, paginationQuerySchema, amendementsQuerySchema, trendingQuerySchema } from './dossiers.schema';
 import { ApiError } from '../../utils/errors';
@@ -31,7 +32,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
       const cached = await fastify.redis.get(cacheKey);
       if (cached) return JSON.parse(cached);
 
-      const where: any = {};
+      const where: Prisma.DossierLegislatifWhereInput = {};
 
       if (etat) where.etat = etat;
       if (chambre === 'senat') where.legislature = 0;
@@ -429,6 +430,51 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
         }
       }
 
+      // Travaux d'application liés, dans les DEUX sens.
+      //
+      // La liste des dossiers exige au moins un scrutin, ce qui écarte 19 135
+      // dossiers sur 21 055 — dont les rapports et missions d'application, qui
+      // deviennent introuvables. Ces documents citent le numéro de la loi dans
+      // leur titre (« Rapport d'information sur l'application de la loi
+      // n° 2023-580 ») sans porter eux-mêmes de `loi_numero`.
+      //
+      // Sens 1 — on consulte la loi : lister ses travaux d'application.
+      // Sens 2 — on consulte un rapport : remonter à la loi qu'il applique. Ces
+      // pages sont très pauvres (aucun vote, aucun amendement), le lien retour
+      // est souvent leur seul contenu exploitable.
+      const loiRefDuTitre = dossier.titre.match(/n°\s*(\d{4}-\d+)/)?.[1] ?? null;
+
+      const [travauxApplication, loiAppliquee] = await Promise.all([
+        loiNumero
+          ? fastify.prisma.$queryRaw<Array<{
+              uid: string; titre: string; procedureLibelle: string | null;
+              legislature: number; urlAN: string | null; urlSenat: string | null;
+            }>>`
+              SELECT doc.uid, doc.titre, doc.procedure_libelle AS "procedureLibelle",
+                     doc.legislature, doc.url_an AS "urlAN", doc.url_senat AS "urlSenat"
+              FROM dossiers_legislatifs doc
+              WHERE substring(doc.titre from 'n°\\s*([0-9]{4}-[0-9]+)') = ${loiNumero}
+                AND doc.id <> ${dossier.id}
+                AND doc.loi_numero IS NULL
+                AND NOT EXISTS (SELECT 1 FROM scrutins s WHERE s.dossier_id = doc.id)
+              ORDER BY doc.legislature DESC, doc.uid
+              LIMIT 20
+            `
+          : Promise.resolve([]),
+        loiRefDuTitre && !dossier.loiNumero
+          ? fastify.prisma.$queryRaw<Array<{
+              uid: string; titre: string; loiNumero: string | null; sujetSlug: string | null;
+            }>>`
+              SELECT loi.uid, loi.titre, loi.loi_numero AS "loiNumero", s.slug AS "sujetSlug"
+              FROM dossiers_legislatifs loi
+              LEFT JOIN sujets s ON s.id = loi.sujet_id AND s.actif = true
+              WHERE loi.loi_numero = ${loiRefDuTitre}
+              ORDER BY (s.slug IS NULL), loi.uid
+              LIMIT 5
+            `
+          : Promise.resolve([]),
+      ]);
+
       const result = {
         ...dossier,
         sourceData: undefined,
@@ -437,6 +483,11 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
         loiDateJO,
         urlLegifrance,
         urlJournalOfficiel,
+        travauxApplication: travauxApplication.map(t => ({
+          ...t,
+          chambre: dossierChambre(t.legislature),
+        })),
+        loiAppliquee: loiAppliquee[0] ?? null,
         chambre: dossierChambre(dossier.legislature),
         scrutinsCount: dossier._count.scrutins,
         amendementsCount: dossier._count.amendements,
@@ -557,7 +608,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
         throw new ApiError(404, 'Dossier législatif non trouvé');
       }
 
-      const where: any = { dossierId: dossier.id };
+      const where: Prisma.AmendementWhereInput = { dossierId: dossier.id };
       if (voted) {
         where.scrutins = { some: {} };
       }

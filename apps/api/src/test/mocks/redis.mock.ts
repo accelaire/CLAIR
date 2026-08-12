@@ -5,6 +5,16 @@
 import { vi } from 'vitest';
 import type { Redis } from 'ioredis';
 
+/**
+ * Glob Redis (`*` seulement) → RegExp. L'ancienne version ne remplaçait que la
+ * PREMIÈRE étoile et n'échappait rien : `parlementaire:votes:<uuid>:*` laissait
+ * les autres caractères spéciaux (`.`, `-`) agir comme des métacaractères.
+ */
+function matchGlob(pattern: string, key: string): boolean {
+  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*');
+  return new RegExp(`^${escaped}$`).test(key);
+}
+
 export function createMockRedisClient() {
   const store = new Map<string, string>();
 
@@ -18,13 +28,23 @@ export function createMockRedisClient() {
       store.set(key, value);
       return Promise.resolve('OK');
     }),
-    del: vi.fn((key: string) => {
-      store.delete(key);
-      return Promise.resolve(1);
+    del: vi.fn((...keys: string[]) => {
+      let n = 0;
+      for (const key of keys) if (store.delete(key)) n++;
+      return Promise.resolve(n);
     }),
     keys: vi.fn((pattern: string) => {
-      const regex = new RegExp(pattern.replace('*', '.*'));
-      return Promise.resolve(Array.from(store.keys()).filter((k) => regex.test(k)));
+      return Promise.resolve(Array.from(store.keys()).filter((k) => matchGlob(pattern, k)));
+    }),
+    // Le vrai `scan` parcourt l'espace de clés par lots ; ici tout tient en
+    // mémoire, on renvoie donc tout d'un coup avec le curseur final '0'.
+    scan: vi.fn((_cursor: string, ...args: (string | number)[]) => {
+      const matchIdx = args.findIndex((a) => String(a).toUpperCase() === 'MATCH');
+      const pattern = matchIdx >= 0 ? String(args[matchIdx + 1]) : '*';
+      return Promise.resolve([
+        '0',
+        Array.from(store.keys()).filter((k) => matchGlob(pattern, k)),
+      ]);
     }),
     flushall: vi.fn(() => {
       store.clear();

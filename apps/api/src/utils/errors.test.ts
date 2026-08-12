@@ -3,6 +3,7 @@
 // =============================================================================
 
 import { describe, it, expect, vi } from 'vitest';
+import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import {
   ApiError,
   notFound,
@@ -142,7 +143,7 @@ describe('isApiError', () => {
 describe('errorHandler', () => {
   const mockRequest = {
     log: { error: vi.fn() },
-  } as any;
+  } as unknown as FastifyRequest;
 
   const createMockReply = () => ({
     status: vi.fn().mockReturnThis(),
@@ -156,7 +157,7 @@ describe('errorHandler', () => {
     ];
     const zodError = new ZodError(zodIssues);
 
-    errorHandler(zodError, mockRequest, reply as any);
+    errorHandler(zodError, mockRequest, reply as unknown as FastifyReply);
 
     expect(reply.status).toHaveBeenCalledWith(400);
     expect(reply.send).toHaveBeenCalledWith({
@@ -171,7 +172,7 @@ describe('errorHandler', () => {
     const reply = createMockReply();
     const error = new ApiError(404, 'Député non trouvé', 'DEPUTE_NOT_FOUND');
 
-    errorHandler(error, mockRequest, reply as any);
+    errorHandler(error, mockRequest, reply as unknown as FastifyReply);
 
     expect(reply.status).toHaveBeenCalledWith(404);
     expect(reply.send).toHaveBeenCalledWith({
@@ -185,7 +186,7 @@ describe('errorHandler', () => {
     const reply = createMockReply();
     const error = new ApiError(400, 'Erreur', 'ERROR', { field: 'test' });
 
-    errorHandler(error, mockRequest, reply as any);
+    errorHandler(error, mockRequest, reply as unknown as FastifyReply);
 
     expect(reply.send).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -196,9 +197,9 @@ describe('errorHandler', () => {
 
   it('devrait gérer les erreurs Fastify avec statusCode', () => {
     const reply = createMockReply();
-    const error = { statusCode: 422, name: 'FastifyError', code: 'FST_ERR', message: 'Fastify error' } as any;
+    const error = { statusCode: 422, name: 'FastifyError', code: 'FST_ERR', message: 'Fastify error' } as unknown as FastifyError;
 
-    errorHandler(error, mockRequest, reply as any);
+    errorHandler(error, mockRequest, reply as unknown as FastifyReply);
 
     expect(reply.status).toHaveBeenCalledWith(422);
     expect(reply.send).toHaveBeenCalledWith({
@@ -210,9 +211,9 @@ describe('errorHandler', () => {
 
   it('devrait gérer les erreurs Prisma P2002 (duplicate)', () => {
     const reply = createMockReply();
-    const error = { name: 'PrismaClientKnownRequestError', code: 'P2002', message: 'Unique constraint' } as any;
+    const error = { name: 'PrismaClientKnownRequestError', code: 'P2002', message: 'Unique constraint' } as unknown as FastifyError;
 
-    errorHandler(error, mockRequest, reply as any);
+    errorHandler(error, mockRequest, reply as unknown as FastifyReply);
 
     expect(reply.status).toHaveBeenCalledWith(409);
     expect(reply.send).toHaveBeenCalledWith({
@@ -224,9 +225,9 @@ describe('errorHandler', () => {
 
   it('devrait gérer les erreurs Prisma P2025 (not found)', () => {
     const reply = createMockReply();
-    const error = { name: 'PrismaClientKnownRequestError', code: 'P2025', message: 'Record not found' } as any;
+    const error = { name: 'PrismaClientKnownRequestError', code: 'P2025', message: 'Record not found' } as unknown as FastifyError;
 
-    errorHandler(error, mockRequest, reply as any);
+    errorHandler(error, mockRequest, reply as unknown as FastifyReply);
 
     expect(reply.status).toHaveBeenCalledWith(404);
     expect(reply.send).toHaveBeenCalledWith({
@@ -241,7 +242,7 @@ describe('errorHandler', () => {
     vi.stubEnv('NODE_ENV', 'production');
 
     const error = new Error('Secret error message');
-    errorHandler(error, mockRequest, reply as any);
+    errorHandler(error, mockRequest, reply as unknown as FastifyReply);
 
     expect(reply.status).toHaveBeenCalledWith(500);
     expect(reply.send).toHaveBeenCalledWith({
@@ -258,7 +259,7 @@ describe('errorHandler', () => {
     vi.stubEnv('NODE_ENV', 'test');
 
     const error = new Error('Debug message');
-    errorHandler(error, mockRequest, reply as any);
+    errorHandler(error, mockRequest, reply as unknown as FastifyReply);
 
     expect(reply.send).toHaveBeenCalledWith(
       expect.objectContaining({

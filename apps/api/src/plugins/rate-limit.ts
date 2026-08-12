@@ -3,6 +3,7 @@
 // =============================================================================
 //
 // - Rate limiting Redis-backed (partagé entre instances, persiste au redeploy)
+// - Trafic interne CLAIR (secret partagé) exempté de toute limite
 // - 10 req/min pour les accès directs à l'API, illimité pour le frontend
 // - Blocage des User-Agents suspects (scripts basiques)
 // - Auto-ban des IPs après trop de violations 429
@@ -12,16 +13,32 @@
 import { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import fp from 'fastify-plugin';
 import rateLimit from '@fastify/rate-limit';
+import {
+  isInternalRequest,
+  hasInternalSecret,
+  getForwardedClientIp,
+} from '../utils/internal-auth';
 
 // =============================================================================
 // CONFIGURATION
 // =============================================================================
 
-/** Max requests per minute for direct API access (non-frontend) */
+/** Max requests per minute for direct API access */
 const DIRECT_API_MAX = 10;
 
-/** Max requests per minute for frontend (Origin matches trusted domains) */
-const FRONTEND_MAX = 200;
+/**
+ * Max requests per minute for browser traffic relayed by the frontend proxy,
+ * counted per real visitor IP.
+ *
+ * Remplace l'ancien tier « frontend » à 200 req/min qui se réclamait d'un
+ * en-tête `Origin` : n'importe quel client pouvait le copier et s'octroyer
+ * 20 fois le quota. Ici le laissez-passer est le secret interne, qui ne quitte
+ * jamais nos serveurs, et le compteur suit le visiteur et non le proxy.
+ *
+ * Volontairement généreux : une IP peut porter des centaines de visiteurs
+ * derrière le NAT d'un opérateur mobile, et le site fait 71 % de mobile.
+ */
+const BROWSER_MAX = 60;
 
 const RATE_LIMIT_WINDOW = '1 minute';
 
@@ -40,7 +57,7 @@ const BLOCKED_USER_AGENTS = new Set(['node', 'undici']);
 const CONTACT_EMAIL = 'contact@clair.vote';
 
 const RATE_LIMIT_MESSAGE =
-  `Limite de requêtes atteinte (${DIRECT_API_MAX} req/min). ` +
+  `Limite de requêtes atteinte. ` +
   `Si vous souhaitez utiliser l'API CLAIR de manière intensive, contactez-nous : ${CONTACT_EMAIL}`;
 
 const BAN_MESSAGE =
@@ -61,38 +78,32 @@ function isExcludedPath(url: string): boolean {
 }
 
 /**
- * Check if a request originates from a trusted frontend.
- * We check both Origin and Referer headers against CORS_ORIGIN env var.
+ * Les trois tiers d'accès.
+ *
+ * Il n'y a plus de tier fondé sur `Origin`/`Referer`. Ces en-têtes sont choisis
+ * par le client : la distinction « notre frontend » qu'ils prétendaient établir
+ * n'a jamais existé, n'importe qui pouvait s'en réclamer pour passer de 10 à
+ * 200 req/min. Le seul laissez-passer est désormais le secret interne, qui ne
+ * quitte jamais nos serveurs.
+ *
+ *  - `internal`  : SSR, sitemap, ingestion. Secret seul, aucune limite.
+ *  - `browser`   : visiteur relayé par le proxy du frontend. Secret + IP du
+ *                  visiteur, plafonné sur cette IP.
+ *  - `anonymous` : tout le reste, y compris les appels directs à api.clair.vote.
  */
-function isTrustedFrontend(request: FastifyRequest): boolean {
-  const trustedOrigins = getTrustedOrigins();
-  if (trustedOrigins.length === 0) return false;
+type AccessTier = 'internal' | 'browser' | 'anonymous';
 
-  const origin = request.headers.origin || '';
-  const referer = request.headers.referer || '';
-
-  return trustedOrigins.some(
-    (trusted) => origin.includes(trusted) || referer.includes(trusted),
-  );
+function getTier(request: FastifyRequest): AccessTier {
+  if (!isInternalRequest(request)) return 'anonymous';
+  return getForwardedClientIp(request) ? 'browser' : 'internal';
 }
 
-let _trustedOrigins: string[] | null = null;
-
-function getTrustedOrigins(): string[] {
-  if (_trustedOrigins !== null) return _trustedOrigins;
-
-  const raw = process.env.CORS_ORIGIN || '';
-  _trustedOrigins = raw
-    .split(',')
-    .map((o) => o.trim())
-    .filter(Boolean);
-
-  // In dev, localhost is always trusted
-  if (process.env.NODE_ENV !== 'production') {
-    _trustedOrigins.push('localhost', '127.0.0.1');
-  }
-
-  return _trustedOrigins;
+/**
+ * Clé de comptage : l'IP du visiteur pour le trafic relayé, l'IP de la connexion
+ * sinon. Sans cela tous les visiteurs partageraient le seau du proxy.
+ */
+function getRateLimitKey(request: FastifyRequest): string {
+  return getForwardedClientIp(request) ?? request.ip;
 }
 
 // =============================================================================
@@ -100,11 +111,21 @@ function getTrustedOrigins(): string[] {
 // =============================================================================
 
 const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
+  // Sans secret configuré, le SSR, le sitemap et le scheduler d'ingestion
+  // retombent dans le tier anonyme et se font throttler en silence. C'est
+  // exactement ce qui tronquait le sitemap : on veut le voir au démarrage.
+  if (!hasInternalSecret()) {
+    fastify.log.warn(
+      'CLAIR_INTERNAL_SECRET absent — le trafic interne (SSR, sitemap, ingestion) sera rate-limité comme un client anonyme',
+    );
+  }
+
   // ===========================================================================
   // 1. BLOCKED USER-AGENTS (runs first)
   // ===========================================================================
   fastify.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     if (isExcludedPath(request.url)) return;
+    if (isInternalRequest(request)) return; // Trafic interne CLAIR
 
     const ua = (request.headers['user-agent'] || '').toLowerCase().trim();
 
@@ -124,8 +145,14 @@ const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
   // ===========================================================================
   // 2. AUTO-BAN CHECK (runs before rate limit)
   // ===========================================================================
+  //
+  // L'auto-ban ne vise que le tier anonyme. Bannir une IP de visiteur pour une
+  // heure reviendrait à couper des centaines de personnes derrière le NAT d'un
+  // opérateur mobile, et le site fait 71 % de mobile. Le plafond BROWSER_MAX
+  // suffit à contenir ce trafic sans jamais fermer la porte.
   fastify.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     if (isExcludedPath(request.url)) return;
+    if (isInternalRequest(request)) return; // Interne et navigateur relayé
 
     const ip = request.ip;
     const banKey = `ratelimit:ban:${ip}`;
@@ -146,20 +173,24 @@ const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
   });
 
   // ===========================================================================
-  // 3. RATE LIMITING (Redis-backed, per-IP, frontend-aware)
+  // 3. RATE LIMITING (Redis-backed, par tier)
   // ===========================================================================
   await fastify.register(rateLimit, {
-    max: (request: FastifyRequest) => {
-      if (isTrustedFrontend(request)) return FRONTEND_MAX;
-      return DIRECT_API_MAX;
-    },
+    max: (request: FastifyRequest) =>
+      getTier(request) === 'browser' ? BROWSER_MAX : DIRECT_API_MAX,
     timeWindow: RATE_LIMIT_WINDOW,
     redis: fastify.redis,
-    keyGenerator: (request: FastifyRequest) => request.ip,
+    keyGenerator: getRateLimitKey,
     skipOnError: true, // If Redis is down, don't block
     allowList: (request: FastifyRequest) => {
       // Health checks (Railway healthcheck) and cache warming (lightMyRequest) bypass rate limiting
-      return isExcludedPath(request.url) || request.ip === '127.0.0.1';
+      // Seul le tier `internal` est exempté : le trafic navigateur relayé garde
+      // un plafond, sinon le proxy du frontend serait un relais illimité ouvert.
+      return (
+        isExcludedPath(request.url) ||
+        request.ip === '127.0.0.1' ||
+        getTier(request) === 'internal'
+      );
     },
     errorResponseBuilder: (_request: FastifyRequest, context) => ({
       statusCode: 429,
@@ -186,6 +217,10 @@ const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
   // ===========================================================================
   fastify.addHook('onResponse', async (request: FastifyRequest, reply: FastifyReply) => {
     if (reply.statusCode !== 429) return;
+    // Ne bannir que le tier anonyme. Compter les violations du trafic relayé
+    // sur `request.ip` bannirait l'IP de Vercel, donc le site entier ; et les
+    // compter sur l'IP du visiteur couperait tout un NAT opérateur.
+    if (isInternalRequest(request)) return;
 
     const ip = request.ip;
     const counterKey = `ratelimit:violations:${ip}`;
@@ -212,23 +247,46 @@ const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
   });
 
   // ===========================================================================
-  // 5. ENHANCED LOGGING for non-frontend requests
+  // 5. ENHANCED LOGGING for everything that isn't internal traffic
   // ===========================================================================
+  //
+  // Le trafic « frontend » était auparavant exclu de ce log, ce qui rendait le
+  // volume navigateur totalement invisible : impossible de dimensionner quoi que
+  // ce soit à partir des seuls accès directs. On loge désormais les deux, et le
+  // champ `tier` permet de les distinguer. Seul l'interne est muet, il est déjà
+  // connu et représenterait du bruit à chaque page rendue côté serveur.
   fastify.addHook('onResponse', async (request: FastifyRequest, reply: FastifyReply) => {
     if (isExcludedPath(request.url)) return;
-    if (isTrustedFrontend(request)) return;
 
-    // Log all non-frontend API access for monitoring
+    const tier = getTier(request);
+    if (tier === 'internal') return;
+
     const duration = reply.elapsedTime.toFixed(0);
     request.log.info(
       {
         type: 'api_access',
-        ip: request.ip,
+        tier,
+        // Pour le tier `browser`, l'IP du visiteur relayée par le proxy ; c'est
+        // elle qui porte le compteur, `request.ip` ne serait que celle de Vercel.
+        ip: getRateLimitKey(request),
         ua: request.headers['user-agent'] || 'none',
         method: request.method,
         url: request.url,
         status: reply.statusCode,
         durationMs: duration,
+        // Suivi de l'egress facturé : Railway mesure les octets en sortie de
+        // conteneur, donc avant la compression de son edge. Ces deux champs
+        // permettent de vérifier que le proxy transmet bien Accept-Encoding et
+        // que @fastify/compress s'active réellement en production.
+        acceptEncoding: request.headers['accept-encoding'] || 'none',
+        contentEncoding: reply.getHeader('content-encoding') || 'none',
+        // ⚠️ Vaut 'unknown' dès que la réponse est compressée : la compression
+        // bascule en chunked et supprime `content-length`. Depuis que gzip est
+        // actif, c'est le cas de la quasi-totalité des réponses, donc ce champ
+        // ne mesure plus l'egress. Le compter réellement demanderait un
+        // compteur d'octets sur le flux ; à faire seulement si l'on remet un
+        // budget au poids à l'ordre du jour.
+        bytes: reply.getHeader('content-length') || 'unknown',
       },
       'Direct API access',
     );

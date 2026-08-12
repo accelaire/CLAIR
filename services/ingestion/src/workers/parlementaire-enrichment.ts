@@ -1,6 +1,6 @@
 // =============================================================================
 // Enrichissement IA des fiches parlementaires
-// Pipeline : DB stats + mandats sourceData + HATVP declarations + Wikipedia + Tavily → Mistral → DB
+// Pipeline : DB stats + mandats sourceData + HATVP declarations + Wikipedia + Wikidata → Mistral → DB
 // =============================================================================
 
 import { Prisma, PrismaClient } from '@prisma/client';
@@ -14,15 +14,11 @@ import {
   type ParlementairePromptData,
 } from '../llm/prompts.js';
 import { fetchWikipediaBio } from '../sources/wikipedia/client.js';
-import { tavilySearch, isTavilyAvailable } from '../sources/tavily/client.js';
-
-// Réseaux sociaux / sites non pertinents exclus des recherches Tavily de bios.
-const TAVILY_SOCIAL_EXCLUDE = [
-  'twitter.com', 'x.com', 'facebook.com', 'instagram.com',
-  'tiktok.com', 'youtube.com', 'linkedin.com',
-];
+import { fetchWikidataFacts } from '../sources/wikidata/client.js';
 import { DECLARATION_TYPES } from '../sources/hatvp/declarations-client.js';
 import { logger } from '../utils/logger.js';
+import { isRecord, readString, type JsonRecord } from '../utils/json.js';
+import { errorMessage } from '../utils/errors.js';
 import type { EnrichmentResult, EnrichmentOptions } from './ia-enrichment.js';
 
 const prisma = new PrismaClient();
@@ -91,43 +87,54 @@ interface ExtractedMandat {
   organeRef?: string | null;
 }
 
-function extractMandatsAN(sourceData: any): ExtractedMandat[] {
-  const mandats = sourceData?.mandats?.mandat;
+function extractMandatsAN(sourceData: unknown): ExtractedMandat[] {
+  const mandats = isRecord(sourceData) && isRecord(sourceData.mandats)
+    ? sourceData.mandats.mandat
+    : undefined;
   if (!Array.isArray(mandats)) return [];
 
   return mandats
-    .filter((m: any) => INTERESTING_TYPE_ORGANES.has(m.typeOrgane))
-    .map((m: any) => ({
-      typeOrgane: m.typeOrgane,
-      institution: TYPE_ORGANE_LABELS[m.typeOrgane] || m.typeOrgane,
-      qualite: m.infosQualite?.libQualite || 'Membre',
-      dateDebut: m.dateDebut,
-      dateFin: m.dateFin || null,
-      sourceUid: m.uid || null,
-      organeRef: m.organes?.organeRef || null,
-    }))
+    .filter((m: unknown): m is JsonRecord =>
+      isRecord(m) && INTERESTING_TYPE_ORGANES.has(readString(m, 'typeOrgane') ?? '')
+    )
+    .map((m) => {
+      const typeOrgane = readString(m, 'typeOrgane') ?? '';
+      return {
+        typeOrgane,
+        institution: TYPE_ORGANE_LABELS[typeOrgane] || typeOrgane,
+        qualite: readString(m.infosQualite, 'libQualite') || 'Membre',
+        dateDebut: readString(m, 'dateDebut') ?? '',
+        dateFin: readString(m, 'dateFin') || null,
+        sourceUid: readString(m, 'uid') || undefined,
+        organeRef: readString(m.organes, 'organeRef') || null,
+      };
+    })
     .sort((a: ExtractedMandat, b: ExtractedMandat) =>
       (b.dateDebut || '').localeCompare(a.dateDebut || '')
     );
 }
 
-function extractMandatsSenat(sourceData: any): ExtractedMandat[] {
-  const organismes = sourceData?.organismes;
+function extractMandatsSenat(sourceData: unknown): ExtractedMandat[] {
+  const organismes = isRecord(sourceData) ? sourceData.organismes : undefined;
   if (!Array.isArray(organismes)) return [];
 
   return organismes
-    .filter((o: any) => {
-      const type = o.type;
+    .filter((o: unknown): o is JsonRecord => {
+      if (!isRecord(o)) return false;
+      const type = readString(o, 'type') ?? '';
       return INTERESTING_TYPE_ORGANES.has(type) || type === 'COMMISSION' || type === 'DELEGATION/OFFICE';
     })
-    .map((o: any) => ({
-      typeOrgane: o.type,
-      institution: o.libelle || TYPE_ORGANE_LABELS[o.type] || o.type,
-      qualite: 'Membre', // Sénat data doesn't include qualite per organisme
-      dateDebut: new Date().toISOString().split('T')[0], // Current membership (no start date in Sénat data)
-      dateFin: null,
-      sourceUid: `senat-${o.code}`,
-    }));
+    .map((o) => {
+      const type = readString(o, 'type') ?? '';
+      return {
+        typeOrgane: type,
+        institution: readString(o, 'libelle') || TYPE_ORGANE_LABELS[type] || type,
+        qualite: 'Membre', // Sénat data doesn't include qualite per organisme
+        dateDebut: new Date().toISOString().slice(0, 10), // Current membership (no start date in Sénat data)
+        dateFin: null,
+        sourceUid: `senat-${readString(o, 'code') ?? ''}`,
+      };
+    });
 }
 
 // =============================================================================
@@ -151,9 +158,13 @@ export async function enrichParlementairesIA(
   const mistral = new CLAIRMistralClient();
   const limiter = pLimit(concurrency);
 
-  const tavilyEnabled = isTavilyAvailable();
+  // Plus de dépendance web dure. Le socle sourcé de chaque fiche, c'est NOTRE dossier
+  // parlementaire (mandats, votes, présence, HATVP), toujours présent. Wikipédia et
+  // Wikidata ne font qu'ajouter du contexte biographique traçable : leur absence
+  // appauvrit la fiche mais ne bloque jamais la génération (fini les 76 fiches sautées
+  // et la boucle infinie du quota Tavily épuisé).
   logger.info(
-    { dryRun, concurrency, limit, force, tavilyEnabled },
+    { dryRun, concurrency, limit, force },
     'Starting parlementaires IA enrichment...'
   );
 
@@ -223,8 +234,8 @@ export async function enrichParlementairesIA(
         try {
           // Extract mandats from sourceData
           const mandats = parl.chambre === 'senat'
-            ? extractMandatsSenat(parl.sourceData as any)
-            : extractMandatsAN(parl.sourceData as any);
+            ? extractMandatsSenat(parl.sourceData)
+            : extractMandatsAN(parl.sourceData);
 
           // Fetch lobbying actions targeting this parlementaire
           const lobbyActions = await prisma.actionLobby.findMany({
@@ -274,13 +285,10 @@ export async function enrichParlementairesIA(
           const role = parl.chambre === 'senat' ? 'sénateur' : 'député';
           const wikiBio = await fetchWikipediaBio(parl.prenom, parl.nom, { role });
 
-          // Fetch Tavily results (optional)
-          const tavilyResults = tavilyEnabled
-            ? await tavilySearch(
-                `${parl.prenom} ${parl.nom} ${role} France actualité politique`,
-                { excludeDomains: TAVILY_SOCIAL_EXCLUDE, maxResults: 3 },
-              )
-            : null;
+          // Faits structurés Wikidata (best-effort, sourcé et traçable).
+          // Gratuit, sans quota, sans clé. En cas d'indisponibilité, on continue :
+          // la fiche reste ancrée sur nos données + Wikipédia.
+          const wikidata = await fetchWikidataFacts(parl.prenom, parl.nom);
 
           // Build prompt data
           const circoStr = parl.circonscription
@@ -325,10 +333,19 @@ export async function enrichParlementairesIA(
               urlDossier: d.urlDossier,
             })),
             wikipediaBio: wikiBio?.extract,
-            tavilyResults: tavilyResults?.map(r => ({
-              title: r.title,
-              content: r.content,
-            })),
+            wikidataFacts: wikidata && {
+              description: wikidata.description,
+              naissance: wikidata.naissance,
+              partis: wikidata.partis,
+              fonctions: wikidata.fonctions,
+            },
+          };
+
+          // Provenance des sources web utilisées — chaque fiche devient traçable.
+          const fetchedAt = new Date().toISOString();
+          const iaSources = {
+            wikipedia: wikiBio?.found ? { url: wikiBio.pageUrl, fetchedAt } : null,
+            wikidata: wikidata ? { url: wikidata.pageUrl, fetchedAt } : null,
           };
 
           const userPrompt = buildParlementaireResumePrompt(promptData);
@@ -385,6 +402,18 @@ export async function enrichParlementairesIA(
             },
           });
 
+          // Provenance : écriture best-effort et découplée. Si la colonne ia_sources
+          // n'a pas encore été migrée, on n'échoue PAS la génération (elle s'activera
+          // d'elle-même après le ALTER). Voir migration ia_sources.
+          try {
+            await prisma.parlementaire.update({
+              where: { id: parl.id },
+              data: { iaSources },
+            });
+          } catch (e) {
+            logger.debug({ parlId: parl.id, error: errorMessage(e) }, 'Provenance ia_sources non persistée (colonne absente ?)');
+          }
+
           result.enriched++;
 
           if (result.enriched % 10 === 0) {
@@ -393,10 +422,10 @@ export async function enrichParlementairesIA(
               'Parlementaires enrichment progress'
             );
           }
-        } catch (error: any) {
+        } catch (error) {
           result.errors++;
           logger.warn(
-            { parlId: parl.id, nom: parl.nom, error: error.message },
+            { parlId: parl.id, nom: parl.nom, error: errorMessage(error) },
             'Failed to enrich parlementaire'
           );
         }
@@ -416,13 +445,26 @@ export async function enrichParlementairesIA(
   } else {
     // Cursor-free pagination: enriched rows drop out of `resumeIA: null`, so we re-take
     // from the top each batch (the legacy behaviour for the non-sample path).
+    //
+    // Garde anti-boucle infinie : cette pagination ne progresse QUE si les fiches
+    // traitées quittent le set `resumeIA: null`. Si un batch entier échoue sans enrichir
+    // une seule fiche (ex. quota Tavily épuisé en cours de run), les mêmes lignes sont
+    // repiochées indéfiniment. On s'arrête donc dès qu'un batch ne fait aucun progrès.
     let remaining = limit ?? Infinity;
     while (remaining > 0) {
       const take = Math.min(BATCH_SIZE, remaining);
       const records = await fetchBatch(baseWhere, take);
       if (records.length === 0) break;
+      const enrichedBefore = result.enriched;
       await Promise.all(records.map(processParl));
       remaining -= records.length;
+      if (result.enriched === enrichedBefore) {
+        logger.error(
+          { errors: result.errors, restants: records.length },
+          'Backfill parlementaires interrompu : batch sans aucun progrès (dépendance externe en échec ?)',
+        );
+        break;
+      }
       if (records.length < take) break;
     }
   }
@@ -468,9 +510,9 @@ async function persistMandats(parlementaireId: string, mandats: ExtractedMandat[
           organeRef: m.organeRef || undefined,
         },
       });
-    } catch (error: any) {
+    } catch (error) {
       // Skip duplicate / invalid date errors silently
-      logger.debug({ sourceUid: m.sourceUid, error: error.message }, 'Mandat upsert failed');
+      logger.debug({ sourceUid: m.sourceUid, error: errorMessage(error) }, 'Mandat upsert failed');
     }
   }
 }

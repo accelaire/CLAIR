@@ -5,24 +5,7 @@ import {
   Calendar, CheckCircle, XCircle, ExternalLink,
 } from 'lucide-react';
 import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
-import { getDossierEtat } from '@/lib/dossiers';
 import { scrutinPeriodeLabel } from '@/lib/periodes';
-
-interface DossierLegislatif {
-  id: string;
-  uid: string;
-  titre: string;
-  titreCourt: string | null;
-  procedureLibelle: string | null;
-  urlAN: string | null;
-  urlSenat: string | null;
-  etat: string | null;
-  dateDepot: string | null;
-  loiNumero: string | null;
-  loiTitre: string | null;
-  urlLegifrance: string | null;
-  _count?: { scrutins: number; amendements: number };
-}
 
 interface ScrutinSidebarProps {
   chambre: string;
@@ -34,7 +17,6 @@ interface ScrutinSidebarProps {
   sort: string;
   tags: string[];
   demandeurTexte: string | null;
-  dossier: DossierLegislatif | null;
   sourceUrl: string | null;
   importance: number;
   formatDemandeurs: (text: string) => React.ReactNode;
@@ -51,14 +33,6 @@ const typeVoteLabels: Record<string, string> = {
   motion: 'Motion',
 };
 
-const formatDossierTitre = (titre: string, procedureLibelle?: string | null): string => {
-  const firstChar = titre.charAt(0);
-  if (firstChar !== firstChar.toUpperCase() && procedureLibelle) {
-    return `${procedureLibelle} ${titre}`;
-  }
-  return titre;
-};
-
 export function ScrutinSidebar({
   chambre,
   date,
@@ -68,7 +42,6 @@ export function ScrutinSidebar({
   sort,
   tags,
   demandeurTexte,
-  dossier,
   sourceUrl,
   importance,
   formatDemandeurs,
@@ -173,68 +146,9 @@ export function ScrutinSidebar({
         </div>
       )}
 
-      {/* Dossier législatif */}
-      {dossier && (
-        <div>
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Dossier législatif</h3>
-          <div className="rounded-lg border p-3 space-y-2">
-            <Link
-              href={`/dossiers/${dossier.uid}`}
-              className="text-sm font-medium hover:text-primary hover:underline block line-clamp-2"
-            >
-              {formatDossierTitre(dossier.titre, dossier.procedureLibelle)}
-            </Link>
-            {(() => {
-              const etatInfo = getDossierEtat(dossier.etat);
-              return etatInfo ? (
-                <span className={`inline-flex px-2 py-0.5 text-xs rounded-full ${etatInfo.color}`}>
-                  {etatInfo.label}
-                </span>
-              ) : null;
-            })()}
-            {dossier.loiNumero && (
-              <p className="text-xs text-green-700 font-medium">
-                Loi n°{dossier.loiNumero}
-              </p>
-            )}
-            <div className="flex flex-wrap gap-1.5">
-              {dossier.urlAN && (
-                <a
-                  href={dossier.urlAN}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  AN
-                </a>
-              )}
-              {dossier.urlSenat && (
-                <a
-                  href={dossier.urlSenat}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  Sénat
-                </a>
-              )}
-              {dossier.urlLegifrance && (
-                <a
-                  href={dossier.urlLegifrance}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  Légifrance
-                </a>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Le dossier législatif est présenté en bandeau au-dessus de la page
+          (cf. ScrutinDossierBanner), pas ici : c'est une destination, pas une
+          métadonnée du scrutin. */}
 
       {/* Lien source */}
       {sourceUrl && (

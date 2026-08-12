@@ -19,10 +19,30 @@ import {
   buildGroupeAmendementPrompt,
 } from '../llm/prompts.js';
 import { logger } from '../utils/logger.js';
+import { errorMessage } from '../utils/errors.js';
 
 const prisma = new PrismaClient();
 
 const BATCH_SIZE = 100;
+
+/** Nombre d'articles transmis au LLM pour illustrer les positions nuancées. */
+const MAX_ARTICLES_PROMPT = 5;
+
+/**
+ * Score de clivage d'un scrutin : nombre de voix exprimées hors de la position
+ * majoritaire de l'hémicycle. Une abstention de groupe face à une majorité "pour"
+ * compte donc comme un clivage, contrairement à un simple écart pour/contre.
+ */
+function scoreClivage(groupes: { pour: bigint; contre: bigint; abstention: bigint }[]): number {
+  let pour = 0, contre = 0, abstention = 0;
+  for (const g of groupes) {
+    pour += Number(g.pour);
+    contre += Number(g.contre);
+    abstention += Number(g.abstention);
+  }
+  const total = pour + contre + abstention;
+  return total - Math.max(pour, contre, abstention);
+}
 
 export interface EnrichmentResult {
   enriched: number;
@@ -41,6 +61,25 @@ export interface EnrichmentOptions {
   randomSample?: number;
   /** Parlementaires + randomSample only: exclude fiches enrichies dans les N derniers jours (défaut 3). */
   skipRecentDays?: number;
+  /**
+   * Restreint le balayage à des entités précises (uid de dossier, slug de sujet).
+   * Permet de corriger une fiche fautive sans relancer tout le corpus — un
+   * `--force` global coûte plusieurs milliers d'appels LLM.
+   */
+  only?: string[];
+  /**
+   * Recalcule et stocke `iaContentHash` SANS appeler le LLM ni toucher aux
+   * textes ni à `iaGeneratedAt`.
+   *
+   * À utiliser après un changement de FORMULE de hash, quand le corpus existant
+   * est déjà correct : sans ça le passage suivant régénère tout (plusieurs
+   * heures, millions de tokens) pour réécrire des résumés équivalents.
+   *
+   * Le hash est calculé par le même chemin de code que l'enrichissement — la
+   * sortie se fait juste avant l'appel LLM — donc les deux ne peuvent pas
+   * diverger.
+   */
+  rehashOnly?: boolean;
 }
 
 // =============================================================================
@@ -64,15 +103,22 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
 
   logger.info({ dryRun, concurrency, limit, force }, 'Starting scrutins IA enrichment...');
 
-  const where = force ? {} : { resumeIA: null };
-  let remaining = limit ?? Infinity;
+  // `limit` borne le nombre de fiches RÉGÉNÉRÉES, pas le nombre examinées : les
+  // fiches inchangées ne doivent pas le consommer. Le budget est décrémenté au
+  // plus près de l'appel LLM (pas de `await` entre le test et la décrémentation,
+  // donc pas de dépassement malgré la parallélisation).
+  let budget = limit ?? Infinity;
+  let offset = 0;
 
-  // No cursor needed: enriched items drop out of `where: { resumeIA: null }`
-  // so each batch naturally picks the next unenriched items
-  while (remaining > 0) {
-    const take = Math.min(BATCH_SIZE, remaining);
+  // On balaie TOUT le corpus, pas seulement les non-enrichis : c'est le hash de
+  // contenu qui décide de régénérer ou non. Filtrer sur `resumeIA: null` rendait
+  // le hash inatteignable — une fiche générée une fois ne repassait jamais, même
+  // après changement de son contenu source.
+  // Le balayage impose une pagination explicite (`offset`) et un tri TOTAL : sans
+  // départage, deux lignes de même date peuvent s'échanger entre deux pages et
+  // l'une d'elles n'est jamais examinée.
+  while (budget > 0) {
     const scrutins = await prisma.scrutin.findMany({
-      where,
       select: {
         id: true,
         titre: true,
@@ -87,8 +133,9 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
           take: 3,
         },
       },
-      orderBy: { date: 'desc' },
-      take,
+      orderBy: [{ date: 'desc' }, { id: 'asc' }],
+      skip: offset,
+      take: BATCH_SIZE,
     });
 
     if (scrutins.length === 0) break;
@@ -102,12 +149,19 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
           const contentHash = computeContentHash(
             scrutin.titre, scrutin.sort, scrutin.typeVote,
             scrutin.objetLibelle, scrutin.tags?.join(','), amendementsHash,
+            // Le titre du dossier est injecté dans le prompt : un scrutin
+            // rattaché à un autre dossier change de contexte, donc de résumé.
+            scrutin.dossier?.titre ?? '',
           );
 
           if (!force && scrutin.iaContentHash === contentHash) {
             result.skipped++;
             return;
           }
+
+          // Quota atteint : ni régénéré, ni comptabilisé comme inchangé.
+          if (budget <= 0) return;
+          budget--;
 
           if (dryRun) {
             result.enriched++;
@@ -132,18 +186,20 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
           });
 
           result.enriched++;
-        } catch (error: any) {
+        } catch (error) {
           result.errors++;
-          logger.warn({ scrutinId: scrutin.id, error: error.message }, 'Failed to enrich scrutin');
+          logger.warn({ scrutinId: scrutin.id, error: errorMessage(error) }, 'Failed to enrich scrutin');
         }
       })
     );
 
     await Promise.all(tasks);
-    remaining -= scrutins.length;
+    // `limit` borne le nombre de fiches RÉGÉNÉRÉES, pas le nombre examinées :
+    // sinon les fiches inchangées le consommeraient sans rien produire.
+    offset += scrutins.length;
 
-    logger.info({ processed: result.enriched + result.skipped + result.errors, remaining }, 'Scrutins batch processed');
-    if (scrutins.length < take) break;
+    logger.info({ processed: result.enriched + result.skipped + result.errors, offset, budget }, 'Scrutins batch processed');
+    if (scrutins.length < BATCH_SIZE) break;
   }
 
   result.totalTokensIn = mistral.totalTokensIn;
@@ -162,13 +218,14 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
 // =============================================================================
 
 export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise<EnrichmentResult> {
-  const { limit, dryRun = false, concurrency = 2, force = false } = options;
+  const { limit, dryRun = false, concurrency = 2, force = false, only, rehashOnly = false } = options;
 
   const result: EnrichmentResult = {
     enriched: 0, skipped: 0, errors: 0, totalTokensIn: 0, totalTokensOut: 0,
   };
 
-  if (!process.env.MISTRAL_API_KEY) {
+  // Le rehash ne parle pas au LLM : la clé n'est pas requise.
+  if (!rehashOnly && !process.env.MISTRAL_API_KEY) {
     logger.warn('MISTRAL_API_KEY not set — skipping IA enrichment');
     return result;
   }
@@ -178,14 +235,22 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
 
   logger.info({ dryRun, concurrency, limit, force }, 'Starting dossiers IA enrichment...');
 
-  const where = force
-    ? { scrutins: { some: {} } }
-    : { resumeIA: null, scrutins: { some: {} } };
+  // Voir enrichScrutinsIA : balayage complet, le hash arbitre. Le filtre sur
+  // l'existence de scrutins reste — un dossier sans vote n'a rien à résumer.
+  // `only` cible des uid de dossier.
+  const where: Prisma.DossierLegislatifWhereInput = {
+    scrutins: { some: {} },
+    ...(only && only.length > 0 ? { uid: { in: only } } : {}),
+  };
 
-  let remaining = limit ?? Infinity;
+  // `limit` borne le nombre de fiches RÉGÉNÉRÉES, pas le nombre examinées : les
+  // fiches inchangées ne doivent pas le consommer. Le budget est décrémenté au
+  // plus près de l'appel LLM (pas de `await` entre le test et la décrémentation,
+  // donc pas de dépassement malgré la parallélisation).
+  let budget = limit ?? Infinity;
+  let offset = 0;
 
-  while (remaining > 0) {
-    const take = Math.min(BATCH_SIZE, remaining);
+  while (budget > 0) {
     const dossiers = await prisma.dossierLegislatif.findMany({
       where,
       select: {
@@ -197,8 +262,9 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
         etat: true,
         iaContentHash: true,
       },
-      orderBy: { createdAt: 'desc' },
-      take,
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      skip: offset,
+      take: BATCH_SIZE,
     });
 
     if (dossiers.length === 0) break;
@@ -208,17 +274,20 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
         try {
           const scrutinsClefs = await prisma.scrutin.findMany({
             where: { dossierId: dossier.id },
-            select: { id: true, titre: true, sort: true, typeVote: true, resumeIA: true },
-            orderBy: [{ typeVote: 'asc' }, { importance: 'desc' }],
+            select: { id: true, titre: true, sort: true, typeVote: true, resumeIA: true, iaContentHash: true },
+            // `id` départage : le tri alimente le hash ET la sélection des 10
+            // scrutins clefs, deux ex æquo qui permutent suffiraient à faire
+            // croire à un changement de contenu.
+            orderBy: [{ typeVote: 'asc' }, { importance: 'desc' }, { id: 'asc' }],
             take: 10,
           });
 
-          type GroupeRow = { nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
-          type ArticleRow = { scrutin_id: string; article: string; sort: string; nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
+          type GroupeRow = { nom: string; nom_complet: string | null; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
+          type ArticleRow = { scrutin_id: string; article: string; sort: string; nom: string; nom_complet: string | null; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
 
           // Votes sur l'ensemble du texte (solennel OU ordinaire avec "ensemble" dans le titre)
           const positionsEnsemble = await prisma.$queryRaw<GroupeRow[]>`
-            SELECT gp.nom, gp.slug, gp.position as orientation,
+            SELECT gp.nom, gp.nom_complet, gp.slug, gp.position as orientation,
               SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END)::bigint AS pour,
               SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
               SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
@@ -229,15 +298,20 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             WHERE s.dossier_id = ${dossier.id}
               AND (s.type_vote = 'solennel' OR s.titre ILIKE '%ensemble%')
               AND v.position != 'absent'
-            GROUP BY gp.nom, gp.slug, gp.position
+            GROUP BY gp.nom, gp.nom_complet, gp.slug, gp.position
             ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
-                      SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) DESC
+                      SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
+                      SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC,
+                     gp.nom ASC, gp.nom_complet ASC, gp.slug ASC, gp.position ASC
           `;
 
-          // Votes sur les articles clés (top 5 articles les plus votés)
+          // Votes sur les articles clés (top 5 articles les plus votés).
+          // L'abstention compte dans le seuil et le tri : une abstention de groupe EST une
+          // position politique. L'exclure faisait disparaître du prompt les groupes qui
+          // s'abstenaient en bloc, et le modèle leur inventait alors un vote.
           const votesArticlesRaw = await prisma.$queryRaw<ArticleRow[]>`
             SELECT s.id as scrutin_id, s.titre as article, s.sort,
-              gp.nom, gp.slug, gp.position as orientation,
+              gp.nom, gp.nom_complet, gp.slug, gp.position as orientation,
               SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END)::bigint AS pour,
               SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
               SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
@@ -250,11 +324,17 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
               AND s.titre NOT ILIKE '%amendement%'
               AND s.titre NOT ILIKE '%ensemble%'
               AND v.position != 'absent'
-            GROUP BY s.id, s.titre, s.sort, gp.nom, gp.slug, gp.position
+            GROUP BY s.id, s.titre, s.sort, gp.nom, gp.nom_complet, gp.slug, gp.position
             HAVING SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
-                   SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) > 5
+                   SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
+                   SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) > 1
+            -- gp.nom departage : ces lignes alimentent le hash dans leur ordre de
+            -- retour, deux groupes ex aequo qui permutent suffiraient a faire
+            -- croire a un changement de contenu.
             ORDER BY s.id, (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
-                            SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) DESC
+                            SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
+                            SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC,
+                           gp.nom ASC, gp.nom_complet ASC, gp.slug ASC, gp.position ASC
           `;
 
           // Regrouper par scrutin pour les articles
@@ -265,31 +345,41 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             }
             articlesMap.get(row.scrutin_id)!.groupes.push(row);
           }
-          // Prendre les 5 articles les plus clivants (plus gros écarts pour/contre)
+          // Prendre les articles les plus clivants
           const votesArticles = [...articlesMap.values()]
-            .sort((a, b) => {
-              const clivageA = a.groupes.reduce((s, g) => s + Math.abs(Number(g.pour) - Number(g.contre)), 0);
-              const clivageB = b.groupes.reduce((s, g) => s + Math.abs(Number(g.pour) - Number(g.contre)), 0);
-              return clivageB - clivageA;
-            })
-            .slice(0, 5);
+            .sort((a, b) => scoreClivage(b.groupes) - scoreClivage(a.groupes) || a.article.localeCompare(b.article))
+            .slice(0, MAX_ARTICLES_PROMPT);
 
           // Amendements clés : adoptés en priorité, puis rejetés, avec exposé sommaire
           const amendementsClefs = await prisma.amendement.findMany({
             where: { dossierId: dossier.id, exposeSommaire: { not: null } },
             select: { numero: true, exposeSommaire: true, auteurLibelle: true, sort: true },
-            orderBy: [{ sort: 'asc' }, { dateDepot: 'desc' }],
+            orderBy: [{ sort: 'asc' }, { dateDepot: 'desc' }, { id: 'asc' }],
             take: 8,
           });
 
           const ensembleForHash = positionsEnsemble.map(g => `ens:${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|');
-          const articlesForHash = votesArticles.map(a => `art:${a.article.slice(0, 30)}`).join('|');
+          const articlesForHash = votesArticles
+            .map(a => `art:${a.article.slice(0, 30)}:${a.groupes.map(g => `${g.slug}:${g.pour}/${g.contre}/${g.abstention}`).join(',')}`)
+            .join('|');
+          // Tout ce qui entre dans le prompt doit entrer dans le hash, sinon un
+          // changement de contenu source ne déclenche aucune régénération.
+          const amendementsForHash = amendementsClefs
+            .map(a => `amd:${a.numero}:${a.sort ?? ''}`)
+            .join('|');
           const hashParts = [
             dossier.titre,
+            dossier.titreCourt,
+            dossier.procedureLibelle,
             dossier.etat,
-            scrutinsClefs.map(s => `${s.sort}:${s.resumeIA ?? s.titre}`).join('|'),
+            // Le HASH suit `iaContentHash` du scrutin, pas son texte : un résumé
+            // LLM est non déterministe (température 0,3), donc le régénérer
+            // suffirait à invalider tous les dossiers qui le citent, en cascade.
+            // Le prompt, lui, reçoit bien le texte.
+            scrutinsClefs.map(s => `${s.sort}:${s.iaContentHash ?? s.titre}`).join('|'),
             ensembleForHash,
             articlesForHash,
+            amendementsForHash,
           ];
           const contentHash = computeContentHash(...hashParts);
 
@@ -298,13 +388,31 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             return;
           }
 
+          // Rehash : on aligne le hash sur la nouvelle formule et on s'arrête
+          // là. Ni LLM, ni réécriture du résumé, ni `iaGeneratedAt` touché —
+          // la date doit continuer de dire quand le TEXTE a été produit.
+          if (rehashOnly) {
+            if (!dryRun) {
+              await prisma.dossierLegislatif.update({
+                where: { id: dossier.id },
+                data: { iaContentHash: contentHash },
+              });
+            }
+            result.enriched++;
+            return;
+          }
+
+          // Quota atteint : ni régénéré, ni comptabilisé comme inchangé.
+          if (budget <= 0) return;
+          budget--;
+
           if (dryRun) {
             result.enriched++;
             return;
           }
 
           const toGroupeArray = (rows: GroupeRow[]) => rows.map(g => ({
-            nom: g.nom, slug: g.slug,
+            nom: g.nom, nomComplet: g.nom_complet, slug: g.slug,
             pour: Number(g.pour), contre: Number(g.contre), abstention: Number(g.abstention),
             orientation: g.orientation,
           }));
@@ -340,18 +448,18 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
           });
 
           result.enriched++;
-        } catch (error: any) {
+        } catch (error) {
           result.errors++;
-          logger.warn({ dossierId: dossier.id, error: error.message }, 'Failed to enrich dossier');
+          logger.warn({ dossierId: dossier.id, error: errorMessage(error) }, 'Failed to enrich dossier');
         }
       })
     );
 
     await Promise.all(tasks);
-    remaining -= dossiers.length;
+    offset += dossiers.length;
 
-    logger.info({ processed: result.enriched + result.skipped + result.errors, remaining }, 'Dossiers batch processed');
-    if (dossiers.length < take) break;
+    logger.info({ processed: result.enriched + result.skipped + result.errors, offset, budget }, 'Dossiers batch processed');
+    if (dossiers.length < BATCH_SIZE) break;
   }
 
   result.totalTokensIn = mistral.totalTokensIn;
@@ -370,13 +478,14 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
 // =============================================================================
 
 export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<EnrichmentResult> {
-  const { limit, dryRun = false, concurrency = 2, force = false } = options;
+  const { limit, dryRun = false, concurrency = 2, force = false, only, rehashOnly = false } = options;
 
   const result: EnrichmentResult = {
     enriched: 0, skipped: 0, errors: 0, totalTokensIn: 0, totalTokensOut: 0,
   };
 
-  if (!process.env.MISTRAL_API_KEY) {
+  // Le rehash ne parle pas au LLM : la clé n'est pas requise.
+  if (!rehashOnly && !process.env.MISTRAL_API_KEY) {
     logger.warn('MISTRAL_API_KEY not set — skipping IA enrichment');
     return result;
   }
@@ -386,14 +495,21 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
 
   logger.info({ dryRun, concurrency, limit, force }, 'Starting sujets IA enrichment...');
 
-  const where = force
-    ? { dossiers: { some: {} } }
-    : { resume: null, dossiers: { some: {} } };
+  // Voir enrichScrutinsIA : balayage complet, le hash arbitre.
+  // `only` cible des slugs de sujet.
+  const where: Prisma.SujetWhereInput = {
+    dossiers: { some: {} },
+    ...(only && only.length > 0 ? { slug: { in: only } } : {}),
+  };
 
-  let remaining = limit ?? Infinity;
+  // `limit` borne le nombre de fiches RÉGÉNÉRÉES, pas le nombre examinées : les
+  // fiches inchangées ne doivent pas le consommer. Le budget est décrémenté au
+  // plus près de l'appel LLM (pas de `await` entre le test et la décrémentation,
+  // donc pas de dépassement malgré la parallélisation).
+  let budget = limit ?? Infinity;
+  let offset = 0;
 
-  while (remaining > 0) {
-    const take = Math.min(BATCH_SIZE, remaining);
+  while (budget > 0) {
     const sujets = await prisma.sujet.findMany({
       where,
       select: {
@@ -404,8 +520,9 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
         status: true,
         iaContentHash: true,
       },
-      orderBy: { scrutinCount: 'desc' },
-      take,
+      orderBy: [{ scrutinCount: 'desc' }, { id: 'asc' }],
+      skip: offset,
+      take: BATCH_SIZE,
     });
 
     if (sujets.length === 0) break;
@@ -415,18 +532,21 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
         try {
           const dossiers = await prisma.dossierLegislatif.findMany({
             where: { sujetId: sujet.id },
-            select: { id: true, uid: true, titre: true, etat: true, resumeIA: true },
+            select: { id: true, uid: true, titre: true, etat: true, resumeIA: true, iaContentHash: true },
+            // Ordre imposé : ces lignes alimentent le hash, un ordre non
+            // déterministe le ferait varier à contenu identique.
+            orderBy: { uid: 'asc' },
           });
 
           const dossierIds = dossiers.map(d => d.id);
 
-          type SujetGroupeRow = { nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
-          type SujetArticleRow = { scrutin_id: string; article: string; sort: string; nom: string; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
+          type SujetGroupeRow = { nom: string; nom_complet: string | null; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
+          type SujetArticleRow = { scrutin_id: string; article: string; sort: string; nom: string; nom_complet: string | null; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
 
           // Votes sur l'ensemble du texte (solennel OU ordinaire avec "ensemble" dans le titre)
           const positionsEnsemble = dossierIds.length > 0
             ? await prisma.$queryRaw<SujetGroupeRow[]>`
-                SELECT gp.nom, gp.slug, gp.position as orientation,
+                SELECT gp.nom, gp.nom_complet, gp.slug, gp.position as orientation,
                   SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END)::bigint AS pour,
                   SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
                   SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
@@ -437,17 +557,22 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
                 WHERE s.dossier_id = ANY(${dossierIds})
                   AND (s.type_vote = 'solennel' OR s.titre ILIKE '%ensemble%')
                   AND v.position != 'absent'
-                GROUP BY gp.nom, gp.slug, gp.position
+                GROUP BY gp.nom, gp.nom_complet, gp.slug, gp.position
                 ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
-                          SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) DESC
+                          SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
+                          SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC,
+                         gp.nom ASC, gp.nom_complet ASC, gp.slug ASC, gp.position ASC
               `
             : [];
 
-          // Votes sur les articles clés (top 5 les plus clivants)
+          // Votes sur les articles clés, les plus clivants d'abord.
+          // L'abstention compte dans le seuil et le tri (cf. scoreClivage) : sans ça,
+          // un groupe qui s'abstient en bloc disparaît du prompt et le modèle lui
+          // invente une position.
           const votesArticlesRaw = dossierIds.length > 0
             ? await prisma.$queryRaw<SujetArticleRow[]>`
                 SELECT s.id as scrutin_id, s.titre as article, s.sort,
-                  gp.nom, gp.slug, gp.position as orientation,
+                  gp.nom, gp.nom_complet, gp.slug, gp.position as orientation,
                   SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END)::bigint AS pour,
                   SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
                   SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
@@ -460,11 +585,15 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
                   AND s.titre NOT ILIKE '%amendement%'
                   AND s.titre NOT ILIKE '%ensemble%'
                   AND v.position != 'absent'
-                GROUP BY s.id, s.titre, s.sort, gp.nom, gp.slug, gp.position
+                GROUP BY s.id, s.titre, s.sort, gp.nom, gp.nom_complet, gp.slug, gp.position
                 HAVING SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
-                       SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) > 5
+                       SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
+                       SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) > 1
+                -- gp.nom departage (cf. enrichDossiersIA).
                 ORDER BY s.id, (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
-                                SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)) DESC
+                                SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
+                                SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC,
+                               gp.nom ASC, gp.nom_complet ASC, gp.slug ASC, gp.position ASC
               `
             : [];
 
@@ -476,20 +605,34 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
             articlesMap.get(row.scrutin_id)!.groupes.push(row);
           }
           const votesArticles = [...articlesMap.values()]
-            .sort((a, b) => {
-              const clivageA = a.groupes.reduce((s, g) => s + Math.abs(Number(g.pour) - Number(g.contre)), 0);
-              const clivageB = b.groupes.reduce((s, g) => s + Math.abs(Number(g.pour) - Number(g.contre)), 0);
-              return clivageB - clivageA;
-            })
-            .slice(0, 5);
+            .sort((a, b) => scoreClivage(b.groupes) - scoreClivage(a.groupes) || a.article.localeCompare(b.article))
+            .slice(0, MAX_ARTICLES_PROMPT);
 
           const ensembleForHash = positionsEnsemble.map(g => `ens:${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|');
-          const articlesForHash = votesArticles.map(a => `art:${a.article.slice(0, 30)}`).join('|');
+          const articlesForHash = votesArticles
+            .map(a => `art:${a.article.slice(0, 30)}:${a.groupes.map(g => `${g.slug}:${g.pour}/${g.contre}/${g.abstention}`).join(',')}`)
+            .join('|');
+          // `etat` et `chambre` sont injectés par dossier dans le prompt
+          // (« Sénat [en_cours] : … ») : les omettre ici fige le résumé sur
+          // l'état d'avancement du jour de sa génération. C'est ce qui laissait
+          // des textes promulgués annoncer un examen « encore en cours ».
+          const dossiersForHash = dossiers
+            .map(d => {
+              const chambre = d.uid.startsWith('SENAT') ? 'senat' : 'assemblee';
+              return `${chambre}:${d.etat ?? ''}:${d.titre}:${d.iaContentHash ?? ''}`;
+            })
+            .join('|');
+          // `sujet.label` est VOLONTAIREMENT absent : l'enrichissement le réécrit
+          // lui-même avec le titre produit par le LLM. L'inclure rendait le hash
+          // auto-invalidant — calculé sur l'ancien label, stocké, puis comparé au
+          // passage suivant à un hash calculé sur le NOUVEAU label. 36 % des
+          // sujets se régénéraient ainsi à chaque nuit sans qu'aucune source
+          // n'ait bougé. Un hash de contenu ne contient que des sources.
           const hashParts = [
-            sujet.label,
             sujet.status,
             sujet.description,
-            dossiers.map(d => `${d.titre}:${d.resumeIA ?? ''}`).join('|'),
+            sujet.category,
+            dossiersForHash,
             ensembleForHash,
             articlesForHash,
           ];
@@ -500,13 +643,29 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
             return;
           }
 
+          // Rehash : voir enrichDossiersIA. `label` n'est pas retouché non plus.
+          if (rehashOnly) {
+            if (!dryRun) {
+              await prisma.sujet.update({
+                where: { id: sujet.id },
+                data: { iaContentHash: contentHash },
+              });
+            }
+            result.enriched++;
+            return;
+          }
+
+          // Quota atteint : ni régénéré, ni comptabilisé comme inchangé.
+          if (budget <= 0) return;
+          budget--;
+
           if (dryRun) {
             result.enriched++;
             return;
           }
 
           const toGroupeArray = (rows: SujetGroupeRow[]) => rows.map(g => ({
-            nom: g.nom, slug: g.slug,
+            nom: g.nom, nomComplet: g.nom_complet, slug: g.slug,
             pour: Number(g.pour), contre: Number(g.contre), abstention: Number(g.abstention),
             orientation: g.orientation,
           }));
@@ -571,18 +730,18 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
           });
 
           result.enriched++;
-        } catch (error: any) {
+        } catch (error) {
           result.errors++;
-          logger.warn({ sujetId: sujet.id, error: error.message }, 'Failed to enrich sujet');
+          logger.warn({ sujetId: sujet.id, error: errorMessage(error) }, 'Failed to enrich sujet');
         }
       })
     );
 
     await Promise.all(tasks);
-    remaining -= sujets.length;
+    offset += sujets.length;
 
-    logger.info({ processed: result.enriched + result.skipped + result.errors, remaining }, 'Sujets batch processed');
-    if (sujets.length < take) break;
+    logger.info({ processed: result.enriched + result.skipped + result.errors, offset, budget }, 'Sujets batch processed');
+    if (sujets.length < BATCH_SIZE) break;
   }
 
   result.totalTokensIn = mistral.totalTokensIn;
@@ -617,14 +776,17 @@ export async function enrichSujetGroupeAmendements(options: EnrichmentOptions = 
 
   logger.info({ dryRun, concurrency, limit, force }, 'Starting groupe amendement descriptions enrichment...');
 
-  const where: Prisma.SujetWhereInput = force
-    ? { dossiers: { some: { amendements: { some: {} } } } }
-    : { groupeAmendementDescriptions: { equals: Prisma.DbNull }, dossiers: { some: { amendements: { some: {} } } } };
+  // Voir enrichScrutinsIA : balayage complet, le hash arbitre.
+  const where: Prisma.SujetWhereInput = { dossiers: { some: { amendements: { some: {} } } } };
 
-  let remaining = limit ?? Infinity;
+  // `limit` borne le nombre de fiches RÉGÉNÉRÉES, pas le nombre examinées : les
+  // fiches inchangées ne doivent pas le consommer. Le budget est décrémenté au
+  // plus près de l'appel LLM (pas de `await` entre le test et la décrémentation,
+  // donc pas de dépassement malgré la parallélisation).
+  let budget = limit ?? Infinity;
+  let offset = 0;
 
-  while (remaining > 0) {
-    const take = Math.min(BATCH_SIZE, remaining);
+  while (budget > 0) {
     const sujets = await prisma.sujet.findMany({
       where,
       select: {
@@ -632,8 +794,9 @@ export async function enrichSujetGroupeAmendements(options: EnrichmentOptions = 
         label: true,
         iaGroupeAmendementHash: true,
       },
-      orderBy: { scrutinCount: 'desc' },
-      take,
+      orderBy: [{ scrutinCount: 'desc' }, { id: 'asc' }],
+      skip: offset,
+      take: BATCH_SIZE,
     });
 
     if (sujets.length === 0) break;
@@ -714,6 +877,10 @@ export async function enrichSujetGroupeAmendements(options: EnrichmentOptions = 
             return;
           }
 
+          // Quota atteint : ni régénéré, ni comptabilisé comme inchangé.
+          if (budget <= 0) return;
+          budget--;
+
           if (dryRun) {
             result.enriched++;
             return;
@@ -772,18 +939,18 @@ export async function enrichSujetGroupeAmendements(options: EnrichmentOptions = 
             logger.warn({ sujetId: sujet.id }, 'Failed to parse groupe amendement descriptions');
             result.errors++;
           }
-        } catch (error: any) {
+        } catch (error) {
           result.errors++;
-          logger.warn({ sujetId: sujet.id, error: error.message }, 'Failed to enrich groupe amendement descriptions');
+          logger.warn({ sujetId: sujet.id, error: errorMessage(error) }, 'Failed to enrich groupe amendement descriptions');
         }
       })
     );
 
     await Promise.all(tasks);
-    remaining -= sujets.length;
+    offset += sujets.length;
 
-    logger.info({ processed: result.enriched + result.skipped + result.errors, remaining }, 'Groupe amendement batch processed');
-    if (sujets.length < take) break;
+    logger.info({ processed: result.enriched + result.skipped + result.errors, offset, budget }, 'Groupe amendement batch processed');
+    if (sujets.length < BATCH_SIZE) break;
   }
 
   result.totalTokensIn = mistral.totalTokensIn;

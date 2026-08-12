@@ -12,6 +12,7 @@
 
 import * as https from 'https';
 import { logger } from '../../utils/logger';
+import { errorMessage } from '../../utils/errors';
 
 const BASE_URL = 'https://videos.senat.fr';
 const SEARCH_ENDPOINT = `${BASE_URL}/senat_videos_search.php`;
@@ -153,8 +154,8 @@ export class SenatVideosClient {
         logger.debug({ page, newCount, total: all.length }, 'Page scraped');
 
         if (page < MAX_PAGES) await sleep(REQUEST_DELAY_MS);
-      } catch (err: any) {
-        logger.warn({ page, error: err.message }, 'Failed to fetch video page — stopping');
+      } catch (err) {
+        logger.warn({ page, error: errorMessage(err) }, 'Failed to fetch video page — stopping');
         break;
       }
     }

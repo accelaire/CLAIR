@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useQueries } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Vote, Filter, ChevronDown, Loader2, Calendar } from 'lucide-react';
+import { Vote, Filter, Loader2, Calendar } from 'lucide-react';
 import { api } from '@/lib/api';
 import { scrutinHref } from '@/lib/scrutin-url';
 
@@ -62,18 +62,19 @@ function PositionBadge({ position }: { position: VotePosition }) {
 export function ComparisonVotesTable({ parlementaires, chambre }: ComparisonVotesTableProps) {
   const [divergentOnly, setDivergentOnly] = useState(false);
 
-  // Fetch votes pour chaque parlementaire
-  const votesQueries = parlementaires.map((p) =>
-    useInfiniteQuery<ParlementaireVotesResponse>({
+  // Fetch votes pour chaque parlementaire.
+  // `useQueries` (et non un `.map()` de `useQuery`) : la liste comparée est
+  // modifiable par l'utilisateur (2 à 4), donc le nombre de hooks varierait
+  // d'un rendu à l'autre — interdit par les règles des hooks React.
+  const votesQueries = useQueries({
+    queries: parlementaires.map((p) => ({
       queryKey: ['parlementaire-votes', p.slug, chambre],
-      queryFn: ({ pageParam = 1 }) =>
+      queryFn: (): Promise<ParlementaireVotesResponse> =>
         api
-          .get(`/${chambre}/${p.slug}/votes`, { params: { page: pageParam, limit: 100 } })
+          .get(`/${chambre}/${p.slug}/votes`, { params: { page: 1, limit: 100 } })
           .then((res) => res.data),
-      getNextPageParam: (lastPage) => (lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined),
-      initialPageParam: 1,
-    })
-  );
+    })),
+  });
 
   // Agréger les votes par scrutin
   const { commonVotes, isLoading } = useMemo(() => {
@@ -84,7 +85,7 @@ export function ComparisonVotesTable({ parlementaires, chambre }: ComparisonVote
 
     // Construire un map des votes par scrutinId pour chaque parlementaire
     const votesMaps = parlementaires.map((p, i) => {
-      const votes = votesQueries[i].data?.pages.flatMap((page) => page.data) ?? [];
+      const votes = votesQueries[i]?.data?.data ?? [];
       const map = new Map<string, ScrutinVote>();
       votes.forEach((v) => map.set(v.scrutinId, v));
       return map;
@@ -108,7 +109,7 @@ export function ComparisonVotesTable({ parlementaires, chambre }: ComparisonVote
       let votedCount = 0;
 
       parlementaires.forEach((p, i) => {
-        const vote = votesMaps[i].get(scrutinId);
+        const vote = votesMaps[i]?.get(scrutinId);
         if (vote) {
           positions.set(p.slug, vote.position);
           scrutinInfo = vote.scrutin;

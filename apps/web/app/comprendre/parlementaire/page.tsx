@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { User, TrendingUp, ShieldCheck, Users, Vote, MessageSquare } from 'lucide-react';
+import { User, TrendingUp, ShieldCheck, Vote, MessageSquare } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'Le parlementaire',

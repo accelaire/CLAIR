@@ -140,7 +140,7 @@ function CommissionsPageContent() {
     staleTime: 60000,
   });
 
-  const allCommissions = data?.data ?? [];
+  const allCommissions = useMemo(() => data?.data ?? [], [data]);
   const commissions = useMemo(() => {
     if (!search.trim()) return allCommissions;
     const q = search.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');

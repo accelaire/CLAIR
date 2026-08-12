@@ -20,7 +20,10 @@
 
 import axios, { AxiosInstance } from 'axios';
 import * as cheerio from 'cheerio';
+// cheerio 1.x ne réexporte plus `Element` : les types viennent de domhandler.
+import type { AnyNode, Element } from 'domhandler';
 import { logger } from '../../utils/logger';
+import { errorMessage, httpStatus } from '../../utils/errors';
 import { TransformedReunion } from '../assemblee-nationale/reunions-client';
 
 // =============================================================================
@@ -115,40 +118,6 @@ function generateWeekDates(maxWeeks: number): string[] {
   return weeks;
 }
 
-/**
- * Extrait le texte des éléments d'une liste de noms de sénateurs.
- * Les noms apparaissent sous forme de liens ou texte brut après "Présents :".
- */
-function extractSenatorNames($: cheerio.CheerioAPI, container: cheerio.Cheerio<cheerio.Element>): string[] {
-  const names: string[] = [];
-
-  // Les noms apparaissent souvent comme des liens <a> vers les pages sénateurs
-  // Format: /senateur/nom-prenom-XXXXX.html
-  container.find('a[href*="/senateur/"]').each((_, el) => {
-    const text = $(el).text().trim();
-    if (text && text.length > 2) {
-      names.push(text);
-    }
-  });
-
-  // Fallback: texte brut (noms séparés par des virgules ou des points-virgules)
-  if (names.length === 0) {
-    const rawText = container.text();
-    const cleaned = rawText
-      .replace(/présents?\s*:/gi, '')
-      .replace(/participaient aussi/gi, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (cleaned) {
-      const parts = cleaned.split(/[,;]/).map((s) => s.trim()).filter((s) => s.length > 2);
-      names.push(...parts);
-    }
-  }
-
-  return [...new Set(names)]; // Dédupliquer
-}
-
 // =============================================================================
 // TYPES EXPORTÉS
 // =============================================================================
@@ -189,20 +158,6 @@ export class SenatReunionsClient {
   }
 
   /**
-   * Teste si un fichier HTML de commission existe pour une semaine donnée.
-   * Retourne true si HTTP 200.
-   */
-  private async checkPage(yyyymmdd: string, slug: string): Promise<boolean> {
-    try {
-      const url = `${BASE_URL}/${yyyymmdd}/${slug}.html`;
-      const res = await this.http.head(url, { timeout: 10_000 });
-      return res.status === 200;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
    * Scrape une page HTML de commission et retourne les réunions de la semaine.
    * Une page peut contenir plusieurs réunions (plusieurs jours/séances).
    */
@@ -216,12 +171,12 @@ export class SenatReunionsClient {
     try {
       const res = await this.http.get(url, { timeout: 20_000 });
       html = res.data as string;
-    } catch (err: any) {
-      if (err.response?.status === 404) {
+    } catch (err) {
+      if (httpStatus(err) === 404) {
         logger.debug({ url }, 'Page 404 - commission not active this week');
         return [];
       }
-      logger.warn({ url, error: err.message }, 'HTTP error fetching commission page');
+      logger.warn({ url, error: errorMessage(err) }, 'HTTP error fetching commission page');
       return [];
     }
 
@@ -255,7 +210,6 @@ export class SenatReunionsClient {
     if (h2Elements.length === 0) {
       // Pas de structure h2 — toute la page est une seule réunion
       // Tenter d'extraire la date du titre de la page
-      const titleText = pageTitle || '';
       const weekDate = parseFrenchDate(`${yyyymmdd.slice(6, 8)} ${getMonthName(parseInt(yyyymmdd.slice(4, 6)) - 1)} ${yyyymmdd.slice(0, 4)}`);
 
       if (weekDate) {
@@ -281,9 +235,9 @@ export class SenatReunionsClient {
 
       let next = h2El.nextSibling;
       while (next) {
-        const nextEl = next as cheerio.Element;
+        const nextEl = next as Element;
         if (nextEl.type === 'tag' && nextEl.tagName === 'h2') break;
-        container.append(sectionContent(nextEl as any).clone());
+        container.append(sectionContent(nextEl).clone());
         next = next.nextSibling;
       }
 
@@ -304,7 +258,8 @@ export class SenatReunionsClient {
    */
   private buildReunion(
     $: cheerio.CheerioAPI,
-    container: cheerio.Cheerio<cheerio.Element>,
+    // `$.root()` (Document) ou un conteneur construit (Element) selon l'appelant.
+    container: cheerio.Cheerio<AnyNode>,
     dateDebut: Date,
     commissionSlugCourt: string,
     dbSlug: string,
@@ -384,8 +339,8 @@ export class SenatReunionsClient {
       try {
         const pageReunions = await this.parseCommissionPage(yyyymmdd, slug);
         reunions.push(...pageReunions);
-      } catch (err: any) {
-        logger.warn({ yyyymmdd, slug, error: err.message }, 'Failed to parse commission page');
+      } catch (err) {
+        logger.warn({ yyyymmdd, slug, error: errorMessage(err) }, 'Failed to parse commission page');
         pagesErrored++;
       }
     }

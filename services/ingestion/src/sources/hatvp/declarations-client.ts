@@ -12,6 +12,9 @@ import { parse } from 'csv-parse/sync';
 import axios from 'axios';
 import { logger } from '../../utils/logger.js';
 
+/** Ligne d'un CSV HATVP parsé avec `columns: true` (toutes les valeurs sont des chaînes). */
+type CsvRow = Record<string, string>;
+
 const LISTE_CSV_URL = 'https://www.hatvp.fr/livraison/opendata/liste.csv';
 const HATVP_BASE_URL = 'https://www.hatvp.fr';
 
@@ -80,23 +83,23 @@ export async function fetchDeclarationsParlementaires(): Promise<HATVPDeclaratio
       skip_empty_lines: true,
       relax_quotes: true,
       relax_column_count: true,
-    }) as any[];
+    }) as CsvRow[];
 
     logger.info({ totalRows: rows.length }, 'CSV parsed');
 
     // Filter for parlementaires only
     const parlementaireRows = rows.filter(
-      (r: any) => r.type_mandat === 'depute' || r.type_mandat === 'senateur'
+      (r: CsvRow) => r.type_mandat === 'depute' || r.type_mandat === 'senateur'
     );
 
     logger.info({ parlementaires: parlementaireRows.length }, 'Parlementaire declarations filtered');
 
-    return parlementaireRows.map((r: any) => ({
+    return parlementaireRows.map((r: CsvRow) => ({
       civilite: r.civilite || '',
       prenom: r.prenom || '',
       nom: r.nom || '',
       classement: r.classement || '',
-      typeMandat: r.type_mandat,
+      typeMandat: r.type_mandat ?? '',
       qualite: r.qualite || '',
       typeDocument: r.type_document || '',
       departement: r.departement || '',

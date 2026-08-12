@@ -15,7 +15,12 @@ module.exports = {
     'plugin:@typescript-eslint/recommended',
   ],
   rules: {
-    '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+    // `_` en préfixe = binding volontairement inutilisé : paramètres, mais aussi
+    // rest destructuring du type `const { contenu, seanceId: _s, ...rest } = row`.
+    '@typescript-eslint/no-unused-vars': [
+      'warn',
+      { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+    ],
     '@typescript-eslint/no-explicit-any': 'warn',
     '@typescript-eslint/no-require-imports': 'off',
     '@typescript-eslint/no-unsafe-declaration-merging': 'off',

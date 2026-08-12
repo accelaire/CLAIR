@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { notFound, permanentRedirect } from 'next/navigation';
 import { fetchFromApi } from '@/lib/api-server';
 import { BreadcrumbJsonLd } from '@/components/seo/JsonLd';
 import PageClient from './PageClient';
@@ -52,6 +53,21 @@ export default async function SujetDetailPage({
 }) {
   const response = await getSujet(params.slug);
   const data = response?.data;
+
+  // Le sujet n'est pas servi : soit il n'a jamais existé, soit il a été désactivé
+  // (137 l'ont été le 2026-07-29, leurs dossiers ayant perdu des scrutins qui ne
+  // leur appartenaient pas). Rendre la page quand même produisait un « introuvable »
+  // en HTTP 200 — un soft 404 que Google garde indexé.
+  if (!data) {
+    const archive = await fetchFromApi<{ data: { dossierUid: string | null } }>(
+      `/sujets/${params.slug}/archive`,
+    );
+    const dossierUid = archive?.data?.dossierUid;
+    // Un seul dossier derrière le sujet : sa page est le contenu le plus proche
+    // de ce que l'URL promettait. Au-delà, aucune cible n'est légitime.
+    if (dossierUid) permanentRedirect(`/dossiers/${dossierUid}`);
+    notFound();
+  }
 
   return (
     <>

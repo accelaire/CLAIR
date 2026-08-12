@@ -16,3 +16,30 @@ export function getDossierEtat(etat: string | null | undefined) {
   if (!etat) return null;
   return DOSSIER_ETAT_CONFIG[etat] ?? { label: etat, color: 'badge-caduc', dotColor: 'bg-gray-400' };
 }
+
+// =============================================================================
+// Libellés
+// =============================================================================
+
+/**
+ * Les titres de dossiers commencent souvent par un complément en minuscule
+ * (« relatif à la protection… ») : on les préfixe alors de la procédure
+ * (« Proposition de loi relative à… ») pour obtenir une phrase lisible.
+ */
+export function formatDossierTitre(titre: string, procedureLibelle?: string | null): string {
+  const firstChar = titre.charAt(0);
+  if (firstChar !== firstChar.toUpperCase() && procedureLibelle) {
+    return `${procedureLibelle} ${titre}`;
+  }
+  return titre;
+}
+
+/**
+ * `titreCourt` est parfois un identifiant technique issu de la source
+ * (`pjl_approbation_goteborg`) plutôt qu'un intitulé : c'est le cas de ~40 % des
+ * dossiers portant des scrutins. On ne s'en sert que s'il est présentable.
+ */
+export function dossierTitreCourtLisible(titreCourt: string | null | undefined): string | null {
+  if (!titreCourt) return null;
+  return titreCourt.includes('_') ? null : titreCourt;
+}

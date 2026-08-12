@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger.js';
+import { errorMessage, httpStatus } from '../utils/errors.js';
 
 const MISTRAL_API_URL = 'https://api.mistral.ai/v1/chat/completions';
 const DEFAULT_MODEL = 'mistral-small-latest';
@@ -46,7 +47,7 @@ export class CLAIRMistralClient {
    */
   async complete(system: string, user: string, options?: { maxTokens?: number }): Promise<string> {
     const maxTokens = options?.maxTokens ?? this.maxTokens;
-    let lastError: Error | null = null;
+    let lastError: unknown = null;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
@@ -70,12 +71,14 @@ export class CLAIRMistralClient {
         if (!response.ok) {
           const status = response.status;
           const body = await response.text().catch(() => '');
-          const error = new Error(`Mistral API ${status}: ${body.slice(0, 200)}`);
-          (error as any).status = status;
+          const error: Error & { status?: number } = new Error(
+            `Mistral API ${status}: ${body.slice(0, 200)}`
+          );
+          error.status = status;
           throw error;
         }
 
-        const data: MistralResponse = await response.json();
+        const data = (await response.json()) as MistralResponse;
 
         // Track tokens
         if (data.usage) {
@@ -89,17 +92,18 @@ export class CLAIRMistralClient {
         }
 
         return content.trim();
-      } catch (error: any) {
+      } catch (error) {
         lastError = error;
 
         // Retry on rate limit (429) or server errors (5xx)
-        const status = error.status;
-        const isRetryable = status === 429 || (status >= 500 && status < 600);
+        const status = httpStatus(error);
+        const isRetryable =
+          status === 429 || (status !== undefined && status >= 500 && status < 600);
 
         if (isRetryable && attempt < MAX_RETRIES) {
           const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt);
           logger.warn(
-            { attempt: attempt + 1, delay, status, error: error.message },
+            { attempt: attempt + 1, delay, status, error: errorMessage(error) },
             'Mistral API error, retrying...'
           );
           await new Promise(resolve => setTimeout(resolve, delay));

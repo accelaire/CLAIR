@@ -103,7 +103,7 @@ function AgendaPageContent() {
     staleTime: 60000,
   });
 
-  const byDay = data?.byDay ?? {};
+  const byDay = useMemo(() => data?.byDay ?? {}, [data]);
 
   // When month changes, select the first day that has reunions (or null)
   const handlePrevMonth = () => {

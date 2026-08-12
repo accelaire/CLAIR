@@ -17,27 +17,27 @@ describe('THRESHOLDS Configuration', () => {
   });
 
   it('chaque check devrait avoir un type valide', () => {
-    for (const [key, config] of entries) {
+    for (const [, config] of entries) {
       expect(['invariant', 'threshold']).toContain(config.type);
     }
   });
 
   it('chaque check devrait avoir un label non-vide', () => {
-    for (const [key, config] of entries) {
+    for (const [, config] of entries) {
       expect(config.label).toBeTruthy();
       expect(config.label.length).toBeGreaterThan(0);
     }
   });
 
   it('chaque check devrait avoir une query non-vide', () => {
-    for (const [key, config] of entries) {
+    for (const [, config] of entries) {
       expect(config.query).toBeTruthy();
       expect(config.query.length).toBeGreaterThan(0);
     }
   });
 
   it('toutes les queries devraient commencer par SELECT', () => {
-    for (const [key, config] of entries) {
+    for (const [, config] of entries) {
       expect(config.query.trimStart().toUpperCase()).toMatch(/^SELECT/);
     }
   });
@@ -46,7 +46,7 @@ describe('THRESHOLDS Configuration', () => {
     const invariants = entries.filter(([, c]) => c.type === 'invariant');
     expect(invariants.length).toBeGreaterThan(0);
 
-    for (const [key, config] of invariants) {
+    for (const [, config] of invariants) {
       expect(config.min).toBe(0);
       expect(config.max).toBe(0);
     }
@@ -56,7 +56,7 @@ describe('THRESHOLDS Configuration', () => {
     const thresholds = entries.filter(([, c]) => c.type === 'threshold');
     expect(thresholds.length).toBeGreaterThan(0);
 
-    for (const [key, config] of thresholds) {
+    for (const [, config] of thresholds) {
       expect(config.min).toBeGreaterThan(0);
     }
   });
@@ -81,7 +81,7 @@ describe('THRESHOLDS Configuration', () => {
   });
 
   it('toutes les queries devraient retourner un champ "value"', () => {
-    for (const [key, config] of entries) {
+    for (const [, config] of entries) {
       expect(config.query.toLowerCase()).toContain('as value');
     }
   });

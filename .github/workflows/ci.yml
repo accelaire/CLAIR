@@ -63,6 +63,53 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint-and-test
 
+    # Le build de @clair/web prérend /sitemap.xml, qui interroge l'API. Depuis
+    # que `fetchSitemapData` lève au lieu de dégrader (à dessein : un sitemap
+    # vide serait ensuite figé 24 h par l'ISR), un build sans API échoue.
+    #
+    # On monte donc une vraie API devant une base vide. Ça ne valide pas le
+    # CONTENU du sitemap — sans données il se réduit à ses 17 pages statiques —
+    # mais ça valide la plomberie : l'API démarre, répond, le JSON parse, le
+    # sitemap se construit. Le prérendu ne touche que 4 endpoints (/sitemap ×2,
+    # /groupes, /scrutins/annees) : les pages de détail sont rendues à la demande.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: clair
+          POSTGRES_PASSWORD: clair_dev
+          POSTGRES_DB: clair
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U clair"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      # L'API enregistre le plugin Redis au démarrage, et le rate-limit en
+      # dépend. Sans Redis elle démarre quand même, mais en logguant une erreur
+      # de connexion par requête.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://clair:clair_dev@localhost:5432/clair
+      REDIS_URL: redis://localhost:6379
+      # Le tier anonyme est plafonné à 10 req/min. Le build en consomme 6, donc
+      # la marge est mince et un fetch de plus au prérendu suffirait à déclencher
+      # un 429 — qui, sur /sitemap.xml, repasserait le build au rouge. Le secret
+      # place ces appels dans le tier interne, exempté. Valeur en clair assumée :
+      # cette API est éphémère, locale au runner, et n'expose qu'une base vide.
+      CLAIR_INTERNAL_SECRET: ci-build-not-a-secret
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -84,5 +131,41 @@ jobs:
       - name: Generate Prisma client
         run: pnpm db:generate
 
+      # `db push` et non `migrate deploy` : l'historique de migrations n'est pas
+      # rejouable depuis une base vierge (20260313_add_sujets référence
+      # `dossiers_legislatifs`, créée plus tard). La prod, elle, a été construite
+      # incrémentalement et n'a jamais rejoué cet historique.
+      #
+      # Ici on ne cherche qu'un schéma conforme à schema.prisma pour faire vivre
+      # l'API : `db push` le donne directement. Rendre l'historique rejouable est
+      # un chantier à part.
+      - name: Apply database schema
+        run: pnpm --filter @clair/api exec prisma db push --skip-generate
+
+      - name: Build API
+        run: pnpm build:api
+
+      - name: Start API
+        run: |
+          nohup node apps/api/dist/index.js > /tmp/api.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3001/health > /dev/null; then
+              echo "API prête après ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::L'API n'a pas démarré en 30 s"
+          cat /tmp/api.log
+          exit 1
+
       - name: Build
         run: pnpm build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3001
+
+      # Le build de /sitemap.xml passe par l'API : si quelque chose a mal tourné
+      # de ce côté, le log de l'API le dit mieux que la trace Next.
+      - name: API logs
+        if: failure()
+        run: cat /tmp/api.log

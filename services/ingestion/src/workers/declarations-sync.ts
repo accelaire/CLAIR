@@ -10,6 +10,7 @@ import {
   type HATVPDeclarationRow,
 } from '../sources/hatvp/declarations-client.js';
 import { logger } from '../utils/logger.js';
+import { errorMessage } from '../utils/errors.js';
 
 const prisma = new PrismaClient();
 
@@ -143,10 +144,10 @@ export async function syncDeclarationsHATVP(): Promise<SyncResult> {
         });
 
         result.created++;
-      } catch (error: any) {
+      } catch (error) {
         result.errors++;
         logger.debug(
-          { parlId, type: decl.typeDocument, error: error.message },
+          { parlId, type: decl.typeDocument, error: errorMessage(error) },
           'Declaration upsert failed'
         );
       }

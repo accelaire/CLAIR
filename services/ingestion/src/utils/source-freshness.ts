@@ -5,6 +5,7 @@
 import axios from 'axios';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { logger } from './logger';
+import { errorMessage, httpStatus } from './errors';
 import { LEGISLATURE_AN_COURANTE } from '../workers/mandats';
 
 const prisma = new PrismaClient();
@@ -17,6 +18,12 @@ export interface SourceConfig {
   source: string;
   dataType: string;
   url: string;
+  /**
+   * Source sans signal de fraîcheur exploitable en amont (ni ETag ni
+   * Last-Modified). On saute le HEAD et on sync systématiquement, au lieu de
+   * laisser le check échouer chaque nuit sur une URL qui ne répondra jamais.
+   */
+  alwaysSync?: boolean;
 }
 
 export interface FreshnessCheckResult {
@@ -128,7 +135,12 @@ export const SOURCES: Record<string, SourceConfig> = {
   'senat:reunions': {
     source: 'senat',
     dataType: 'reunions',
+    // Le Sénat bloque le listing de ce répertoire (403 systématique, y compris
+    // depuis un navigateur) : c'est pour ça que le client génère les dates de
+    // lundi au lieu de scraper un index. Aucune URL en amont n'expose d'ETag ni
+    // de Last-Modified pour les comptes rendus de commission, donc pas de check.
     url: 'https://www.senat.fr/compte-rendu-commissions/',
+    alwaysSync: true,
   },
   'senat:videos': {
     source: 'senat',
@@ -179,19 +191,32 @@ export async function checkSourceFreshness(
   }
 
   const { source, dataType } = config;
-  let url = config.url;
+  const url = config.url;
 
   // Récupérer l'état précédent
   const previousState = await prisma.sourceState.findUnique({
     where: { source_dataType: { source, dataType } },
   });
 
+  // Sources sans signal de fraîcheur : inutile de tenter un HEAD qui échouera.
+  if (config.alwaysSync) {
+    logger.info({ sourceKey }, 'Source sans signal de fraîcheur, sync systématique');
+    return {
+      hasChanged: true,
+      currentEtag: null,
+      currentLastModified: null,
+      previousEtag: previousState?.lastEtag || null,
+      previousLastModified: previousState?.lastModified || null,
+      lastSyncAt: previousState?.lastSyncAt || null,
+    };
+  }
+
   // Faire une requête HEAD pour obtenir les headers
   let currentEtag: string | null = null;
   let currentLastModified: Date | null = null;
 
   try {
-    let response = await axios.head(url, {
+    const response = await axios.head(url, {
       timeout: 30000,
       headers: {
         'User-Agent': 'CLAIR-Bot/1.0 (https://github.com/clair)',
@@ -211,11 +236,11 @@ export async function checkSourceFreshness(
       { sourceKey, currentEtag, currentLastModified },
       'Source headers fetched'
     );
-  } catch (error: any) {
+  } catch (error) {
     // Pour DILA: si 404 sur l'année courante, essayer l'année précédente
     if (
       sourceKey === 'dila:interventions' &&
-      error.response?.status === 404
+      httpStatus(error) === 404
     ) {
       const previousYearUrl = url.replace(
         `/${new Date().getFullYear()}/`,
@@ -247,9 +272,9 @@ export async function checkSourceFreshness(
           { sourceKey, currentEtag, currentLastModified, url: previousYearUrl },
           'Source headers fetched (fallback year)'
         );
-      } catch (fallbackError: any) {
+      } catch (fallbackError) {
         logger.error(
-          { sourceKey, error: fallbackError.message },
+          { sourceKey, error: errorMessage(fallbackError) },
           'Failed to check source freshness (fallback also failed)'
         );
         return {
@@ -263,7 +288,7 @@ export async function checkSourceFreshness(
       }
     } else {
       logger.error(
-        { sourceKey, error: error.message },
+        { sourceKey, error: errorMessage(error) },
         'Failed to check source freshness'
       );
       // En cas d'erreur, on considère que la source a changé (pour ne pas bloquer)
@@ -406,8 +431,8 @@ export async function checkAllSourcesFreshness(): Promise<string[]> {
       if (result.hasChanged) {
         changedSources.push(sourceKey);
       }
-    } catch (error: any) {
-      logger.error({ sourceKey, error: error.message }, 'Error checking source');
+    } catch (error) {
+      logger.error({ sourceKey, error: errorMessage(error) }, 'Error checking source');
       // En cas d'erreur, on inclut la source pour ne pas bloquer
       changedSources.push(sourceKey);
     }

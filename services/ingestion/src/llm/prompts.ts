@@ -95,6 +95,10 @@ export function buildScrutinResumePrompt(data: ScrutinPromptData): string {
 interface GroupePosition {
   nom: string;
   slug: string;
+  /** Intitulé complet du groupe. Sans lui le modèle développe le sigle de
+   *  mémoire et se trompe (UDDPLR rendu « Union des démocrates et
+   *  indépendants » au lieu d'« Union des droites pour la République »). */
+  nomComplet?: string | null;
   pour: number;
   contre: number;
   abstention: number;
@@ -123,11 +127,20 @@ function formatGroupePosition(g: GroupePosition): string {
   const total = g.pour + g.contre + g.abstention;
   if (total === 0) return `${g.nom} : aucun vote exprimé`;
 
-  // Tendency sur votes exprimés uniquement (pour+contre), pas les abstentions
+  // L'abstention est une position, pas une absence de position : quand elle
+  // domine le groupe, elle prime sur le ratio pour/contre des rares voix
+  // exprimées. Sans ça un groupe à 0 pour / 1 contre / 12 abstentions était
+  // annoncé « Très opposé » au modèle.
   const expressed = g.pour + g.contre;
   let tendency: string;
   if (expressed === 0) {
     tendency = 'Abstention totale';
+  } else if (g.abstention > expressed) {
+    // Strictement supérieur. À égalité (ex. 15 pour / 0 contre / 15
+    // abstentions) l'abstention ne domine pas, et le libellé ferait écrire au
+    // modèle que le groupe s'est abstenu alors que toutes ses voix exprimées
+    // étaient favorables.
+    tendency = 'Abstention majoritaire';
   } else {
     const pctPourExpr = (g.pour / expressed) * 100;
     if (pctPourExpr >= 70) tendency = 'Très favorable';
@@ -138,7 +151,66 @@ function formatGroupePosition(g: GroupePosition): string {
   }
 
   const orientationLabel = g.orientation ? ` [${g.orientation.replace(/_/g, ' ')}]` : '';
-  return `${g.nom}${orientationLabel} : ${g.pour} pour, ${g.contre} contre, ${g.abstention} abstention → ${tendency}`;
+  const nomAffiche = g.nomComplet && g.nomComplet !== g.nom ? `${g.nom} (${g.nomComplet})` : g.nom;
+  return `${nomAffiche}${orientationLabel} : ${g.pour} pour, ${g.contre} contre, ${g.abstention} abstention → ${tendency}`;
+}
+
+/** Position dominante d'un groupe, `null` si aucune voix ou si ex æquo. */
+function positionDominante(g: GroupePosition): 'POUR' | 'CONTRE' | 'ABSTENTION' | null {
+  const max = Math.max(g.pour, g.contre, g.abstention);
+  if (max === 0) return null;
+
+  // Ex æquo ⇒ aucune position dominante. Départager par l'ordre des tests
+  // ferait d'un groupe à 5 pour / 5 contre un groupe « POUR », que
+  // `formatDivergences` transmettrait ensuite au modèle comme un fait à ne pas
+  // contredire. Mieux vaut taire une divergence que d'en publier une fausse.
+  // Même règle que le badge de dissidence côté API.
+  if ([g.pour, g.contre, g.abstention].filter(n => n === max).length > 1) return null;
+
+  if (g.abstention === max) return 'ABSTENTION';
+  return g.pour === max ? 'POUR' : 'CONTRE';
+}
+
+/** Coupe un libellé de scrutin à une longueur lisible. */
+function articleCourt(titre: string): string {
+  const cut = titre.slice(0, 70).trim();
+  return cut.length < titre.length ? `${cut}…` : cut;
+}
+
+/**
+ * Divergences entre le vote d'un groupe sur l'ensemble et ses votes article par
+ * article. Le calcul est fait ICI plutôt que délégué au modèle : livré aux
+ * seules lignes chiffrées, il concluait « le groupe X a voté pour tous les
+ * articles » alors que X s'était abstenu en bloc sur l'un d'eux.
+ */
+function formatDivergences(positionsEnsemble: GroupePosition[], votesArticles: VoteArticle[]): string[] {
+  if (positionsEnsemble.length === 0 || votesArticles.length === 0) return [];
+
+  const ensembleParGroupe = new Map(positionsEnsemble.map(g => [g.nom, positionDominante(g)]));
+  const lignes: string[] = [];
+
+  for (const [nom, posEnsemble] of ensembleParGroupe) {
+    if (!posEnsemble) continue;
+    const ecarts: string[] = [];
+
+    for (const va of votesArticles) {
+      const g = va.groupes.find(x => x.nom === nom);
+      if (!g) continue;
+      const posArticle = positionDominante(g);
+      if (posArticle && posArticle !== posEnsemble) {
+        ecarts.push(`${posArticle} sur « ${articleCourt(va.article)} »`);
+      }
+    }
+
+    if (ecarts.length > 0) {
+      lignes.push(`${nom} : ${posEnsemble} sur l'ensemble, MAIS ${ecarts.join(' ; ')}`);
+    }
+  }
+
+  if (lignes.length === 0) {
+    return ['Aucune : chaque groupe a tenu la même position sur l\'ensemble et sur les articles fournis.'];
+  }
+  return lignes;
 }
 
 export function buildDossierResumePrompt(data: DossierPromptData): string {
@@ -184,12 +256,21 @@ export function buildDossierResumePrompt(data: DossierPromptData): string {
   // Votes sur les articles clés — nuance qualitative
   if (data.votesArticles.length > 0) {
     parts.push('\n--- Votes sur les articles clés (positions nuancées par article) ---');
-    for (const va of data.votesArticles.slice(0, 5)) {
+    // Tous les groupes présents, sans troncature : couper la liste faisait
+    // disparaître ceux qui s'abstenaient en bloc, et le modèle leur inventait
+    // une position à partir du vote sur l'ensemble.
+    for (const va of data.votesArticles) {
       const résultat = va.sort === 'adopte' ? 'Adopté' : 'Rejeté';
       parts.push(`${va.article} (${résultat}) :`);
-      for (const g of va.groupes.slice(0, 6)) {
+      for (const g of va.groupes) {
         parts.push(`  ${formatGroupePosition(g)}`);
       }
+    }
+
+    const divergences = formatDivergences(data.positionsEnsemble, data.votesArticles);
+    if (divergences.length > 0) {
+      parts.push('\n--- Divergences entre le vote sur l\'ensemble et les votes par article (calculées, à reprendre telles quelles) ---');
+      parts.push(...divergences);
     }
   }
 
@@ -209,14 +290,22 @@ export function buildDossierResumePrompt(data: DossierPromptData): string {
   parts.push(
     '',
     'Génère un résumé structuré en deux parties séparées par la ligne exacte "---POSITIONS---" :',
-    '1. RÉSUMÉ (3 à 5 phrases) : Explique de quoi traite ce dossier, ce qui a été décidé, et l\'impact pour les citoyens.',
+    '1. RÉSUMÉ (3 à 5 phrases) : Explique de quoi traite ce dossier, ce qui a été décidé, et l\'impact pour les citoyens. RÈGLES STRICTES :',
+    '- N\'attribue un contenu à un article numéroté que si les données ci-dessus le disent. Un exposé sommaire d\'amendement décrit ce que son auteur veut changer, PAS le contenu de l\'article ni celui du texte adopté.',
+    '- Si tu ne sais pas ce que contient un article, décris la mesure sans la numéroter plutôt que d\'inventer le rattachement.',
+    '- Ne présente pas une mesure de portée limitée (dérogation locale, cas particulier) comme une mesure principale du texte.',
     data.positionsEnsemble.length > 0 || data.votesArticles.length > 0
       ? '2. POSITIONS (3 à 6 phrases) : Analyse les positions de chaque groupe politique majeur. RÈGLES STRICTES :'
       : '2. POSITIONS (1 à 2 phrases) : Indique simplement que les votes disponibles ne portent que sur des amendements et ne permettent pas de déterminer la position globale des groupes. Ne décris AUCUNE position de groupe.',
     ...(data.positionsEnsemble.length > 0 || data.votesArticles.length > 0 ? [
     '- Base-toi UNIQUEMENT sur les votes sur l\'ensemble du texte et/ou sur les articles fournis ci-dessus.',
     '- Si des votes par article sont disponibles, mentionne les positions nuancées (ex: "le groupe X s\'est opposé à l\'article 3 sur la clause de conscience").',
+    '- L\'ABSTENTION EST UNE POSITION. Un groupe qui s\'abstient n\'est ni favorable ni opposé : dis "s\'est abstenu", jamais "a voté pour" ni "a voté contre". Si un groupe s\'abstient en bloc sur un article alors qu\'il vote pour ailleurs, signale-le explicitement.',
+    '- Ne généralise JAMAIS le vote d\'un groupe sur l\'ensemble du texte à ses votes article par article, ni l\'inverse. Chaque affirmation doit correspondre à une ligne chiffrée ci-dessus.',
+    '- Toute divergence listée dans la section « Divergences » DOIT apparaître dans ta réponse. Elle est calculée à partir des votes, ne la contredis pas et ne l\'omets pas.',
+    '- N\'affirme "tous les articles" / "systématiquement" / "à chaque vote" que si le groupe a effectivement la même position sur TOUTES les lignes fournies.',
     '- Utilise l\'orientation politique entre crochets [gauche/droite/etc.] pour classifier correctement les groupes. Ne JAMAIS inventer de classification (ex: le RN est extrême droite, PAS gauche radicale).',
+    '- Nomme les groupes EXACTEMENT comme ci-dessus (ex: "LFI-NFP", pas "LFI-NUPES"). N\'utilise aucun sigle ou intitulé venant de tes connaissances.',
     '- Si un groupe n\'apparaît pas dans les données fournies, ne lui attribue AUCUNE position.',
     '- Si un groupe traditionnellement de gauche vote avec la droite (ou inversement), mentionne-le explicitement.',
     '- ATTENTION : ne regroupe JAMAIS des groupes de familles politiques opposées dans la même catégorie, même s\'ils ont voté de la même manière.',
@@ -253,9 +342,11 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
     parts.push(`Catégorie : ${data.category}`);
   }
 
-  // Dossiers liés avec leurs résumés IA
+  // Dossiers liés avec leurs résumés IA.
+  // Ces résumés sont eux-mêmes générés : en cas de contradiction avec les votes
+  // chiffrés plus bas, ce sont les votes qui font foi (cf. règles du prompt).
   if (data.dossiersResumes.length > 0) {
-    parts.push('\n--- Dossiers législatifs liés ---');
+    parts.push('\n--- Dossiers législatifs liés (synthèses rédigées, à recouper) ---');
     for (const d of data.dossiersResumes) {
       const chambreLabel = d.chambre === 'senat' ? 'Sénat' : d.chambre === 'assemblee' ? 'AN' : 'AN+Sénat';
       const etatStr = d.etat ? ` [${d.etat}]` : '';
@@ -278,12 +369,19 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
   // Votes sur les articles clés
   if (data.votesArticles.length > 0) {
     parts.push('\n--- Votes sur les articles clés (positions nuancées par article) ---');
-    for (const va of data.votesArticles.slice(0, 5)) {
+    // Aucune troncature : voir buildDossierResumePrompt.
+    for (const va of data.votesArticles) {
       const résultat = va.sort === 'adopte' ? 'Adopté' : 'Rejeté';
       parts.push(`${va.article} (${résultat}) :`);
-      for (const g of va.groupes.slice(0, 6)) {
+      for (const g of va.groupes) {
         parts.push(`  ${formatGroupePosition(g)}`);
       }
+    }
+
+    const divergences = formatDivergences(data.positionsEnsemble, data.votesArticles);
+    if (divergences.length > 0) {
+      parts.push('\n--- Divergences entre le vote sur l\'ensemble et les votes par article (calculées, à reprendre telles quelles) ---');
+      parts.push(...divergences);
     }
   }
 
@@ -292,18 +390,27 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
     'Génère une réponse structurée en trois parties séparées par les lignes exactes "---RESUME---" et "---ENJEUX---" :',
     '1. TITRE (une seule ligne, pas de préfixe) : Un titre court et clair en français pour ce sujet parlementaire, compréhensible par un citoyen (ex: "Financement de la sécurité sociale pour 2026", "Droit à l\'aide à mourir", "Organisation des JO 2030"). Pas d\'acronymes, pas de numéro de législature.',
     '---RESUME---',
-    '2. RÉSUMÉ (3 à 5 phrases) : Synthèse accessible de ce sujet pour un citoyen. De quoi s\'agit-il, où en est-on, qu\'est-ce qui a été voté à l\'Assemblée et au Sénat.',
+    '2. RÉSUMÉ (3 à 5 phrases) : Synthèse accessible de ce sujet pour un citoyen. De quoi s\'agit-il, où en est-on, qu\'est-ce qui a été voté à l\'Assemblée et au Sénat. RÈGLES STRICTES :',
+    '- Les synthèses de dossiers ci-dessus sont des textes rédigés, pas des données brutes : ne recopie pas une affirmation qui contredit les votes chiffrés.',
+    '- N\'attribue un contenu à un article numéroté que si les données ci-dessus le disent explicitement.',
+    '- Ne présente pas une mesure de portée limitée (dérogation locale, cas particulier) comme une mesure principale du texte.',
     '---ENJEUX---',
     data.positionsEnsemble.length > 0 || data.votesArticles.length > 0
       ? '3. ENJEUX (3 à 6 phrases) : Quels sont les enjeux concrets pour les citoyens et quelles sont les positions des principaux groupes politiques. RÈGLES STRICTES :'
       : '3. ENJEUX (2 à 4 phrases) : Quels sont les enjeux concrets pour les citoyens. Ne décris AUCUNE position de groupe politique car les seuls votes disponibles portent sur des amendements et ne reflètent pas les positions globales.',
     ...(data.positionsEnsemble.length > 0 || data.votesArticles.length > 0 ? [
-    '- Base-toi UNIQUEMENT sur les votes sur l\'ensemble du texte et/ou sur les articles fournis.',
+    '- Base-toi UNIQUEMENT sur les votes chiffrés sur l\'ensemble du texte et/ou sur les articles fournis. En cas de contradiction avec une synthèse de dossier ci-dessus, les chiffres l\'emportent.',
     '- Si des votes par article sont disponibles, mentionne les positions nuancées.',
+    '- L\'ABSTENTION EST UNE POSITION. Un groupe qui s\'abstient n\'est ni favorable ni opposé : dis "s\'est abstenu", jamais "a voté pour" ni "a voté contre". Si un groupe s\'abstient en bloc sur un article alors qu\'il vote pour ailleurs, signale-le explicitement.',
+    '- Ne généralise JAMAIS le vote d\'un groupe sur l\'ensemble du texte à ses votes article par article, ni l\'inverse. Chaque affirmation doit correspondre à une ligne chiffrée ci-dessus.',
+    '- Toute divergence listée dans la section « Divergences » DOIT apparaître dans ta réponse. Elle est calculée à partir des votes, ne la contredis pas et ne l\'omets pas.',
+    '- N\'affirme "tous les articles" / "systématiquement" / "à chaque vote" que si le groupe a effectivement la même position sur TOUTES les lignes fournies.',
     '- Utilise l\'orientation politique entre crochets pour classifier les groupes. Ne JAMAIS inventer de classification.',
+    '- Nomme les groupes EXACTEMENT comme ci-dessus (ex: "LFI-NFP", pas "LFI-NUPES"). N\'utilise aucun sigle ou intitulé venant de tes connaissances.',
     '- Si un groupe n\'apparaît pas dans les données, ne lui attribue AUCUNE position.',
     '- Si un groupe vote contre son camp habituel, mentionne-le.',
     '- Ne regroupe JAMAIS des groupes de familles opposées dans la même catégorie.',
+    '- Ne conclus pas à un "soutien transpartisan" ou à un "large consensus" si une famille politique entière a voté contre ou s\'est abstenue.',
     ] : []),
     '- Pourquoi ce sujet est important ou controversé.',
   );
@@ -377,6 +484,7 @@ Règles :
 - Ne prends jamais parti politiquement.
 - Cite les faits vérifiables : mandats, votes notables, prises de position publiques.
 - Si des informations manquent, n'invente rien.
+- Les données CLAIR (groupe, mandats, statistiques de vote, HATVP) sont à jour quotidiennement et FONT FOI : en cas de contradiction avec une source web (Wikipédia, Wikidata), privilégie toujours les données CLAIR, notamment sur le mandat et le groupe en cours.
 - Réponds en texte brut, sans markdown.
 - Utilise un ton accessible et engageant, comme un journaliste politique de qualité.`;
 
@@ -427,9 +535,22 @@ export interface ParlementairePromptData {
   // Déclarations HATVP
   declarations: { type: string; label: string; datePublication?: string | null; urlDossier?: string | null }[];
 
-  // Sources web
+  // Sources web (contexte biographique traçable — jamais prioritaire sur nos données)
   wikipediaBio?: string | null;
-  tavilyResults?: { title: string; content: string }[];
+  wikidataFacts?: {
+    description?: string;
+    naissance?: string;
+    partis: { label: string; debut?: string; fin?: string }[];
+    fonctions: { label: string; debut?: string; fin?: string }[];
+  } | null;
+}
+
+/** Formatte une période Wikidata (début/fin par année) en suffixe lisible. */
+function periodeStr(f: { debut?: string; fin?: string }): string {
+  if (f.debut && f.fin) return ` (${f.debut}–${f.fin})`;
+  if (f.debut) return ` (depuis ${f.debut})`;
+  if (f.fin) return ` (jusqu'en ${f.fin})`;
+  return '';
 }
 
 export function buildParlementaireResumePrompt(data: ParlementairePromptData): string {
@@ -509,14 +630,21 @@ export function buildParlementaireResumePrompt(data: ParlementairePromptData): s
     parts.push(bio);
   }
 
-  // Résultats Tavily (presse / actualités)
-  if (data.tavilyResults && data.tavilyResults.length > 0) {
-    parts.push('\n--- Actualités et articles de presse ---');
-    for (const r of data.tavilyResults.slice(0, 3)) {
-      const content = r.content.length > 500
-        ? r.content.slice(0, 500) + '...'
-        : r.content;
-      parts.push(`[${r.title}] ${content}`);
+  // Faits structurés Wikidata (sourcés, vérifiables)
+  if (data.wikidataFacts) {
+    const wd = data.wikidataFacts;
+    const wdLines: string[] = [];
+    if (wd.description) wdLines.push(`Description : ${wd.description}`);
+    if (wd.naissance) wdLines.push(`Année de naissance : ${wd.naissance}`);
+    if (wd.partis.length > 0) {
+      wdLines.push('Partis politiques : ' + wd.partis.map(p => `${p.label}${periodeStr(p)}`).join(' ; '));
+    }
+    if (wd.fonctions.length > 0) {
+      wdLines.push('Fonctions occupées : ' + wd.fonctions.map(f => `${f.label}${periodeStr(f)}`).join(' ; '));
+    }
+    if (wdLines.length > 0) {
+      parts.push('\n--- Faits structurés (Wikidata, sourcés) ---');
+      parts.push(...wdLines);
     }
   }
 

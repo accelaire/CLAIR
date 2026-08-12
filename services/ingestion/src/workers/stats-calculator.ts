@@ -6,6 +6,7 @@
 import { PrismaClient } from '@prisma/client';
 import pLimit from 'p-limit';
 import { logger } from '../utils/logger';
+import { errorMessage } from '../utils/errors';
 import { LEGISLATURE_AN_COURANTE } from './mandats';
 
 /**
@@ -535,8 +536,8 @@ export async function calculateAllStats(
       errors: 0,
       duration,
     };
-  } catch (error: any) {
-    logger.error({ error: error.message }, 'Stats calculation failed');
+  } catch (error) {
+    logger.error({ error: errorMessage(error) }, 'Stats calculation failed');
     throw error;
   }
 }
@@ -592,8 +593,8 @@ export async function calculateAllStatsLegacy(
           try {
             await calculateAndStoreStats(p, globalData);
             return true;
-          } catch (error: any) {
-            logger.error({ parlementaire: p.slug, error: error.message }, 'Error calculating stats');
+          } catch (error) {
+            logger.error({ parlementaire: p.slug, error: errorMessage(error) }, 'Error calculating stats');
             return false;
           }
         })
@@ -930,8 +931,8 @@ export async function calculateAllGroupeStats(
       logger.debug({ groupe: g.slug, progress: `${i + 1}/${groupes.length}` }, 'Calculating groupe stats');
       await calculateAndStoreGroupeStats(g);
       updated++;
-    } catch (error: any) {
-      logger.error({ groupe: g.slug, error: error.message }, 'Error calculating groupe stats');
+    } catch (error) {
+      logger.error({ groupe: g.slug, error: errorMessage(error) }, 'Error calculating groupe stats');
       errors++;
     }
   }
@@ -1209,8 +1210,8 @@ export async function calculateAllGroupeAlliances(
               progress: `${processedInChambre}/${totalPairsInChambre}`,
             }, 'Alliances progress');
           }
-        } catch (error: any) {
-          logger.error({ g1: g1.slug, g2: g2.slug, error: error.message }, 'Error calculating alliance');
+        } catch (error) {
+          logger.error({ g1: g1.slug, g2: g2.slug, error: errorMessage(error) }, 'Error calculating alliance');
         }
       }
     }
@@ -1429,8 +1430,8 @@ export async function calculateAllGroupeThematiques(
 
       await calculateAndStoreGroupeThematiques(groupe.id, groupe.chambre);
       totalStats += THEMATIQUES.length;
-    } catch (error: any) {
-      logger.error({ groupe: groupe.slug, error: error.message }, 'Error calculating thematiques');
+    } catch (error) {
+      logger.error({ groupe: groupe.slug, error: errorMessage(error) }, 'Error calculating thematiques');
     }
   }
 

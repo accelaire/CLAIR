@@ -17,6 +17,8 @@ import { SenatInterventionsClient } from '../sources/senat/interventions-client'
 import { SenatDossiersClient } from '../sources/senat/dossiers-client';
 import { syncSenateursHistoriques } from './senat-histo';
 import { logger } from '../utils/logger';
+import { errorMessage } from '../utils/errors';
+import { asArray, isRecord, readString } from '../utils/json';
 import { extractCommissionSaisines } from '../utils/dossier-commissions';
 import {
   LEGISLATURE_AN_COURANTE,
@@ -69,6 +71,18 @@ const COMMISSION_CODE_TYPES = [
   'ASSEMBLEE', 'SENAT',
   'COMNL', 'BUREAU', 'CONFPT',
 ] as const;
+
+/**
+ * Un amendement peut être déposé par le Gouvernement ou une commission, qui ne
+ * sont pas des parlementaires. Sans ce garde-fou, le repli par nom leur trouve
+ * un homonyme : « LE GOUVERNEMENT » a été rattaché au sénateur Alain Le Vern
+ * sur 514 amendements.
+ */
+function estAuteurNonParlementaire(libelle: string | null | undefined): boolean {
+  if (!libelle) return false;
+  return /^\s*(le\s+)?gouvernement\b|^\s*(la\s+)?commission\b|^\s*(m\.\s+)?le\s+rapporteur\b/i
+    .test(libelle.trim());
+}
 
 function slugifyCommission(nom: string, chambre: string): string {
   const base = nom
@@ -349,7 +363,7 @@ export async function syncReunions(options: { limit?: number } = {}): Promise<{
         const isPastAndExisting = existing && reunionData.dateDebut < new Date();
         if (r.participants.length > 0 && !isPastAndExisting) {
           const seen = new Set<string>();
-          const participantRecords: Array<{ reunionId: string; parlementaireId: string; presence: string | null }> = [];
+          const participantRecords: Array<{ reunionId: string; parlementaireId: string; presence: string }> = [];
           for (const p of r.participants) {
             const parlementaireId = parlementaireByRef.get(p.acteurRef);
             if (!parlementaireId || seen.has(parlementaireId)) continue;
@@ -365,8 +379,8 @@ export async function syncReunions(options: { limit?: number } = {}): Promise<{
             participantsLinked += participantRecords.length;
           }
         }
-      } catch (error: any) {
-        logger.warn({ uid: r.uid, error: error.message }, 'Error syncing reunion');
+      } catch (error) {
+        logger.warn({ uid: r.uid, error: errorMessage(error) }, 'Error syncing reunion');
       }
     }
 
@@ -451,7 +465,7 @@ async function syncMandatsFromSourceData(
   if (!sourceData || typeof sourceData !== 'object') return 0;
 
   const data = sourceData as Record<string, unknown>;
-  const mandatsRaw = (data as any).mandats?.mandat;
+  const mandatsRaw = isRecord(data.mandats) ? data.mandats.mandat : undefined;
   if (!mandatsRaw) return 0;
 
   const mandats = Array.isArray(mandatsRaw) ? mandatsRaw : [mandatsRaw];
@@ -623,11 +637,10 @@ export async function syncDeputes(
             p,
             groupeMap,
             circoMap,
-            organeRefToCommissionId,
             ctx,
           );
-        } catch (error: any) {
-          logger.error({ slug: p.slug, error: error.message }, 'Error syncing parlementaire');
+        } catch (error) {
+          logger.error({ slug: p.slug, error: errorMessage(error) }, 'Error syncing parlementaire');
           return null;
         }
       })
@@ -716,7 +729,6 @@ async function syncSingleParlementaireAN(
   p: TransformedParlementaire,
   groupeMap: Map<string, string>,
   circoMap: Map<string, string>,
-  organeRefToCommissionId: Map<string, string>,
   ctx: MandatContext,
 ): Promise<{ person: 'created' | 'updated'; mandatCreated: boolean } | null> {
   // Une législature courante alimente la table `parlementaires` (groupe/circo/actif
@@ -848,16 +860,6 @@ async function syncSingleParlementaireAN(
 // SYNC SÉNATS - CommissionsSenate depuis API Sénat
 // =============================================================================
 
-const SENAT_CODE_TO_TYPE: Record<string, string> = {
-  COMAFCL: 'permanente',
-  COMAFETR: 'permanente',
-  COMCAEE: 'permanente',
-  COMLOIS: 'permanente',
-  COMSOCIALE: 'permanente',
-  COMFINC: 'permanente',
-  COMEUROPE: 'permanente', // Commission des affaires européennes
-};
-
 /**
  * Sync Senate commissions from the Senate API data embedded in senateurs.
  * Also backfills organeRef on existing Senate commissions.
@@ -914,11 +916,12 @@ export async function syncSenatCommissions(): Promise<{ created: number; updated
   for (const p of senateurs) {
     const data = p.sourceData as Record<string, unknown> | null;
     if (!data) continue;
-    const organismes = (data as any).organismes || [];
-    for (const org of organismes) {
-      if (org.type !== 'COMMISSION') continue;
-      if (!commissionData.has(org.code)) {
-        commissionData.set(org.code, { code: org.code, libelle: org.libelle });
+    for (const org of asArray(data.organismes)) {
+      if (!isRecord(org) || org.type !== 'COMMISSION') continue;
+      const code = readString(org, 'code');
+      if (!code) continue;
+      if (!commissionData.has(code)) {
+        commissionData.set(code, { code, libelle: readString(org, 'libelle') ?? '' });
       }
     }
   }
@@ -1057,8 +1060,8 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
       limit(async () => {
         try {
           return await syncSingleSenateur(s, groupeMap, circoMap, commissionByOrganeRef);
-        } catch (error: any) {
-          logger.error({ slug: s.slug, error: error.message }, 'Error syncing sénateur');
+        } catch (error) {
+          logger.error({ slug: s.slug, error: errorMessage(error) }, 'Error syncing sénateur');
           return null;
         }
       })
@@ -1282,9 +1285,37 @@ async function syncSingleSenateur(
 // SYNC SCRUTINS (via API Assemblée Nationale)
 // =============================================================================
 
+
+/**
+ * Fenêtre du sync quotidien des scrutins.
+ *
+ * Un scrutin clos ne change plus : ses votes sont figés dès la séance. Or le
+ * sync remplace intégralement les votes de chaque scrutin qu'il traite, sans
+ * comparer. Mesure du 2026-08-06 : 1 482 204 votes supprimés puis réinsérés en
+ * une nuit, dont 1 220 081 (82 %) sur des scrutins vieux de plus de trois mois,
+ * le plus ancien datant d'octobre 2024.
+ *
+ * On borne donc le passage quotidien à une fenêtre récente. Les scrutins plus
+ * anciens restent rattrapables explicitement via `sync --scrutins` (sans
+ * `sinceMonths`), qui reste non borné.
+ */
+export const SCRUTINS_DAILY_WINDOW_MONTHS = 6;
+
+/** Date plancher d'une fenêtre exprimée en mois, `null` si non bornée. */
+export function windowFloor(sinceMonths?: number): Date | null {
+  if (!sinceMonths || sinceMonths <= 0) return null;
+  const floor = new Date();
+  floor.setMonth(floor.getMonth() - sinceMonths);
+  return floor;
+}
+
 export async function syncScrutins(
-  options: { limit?: number; fromNumero?: number; legislature?: number } = {}
-): Promise<{ scrutins: number; votes: number }> {
+  options: {
+    limit?: number; fromNumero?: number; legislature?: number;
+    /** Ne traiter que les scrutins des N derniers mois (cf. SCRUTINS_DAILY_WINDOW_MONTHS). */
+    sinceMonths?: number;
+  } = {}
+): Promise<{ scrutins: number; votes: number; votesOrphelins: number }> {
   const legislature = options.legislature ?? LEGISLATURE_AN_COURANTE;
   logger.info({ limit: options.limit, legislature }, 'Starting scrutins AN sync (from Assemblée Nationale API)...');
 
@@ -1304,6 +1335,10 @@ export async function syncScrutins(
   let scrutinsCreated = 0;
   let scrutinsUpdated = 0;
   let votesCreated = 0;
+  let votesOrphelins = 0;
+
+  const floor = windowFloor(options.sinceMonths);
+  let scrutinsSkippedOld = 0;
 
   const chambre = 'assemblee';
   // Pour l'AN, la session est la législature : elle fait partie de la clé unique
@@ -1313,6 +1348,12 @@ export async function syncScrutins(
   for (const data of scrutinsData) {
     try {
       const { scrutin, votes } = data;
+
+      // Hors fenêtre : on ne réécrit pas les votes d'un scrutin clos.
+      if (floor && scrutin.date && new Date(scrutin.date) < floor) {
+        scrutinsSkippedOld++;
+        continue;
+      }
 
       // Tags automatiques basés sur le titre
       const tags = extractTags(scrutin.titre);
@@ -1366,11 +1407,9 @@ export async function syncScrutins(
         scrutinsCreated++;
       }
 
-      // Synchroniser les votes individuels
-      // D'abord supprimer les votes existants pour ce scrutin
-      await prisma.vote.deleteMany({ where: { scrutinId } });
-
-      // Créer les nouveaux votes
+      // Synchroniser les votes individuels.
+      // Remplacement complet plutôt qu'upsert : c'est la seule façon simple de
+      // faire disparaître un vote retiré à la source (mise au point).
       const voteRecords = [];
       for (const vote of votes) {
         const parlementaireId = parlementaireMap.get(vote.acteurRef);
@@ -1384,13 +1423,36 @@ export async function syncScrutins(
         });
       }
 
-      if (voteRecords.length > 0) {
-        await prisma.vote.createMany({ data: voteRecords });
-        votesCreated += voteRecords.length;
+      // La source annonce des votes mais aucun ne se rattache à un
+      // parlementaire connu : le remplacement viderait le scrutin, proprement
+      // et sans erreur. Ce cas ne traduit jamais une réalité parlementaire,
+      // seulement un décalage de notre côté (refs d'un format inattendu, ou
+      // scrutins synchronisés avant les parlementaires après un renouvellement).
+      // On préfère conserver les votes existants et le signaler.
+      if (votes.length > 0 && voteRecords.length === 0) {
+        logger.error({
+          numero: data.scrutin.numero,
+          chambre,
+          votesSource: votes.length,
+        }, 'Aucun vote rattachable à un parlementaire connu — remplacement annulé');
+        votesOrphelins++;
+        continue;
       }
 
-    } catch (error: any) {
-      logger.warn({ numero: data.scrutin.numero, error: error.message }, 'Error syncing scrutin');
+      // La suppression et la réinsertion DOIVENT être atomiques : hors
+      // transaction, le scrutin traverse un état sans aucun vote, que l'API
+      // sert telle quelle. C'est aussi l'invariant « scrutins sans votes »
+      // (tolérance zéro) que les checks qualité font respecter par ailleurs.
+      await prisma.$transaction([
+        prisma.vote.deleteMany({ where: { scrutinId } }),
+        ...(voteRecords.length > 0
+          ? [prisma.vote.createMany({ data: voteRecords })]
+          : []),
+      ]);
+      votesCreated += voteRecords.length;
+
+    } catch (error) {
+      logger.warn({ numero: data.scrutin.numero, error: errorMessage(error) }, 'Error syncing scrutin');
     }
 
     // Pause tous les 100 scrutins pour laisser le GC respirer
@@ -1403,9 +1465,12 @@ export async function syncScrutins(
     scrutins: { created: scrutinsCreated, updated: scrutinsUpdated },
     votes: votesCreated,
     total: scrutinsData.length,
+    skippedHorsFenetre: scrutinsSkippedOld,
+    fenetreMois: options.sinceMonths ?? null,
+    votesOrphelins,
   }, 'Scrutins AN sync completed');
 
-  return { scrutins: scrutinsCreated + scrutinsUpdated, votes: votesCreated };
+  return { scrutins: scrutinsCreated + scrutinsUpdated, votes: votesCreated, votesOrphelins };
 }
 
 // =============================================================================
@@ -1418,8 +1483,10 @@ export async function syncScrutinsSenat(
     session?: string;
     sessions?: string[];
     enrichDossiers?: boolean;
+    /** Ne traiter que les scrutins des N derniers mois (cf. SCRUTINS_DAILY_WINDOW_MONTHS). */
+    sinceMonths?: number;
   } = {}
-): Promise<{ scrutins: number; votes: number; dossiersLinked: number }> {
+): Promise<{ scrutins: number; votes: number; dossiersLinked: number; votesOrphelins: number }> {
   // Le client DOSLEG couvre par défaut SENAT_SESSION_MIN → année courante.
   // On peut restreindre à une/des sessions via options.session / options.sessions.
   logger.info({ limit: options.limit, enrichDossiers: options.enrichDossiers ?? true }, 'Starting scrutins Sénat sync (DOSLEG)...');
@@ -1467,13 +1534,23 @@ export async function syncScrutinsSenat(
   let scrutinsCreated = 0;
   let scrutinsUpdated = 0;
   let votesCreated = 0;
+  let votesOrphelins = 0;
   let dossiersLinked = 0;
+
+  const floor = windowFloor(options.sinceMonths);
+  let scrutinsSkippedOld = 0;
 
   const chambre = 'senat';
 
   for (const data of scrutinsData) {
     try {
       const { scrutin, votes } = data;
+
+      // Hors fenêtre : on ne réécrit pas les votes d'un scrutin clos.
+      if (floor && scrutin.date && new Date(scrutin.date) < floor) {
+        scrutinsSkippedOld++;
+        continue;
+      }
 
       // Utiliser la session directement du client (format "2024-2025")
       // Extraire l'année de début pour la clé unique
@@ -1559,9 +1636,8 @@ export async function syncScrutinsSenat(
         scrutinsCreated++;
       }
 
-      // Synchroniser les votes individuels
-      await prisma.vote.deleteMany({ where: { scrutinId } });
-
+      // Synchroniser les votes individuels (cf. syncScrutins pour le pourquoi
+      // du remplacement complet et de la transaction).
       const voteRecords = [];
       for (const vote of votes) {
         const parlementaireId = parlementaireMap.get(vote.matricule);
@@ -1575,13 +1651,29 @@ export async function syncScrutinsSenat(
         });
       }
 
-      if (voteRecords.length > 0) {
-        await prisma.vote.createMany({ data: voteRecords });
-        votesCreated += voteRecords.length;
+      // Cf. syncScrutins : un scrutin dont aucun vote ne se rattache traduit un
+      // décalage de notre côté, pas une réalité parlementaire. On garde
+      // l'existant plutôt que de le vider en silence.
+      if (votes.length > 0 && voteRecords.length === 0) {
+        logger.error({
+          numero: data.scrutin.numero,
+          chambre: 'senat',
+          votesSource: votes.length,
+        }, 'Aucun vote rattachable à un parlementaire connu — remplacement annulé');
+        votesOrphelins++;
+        continue;
       }
 
-    } catch (error: any) {
-      logger.warn({ numero: data.scrutin.numero, error: error.message }, 'Error syncing scrutin Sénat');
+      await prisma.$transaction([
+        prisma.vote.deleteMany({ where: { scrutinId } }),
+        ...(voteRecords.length > 0
+          ? [prisma.vote.createMany({ data: voteRecords })]
+          : []),
+      ]);
+      votesCreated += voteRecords.length;
+
+    } catch (error) {
+      logger.warn({ numero: data.scrutin.numero, error: errorMessage(error) }, 'Error syncing scrutin Sénat');
     }
 
     // Pause tous les 100 scrutins pour laisser le GC respirer
@@ -1595,9 +1687,12 @@ export async function syncScrutinsSenat(
     votes: votesCreated,
     dossiersLinked,
     total: scrutinsData.length,
+    skippedHorsFenetre: scrutinsSkippedOld,
+    fenetreMois: options.sinceMonths ?? null,
+    votesOrphelins,
   }, 'Scrutins Sénat sync completed');
 
-  return { scrutins: scrutinsCreated + scrutinsUpdated, votes: votesCreated, dossiersLinked };
+  return { scrutins: scrutinsCreated + scrutinsUpdated, votes: votesCreated, dossiersLinked, votesOrphelins };
 }
 
 // =============================================================================
@@ -1737,8 +1832,8 @@ export async function syncInterventions(
         createdNonParlementaire++;
       }
 
-    } catch (error: any) {
-      logger.warn({ seance: intervention.seanceId, error: error.message }, 'Error syncing intervention');
+    } catch (error) {
+      logger.warn({ seance: intervention.seanceId, error: errorMessage(error) }, 'Error syncing intervention');
     }
   }
 
@@ -1881,8 +1976,8 @@ export async function syncInterventionsSenat(
         createdNonParlementaire++;
       }
 
-    } catch (error: any) {
-      logger.warn({ seance: intervention.seanceId, error: error.message }, 'Error syncing intervention Sénat');
+    } catch (error) {
+      logger.warn({ seance: intervention.seanceId, error: errorMessage(error) }, 'Error syncing intervention Sénat');
     }
   }
 
@@ -2248,8 +2343,8 @@ export async function syncSenatReunions(options: { maxWeeks?: number } = {}): Pr
       }
 
       // Match participants — only for new reunions (compte-rendu passé = données finales)
-      if (!existing && (r as any).participantNames?.length > 0) {
-        const participantNames = (r as any).participantNames as string[];
+      if (!existing && r.participantNames.length > 0) {
+        const participantNames = r.participantNames;
         const seen = new Set<string>();
         const records: Array<{ reunionId: string; parlementaireId: string; presence: string }> = [];
 
@@ -2265,8 +2360,8 @@ export async function syncSenatReunions(options: { maxWeeks?: number } = {}): Pr
           participantsLinked += records.length;
         }
       }
-    } catch (err: any) {
-      logger.warn({ uid: r.uid, error: err.message }, 'Error syncing Sénat reunion');
+    } catch (err) {
+      logger.warn({ uid: r.uid, error: errorMessage(err) }, 'Error syncing Sénat reunion');
     }
   }
 
@@ -2332,8 +2427,8 @@ export async function syncSenatAgenda(): Promise<{ created: number; updated: num
         await prisma.reunion.create({ data: reunionData });
         created++;
       }
-    } catch (err: any) {
-      logger.warn({ uid: s.uid, error: err.message }, 'Error syncing Sénat agenda séance');
+    } catch (err) {
+      logger.warn({ uid: s.uid, error: errorMessage(err) }, 'Error syncing Sénat agenda séance');
     }
   }
 
@@ -2397,8 +2492,8 @@ export async function syncSeancesODJ(): Promise<{
         });
         updated++;
       }
-    } catch (err: any) {
-      logger.warn({ date: seance.date, heure: seance.heure, error: err.message }, 'Error processing séance ODJ row');
+    } catch (err) {
+      logger.warn({ date: seance.date, heure: seance.heure, error: errorMessage(err) }, 'Error processing séance ODJ row');
     }
   }
 
@@ -2484,8 +2579,8 @@ export async function fullSync(): Promise<void> {
       deputes: deputes.created + deputes.updated,
       senateurs: senateurs.created + senateurs.updated,
     }, 'Full sync completed successfully');
-  } catch (error: any) {
-    logger.error({ error: error.message }, 'Full sync failed');
+  } catch (error) {
+    logger.error({ error: errorMessage(error) }, 'Full sync failed');
     throw error;
   }
 }
@@ -2532,7 +2627,19 @@ export interface SmartSyncResult {
   sourcesChecked: string[];
   sourcesChanged: string[];
   sourcesSkipped: string[];
-  results: Record<string, { created: number; updated: number; skipped?: boolean }>;
+  /**
+   * Sources dont la synchronisation a levé une exception.
+   *
+   * Sans cette liste, un échec était indiscernable d'un succès à zéro item : le
+   * catch écrivait `{ created: 0, updated: 0 }` et la source restait dans
+   * `sourcesChanged`, donc le récapitulatif l'affichait en ✅. Les amendements
+   * AN ont ainsi échoué sept jours sur huit sans que rien ne le signale.
+   */
+  sourcesFailed: string[];
+  results: Record<
+    string,
+    { created: number; updated: number; skipped?: boolean; failed?: boolean; error?: string }
+  >;
   duration: string;
 }
 
@@ -2546,6 +2653,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     sourcesChecked: [],
     sourcesChanged: [],
     sourcesSkipped: [],
+    sourcesFailed: [],
     results: {},
     duration: '0s',
   };
@@ -2706,7 +2814,12 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
 
           case 'assemblee_nationale:scrutins': {
             // Si --all et pas de limite explicite, on sync TOUT (undefined = pas de limite)
-            const scrutinsResult = await syncScrutins({ limit: options.scrutinsLimit });
+            // `sinceMonths` ne borne QUE le batch quotidien : `sync --scrutins`
+            // reste non borné pour les rattrapages.
+            const scrutinsResult = await syncScrutins({
+              limit: options.scrutinsLimit,
+              sinceMonths: SCRUTINS_DAILY_WINDOW_MONTHS,
+            });
             syncResult = { created: scrutinsResult.scrutins, updated: 0 };
             break;
           }
@@ -2722,6 +2835,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
             const senatScrutinsResult = await syncScrutinsSenat({
               limit: options.scrutinsLimit,
               sessions,
+              sinceMonths: SCRUTINS_DAILY_WINDOW_MONTHS,
             });
             syncResult = { created: senatScrutinsResult.scrutins, updated: 0 };
             break;
@@ -2839,21 +2953,33 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
 
         logger.info({ sourceKey, ...syncResult }, 'Source sync completed');
 
-      } catch (error: any) {
+      } catch (error) {
         await prisma.syncLog.update({
           where: { id: syncLog.id },
           data: {
             statut: 'failed',
             completedAt: new Date(),
-            error: error.message,
+            error: errorMessage(error),
           },
         });
         throw error;
       }
 
-    } catch (error: any) {
-      logger.error({ sourceKey, error: error.message }, 'Error syncing source');
-      results.results[sourceKey] = { created: 0, updated: 0 };
+    } catch (error) {
+      const message = errorMessage(error);
+      logger.error({ sourceKey, error: message }, 'Error syncing source');
+
+      // La source avait été poussée dans sourcesChanged avant d'être
+      // synchronisée : on l'en retire pour qu'elle ne compte pas comme un
+      // succès, ni dans le récapitulatif, ni dans les `has*Changed` qui
+      // décident de rejouer les étapes de liaison en aval.
+      const changedIndex = results.sourcesChanged.indexOf(sourceKey);
+      if (changedIndex !== -1) {
+        results.sourcesChanged.splice(changedIndex, 1);
+      }
+
+      results.sourcesFailed.push(sourceKey);
+      results.results[sourceKey] = { created: 0, updated: 0, failed: true, error: message };
     }
   }
 
@@ -2872,8 +2998,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         bySeanceRef: linkResult.bySeanceRef,
         byDate: linkResult.byDate,
       }, 'Interventions linking completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Interventions linking failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Interventions linking failed (non-blocking)');
     }
   }
 
@@ -2906,12 +3032,24 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         notFound: enrichSenatResult.notFound,
         errors: enrichSenatResult.errors,
       }, 'Sénat scrutins enrichment completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Scrutins-Amendements enrichment failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Scrutins-Amendements enrichment failed (non-blocking)');
     }
   }
 
   if (hasDossiersChanged || hasScrutinsChanged) {
+    // Casser les liens AN inter-législatures AVANT tout matching : les étapes qui
+    // suivent propagent de proche en proche, elles doivent partir d'un état sain.
+    logger.info('Unlinking AN scrutins bound to another legislature...');
+    try {
+      const guardResult = await unlinkANScrutinsWrongLegislature();
+      logger.info({
+        unlinked: guardResult.unlinked,
+      }, 'AN legislature guard completed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'AN legislature guard failed (non-blocking)');
+    }
+
     // Scrutin→dossier linking MUST run BEFORE scrutin→amendement linking
     // because the CTE requires dossier_id to avoid cross-dossier false positives.
     logger.info('Linking Sénat scrutins to dossiers...');
@@ -2920,8 +3058,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.info({
         linked: linkResult.linked,
       }, 'Sénat scrutins-dossiers linking completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sénat scrutins-dossiers linking failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sénat scrutins-dossiers linking failed (non-blocking)');
     }
 
     // TF-IDF matching for ALL orphan scrutins (AN + Sénat) — high recall
@@ -2932,8 +3070,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         linked: tfidfResult.linked,
         skipped: tfidfResult.skipped,
       }, 'TF-IDF scrutin-dossier linking completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'TF-IDF scrutin-dossier linking failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'TF-IDF scrutin-dossier linking failed (non-blocking)');
     }
 
     // AN scrutins-dossiers title matching — safety net for remaining orphans
@@ -2943,8 +3081,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.info({
         linked: anLinkResult.linked,
       }, 'AN scrutins-dossiers title linking completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'AN scrutins-dossiers title linking failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'AN scrutins-dossiers title linking failed (non-blocking)');
     }
 
     // Texte_numero linking — structural match via shared texte reference
@@ -2954,8 +3092,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.info({
         linked: texteNumResult.linked,
       }, 'Texte_numero orphan linking completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Texte_numero orphan linking failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Texte_numero orphan linking failed (non-blocking)');
     }
 
     // Loi_titre matching — last resort matching against promulgated law title
@@ -2965,8 +3103,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.info({
         linked: loiTitreResult.linked,
       }, 'Loi_titre orphan linking completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Loi_titre orphan linking failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Loi_titre orphan linking failed (non-blocking)');
     }
   }
 
@@ -2980,8 +3118,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         linked: linkAmResult.linked,
         notFound: linkAmResult.notFound,
       }, 'Scrutins-amendements linking completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Scrutins-amendements linking failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Scrutins-amendements linking failed (non-blocking)');
     }
 
     // Propagate dossier_id from scrutins to amendements (only fills NULL, never resets)
@@ -2991,8 +3129,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.info({
         linked: amdtLinkResult.linked,
       }, 'Amendements-dossiers linking via scrutins completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Amendements-dossiers linking via scrutins failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Amendements-dossiers linking via scrutins failed (non-blocking)');
     }
 
     // Link amendements to dossiers via texte_ref (catches non-voted amendements)
@@ -3001,8 +3139,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.info({
         linked: texteRefResult.linked,
       }, 'Amendements-dossiers linking via texteRef completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Amendements-dossiers linking via texteRef failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Amendements-dossiers linking via texteRef failed (non-blocking)');
     }
 
     // Propagate dossier_id between sibling amendments on same texte_ref (safe: unanimous only)
@@ -3011,8 +3149,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.info({
         linked: siblingResult.linked,
       }, 'Sibling texte_ref dossier propagation completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sibling texte_ref dossier propagation failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sibling texte_ref dossier propagation failed (non-blocking)');
     }
 
   }
@@ -3067,8 +3205,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         total: thematiquesResult.total,
         duration: thematiquesResult.duration,
       }, 'Groupe thematiques calculation completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Stats calculation failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Stats calculation failed (non-blocking)');
       // Ne pas faire échouer le sync complet si le calcul des stats échoue
     }
   }
@@ -3083,8 +3221,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         updated: sujetResult.updated,
         totalDossiers: sujetResult.totalDossiers,
       }, 'Incremental sujet generation completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sujet generation failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sujet generation failed (non-blocking)');
     }
   }
 
@@ -3098,8 +3236,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         deleted: linksResult.deleted,
         dropped: linksResult.dropped,
       }, 'Sujet links generation completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sujet links generation failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sujet links generation failed (non-blocking)');
     }
   }
 
@@ -3116,8 +3254,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         created: ctxResult.created,
         deleted: ctxResult.deleted,
       }, 'Sujet context links generation completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sujet context links generation failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sujet context links generation failed (non-blocking)');
     }
   }
 
@@ -3153,8 +3291,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         updated: sujetsResult,
         duration: `${((Date.now() - refreshStart) / 1000).toFixed(1)}s`,
       }, 'Sujets stats refresh completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sujets stats refresh failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sujets stats refresh failed (non-blocking)');
     }
   }
 
@@ -3172,8 +3310,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         await prisma.$executeRawUnsafe(`VACUUM ANALYZE ${table}`);
       }
       logger.info({ duration: `${((Date.now() - vacuumStart) / 1000).toFixed(1)}s` }, 'VACUUM ANALYZE completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'VACUUM ANALYZE failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'VACUUM ANALYZE failed (non-blocking)');
     }
   }
 
@@ -3186,8 +3324,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         matched: declResult.matched, created: declResult.created,
         unmatched: declResult.unmatched, errors: declResult.errors,
       }, 'HATVP declarations sync completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'HATVP declarations sync failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'HATVP declarations sync failed (non-blocking)');
     }
   }
 
@@ -3213,8 +3351,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       `;
       await prismaLocal.$disconnect();
       logger.info('Sujet statuses refreshed from dossier etats');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Sujet status refresh failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Sujet status refresh failed (non-blocking)');
     }
   }
 
@@ -3247,10 +3385,11 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         tokensIn: iaGroupeAmendements.totalTokensIn, tokensOut: iaGroupeAmendements.totalTokensOut,
       }, 'Groupe amendement descriptions enrichment completed');
 
-      // Fiches parlementaires enrichies (Wikipedia + Tavily + Mistral)
+      // Fiches parlementaires enrichies (Wikipedia + Wikidata + Mistral)
       const { enrichParlementairesIA } = await import('./parlementaire-enrichment.js');
 
       // 1) Backfill : fiches jamais enrichies (resumeIA null), typiquement les nouveaux élus.
+      //    Sans limite : traite TOUTES les fiches non enrichies en un passage.
       const iaParl = await enrichParlementairesIA({ concurrency: 2 });
       logger.info({
         enriched: iaParl.enriched, skipped: iaParl.skipped, errors: iaParl.errors,
@@ -3260,8 +3399,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       // 2) Rotation : le backfill ne retouche jamais une fiche déjà enrichie, donc la date
       // affichée vieillit indéfiniment. On régénère chaque jour un échantillon aléatoire parmi
       // les fiches non rafraîchies depuis 25 jours.
-      // Budget : Tavily = 1 appel par fiche, quota 1000/mois partagé avec sujet-links-generator
-      // → 25/jour (750/mois) couvre les ~950 fiches en ~5 semaines en gardant une marge.
+      // Sources gratuites (Wikipedia + Wikidata, sans quota) : le seul coût est Mistral.
+      // 25/jour rafraîchit les ~950 fiches en ~38 jours ; ce plafond est ajustable librement.
       const iaParlRefresh = await enrichParlementairesIA({
         concurrency: 2,
         randomSample: 25,
@@ -3271,8 +3410,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         enriched: iaParlRefresh.enriched, errors: iaParlRefresh.errors,
         tokensIn: iaParlRefresh.totalTokensIn, tokensOut: iaParlRefresh.totalTokensOut,
       }, 'Parlementaires IA rotation refresh completed');
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'IA enrichment failed (non-blocking)');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'IA enrichment failed (non-blocking)');
     }
   }
 
@@ -3304,8 +3443,8 @@ export async function checkSourcesStatus(): Promise<void> {
         previousLastModified: freshness.previousLastModified,
         lastSyncAt: freshness.lastSyncAt,
       }, freshness.hasChanged ? 'Source HAS CHANGED' : 'Source unchanged');
-    } catch (error: any) {
-      logger.error({ source: sourceKey, error: error.message }, 'Error checking source');
+    } catch (error) {
+      logger.error({ source: sourceKey, error: errorMessage(error) }, 'Error checking source');
     }
   }
 }
@@ -3338,18 +3477,30 @@ export async function syncAmendements(
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/-/g, ' ').replace(/'/g, ' ').trim();
 
-  const parlementaireNameMap = new Map<string, string>();
   const parlementaireByRef = new Map<string, string>();
+  // Un patronyme partagé par deux députés ne permet AUCUNE attribution fiable :
+  // on le retire de la map plutôt que de laisser le dernier chargé l'emporter.
+  const nameHits = new Map<string, Set<string>>();
+  const addName = (raw: string | null | undefined, id: string) => {
+    const key = normalize(raw ?? '');
+    // Les patronymes d'une ou deux lettres (« O », « Ba ») ne discriminent rien.
+    if (key.length < 3) return;
+    if (!nameHits.has(key)) nameHits.set(key, new Set());
+    nameHits.get(key)!.add(id);
+  };
+
   for (const p of parlementaires) {
-    parlementaireNameMap.set(normalize(p.nom), p.id);
     if (p.sourceId) parlementaireByRef.set(p.sourceId, p.id);
+    addName(p.nom, p.id);
+    addName(`${p.prenom} ${p.nom}`, p.id);
     const parts = p.nom.trim().split(/\s+/);
-    if (parts.length > 1) {
-      const lastName = parts[parts.length - 1];
-      if (lastName && lastName.length > 3) {
-        parlementaireNameMap.set(normalize(lastName), p.id);
-      }
-    }
+    if (parts.length > 1) addName(parts[parts.length - 1], p.id);
+  }
+
+  const parlementaireNameMap = new Map<string, string>();
+  for (const [name, ids] of nameHits) {
+    const [seul] = [...ids];
+    if (ids.size === 1 && seul) parlementaireNameMap.set(name, seul);
   }
 
   const chambre = 'assemblee';
@@ -3363,18 +3514,28 @@ export async function syncAmendements(
       try {
         const transformed = amendementClient.transformAmendement(raw);
 
-        let parlementaireId: string | null = null;
-        if (transformed.auteurLibelle) {
+        // 1. `auteurRef` est l'identifiant d'acteur AN (PA…), renseigné sur ~99 %
+        //    des amendements. C'est la seule attribution sûre.
+        let parlementaireId: string | null = transformed.auteurRef
+          ? parlementaireByRef.get(transformed.auteurRef) ?? null
+          : null;
+
+        // 2. Repli sur le nom, en ÉGALITÉ STRICTE. L'ancienne version comparait
+        //    en sous-chaîne (`libelle.includes(name)`) et retenait le premier
+        //    hit de la map : le patronyme « O » matchait « Brulebois »,
+        //    « Falcon », « Rolland »… et a capté 30 221 amendements.
+        if (!parlementaireId && transformed.auteurLibelle
+            && !estAuteurNonParlementaire(transformed.auteurLibelle)) {
           const libelleRaw = transformed.auteurLibelle
             .replace(/^(M\.|Mme|Mme\.)\s*/i, '')
             .split(',')[0];
           const libelle = normalize(libelleRaw || '');
 
-          for (const [name, id] of parlementaireNameMap) {
-            if (libelle.includes(name) || name.includes(libelle)) {
-              parlementaireId = id;
-              break;
-            }
+          if (libelle) {
+            const mots = libelle.split(/\s+/);
+            const dernier = mots[mots.length - 1];
+            parlementaireId = parlementaireNameMap.get(libelle)
+              ?? (dernier ? parlementaireNameMap.get(dernier) ?? null : null);
           }
         }
 
@@ -3428,8 +3589,8 @@ export async function syncAmendements(
         }
 
         if (parlementaireId) linked++;
-      } catch (error: any) {
-        logger.warn({ uid: raw.uid, error: error.message }, 'Error syncing amendement');
+      } catch (error) {
+        logger.warn({ uid: raw.uid, error: errorMessage(error) }, 'Error syncing amendement');
       }
     }
 
@@ -3501,17 +3662,20 @@ export async function syncAmendementsSenat(
         }
 
         // Sinon par nom
-        if (!parlementaireId && amd.auteurNom) {
+        if (!parlementaireId && amd.auteurNom && !estAuteurNonParlementaire(amd.auteurNom)) {
           const nomNorm = normalize(amd.auteurNom);
           parlementaireId = parlementaireByName.get(nomNorm) || null;
 
-          // Recherche partielle
+          // Repli sur le seul patronyme, en égalité stricte. Surtout PAS de
+          // comparaison en sous-chaîne : côté AN, `nom.includes(...)` avec
+          // premier-hit-gagne a capté 30 221 amendements sur un patronyme d'une
+          // lettre. Le motif est le même ici, il n'a simplement pas encore de
+          // sénateur au nom assez court pour exploser.
           if (!parlementaireId) {
-            for (const [name, id] of parlementaireByName) {
-              if (nomNorm.includes(name) || name.includes(nomNorm)) {
-                parlementaireId = id;
-                break;
-              }
+            const mots = nomNorm.split(/\s+/);
+            const dernier = mots[mots.length - 1];
+            if (dernier && dernier.length >= 3) {
+              parlementaireId = parlementaireByName.get(dernier) || null;
             }
           }
         }
@@ -3566,8 +3730,8 @@ export async function syncAmendementsSenat(
         }
 
         if (parlementaireId) linked++;
-      } catch (error: any) {
-        logger.warn({ uid: amd.uid, error: error.message }, 'Error syncing amendement Sénat');
+      } catch (error) {
+        logger.warn({ uid: amd.uid, error: errorMessage(error) }, 'Error syncing amendement Sénat');
       }
     }
 
@@ -3691,15 +3855,15 @@ export async function syncAmendementsSenatCsv(
     if (amd.auteurMatricule) {
       parlementaireId = parlementaireByMatricule.get(amd.auteurMatricule) || null;
     }
-    if (!parlementaireId && amd.auteurNom) {
+    if (!parlementaireId && amd.auteurNom && !estAuteurNonParlementaire(amd.auteurNom)) {
       const nomNorm = normalize(amd.auteurNom);
       parlementaireId = parlementaireByName.get(nomNorm) || null;
+      // Repli en égalité stricte sur le patronyme (cf. sync AMELI ci-dessus).
       if (!parlementaireId) {
-        for (const [name, id] of parlementaireByName) {
-          if (nomNorm.includes(name) || name.includes(nomNorm)) {
-            parlementaireId = id;
-            break;
-          }
+        const mots = nomNorm.split(/\s+/);
+        const dernier = mots[mots.length - 1];
+        if (dernier && dernier.length >= 3) {
+          parlementaireId = parlementaireByName.get(dernier) || null;
         }
       }
     }
@@ -3840,8 +4004,8 @@ export async function syncAmendementsSenatCsv(
       }
 
       totalAmendements += amendments.length;
-    } catch (error: any) {
-      logger.warn({ texteId: texte.texteId, error: error.message }, 'Error processing texte CSV');
+    } catch (error) {
+      logger.warn({ texteId: texte.texteId, error: errorMessage(error) }, 'Error processing texte CSV');
     }
 
     // Release references for GC
@@ -3861,12 +4025,16 @@ export async function syncAmendementsSenatCsv(
 // =============================================================================
 
 export async function syncDossiers(
-  options: { limit?: number; linkScrutins?: boolean } = {}
+  options: { limit?: number; linkScrutins?: boolean; legislature?: number } = {}
 ): Promise<{ created: number; updated: number; scrutinsLinked: number; amendementsLinked: number; commissionsLinked: number }> {
   const linkScrutins = options.linkScrutins ?? true;
-  logger.info({ limit: options.limit, linkScrutins }, 'Starting dossiers législatifs sync...');
+  // Les législatures closes (15, 16) ne sont pas dans le batch quotidien : elles
+  // s'ingèrent en one-shot, sinon leurs scrutins restent orphelins faute de
+  // dossier de leur propre législature (cf. garde-fou AN_LEGISLATURE_MATCHES).
+  const legislature = options.legislature ?? LEGISLATURE_AN_COURANTE;
+  logger.info({ limit: options.limit, linkScrutins, legislature }, 'Starting dossiers législatifs sync...');
 
-  const client = new DossiersLegislatifsClient(17);
+  const client = new DossiersLegislatifsClient(legislature);
   const dossiers = await client.getDossiers(options.limit);
 
   let created = 0;
@@ -3930,14 +4098,19 @@ export async function syncDossiers(
       // Lier les scrutins au dossier via voteRefs
       if (linkScrutins && dossier.voteRefs.length > 0) {
         for (const voteRef of dossier.voteRefs) {
-          // voteRef format: VTANR5L17V451 -> extract numero 451
-          const match = voteRef.match(/VTANR5L\d+V(\d+)/);
-          if (match && match[1]) {
-            const numero = parseInt(match[1], 10);
+          // voteRef format: VTANR5L17V451 -> législature 17, numero 451.
+          // Les deux sont nécessaires : les numéros de scrutin repartent de 1 à
+          // chaque législature, matcher sur le seul numéro rattache le scrutin
+          // n° 451 de TOUTES les législatures au dossier.
+          const match = voteRef.match(/VTANR5L(\d+)V(\d+)/);
+          if (match && match[1] && match[2]) {
+            const voteLegislature = match[1];
+            const numero = parseInt(match[2], 10);
             const result = await prisma.scrutin.updateMany({
               where: {
                 numero,
                 chambre: 'assemblee',
+                session: voteLegislature,
                 dossierId: null, // Only update if not already linked
               },
               data: { dossierId },
@@ -3988,8 +4161,8 @@ export async function syncDossiers(
         }
       }
 
-    } catch (e: any) {
-      logger.warn({ uid: dossier.uid, error: e.message }, 'Failed to upsert dossier');
+    } catch (e) {
+      logger.warn({ uid: dossier.uid, error: errorMessage(e) }, 'Failed to upsert dossier');
     }
   }
 
@@ -4078,8 +4251,8 @@ export async function syncDossiersSenat(
       // Store ref -> dossierId mapping
       refToDossierId.set(dossier.ref, dossierId);
 
-    } catch (e: any) {
-      logger.warn({ uid: dossier.uid, error: e.message }, 'Failed to upsert dossier Sénat');
+    } catch (e) {
+      logger.warn({ uid: dossier.uid, error: errorMessage(e) }, 'Failed to upsert dossier Sénat');
     }
   }
 
@@ -4137,6 +4310,50 @@ export async function linkSenatScrutinsToDossiers(): Promise<{ linked: number }>
 }
 
 // =============================================================================
+// GARDE-FOU LÉGISLATURE (AN)
+// =============================================================================
+
+/**
+ * Un scrutin AN ne peut appartenir qu'à un dossier de SA législature : un dossier
+ * de la 17e n'existait pas quand la 16e votait. Sans ce garde-fou, les scrutins
+ * dont le dossier est absent de la base (législatures non ingérées) se raccrochent
+ * au dossier textuellement le plus proche parmi ceux d'une AUTRE législature —
+ * typiquement le rapport d'information *portant sur* la loi qu'ils ont votée.
+ *
+ * `scrutins.session` est un texte ('15', '16', '17') côté AN ; on ne compare que
+ * lorsqu'il est numérique. Côté Sénat, `session` est une année et
+ * `dossiers_legislatifs.legislature` vaut 0 : le garde-fou ne s'applique pas.
+ */
+const AN_LEGISLATURE_MATCHES = Prisma.sql`
+  (s.session ~ '^[0-9]+$' AND d.legislature = s.session::int)
+`;
+
+/**
+ * Casse les liens scrutin AN → dossier d'une autre législature.
+ *
+ * Les scrutins concernés redeviennent orphelins, ce qui est l'état honnête tant
+ * que les dossiers de leur législature ne sont pas ingérés. Doit tourner AVANT
+ * les étapes de matching pour qu'elles ne repartent pas d'un état contaminé.
+ */
+export async function unlinkANScrutinsWrongLegislature(): Promise<{ unlinked: number }> {
+  const unlinked = await prisma.$executeRaw`
+    UPDATE scrutins s
+    SET dossier_id = NULL
+    FROM dossiers_legislatifs d
+    WHERE s.dossier_id = d.id
+      AND s.chambre = 'assemblee'
+      AND d.uid NOT LIKE 'SENAT%'
+      AND s.session ~ '^[0-9]+$'
+      AND d.legislature <> s.session::int
+  `;
+
+  if (unlinked > 0) {
+    logger.warn({ unlinked }, 'Unlinked AN scrutins pointing to a dossier from another legislature');
+  }
+  return { unlinked };
+}
+
+// =============================================================================
 // LINK AN SCRUTINS TO DOSSIERS BY TITLE MATCHING
 // =============================================================================
 
@@ -4175,6 +4392,7 @@ export async function linkANScrutinsByTitle(): Promise<{ linked: number }> {
         AND d.titre IS NOT NULL
         AND LENGTH(d.titre) > 15
         AND LOWER(s.titre) LIKE '%' || LOWER(d.titre) || '%'
+        AND ${AN_LEGISLATURE_MATCHES}
       GROUP BY s.id
       HAVING COUNT(DISTINCT d.id) = 1
     )
@@ -4201,6 +4419,7 @@ export async function linkANScrutinsByTitle(): Promise<{ linked: number }> {
         AND d.titre IS NOT NULL
         AND LENGTH(d.titre) > 15
         AND LOWER(s.titre) LIKE '%' || LOWER(d.titre) || '%'
+        AND ${AN_LEGISLATURE_MATCHES}
     )
     UPDATE scrutins SET dossier_id = r.dossier_id
     FROM ranked r WHERE scrutins.id = r.scrutin_id AND r.rn = 1
@@ -4249,8 +4468,8 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
       ? Prisma.sql`d.uid LIKE 'SENAT%'`
       : Prisma.sql`d.uid NOT LIKE 'SENAT%'`;
 
-    const dossiers = await prisma.$queryRaw<{ id: string; titre: string }[]>`
-      SELECT id,
+    const dossiers = await prisma.$queryRaw<{ id: string; titre: string; legislature: number }[]>`
+      SELECT id, legislature,
         CASE
           WHEN titre ~ '^[a-zàâäéèêëïîôùûüÿçœæ]' AND procedure_libelle IS NOT NULL
           THEN procedure_libelle || ' ' || titre
@@ -4267,8 +4486,8 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
     }
 
     // 2. Load orphan scrutins for this chamber
-    const orphans = await prisma.$queryRaw<{ id: string; titre: string }[]>`
-      SELECT id, titre FROM scrutins
+    const orphans = await prisma.$queryRaw<{ id: string; titre: string; session: string }[]>`
+      SELECT id, titre, session FROM scrutins
       WHERE chambre = ${chambre}
         AND dossier_id IS NULL
         AND titre IS NOT NULL AND LENGTH(titre) > 5
@@ -4299,14 +4518,49 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
     const dossierTokenSets = dossiers.map(d => tokenize(extractSubject(d.titre)));
     const scrutinTokenSets = orphans.map(s => tokenize(extractSubject(s.titre)));
 
-    let jaccardRejected = 0;
+    // Garde-fou législature (AN uniquement) : un scrutin ne peut matcher qu'un
+    // dossier de sa propre législature. L'IDF reste global — seuls les candidats
+    // sont restreints, ce qui garde des poids stables entre législatures.
+    const candidatesByLegislature = new Map<number, number[]>();
+    if (chambre === 'assemblee') {
+      for (const [i, d] of dossiers.entries()) {
+        const bucket = candidatesByLegislature.get(d.legislature);
+        if (bucket) bucket.push(i);
+        else candidatesByLegislature.set(d.legislature, [i]);
+      }
+    }
 
-    for (let i = 0; i < orphans.length; i++) {
-      const match = bestMatch(scrutinVectors[i], dossierVectors);
+    let jaccardRejected = 0;
+    let legislatureSkipped = 0;
+
+    for (const [i, orphan] of orphans.entries()) {
+      const scrutinVector = scrutinVectors[i];
+      const scrutinTokens = scrutinTokenSets[i];
+      if (!scrutinVector || !scrutinTokens) continue;
+
+      let candidates: number[] | undefined;
+      if (chambre === 'assemblee') {
+        const legislature = Number.parseInt(orphan.session, 10);
+        // Session non numérique ou législature absente de la base : aucun dossier
+        // légitime ne peut correspondre, on laisse le scrutin orphelin.
+        candidates = Number.isNaN(legislature)
+          ? undefined
+          : candidatesByLegislature.get(legislature);
+        if (!candidates || candidates.length === 0) {
+          legislatureSkipped++;
+          continue;
+        }
+      }
+
+      const match = bestMatch(scrutinVector, dossierVectors, candidates);
       if (match.index >= 0 && match.score >= MIN_TFIDF_SIMILARITY) {
+        const dossier = dossiers[match.index];
+        const dossierTokens = dossierTokenSets[match.index];
+        if (!dossier || !dossierTokens) continue;
+
         // Jaccard post-validation: skip for high-confidence TF-IDF matches
         if (match.score < HIGH_CONFIDENCE_TFIDF) {
-          const jaccard = jaccardSimilarity(scrutinTokenSets[i], dossierTokenSets[match.index]);
+          const jaccard = jaccardSimilarity(scrutinTokens, dossierTokens);
           if (jaccard < MIN_JACCARD_SIMILARITY) {
             jaccardRejected++;
             continue;
@@ -4314,8 +4568,8 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
         }
 
         updates.push({
-          scrutinId: orphans[i].id,
-          dossierId: dossiers[match.index].id,
+          scrutinId: orphan.id,
+          dossierId: dossier.id,
           score: match.score,
         });
       }
@@ -4325,14 +4579,21 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
       logger.info({ chambre, jaccardRejected }, 'TF-IDF matches rejected by Jaccard validation');
     }
 
+    if (legislatureSkipped > 0) {
+      logger.info(
+        { chambre, legislatureSkipped },
+        'Orphan scrutins skipped: no dossier ingested for their legislature',
+      );
+    }
+
     // Log score distribution for monitoring
     if (updates.length > 0) {
       const scores = updates.map(u => u.score).sort((a, b) => a - b);
       const p10 = scores[Math.floor(scores.length * 0.1)] || 0;
       const p50 = scores[Math.floor(scores.length * 0.5)] || 0;
       const p90 = scores[Math.floor(scores.length * 0.9)] || 0;
-      const min = scores[0];
-      const max = scores[scores.length - 1];
+      const min = scores[0] ?? 0;
+      const max = scores[scores.length - 1] ?? 0;
       logger.info({
         chambre, count: updates.length,
         min: min.toFixed(3), p10: p10.toFixed(3),
@@ -4476,20 +4737,25 @@ function extractTexteRefsFromSourceData(sourceData: unknown): string[] {
   if (!sourceData || typeof sourceData !== 'object') return [];
   const refs: string[] = [];
 
-  function walk(node: any) {
-    if (!node || typeof node !== 'object') return;
+  function walk(node: unknown) {
     if (Array.isArray(node)) { node.forEach(walk); return; }
+    if (!isRecord(node)) return;
 
-    if (node.texteAssocie) {
-      if (typeof node.texteAssocie === 'string') {
-        refs.push(node.texteAssocie);
-      } else if (Array.isArray(node.texteAssocie)) {
-        for (const t of node.texteAssocie) {
+    const texteAssocie = node.texteAssocie;
+    if (texteAssocie) {
+      if (typeof texteAssocie === 'string') {
+        refs.push(texteAssocie);
+      } else if (Array.isArray(texteAssocie)) {
+        for (const t of texteAssocie) {
           if (typeof t === 'string') refs.push(t);
-          else if (t?.refTexteAssocie) refs.push(t.refTexteAssocie);
+          else {
+            const ref = readString(t, 'refTexteAssocie');
+            if (ref) refs.push(ref);
+          }
         }
-      } else if (node.texteAssocie.refTexteAssocie) {
-        refs.push(node.texteAssocie.refTexteAssocie);
+      } else {
+        const ref = readString(texteAssocie, 'refTexteAssocie');
+        if (ref) refs.push(ref);
       }
     }
     if (typeof node.texteAdopte === 'string') {
@@ -4497,17 +4763,14 @@ function extractTexteRefsFromSourceData(sourceData: unknown): string[] {
     }
 
     // Recurse into nested actes
-    if (node.actesLegislatifs?.acteLegislatif) {
-      const nested = node.actesLegislatifs.acteLegislatif;
-      (Array.isArray(nested) ? nested : [nested]).forEach(walk);
-    }
+    const nested = isRecord(node.actesLegislatifs) ? node.actesLegislatifs.acteLegislatif : undefined;
+    if (nested) asArray(nested).forEach(walk);
   }
 
-  const sd = sourceData as any;
-  if (sd.actesLegislatifs?.acteLegislatif) {
-    const actes = sd.actesLegislatifs.acteLegislatif;
-    (Array.isArray(actes) ? actes : [actes]).forEach(walk);
-  }
+  const actes = isRecord(sourceData) && isRecord(sourceData.actesLegislatifs)
+    ? sourceData.actesLegislatifs.acteLegislatif
+    : undefined;
+  if (actes) asArray(actes).forEach(walk);
 
   return [...new Set(refs)];
 }
@@ -5127,8 +5390,8 @@ export async function enrichScrutinsANAmendements(
           }
           logger.debug({ scrutinNumero: scrutin.numero, amendementCount: foundAmendementIds.length, dryRun }, 'Amendments linked');
           return { status: 'enriched' as const };
-        } catch (error: any) {
-          logger.warn({ scrutinNumero: scrutin.numero, error: error.message }, 'Error enriching scrutin');
+        } catch (error) {
+          logger.warn({ scrutinNumero: scrutin.numero, error: errorMessage(error) }, 'Error enriching scrutin');
           return { status: 'error' as const };
         }
       })
@@ -5265,8 +5528,8 @@ export async function enrichScrutinsSenatAmendements(
         texteNumToInternalId.set(num, existing);
       }
       logger.info({ uniqueNums: texteNumToInternalId.size }, 'Texte number mapping loaded from AMELI');
-    } catch (error: any) {
-      logger.warn({ error: error.message }, 'Failed to load texte mapping - will fallback to dossier-based matching only');
+    } catch (error) {
+      logger.warn({ error: errorMessage(error) }, 'Failed to load texte mapping - will fallback to dossier-based matching only');
     }
   }
 
@@ -5321,7 +5584,7 @@ export async function enrichScrutinsSenatAmendements(
 
             // Build where clause: require texteRef match OR dossier match
             // NEVER fall back to date-based matching — better no link than a wrong link
-            const where: any = {
+            const where: Prisma.AmendementWhereInput = {
               chambre: 'senat' as const,
               numero: baseNumero,
             };
@@ -5388,8 +5651,8 @@ export async function enrichScrutinsSenatAmendements(
           }, 'Amendments linked');
           return { status: 'enriched' as const };
 
-        } catch (error: any) {
-          logger.warn({ scrutinNumero: scrutin.numero, error: error.message }, 'Error enriching Sénat scrutin');
+        } catch (error) {
+          logger.warn({ scrutinNumero: scrutin.numero, error: errorMessage(error) }, 'Error enriching Sénat scrutin');
           return { status: 'error' as const };
         }
       })
@@ -5576,8 +5839,8 @@ export async function syncLobbyistes(
           });
         }
       }
-    } catch (error: any) {
-      logger.warn({ lobbyiste: csvLobbyiste.denomination, error: error.message }, 'Error syncing lobbyiste');
+    } catch (error) {
+      logger.warn({ lobbyiste: csvLobbyiste.denomination, error: errorMessage(error) }, 'Error syncing lobbyiste');
     }
   }
 
@@ -5673,7 +5936,7 @@ export async function syncLobbyistes(
     const existingActions = await prisma.actionLobby.findMany({
       select: { id: true, lobbyisteId: true, descriptionId: true, cible: true, cibleTypeId: true, texteVise: true, texteViseNom: true },
     });
-    const existingActionMap = new Map<string, { id: string; cible: string | null; cibleTypeId: string | null; texteVise: string | null; texteViseNom: string | null }>();
+    const existingActionMap = new Map<string, { id: string; cible: string | null; cibleTypeId: number | null; texteVise: string | null; texteViseNom: string | null }>();
     for (const ea of existingActions) {
       if (ea.descriptionId) {
         existingActionMap.set(`${ea.lobbyisteId}::${ea.descriptionId}`, ea);
@@ -5683,8 +5946,8 @@ export async function syncLobbyistes(
     logger.info({ count: existingActionMap.size }, 'Existing actions loaded');
 
     // 2. Single pass: collect batch operations (zero DB queries)
-    const toCreate: Array<{ id: string; lobbyisteId: string; descriptionId: string; dateDebut: Date; cible: string | null; cibleTypeId: string | null; texteVise: string | null; texteViseNom: string | null }> = [];
-    const toUpdate: Array<{ id: string; descriptionId: string; cible: string | null; cibleTypeId: string | null; texteVise: string | null; texteViseNom: string | null }> = [];
+    const toCreate: Array<{ id: string; lobbyisteId: string; descriptionId: number; dateDebut: Date; cible: string | null; cibleTypeId: number | null; texteVise: string | null; texteViseNom: string | null }> = [];
+    const toUpdate: Array<{ id: string; descriptionId: number; cible: string | null; cibleTypeId: number | null; texteVise: string | null; texteViseNom: string | null }> = [];
     const pivotActionIds: string[] = [];
     const pivotPairs: Array<{ actionId: string; secteurId: string }> = [];
     const validActionKeys = new Set<string>();
@@ -5892,15 +6155,22 @@ export async function linkOrphanScrutinsByTexteNumero(): Promise<{ linked: numbe
   let totalLinked = 0;
 
   for (const chambre of ['assemblee', 'senat'] as const) {
+    // Les numéros de texte repartent de 1 à chaque législature : sans partitionner
+    // la carte texte_numero → dossier, un scrutin de la 16e hériterait du dossier
+    // d'un scrutin de la 17e portant le même numéro. Constante côté Sénat, où
+    // `session` est une année et non une législature (comportement inchangé).
+    // Le cast est nécessaire : Postgres refuse une constante nue en GROUP BY.
+    const partitionKey = chambre === 'assemblee' ? Prisma.sql`s.session` : Prisma.sql`''::text`;
+
     const result = await prisma.$executeRaw`
       WITH texte_dossier_map AS (
-        SELECT texte_numero, MIN(dossier_id) as dossier_id
-        FROM scrutins
-        WHERE chambre = ${chambre}
-          AND dossier_id IS NOT NULL
-          AND texte_numero IS NOT NULL
-        GROUP BY texte_numero
-        HAVING COUNT(DISTINCT dossier_id) = 1
+        SELECT s.texte_numero, ${partitionKey} AS partition_key, MIN(s.dossier_id) as dossier_id
+        FROM scrutins s
+        WHERE s.chambre = ${chambre}
+          AND s.dossier_id IS NOT NULL
+          AND s.texte_numero IS NOT NULL
+        GROUP BY s.texte_numero, ${partitionKey}
+        HAVING COUNT(DISTINCT s.dossier_id) = 1
       )
       UPDATE scrutins s
       SET dossier_id = tdm.dossier_id
@@ -5909,6 +6179,7 @@ export async function linkOrphanScrutinsByTexteNumero(): Promise<{ linked: numbe
         AND s.dossier_id IS NULL
         AND s.texte_numero IS NOT NULL
         AND s.texte_numero = tdm.texte_numero
+        AND ${partitionKey} = tdm.partition_key
     `;
 
     if (result > 0) {
@@ -5948,6 +6219,14 @@ export async function linkOrphansByLoiTitre(): Promise<{ linked: number }> {
     const dossierFilter = chambre === 'senat'
       ? Prisma.sql`d.uid LIKE 'SENAT%'`
       : Prisma.sql`d.uid NOT LIKE 'SENAT%'`;
+    // Garde-fou législature : no-op côté Sénat (legislature = 0, session = année).
+    const legislatureFilter = chambre === 'assemblee'
+      ? AN_LEGISLATURE_MATCHES
+      : Prisma.sql`TRUE`;
+    // Même garde-fou pour la sous-requête d'ambiguïté, qui utilise l'alias d2.
+    const legislatureFilterD2 = chambre === 'assemblee'
+      ? Prisma.sql`(s.session ~ '^[0-9]+$' AND d2.legislature = s.session::int)`
+      : Prisma.sql`TRUE`;
 
     // Pass 1: loi_titre substring match
     const loiTitreResult = await prisma.$executeRaw`
@@ -5958,13 +6237,15 @@ export async function linkOrphansByLoiTitre(): Promise<{ linked: number }> {
         AND s.dossier_id IS NULL
         AND d.loi_titre IS NOT NULL AND LENGTH(d.loi_titre) > 15
         AND ${dossierFilter}
+        AND ${legislatureFilter}
         AND LOWER(s.titre) LIKE '%' || LOWER(d.loi_titre) || '%'
         -- Only use unambiguous matches (exactly 1 dossier matches)
         AND (
           SELECT COUNT(DISTINCT d2.id)
           FROM dossiers_legislatifs d2
           WHERE d2.loi_titre IS NOT NULL AND LENGTH(d2.loi_titre) > 15
-            AND ${dossierFilter}
+            AND d2.uid ${chambre === 'senat' ? Prisma.sql`LIKE 'SENAT%'` : Prisma.sql`NOT LIKE 'SENAT%'`}
+            AND ${legislatureFilterD2}
             AND LOWER(s.titre) LIKE '%' || LOWER(d2.loi_titre) || '%'
         ) = 1
     `;
@@ -5978,9 +6259,13 @@ export async function linkOrphansByLoiTitre(): Promise<{ linked: number }> {
     // from orphan titles and match against already-linked scrutins with same phrase.
     // Covers cases like "aide à mourir (deuxième lecture)" where dossier title is "Fin de vie"
     // but existing scrutins on the same law are already linked.
+    // Un même intitulé de loi peut réapparaître d'une législature à l'autre
+    // (texte redéposé) : on partitionne la carte des pairs par session côté AN.
+    const peerPartition = chambre === 'assemblee' ? Prisma.sql`session` : Prisma.sql`''::text`;
+
     const peerResult = await prisma.$executeRaw`
       WITH orphan_phrases AS (
-        SELECT s.id,
+        SELECT s.id, ${peerPartition} AS partition_key,
           LOWER(SUBSTRING(s.titre FROM '((?:proposition|projet) de (?:loi|résolution)[^(.]+)')) as loi_phrase
         FROM scrutins s
         WHERE s.chambre = ${chambre}
@@ -5990,18 +6275,21 @@ export async function linkOrphansByLoiTitre(): Promise<{ linked: number }> {
       peer_dossier_map AS (
         SELECT
           LOWER(SUBSTRING(s2.titre FROM '((?:proposition|projet) de (?:loi|résolution)[^(.]+)')) as loi_phrase,
+          ${peerPartition} AS partition_key,
           MIN(s2.dossier_id) as dossier_id
         FROM scrutins s2
         WHERE s2.chambre = ${chambre}
           AND s2.dossier_id IS NOT NULL
           AND s2.titre ~* '(proposition|projet) de (loi|résolution)'
-        GROUP BY 1
+        GROUP BY 1, 2
         HAVING COUNT(DISTINCT s2.dossier_id) = 1
       )
       UPDATE scrutins s
       SET dossier_id = pdm.dossier_id
       FROM orphan_phrases op
-      JOIN peer_dossier_map pdm ON op.loi_phrase = pdm.loi_phrase
+      JOIN peer_dossier_map pdm
+        ON op.loi_phrase = pdm.loi_phrase
+       AND op.partition_key = pdm.partition_key
       WHERE s.id = op.id
         AND op.loi_phrase IS NOT NULL
         AND LENGTH(op.loi_phrase) > 20

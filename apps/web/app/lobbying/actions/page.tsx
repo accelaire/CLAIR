@@ -331,7 +331,6 @@ function ActionsPageContent() {
           <div className="space-y-3">
             {actions.map((action) => {
               const typeConfig = typeLabels[action.lobbyiste.type || ''];
-              const Icon = typeConfig?.icon || Building2;
               const { secteur, cleanDescription } = extractSecteur(action.description || '');
 
               return (

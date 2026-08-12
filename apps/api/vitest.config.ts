@@ -5,6 +5,11 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // Pool 'forks' obligatoire : avec le pool 'threads' par défaut, le client
+    // Prisma laisse des FILEHANDLE ouverts que le worker ne peut pas fermer.
+    // Les tests passaient bien, puis vitest restait bloqué indéfiniment sur
+    // « Failed to terminate worker ». Un process forké, lui, se tue proprement.
+    pool: 'forks',
     include: ['src/**/*.test.ts'],
     exclude: ['node_modules', 'dist'],
     coverage: {

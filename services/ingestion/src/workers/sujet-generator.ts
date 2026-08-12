@@ -54,7 +54,7 @@ interface GenerateSujetsResult {
  */
 function extractRefFromSenatUrl(url: string): string | null {
   const match = url.match(/dossier-legislatif\/(.+?)\.html/);
-  return match ? match[1].toLowerCase() : null;
+  return match?.[1] ? match[1].toLowerCase() : null;
 }
 
 /**
@@ -64,7 +64,7 @@ function extractRefFromSenatUrl(url: string): string | null {
  */
 function extractANUidFromUrl(url: string): string | null {
   const match = url.match(/(DLR5L\d+N\d+)/);
-  return match ? match[1] : null;
+  return match?.[1] ?? null;
 }
 
 /**
@@ -73,16 +73,26 @@ function extractANUidFromUrl(url: string): string | null {
  * tronque à 80 caractères.
  */
 function slugify(text: string): string {
-  return text
+  const full = text
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '') // strip accents
     .toLowerCase()
     .replace(/['']/g, '-')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .substring(0, 80);
+    .replace(/^-|-$/g, '');
+
+  if (full.length <= SLUG_MAX_LENGTH) return full;
+
+  // Couper sur une fronti\u00e8re de mot : une troncature brute laisse un tiret final
+  // ou un mot coup\u00e9 en deux (\u00ab \u2026discriminations-dans-les- \u00bb).
+  const cut = full.substring(0, SLUG_MAX_LENGTH);
+  const lastDash = cut.lastIndexOf('-');
+  const trimmed = lastDash > 0 ? cut.substring(0, lastDash) : cut;
+  return trimmed.replace(/-+$/, '');
 }
+
+const SLUG_MAX_LENGTH = 80;
 
 // =============================================================================
 // UNION-FIND
@@ -248,16 +258,17 @@ export async function generateSujets(options: {
     }
 
     // Signal 3: loiNumero identique
-    for (const [loiNumero, group] of dossiersByLoiNumero) {
-      if (group.length < 2) continue;
+    for (const group of dossiersByLoiNumero.values()) {
+      const first = group[0];
+      if (group.length < 2 || !first) continue;
 
       // Only merge if the group spans both chambers
       const hasAN = group.some(d => d.uid.startsWith('DLR'));
       const hasSenat = group.some(d => d.uid.startsWith('SENAT'));
       if (!hasAN || !hasSenat) continue;
 
-      for (let i = 1; i < group.length; i++) {
-        uf.union(group[0].id, group[i].id);
+      for (const member of group.slice(1)) {
+        uf.union(first.id, member.id);
         loiNumeroCount++;
       }
     }
@@ -327,7 +338,7 @@ export async function generateSujets(options: {
 
       if (existingSujetIds.size === 1) {
         // One existing sujet + orphan dossiers → attach orphans
-        const sujetId = [...existingSujetIds][0];
+        const sujetId = [...existingSujetIds][0]!;
         if (!dryRun) {
           for (const d of orphans) {
             await prisma.$executeRawUnsafe(
@@ -354,7 +365,7 @@ export async function generateSujets(options: {
       const matchMethod = isMultiChambre ? 'cross_ref' : 'solo';
       const label = pickBestLabel(members);
       let baseSlug = slugify(label);
-      if (!baseSlug) baseSlug = `sujet-${members[0].uid.toLowerCase()}`;
+      if (!baseSlug) baseSlug = `sujet-${members[0]?.uid.toLowerCase() ?? 'inconnu'}`;
 
       let slug = baseSlug;
       let suffix = 2;
@@ -392,24 +403,12 @@ export async function generateSujets(options: {
       0
     );
 
-    // Refresh stats only for affected sujets (new or updated)
+    // match_method ne dépend que de la composition en dossiers : seuls les sujets
+    // touchés ici peuvent avoir changé de chambres.
     if (affectedSujetIds.size > 0) {
       const ids = [...affectedSujetIds];
       await prisma.$executeRawUnsafe(
         `UPDATE sujets s SET
-          dossier_count = (SELECT COUNT(*) FROM dossiers_legislatifs d WHERE d.sujet_id = s.id),
-          scrutin_count = (
-            SELECT COUNT(*)
-            FROM scrutins sc
-            JOIN dossiers_legislatifs d ON sc.dossier_id = d.id
-            WHERE d.sujet_id = s.id
-          ),
-          date_dernier_vote = (
-            SELECT MAX(sc.date)
-            FROM scrutins sc
-            JOIN dossiers_legislatifs d ON sc.dossier_id = d.id
-            WHERE d.sujet_id = s.id
-          ),
           match_method = CASE
             WHEN (SELECT COUNT(DISTINCT CASE WHEN d.uid LIKE 'SENAT-%' THEN 'senat' ELSE 'an' END) FROM dossiers_legislatifs d WHERE d.sujet_id = s.id) > 1
             THEN 'cross_ref' ELSE 'solo'
@@ -417,6 +416,12 @@ export async function generateSujets(options: {
         WHERE s.id = ANY($1::text[])`,
         ids,
       );
+    }
+
+    // Compteurs + activation sur TOUS les sujets : un sujet peut avoir perdu ses
+    // scrutins sans qu'aucun dossier ne bouge (dé-liaison en amont).
+    if (!dryRun) {
+      await refreshSujetStats();
     }
 
     logger.info({
@@ -438,6 +443,236 @@ export async function generateSujets(options: {
       totalDossiers,
       totalScrutins,
     };
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+// =============================================================================
+// RÉPARATION DES LABELS TECHNIQUES
+// =============================================================================
+
+/**
+ * Recalcule le label des sujets dont l'intitulé est resté un UID technique.
+ *
+ * `generateSujets()` ne pose le label qu'à la création : les sujets déjà en base
+ * gardent celui qu'un `pickBestLabel()` antérieur leur a donné. Cette fonction
+ * les repasse avec la règle corrigée (cf. `isUsableLabel`).
+ *
+ * Le **slug n'est pas touché** : il est dans les URLs publiques et dans les
+ * sitemaps. Un sujet peut donc afficher un intitulé correct sous une URL encore
+ * technique — c'est volontaire, la réécriture des slugs est une décision à part.
+ */
+export async function relabelTechnicalSujets(options: { dryRun?: boolean } = {}): Promise<{
+  examined: number;
+  relabeled: number;
+  stillTechnical: number;
+  changes: { slug: string; before: string; after: string }[];
+}> {
+  const { dryRun = false } = options;
+  const prisma = new PrismaClient();
+
+  try {
+    const sujets = await prisma.$queryRaw<{ id: string; slug: string; label: string }[]>`
+      SELECT id, slug, label FROM sujets WHERE label ~ '^DLR5L[0-9]+N[0-9]+$'
+    `;
+
+    const changes: { slug: string; before: string; after: string }[] = [];
+    let stillTechnical = 0;
+
+    for (const sujet of sujets) {
+      const members = await prisma.$queryRaw<DossierRow[]>`
+        SELECT
+          d.id, d.uid, d.titre, d.titre_court as "titreCourt",
+          d.url_an as "urlAN", d.url_senat as "urlSenat", d.loi_numero as "loiNumero",
+          d.etat, d.date_depot as "dateDepot", d.date_adoption as "dateAdoption",
+          d.loi_date_jo as "loiDateJO", 0 as "scrutinCount", d.sujet_id as "sujetId"
+        FROM dossiers_legislatifs d WHERE d.sujet_id = ${sujet.id}
+      `;
+
+      if (members.length === 0) continue;
+
+      const label = pickBestLabel(members);
+      // Aucun dossier du groupe ne porte d'intitulé lisible : laisser en l'état
+      // plutôt que réécrire un UID par un autre.
+      if (!label || UID_AN_RE.test(label)) {
+        stillTechnical++;
+        continue;
+      }
+      if (label === sujet.label) continue;
+
+      changes.push({ slug: sujet.slug, before: sujet.label, after: label });
+
+      if (!dryRun) {
+        await prisma.$executeRawUnsafe(
+          `UPDATE sujets SET label = $1, updated_at = NOW() WHERE id = $2`,
+          label, sujet.id,
+        );
+      }
+    }
+
+    logger.info(
+      { examined: sujets.length, relabeled: changes.length, stillTechnical, dryRun },
+      'Technical sujet labels repaired',
+    );
+
+    return { examined: sujets.length, relabeled: changes.length, stillTechnical, changes };
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+// =============================================================================
+// RÉPARATION DES SLUGS TECHNIQUES
+// =============================================================================
+
+/** Slug purement technique : « dlr5l17n53980 », « senat-pjl21-654 », « sujet-… ». */
+const SLUG_TECHNIQUE_RE = /^(dlr5l\d+n\d+|senat-.+|sujet-.+)$/i;
+
+/**
+ * Recalcule le slug des sujets dont l'URL est restée un identifiant technique.
+ *
+ * Le slug est figé à la création du sujet, depuis le label de l'époque. Les sujets
+ * créés quand `pickBestLabel()` renvoyait encore un UID ont donc gardé une URL
+ * illisible même après correction de leur label.
+ *
+ * Repli assumé : si le label est lui-même technique, on ne touche à rien — mieux
+ * vaut un UID qu'un slug inventé.
+ *
+ * ⚠️ Renommer un slug CASSE l'URL publique. L'appelant est responsable de la
+ * redirection : la fonction retourne les couples (avant, après) pour alimenter
+ * une table de redirection ou un audit.
+ */
+export async function reslugTechnicalSujets(options: { dryRun?: boolean } = {}): Promise<{
+  examined: number;
+  reslugged: number;
+  skipped: number;
+  changes: { before: string; after: string; label: string; scrutinCount: number }[];
+}> {
+  const { dryRun = false } = options;
+  const prisma = new PrismaClient();
+
+  try {
+    const sujets = await prisma.$queryRaw<
+      { id: string; slug: string; label: string; scrutinCount: number; actif: boolean }[]
+    >`
+      SELECT id, slug, label, scrutin_count as "scrutinCount", actif
+      FROM sujets
+      ORDER BY scrutin_count DESC, id ASC
+    `;
+
+    // Tous les slugs occupés, y compris ceux des sujets inactifs : un slug libéré
+    // par un renommage reste réservé, sinon on créerait une collision avec une
+    // ancienne URL encore indexée.
+    const usedSlugs = new Set<string>(sujets.map(s => s.slug));
+
+    const changes: { before: string; after: string; label: string; scrutinCount: number }[] = [];
+    let examined = 0;
+    let skipped = 0;
+
+    for (const sujet of sujets) {
+      if (!SLUG_TECHNIQUE_RE.test(sujet.slug)) continue;
+      // Les sujets désactivés ne sont pas servis par l'API : les renommer ne
+      // change rien pour personne, mais leur attribuerait un beau slug qu'un
+      // sujet visible devrait ensuite suffixer en « -2 ». Leur slug actuel reste
+      // réservé dans `usedSlugs`, donc aucune collision d'URL.
+      if (!sujet.actif) continue;
+      examined++;
+
+      // Label encore technique : aucun intitulé lisible à dériver.
+      if (!sujet.label || UID_AN_RE.test(sujet.label)) {
+        skipped++;
+        continue;
+      }
+
+      const baseSlug = slugify(sujet.label);
+      if (!baseSlug) {
+        skipped++;
+        continue;
+      }
+
+      let slug = baseSlug;
+      let suffix = 2;
+      while (usedSlugs.has(slug)) {
+        slug = `${baseSlug}-${suffix}`;
+        suffix++;
+      }
+
+      if (slug === sujet.slug) {
+        skipped++;
+        continue;
+      }
+
+      usedSlugs.add(slug);
+      changes.push({
+        before: sujet.slug,
+        after: slug,
+        label: sujet.label,
+        scrutinCount: sujet.scrutinCount,
+      });
+
+      if (!dryRun) {
+        await prisma.$executeRawUnsafe(
+          `UPDATE sujets SET slug = $1, updated_at = NOW() WHERE id = $2`,
+          slug, sujet.id,
+        );
+      }
+    }
+
+    logger.info(
+      { examined, reslugged: changes.length, skipped, dryRun },
+      'Technical sujet slugs repaired',
+    );
+
+    return { examined, reslugged: changes.length, skipped, changes };
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+// =============================================================================
+// RESYNC GLOBAL DES COMPTEURS + DÉSACTIVATION DES SUJETS VIDES
+// =============================================================================
+
+/**
+ * Recalcule les compteurs de TOUS les sujets et désactive ceux qui n'ont plus
+ * aucun scrutin.
+ *
+ * `generateSujets()` ne rafraîchit que les sujets qu'il a touchés : un sujet qui
+ * perd ses scrutins en amont (dé-liaison d'un mauvais appariement, par exemple)
+ * garde donc un `scrutin_count` périmé et reste `actif`, donnant une page vide
+ * mais crédible. L'API filtre sur `actif = true`, la désactivation suffit à la
+ * retirer du site sans casser d'URL ni supprimer d'historique.
+ */
+export async function refreshSujetStats(): Promise<{ deactivated: number; reactivated: number }> {
+  const prisma = new PrismaClient();
+
+  try {
+    await prisma.$executeRawUnsafe(`
+      UPDATE sujets s SET
+        dossier_count = (SELECT COUNT(*) FROM dossiers_legislatifs d WHERE d.sujet_id = s.id),
+        scrutin_count = (
+          SELECT COUNT(*) FROM scrutins sc
+          JOIN dossiers_legislatifs d ON sc.dossier_id = d.id
+          WHERE d.sujet_id = s.id
+        ),
+        date_dernier_vote = (
+          SELECT MAX(sc.date) FROM scrutins sc
+          JOIN dossiers_legislatifs d ON sc.dossier_id = d.id
+          WHERE d.sujet_id = s.id
+        ),
+        updated_at = NOW()
+    `);
+
+    const deactivated = await prisma.$executeRawUnsafe(
+      `UPDATE sujets SET actif = false, updated_at = NOW() WHERE actif = true AND scrutin_count = 0`,
+    );
+    const reactivated = await prisma.$executeRawUnsafe(
+      `UPDATE sujets SET actif = true, updated_at = NOW() WHERE actif = false AND scrutin_count > 0`,
+    );
+
+    logger.info({ deactivated, reactivated }, 'Sujet stats refreshed');
+    return { deactivated, reactivated };
   } finally {
     await prisma.$disconnect();
   }
@@ -482,13 +717,9 @@ function computeDates(members: DossierRow[]): { dateDebut: Date | null; dateFin:
     else if (d.dateAdoption) endDates.push(new Date(d.dateAdoption));
   }
 
-  const dateDebut = allDates.length > 0
-    ? allDates.sort((a, b) => a.getTime() - b.getTime())[0]
-    : null;
+  const dateDebut = allDates.sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
 
-  const dateFin = endDates.length > 0
-    ? endDates.sort((a, b) => b.getTime() - a.getTime())[0]
-    : null;
+  const dateFin = endDates.sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
 
   return { dateDebut, dateFin };
 }
@@ -500,23 +731,46 @@ function computeDates(members: DossierRow[]): { dateDebut: Date | null; dateFin:
 function pickBestLabel(members: DossierRow[]): string {
   // Prefer titreCourt if available, pick the shortest non-null one
   const titresCourts = members
-    .map(d => d.titreCourt)
-    .filter((t): t is string => t !== null && t.length > 0);
+    .filter(d => isUsableLabel(d.titreCourt, d.uid))
+    .map(d => d.titreCourt as string);
 
-  if (titresCourts.length > 0) {
-    return cleanLabel(titresCourts.sort((a, b) => a.length - b.length)[0]);
+  const shortestTitreCourt = titresCourts.sort((a, b) => a.length - b.length)[0];
+  if (shortestTitreCourt) {
+    return cleanLabel(shortestTitreCourt);
   }
 
   // Fallback to shortest titre
   const titres = members
-    .map(d => d.titre)
-    .filter((t): t is string => t !== null && t.length > 0);
+    .filter(d => isUsableLabel(d.titre, d.uid))
+    .map(d => d.titre as string);
 
-  if (titres.length > 0) {
-    return cleanLabel(titres.sort((a, b) => a.length - b.length)[0]);
+  const shortestTitre = titres.sort((a, b) => a.length - b.length)[0];
+  if (shortestTitre) {
+    return cleanLabel(shortestTitre);
   }
 
-  return members[0].uid;
+  return members[0]?.uid ?? '';
+}
+
+/** Un UID AN : « DLR5L16N45914 ». */
+const UID_AN_RE = /^DLR5L\d+N\d+$/i;
+
+/**
+ * Écarte les titres qui n'en sont pas.
+ *
+ * 1935 dossiers AN ont un `titre_court` égal à leur propre UID. Comme le label
+ * est choisi sur le critère du PLUS COURT, cet UID (13 caractères) battait
+ * systématiquement un vrai intitulé, et le sujet héritait d'un label technique
+ * du type « DLR5L15N45830 » — repris tel quel dans le slug, donc dans l'URL.
+ */
+function isUsableLabel(candidate: string | null, uid: string): boolean {
+  if (!candidate) return false;
+  const trimmed = candidate.trim();
+  if (trimmed.length === 0) return false;
+  if (trimmed.toUpperCase() === uid.toUpperCase()) return false;
+  // Un UID d'un AUTRE dossier du même sujet est tout aussi illisible.
+  if (UID_AN_RE.test(trimmed)) return false;
+  return true;
 }
 
 /**

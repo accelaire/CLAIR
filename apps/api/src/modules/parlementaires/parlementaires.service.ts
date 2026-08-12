@@ -83,6 +83,124 @@ function buildPeriodMandatWhere(
   return null;
 }
 
+/** Champs d'un amendement renvoyés par la liste d'un parlementaire. */
+const AMENDEMENT_SELECT = {
+  id: true,
+  uid: true,
+  numero: true,
+  legislature: true,
+  chambre: true,
+  texteRef: true,
+  articleVise: true,
+  dispositif: true,
+  exposeSommaire: true,
+  auteurLibelle: true,
+  sort: true,
+  dateDepot: true,
+  dateSort: true,
+  scrutins: {
+    select: {
+      id: true,
+      numero: true,
+      chambre: true,
+      session: true,
+      titre: true,
+      date: true,
+      sort: true,
+    },
+    take: 1,
+  },
+  dossier: {
+    select: {
+      uid: true,
+      titre: true,
+      titreCourt: true,
+    },
+  },
+} satisfies Prisma.AmendementSelect;
+
+// =============================================================================
+// PROJECTION DE LA LISTE DES PARLEMENTAIRES
+//
+// `select` explicite plutôt qu'`include`, pour deux raisons.
+//
+// 1. sourceData est le blob brut de l'API source (65 % du poids d'une fiche).
+//    L'écarter en JS au shaping ne suffisait pas : Postgres lisait quand même la
+//    colonne sur disque à chaque page. Elle reste servie sur le détail.
+// 2. `_count` sur les relations a été retiré — voir countRelationsForPage().
+//
+// La liste reprend TOUS les scalaires du modèle sauf sourceData : le payload
+// renvoyé est donc strictement identique à celui de la version `include`.
+// =============================================================================
+const PARLEMENTAIRE_LIST_SELECT = {
+  id: true,
+  slug: true,
+  chambre: true,
+  nom: true,
+  prenom: true,
+  sexe: true,
+  dateNaissance: true,
+  lieuNaissance: true,
+  profession: true,
+  photoUrl: true,
+  twitter: true,
+  facebook: true,
+  email: true,
+  siteWeb: true,
+  actif: true,
+  groupeId: true,
+  circonscriptionId: true,
+  serie: true,
+  commissionPermanente: true,
+  statsPresence: true,
+  statsPresenceSolennel: true,
+  statsLoyaute: true,
+  statsParticipation: true,
+  statsInterventions: true,
+  statsAmendements: true,
+  statsAmendementsAdoptes: true,
+  statsQuestions: true,
+  statsCalculatedAt: true,
+  statsCarrierePresence: true,
+  statsCarriereLoyaute: true,
+  statsCarriereParticipation: true,
+  statsCarriereInterventions: true,
+  statsCarriereAmendements: true,
+  resumeIA: true,
+  parcoursIA: true,
+  positionsClesIA: true,
+  faitsNotablesIA: true,
+  iaContentHash: true,
+  iaGeneratedAt: true,
+  sourceId: true,
+  createdAt: true,
+  updatedAt: true,
+  groupe: {
+    select: {
+      id: true,
+      slug: true,
+      chambre: true,
+      nom: true,
+      nomComplet: true,
+      couleur: true,
+      position: true,
+    },
+  },
+  circonscription: {
+    select: {
+      id: true,
+      departement: true,
+      numero: true,
+      nom: true,
+      type: true,
+    },
+  },
+} satisfies Prisma.ParlementaireSelect;
+
+type ParlementaireListRow = Prisma.ParlementaireGetPayload<{
+  select: typeof PARLEMENTAIRE_LIST_SELECT;
+}>;
+
 export class ParlementairesService {
   private readonly CACHE_TTL = 3600; // 1 hour (data synced daily)
   private readonly CACHE_TTL_LONG = 43200; // 12 hours
@@ -183,6 +301,48 @@ export class ParlementairesService {
   // LISTE DES PARLEMENTAIRES
   // ===========================================================================
 
+  /**
+   * Compteurs votes / interventions / amendements, bornés aux parlementaires de
+   * la page courante.
+   *
+   * Remplace `_count: { select: { votes, interventions, amendements } }`, qui
+   * faisait générer à Prisma trois LEFT JOIN sur des GROUP BY de la TOTALITÉ de
+   * ces tables (`WHERE $8=$9`, soit aucun filtre) à chaque appel, pour n'en
+   * conserver que les ~20 lignes affichées. Mesuré en prod le 2026-08-02 :
+   * 2,9 Go de tables balayées et 162 Mo lus sur disque PAR APPEL, 574 ms de
+   * moyenne — première source de lectures disque de toute la base, et ce qui
+   * maintenait le page cache sous pression toute la journée.
+   *
+   * Les trois comptages partent en parallèle et tiennent chacun dans un Index
+   * Only Scan sur `(parlementaire_id)` : ~17 ms de temps mur pour les trois.
+   */
+  private async countRelationsForPage(pageIds: string[]) {
+    const empty = new Map<string, number>();
+    if (pageIds.length === 0) {
+      return { votes: empty, interventions: empty, amendements: empty };
+    }
+
+    const where = { parlementaireId: { in: pageIds } };
+    const [votes, interventions, amendements] = await Promise.all([
+      this.prisma.vote.groupBy({ by: ['parlementaireId'], where, _count: { _all: true } }),
+      this.prisma.intervention.groupBy({ by: ['parlementaireId'], where, _count: { _all: true } }),
+      this.prisma.amendement.groupBy({ by: ['parlementaireId'], where, _count: { _all: true } }),
+    ]);
+
+    // parlementaireId est nullable sur Intervention et Amendement ; le `where`
+    // exclut déjà les null, le filtre ne sert qu'à satisfaire le typage.
+    const toMap = (
+      rows: { parlementaireId: string | null; _count: { _all: number } }[],
+    ): Map<string, number> =>
+      new Map(
+        rows
+          .filter((r): r is typeof r & { parlementaireId: string } => r.parlementaireId !== null)
+          .map((r) => [r.parlementaireId, r._count._all]),
+      );
+
+    return { votes: toMap(votes), interventions: toMap(interventions), amendements: toMap(amendements) };
+  }
+
   async getParlementaires(query: ParlementairesListQuery, forcedChambre?: Chambre) {
     const chambre = forcedChambre || query.chambre;
     const cacheKey = `parlementaires:list:${JSON.stringify({ ...query, chambre })}`;
@@ -227,40 +387,10 @@ export class ParlementairesService {
 
     const orderBy = this.buildParlementaireOrderBy(sort, order, periode);
 
-    const parlementaireInclude = {
-      groupe: {
-        select: {
-          id: true,
-          slug: true,
-          chambre: true,
-          nom: true,
-          nomComplet: true,
-          couleur: true,
-          position: true,
-        },
-      },
-      circonscription: {
-        select: {
-          id: true,
-          departement: true,
-          numero: true,
-          nom: true,
-          type: true,
-        },
-      },
-      _count: {
-        select: {
-          votes: true,
-          interventions: true,
-          amendements: true,
-        },
-      },
-    };
-
-    let [parlementaires, total] = await Promise.all([
+    let [parlementaires, total]: [ParlementaireListRow[], number] = await Promise.all([
       this.prisma.parlementaire.findMany({
         where,
-        include: parlementaireInclude,
+        select: PARLEMENTAIRE_LIST_SELECT,
         orderBy,
         skip,
         take: limit,
@@ -277,10 +407,15 @@ export class ParlementairesService {
         actif,
         limit,
         skip,
-      }, parlementaireInclude, orderBy);
+      });
       parlementaires = fuzzyResult.parlementaires;
       total = fuzzyResult.total;
     }
+
+    // Compteurs bornés à la page — après le fallback fuzzy, qui peut remplacer
+    // entièrement le jeu de résultats.
+    const { votes: votesCount, interventions: interventionsCount, amendements: amendementsCount } =
+      await this.countRelationsForPage(parlementaires.map((p) => p.id));
 
     const totalPages = Math.ceil(total / limit);
     const meta: PaginationMeta = {
@@ -318,10 +453,11 @@ export class ParlementairesService {
         ...(period && { groupe: period.groupe, circonscription: period.circonscription }),
         legislature,
         session,
-        _count: undefined,
-        votesCount: p._count.votes,
-        interventionsCount: p._count.interventions,
-        amendementsCount: p._count.amendements,
+        // `_count` et sourceData ne sont plus ramenés par la requête : le `select`
+        // explicite les exclut à la source, plus besoin de les neutraliser ici.
+        votesCount: votesCount.get(p.id) ?? 0,
+        interventionsCount: interventionsCount.get(p.id) ?? 0,
+        amendementsCount: amendementsCount.get(p.id) ?? 0,
         stats: p.statsCalculatedAt
           ? {
               presence: p.statsPresence ?? 0,
@@ -721,6 +857,24 @@ export class ParlementairesService {
       };
     }
 
+    // Le groupe courant entre dans la clé : il sert de repli quand le mandat
+    // d'époque est introuvable, deux valeurs donnent donc deux résultats.
+    const cacheKey = `parlementaire:votes:${parlementaireId}:${JSON.stringify({
+      groupeId,
+      page,
+      limit,
+      position,
+      tag,
+      dateFrom,
+      dateTo,
+      dissidentOnly,
+    })}`;
+
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
     // Build dynamic WHERE conditions
     const conditions: string[] = ['v.parlementaire_id = $1'];
     const countConditions: string[] = ['v.parlementaire_id = $1'];
@@ -789,13 +943,18 @@ export class ParlementairesService {
       scrutin_nombre_abstention: number;
     }
 
-    const votesQuery = `
-      WITH ${CTE_GROUP_MAJORITY_EPOQUE(parlementaireId, groupeIdParam)}
-      SELECT
+    // Un numéro de scrutin n'est unique que par (chambre, session) : deux
+    // scrutins de sessions différentes peuvent partager date et numéro. Sans
+    // départage, « la page N » n'est pas un ensemble stable et une ligne peut
+    // se répéter d'une page à l'autre ou n'apparaître nulle part. `scrutin_id`
+    // rend l'ordre total, comme dans GroupesService.
+    const ORDRE_VOTES = `ORDER BY s.date DESC, s.numero DESC, s.id ASC`;
+
+    // Colonnes du vote et de son scrutin, communes aux deux formes de requête.
+    const COLONNES_VOTE = `
         v.id,
         v.position,
-        gm.majority_position as groupe_position,
-        s.id as scrutin_id,
+        v.scrutin_id,
         s.numero as scrutin_numero,
         s.chambre as scrutin_chambre,
         s.session as scrutin_session,
@@ -807,21 +966,65 @@ export class ParlementairesService {
         s.importance as scrutin_importance,
         s.nombre_pour as scrutin_nombre_pour,
         s.nombre_contre as scrutin_nombre_contre,
-        s.nombre_abstention as scrutin_nombre_abstention
+        s.nombre_abstention as scrutin_nombre_abstention`;
+
+    // Deux régimes, selon que la majorité de groupe FILTRE ou seulement DÉCORE.
+    //
+    // `dissidentOnly` la met dans le WHERE : elle doit alors être connue pour
+    // tous les votes candidats, avant pagination. La CTE reste donc complète et
+    // la requête de comptage la porte aussi — c'est le prix du filtre, et la
+    // raison pour laquelle on ne peut pas simplement borner la CTE partout.
+    //
+    // Sinon la majorité n'est qu'une colonne affichée : on sélectionne d'abord
+    // la page (20 lignes), puis on ne calcule la majorité que pour ces
+    // scrutins-là. Le comptage, lui, n'a plus aucune raison de porter la CTE :
+    // aucune de ses conditions n'y fait référence.
+    const votesQuery = dissidentOnly
+      ? `
+      WITH ${CTE_GROUP_MAJORITY_EPOQUE(parlementaireId, groupeIdParam)}
+      SELECT
+        ${COLONNES_VOTE},
+        gm.majority_position as groupe_position
       FROM votes v
       JOIN scrutins s ON v.scrutin_id = s.id
       LEFT JOIN group_majority gm ON v.scrutin_id = gm.scrutin_id AND gm.rn = 1
       WHERE ${whereClause}
-      ORDER BY s.date DESC, s.numero DESC
+      ${ORDRE_VOTES}
       LIMIT ${limit} OFFSET ${offset}
+    `
+      : `
+      WITH page AS (
+        SELECT ${COLONNES_VOTE}
+        FROM votes v
+        JOIN scrutins s ON v.scrutin_id = s.id
+        WHERE ${whereClause}
+        ${ORDRE_VOTES}
+        LIMIT ${limit} OFFSET ${offset}
+      ),
+      ${CTE_GROUP_MAJORITY_EPOQUE(parlementaireId, groupeIdParam, {
+        scrutinIdsSubquery: 'SELECT scrutin_id FROM page',
+      })}
+      SELECT
+        page.*,
+        gm.majority_position as groupe_position
+      FROM page
+      LEFT JOIN group_majority gm ON gm.scrutin_id = page.scrutin_id AND gm.rn = 1
+      ORDER BY page.scrutin_date DESC, page.scrutin_numero DESC, page.scrutin_id ASC
     `;
 
-    const countQuery = `
+    const countQuery = dissidentOnly
+      ? `
       WITH ${CTE_GROUP_MAJORITY_EPOQUE(parlementaireId, groupeIdParam)}
       SELECT COUNT(*)::int as total
       FROM votes v
       JOIN scrutins s ON v.scrutin_id = s.id
       LEFT JOIN group_majority gm ON v.scrutin_id = gm.scrutin_id AND gm.rn = 1
+      WHERE ${countWhereClause}
+    `
+      : `
+      SELECT COUNT(*)::int as total
+      FROM votes v
+      JOIN scrutins s ON v.scrutin_id = s.id
       WHERE ${countWhereClause}
     `;
 
@@ -855,7 +1058,7 @@ export class ParlementairesService {
       },
     }));
 
-    return {
+    const result = {
       data,
       meta: {
         total,
@@ -866,6 +1069,152 @@ export class ParlementairesService {
         hasPrev: page > 1,
       },
     };
+
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+
+    return result;
+  }
+
+  // ===========================================================================
+  // AMENDEMENTS D'UN PARLEMENTAIRE
+  // ===========================================================================
+
+  /**
+   * Amendements déposés OU cosignés par un parlementaire.
+   *
+   * Le périmètre est une union de deux ensembles : `amendements.parlementaire_id`
+   * (l'auteur) et la table de cosignatures. Exprimé en `OR` dans un seul WHERE —
+   * ce que produit naturellement Prisma —, Postgres ne peut se servir d'aucun des
+   * deux index et parcourt les 197 000 amendements en séquentiel ; le coût estimé
+   * déclenchait même la compilation JIT, 250 ms perdus avant la première ligne.
+   *
+   * En UNION, chaque branche redevient une simple recherche indexée. On ne
+   * ramène ainsi que les identifiants de la page, dont Prisma charge ensuite le
+   * détail avec ses relations — deux allers-retours courts plutôt qu'un long.
+   */
+  async getParlementaireAmendements(
+    parlementaireId: string,
+    query: {
+      page: number;
+      limit: number;
+      sort?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      votedOnly?: boolean;
+    }
+  ) {
+    const { page, limit, sort, dateFrom, dateTo, votedOnly } = query;
+    const offset = (page - 1) * limit;
+
+    const cacheKey = `parlementaire:amendements:${parlementaireId}:${JSON.stringify({
+      page,
+      limit,
+      sort,
+      dateFrom,
+      dateTo,
+      votedOnly,
+    })}`;
+
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    const conditions: string[] = [];
+    const params: (string | Date)[] = [parlementaireId];
+    let paramIndex = 2;
+
+    if (sort) {
+      conditions.push(`a.sort = $${paramIndex}`);
+      params.push(sort);
+      paramIndex++;
+    }
+    if (dateFrom) {
+      conditions.push(`a.date_depot >= $${paramIndex}`);
+      params.push(new Date(dateFrom));
+      paramIndex++;
+    }
+    if (dateTo) {
+      conditions.push(`a.date_depot <= $${paramIndex}`);
+      params.push(new Date(dateTo));
+      paramIndex++;
+    }
+    if (votedOnly) {
+      conditions.push(`EXISTS (SELECT 1 FROM "_AmendementToScrutin" ats WHERE ats."A" = a.id)`);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const CANDIDATS = `
+      WITH candidats AS (
+        SELECT id FROM amendements WHERE parlementaire_id = $1
+        UNION
+        SELECT "A" AS id FROM "_AmendementCosignataires" WHERE "B" = $1
+      )`;
+
+    // Le tri porte sur trois colonnes dont deux acceptent NULL : des ex æquo
+    // parfaits existent (même dépôt, même dossier, même rang). Sans départage,
+    // deux exécutions les ordonnent différemment et la pagination peut répéter
+    // ou sauter une ligne d'une page à l'autre. `id` rend l'ordre total.
+    const ORDRE = `ORDER BY a.date_depot DESC NULLS LAST, a.dossier_id ASC,
+                            a.numero_ordre DESC NULLS LAST, a.id ASC`;
+
+    // Comptage séparé plutôt qu'un `COUNT(*) OVER ()` : la fenêtre ne renvoie
+    // aucune ligne — donc aucun total — dès que la page demandée est au-delà de
+    // la fin, et l'interface afficherait « 0 résultat » sur un jeu non vide.
+    const pageQuery = `
+      ${CANDIDATS}
+      SELECT a.id
+      FROM amendements a
+      JOIN candidats c ON c.id = a.id
+      ${whereClause}
+      ${ORDRE}
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+
+    const countQuery = `
+      ${CANDIDATS}
+      SELECT COUNT(*)::int as total
+      FROM amendements a
+      JOIN candidats c ON c.id = a.id
+      ${whereClause}
+    `;
+
+    const [rows, countResult] = await Promise.all([
+      this.prisma.$queryRawUnsafe<{ id: string }[]>(pageQuery, ...params),
+      this.prisma.$queryRawUnsafe<{ total: number }[]>(countQuery, ...params),
+    ]);
+
+    const total = countResult[0]?.total ?? 0;
+    const totalPages = Math.ceil(total / limit);
+
+    let amendements: unknown[] = [];
+    if (rows.length > 0) {
+      const ids = rows.map((r) => r.id);
+      const charges = await this.prisma.amendement.findMany({
+        where: { id: { in: ids } },
+        select: AMENDEMENT_SELECT,
+      });
+      // `IN` ne garantit aucun ordre : on rétablit celui décidé par le tri SQL.
+      const parId = new Map(charges.map((a) => [a.id, a]));
+      amendements = ids.map((id) => parId.get(id)).filter(Boolean);
+    }
+
+    const result = {
+      data: amendements,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrev: page > 1,
+      },
+    };
+
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+
+    return result;
   }
 
   // ===========================================================================
@@ -896,6 +1245,8 @@ export class ParlementairesService {
     // Transformer les résultats avec les stats pré-calculées
     const result = parlementaires.map((p) => ({
       ...p,
+      // sourceData retiré : voir getParlementaires. Reste sur le détail.
+      sourceData: undefined,
       stats: p.statsCalculatedAt
         ? {
             presence: p.statsPresence ?? 0,
@@ -1210,9 +1561,7 @@ export class ParlementairesService {
       limit: number;
       skip: number;
     },
-    include: any,
-    _orderBy: any
-  ) {
+  ): Promise<{ parlementaires: ParlementaireListRow[]; total: number }> {
     const candidates = await this.getFuzzyCandidates({
       chambre: filters.chambre,
       groupe: filters.groupe,
@@ -1223,7 +1572,7 @@ export class ParlementairesService {
     const fuzzyResults = fuzzySearchCandidates(search, candidates);
 
     if (fuzzyResults.length === 0) {
-      return { parlementaires: [] as any[], total: 0 };
+      return { parlementaires: [], total: 0 };
     }
 
     const matchingIds = fuzzyResults.map((r) => r.id);
@@ -1234,7 +1583,7 @@ export class ParlementairesService {
 
     const parlementaires = await this.prisma.parlementaire.findMany({
       where: { id: { in: pageIds } },
-      include,
+      select: PARLEMENTAIRE_LIST_SELECT,
     });
 
     // Preserve fuzzy score ordering
@@ -1258,10 +1607,29 @@ export class ParlementairesService {
         await this.redis.del(`parlementaire:${parlementaire.slug}:*`);
         await this.redis.del(`parlementaire:stats:${parlementaireId}`);
       }
+      // Les votes sont cachés par combinaison de filtres : il faut balayer, un
+      // `del` sur un motif ne supprimerait rien (Redis ne développe pas le `*`).
+      await this.deleteByPattern(`parlementaire:votes:${parlementaireId}:*`);
     }
     const keys = await this.redis.keys('parlementaires:list:*');
     if (keys.length > 0) {
       await this.redis.del(...keys);
     }
+  }
+
+  /**
+   * Supprime toutes les clés d'un motif. `scan` plutôt que `keys` : le cache des
+   * votes compte une entrée par (parlementaire × filtres × page), et `keys`
+   * bloque Redis le temps du parcours complet de l'espace de clés.
+   */
+  private async deleteByPattern(pattern: string): Promise<void> {
+    let cursor = '0';
+    do {
+      const [next, keys] = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 200);
+      cursor = next;
+      if (keys.length > 0) {
+        await this.redis.del(...keys);
+      }
+    } while (cursor !== '0');
   }
 }

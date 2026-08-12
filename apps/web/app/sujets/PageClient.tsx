@@ -3,7 +3,7 @@
 import { Suspense, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Search, Vote, Loader2, Layers, Sparkles, ChevronDown, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Search, Vote, Loader2, Layers, Sparkles, ChevronDown, CheckCircle2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
 
@@ -237,7 +237,7 @@ function SujetsPageContent() {
     },
   });
 
-  const sujets = data ?? [];
+  const sujets = useMemo(() => data ?? [], [data]);
 
   // Helper: tri par dateDernierVote desc (plus récent en premier)
   const sortByLastVote = (a: Sujet, b: Sujet) => {

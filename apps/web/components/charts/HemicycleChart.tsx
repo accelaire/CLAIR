@@ -21,7 +21,6 @@ interface HemicycleChartProps {
   onGroupClick?: (groupe: GroupeData) => void;
   selectedSlug?: string;
   highlightedSlugs?: string[]; // Si défini, seuls ces groupes sont mis en avant
-  height?: number;
 }
 
 // Ordre des positions de gauche à droite
@@ -149,7 +148,6 @@ export function HemicycleChart({
   onGroupClick,
   selectedSlug,
   highlightedSlugs,
-  height = 300,
 }: HemicycleChartProps) {
   const [hoveredGroupe, setHoveredGroupe] = useState<string | null>(null);
   const [tappedGroupe, setTappedGroupe] = useState<string | null>(null);
@@ -192,17 +190,6 @@ export function HemicycleChart({
   );
 
   const seatRadius = 5;
-
-  // Grouper les sièges pour l'affichage
-  const groupedSeats = useMemo(() => {
-    const map = new Map<string, Seat[]>();
-    seats.forEach((seat) => {
-      const key = seat.groupe.slug;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(seat);
-    });
-    return map;
-  }, [seats]);
 
   return (
     <div className="w-full h-full flex flex-col">

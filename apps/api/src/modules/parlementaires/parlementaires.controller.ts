@@ -401,7 +401,10 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
       },
       handler: async (request, _reply) => {
         const { slug } = parlementaireParamsSchema.parse(request.params);
-        const { page = 1, limit = 20, sort, dateFrom, dateTo, votedOnly } = request.query as any;
+        const { page = 1, limit = 20, sort, dateFrom, dateTo, votedOnly } = request.query as {
+        page?: number; limit?: number; sort?: string;
+        dateFrom?: string; dateTo?: string; votedOnly?: boolean;
+      };
 
         const parlementaire = await fastify.prisma.parlementaire.findUnique({
           where: { slug },
@@ -416,92 +419,14 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           throw new ApiError(404, `${chambreLabel.slice(0, -1)} non trouvé`);
         }
 
-        const skip = (page - 1) * limit;
-
-        // Build date filter
-        const dateFilter = (dateFrom || dateTo) ? {
-          dateDepot: {
-            ...(dateFrom && { gte: new Date(dateFrom) }),
-            ...(dateTo && { lte: new Date(dateTo) }),
-          },
-        } : {};
-
-        // Build voted filter (uses EXISTS subquery - performant)
-        const votedFilter = votedOnly ? { scrutins: { some: {} } } : {};
-
-        const parlWhere = {
-          OR: [
-            { parlementaireId: parlementaire.id },
-            { cosignataires: { some: { id: parlementaire.id } } },
-          ],
-          ...(sort && { sort }),
-          ...dateFilter,
-          ...votedFilter,
-        };
-
-        const [amendements, total] = await Promise.all([
-          fastify.prisma.amendement.findMany({
-            where: parlWhere,
-            orderBy: [
-              { dateDepot: { sort: 'desc', nulls: 'last' } },
-              { dossierId: 'asc' },
-              { numeroOrdre: { sort: 'desc', nulls: 'last' } },
-            ],
-            skip,
-            take: limit,
-            select: {
-              id: true,
-              uid: true,
-              numero: true,
-              legislature: true,
-              chambre: true,
-              texteRef: true,
-              articleVise: true,
-              dispositif: true,
-              exposeSommaire: true,
-              auteurLibelle: true,
-              sort: true,
-              dateDepot: true,
-              dateSort: true,
-              scrutins: {
-                select: {
-                  id: true,
-                  numero: true,
-                  chambre: true,
-                  session: true,
-                  titre: true,
-                  date: true,
-                  sort: true,
-                },
-                take: 1,
-              },
-              dossier: {
-                select: {
-                  uid: true,
-                  titre: true,
-                  titreCourt: true,
-                },
-              },
-            },
-          }),
-          fastify.prisma.amendement.count({
-            where: parlWhere,
-          }),
-        ]);
-
-        const totalPages = Math.ceil(total / limit);
-
-        return {
-          data: amendements,
-          meta: {
-            total,
-            page,
-            limit,
-            totalPages,
-            hasNext: page < totalPages,
-            hasPrev: page > 1,
-          },
-        };
+        return service.getParlementaireAmendements(parlementaire.id, {
+          page,
+          limit,
+          sort,
+          dateFrom,
+          dateTo,
+          votedOnly,
+        });
       },
     });
 
@@ -533,7 +458,9 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
       },
       handler: async (request, _reply) => {
         const { slug } = parlementaireParamsSchema.parse(request.params);
-        const { page = 1, limit = 10, type, dateFrom, dateTo } = request.query as any;
+        const { page = 1, limit = 10, type, dateFrom, dateTo } = request.query as {
+        page?: number; limit?: number; type?: string; dateFrom?: string; dateTo?: string;
+      };
 
         const parlementaire = await fastify.prisma.parlementaire.findUnique({
           where: { slug },
@@ -628,11 +555,15 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
         });
 
         // 4. Group by seanceId
+        // Formes réellement poussées dans les groupes (dérivées des requêtes ci-dessus).
+        type SeanceIntervention = Omit<(typeof interventions)[number], 'seanceId'> & { hasMore: boolean };
+        type SeanceScrutin = Omit<(typeof scrutins)[number], 'seanceRef'>;
+
         const seanceMap = new Map<string, {
           seanceId: string;
           date: string;
-          interventions: any[];
-          scrutins: any[];
+          interventions: SeanceIntervention[];
+          scrutins: SeanceScrutin[];
         }>();
 
         // Init with seance order from pagination
@@ -668,7 +599,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
             const matchByDate = new Date(s.date).toDateString() === new Date(group.date).toDateString();
             if (matchByRef || matchByDate) {
               // Avoid duplicate scrutins in same group
-              if (!group.scrutins.some((gs: any) => gs.id === s.id)) {
+              if (!group.scrutins.some((gs) => gs.id === s.id)) {
                 const { seanceRef: _r, ...scrutinData } = s;
                 group.scrutins.push(scrutinData);
               }
@@ -678,7 +609,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
 
         // Sort scrutins by numero within each seance
         for (const group of seanceMap.values()) {
-          group.scrutins.sort((a: any, b: any) => a.numero - b.numero);
+          group.scrutins.sort((a, b) => a.numero - b.numero);
         }
 
         // 5. Count total distinct seances for pagination

@@ -3,13 +3,12 @@
 // =============================================================================
 
 import { LEGISLATURE_AN_COURANTE } from '../../workers/mandats';
-import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { createWriteStream } from 'fs';
-import { pipeline } from 'stream/promises';
 import { logger } from '../../utils/logger';
+import { errorMessage } from '../../utils/errors';
+import { downloadWithRetry } from '../../utils/download';
 
 // =============================================================================
 // TYPES BRUTS (structure JSON de l'AN)
@@ -111,6 +110,22 @@ export interface TransformedDossier {
 // CLIENT
 // =============================================================================
 
+/**
+ * Nom de l'archive des dossiers pour une législature donnée.
+ *
+ * L'AN n'a pas rétro-nommé ses anciennes archives : la 15e est publiée sous
+ * `Dossiers_Legislatifs_XV.json.zip` (suffixe en chiffres romains), alors que
+ * la 16e et la 17e utilisent le nom court. Vérifié le 2026-07-29 — la variante
+ * romaine renvoie 404 sur 16 et 17, et le nom court renvoie 404 sur 15.
+ */
+export function archiveName(legislature: number): string {
+  const ROMAN: Record<number, string> = { 15: 'XV' };
+  const suffix = ROMAN[legislature];
+  return suffix
+    ? `Dossiers_Legislatifs_${suffix}.json.zip`
+    : 'Dossiers_Legislatifs.json.zip';
+}
+
 export class DossiersLegislatifsClient {
   private legislature: number;
   private baseUrl: string;
@@ -125,24 +140,15 @@ export class DossiersLegislatifsClient {
   // DOWNLOAD & EXTRACT
   // ===========================================================================
 
+  /**
+   * Toutes les archives AN viennent du même CDN, qui throttle sévèrement les
+   * tirages répétés (mesuré le 2026-07-26 : 45x plus lent au 2e tirage
+   * consécutif de la même archive). Un run télécharge plusieurs de ces archives
+   * d'affilée, d'où des coupures dont le message « aborted » ne disait rien.
+   * `downloadWithRetry` reprend avec backoff et journalise le contexte réel.
+   */
   private async downloadFile(url: string, destPath: string): Promise<void> {
-    logger.debug({ url, destPath }, 'Downloading file...');
-
-    const response = await axios({
-      method: 'GET',
-      url,
-      responseType: 'stream',
-      timeout: 180000, // 3 minutes
-      headers: {
-        'User-Agent': 'CLAIR-Bot/1.0 (https://github.com/clair)',
-        Accept: 'application/zip, application/octet-stream',
-      },
-    });
-
-    const writer = createWriteStream(destPath);
-    await pipeline(response.data, writer);
-
-    logger.debug({ destPath }, 'File downloaded');
+    await downloadWithRetry(url, destPath);
   }
 
   private async extractZip(zipPath: string, extractDir: string): Promise<string[]> {
@@ -158,9 +164,9 @@ export class DossiersLegislatifsClient {
       await execAsync(`unzip -q -o "${zipPath}" -d "${extractDir}"`, {
         maxBuffer: 1024 * 1024 * 100, // 100 MB buffer
       });
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'unzip failed');
-      throw new Error(`Zip extraction failed: ${error.message}`);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'unzip failed');
+      throw new Error(`Zip extraction failed: ${errorMessage(error)}`);
     }
 
     const files = await fs.promises.readdir(extractDir);
@@ -189,7 +195,7 @@ export class DossiersLegislatifsClient {
   // ===========================================================================
 
   async getDossiers(limit?: number): Promise<TransformedDossier[]> {
-    const zipUrl = `${this.baseUrl}/${this.legislature}/loi/dossiers_legislatifs/Dossiers_Legislatifs.json.zip`;
+    const zipUrl = `${this.baseUrl}/${this.legislature}/loi/dossiers_legislatifs/${archiveName(this.legislature)}`;
     const tempDir = path.join(os.tmpdir(), 'clair-dossiers');
     const zipPath = path.join(tempDir, 'Dossiers_Legislatifs.json.zip');
     const extractDir = path.join(tempDir, 'extracted');
@@ -254,8 +260,8 @@ export class DossiersLegislatifsClient {
           if (processed % 100 === 0) {
             logger.debug({ processed, total: filesToProcess.length }, 'Parsing progress');
           }
-        } catch (e: any) {
-          logger.warn({ file: jsonFile, error: e.message }, 'Failed to parse dossier file');
+        } catch (e) {
+          logger.warn({ file: jsonFile, error: errorMessage(e) }, 'Failed to parse dossier file');
         }
       }
 
@@ -316,8 +322,8 @@ export class DossiersLegislatifsClient {
         texteRefs,
         sourceData: raw,
       };
-    } catch (e: any) {
-      logger.warn({ uid: raw.uid, error: e.message }, 'Error transforming dossier');
+    } catch (e) {
+      logger.warn({ uid: raw.uid, error: errorMessage(e) }, 'Error transforming dossier');
       return null;
     }
   }

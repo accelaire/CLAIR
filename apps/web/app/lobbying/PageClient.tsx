@@ -300,8 +300,6 @@ function LobbyingPageContent() {
           </div>
           <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {actionsRecentes.map((action) => {
-              const typeConfig = typeLabels[action.lobbyiste.type || ''];
-              const Icon = typeConfig?.icon || Building2;
               const { secteur, cleanDescription } = extractSecteur(action.description || '');
 
               return (

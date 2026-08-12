@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { logger } from '../../utils/logger.js';
+import { errorMessage } from '../../utils/errors.js';
 
 const WIKIPEDIA_API_URL = 'https://fr.wikipedia.org/w/api.php';
 const MAX_EXTRACT_CHARS = 4000;
@@ -35,10 +36,10 @@ export async function fetchWikipediaBio(
 
   for (const query of queries) {
     try {
-      const result = await searchAndExtract(query, prenom, nom);
+      const result = await searchAndExtract(query, nom);
       if (result) return result;
-    } catch (error: any) {
-      logger.debug({ query, error: error.message }, 'Wikipedia search failed for query');
+    } catch (error) {
+      logger.debug({ query, error: errorMessage(error) }, 'Wikipedia search failed for query');
     }
   }
 
@@ -47,7 +48,6 @@ export async function fetchWikipediaBio(
 
 async function searchAndExtract(
   query: string,
-  prenom: string,
   nom: string,
 ): Promise<WikipediaResult | null> {
   // Étape 1 : Recherche via opensearch

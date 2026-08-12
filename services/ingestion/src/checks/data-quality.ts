@@ -150,6 +150,36 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     max: 0,
     query: `SELECT COUNT(*)::int AS value FROM scrutins s JOIN dossiers_legislatifs d ON s.dossier_id = d.id WHERE (s.chambre = 'assemblee' AND d.uid LIKE 'SENAT%') OR (s.chambre = 'senat' AND d.uid NOT LIKE 'SENAT%')`,
   },
+  cross_legislature_links: {
+    type: 'invariant',
+    label: 'Liens scrutin-dossier inter-législatures (AN)',
+    min: 0,
+    max: 0,
+    // Un scrutin AN ne peut appartenir qu'à un dossier de sa propre législature.
+    // Non nul = le matching a rattaché des scrutins à un dossier d'une autre
+    // législature, faute de dossier ingéré pour la leur.
+    query: `SELECT COUNT(*)::int AS value FROM scrutins s JOIN dossiers_legislatifs d ON s.dossier_id = d.id WHERE s.chambre = 'assemblee' AND d.uid NOT LIKE 'SENAT%' AND s.session ~ '^[0-9]+$' AND d.legislature <> s.session::int`,
+  },
+  resume_contredit_statut: {
+    type: 'invariant',
+    label: 'Résumés IA contredisant le statut du sujet',
+    min: 0,
+    max: 0,
+    // Un sujet promulgué ou rejeté dont le résumé annonce une procédure encore
+    // en cours = résumé figé sur l'état d'avancement du jour de sa génération.
+    //
+    // La formulation est volontairement étroite : « en cours d'année »,
+    // « retiré en cours de route » ou « abandonné en cours de discussion » sont
+    // parfaitement valides pour un texte promulgué. Seules sont retenues les
+    // assertions portant sur l'inachèvement de la procédure elle-même.
+    //
+    // Le `.` remplace l'apostrophe : les résumés mélangent ' et ’.
+    query: `SELECT COUNT(*)::int AS value FROM sujets
+      WHERE actif = true
+        AND status IN ('promulgue', 'rejete')
+        AND resume IS NOT NULL
+        AND resume ~* '(doit encore (être )?(promulgu|examin|adopt|vot|discut|débattu|passer)|n.a pas encore été (promulgu|adopt|examin|vot)|en cours d.examen|examen (est |se poursuit)?(encore )?en cours|sera (prochainement )?examiné|en cours de promulgation|doit désormais être examiné)'`,
+  },
 
   // ---- Seuils quantitatifs (minimums) ----
   parlementaires_count: {
@@ -284,7 +314,7 @@ export function extractAmendmentNumbers(titre: string): string[] {
   const regex = /n°\s+([A-Za-z]*-?\d+)/g;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(titre)) !== null) {
-    matches.push(match[1]);
+    if (match[1]) matches.push(match[1]);
   }
   return matches;
 }
@@ -363,15 +393,15 @@ export async function runMultiAmendmentCheck(prisma: PrismaClient): Promise<Mult
   for (const row of rows) {
     const nums = extractAmendmentNumbers(row.titre);
     if (nums.length < 2) continue;
-    if (!byChambre[row.chambre]) {
-      byChambre[row.chambre] = { total: 0, correct: 0, incorrect: 0 };
-    }
-    byChambre[row.chambre].total++;
+    const stats = byChambre[row.chambre] ?? { total: 0, correct: 0, incorrect: 0 };
+    stats.total++;
+    byChambre[row.chambre] = stats;
   }
   for (const m of mismatches) {
-    if (byChambre[m.chambre]) byChambre[m.chambre].incorrect++;
+    const stats = byChambre[m.chambre];
+    if (stats) stats.incorrect++;
   }
-  for (const [chambre, stats] of Object.entries(byChambre)) {
+  for (const stats of Object.values(byChambre)) {
     stats.correct = stats.total - stats.incorrect;
   }
 
@@ -599,8 +629,7 @@ export function printReport(report: QualityReport): void {
   if (ma.mismatches.length > 0) {
     console.log();
     const limit = Math.min(ma.mismatches.length, 5);
-    for (let i = 0; i < limit; i++) {
-      const m = ma.mismatches[i];
+    for (const m of ma.mismatches.slice(0, limit)) {
       console.log(`    \x1b[33m⚠\x1b[0m  [${m.chambre}] scrutin ${m.scrutinId.slice(0, 8)}...`);
       if (m.missingNumeros.length > 0) {
         console.log(`       Manquants: ${m.missingNumeros.join(', ')}`);

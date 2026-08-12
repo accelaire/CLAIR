@@ -235,6 +235,92 @@ export class SujetsService {
   }
 
   /**
+   * Résout le sort d'un slug de sujet désactivé.
+   *
+   * 137 sujets ont été désactivés le 2026-07-29 : ils n'existaient que parce que
+   * leurs dossiers avaient capté les scrutins d'autres législatures. Leurs URLs
+   * restent appelées, et le front servait un « introuvable » en HTTP 200 — un
+   * soft 404 que Google continue d'indexer.
+   *
+   * Renvoie le dossier de destination quand le sujet n'en portait qu'un : la page
+   * dossier reste le contenu le plus proche de ce que l'URL promettait. Au-delà
+   * d'un dossier, aucune cible n'est légitime et l'appelant doit rendre un 404.
+   */
+  async resolveArchivedSlug(slug: string) {
+    const sujet = await this.prisma.sujet.findUnique({
+      where: { slug },
+      select: {
+        actif: true,
+        dossiers: { select: { uid: true }, take: 2 },
+      },
+    });
+
+    if (!sujet || sujet.actif) return null;
+
+    return {
+      dossierUid: sujet.dossiers.length === 1 ? sujet.dossiers[0]!.uid : null,
+    };
+  }
+
+  /**
+   * Documents parlementaires liés à un sujet mais dépourvus de vote.
+   *
+   * La liste des dossiers ne montre que ceux ayant au moins un scrutin
+   * (`dossiers.controller.ts`), ce qui écarte 19 135 dossiers sur 21 055 :
+   * rapports d'information, missions d'application, textes non votés. Utile en
+   * général, mais ça rend introuvable le rapport d'application d'une loi dont on
+   * consulte justement le sujet.
+   *
+   * Le rattachement se déduit du titre : ces documents citent le numéro de la loi
+   * (« Rapport d'information sur l'application de la loi n° 2023-580 »), alors que
+   * leur colonne `loi_numero` est vide — ils ne sont pas eux-mêmes une loi.
+   */
+  async getDocumentsLies(slug: string) {
+    const sujet = await this.prisma.sujet.findFirst({
+      where: { slug, actif: true },
+      select: { id: true },
+    });
+
+    if (!sujet) return null;
+
+    const documents = await this.prisma.$queryRaw<
+      {
+        uid: string;
+        titre: string;
+        procedureLibelle: string | null;
+        urlAN: string | null;
+        urlSenat: string | null;
+        dateDepot: Date | null;
+        loiRef: string;
+      }[]
+    >`
+      SELECT DISTINCT ON (doc.uid)
+        doc.uid,
+        doc.titre,
+        doc.procedure_libelle AS "procedureLibelle",
+        doc.url_an AS "urlAN",
+        doc.url_senat AS "urlSenat",
+        doc.date_depot AS "dateDepot",
+        loi.loi_numero AS "loiRef"
+      FROM dossiers_legislatifs loi
+      JOIN dossiers_legislatifs doc
+        ON substring(doc.titre from 'n°\\s*([0-9]{4}-[0-9]+)') = loi.loi_numero
+      WHERE loi.sujet_id = ${sujet.id}
+        AND loi.loi_numero IS NOT NULL
+        -- Un document du sujet lui-même n'est pas un document « lié ».
+        AND (doc.sujet_id IS NULL OR doc.sujet_id <> ${sujet.id})
+        -- Seuls les dossiers sans vote : les autres sont déjà dans la liste.
+        AND NOT EXISTS (SELECT 1 FROM scrutins s WHERE s.dossier_id = doc.id)
+      ORDER BY doc.uid, doc.date_depot DESC NULLS LAST
+    `;
+
+    return documents.map(d => ({
+      ...d,
+      chambre: d.uid.startsWith('SENAT') ? 'senat' : 'assemblee',
+    }));
+  }
+
+  /**
    * Scrutins d'un sujet avec pagination (via les dossiers)
    */
   async getScrutins(slug: string, query: SujetScrutinsQuery) {

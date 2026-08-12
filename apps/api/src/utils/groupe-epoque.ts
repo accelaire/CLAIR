@@ -120,32 +120,74 @@ export async function chargerGroupesEpoque(
  * déclaré dissident à tort. On résout donc, scrutin par scrutin, son groupe
  * d'époque (`mm`), puis la majorité des membres de CE groupe à CE scrutin (`gm`).
  *
+ * ÉGALITÉ → PAS DE MAJORITÉ. Quand deux positions arrivent ex æquo en tête (un
+ * groupe qui se partage 3 pour / 3 abstention, soit 2,2 % des couples
+ * scrutin×groupe), `majority_position` vaut NULL. Auparavant `ROW_NUMBER` sans
+ * départage en désignait une au hasard : le badge « dissident » d'un député
+ * pouvait basculer d'un déploiement à l'autre, au gré du plan d'exécution.
+ * Sur un site de transparence on n'attribue pas une dissidence à pile ou face —
+ * et NULL exclut naturellement ces votes du filtre `dissidentOnly`, qui exige
+ * déjà `majority_position IS NOT NULL`.
+ *
+ * `scrutinIdsSubquery` restreint le calcul à un sous-ensemble de scrutins (en
+ * pratique : ceux de la page affichée). L'agrégat étant partitionné par scrutin,
+ * le restreindre ne change aucune valeur — seulement le volume balayé. À n'
+ * utiliser que si la majorité sert à AFFICHER, jamais à FILTRER : un filtre
+ * s'applique avant la pagination, donc hors du périmètre de la page.
+ *
  * Les identifiants sont interpolés (et non passés en paramètre) pour ne pas
  * perturber la numérotation `$1..$n` des requêtes appelantes : ce sont des UUID
  * issus de notre propre base, jamais une saisie utilisateur libre.
  */
 export function CTE_GROUP_MAJORITY_EPOQUE(
   parlementaireId: string,
-  groupeCourantId: string
+  groupeCourantId: string,
+  options: { scrutinIdsSubquery?: string } = {}
 ): string {
   assertUuid(parlementaireId);
   assertUuid(groupeCourantId);
 
+  const perimetre = options.scrutinIdsSubquery
+    ? `AND gv.scrutin_id IN (${options.scrutinIdsSubquery})`
+    : '';
+
   return `group_majority AS (
     SELECT
-      gv.scrutin_id,
-      gv.position as majority_position,
-      ROW_NUMBER() OVER (PARTITION BY gv.scrutin_id ORDER BY COUNT(*) DESC) as rn
-    FROM votes gv
-    JOIN scrutins gs ON gs.id = gv.scrutin_id
-    JOIN parlementaires gp ON gp.id = gv.parlementaire_id
-    ${joinMandatEpoque('gv', 'gs', 'gm')}
-    -- le vote du parlementaire étudié sur ce scrutin, et son groupe d'époque
-    JOIN votes mv ON mv.scrutin_id = gv.scrutin_id AND mv.parlementaire_id = '${parlementaireId}'
-    ${joinMandatEpoque('mv', 'gs', 'mm')}
-    WHERE gv.position != 'absent'
-      AND COALESCE(gm.groupe_id, gp.groupe_id) = COALESCE(mm.groupe_id, '${groupeCourantId}')
-    GROUP BY gv.scrutin_id, gv.position
+      scrutin_id,
+      -- une seule position en tête : c'est la majorité. Ex æquo : aucune.
+      CASE WHEN nb_ex_aequo = 1 THEN position END as majority_position,
+      rn
+    FROM (
+      SELECT
+        scrutin_id,
+        position,
+        ROW_NUMBER() OVER (PARTITION BY scrutin_id ORDER BY nb DESC, position ASC) as rn,
+        COUNT(*) FILTER (WHERE nb = nb_max) OVER (PARTITION BY scrutin_id) as nb_ex_aequo
+      FROM (
+        SELECT
+          scrutin_id,
+          position,
+          nb,
+          MAX(nb) OVER (PARTITION BY scrutin_id) as nb_max
+        FROM (
+          SELECT
+            gv.scrutin_id,
+            gv.position,
+            COUNT(*) as nb
+          FROM votes gv
+          JOIN scrutins gs ON gs.id = gv.scrutin_id
+          JOIN parlementaires gp ON gp.id = gv.parlementaire_id
+          ${joinMandatEpoque('gv', 'gs', 'gm')}
+          -- le vote du parlementaire étudié sur ce scrutin, et son groupe d'époque
+          JOIN votes mv ON mv.scrutin_id = gv.scrutin_id AND mv.parlementaire_id = '${parlementaireId}'
+          ${joinMandatEpoque('mv', 'gs', 'mm')}
+          WHERE gv.position != 'absent'
+            ${perimetre}
+            AND COALESCE(gm.groupe_id, gp.groupe_id) = COALESCE(mm.groupe_id, '${groupeCourantId}')
+          GROUP BY gv.scrutin_id, gv.position
+        ) tallies
+      ) avec_max
+    ) classe
   )`;
 }
 

@@ -10,6 +10,7 @@ import * as os from 'os';
 import { createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
 import { logger } from '../../utils/logger';
+import { errorMessage, httpStatus } from '../../utils/errors';
 
 // =============================================================================
 // TYPES
@@ -127,9 +128,9 @@ export class DILAInterventionsClient {
       const allFiles = await fs.promises.readdir(extractDir);
       return allFiles.filter(f => f.endsWith('.xml')).map(f => path.join(extractDir, f));
 
-    } catch (error: any) {
-      logger.error({ error: error.message }, 'Extraction failed');
-      throw new Error(`TAZ extraction failed: ${error.message}`);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Extraction failed');
+      throw new Error(`TAZ extraction failed: ${errorMessage(error)}`);
     }
   }
 
@@ -176,8 +177,8 @@ export class DILAInterventionsClient {
           // Si on a assez de séances, on arrête
           if (allTazFiles.length >= maxSeances) break;
 
-        } catch (error: any) {
-          if (error.response?.status === 404) {
+        } catch (error) {
+          if (httpStatus(error) === 404) {
             logger.warn({ year }, 'No data for year, trying previous year...');
           } else {
             throw error;
@@ -222,8 +223,8 @@ export class DILAInterventionsClient {
           processed++;
           logger.debug({ seance: tazFile, interventions: allInterventions.length }, 'Séance processed');
 
-        } catch (error: any) {
-          logger.warn({ file: tazFile, error: error.message }, 'Error processing séance');
+        } catch (error) {
+          logger.warn({ file: tazFile, error: errorMessage(error) }, 'Error processing séance');
         }
       }
 
@@ -243,7 +244,7 @@ export class DILAInterventionsClient {
           deduplicated.push(intervention);
         } else {
           // Remplacer si le nouveau a un orateurRef et pas l'existant
-          if (!deduplicated[existingIdx].orateurRef && intervention.orateurRef) {
+          if (!deduplicated[existingIdx]?.orateurRef && intervention.orateurRef) {
             deduplicated[existingIdx] = intervention;
           }
         }
@@ -298,9 +299,9 @@ export class DILAInterventionsClient {
 
       // Extraire les métadonnées directement depuis le XML (pas besoin de xml2js)
       const dateMatch = content.match(/<dateSeance>(\d{4}-\d{2}-\d{2})<\/dateSeance>/);
-      const dateSeance = dateMatch ? new Date(dateMatch[1]) : new Date();
+      const dateSeance = dateMatch?.[1] ? new Date(dateMatch[1]) : new Date();
       const parutionMatch = content.match(/<parution>([^<]+)<\/parution>/);
-      const seanceId = parutionMatch ? parutionMatch[1] : path.basename(xmlPath, '.xml');
+      const seanceId = parutionMatch?.[1] ?? path.basename(xmlPath, '.xml');
       const baseUrl = generateSeanceUrl(dateSeance);
 
       // 1. Collecter tous les <Para> avec idsyceron (le contenu du débat)
@@ -312,9 +313,9 @@ export class DILAInterventionsClient {
       while ((match = paraRegex.exec(content)) !== null) {
         if (!match[2]) continue; // Pas d'idsyceron → sommaire, ignorer
         allParagraphs.push({
-          ident: match[1],
+          ident: match[1] ?? '',
           idsyceron: match[2],
-          content: match[3],
+          content: match[3] ?? '',
         });
       }
 
@@ -348,9 +349,9 @@ export class DILAInterventionsClient {
 
         // Extraire les infos de l'orateur
         const hrefMatch = orateurHtml.match(/<Orateur\s+href="([^"]*)"/);
-        const href = hrefMatch ? hrefMatch[1] : '';
+        const href = hrefMatch?.[1] ?? '';
         const nomMatch = orateurHtml.match(/<Nom[^>]*>([^<]*)<\/Nom>/);
-        const nomBrut = nomMatch ? nomMatch[1].trim() : '';
+        const nomBrut = nomMatch?.[1]?.trim() ?? '';
 
         if (!nomBrut) continue;
 
@@ -374,7 +375,7 @@ export class DILAInterventionsClient {
         // 2. Fallback : depuis le <Nom> si il contient un pattern de qualité
         let orateurQualite: string | undefined;
         const qualiteMvtMatch = orateurHtml.match(/<QualiteMouvement>([^<]*)<\/QualiteMouvement>/);
-        if (qualiteMvtMatch) {
+        if (qualiteMvtMatch?.[1]) {
           orateurQualite = qualiteMvtMatch[1].replace(/\.\s*$/, '').trim();
           if (orateurQualite) {
             orateurQualite = orateurQualite.charAt(0).toUpperCase() + orateurQualite.slice(1);
@@ -454,8 +455,8 @@ export class DILAInterventionsClient {
         });
       }
 
-    } catch (error: any) {
-      logger.warn({ file: xmlPath, error: error.message }, 'Error parsing compte rendu');
+    } catch (error) {
+      logger.warn({ file: xmlPath, error: errorMessage(error) }, 'Error parsing compte rendu');
     }
 
     return interventions;
