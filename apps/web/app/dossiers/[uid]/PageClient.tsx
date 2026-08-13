@@ -92,7 +92,6 @@ export interface DossierDetail {
   commissions: Array<{
     slug: string;
     nom: string;
-    nomCourt: string | null;
     chambre: string;
     type: string;
     role: string;
@@ -456,23 +455,30 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
             <Users className="h-4 w-4" />
             Commissions saisies
           </h2>
-          <ul className="flex flex-col gap-2">
+          {/* Deux colonnes dès `lg` : un projet de loi de finances mobilise
+              jusqu'à neuf commissions, et une seule colonne laissait la moitié
+              de la largeur vide sur écran large. */}
+          <ul className="grid gap-x-6 gap-y-3 sm:grid-cols-1 lg:grid-cols-2">
             {dossier.commissions.map((c) => (
-              <li key={`${c.slug}-${c.role}`} className="flex flex-wrap items-center gap-2 text-sm">
+              <li key={`${c.slug}-${c.role}`} className="flex items-start gap-2.5 text-sm">
+                {/* `shrink-0` + `items-start` : sans ça, un nom long repoussait
+                    le badge et la chambre sur leurs propres lignes. */}
                 <span
-                  className={`px-2 py-0.5 rounded text-xs font-medium border ${
+                  className={`shrink-0 mt-0.5 px-2 py-0.5 rounded text-xs font-medium border whitespace-nowrap ${
                     c.role === 'fond'
                       ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-700'
                       : 'bg-muted text-muted-foreground border-border'
                   }`}
                 >
-                  {c.role === 'fond' ? 'Saisie au fond' : 'Saisie pour avis'}
+                  {c.role === 'fond' ? 'Fond' : 'Avis'}
                 </span>
-                <Link href={`/commissions/${c.slug}`} className="hover:underline">
-                  {c.nomCourt || c.nom}
-                </Link>
-                <span className="text-xs text-muted-foreground">
-                  {c.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale'}
+                <span className="min-w-0">
+                  <Link href={`/commissions/${c.slug}`} className="hover:underline">
+                    {c.nom}
+                  </Link>
+                  <span className="block text-xs text-muted-foreground">
+                    {c.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale'}
+                  </span>
                 </span>
               </li>
             ))}

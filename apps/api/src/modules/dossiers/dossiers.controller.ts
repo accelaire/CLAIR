@@ -315,7 +315,10 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
             select: {
               role: true,
               commission: {
-                select: { slug: true, nom: true, nomCourt: true, chambre: true, type: true },
+                // `nomCourt` est volontairement absent : côté Assemblée il
+                // contient le code brut de l'organe (CION_FIN, CION-SOC…), pas
+                // un libellé affichable. Seul `nom` est présentable.
+                select: { slug: true, nom: true, chambre: true, type: true },
               },
             },
             orderBy: [{ commission: { chambre: 'asc' } }],
@@ -498,7 +501,6 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
           .map((dc) => ({
             slug: dc.commission.slug,
             nom: dc.commission.nom,
-            nomCourt: dc.commission.nomCourt,
             chambre: dc.commission.chambre,
             type: dc.commission.type,
             role: dc.role,

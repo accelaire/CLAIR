@@ -133,6 +133,9 @@ export class CommissionsService {
         dateFin: true,
         lieu: true,
         odjResume: true,
+        // `odjResume` est plafonné à 500 caractères à l'ingestion, ce qui coupe
+        // le dernier point en plein mot. `odjComplet` porte les points entiers.
+        odjComplet: true,
         etat: true,
         captationVideo: true,
         urlVideo: true,
