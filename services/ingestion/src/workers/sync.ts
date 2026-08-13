@@ -16,6 +16,7 @@ import { DILAInterventionsClient } from '../sources/dila/interventions-client';
 import { SenatInterventionsClient } from '../sources/senat/interventions-client';
 import { SenatDossiersClient } from '../sources/senat/dossiers-client';
 import { syncSenateursHistoriques } from './senat-histo';
+import { syncSenatBureaux } from './senat-bureaux';
 import { logger } from '../utils/logger';
 import { errorMessage } from '../utils/errors';
 import { asArray, isRecord, readString } from '../utils/json';
@@ -2610,6 +2611,7 @@ export interface SmartSyncOptions {
   includeReunions?: boolean;
   includeSenatReunions?: boolean;
   includeSenatAgenda?: boolean;
+  includeSenatBureaux?: boolean; // Fonctions au bureau des commissions Sénat
   includeSenatVideos?: boolean;
   includeAnVideos?: boolean;
   includeSeancesODJ?: boolean;
@@ -2678,6 +2680,9 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       // 2b. Anciens sénateurs (ODSEN) : après senateurs.json (réconcilie ses mandats
       //     courants), avant les scrutins (les votes historiques ont besoin du roster)
       'senat:senateurs_histo',
+      // 2c. Bureaux des commissions Sénat : requiert les mandats de commission
+      //     créés par 'senat:senateurs' — ce worker ne fait que corriger leur qualité
+      'senat:bureaux',
       // 3. Scrutins et votes
       'assemblee_nationale:scrutins',
       'senat:scrutins',
@@ -2720,6 +2725,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       ...(options.includeSeancesODJ ? ['assemblee_nationale:seances_odj'] : []),
       ...(options.includeSenatReunions ? ['senat:reunions'] : []),
       ...(options.includeSenatAgenda ? ['senat:agenda'] : []),
+      ...(options.includeSenatBureaux ? ['senat:bureaux'] : []),
       ...(options.includeSenatVideos ? ['senat:videos'] : []),
       ...(options.includeAnVideos ? ['assemblee_nationale:videos'] : []),
     ];
@@ -2911,6 +2917,13 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
           case 'senat:agenda': {
             const senatAgendaResult = await syncSenatAgenda();
             syncResult = { created: senatAgendaResult.created, updated: senatAgendaResult.updated };
+            break;
+          }
+
+          case 'senat:bureaux': {
+            const bureauxResult = await syncSenatBureaux();
+            // Ce worker ne crée aucune ligne : il requalifie des mandats existants.
+            syncResult = { created: 0, updated: bureauxResult.updated + bureauxResult.reset };
             break;
           }
 

@@ -132,6 +132,16 @@ export const SOURCES: Record<string, SourceConfig> = {
     dataType: 'agenda',
     url: 'https://www.senat.fr/api/v1/agenda/events',
   },
+  'senat:bureaux': {
+    source: 'senat',
+    dataType: 'bureaux',
+    // Pages HTML « Le bureau de la commission … ». Elles n'exposent ni ETag ni
+    // Last-Modified exploitable, et une recomposition de bureau ne change aucune
+    // URL amont : rien à interroger pour décider. Le coût est marginal
+    // (~17 requêtes), on resynchronise donc systématiquement.
+    url: 'https://www.senat.fr/travaux-parlementaires/commissions.html',
+    alwaysSync: true,
+  },
   'senat:reunions': {
     source: 'senat',
     dataType: 'reunions',

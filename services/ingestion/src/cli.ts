@@ -380,6 +380,7 @@ program
   .option('--re, --reunions', 'Inclure les réunions/agenda parlementaire (AN)')
   .option('--senat-reunions', 'Inclure les réunions Sénat (scraping HTML comptes rendus)')
   .option('--senat-agenda', 'Inclure l\'agenda Sénat (séances publiques à venir via API senat.fr)')
+  .option('--senat-bureaux', 'Inclure les fonctions au bureau des commissions Sénat (scraping senat.fr)')
   .option('--senat-videos', 'Inclure les vidéos Sénat (scraping videos.senat.fr)')
   .option('--an-videos', 'Inclure les vidéos AN (videos.assemblee-nationale.fr)')
   .option('--seances-odj', 'Inclure l\'enrichissement ODJ des séances publiques (CSV AN)')
@@ -402,6 +403,7 @@ program
         includeReunions: options.reunions,
         includeSenatReunions: options.senatReunions,
         includeSenatAgenda: options.senatAgenda,
+        includeSenatBureaux: options.senatBureaux,
         includeSenatVideos: options.senatVideos,
         includeAnVideos: options.anVideos,
         includeSeancesODJ: options.seancesOdj,
