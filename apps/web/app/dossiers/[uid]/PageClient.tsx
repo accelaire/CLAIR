@@ -89,6 +89,14 @@ export interface DossierDetail {
     label: string;
     status: string;
   } | null;
+  commissions: Array<{
+    slug: string;
+    nom: string;
+    nomCourt: string | null;
+    chambre: string;
+    type: string;
+    role: string;
+  }>;
   scrutins: DossierScrutin[];
   amendements: DossierAmendement[];
   scrutinsCount: number;
@@ -440,6 +448,37 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
           )}
         </div>
       </div>
+
+      {/* Commissions saisies — un texte passe souvent devant les deux chambres */}
+      {dossier.commissions.length > 0 && (
+        <div className="rounded-lg border bg-card p-5 mb-8">
+          <h2 className="text-sm font-semibold flex items-center gap-2 mb-3">
+            <Users className="h-4 w-4" />
+            Commissions saisies
+          </h2>
+          <ul className="flex flex-col gap-2">
+            {dossier.commissions.map((c) => (
+              <li key={`${c.slug}-${c.role}`} className="flex flex-wrap items-center gap-2 text-sm">
+                <span
+                  className={`px-2 py-0.5 rounded text-xs font-medium border ${
+                    c.role === 'fond'
+                      ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-700'
+                      : 'bg-muted text-muted-foreground border-border'
+                  }`}
+                >
+                  {c.role === 'fond' ? 'Saisie au fond' : 'Saisie pour avis'}
+                </span>
+                <Link href={`/commissions/${c.slug}`} className="hover:underline">
+                  {c.nomCourt || c.nom}
+                </Link>
+                <span className="text-xs text-muted-foreground">
+                  {c.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* En clair — IA summary */}
       {dossier.resumeIA && (
