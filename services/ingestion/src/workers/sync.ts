@@ -2290,7 +2290,12 @@ export async function syncSenatReunions(options: { maxWeeks?: number } = {}): Pr
           type: 'commission',
           dateDebut: { gte: dayStart, lte: dayEnd },
         },
-        select: { id: true, compteRenduRef: true, participants: { select: { id: true } } },
+        select: {
+          id: true,
+          compteRenduRef: true,
+          odjResume: true,
+          participants: { select: { id: true } },
+        },
       });
 
       let targets = existing;
@@ -2320,7 +2325,12 @@ export async function syncSenatReunions(options: { maxWeeks?: number } = {}): Pr
             commissionId,
           },
           update: { compteRenduRef: ref.url, commissionId },
-          select: { id: true, compteRenduRef: true, participants: { select: { id: true } } },
+          select: {
+            id: true,
+            compteRenduRef: true,
+            odjResume: true,
+            participants: { select: { id: true } },
+          },
         });
         created++;
         targets = [createdRow];
@@ -2337,11 +2347,32 @@ export async function syncSenatReunions(options: { maxWeeks?: number } = {}): Pr
 
       // Les sénateurs cités ne sont récupérés que si la réunion n'en a pas
       // encore : télécharger ~270 comptes rendus à chaque passage serait inutile.
+      // On ne retélécharge un compte rendu que s'il manque quelque chose : sur
+      // ~270 pages à chaque passage, tout refetch systématiquement serait
+      // gratuit en base mais coûteux pour senat.fr.
       const needsParticipants = targets.filter((t) => t.participants.length === 0);
-      if (needsParticipants.length === 0) continue;
+      const needsOdj = targets.filter((t) => !t.odjResume);
+      if (needsParticipants.length === 0 && needsOdj.length === 0) continue;
 
       const content = await client.fetchCompteRendu(ref);
-      if (!content || content.matricules.length === 0) continue;
+      if (!content) continue;
+
+      // Ordre du jour : hors fenêtre de l'agenda, le compte rendu est la seule
+      // source. Sans ça l'onglet Historique n'affiche qu'une date nue, et il
+      // n'y a aucun texte exploitable pour rattacher la réunion à un dossier.
+      if (content.odjItems.length > 0 && needsOdj.length > 0) {
+        {
+          await prisma.reunion.updateMany({
+            where: { id: { in: needsOdj.map((t) => t.id) } },
+            data: {
+              odjResume: content.odjItems.join(' | ').substring(0, 500),
+              odjComplet: content.odjItems.join('\n').substring(0, 5000),
+            },
+          });
+        }
+      }
+
+      if (content.matricules.length === 0) continue;
 
       for (const target of needsParticipants) {
         for (const matricule of content.matricules) {
