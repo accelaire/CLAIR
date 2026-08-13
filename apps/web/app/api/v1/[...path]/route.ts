@@ -56,6 +56,27 @@ const EDGE_STALE_SECONDS = 86_400;
 /** Méthodes sans effet de bord, seules candidates au cache partagé. */
 const SAFE_METHODS = new Set(['GET', 'HEAD']);
 
+/**
+ * Chemins réservés au trafic service-à-service, que ce proxy ne doit jamais
+ * relayer.
+ *
+ * Ce handler pose le secret interne sur TOUT ce qu'il transmet — c'est sa raison
+ * d'être. Un endpoint qui se contente de vérifier ce secret devient donc, sans
+ * cette liste, appelable depuis n'importe quelle page web. L'API refait le
+ * contrôle de son côté (`isStrictlyInternalRequest`) et c'est elle qui fait
+ * autorité ; cette liste évite simplement qu'une requête forgée serve à sonder
+ * un chemin interne depuis clair.vote.
+ *
+ * Le seul appelant légitime de ces chemins est le scheduler d'ingestion, qui
+ * joint l'API par le réseau privé Railway et ne passe donc jamais par ici.
+ *
+ * ⚠️ On ne peut PAS généraliser en refusant simplement le secret sur les
+ * méthodes mutantes : sans lui, l'API ne voit plus `x-clair-client-ip` et compte
+ * tous les visiteurs sur l'IP de cette fonction. Un futur POST navigateur
+ * (connexion) partagerait un seul quota et pourrait faire bannir l'IP Vercel.
+ */
+const INTERNAL_ONLY_PATHS = new Set(['homepage/warm']);
+
 /** En-têtes de réponse à ne jamais relayer tels quels. */
 const STRIPPED_RESPONSE_HEADERS = new Set([
   // `fetch` décompresse déjà le corps : relayer `content-encoding: gzip` sur des
@@ -109,7 +130,25 @@ function clientIp(request: NextRequest): string {
   return forwarded?.split(',')[0]?.trim() || '127.0.0.1';
 }
 
+/**
+ * Normalise avant comparaison : Next décode déjà les segments, on retire les
+ * segments vides (`homepage//warm`) et la casse pour qu'aucune de ces variantes
+ * ne passe à côté de la liste.
+ */
+function isInternalOnly(path: string[]): boolean {
+  return INTERNAL_ONLY_PATHS.has(path.filter(Boolean).join('/').toLowerCase());
+}
+
 async function proxy(request: NextRequest, path: string[]): Promise<Response> {
+  // 404 plutôt que 403 : depuis l'extérieur ce chemin n'existe pas, et une
+  // réponse distincte confirmerait qu'il y a quelque chose à trouver.
+  if (isInternalOnly(path)) {
+    return NextResponse.json(
+      { error: 'Not Found', code: 'NOT_FOUND' },
+      { status: 404, headers: { 'Cache-Control': 'private, no-store' } },
+    );
+  }
+
   const secret = process.env.CLAIR_INTERNAL_SECRET?.trim();
   const target = `${API_URL}/api/v1/${path.join('/')}${request.nextUrl.search}`;
 

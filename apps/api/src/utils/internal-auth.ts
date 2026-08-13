@@ -81,6 +81,29 @@ export function hasInternalSecret(): boolean {
 }
 
 /**
+ * La requête vient-elle d'un service interne parlant à l'API en direct, sans
+ * navigateur au bout de la chaîne ?
+ *
+ * `isInternalRequest()` seul ne suffit PAS à protéger un endpoint : le proxy du
+ * frontend pose le secret sur tout ce qu'il relaie, y compris ce qu'un visiteur
+ * déclenche depuis sa page. Le secret prouve « cette requête a traversé un de
+ * nos serveurs », jamais « un humain n'est à l'origine de cette requête ».
+ *
+ * La différence se lit sur `x-clair-client-ip` : le proxy le pose toujours (il
+ * en a besoin pour le rate-limit), le scheduler d'ingestion jamais. Son absence
+ * est donc la signature du trafic service-à-service.
+ *
+ * ⚠️ C'est CE contrôle, et non `isInternalRequest()`, que doit utiliser tout
+ * endpoint à effet de bord réservé à nos machines. Avec le contrôle laxiste,
+ * `fetch('/api/v1/…', { method: 'POST' })` depuis n'importe quelle page suffit
+ * à l'atteindre — et comme un POST sans `content-type` custom est une « simple
+ * request » CORS, même un site tiers peut le déclencher chez ses visiteurs.
+ */
+export function isStrictlyInternalRequest(request: FastifyRequest): boolean {
+  return isInternalRequest(request) && getForwardedClientIp(request) === null;
+}
+
+/**
  * IP du visiteur relayée par le proxy du frontend, ou `null`.
  *
  * Renvoie `null` si la requête n'est pas authentifiée comme interne : l'en-tête

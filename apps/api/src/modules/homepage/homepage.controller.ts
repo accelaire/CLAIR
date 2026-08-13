@@ -4,7 +4,7 @@
 // =============================================================================
 
 import { FastifyPluginAsync } from 'fastify';
-import { isInternalRequest } from '../../utils/internal-auth';
+import { isStrictlyInternalRequest } from '../../utils/internal-auth';
 
 // Cache 27h — survit au sync (CRON 5h, durée max ~2h) + marge
 // Le cache est renouvelé activement par l'ingestion après chaque sync
@@ -272,10 +272,14 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
       description: 'Appelé par le service d\'ingestion après la synchronisation quotidienne',
     },
     handler: async (request, reply) => {
-      // Protégé par le secret interne partagé entre l'API et le scheduler.
-      // C'est ce même secret qui identifie le frontend (voir utils/internal-auth.ts),
-      // avec une comparaison en temps constant.
-      if (!isInternalRequest(request)) {
+      // Réservé au trafic service-à-service : le secret interne SEUL ne protège
+      // rien ici. Le proxy du frontend le pose sur tout ce qu'il relaie, donc
+      // s'en contenter rendait cet endpoint appelable par n'importe quel
+      // visiteur — un `fetch` en boucle vidait `homepage:data` et forçait la
+      // réagrégation que le TTL de 27 h existe justement pour éviter.
+      // `isStrictlyInternalRequest` exige en plus l'absence de `x-clair-client-ip`,
+      // que le scheduler d'ingestion ne pose pas (services/ingestion/src/cli.ts).
+      if (!isStrictlyInternalRequest(request)) {
         fastify.log.warn(
           { ip: request.ip, ua: request.headers['user-agent'] || 'none' },
           'Cache warm 403',

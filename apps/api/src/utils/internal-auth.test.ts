@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import type { FastifyRequest } from 'fastify';
 import {
   isInternalRequest,
+  isStrictlyInternalRequest,
   hasInternalSecret,
   getForwardedClientIp,
   INTERNAL_HEADER,
@@ -113,6 +114,49 @@ describe('getForwardedClientIp', () => {
     process.env.CLAIR_INTERNAL_SECRET = 'secret-interne';
     const r = req({ [INTERNAL_HEADER]: 'secret-interne', [CLIENT_IP_HEADER]: '   ' });
     expect(getForwardedClientIp(r)).toBeNull();
+  });
+});
+
+describe('isStrictlyInternalRequest', () => {
+  it('accepte le scheduler d\'ingestion : secret seul, sans IP relayée', () => {
+    process.env.CLAIR_INTERNAL_SECRET = 'secret-interne';
+    // Exactement les en-têtes posés par services/ingestion/src/cli.ts.
+    const r = req({ [INTERNAL_HEADER]: 'secret-interne', 'user-agent': 'clair-ingestion/1.0' });
+    expect(isStrictlyInternalRequest(r)).toBe(true);
+  });
+
+  it('refuse le trafic relayé par le proxy, secret valide compris', () => {
+    process.env.CLAIR_INTERNAL_SECRET = 'secret-interne';
+    // Le proxy pose le secret sur tout ce qu'il transmet : c'est le cas qui
+    // rendait POST /homepage/warm déclenchable depuis n'importe quelle page.
+    const r = req({
+      [INTERNAL_HEADER]: 'secret-interne',
+      [CLIENT_IP_HEADER]: '203.0.113.7',
+      'user-agent': 'CLAIR-Web-Proxy/1.0',
+    });
+    expect(isInternalRequest(r)).toBe(true);
+    expect(isStrictlyInternalRequest(r)).toBe(false);
+  });
+
+  it('refuse une requête sans secret, IP relayée forgée ou non', () => {
+    process.env.CLAIR_INTERNAL_SECRET = 'secret-interne';
+    expect(isStrictlyInternalRequest(req({}))).toBe(false);
+    expect(isStrictlyInternalRequest(req({ [CLIENT_IP_HEADER]: '203.0.113.7' }))).toBe(false);
+    expect(isStrictlyInternalRequest(req({ [INTERNAL_HEADER]: 'mauvais' }))).toBe(false);
+  });
+
+  it('refuse quand aucun secret n\'est configuré', () => {
+    expect(isStrictlyInternalRequest(req({ [INTERNAL_HEADER]: 'peu-importe' }))).toBe(false);
+  });
+
+  it('traite une IP relayée vide comme absente, sans ouvrir de contournement', () => {
+    process.env.CLAIR_INTERNAL_SECRET = 'secret-interne';
+    // Le proxy ne peut pas produire ce cas (clientIp() retombe sur 127.0.0.1),
+    // mais un appel direct le pourrait : il reste alors du service-à-service,
+    // authentifié par le secret. Rien de plus permissif qu'une requête sans
+    // l'en-tête du tout.
+    const r = req({ [INTERNAL_HEADER]: 'secret-interne', [CLIENT_IP_HEADER]: '   ' });
+    expect(isStrictlyInternalRequest(r)).toBe(true);
   });
 });
 
