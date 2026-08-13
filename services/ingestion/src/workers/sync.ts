@@ -2211,192 +2211,345 @@ export async function syncSenatVideos(): Promise<{ linked: number }> {
 // SYNC RÉUNIONS SÉNAT (scraping comptes rendus HTML)
 // =============================================================================
 
+/**
+ * Comptes rendus de commission Sénat.
+ *
+ * Ce sync n'est plus la source des réunions — c'est l'agenda (`syncSenatAgenda`)
+ * qui les crée, avec heure, salle et ordre du jour. Il apporte ici trois choses
+ * que l'agenda ne donne pas :
+ *
+ *   - le lien vers le compte rendu intégral ;
+ *   - les sénateurs cités, appariés par matricule ;
+ *   - les réunions antérieures à la fenêtre de l'agenda, qu'il crée au jour
+ *     (sans heure connue) faute d'autre trace.
+ *
+ * Ordre d'exécution : APRÈS `senat:agenda`, pour se rattacher aux réunions
+ * qu'il vient de créer plutôt que d'en créer des doublons.
+ */
 export async function syncSenatReunions(options: { maxWeeks?: number } = {}): Promise<{
   created: number;
   updated: number;
   participantsLinked: number;
-  weeksFetched: number;
-  pagesParsed: number;
-  pagesErrored: number;
+  comptesRendusFound: number;
+  indexesErrored: number;
+  legacyMigrated: number;
+  legacyMerged: number;
 }> {
   const { SenatReunionsClient } = await import('../sources/senat/reunions-client.js');
 
-  logger.info({ maxWeeks: options.maxWeeks }, 'Starting Sénat reunions sync (HTML scraping)...');
+  logger.info('Starting Sénat comptes rendus sync...');
+
+  const legacy = await reconcileSenatCommissionReunions();
 
   const client = new SenatReunionsClient();
-  const { reunions, weeksFetched, pagesParsed, pagesErrored } = await client.getAllReunions({
-    maxWeeks: options.maxWeeks,
-  });
+  const { refs, indexesErrored } = await client.discoverComptesRendus();
 
-  logger.info({ count: reunions.length, weeksFetched }, 'Sénat reunions fetched — starting DB upsert...');
+  // `maxWeeks` reste accepté pour compatibilité d'appel : on le convertit en
+  // borne de date plutôt qu'en nombre de pages à deviner.
+  const cutoff = options.maxWeeks
+    ? new Date(Date.now() - options.maxWeeks * 7 * 86_400_000).toISOString().slice(0, 10)
+    : null;
+  const selected = cutoff ? refs.filter((r) => r.date >= cutoff) : refs;
 
-  // Load commissions by slug for organeReuniRef → commissionId mapping
+  logger.info(
+    { comptesRendus: refs.length, selected: selected.length, cutoff },
+    'Comptes rendus discovered — starting DB sync...'
+  );
+
   const commissions = await prisma.commission.findMany({
     where: { chambre: 'senat' },
-    select: { id: true, slug: true },
+    select: { id: true, organeRef: true },
   });
-  const commissionBySlug = new Map(commissions.map((c) => [c.slug, c.id]));
+  const commissionByOrganeRef = new Map(
+    commissions.filter((c) => c.organeRef).map((c) => [c.organeRef!, c.id])
+  );
 
-  // Load sénat parlementaires for fuzzy name matching
-  // Indexing by normalized "NOM Prénom" to allow fast lookups
   const senateurs = await prisma.parlementaire.findMany({
-    where: { chambre: 'senat' },
-    select: { id: true, nom: true, prenom: true },
+    where: { chambre: 'senat', sourceId: { not: null } },
+    select: { id: true, sourceId: true },
   });
-
-  /**
-   * Normalize a name for fuzzy matching:
-   * - Lowercase, remove diacritics, remove hyphens, collapse spaces
-   */
-  function normalizeName(s: string): string {
-    return s
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[-']/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  // Build lookup: normalized "nom prenom" → id
-  const senByNomPrenom = new Map<string, string>();
-  // Also: normalized "nom" → id (for last-name-only matches)
-  const senByNom = new Map<string, string[]>();
+  const idByMatricule = new Map<string, string>();
   for (const s of senateurs) {
-    const key = normalizeName(`${s.nom} ${s.prenom}`);
-    senByNomPrenom.set(key, s.id);
-    const nomKey = normalizeName(s.nom);
-    if (!senByNom.has(nomKey)) senByNom.set(nomKey, []);
-    senByNom.get(nomKey)!.push(s.id);
-  }
-
-  /**
-   * Match a raw name extracted from HTML to a sénat parlementaire ID.
-   * Returns null if no match with sufficient confidence.
-   */
-  function matchSenateur(rawName: string): string | null {
-    // Remove civility prefixes and abbreviations
-    const cleaned = rawName
-      .replace(/^M(?:me|M)?\.?\s*/i, '')
-      .replace(/^M\.\s*/i, '')
-      .trim();
-
-    const normalized = normalizeName(cleaned);
-
-    // 1. Exact nom + prénom match
-    const exactMatch = senByNomPrenom.get(normalized);
-    if (exactMatch) return exactMatch;
-
-    // 2. Try "NOM Prénom" or "Prénom NOM" permutations
-    const parts = normalized.split(' ').filter((p) => p.length > 1);
-
-    // Try each part as the surname
-    for (const part of parts) {
-      const ids = senByNom.get(part);
-      if (ids && ids.length === 1) return ids[0]!;
-    }
-
-    // 3. Partial match: check if normalized name contains a known full key
-    for (const [key, id] of senByNomPrenom) {
-      if (normalized.includes(key) || key.includes(normalized)) {
-        return id;
-      }
-    }
-
-    return null;
+    if (s.sourceId) idByMatricule.set(s.sourceId.toUpperCase(), s.id);
   }
 
   let created = 0;
   let updated = 0;
   let participantsLinked = 0;
 
-  for (const r of reunions) {
+  for (const ref of selected) {
     try {
-      const commissionId = commissionBySlug.get(r.organeReuniRef || '') || null;
+      const dayStart = new Date(`${ref.date}T00:00:00.000Z`);
+      const dayEnd = new Date(`${ref.date}T23:59:59.999Z`);
 
-      const reunionData = {
-        uid: r.uid,
-        type: r.type,
-        dateDebut: r.dateDebut,
-        dateFin: r.dateFin,
-        lieu: r.lieu,
-        etat: r.etat,
-        odjResume: r.odjResume,
-        odjComplet: r.odjComplet,
-        captationVideo: r.captationVideo,
-        ouvertePresse: r.ouvertePresse,
-        compteRenduRef: r.compteRenduRef,
-        organeRef: r.organeReuniRef || null,
-        commissionId,
-      };
+      // Les réunions déjà posées par l'agenda pour cette commission ce jour-là.
+      const existing = await prisma.reunion.findMany({
+        where: {
+          organeRef: ref.organeRef,
+          type: 'commission',
+          dateDebut: { gte: dayStart, lte: dayEnd },
+        },
+        select: { id: true, compteRenduRef: true, participants: { select: { id: true } } },
+      });
 
-      const existing = await prisma.reunion.findUnique({ where: { uid: r.uid } });
+      let targets = existing;
 
-      let reunionId: string;
-      if (existing) {
-        await prisma.reunion.update({ where: { id: existing.id }, data: reunionData });
-        reunionId = existing.id;
-        updated++;
-      } else {
-        const created_ = await prisma.reunion.create({ data: reunionData });
-        reunionId = created_.id;
+      if (targets.length === 0) {
+        // Hors fenêtre de l'agenda : le compte rendu est la seule trace. On crée
+        // une réunion au jour, sans heure (midi UTC pour éviter qu'un décalage
+        // de fuseau la fasse basculer la veille à l'affichage).
+        const uid = `SENAT_CR_${ref.organeRef}_${ref.date.replace(/-/g, '')}`;
+        const commissionId = commissionByOrganeRef.get(ref.organeRef) || null;
+
+        const createdRow = await prisma.reunion.upsert({
+          where: { uid },
+          create: {
+            uid,
+            type: 'commission',
+            dateDebut: new Date(`${ref.date}T12:00:00.000Z`),
+            dateFin: null,
+            lieu: 'Sénat',
+            etat: 'confirme',
+            odjResume: null,
+            odjComplet: null,
+            captationVideo: false,
+            ouvertePresse: false,
+            compteRenduRef: ref.url,
+            organeRef: ref.organeRef,
+            commissionId,
+          },
+          update: { compteRenduRef: ref.url, commissionId },
+          select: { id: true, compteRenduRef: true, participants: { select: { id: true } } },
+        });
         created++;
+        targets = [createdRow];
+      } else {
+        const toUpdate = targets.filter((t) => t.compteRenduRef !== ref.url);
+        if (toUpdate.length > 0) {
+          await prisma.reunion.updateMany({
+            where: { id: { in: toUpdate.map((t) => t.id) } },
+            data: { compteRenduRef: ref.url },
+          });
+          updated += toUpdate.length;
+        }
       }
 
-      // Match participants — only for new reunions (compte-rendu passé = données finales)
-      if (!existing && r.participantNames.length > 0) {
-        const participantNames = r.participantNames;
-        const seen = new Set<string>();
-        const records: Array<{ reunionId: string; parlementaireId: string; presence: string }> = [];
+      // Les sénateurs cités ne sont récupérés que si la réunion n'en a pas
+      // encore : télécharger ~270 comptes rendus à chaque passage serait inutile.
+      const needsParticipants = targets.filter((t) => t.participants.length === 0);
+      if (needsParticipants.length === 0) continue;
 
-        for (const name of participantNames) {
-          const parlementaireId = matchSenateur(name);
-          if (!parlementaireId || seen.has(parlementaireId)) continue;
-          seen.add(parlementaireId);
-          records.push({ reunionId, parlementaireId, presence: 'present' });
-        }
+      const content = await client.fetchCompteRendu(ref);
+      if (!content || content.matricules.length === 0) continue;
 
-        if (records.length > 0) {
-          await prisma.reunionParticipant.createMany({ data: records, skipDuplicates: true });
-          participantsLinked += records.length;
+      for (const target of needsParticipants) {
+        for (const matricule of content.matricules) {
+          const parlementaireId = idByMatricule.get(matricule);
+          if (!parlementaireId) continue;
+
+          await prisma.reunionParticipant.upsert({
+            where: {
+              reunionId_parlementaireId: { reunionId: target.id, parlementaireId },
+            },
+            create: { reunionId: target.id, parlementaireId, presence: 'present' },
+            update: {},
+          });
+          participantsLinked++;
         }
       }
     } catch (err) {
-      logger.warn({ uid: r.uid, error: errorMessage(err) }, 'Error syncing Sénat reunion');
+      logger.warn({ url: ref.url, error: errorMessage(err) }, 'Error syncing compte rendu');
     }
   }
 
-  logger.info(
-    { created, updated, participantsLinked, weeksFetched, pagesParsed, pagesErrored },
-    'Sénat reunions sync completed'
+  const result = {
+    created,
+    updated,
+    participantsLinked,
+    comptesRendusFound: refs.length,
+    indexesErrored,
+    legacyMigrated: legacy.migrated,
+    legacyMerged: legacy.merged,
+  };
+  logger.info(result, 'Sénat comptes rendus sync completed');
+  return result;
+}
+
+/**
+ * Réconcilie les réunions de commission Sénat issues des différentes sources.
+ *
+ * Deux catégories de lignes doivent céder la place à une réunion d'agenda quand
+ * il en existe une le même jour pour la même commission — l'agenda est toujours
+ * plus précis (heure, salle, ordre du jour détaillé) :
+ *
+ *   1. `SENAT_<date>_<slug>` — l'ancien scraping. Ces lignes portent un
+ *      `organe_ref` au format des slugs de commission d'alors (`senat-com-lois`),
+ *      qui ne correspond plus à rien depuis leur renommage : 141 des 144
+ *      réunions en production sont orphelines de commission.
+ *
+ *   2. `SENAT_CR_<organeRef>_<date>` — les réunions au jour créées par le sync
+ *      des comptes rendus hors fenêtre de l'agenda. La fenêtre glisse, et rien
+ *      n'interdit qu'elle finisse par couvrir une date déjà pourvue.
+ *
+ * Dans les deux cas on transfère compte rendu et participants vers la réunion
+ * d'agenda avant de supprimer le doublon. Sans jumelle, la ligne est conservée
+ * (elle est alors la seule trace de la réunion) et son `organe_ref` corrigé.
+ *
+ * Idempotent, et sort immédiatement quand il n'y a rien à réconcilier.
+ */
+async function reconcileSenatCommissionReunions(): Promise<{ migrated: number; merged: number }> {
+  const candidates = await prisma.reunion.findMany({
+    where: {
+      type: 'commission',
+      OR: [{ organeRef: { startsWith: 'senat-' } }, { uid: { startsWith: 'SENAT_CR_' } }],
+    },
+    select: {
+      id: true,
+      uid: true,
+      organeRef: true,
+      dateDebut: true,
+      compteRenduRef: true,
+      participants: { select: { parlementaireId: true } },
+    },
+  });
+
+  if (candidates.length === 0) return { migrated: 0, merged: 0 };
+
+  const commissions = await prisma.commission.findMany({
+    where: { chambre: 'senat' },
+    select: { id: true, organeRef: true },
+  });
+  const commissionByOrganeRef = new Map(
+    commissions.filter((c) => c.organeRef).map((c) => [c.organeRef!, c.id])
   );
 
-  return { created, updated, participantsLinked, weeksFetched, pagesParsed, pagesErrored };
+  let migrated = 0;
+  let merged = 0;
+
+  for (const row of candidates) {
+    try {
+      // `senat-com-lois` → `COM-LOIS`, `senat-comeur-afeu` → `COMEUR-AFEU`.
+      // Les `SENAT_CR_*` portent déjà le bon code : le remplacement est neutre.
+      const organeRef = row.organeRef!.replace(/^senat-/, '').toUpperCase();
+      const commissionId = commissionByOrganeRef.get(organeRef) || null;
+
+      const day = row.dateDebut.toISOString().slice(0, 10);
+      const twin = await prisma.reunion.findFirst({
+        where: {
+          organeRef,
+          type: 'commission',
+          uid: { startsWith: 'SENAT_AGENDA_' },
+          dateDebut: {
+            gte: new Date(`${day}T00:00:00.000Z`),
+            lte: new Date(`${day}T23:59:59.999Z`),
+          },
+          id: { not: row.id },
+        },
+        // La plus matinale, pour rattacher le compte rendu à l'ouverture.
+        orderBy: { dateDebut: 'asc' },
+        select: { id: true, compteRenduRef: true },
+      });
+
+      if (!twin) {
+        if (row.organeRef !== organeRef || !commissionId) {
+          await prisma.reunion.update({
+            where: { id: row.id },
+            data: { organeRef, commissionId },
+          });
+          migrated++;
+        }
+        continue;
+      }
+
+      for (const p of row.participants) {
+        await prisma.reunionParticipant.upsert({
+          where: {
+            reunionId_parlementaireId: {
+              reunionId: twin.id,
+              parlementaireId: p.parlementaireId,
+            },
+          },
+          create: { reunionId: twin.id, parlementaireId: p.parlementaireId, presence: 'present' },
+          update: {},
+        });
+      }
+
+      if (!twin.compteRenduRef && row.compteRenduRef) {
+        await prisma.reunion.update({
+          where: { id: twin.id },
+          data: { compteRenduRef: row.compteRenduRef },
+        });
+      }
+
+      // Les participants du doublon partent en cascade avec lui.
+      await prisma.reunion.delete({ where: { id: row.id } });
+      merged++;
+    } catch (err) {
+      logger.warn({ uid: row.uid, error: errorMessage(err) }, 'Failed to reconcile reunion');
+    }
+  }
+
+  if (migrated > 0 || merged > 0) {
+    logger.info({ migrated, merged }, 'Sénat commission reunions reconciled');
+  }
+  return { migrated, merged };
 }
 
 // =============================================================================
 // SYNC AGENDA SÉNAT (séances publiques à venir via API senat.fr)
 // =============================================================================
 
-export async function syncSenatAgenda(): Promise<{ created: number; updated: number }> {
+/**
+ * Agenda Sénat : séances publiques ET réunions de commission.
+ *
+ * L'API ne couvre qu'une fenêtre glissante correspondant en gros à la session
+ * en cours (constaté : rien avant fin décembre 2025 depuis août 2026, et rien
+ * au-delà de l'agenda publié). Elle est donc la source des réunions
+ * RÉCENTES et À VENIR ; l'historique plus ancien reste du ressort des comptes
+ * rendus (`syncSenatReunions`), qui sont rétrospectifs mais remontent loin.
+ *
+ * Une seule passe réseau alimente les deux types.
+ */
+export async function syncSenatAgenda(
+  options: { daysBack?: number; daysAhead?: number } = {}
+): Promise<{ created: number; updated: number; reunionsCreated: number; reunionsUpdated: number }> {
   const { SenatAgendaClient } = await import('../sources/senat/agenda-client.js');
 
-  logger.info('Starting Sénat agenda sync (upcoming public sessions)...');
+  // La fenêtre déborde sur le passé : un ordre du jour est fréquemment amendé
+  // après la réunion, et les comptes rendus arrivent avec quelques jours de retard.
+  const daysBack = options.daysBack ?? 45;
+  const daysAhead = options.daysAhead ?? 30;
+
+  logger.info({ daysBack, daysAhead }, 'Starting Sénat agenda sync (séances + commissions)...');
 
   const client = new SenatAgendaClient();
-  const seances = await client.getUpcomingSeances(4);
+  const { seances, reunions } = await client.getAgenda(daysBack, daysAhead);
 
-  logger.info({ count: seances.length }, 'Sénat agenda fetched — starting DB upsert...');
+  logger.info(
+    { seances: seances.length, reunions: reunions.length },
+    'Sénat agenda fetched — starting DB upsert...'
+  );
 
-  const commission = await prisma.commission.findFirst({
+  const hemicycle = await prisma.commission.findFirst({
     where: { slug: 'senat-senat-5eme-republique' },
     select: { id: true },
   });
-  const commissionId = commission?.id || null;
+  const hemicycleId = hemicycle?.id || null;
 
-  if (!commissionId) {
+  if (!hemicycleId) {
     logger.warn('Commission "senat-senat-5eme-republique" not found — séances will have no commission link');
   }
+
+  // Les réunions de commission se résolvent sur `organe_ref` (COM-FINC…), qui
+  // est stable, et surtout pas sur le slug : les slugs des commissions Sénat
+  // ont déjà été renommés une fois, ce qui avait orphelin 141 réunions.
+  const commissions = await prisma.commission.findMany({
+    where: { chambre: 'senat' },
+    select: { id: true, organeRef: true },
+  });
+  const commissionByOrganeRef = new Map(
+    commissions.filter((c) => c.organeRef).map((c) => [c.organeRef!, c.id])
+  );
 
   let created = 0;
   let updated = 0;
@@ -2414,9 +2567,8 @@ export async function syncSenatAgenda(): Promise<{ created: number; updated: num
         odjComplet: s.odjItems.join('\n') || null,
         captationVideo: true,
         ouvertePresse: false,
-        compteRenduRef: null,
         organeRef: 'PO78718',
-        commissionId,
+        commissionId: hemicycleId,
       };
 
       const existing = await prisma.reunion.findUnique({ where: { uid: s.uid } });
@@ -2425,7 +2577,7 @@ export async function syncSenatAgenda(): Promise<{ created: number; updated: num
         await prisma.reunion.update({ where: { id: existing.id }, data: reunionData });
         updated++;
       } else {
-        await prisma.reunion.create({ data: reunionData });
+        await prisma.reunion.create({ data: { ...reunionData, compteRenduRef: null } });
         created++;
       }
     } catch (err) {
@@ -2433,8 +2585,53 @@ export async function syncSenatAgenda(): Promise<{ created: number; updated: num
     }
   }
 
-  logger.info({ created, updated, total: seances.length }, 'Sénat agenda sync completed');
-  return { created, updated };
+  let reunionsCreated = 0;
+  let reunionsUpdated = 0;
+
+  for (const r of reunions) {
+    try {
+      const commissionId = commissionByOrganeRef.get(r.organeRef) || null;
+      if (!commissionId) {
+        logger.warn({ organeRef: r.organeRef, uid: r.uid }, 'No commission for organeRef — reunion left unlinked');
+      }
+
+      // `compteRenduRef` est volontairement absent de l'update : il est posé par
+      // `syncSenatReunions` à partir des comptes rendus, l'agenda ne le connaît
+      // pas et l'écraserait à null à chaque passage.
+      const reunionData = {
+        uid: r.uid,
+        type: 'commission' as const,
+        dateDebut: r.dateDebut,
+        dateFin: null,
+        lieu: r.lieu,
+        etat: r.etat,
+        odjResume: r.odjResume,
+        odjComplet: r.odjItems.join('\n') || null,
+        captationVideo: false,
+        ouvertePresse: false,
+        organeRef: r.organeRef,
+        commissionId,
+      };
+
+      const existing = await prisma.reunion.findUnique({ where: { uid: r.uid } });
+
+      if (existing) {
+        await prisma.reunion.update({ where: { id: existing.id }, data: reunionData });
+        reunionsUpdated++;
+      } else {
+        await prisma.reunion.create({ data: { ...reunionData, compteRenduRef: null } });
+        reunionsCreated++;
+      }
+    } catch (err) {
+      logger.warn({ uid: r.uid, error: errorMessage(err) }, 'Error syncing Sénat commission reunion');
+    }
+  }
+
+  logger.info(
+    { created, updated, reunionsCreated, reunionsUpdated },
+    'Sénat agenda sync completed'
+  );
+  return { created, updated, reunionsCreated, reunionsUpdated };
 }
 
 // =============================================================================
@@ -2701,10 +2898,12 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       'assemblee_nationale:reunions',
       // 9. Séances publiques ODJ (enrichissement CSV — doit venir après reunions)
       'assemblee_nationale:seances_odj',
-      // 10. Réunions Sénat (scraping HTML comptes rendus — nécessite commissions Sénat)
-      'senat:reunions',
-      // 11. Agenda Sénat (séances publiques à venir via API senat.fr)
+      // 10. Agenda Sénat : crée les séances publiques ET les réunions de
+      //     commission (API senat.fr). Doit précéder les comptes rendus.
       'senat:agenda',
+      // 11. Comptes rendus Sénat : rattache compte rendu et sénateurs cités aux
+      //     réunions ci-dessus, et complète l'historique hors fenêtre de l'agenda
+      'senat:reunions',
       // 12. Vidéos Sénat (scraping videos.senat.fr — lie les replays aux séances)
       'senat:videos',
       // 12. Vidéos AN (videos.assemblee-nationale.fr — séances + commissions)
@@ -2723,8 +2922,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       ...(options.includeLobbying ? ['hatvp:lobbyistes'] : []),
       ...(options.includeReunions ? ['assemblee_nationale:reunions'] : []),
       ...(options.includeSeancesODJ ? ['assemblee_nationale:seances_odj'] : []),
-      ...(options.includeSenatReunions ? ['senat:reunions'] : []),
       ...(options.includeSenatAgenda ? ['senat:agenda'] : []),
+      ...(options.includeSenatReunions ? ['senat:reunions'] : []),
       ...(options.includeSenatBureaux ? ['senat:bureaux'] : []),
       ...(options.includeSenatVideos ? ['senat:videos'] : []),
       ...(options.includeAnVideos ? ['assemblee_nationale:videos'] : []),
@@ -2915,8 +3114,11 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
           }
 
           case 'senat:agenda': {
-            const senatAgendaResult = await syncSenatAgenda();
-            syncResult = { created: senatAgendaResult.created, updated: senatAgendaResult.updated };
+            const a = await syncSenatAgenda();
+            syncResult = {
+              created: a.created + a.reunionsCreated,
+              updated: a.updated + a.reunionsUpdated,
+            };
             break;
           }
 

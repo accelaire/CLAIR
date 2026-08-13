@@ -145,11 +145,12 @@ export const SOURCES: Record<string, SourceConfig> = {
   'senat:reunions': {
     source: 'senat',
     dataType: 'reunions',
-    // Le Sénat bloque le listing de ce répertoire (403 systématique, y compris
-    // depuis un navigateur) : c'est pour ça que le client génère les dates de
-    // lundi au lieu de scraper un index. Aucune URL en amont n'expose d'ETag ni
-    // de Last-Modified pour les comptes rendus de commission, donc pas de check.
-    url: 'https://www.senat.fr/compte-rendu-commissions/',
+    // Le listing du répertoire est bloqué (403 systématique), mais chaque
+    // commission publie une page d'index de ses comptes rendus : c'est de là que
+    // partent les URLs réelles, dont le slug hebdomadaire varie (etra/etrang/etran).
+    // Aucun de ces index n'expose d'ETag ni de Last-Modified exploitable, donc
+    // pas de check de fraîcheur possible.
+    url: 'https://www.senat.fr/compte-rendu-commissions/lois.html',
     alwaysSync: true,
   },
   'senat:videos': {

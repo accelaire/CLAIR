@@ -1,30 +1,37 @@
 // =============================================================================
-// Client Sénat - Scraping des comptes rendus de commissions
+// Client Sénat - Comptes rendus de commission
 // Source: https://www.senat.fr/compte-rendu-commissions/
 // =============================================================================
 //
-// Le Sénat ne publie aucun dataset structuré (JSON/XML/ICS) pour les réunions
-// de commissions. La seule source disponible est le scraping des comptes rendus
-// HTML hebdomadaires.
+// RÔLE. Ce client ne construit plus les réunions : elles viennent de l'API
+// agenda (`agenda-client.ts`), qui donne l'heure, la salle et l'ordre du jour,
+// pour le passé comme pour le futur. Mais l'agenda ne couvre qu'une fenêtre
+// correspondant en gros à la session en cours. Ce client apporte donc :
 //
-// Structure URL:
-//   https://www.senat.fr/compte-rendu-commissions/{YYYYMMDD}/{commission}.html
+//   1. le lien vers le compte rendu intégral (`compteRenduRef`) ;
+//   2. les sénateurs cités au compte rendu ;
+//   3. les réunions ANTÉRIEURES à la fenêtre de l'agenda, seule trace
+//      disponible pour les sessions passées.
 //
-// Où {YYYYMMDD} est le lundi de la semaine, et {commission} est le slug
-// court (ex: finances, lois, social, affeco, culture, etrangeres,
-// developpement-durable, europe).
+// POURQUOI ON NE DEVINE PLUS LES URLS. L'ancienne version générait
+// `/{YYYYMMDD}/{slug}.html` pour 104 semaines × 8 slugs codés en dur. Or le
+// slug d'URL du Sénat CHANGE d'une semaine à l'autre pour une même commission :
 //
-// Le site bloque le listing des répertoires (403 Accès restreint) — les dates
-// sont donc générées de façon déterministe à partir de la date du jour.
+//   /compte-rendu-commissions/20251006/etra.html
+//   /compte-rendu-commissions/20251020/etrang.html
+//   /compte-rendu-commissions/20260202/etran.html
+//
+// Six slugs sur huit renvoyaient donc 404 en permanence, et seules deux
+// commissions sur huit remontaient. Chaque commission publie en réalité une
+// page d'index qui liste ses comptes rendus avec leurs vraies URLs : on part
+// de là. On passe de 832 requêtes à l'aveugle à 8 index puis ~270 liens
+// certains.
 // =============================================================================
 
 import axios, { AxiosInstance } from 'axios';
 import * as cheerio from 'cheerio';
-// cheerio 1.x ne réexporte plus `Element` : les types viennent de domhandler.
-import type { AnyNode, Element } from 'domhandler';
 import { logger } from '../../utils/logger';
 import { errorMessage, httpStatus } from '../../utils/errors';
-import { TransformedReunion } from '../assemblee-nationale/reunions-client';
 
 // =============================================================================
 // CONFIG
@@ -33,99 +40,96 @@ import { TransformedReunion } from '../assemblee-nationale/reunions-client';
 const BASE_URL = 'https://www.senat.fr/compte-rendu-commissions';
 
 /**
- * Mapping slug HTML court → slug DB commission Sénat.
- * Vérifié en DB locale via:
- *   SELECT slug, nom FROM commissions WHERE chambre='senat' AND type='permanente';
+ * Page d'index des comptes rendus → `commissions.organe_ref`.
+ *
+ * Ces slugs-là sont les URLs « propres » et stables du site, à ne pas confondre
+ * avec les slugs hebdomadaires (`etra`/`etrang`/`etran`) qui, eux, varient.
+ * Relevés depuis les liens « Comptes rendus » des pages de commission.
  */
-const SENAT_SLUG_TO_DB_SLUG: Record<string, string> = {
-  'finances': 'senat-com-finc',
-  'social': 'senat-com-soci',
-  'lois': 'senat-com-lois',
-  'affeco': 'senat-com-cae',
-  'culture': 'senat-com-afcl',
-  'etrangeres': 'senat-com-etrd',
-  'developpement-durable': 'senat-com-cdd',
-  'europe': 'senat-comeur-afeu',
+const CR_INDEX_TO_ORGANE_REF: Record<string, string> = {
+  finances: 'COM-FINC',
+  'affaires-sociales': 'COM-SOCI',
+  lois: 'COM-LOIS',
+  economie: 'COM-CAE',
+  culture: 'COM-AFCL',
+  'affaires-etrangeres': 'COM-ETRD',
+  'developpement-durable': 'COM-CDD',
+  'affaires-europeennes': 'COMEUR-AFEU',
 };
 
-/** Tous les slugs de fichiers HTML à tester pour chaque semaine */
-const COMMISSION_SLUGS = Object.keys(SENAT_SLUG_TO_DB_SLUG);
-
-/** Nombre max de semaines en arrière (2 ans = 104 semaines) */
-const MAX_WEEKS_DEFAULT = 104;
-
-/** Délai entre requêtes (en ms) — respectueux du serveur */
-const REQUEST_DELAY_MS = 500;
+const REQUEST_DELAY_MS = 400;
 
 // =============================================================================
-// HELPERS
+// TYPES
 // =============================================================================
 
-/** Pause asynchrone */
+export interface CompteRenduRef {
+  /** Code organisme Sénat (= `commissions.organe_ref`). */
+  organeRef: string;
+  /** Date de la réunion, `YYYY-MM-DD`. */
+  date: string;
+  /** URL absolue du compte rendu. */
+  url: string;
+}
+
+export interface CompteRenduContent extends CompteRenduRef {
+  /** Matricules des sénateurs cités (= `parlementaires.source_id`). */
+  matricules: string[];
+  /** Intitulés des points abordés, si la page en expose. */
+  odjItems: string[];
+}
+
+// =============================================================================
+// HELPERS EXPORTÉS (testables)
+// =============================================================================
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
- * Parse une date française en Date.
- * Supporte: "Mardi 18 mars 2025", "Mercredi 19 mars 2025", etc.
+ * Extrait les liens de comptes rendus d'une page d'index.
+ * Format attendu : `/compte-rendu-commissions/YYYYMMDD/<slug>.html`.
  */
-function parseFrenchDate(text: string): Date | null {
-  const MONTHS: Record<string, number> = {
-    janvier: 0, février: 1, mars: 2, avril: 3, mai: 4, juin: 5,
-    juillet: 6, août: 7, septembre: 8, octobre: 9, novembre: 10, décembre: 11,
-    fevrier: 1, aout: 7,
-  };
+export function extractCompteRenduLinks(html: string, organeRef: string): CompteRenduRef[] {
+  const re = /\/compte-rendu-commissions\/(\d{8})\/([a-z0-9_-]+)\.html/g;
+  const seen = new Set<string>();
+  const out: CompteRenduRef[] = [];
 
-  // Pattern: "Mardi 18 mars 2025" ou "18 mars 2025"
-  const match = text.match(/(\d{1,2})\s+([a-zéûèà]+)\s+(\d{4})/i);
-  if (!match) return null;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const yyyymmdd = m[1]!;
+    const url = `https://www.senat.fr${m[0]}`;
+    if (seen.has(url)) continue;
+    seen.add(url);
 
-  const day = parseInt(match[1]!, 10);
-  const monthStr = match[2]!.toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-  const year = parseInt(match[3]!, 10);
-  const month = MONTHS[monthStr];
+    const date = `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`;
+    out.push({ organeRef, date, url });
+  }
 
-  if (month === undefined || isNaN(day) || isNaN(year)) return null;
-
-  const d = new Date(Date.UTC(year, month, day, 9, 0, 0)); // 9h par défaut
-  return isNaN(d.getTime()) ? null : d;
+  return out;
 }
 
 /**
- * Génère la liste des lundis sur les N dernières semaines.
- * Retourne un tableau de dates au format YYYYMMDD.
+ * Matricules des sénateurs cités dans un compte rendu.
+ *
+ * Les comptes rendus lient les sénateurs par URL, laquelle porte le matricule
+ * (`/senateur/perrin_cedric14193x.html` → `14193X`). On apparie donc sur cet
+ * identifiant, jamais sur les noms : l'ancien rapprochement flou testait
+ * `nom.includes(...)`, ce qui attribue à un homonyme court tout ce qui contient
+ * son nom.
+ *
+ * Ce sont les sénateurs CITÉS au compte rendu (intervenants, rapporteurs), pas
+ * une feuille de présence : le Sénat ne publie pas la présence en commission.
  */
-function generateWeekDates(maxWeeks: number): string[] {
-  const today = new Date();
-  const dayOfWeek = today.getDay(); // 0=Dimanche, 1=Lundi, ...
-  // Décaler vers le lundi précédent (ou courant)
-  const daysSinceMonday = (dayOfWeek + 6) % 7; // 0 si lundi, 6 si dimanche
-  const lastMonday = new Date(today);
-  lastMonday.setDate(today.getDate() - daysSinceMonday);
-
-  const weeks: string[] = [];
-  for (let i = 0; i < maxWeeks; i++) {
-    const weekDate = new Date(lastMonday);
-    weekDate.setDate(lastMonday.getDate() - i * 7);
-    const yyyy = weekDate.getUTCFullYear().toString();
-    const mm = String(weekDate.getUTCMonth() + 1).padStart(2, '0');
-    const dd = String(weekDate.getUTCDate()).padStart(2, '0');
-    weeks.push(`${yyyy}${mm}${dd}`);
+export function extractMatriculesFromCompteRendu(html: string): string[] {
+  const re = /\/senateur\/[a-z0-9_'-]*?(\d{5}[a-z])\.html/g;
+  const out = new Set<string>();
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    out.add(m[1]!.toUpperCase());
   }
-  return weeks;
-}
-
-// =============================================================================
-// TYPES EXPORTÉS
-// =============================================================================
-
-export interface ParsedReunion extends TransformedReunion {
-  commissionSlugCourt: string; // ex: "lois", "finances"
-  compteRenduUrl: string;      // URL source du CR
-  participantNames: string[];  // Noms bruts extraits (à matcher ensuite)
+  return [...out];
 }
 
 // =============================================================================
@@ -140,272 +144,83 @@ export class SenatReunionsClient {
       timeout: 30_000,
       headers: {
         'User-Agent': 'CLAIR-bot (transparence-politique, contact@clair.vote)',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'fr,fr-FR;q=0.8,en-US;q=0.5,en;q=0.3',
       },
     });
     logger.info('SenatReunionsClient initialized');
   }
 
-  /**
-   * Retourne les YYYYMMDD des 104 dernières semaines (lundi).
-   * Note: Le Sénat bloque le listing des répertoires — on génère les dates.
-   */
-  async getWeekIndices(maxWeeks: number = MAX_WEEKS_DEFAULT): Promise<string[]> {
-    const weeks = generateWeekDates(Math.min(maxWeeks, MAX_WEEKS_DEFAULT));
-    logger.info({ count: weeks.length }, 'Generated week dates for Sénat scraping');
-    return weeks;
-  }
-
-  /**
-   * Scrape une page HTML de commission et retourne les réunions de la semaine.
-   * Une page peut contenir plusieurs réunions (plusieurs jours/séances).
-   */
-  async parseCommissionPage(
-    yyyymmdd: string,
-    commissionSlug: string
-  ): Promise<ParsedReunion[]> {
-    const url = `${BASE_URL}/${yyyymmdd}/${commissionSlug}.html`;
-
-    let html: string;
+  private async fetchHtml(url: string): Promise<string | null> {
     try {
-      const res = await this.http.get(url, { timeout: 20_000 });
-      html = res.data as string;
+      const res = await this.http.get(url);
+      return res.data as string;
     } catch (err) {
       if (httpStatus(err) === 404) {
-        logger.debug({ url }, 'Page 404 - commission not active this week');
-        return [];
+        logger.debug({ url }, 'Compte rendu page 404');
+        return null;
       }
-      logger.warn({ url, error: errorMessage(err) }, 'HTTP error fetching commission page');
-      return [];
+      logger.warn({ url, error: errorMessage(err) }, 'HTTP error fetching compte rendu');
+      return null;
     }
-
-    const $ = cheerio.load(html);
-
-    // Vérifier que la page n'est pas une 404 applicative (titre "introuvable")
-    const pageTitle = $('title').text();
-    if (pageTitle.toLowerCase().includes('introuvable') || pageTitle.toLowerCase().includes('forbidden')) {
-      return [];
-    }
-
-    // =========================================================================
-    // Extraire les sections par jour (balises h2)
-    // Chaque h2 contient une date française (ex: "Mardi 18 mars 2025")
-    // =========================================================================
-
-    const dbSlug = SENAT_SLUG_TO_DB_SLUG[commissionSlug];
-    if (!dbSlug) {
-      logger.warn({ commissionSlug }, 'Unknown commission slug — no DB mapping');
-      return [];
-    }
-
-    const reunions: ParsedReunion[] = [];
-
-    // Index global des UIDs générés pour gérer les doublons (même jour, même commission)
-    const uidCounters = new Map<string, number>();
-
-    // Trouver les sections de jours via les h2
-    const h2Elements = $('h2');
-
-    if (h2Elements.length === 0) {
-      // Pas de structure h2 — toute la page est une seule réunion
-      // Tenter d'extraire la date du titre de la page
-      const weekDate = parseFrenchDate(`${yyyymmdd.slice(6, 8)} ${getMonthName(parseInt(yyyymmdd.slice(4, 6)) - 1)} ${yyyymmdd.slice(0, 4)}`);
-
-      if (weekDate) {
-        const reunion = this.buildReunion($, $.root(), weekDate, commissionSlug, dbSlug, url, uidCounters);
-        if (reunion) reunions.push(reunion);
-      }
-      return reunions;
-    }
-
-    h2Elements.each((_, h2El) => {
-      const h2 = $(h2El);
-      const h2Text = h2.text().trim();
-
-      const dateDebut = parseFrenchDate(h2Text);
-      if (!dateDebut) {
-        // Ce h2 ne contient pas une date — skip
-        return;
-      }
-
-      // Collecter tout le contenu entre ce h2 et le suivant
-      const sectionContent = cheerio.load('<div></div>');
-      const container = sectionContent('div');
-
-      let next = h2El.nextSibling;
-      while (next) {
-        const nextEl = next as Element;
-        if (nextEl.type === 'tag' && nextEl.tagName === 'h2') break;
-        container.append(sectionContent(nextEl).clone());
-        next = next.nextSibling;
-      }
-
-      const reunion = this.buildReunion(sectionContent, container, dateDebut, commissionSlug, dbSlug, url, uidCounters);
-      if (reunion) reunions.push(reunion);
-    });
-
-    logger.debug(
-      { yyyymmdd, commissionSlug, reunionsFound: reunions.length },
-      'Commission page parsed'
-    );
-
-    return reunions;
   }
 
   /**
-   * Construit une TransformedReunion à partir d'un bloc de contenu HTML.
+   * Liste tous les comptes rendus référencés par les 8 pages d'index.
+   * Ces index ne couvrent que la session en cours.
    */
-  private buildReunion(
-    $: cheerio.CheerioAPI,
-    // `$.root()` (Document) ou un conteneur construit (Element) selon l'appelant.
-    container: cheerio.Cheerio<AnyNode>,
-    dateDebut: Date,
-    commissionSlugCourt: string,
-    dbSlug: string,
-    sourceUrl: string,
-    uidCounters: Map<string, number>
-  ): ParsedReunion | null {
-    // --- UID déterministe ---
-    const yyyymmdd = [
-      dateDebut.getUTCFullYear(),
-      String(dateDebut.getUTCMonth() + 1).padStart(2, '0'),
-      String(dateDebut.getUTCDate()).padStart(2, '0'),
-    ].join('');
+  async discoverComptesRendus(): Promise<{ refs: CompteRenduRef[]; indexesErrored: number }> {
+    const refs: CompteRenduRef[] = [];
+    let indexesErrored = 0;
 
-    const baseUid = `SENAT_${yyyymmdd}_${commissionSlugCourt}`;
-    const count = (uidCounters.get(baseUid) || 0) + 1;
-    uidCounters.set(baseUid, count);
-    const uid = count === 1 ? baseUid : `${baseUid}_${count}`;
-
-    // --- ODJ ---
-    // Les h3 contiennent les points de l'ordre du jour
-    const odjItems: string[] = [];
-    container.find('h3').each((_, el) => {
-      const text = $(el).text().trim().replace(/\s+/g, ' ');
-      if (text && text.length > 5) {
-        odjItems.push(text);
-      }
-    });
-
-    const odjCompletRaw = container.text().replace(/\s+/g, ' ').trim();
-    const odjResume = odjItems.slice(0, 3).join(' | ').substring(0, 500) || null;
-    const odjComplet = odjItems.join('\n').substring(0, 5000) || odjCompletRaw.substring(0, 5000) || null;
-
-    // --- Participants ---
-    // Chercher les liens vers /senateur/ dans le contenu
-    const participantNames: string[] = [];
-    container.find('a[href*="/senateur/"]').each((_, el) => {
-      const text = $(el).text().trim();
-      if (text && text.length > 2 && !text.toLowerCase().includes('président')) {
-        participantNames.push(text);
-      }
-    });
-
-    // Déduplication
-    const uniqueParticipants = [...new Set(participantNames)];
-
-    return {
-      uid,
-      type: 'commission',
-      organeReuniRef: dbSlug,
-      dateDebut,
-      dateFin: null,
-      lieu: 'Sénat',
-      etat: 'confirme',
-      odjResume,
-      odjComplet,
-      captationVideo: false,
-      ouvertePresse: false,
-      compteRenduRef: sourceUrl,
-      participants: [],       // Les vrais participants seront matchés dans syncSenatReunions()
-      auditionnes: [],
-      commissionSlugCourt,
-      compteRenduUrl: sourceUrl,
-      participantNames: uniqueParticipants,
-    };
-  }
-
-  /**
-   * Récupère toutes les réunions pour une semaine (toutes commissions confondues).
-   */
-  async getReunionsForWeek(yyyymmdd: string): Promise<{ reunions: ParsedReunion[]; pagesErrored: number }> {
-    const reunions: ParsedReunion[] = [];
-    let pagesErrored = 0;
-
-    for (const slug of COMMISSION_SLUGS) {
+    for (const [slug, organeRef] of Object.entries(CR_INDEX_TO_ORGANE_REF)) {
       await sleep(REQUEST_DELAY_MS);
 
-      try {
-        const pageReunions = await this.parseCommissionPage(yyyymmdd, slug);
-        reunions.push(...pageReunions);
-      } catch (err) {
-        logger.warn({ yyyymmdd, slug, error: errorMessage(err) }, 'Failed to parse commission page');
-        pagesErrored++;
-      }
-    }
-
-    return { reunions, pagesErrored };
-  }
-
-  /**
-   * Récupère toutes les réunions sur les N dernières semaines.
-   */
-  async getAllReunions(options: { maxWeeks?: number } = {}): Promise<{
-    reunions: ParsedReunion[];
-    weeksFetched: number;
-    pagesParsed: number;
-    pagesErrored: number;
-  }> {
-    const maxWeeks = options.maxWeeks || MAX_WEEKS_DEFAULT;
-    const weeks = await this.getWeekIndices(maxWeeks);
-
-    const allReunions: ParsedReunion[] = [];
-    let pagesParsed = 0;
-    let pagesErrored = 0;
-    let weeksFetched = 0;
-
-    logger.info({ maxWeeks, weeks: weeks.length }, 'Starting Sénat reunions scraping...');
-
-    for (const yyyymmdd of weeks) {
-      const { reunions, pagesErrored: weekErrors } = await this.getReunionsForWeek(yyyymmdd);
-
-      pagesErrored += weekErrors;
-      pagesParsed += COMMISSION_SLUGS.length;
-      weeksFetched++;
-
-      if (reunions.length > 0) {
-        allReunions.push(...reunions);
-        logger.debug({ yyyymmdd, reunionsFound: reunions.length }, 'Week processed');
+      const html = await this.fetchHtml(`${BASE_URL}/${slug}.html`);
+      if (!html) {
+        logger.warn({ slug }, 'Compte rendu index unreachable');
+        indexesErrored++;
+        continue;
       }
 
-      if (weeksFetched % 10 === 0) {
-        logger.info(
-          { weeksFetched, totalWeeks: weeks.length, reunionsSoFar: allReunions.length },
-          'Scraping progress'
-        );
-      }
+      const found = extractCompteRenduLinks(html, organeRef);
+      refs.push(...found);
+      logger.debug({ slug, organeRef, count: found.length }, 'Compte rendu index parsed');
     }
 
     logger.info(
-      { total: allReunions.length, weeksFetched, pagesParsed, pagesErrored },
-      'Sénat reunions scraping completed'
+      { refs: refs.length, indexes: Object.keys(CR_INDEX_TO_ORGANE_REF).length, indexesErrored },
+      'Comptes rendus discovered'
     );
-
-    return { reunions: allReunions, weeksFetched, pagesParsed, pagesErrored };
+    return { refs, indexesErrored };
   }
-}
 
-// =============================================================================
-// HELPERS INTERNES
-// =============================================================================
+  /**
+   * Récupère et parse un compte rendu (sénateurs cités + points abordés).
+   *
+   * La temporisation est portée ici plutôt que par l'appelant : ces pages sont
+   * récupérées une par une depuis une boucle de sync, et sans elle un premier
+   * passage enchaînerait ~270 requêtes sans répit sur senat.fr.
+   */
+  async fetchCompteRendu(ref: CompteRenduRef): Promise<CompteRenduContent | null> {
+    await sleep(REQUEST_DELAY_MS);
 
-function getMonthName(monthIndex: number): string {
-  const months = [
-    'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
-    'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
-  ];
-  return months[monthIndex] || 'janvier';
+    const html = await this.fetchHtml(ref.url);
+    if (!html) return null;
+
+    const $ = cheerio.load(html);
+    const odjItems: string[] = [];
+    $('h3').each((_, el) => {
+      const text = $(el).text().trim().replace(/\s+/g, ' ');
+      if (text.length > 5) odjItems.push(text);
+    });
+
+    return {
+      ...ref,
+      matricules: extractMatriculesFromCompteRendu(html),
+      odjItems,
+    };
+  }
 }
 
 export default SenatReunionsClient;
