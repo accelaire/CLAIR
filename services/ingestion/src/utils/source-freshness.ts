@@ -142,6 +142,15 @@ export const SOURCES: Record<string, SourceConfig> = {
     url: 'https://www.senat.fr/travaux-parlementaires/commissions.html',
     alwaysSync: true,
   },
+  'senat:dossier_commissions': {
+    source: 'senat',
+    dataType: 'dossier_commissions',
+    // Scraping des pages dossier-legislatif : aucune URL amont n'expose d'ETag
+    // ni de Last-Modified. Le worker est incrémental (il saute les dossiers
+    // déjà liés), donc un passage systématique reste peu coûteux.
+    url: 'https://www.senat.fr/dossiers-legislatifs/textes-recents.html',
+    alwaysSync: true,
+  },
   'senat:reunions': {
     source: 'senat',
     dataType: 'reunions',

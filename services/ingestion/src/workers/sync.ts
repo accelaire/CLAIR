@@ -17,6 +17,7 @@ import { SenatInterventionsClient } from '../sources/senat/interventions-client'
 import { SenatDossiersClient } from '../sources/senat/dossiers-client';
 import { syncSenateursHistoriques } from './senat-histo';
 import { syncSenatBureaux } from './senat-bureaux';
+import { syncSenatDossierCommissions } from './senat-dossier-commissions';
 import { logger } from '../utils/logger';
 import { errorMessage } from '../utils/errors';
 import { asArray, isRecord, readString } from '../utils/json';
@@ -2809,6 +2810,7 @@ export interface SmartSyncOptions {
   includeSenatReunions?: boolean;
   includeSenatAgenda?: boolean;
   includeSenatBureaux?: boolean; // Fonctions au bureau des commissions Sénat
+  includeSenatDossierCommissions?: boolean; // Commissions saisies des dossiers Sénat
   includeSenatVideos?: boolean;
   includeAnVideos?: boolean;
   includeSeancesODJ?: boolean;
@@ -2901,9 +2903,12 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       // 10. Agenda Sénat : crée les séances publiques ET les réunions de
       //     commission (API senat.fr). Doit précéder les comptes rendus.
       'senat:agenda',
+      // 10b. Commissions saisies des dossiers Sénat (scraping) : après
+      //      'senat:dossiers' qui crée les dossiers, et après les commissions
       // 11. Comptes rendus Sénat : rattache compte rendu et sénateurs cités aux
       //     réunions ci-dessus, et complète l'historique hors fenêtre de l'agenda
       'senat:reunions',
+      'senat:dossier_commissions',
       // 12. Vidéos Sénat (scraping videos.senat.fr — lie les replays aux séances)
       'senat:videos',
       // 12. Vidéos AN (videos.assemblee-nationale.fr — séances + commissions)
@@ -2925,6 +2930,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       ...(options.includeSenatAgenda ? ['senat:agenda'] : []),
       ...(options.includeSenatReunions ? ['senat:reunions'] : []),
       ...(options.includeSenatBureaux ? ['senat:bureaux'] : []),
+      ...(options.includeSenatDossierCommissions ? ['senat:dossier_commissions'] : []),
       ...(options.includeSenatVideos ? ['senat:videos'] : []),
       ...(options.includeAnVideos ? ['assemblee_nationale:videos'] : []),
     ];
@@ -3126,6 +3132,12 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
             const bureauxResult = await syncSenatBureaux();
             // Ce worker ne crée aucune ligne : il requalifie des mandats existants.
             syncResult = { created: 0, updated: bureauxResult.updated + bureauxResult.reset };
+            break;
+          }
+
+          case 'senat:dossier_commissions': {
+            const dcResult = await syncSenatDossierCommissions();
+            syncResult = { created: dcResult.linksCreated, updated: 0 };
             break;
           }
 
