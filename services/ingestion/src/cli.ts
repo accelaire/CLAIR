@@ -395,6 +395,7 @@ program
   .option('--seances-odj', 'Inclure l\'enrichissement ODJ des séances publiques (CSV AN)')
   .option('-l, --limit <number>', 'Limite globale pour tous les types (défaut: TOUT)', parseInt)
   .option('--sources <sources>', 'Sources spécifiques à sync (séparées par des virgules)')
+  .option('--skip-stats', 'Ne pas recalculer les stats parlementaires après le sync')
   .action(async (options) => {
     try {
       logger.info({ options }, 'Starting smart sync command');
@@ -424,6 +425,7 @@ program
         lobbyingLimit: options.limit,
         reunionsLimit: options.limit,
         sources: options.sources?.split(',').map((s: string) => s.trim()),
+        skipStatsCalculation: options.skipStats,
       });
 
       const syncSummary = {
