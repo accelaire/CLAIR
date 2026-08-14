@@ -2892,6 +2892,32 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
 
   logger.info({ options }, 'Starting smart sync...');
 
+  // Événements institutionnels : liste curée en dur, aucun appel réseau, quelques
+  // millisecondes. Elle passe donc HORS de la boucle de fraîcheur (il n'y a aucune
+  // source distante à interroger) et se rejoue à chaque batch, ce qui propage en
+  // prod toute correction faite dans le code sans commande manuelle.
+  // Ce que ça ne fait PAS : découvrir une date de décret. C'est le rôle du
+  // contrôle `evenements_a_revoir` de data-quality.ts, qui signale les entrées
+  // périmées au lieu de compter sur la mémoire de quelqu'un.
+  if (options.all) {
+    try {
+      const { syncEvenements } = await import('./evenements.js');
+      const evts = await syncEvenements(prisma);
+      results.sourcesChecked.push('clair:evenements');
+      results.sourcesChanged.push('clair:evenements');
+      results.results['clair:evenements'] = { created: evts.created, updated: evts.updated };
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Échec de la synchronisation des événements');
+      results.sourcesFailed.push('clair:evenements');
+      results.results['clair:evenements'] = {
+        created: 0,
+        updated: 0,
+        failed: true,
+        error: errorMessage(error),
+      };
+    }
+  }
+
   // Cache AMELI texte mapping across sync steps to avoid double download
   let cachedTexteMapping: Map<number, { num: string; session: string }> | undefined;
 

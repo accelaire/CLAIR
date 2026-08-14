@@ -162,8 +162,19 @@ function isEventHappeningNow(ev: UpcomingEvent, now: number): boolean {
 }
 
 import { deriveChambre } from '@/lib/chambre';
+import {
+  TYPE_EVENEMENT_META,
+  formatDateEvenement,
+  joursCouverts,
+  type AgendaEvenement,
+} from './agenda/components/EvenementCard';
 
-function DayCard({ isoDate, label, events }: { isoDate: string; label: string; events: UpcomingEvent[] }) {
+function DayCard({ isoDate, label, events, evenements }: {
+  isoDate: string;
+  label: string;
+  events: UpcomingEvent[];
+  evenements: AgendaEvenement[];
+}) {
   const [now, setNow] = useState(() => Date.now());
   const { liveByOrganeRef, liveBySeanceKey, liveBySeanceDate } = useLiveNow();
 
@@ -178,6 +189,34 @@ function DayCard({ isoDate, label, events }: { isoDate: string; label: string; e
   return (
     <div className="w-[calc((100%-2rem)/3)] min-w-[300px] shrink-0 rounded-xl border bg-card p-4">
       <h3 className="text-sm font-semibold text-foreground mb-3 capitalize">{label}</h3>
+
+      {/* Repères institutionnels du jour, en tête : ils donnent le cadre dans
+          lequel se lisent les réunions (ou leur absence). Pas d'heure — une
+          élection ou une ouverture de session n'est pas un créneau. */}
+      {evenements.length > 0 && (
+        <div className="space-y-2 mb-2">
+          {evenements.map((e) => {
+            const meta = TYPE_EVENEMENT_META[e.type];
+            const Icon = meta.icon;
+            return (
+              <Link
+                key={e.id}
+                href={`/agenda?date=${isoDate}`}
+                className={`flex items-start gap-3 rounded-lg border p-3 transition-all hover:shadow-sm ${meta.card}`}
+              >
+                <div className="shrink-0 w-12 flex justify-center pt-0.5">
+                  <Icon className="h-4 w-4" aria-hidden />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold leading-snug">{e.titre}</p>
+                  <p className="mt-0.5 text-xs opacity-80">{formatDateEvenement(e)}</p>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+
       <div className="space-y-2">
         {visible.map((ev) => {
           const chambre = deriveChambre(ev);
@@ -251,7 +290,44 @@ function DayCard({ isoDate, label, events }: { isoDate: string; label: string; e
   );
 }
 
-function UpcomingTimeline({ events }: { events: UpcomingEvent[] | null }) {
+/**
+ * Échéances majeures, hors fenêtre des 7 jours affichés — sinon les sénatoriales
+ * (à six semaines) n'apparaîtraient jamais sur la home.
+ *
+ * Extrait en composant parce qu'il doit s'afficher AUSSI quand il n'y a aucune
+ * réunion à venir : c'est justement le cas pendant une suspension de séance, et
+ * c'est là que ces repères sont les plus utiles.
+ */
+function EcheancesStrip({ echeances }: { echeances: AgendaEvenement[] }) {
+  if (echeances.length === 0) return null;
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-2">
+      <span className="text-xs font-medium text-muted-foreground">Prochaines échéances</span>
+      {echeances.map((e) => {
+        const meta = TYPE_EVENEMENT_META[e.type];
+        const Icon = meta.icon;
+        return (
+          <Link
+            key={e.id}
+            href={`/agenda?date=${e.dateDebut.slice(0, 10)}`}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-all hover:shadow-sm ${meta.card}`}
+          >
+            <Icon className="h-3.5 w-3.5" aria-hidden />
+            <span className="font-medium">{e.titre}</span>
+            <span className="opacity-75">{formatDateEvenement(e)}</span>
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+function UpcomingTimeline({ events, evenements, echeances }: {
+  events: UpcomingEvent[] | null;
+  evenements: AgendaEvenement[];
+  echeances: AgendaEvenement[];
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollIndex, setScrollIndex] = useState(0);
 
@@ -309,8 +385,11 @@ function UpcomingTimeline({ events }: { events: UpcomingEvent[] | null }) {
 
   if (dayGroups.length === 0) {
     return (
-      <div className="rounded-xl border bg-card p-8 text-center text-muted-foreground text-sm">
-        Aucun événement à venir
+      <div>
+        <div className="rounded-xl border bg-card p-8 text-center text-muted-foreground text-sm">
+          Aucun événement à venir
+        </div>
+        <EcheancesStrip echeances={echeances} />
       </div>
     );
   }
@@ -341,9 +420,17 @@ function UpcomingTimeline({ events }: { events: UpcomingEvent[] | null }) {
         className="flex items-start gap-4 overflow-x-auto scrollbar-none scroll-smooth pb-2"
       >
         {dayGroups.map(({ isoDate, label, events: dayEvents }) => (
-          <DayCard key={isoDate} isoDate={isoDate} label={label} events={dayEvents} />
+          <DayCard
+            key={isoDate}
+            isoDate={isoDate}
+            label={label}
+            events={dayEvents}
+            evenements={evenements.filter((e) => joursCouverts(e).includes(isoDate))}
+          />
         ))}
       </div>
+
+      <EcheancesStrip echeances={echeances} />
     </div>
   );
 }
@@ -358,6 +445,10 @@ export default function HomePage() {
     lastUpdate: string | null;
     upcoming: {
       events: UpcomingEvent[];
+      // Optionnels : une réponse servie depuis le cache Redis écrit avant ce
+      // déploiement ne les porte pas encore (TTL 15 min).
+      evenements?: AgendaEvenement[];
+      echeances?: AgendaEvenement[];
     } | null;
   }>({
     queryKey: ['homepage'],
@@ -523,7 +614,11 @@ export default function HomePage() {
             </div>
           </div>
 
-          <UpcomingTimeline events={upcoming?.events ?? null} />
+          <UpcomingTimeline
+            events={upcoming?.events ?? null}
+            evenements={upcoming?.evenements ?? []}
+            echeances={upcoming?.echeances ?? []}
+          />
 
           {/* Mobile CTA */}
           <div className="mt-6 sm:hidden">

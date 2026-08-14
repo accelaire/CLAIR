@@ -10,6 +10,7 @@ import { FilterBar } from '@/components/FilterBar';
 import { MonthCalendar } from './components/MonthCalendar';
 import { DayDetail } from './components/DayDetail';
 import type { AgendaReunion } from './components/ReunionCard';
+import { joursCouverts, type AgendaEvenement } from './components/EvenementCard';
 
 interface AgendaResponse {
   dateFrom: string;
@@ -22,6 +23,7 @@ interface AgendaResponse {
     totalPages: number;
   };
   byDay: Record<string, AgendaReunion[]>;
+  evenements: AgendaEvenement[];
 }
 
 function toDateStr(year: number, month: number, day: number): string {
@@ -126,10 +128,20 @@ function AgendaPageContent() {
     setSelectedDate(null);
   };
 
+  const evenements = useMemo(() => data?.evenements ?? [], [data]);
+
   const selectedReunions = useMemo<AgendaReunion[]>(() => {
     if (!selectedDate) return [];
     return (byDay[selectedDate] ?? []) as AgendaReunion[];
   }, [selectedDate, byDay]);
+
+  // Un jour donné hérite des événements ponctuels tombant dessus ET des périodes
+  // qui le couvrent : sélectionner le 10 septembre doit rappeler que les travaux
+  // sont suspendus, même si la suspension a commencé en juillet.
+  const selectedEvenements = useMemo<AgendaEvenement[]>(() => {
+    if (!selectedDate) return [];
+    return evenements.filter((e) => joursCouverts(e).includes(selectedDate));
+  }, [selectedDate, evenements]);
 
   const activeFilterCount = useMemo(() => {
     let n = 0;
@@ -149,9 +161,14 @@ function AgendaPageContent() {
           <p className='mt-1 text-muted-foreground'>
             {isLoading
               ? 'Chargement...'
-              : totalThisMonth > 0
-                ? `${totalThisMonth} réunion${totalThisMonth > 1 ? 's' : ''} ce mois`
-                : 'Aucune réunion ce mois'}{' '}
+              : [
+                totalThisMonth > 0
+                  ? `${totalThisMonth} réunion${totalThisMonth > 1 ? 's' : ''} ce mois`
+                  : null,
+                evenements.length > 0
+                  ? `${evenements.length} événement${evenements.length > 1 ? 's' : ''}`
+                  : null,
+              ].filter(Boolean).join(' · ') || 'Rien ce mois'}{' '}
             — Assemblée nationale &amp; Sénat
           </p>
         </div>
@@ -182,6 +199,7 @@ function AgendaPageContent() {
               <option value=''>Tous les types</option>
               <option value='commission'>Commissions</option>
               <option value='seance'>Séances publiques</option>
+              <option value='evenement'>Événements institutionnels</option>
             </select>
             <ChevronDown className='absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none' />
           </div>
@@ -217,6 +235,7 @@ function AgendaPageContent() {
               year={year}
               month={month}
               byDay={byDay}
+              evenements={evenements}
               selectedDate={selectedDate}
               onSelectDate={setSelectedDate}
               onPrevMonth={handlePrevMonth}
@@ -237,7 +256,11 @@ function AgendaPageContent() {
               </div>
             </div>
           ) : (
-            <DayDetail selectedDate={selectedDate} reunions={selectedReunions} />
+            <DayDetail
+              selectedDate={selectedDate}
+              reunions={selectedReunions}
+              evenements={selectedEvenements}
+            />
           )}
         </div>
       </div>

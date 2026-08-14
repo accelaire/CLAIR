@@ -1097,6 +1097,34 @@ program
   });
 
 // =============================================================================
+// COMMANDE: sync-evenements
+// =============================================================================
+program
+  .command('sync-evenements')
+  .description('Événements institutionnels de l\'agenda (élections, sessions, suspensions, budget) — liste curée, idempotent')
+  .action(async () => {
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+
+      try {
+        const { syncEvenements } = await import('./workers/evenements.js');
+        const result = await syncEvenements(prisma);
+        console.log('\n📅 Événements institutionnels :');
+        console.log(`   Créés      : ${result.created}`);
+        console.log(`   Mis à jour : ${result.updated}`);
+        console.log(`   Total      : ${result.total}`);
+        process.exit(0);
+      } finally {
+        await prisma.$disconnect();
+      }
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-evenements failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
 // COMMANDE: check-quality
 // =============================================================================
 program

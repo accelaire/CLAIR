@@ -349,6 +349,61 @@ model ReunionParticipant {
 }
 
 // =============================================================================
+// ÉVÉNEMENTS INSTITUTIONNELS (agenda)
+//
+// Repères du calendrier politique qui n'ont pas de source open data : élections,
+// bornes de session, suspensions de travaux, échéances budgétaires, temps forts.
+// Contrairement à `Reunion` (ingérée depuis l'AN et le Sénat), le contenu est
+// curé à la main dans `services/ingestion/src/workers/evenements.ts` et poussé
+// par un upsert idempotent sur le `slug`.
+//
+// Distinction importante : un événement peut couvrir une PÉRIODE (`dateFin`
+// renseignée, ex. une suspension de travaux) là où une réunion est ponctuelle.
+// =============================================================================
+
+model EvenementInstitutionnel {
+  id   String @id @default(uuid())
+  slug String @unique // 'senatoriales-2026', 'suspension-hiver-2027'…
+
+  // 'election' | 'session' | 'suspension' | 'budget' | 'institution'
+  type String
+
+  titre       String
+  description String? @db.Text
+
+  dateDebut DateTime  @map("date_debut")
+  dateFin   DateTime? @map("date_fin") // null = événement ponctuel
+
+  // false = échéance connue mais date non encore fixée (décret de convocation à
+  // paraître). `dateDebut` vaut alors le 1er du mois attendu, uniquement pour le
+  // tri : l'UI doit afficher le mois, jamais le jour. Ne JAMAIS présenter une
+  // date non décrétée comme certaine.
+  datePrecise Boolean @default(true) @map("date_precise")
+
+  // null = concerne les deux chambres (ou aucune en particulier)
+  chambre String?
+
+  // Sources officielles, tableau JSON `[{ label, url? }]`.
+  //
+  // Un tableau et non un couple url/source : un repère transverse s'appuie
+  // légitimement sur plusieurs autorités. La suspension de séance, par exemple,
+  // vaut pour les deux chambres et chacune publie la sienne — n'en citer qu'une
+  // reviendrait à généraliser depuis une source unique.
+  sources Json?
+
+  // Mis en avant dans le bloc « Prochaines échéances »
+  important Boolean @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([dateDebut])
+  @@index([type])
+  @@index([important])
+  @@map("evenements_institutionnels")
+}
+
+// =============================================================================
 // DÉCLARATIONS HATVP (intérêts & patrimoine des parlementaires)
 // Source: https://www.hatvp.fr/livraison/opendata/liste.csv
 // =============================================================================

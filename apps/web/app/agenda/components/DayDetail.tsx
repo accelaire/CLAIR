@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { ReunionCard, type AgendaReunion } from './ReunionCard';
+import { EvenementCard, type AgendaEvenement } from './EvenementCard';
 import { Calendar } from 'lucide-react';
 import { useLiveNow } from '@/hooks/useLiveNow';
 import { matchLiveUrl } from '@/lib/live-url';
@@ -9,6 +10,8 @@ import { matchLiveUrl } from '@/lib/live-url';
 interface DayDetailProps {
   selectedDate: string | null; // 'YYYY-MM-DD'
   reunions: AgendaReunion[];
+  /** Repères institutionnels du jour : ponctuels, ou périodes le couvrant. */
+  evenements: AgendaEvenement[];
 }
 
 const DAY_NAMES_FULL = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
@@ -26,7 +29,7 @@ function formatDayTitle(dateStr: string): string {
   return `${dayName.charAt(0).toUpperCase() + dayName.slice(1)} ${day} ${month} ${year}`;
 }
 
-export function DayDetail({ selectedDate, reunions }: DayDetailProps) {
+export function DayDetail({ selectedDate, reunions, evenements }: DayDetailProps) {
   const { liveByOrganeRef, liveBySeanceKey, liveBySeanceDate } = useLiveNow();
 
   const sorted = [...reunions].sort(
@@ -50,7 +53,7 @@ export function DayDetail({ selectedDate, reunions }: DayDetailProps) {
     );
   }
 
-  if (reunions.length === 0) {
+  if (reunions.length === 0 && evenements.length === 0) {
     return (
       <div>
         <h3 className='text-base font-semibold mb-4 capitalize'>{formatDayTitle(selectedDate)}</h3>
@@ -67,9 +70,22 @@ export function DayDetail({ selectedDate, reunions }: DayDetailProps) {
       <div className='mb-4 flex items-center justify-between'>
         <h3 className='text-base font-semibold capitalize'>{formatDayTitle(selectedDate)}</h3>
         <span className='text-sm text-muted-foreground'>
-          {reunions.length} réunion{reunions.length > 1 ? 's' : ''}
+          {reunions.length > 0
+            ? `${reunions.length} réunion${reunions.length > 1 ? 's' : ''}`
+            : 'Pas de réunion'}
         </span>
       </div>
+
+      {/* Les repères institutionnels passent devant : ils donnent le contexte
+          dans lequel se lisent les réunions du jour (ou leur absence). */}
+      {evenements.length > 0 && (
+        <div className='mb-4 space-y-2'>
+          {evenements.map((evenement) => (
+            <EvenementCard key={evenement.id} evenement={evenement} />
+          ))}
+        </div>
+      )}
+
       <div className='space-y-2'>
         {sorted.map((reunion) => (
           <ReunionCard
