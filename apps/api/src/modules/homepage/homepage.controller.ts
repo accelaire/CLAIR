@@ -160,7 +160,7 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Batch 4 — agenda à venir (TTL court séparé), liste unifiée chronologique
       const upcomingCacheKey = 'homepage:upcoming';
-      let upcoming: { events: unknown[] } | null = null;
+      let upcoming: { events: unknown[]; evenements: unknown[]; echeances: unknown[] } | null = null;
       const cachedUpcoming = await fastify.redis.get(upcomingCacheKey);
       if (cachedUpcoming) {
         upcoming = JSON.parse(cachedUpcoming);
@@ -192,7 +192,50 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
           if (seenDays.size > TARGET_DAYS) break;
           events.push(ev);
         }
-        upcoming = { events };
+        // Repères institutionnels. Deux listes, parce qu'elles répondent à deux
+        // questions différentes : `evenements` sert à annoter les jours affichés
+        // dans le planning, `echeances` à montrer les rendez-vous majeurs qui
+        // tombent bien au-delà de la fenêtre de 7 jours (les sénatoriales sont à
+        // six semaines et n'apparaîtraient jamais autrement).
+        const evenementSelect = {
+          id: true, slug: true, type: true, titre: true, description: true,
+          dateDebut: true, dateFin: true, datePrecise: true, chambre: true,
+          sources: true, important: true,
+        } as const;
+
+        const finFenetre = events.length > 0
+          ? events[events.length - 1]!.dateDebut
+          : new Date(now.getTime() + TARGET_DAYS * 86_400_000);
+        const debutJour = new Date(Date.UTC(
+          now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(),
+        ));
+
+        const [evenements, echeances] = await Promise.all([
+          fastify.prisma.evenementInstitutionnel.findMany({
+            where: {
+              OR: [
+                { dateFin: null, dateDebut: { gte: debutJour, lte: finFenetre } },
+                { dateFin: { not: null, gte: debutJour }, dateDebut: { lte: finFenetre } },
+              ],
+            },
+            orderBy: [{ dateDebut: 'asc' }, { titre: 'asc' }],
+            select: evenementSelect,
+          }),
+          fastify.prisma.evenementInstitutionnel.findMany({
+            where: {
+              important: true,
+              OR: [
+                { dateFin: null, dateDebut: { gte: debutJour } },
+                { dateFin: { gte: debutJour } },
+              ],
+            },
+            orderBy: [{ dateDebut: 'asc' }, { titre: 'asc' }],
+            take: 3,
+            select: evenementSelect,
+          }),
+        ]);
+
+        upcoming = { events, evenements, echeances };
         await fastify.redis.setex(upcomingCacheKey, UPCOMING_CACHE_TTL, JSON.stringify(upcoming));
       }
 

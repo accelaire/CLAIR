@@ -72,6 +72,7 @@ export interface CommissionDetail {
     dateFin: string | null;
     lieu: string | null;
     odjResume: string | null;
+    odjComplet: string | null;
     etat: string | null;
     captationVideo: boolean | null;
     urlVideo: string | null;
@@ -99,6 +100,7 @@ interface Reunion {
   dateFin: string | null;
   lieu: string | null;
   odjResume: string | null;
+  odjComplet: string | null;
   etat: string | null;
   captationVideo: boolean | null;
   urlVideo: string | null;
@@ -187,6 +189,69 @@ function buildCompteRenduUrl(ref: string): string | null {
   return null;
 }
 
+/**
+ * Ordre du jour d'une réunion.
+ *
+ * `odjResume` concatène les points de l'ordre du jour avec « | ». Rendu tel
+ * quel puis tronqué en CSS, on obtenait une phrase coupée en plein milieu, le
+ * séparateur resté pendant : « … du texte de la commission |… ». On sépare donc
+ * les points et on les rend individuellement, en annonçant ceux qu'on masque
+ * plutôt qu'en les rognant silencieusement.
+ */
+/** Points affichés avant de replier. Au-delà, la carte devient illisible. */
+const ODJ_POINTS_VISIBLES = 3;
+
+function OrdreDuJour({ resume, complet }: { resume: string | null; complet: string | null }) {
+  const [deplie, setDeplie] = useState(false);
+  // `odjComplet` d'abord : `odjResume` est plafonné à 500 caractères au moment
+  // de l'ingestion, si bien que son dernier point est coupé en plein mot — 168
+  // réunions sur 311 sont dans ce cas. Le complet sépare les points par des
+  // retours à la ligne et va jusqu'à 5 000 caractères.
+  const source = complet || resume || '';
+  const points = source
+    .split(complet ? '\n' : '|')
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (points.length === 0) return null;
+
+  // Les points sont affichés en entier, sans troncature CSS : l'ordre du jour
+  // est ce que la commission a réellement traité, le rogner vide la ligne de
+  // son sens. Au-delà de trois points on replie — 65 % des réunions en ont
+  // plus de deux, en masquer une partie sans recours serait de la perte sèche.
+  const visibles = deplie ? points : points.slice(0, ODJ_POINTS_VISIBLES);
+  const restants = points.length - visibles.length;
+
+  return (
+    <div className='text-sm text-muted-foreground space-y-1'>
+      {visibles.map((point, i) => (
+        <p key={i} className='flex gap-1.5'>
+          {points.length > 1 && <span className='opacity-60 shrink-0'>•</span>}
+          <span className='min-w-0'>{point}</span>
+        </p>
+      ))}
+      {restants > 0 && (
+        <button
+          type='button'
+          onClick={() => setDeplie(true)}
+          className='text-xs underline underline-offset-2 hover:text-foreground transition-colors'
+        >
+          + {restants} autre{restants > 1 ? 's' : ''} point{restants > 1 ? 's' : ''} à l&apos;ordre du jour
+        </button>
+      )}
+      {deplie && points.length > ODJ_POINTS_VISIBLES && (
+        <button
+          type='button'
+          onClick={() => setDeplie(false)}
+          className='text-xs underline underline-offset-2 hover:text-foreground transition-colors'
+        >
+          Réduire
+        </button>
+      )}
+    </div>
+  );
+}
+
 function ReunionItem({ reunion }: { reunion: Reunion }) {
   const isPast = new Date(reunion.dateDebut) < new Date();
   const crUrl = isPast && reunion.compteRenduRef ? buildCompteRenduUrl(reunion.compteRenduRef) : null;
@@ -206,8 +271,8 @@ function ReunionItem({ reunion }: { reunion: Reunion }) {
               {reunion.dateFin && ` — ${formatTime(reunion.dateFin)}`}
             </span>
           </div>
-          {reunion.odjResume && (
-            <p className='text-sm text-muted-foreground line-clamp-2'>{reunion.odjResume}</p>
+          {(reunion.odjComplet || reunion.odjResume) && (
+            <OrdreDuJour resume={reunion.odjResume} complet={reunion.odjComplet} />
           )}
           {reunion.lieu && (
             <p className='mt-1 flex items-center gap-1 text-xs text-muted-foreground'>

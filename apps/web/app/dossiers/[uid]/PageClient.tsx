@@ -89,6 +89,13 @@ export interface DossierDetail {
     label: string;
     status: string;
   } | null;
+  commissions: Array<{
+    slug: string;
+    nom: string;
+    chambre: string;
+    type: string;
+    role: string;
+  }>;
   scrutins: DossierScrutin[];
   amendements: DossierAmendement[];
   scrutinsCount: number;
@@ -440,6 +447,44 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
           )}
         </div>
       </div>
+
+      {/* Commissions saisies — un texte passe souvent devant les deux chambres */}
+      {dossier.commissions.length > 0 && (
+        <div className="rounded-lg border bg-card p-5 mb-8">
+          <h2 className="text-sm font-semibold flex items-center gap-2 mb-3">
+            <Users className="h-4 w-4" />
+            Commissions saisies
+          </h2>
+          {/* Deux colonnes dès `lg` : un projet de loi de finances mobilise
+              jusqu'à neuf commissions, et une seule colonne laissait la moitié
+              de la largeur vide sur écran large. */}
+          <ul className="grid gap-x-6 gap-y-3 sm:grid-cols-1 lg:grid-cols-2">
+            {dossier.commissions.map((c) => (
+              <li key={`${c.slug}-${c.role}`} className="flex items-start gap-2.5 text-sm">
+                {/* `shrink-0` + `items-start` : sans ça, un nom long repoussait
+                    le badge et la chambre sur leurs propres lignes. */}
+                <span
+                  className={`shrink-0 mt-0.5 px-2 py-0.5 rounded text-xs font-medium border whitespace-nowrap ${
+                    c.role === 'fond'
+                      ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-700'
+                      : 'bg-muted text-muted-foreground border-border'
+                  }`}
+                >
+                  {c.role === 'fond' ? 'Fond' : 'Avis'}
+                </span>
+                <span className="min-w-0">
+                  <Link href={`/commissions/${c.slug}`} className="hover:underline">
+                    {c.nom}
+                  </Link>
+                  <span className="block text-xs text-muted-foreground">
+                    {c.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale'}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* En clair — IA summary */}
       {dossier.resumeIA && (

@@ -181,6 +181,25 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
         AND resume ~* '(doit encore (être )?(promulgu|examin|adopt|vot|discut|débattu|passer)|n.a pas encore été (promulgu|adopt|examin|vot)|en cours d.examen|examen (est |se poursuit)?(encore )?en cours|sera (prochainement )?examiné|en cours de promulgation|doit désormais être examiné)'`,
   },
 
+  evenements_a_revoir: {
+    type: 'invariant',
+    label: 'Événements à date imprécise dont le mois est passé',
+    min: 0,
+    max: 0,
+    // Les événements institutionnels sont une liste curée à la main : rien ne les
+    // rafraîchit tout seul. Quand une échéance porte `date_precise = false`, sa
+    // date n'est pas encore fixée par décret et l'UI n'affiche que le mois. Une
+    // fois ce mois écoulé, deux cas seulement : le décret est paru et il faut
+    // inscrire la vraie date, ou l'échéance a bougé. Dans les deux cas le site
+    // ment (« Courant avril 2027 » affiché en mai 2027).
+    //
+    // Cet invariant remplace la mémoire de quelqu'un par un échec du batch de 5h.
+    // Il se résout en éditant `services/ingestion/src/workers/evenements.ts`.
+    query: `SELECT COUNT(*)::int AS value FROM evenements_institutionnels
+      WHERE date_precise = false
+        AND date_debut < date_trunc('month', CURRENT_DATE)`,
+  },
+
   // ---- Seuils quantitatifs (minimums) ----
   parlementaires_count: {
     type: 'threshold',

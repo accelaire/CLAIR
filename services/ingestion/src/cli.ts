@@ -261,19 +261,23 @@ program
         console.log(`   Mandats liés: ${result.mandatsLinked}`);
       } else if (options.reunions) {
         if (chambre === 'se') {
-          const result = await syncSenatReunions({ maxWeeks: options.limit });
-          console.log(`\n📊 Réunions Sénat (scraping HTML):`);
-          console.log(`   Créées: ${result.created}`);
-          console.log(`   Mises à jour: ${result.updated}`);
-          console.log(`   Participants liés: ${result.participantsLinked}`);
-          console.log(`   Semaines traitées: ${result.weeksFetched}`);
-          console.log(`   Pages parsées: ${result.pagesParsed}`);
-          console.log(`   Pages en erreur: ${result.pagesErrored}`);
-
+          // L'agenda d'abord : il crée les réunions, les comptes rendus s'y rattachent.
           const agendaResult = await syncSenatAgenda();
-          console.log(`\n📊 Agenda Sénat (séances publiques à venir):`);
-          console.log(`   Créées: ${agendaResult.created}`);
-          console.log(`   Mises à jour: ${agendaResult.updated}`);
+          console.log(`\n📊 Agenda Sénat (séances + commissions):`);
+          console.log(`   Séances créées: ${agendaResult.created}`);
+          console.log(`   Séances mises à jour: ${agendaResult.updated}`);
+          console.log(`   Réunions de commission créées: ${agendaResult.reunionsCreated}`);
+          console.log(`   Réunions de commission mises à jour: ${agendaResult.reunionsUpdated}`);
+
+          const result = await syncSenatReunions({ maxWeeks: options.limit });
+          console.log(`\n📊 Comptes rendus Sénat:`);
+          console.log(`   Comptes rendus trouvés: ${result.comptesRendusFound}`);
+          console.log(`   Réunions créées (hors fenêtre agenda): ${result.created}`);
+          console.log(`   Réunions enrichies d'un compte rendu: ${result.updated}`);
+          console.log(`   Participants liés: ${result.participantsLinked}`);
+          console.log(`   Index en erreur: ${result.indexesErrored}`);
+          console.log(`   Anciennes réunions reprises: ${result.legacyMigrated}`);
+          console.log(`   Anciennes réunions fusionnées: ${result.legacyMerged}`);
         } else if (chambre === 'an') {
           const result = await syncReunions({ limit: options.limit });
           console.log(`\n📊 Réunions AN:`);
@@ -287,19 +291,23 @@ program
           console.log(`   Mises à jour: ${resultAN.updated}`);
           console.log(`   Participants liés: ${resultAN.participantsLinked}`);
 
-          const resultSE = await syncSenatReunions({ maxWeeks: options.limit });
-          console.log(`\n📊 Réunions Sénat (scraping HTML):`);
-          console.log(`   Créées: ${resultSE.created}`);
-          console.log(`   Mises à jour: ${resultSE.updated}`);
-          console.log(`   Participants liés: ${resultSE.participantsLinked}`);
-          console.log(`   Semaines traitées: ${resultSE.weeksFetched}`);
-          console.log(`   Pages parsées: ${resultSE.pagesParsed}`);
-          console.log(`   Pages en erreur: ${resultSE.pagesErrored}`);
-
+          // L'agenda d'abord : il crée les réunions, les comptes rendus s'y rattachent.
           const agendaResult = await syncSenatAgenda();
-          console.log(`\n📊 Agenda Sénat (séances publiques à venir):`);
-          console.log(`   Créées: ${agendaResult.created}`);
-          console.log(`   Mises à jour: ${agendaResult.updated}`);
+          console.log(`\n📊 Agenda Sénat (séances + commissions):`);
+          console.log(`   Séances créées: ${agendaResult.created}`);
+          console.log(`   Séances mises à jour: ${agendaResult.updated}`);
+          console.log(`   Réunions de commission créées: ${agendaResult.reunionsCreated}`);
+          console.log(`   Réunions de commission mises à jour: ${agendaResult.reunionsUpdated}`);
+
+          const resultSE = await syncSenatReunions({ maxWeeks: options.limit });
+          console.log(`\n📊 Comptes rendus Sénat:`);
+          console.log(`   Comptes rendus trouvés: ${resultSE.comptesRendusFound}`);
+          console.log(`   Réunions créées (hors fenêtre agenda): ${resultSE.created}`);
+          console.log(`   Réunions enrichies d'un compte rendu: ${resultSE.updated}`);
+          console.log(`   Participants liés: ${resultSE.participantsLinked}`);
+          console.log(`   Index en erreur: ${resultSE.indexesErrored}`);
+          console.log(`   Anciennes réunions reprises: ${resultSE.legacyMigrated}`);
+          console.log(`   Anciennes réunions fusionnées: ${resultSE.legacyMerged}`);
         }
       } else if (options.seancesOdj) {
         const result = await syncSeancesODJ();
@@ -380,11 +388,14 @@ program
   .option('--re, --reunions', 'Inclure les réunions/agenda parlementaire (AN)')
   .option('--senat-reunions', 'Inclure les réunions Sénat (scraping HTML comptes rendus)')
   .option('--senat-agenda', 'Inclure l\'agenda Sénat (séances publiques à venir via API senat.fr)')
+  .option('--senat-bureaux', 'Inclure les fonctions au bureau des commissions Sénat (scraping senat.fr)')
+  .option('--senat-dossier-commissions', 'Inclure les commissions saisies des dossiers Sénat (scraping senat.fr)')
   .option('--senat-videos', 'Inclure les vidéos Sénat (scraping videos.senat.fr)')
   .option('--an-videos', 'Inclure les vidéos AN (videos.assemblee-nationale.fr)')
   .option('--seances-odj', 'Inclure l\'enrichissement ODJ des séances publiques (CSV AN)')
   .option('-l, --limit <number>', 'Limite globale pour tous les types (défaut: TOUT)', parseInt)
   .option('--sources <sources>', 'Sources spécifiques à sync (séparées par des virgules)')
+  .option('--skip-stats', 'Ne pas recalculer les stats parlementaires après le sync')
   .action(async (options) => {
     try {
       logger.info({ options }, 'Starting smart sync command');
@@ -402,6 +413,8 @@ program
         includeReunions: options.reunions,
         includeSenatReunions: options.senatReunions,
         includeSenatAgenda: options.senatAgenda,
+        includeSenatBureaux: options.senatBureaux,
+        includeSenatDossierCommissions: options.senatDossierCommissions,
         includeSenatVideos: options.senatVideos,
         includeAnVideos: options.anVideos,
         includeSeancesODJ: options.seancesOdj,
@@ -412,6 +425,7 @@ program
         lobbyingLimit: options.limit,
         reunionsLimit: options.limit,
         sources: options.sources?.split(',').map((s: string) => s.trim()),
+        skipStatsCalculation: options.skipStats,
       });
 
       const syncSummary = {
@@ -1078,6 +1092,34 @@ program
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'IA enrichment failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: sync-evenements
+// =============================================================================
+program
+  .command('sync-evenements')
+  .description('Événements institutionnels de l\'agenda (élections, sessions, suspensions, budget) — liste curée, idempotent')
+  .action(async () => {
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+
+      try {
+        const { syncEvenements } = await import('./workers/evenements.js');
+        const result = await syncEvenements(prisma);
+        console.log('\n📅 Événements institutionnels :');
+        console.log(`   Créés      : ${result.created}`);
+        console.log(`   Mis à jour : ${result.updated}`);
+        console.log(`   Total      : ${result.total}`);
+        process.exit(0);
+      } finally {
+        await prisma.$disconnect();
+      }
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-evenements failed');
       process.exit(1);
     }
   });

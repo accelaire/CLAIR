@@ -132,14 +132,34 @@ export const SOURCES: Record<string, SourceConfig> = {
     dataType: 'agenda',
     url: 'https://www.senat.fr/api/v1/agenda/events',
   },
+  'senat:bureaux': {
+    source: 'senat',
+    dataType: 'bureaux',
+    // Pages HTML « Le bureau de la commission … ». Elles n'exposent ni ETag ni
+    // Last-Modified exploitable, et une recomposition de bureau ne change aucune
+    // URL amont : rien à interroger pour décider. Le coût est marginal
+    // (~17 requêtes), on resynchronise donc systématiquement.
+    url: 'https://www.senat.fr/travaux-parlementaires/commissions.html',
+    alwaysSync: true,
+  },
+  'senat:dossier_commissions': {
+    source: 'senat',
+    dataType: 'dossier_commissions',
+    // Scraping des pages dossier-legislatif : aucune URL amont n'expose d'ETag
+    // ni de Last-Modified. Le worker est incrémental (il saute les dossiers
+    // déjà liés), donc un passage systématique reste peu coûteux.
+    url: 'https://www.senat.fr/dossiers-legislatifs/textes-recents.html',
+    alwaysSync: true,
+  },
   'senat:reunions': {
     source: 'senat',
     dataType: 'reunions',
-    // Le Sénat bloque le listing de ce répertoire (403 systématique, y compris
-    // depuis un navigateur) : c'est pour ça que le client génère les dates de
-    // lundi au lieu de scraper un index. Aucune URL en amont n'expose d'ETag ni
-    // de Last-Modified pour les comptes rendus de commission, donc pas de check.
-    url: 'https://www.senat.fr/compte-rendu-commissions/',
+    // Le listing du répertoire est bloqué (403 systématique), mais chaque
+    // commission publie une page d'index de ses comptes rendus : c'est de là que
+    // partent les URLs réelles, dont le slug hebdomadaire varie (etra/etrang/etran).
+    // Aucun de ces index n'expose d'ETag ni de Last-Modified exploitable, donc
+    // pas de check de fraîcheur possible.
+    url: 'https://www.senat.fr/compte-rendu-commissions/lois.html',
     alwaysSync: true,
   },
   'senat:videos': {

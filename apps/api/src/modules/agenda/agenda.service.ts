@@ -1,6 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { Redis } from 'ioredis';
-import { AgendaQuery } from './agenda.schema';
+import { AgendaQuery, ProchainesEcheancesQuery } from './agenda.schema';
 
 export class AgendaService {
   // Agenda data changes daily (reunions added/modified)
@@ -22,12 +22,18 @@ export class AgendaService {
     const cached = await this.redis.get(cacheKey);
     if (cached) return JSON.parse(cached);
 
+    // `type` arbitre les deux collections : 'evenement' ne renvoie QUE les repères
+    // institutionnels (on évite alors la requête réunions), 'commission'/'seance'
+    // ne renvoient que des réunions, 'tous' les deux.
+    const wantsReunions = query.type !== 'evenement';
+    const wantsEvenements = query.type === 'tous' || query.type === 'evenement';
+
     const where: Record<string, unknown> = {
       dateDebut: { gte: query.dateFrom, lte: dateTo },
       etat: { not: 'supprime' },
     };
 
-    if (query.type !== 'tous') where.type = query.type;
+    if (query.type !== 'tous' && query.type !== 'evenement') where.type = query.type;
     if (query.commissionId) where.commissionId = query.commissionId;
     if (query.chambre) {
       const existingConditions = { ...where };
@@ -45,28 +51,35 @@ export class AgendaService {
       where.AND = [existingConditions, { OR: chambreOr }];
     }
 
-    const [reunions, total] = await Promise.all([
-      this.prisma.reunion.findMany({
-        where,
-        orderBy: { dateDebut: 'asc' },
-        skip: (query.page - 1) * query.limit,
-        take: query.limit,
-        include: {
-          commission: {
-            select: {
-              id: true,
-              slug: true,
-              nom: true,
-              nomCourt: true,
-              chambre: true,
-              type: true,
-              organeRef: true,
-            },
-          },
-          _count: { select: { participants: true } },
+    const reunionInclude = {
+      commission: {
+        select: {
+          id: true,
+          slug: true,
+          nom: true,
+          nomCourt: true,
+          chambre: true,
+          type: true,
+          organeRef: true,
         },
-      }),
-      this.prisma.reunion.count({ where }),
+      },
+      _count: { select: { participants: true } },
+    } as const;
+
+    const [reunions, total, evenements] = await Promise.all([
+      wantsReunions
+        ? this.prisma.reunion.findMany({
+          where,
+          orderBy: { dateDebut: 'asc' },
+          skip: (query.page - 1) * query.limit,
+          take: query.limit,
+          include: reunionInclude,
+        })
+        : Promise.resolve([]),
+      wantsReunions ? this.prisma.reunion.count({ where }) : Promise.resolve(0),
+      wantsEvenements
+        ? this.getEvenementsSurPeriode(query.dateFrom, dateTo, query.chambre)
+        : Promise.resolve([]),
     ]);
 
     const scrutinSelect = {
@@ -172,9 +185,111 @@ export class AgendaService {
         totalPages: Math.ceil(total / query.limit),
       },
       byDay,
+      // Hors `byDay` volontairement : un événement peut couvrir une PÉRIODE
+      // (suspension de travaux) et n'appartient donc pas à un jour unique.
+      // Le client décide de le rendre en pastille ou en bandeau.
+      evenements,
     };
 
     await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+    return result;
+  }
+
+  /**
+   * Événements institutionnels chevauchant la fenêtre.
+   *
+   * Deux cas distincts, d'où le OR : un événement ponctuel (`dateFin` null) doit
+   * simplement tomber dans la fenêtre ; un événement de période la chevauche dès
+   * lors qu'il commence avant la fin et finit après le début. Un filtre naïf sur
+   * `dateDebut` seul ferait disparaître une suspension estivale quand on consulte
+   * le mois de septembre, alors qu'elle le couvre entièrement.
+   *
+   * `chambre` null = concerne les deux, donc toujours retenu.
+   */
+  private async getEvenementsSurPeriode(
+    dateFrom: Date,
+    dateTo: Date,
+    chambre?: 'assemblee' | 'senat',
+  ) {
+    const chevauchement: Prisma.EvenementInstitutionnelWhereInput = {
+      OR: [
+        { dateFin: null, dateDebut: { gte: dateFrom, lte: dateTo } },
+        { dateFin: { not: null, gte: dateFrom }, dateDebut: { lte: dateTo } },
+      ],
+    };
+
+    // Une chambre demandée conserve aussi les événements transverses (chambre
+    // null) : une élection présidentielle ou une suspension concerne tout le monde.
+    const where: Prisma.EvenementInstitutionnelWhereInput = chambre
+      ? { AND: [chevauchement, { OR: [{ chambre }, { chambre: null }] }] }
+      : chevauchement;
+
+    return this.prisma.evenementInstitutionnel.findMany({
+      where,
+      orderBy: [{ dateDebut: 'asc' }, { titre: 'asc' }],
+      select: {
+        id: true,
+        slug: true,
+        type: true,
+        titre: true,
+        description: true,
+        dateDebut: true,
+        dateFin: true,
+        datePrecise: true,
+        chambre: true,
+        sources: true,
+        important: true,
+      },
+    });
+  }
+
+  /**
+   * Prochaines échéances à partir d'aujourd'hui (bloc d'accueil, page dédiée).
+   * Une période en cours reste « à venir » tant qu'elle n'est pas terminée.
+   */
+  async getProchainesEcheances(query: ProchainesEcheancesQuery) {
+    const now = new Date();
+    const aujourdhui = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+    ));
+
+    // Le jour fait partie de la clé : sans lui, l'entrée écrite la veille
+    // continuerait de servir une échéance déjà passée jusqu'à expiration du TTL.
+    const jour = aujourdhui.toISOString().split('T')[0];
+    const cacheKey = `agenda:echeances:${jour}:${query.limit}:${query.importantOnly}`;
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
+    const evenements = await this.prisma.evenementInstitutionnel.findMany({
+      where: {
+        OR: [
+          { dateFin: null, dateDebut: { gte: aujourdhui } },
+          { dateFin: { gte: aujourdhui } },
+        ],
+        ...(query.importantOnly ? { important: true } : {}),
+      },
+      orderBy: [{ dateDebut: 'asc' }, { titre: 'asc' }],
+      take: query.limit,
+      select: {
+        id: true,
+        slug: true,
+        type: true,
+        titre: true,
+        description: true,
+        dateDebut: true,
+        dateFin: true,
+        datePrecise: true,
+        chambre: true,
+        sources: true,
+        important: true,
+      },
+    });
+
+    const result = { data: evenements };
+    // TTL court : la liste bascule d'un jour à l'autre quand une échéance passe.
+    await this.redis.setex(cacheKey, 3600, JSON.stringify(result));
     return result;
   }
 

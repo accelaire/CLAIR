@@ -308,6 +308,21 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
               status: true,
             },
           },
+          // Commissions saisies. Un dossier est fréquemment examiné dans les
+          // deux chambres : on trie donc par chambre puis par rôle, pour que la
+          // saisine au fond de chaque chambre passe avant les saisines pour avis.
+          dossierCommissions: {
+            select: {
+              role: true,
+              commission: {
+                // `nomCourt` est volontairement absent : côté Assemblée il
+                // contient le code brut de l'organe (CION_FIN, CION-SOC…), pas
+                // un libellé affichable. Seul `nom` est présentable.
+                select: { slug: true, nom: true, chambre: true, type: true },
+              },
+            },
+            orderBy: [{ commission: { chambre: 'asc' } }],
+          },
           scrutins: {
             orderBy: [{ date: 'desc' }, { numero: 'asc' }],
             take: 20,
@@ -478,6 +493,19 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
       const result = {
         ...dossier,
         sourceData: undefined,
+        // Aplati pour éviter au client de traverser la table de liaison.
+        // Le rang est explicite : un tri alphabétique sur `role` placerait
+        // « avis » avant « fond », alors que la saisine au fond prime.
+        commissions: [...dossier.dossierCommissions]
+          .sort((a, b) => (a.role === b.role ? 0 : a.role === 'fond' ? -1 : 1))
+          .map((dc) => ({
+            slug: dc.commission.slug,
+            nom: dc.commission.nom,
+            chambre: dc.commission.chambre,
+            type: dc.commission.type,
+            role: dc.role,
+          })),
+        dossierCommissions: undefined,
         loiNumero,
         loiTitre,
         loiDateJO,
