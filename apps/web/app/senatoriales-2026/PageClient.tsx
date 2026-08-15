@@ -83,15 +83,13 @@ export interface Sortant {
     segments: number;
     interrompu: boolean;
   };
+  /** Statistiques de carrière — identiques à celles de la fiche du sénateur. */
   bilan: {
     presence: number | null;
-    presenceSolennel: number | null;
     loyaute: number | null;
     participation: number | null;
     interventions: number | null;
     amendements: number | null;
-    amendementsAdoptes: number | null;
-    questions: number | null;
     calculatedAt: string | null;
   };
 }
@@ -392,18 +390,17 @@ function SenatorialesPageContent() {
 
       <div className="text-sm text-muted-foreground space-y-2">
         <p>
-          Les taux de présence et de loyauté sont calculés{' '}
-          <strong>sur la durée réelle du mandat</strong>, donc comparables entre eux. En
-          revanche, les compteurs d&apos;interventions et d&apos;amendements ne le sont pas
-          entre un sénateur en poste depuis 2020 et un arrivé en cours de mandature —
-          d&apos;où le badge sur sa carte.
+          Les chiffres affichés sont ceux de la <strong>carrière au Sénat</strong> de
+          chaque sortant : ce sont exactement ceux de sa fiche. Les taux de présence et
+          de loyauté sont comparables entre eux ; les compteurs d&apos;interventions et
+          d&apos;amendements le sont moins, un sénateur arrivé en cours de mandature
+          ayant eu moins d&apos;occasions de siéger — d&apos;où le badge sur sa carte.
         </p>
         <p>
           Quelques mandats ont été exercés en plusieurs périodes, une entrée au
-          gouvernement suspendant le mandat parlementaire. Leur bilan additionne les
-          compteurs de chaque période et pondère les taux par sa durée, plutôt que de
-          n&apos;afficher que la dernière : ces sénateurs portent le badge{' '}
-          <em>mandat interrompu</em>.
+          gouvernement suspendant le mandat parlementaire. Ces sénateurs portent le badge{' '}
+          <em>mandat interrompu</em> ; leurs chiffres couvrent bien l&apos;ensemble de
+          leur passage au Sénat, et non la seule période en cours.
         </p>
         <p>
           <Link href="/methodologie" className="underline hover:text-foreground">

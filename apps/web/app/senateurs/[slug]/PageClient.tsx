@@ -790,7 +790,7 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
               value={senateur.stats.presence}
               suffix="%"
               icon={ShieldCheck}
-              tooltip="Pourcentage de scrutins publics auxquels ce parlementaire a participé (voté pour, contre ou abstention)."
+              tooltip="Pourcentage de scrutins publics auxquels ce parlementaire a participé (voté pour, contre ou abstention). Calculé sur l'ensemble de la carrière au Sénat, tous mandats confondus."
               tooltipHref="/comprendre/parlementaire"
             />
             <StatCard
@@ -798,21 +798,21 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
               value={senateur.stats.loyaute}
               suffix="%"
               icon={Users}
-              tooltip="Pourcentage de votes alignés avec la position majoritaire du groupe politique."
+              tooltip="Pourcentage de votes alignés avec la position majoritaire du groupe politique. Calculé sur l'ensemble de la carrière au Sénat, tous mandats confondus."
               tooltipHref="/comprendre/parlementaire"
             />
             <StatCard
               label="Votes"
               value={senateur.stats.participation}
               icon={Vote}
-              tooltip="Nombre total de scrutins publics auxquels ce parlementaire a pris part."
+              tooltip="Nombre total de scrutins publics auxquels ce parlementaire a pris part. Calculé sur l'ensemble de la carrière au Sénat, tous mandats confondus."
               tooltipHref="/comprendre/parlementaire"
             />
             <StatCard
               label="Interventions"
               value={senateur.stats.interventions}
               icon={MessageSquare}
-              tooltip="Nombre de prises de parole en séance publique."
+              tooltip="Nombre de prises de parole en séance publique. Calculé sur l'ensemble de la carrière au Sénat, tous mandats confondus."
               tooltipHref="/comprendre/parlementaire"
             />
           </div>

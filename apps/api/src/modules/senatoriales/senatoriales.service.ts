@@ -84,15 +84,17 @@ export interface Sortant {
     segments: number;
     interrompu: boolean;
   };
+  /**
+   * Statistiques de carrière de la personne — les mêmes que sa fiche. Il n'existe
+   * pas d'équivalent carrière pour la présence en scrutin solennel, les amendements
+   * adoptés ni les questions : ces mesures ne sont donc pas exposées ici.
+   */
   bilan: {
     presence: number | null;
-    presenceSolennel: number | null;
     loyaute: number | null;
     participation: number | null;
     interventions: number | null;
     amendements: number | null;
-    amendementsAdoptes: number | null;
-    questions: number | null;
     calculatedAt: string | null;
   };
 }
@@ -113,17 +115,7 @@ const MANDATS_SORTANTS: Prisma.MandatParlementaireWhereInput = {
   OR: [{ dateFin: null }, { dateFin: { gte: DATE_REFERENCE } }],
 };
 
-type CleTaux =
-  | 'statsPresence'
-  | 'statsPresenceSolennel'
-  | 'statsLoyaute'
-  | 'statsParticipation';
 
-type CleCumul =
-  | 'statsInterventions'
-  | 'statsAmendements'
-  | 'statsAmendementsAdoptes'
-  | 'statsQuestions';
 
 /** Durée couverte par un segment de mandat, bornée au jour du scrutin. */
 export function joursCouverts(debut: Date, fin: Date | null): number {
@@ -131,27 +123,7 @@ export function joursCouverts(debut: Date, fin: Date | null): number {
   return Math.max(0, (borne.getTime() - debut.getTime()) / MS_PAR_JOUR);
 }
 
-/**
- * Moyenne d'un taux sur plusieurs segments, pondérée par leur durée.
- *
- * Une moyenne simple donnerait le même poids à quatre ans de mandat et à deux
- * mois de remplacement. Les segments sans mesure sont ignorés plutôt que comptés
- * pour zéro.
- */
-export function moyennePonderee(valeurs: [number | null, number][]): number | null {
-  const utiles = valeurs.filter(([v, poids]) => v !== null && poids > 0);
-  if (utiles.length === 0) return null;
-  const total = utiles.reduce((acc, [, poids]) => acc + poids, 0);
-  if (total === 0) return null;
-  return Math.round(utiles.reduce((acc, [v, poids]) => acc + v! * poids, 0) / total);
-}
 
-/** Somme d'un compteur sur plusieurs segments ; `null` si aucun segment n'en porte. */
-export function somme(valeurs: (number | null)[]): number | null {
-  const utiles = valeurs.filter((v): v is number => v !== null);
-  if (utiles.length === 0) return null;
-  return utiles.reduce((acc, v) => acc + v, 0);
-}
 
 /**
  * Départage commun à tous les tris.
@@ -306,6 +278,24 @@ export class SenatorialesService {
    * kilo-octets, et filtrer 178 lignes en mémoire coûte moins qu'un aller-retour
    * SQL par combinaison de filtres.
    */
+  /**
+   * Les 178 sièges remis en jeu, sans filtre ni tri.
+   *
+   * Le bilan est lu dans les colonnes `stats_carriere_*` de la personne, celles-là
+   * mêmes qu'affiche sa fiche : deux chiffres différents pour un même sénateur à un
+   * clic d'écart seraient un défaut de crédibilité, et le lecteur n'a aucun moyen
+   * de savoir lequel croire.
+   *
+   * Ce choix règle du même coup les mandats interrompus. Une entrée au gouvernement
+   * scinde le mandat en plusieurs lignes, dont la dernière ne porte qu'une fraction
+   * de la mandature — celle de Bruno Retailleau, ouverte le 22 octobre 2024, affiche
+   * 46 % de présence. Les statistiques de carrière sont calculées sur les votes de
+   * la personne et ignorent ce découpage.
+   *
+   * Le chargement est mutualisé : la liste tient en quelques centaines de
+   * kilo-octets, et filtrer 178 lignes en mémoire coûte moins qu'un aller-retour
+   * SQL par combinaison de filtres.
+   */
   private async chargerSortants(): Promise<Sortant[]> {
     const cacheKey = 'senatoriales:2026:sortants:bruts';
     const cached = await this.redis.get(cacheKey);
@@ -323,6 +313,12 @@ export class SenatorialesService {
             photoUrl: true,
             profession: true,
             dateNaissance: true,
+            statsCarrierePresence: true,
+            statsCarriereLoyaute: true,
+            statsCarriereParticipation: true,
+            statsCarriereInterventions: true,
+            statsCarriereAmendements: true,
+            statsCalculatedAt: true,
           },
         },
         groupe: {
@@ -343,12 +339,10 @@ export class SenatorialesService {
       },
     });
 
-    // Un mandat interrompu (entrée au gouvernement, notamment) est stocké en
-    // plusieurs lignes. La ligne encore ouverte ne porte alors que les statistiques
-    // de son propre segment : celle de Bruno Retailleau, ouverte le 22 octobre 2024,
-    // affiche 46 % de présence là où la mandature complète en compte 98 puis 46.
-    // Les publier telles quelles reviendrait à présenter une fraction du mandat
-    // comme s'il s'agissait du bilan des six ans.
+    // Les autres lignes de mandat de la mandature ne servent plus au bilan, mais
+    // restent nécessaires pour dater le début réel du mandat : la ligne encore
+    // ouverte d'un mandat interrompu ferait passer son titulaire pour une arrivée
+    // en cours de mandature.
     const segments = await this.prisma.mandatParlementaire.findMany({
       where: {
         chambre: 'senat',
@@ -356,45 +350,20 @@ export class SenatorialesService {
         mandature: MANDATURE_SORTANTE,
         personneId: { in: sieges.map((m) => m.personneId) },
       },
-      select: {
-        personneId: true,
-        dateDebut: true,
-        dateFin: true,
-        statsPresence: true,
-        statsPresenceSolennel: true,
-        statsLoyaute: true,
-        statsParticipation: true,
-        statsInterventions: true,
-        statsAmendements: true,
-        statsAmendementsAdoptes: true,
-        statsQuestions: true,
-        statsCalculatedAt: true,
-      },
+      select: { personneId: true, dateDebut: true },
     });
 
-    const parPersonne = new Map<string, typeof segments>();
+    const segmentsParPersonne = new Map<string, Date[]>();
     for (const segment of segments) {
-      const liste = parPersonne.get(segment.personneId);
-      if (liste) liste.push(segment);
-      else parPersonne.set(segment.personneId, [segment]);
+      const dates = segmentsParPersonne.get(segment.personneId);
+      if (dates) dates.push(segment.dateDebut);
+      else segmentsParPersonne.set(segment.personneId, [segment.dateDebut]);
     }
 
     const data: Sortant[] = sieges.map((siege) => {
-      const mesSegments = parPersonne.get(siege.personneId) ?? [];
-      const debut = mesSegments.reduce(
-        (min, s) => (s.dateDebut < min ? s.dateDebut : min),
-        siege.dateDebut,
-      );
-
-      const poids = mesSegments.map((s) => joursCouverts(s.dateDebut, s.dateFin));
-      const taux = (cle: CleTaux) =>
-        moyennePonderee(mesSegments.map((s, i) => [s[cle], poids[i] ?? 0]));
-      const cumul = (cle: CleCumul) => somme(mesSegments.map((s) => s[cle]));
-
-      const calculatedAt = mesSegments
-        .map((s) => s.statsCalculatedAt)
-        .filter((d): d is Date => d !== null)
-        .sort((a, b) => b.getTime() - a.getTime())[0];
+      const dates = segmentsParPersonne.get(siege.personneId) ?? [siege.dateDebut];
+      const debut = dates.reduce((min, d) => (d < min ? d : min), siege.dateDebut);
+      const { personne } = siege;
 
       return {
         mandatId: siege.id,
@@ -402,8 +371,13 @@ export class SenatorialesService {
         // premier appel renvoie des objets et les suivants, relus du cache JSON,
         // des chaînes. Même charge utile HTTP, mais un seul type côté service.
         personne: {
-          ...siege.personne,
-          dateNaissance: siege.personne.dateNaissance?.toISOString() ?? null,
+          id: personne.id,
+          slug: personne.slug,
+          nom: personne.nom,
+          prenom: personne.prenom,
+          photoUrl: personne.photoUrl,
+          profession: personne.profession,
+          dateNaissance: personne.dateNaissance?.toISOString() ?? null,
         },
         groupe: siege.groupe,
         circonscription: siege.circonscription,
@@ -416,19 +390,16 @@ export class SenatorialesService {
             0,
             Math.round(joursCouverts(debut, siege.dateFin) / JOURS_PAR_MOIS),
           ),
-          segments: mesSegments.length,
-          interrompu: mesSegments.length > 1,
+          segments: dates.length,
+          interrompu: dates.length > 1,
         },
         bilan: {
-          presence: taux('statsPresence'),
-          presenceSolennel: taux('statsPresenceSolennel'),
-          loyaute: taux('statsLoyaute'),
-          participation: taux('statsParticipation'),
-          interventions: cumul('statsInterventions'),
-          amendements: cumul('statsAmendements'),
-          amendementsAdoptes: cumul('statsAmendementsAdoptes'),
-          questions: cumul('statsQuestions'),
-          calculatedAt: calculatedAt?.toISOString() ?? null,
+          presence: personne.statsCarrierePresence,
+          loyaute: personne.statsCarriereLoyaute,
+          participation: personne.statsCarriereParticipation,
+          interventions: personne.statsCarriereInterventions,
+          amendements: personne.statsCarriereAmendements,
+          calculatedAt: personne.statsCalculatedAt?.toISOString() ?? null,
         },
       };
     });

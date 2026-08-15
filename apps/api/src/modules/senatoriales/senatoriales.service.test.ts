@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { joursCouverts, moyennePonderee, somme, comparateur, type Sortant } from './senatoriales.service';
+import { joursCouverts, comparateur, type Sortant } from './senatoriales.service';
 
 function sortant(partiel: {
   nom?: string;
@@ -47,13 +47,10 @@ function sortant(partiel: {
     },
     bilan: {
       presence: partiel.presence ?? null,
-      presenceSolennel: null,
       loyaute: partiel.loyaute ?? null,
       participation: null,
       interventions: partiel.interventions ?? null,
       amendements: partiel.amendements ?? null,
-      amendementsAdoptes: null,
-      questions: null,
       calculatedAt: null,
     },
   };
@@ -80,53 +77,6 @@ describe('joursCouverts', () => {
   it('renvoie zéro pour un segment commencé après le scrutin et jamais un nombre négatif', () => {
     const debut = new Date('2026-09-28T00:00:00.000Z');
     expect(joursCouverts(debut, null)).toBe(0);
-  });
-});
-
-describe('moyennePonderee', () => {
-  it('renvoie null pour une liste vide', () => {
-    expect(moyennePonderee([])).toBeNull();
-  });
-
-  it('renvoie la valeur d\'un unique segment mesuré', () => {
-    expect(moyennePonderee([[75, 100]])).toBe(75);
-  });
-
-  it('calcule la moyenne pondérée exacte sur plusieurs segments et arrondit à l\'entier', () => {
-    // Segment de 1461 jours à 98 % et segment de 700 jours à 46 %
-    // (98 * 1461 + 46 * 700) / (1461 + 700) ≈ 81,16 → 81
-    expect(moyennePonderee([[98, 1461], [46, 700]])).toBe(81);
-  });
-
-  it('ignore les segments sans mesure (null) plutôt que de les compter pour zéro', () => {
-    expect(moyennePonderee([[null, 1000], [80, 10]])).toBe(80);
-  });
-
-  it('renvoie null si toutes les valeurs sont nulles', () => {
-    expect(moyennePonderee([[null, 100], [null, 200]])).toBeNull();
-  });
-
-  it('renvoie null si tous les poids sont nuls', () => {
-    expect(moyennePonderee([[50, 0], [60, 0]])).toBeNull();
-  });
-
-  it('arrondit le résultat à l\'entier le plus proche', () => {
-    // (1 + 2) / 2 = 1,5 → 2
-    expect(moyennePonderee([[1, 1], [2, 1]])).toBe(2);
-  });
-});
-
-describe('somme', () => {
-  it('renvoie null si tous les éléments sont null', () => {
-    expect(somme([null, null])).toBeNull();
-  });
-
-  it('additionne uniquement les nombres présents en ignorant les null', () => {
-    expect(somme([null, 5, null, 3, null])).toBe(8);
-  });
-
-  it('renvoie null pour une liste vide', () => {
-    expect(somme([])).toBeNull();
   });
 });
 

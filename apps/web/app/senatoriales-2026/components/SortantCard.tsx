@@ -73,7 +73,7 @@ export function SortantCard({ sortant }: { sortant: Sortant }) {
         {sortant.mandat.interrompu && (
           <span
             className="inline-block rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
-            title="Mandat exercé en plusieurs périodes. Les chiffres ci-dessous couvrent l'ensemble de la mandature, les taux étant pondérés par la durée de chaque période."
+            title="Mandat exercé en plusieurs périodes, une entrée au gouvernement l'ayant suspendu. Les chiffres ci-dessous couvrent l'ensemble du passage au Sénat."
           >
             Mandat interrompu
           </span>
