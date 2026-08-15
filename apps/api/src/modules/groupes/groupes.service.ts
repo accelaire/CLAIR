@@ -975,7 +975,14 @@ export class GroupesService {
         }[]
       >`
         WITH scrutins_groupe AS (
-          SELECT DISTINCT s.id, s.tags
+          -- Pas de DISTINCT : s.id est la clé primaire et le filtre du
+          -- demandeur est un EXISTS, qui ne duplique pas de ligne. Il y en avait
+          -- un, et comme il ne couvrait pas la colonne de tri, Postgres
+          -- refusait la requête (42P10).
+          --
+          -- chambre, legislature et date sont portées jusqu'ici pour
+          -- rattacher chaque vote au groupe d'époque de son auteur, plus bas.
+          SELECT s.id, s.tags, s.chambre, s.legislature, s.date
           FROM scrutins s
           WHERE s.chambre = ${chambre}
             ${this.demandeurInitieParSql(groupe.id)}
@@ -983,7 +990,12 @@ export class GroupesService {
           LIMIT 500
         ),
         scrutin_tags AS (
-          SELECT sg.id as scrutin_id, unnest(sg.tags) as tag
+          SELECT
+            sg.id as scrutin_id,
+            sg.chambre,
+            sg.legislature,
+            sg.date,
+            unnest(sg.tags) as tag
           FROM scrutins_groupe sg
         ),
         votes_par_tag AS (
@@ -995,14 +1007,18 @@ export class GroupesService {
             SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) as abstention
           FROM scrutin_tags st
           JOIN votes v ON v.scrutin_id = st.scrutin_id
+          -- Groupe d'époque : on retient le mandat que le votant exerçait au
+          -- moment du scrutin, et non son groupe actuel. Les colonnes viennent
+          -- de scrutin_tags ; elles étaient lues sur un alias s absent de
+          -- ce FROM, ce qui faisait échouer la requête (42P01).
           JOIN mandats_parlementaires m
             ON m.personne_id = v.parlementaire_id
-            AND m.chambre = s.chambre
+            AND m.chambre = st.chambre
             AND (
-                  (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
-                   AND m.legislature = s.legislature)
-               OR (s.chambre = 'senat' AND m.date_debut <= s.date
-                   AND (m.date_fin IS NULL OR m.date_fin >= s.date))
+                  (st.chambre = 'assemblee' AND st.legislature IS NOT NULL
+                   AND m.legislature = st.legislature)
+               OR (st.chambre = 'senat' AND m.date_debut <= st.date
+                   AND (m.date_fin IS NULL OR m.date_fin >= st.date))
                 )
           WHERE m.groupe_id = ${groupe.id}
           GROUP BY st.tag, v.scrutin_id
