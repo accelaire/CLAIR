@@ -4,6 +4,28 @@ import { BreadcrumbJsonLd } from '@/components/seo/JsonLd';
 import PageClient from './PageClient';
 import type { ApercuSenatoriales, Sortant } from './PageClient';
 
+/**
+ * Rendu à la demande, et non au build.
+ *
+ * `PageClient` lit les filtres dans l'URL (`useUrlFilters` → `useSearchParams`).
+ * Sur une route pré-rendue, Next ne connaît pas les paramètres de recherche au
+ * moment du build : il abandonne le pré-rendu du sous-arbre et écrit à la place
+ * le `fallback` de la `<Suspense>` la plus proche. Le HTML servi ne contenait
+ * donc que le squelette de chargement — 15 Ko sans un seul nom de sénateur,
+ * alors que le fetch serveur juste en dessous avait bien ramené les 178 lignes.
+ * Elles ne voyageaient que dans la charge utile RSC, à l'intérieur de balises
+ * `script` : le navigateur les affichait instantanément, mais rien de tout cela
+ * n'existait pour qui n'exécute pas le JavaScript. C'est précisément ce que
+ * cette page cherche à éviter.
+ *
+ * En rendu à la demande, les paramètres sont connus et l'arbre est rendu en
+ * entier côté serveur : le contenu revient dans le DOM (307 Ko, 178 sortants).
+ * Le coût est absorbé par le cache edge posé sur ce chemin dans `vercel.json`,
+ * sur le modèle du proxy `/api/v1/[...path]` : le CDN rend la page une fois et
+ * la sert ensuite sans réveiller la fonction.
+ */
+export const dynamic = 'force-dynamic';
+
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
 
 const title = 'Sénatoriales 2026 — le bilan des sortants';
