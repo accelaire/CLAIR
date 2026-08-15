@@ -25,6 +25,7 @@ const navigation: NavItem[] = [
       { name: 'Députés', href: '/deputes' },
       { name: 'Sénateurs', href: '/senateurs' },
       { name: 'Commissions', href: '/commissions' },
+      { name: 'Sénatoriales 2026', href: '/senatoriales-2026' },
     ],
   },
   {
