@@ -41,6 +41,7 @@ import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
 import { InterventionsList } from '@/components/parlementaire/interventions-list';
 import { MandatsBlock } from '@/components/parlementaire/mandats-timeline';
+import { SiegeRenouvelableCallout } from '@/components/SiegeRenouvelableCallout';
 
 export interface SenateurDetail {
   id: string;
@@ -56,6 +57,8 @@ export interface SenateurDetail {
   email: string | null;
   siteWeb: string | null;
   serie: string | null;
+  actif: boolean | null;
+  chambre: string | null;
   commissionPermanente: string | null;
   groupe: {
     slug: string;
@@ -774,6 +777,8 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
           </p>
         </div>
       </div>
+
+      <SiegeRenouvelableCallout parlementaire={senateur} />
 
       {/* Statistiques */}
       {senateur.stats && (

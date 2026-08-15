@@ -4,7 +4,8 @@ import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, ArrowRight, Calendar, ChevronLeft, ChevronRight, Landmark, Building2, Users, Lightbulb } from 'lucide-react';
+import { Search, ArrowRight, Calendar, ChevronLeft, ChevronRight, Landmark, Building2, Users, Lightbulb, Vote } from 'lucide-react';
+import { SENATORIALES_2026, renouvellementAVenir } from '@/lib/senatoriales';
 import { api } from '@/lib/api';
 import { useCountUp } from '@/hooks/useCountUp';
 import { useLiveNow } from '@/hooks/useLiveNow';
@@ -298,6 +299,36 @@ function DayCard({ isoDate, label, events, evenements }: {
  * réunion à venir : c'est justement le cas pendant une suspension de séance, et
  * c'est là que ces repères sont les plus utiles.
  */
+/**
+ * Accroche vers la page du renouvellement sénatorial, au-dessus du planning.
+ *
+ * Plus visible que la puce d'échéance qui la suit, sans la remplacer : la puce
+ * mène à l'agenda, celle-ci mène directement au bilan des sortants. Le bloc
+ * disparaît de lui-même à la prise de fonction des élus.
+ */
+function SenatorialesCallout() {
+  if (!renouvellementAVenir()) return null;
+
+  return (
+    <Link
+      href={SENATORIALES_2026.href}
+      className="mb-8 flex items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 p-4 text-rose-700 transition-colors hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300 dark:hover:bg-rose-950/50"
+    >
+      <Vote className="h-5 w-5 shrink-0" aria-hidden />
+      <span className="min-w-0 flex-1 text-sm">
+        <strong className="font-semibold">Sénatoriales du 27 septembre 2026.</strong>{' '}
+        178 des 348 sièges sont renouvelés. Le bilan de mandature des sortants,
+        département par département.
+      </span>
+      <span className="hidden shrink-0 items-center gap-1 text-sm font-medium sm:inline-flex">
+        Consulter
+        <ArrowRight className="h-4 w-4" aria-hidden />
+      </span>
+      <ArrowRight className="h-4 w-4 shrink-0 sm:hidden" aria-hidden />
+    </Link>
+  );
+}
+
 function EcheancesStrip({ echeances }: { echeances: AgendaEvenement[] }) {
   if (echeances.length === 0) return null;
 
@@ -601,6 +632,7 @@ export default function HomePage() {
       {/* Prochainement au Parlement */}
       <section className="py-16">
         <div className="container mx-auto px-4">
+          <SenatorialesCallout />
           <div className="mb-8">
             <span className="text-sm font-medium text-primary">Agenda</span>
             <div className="flex items-center justify-between mt-1">
