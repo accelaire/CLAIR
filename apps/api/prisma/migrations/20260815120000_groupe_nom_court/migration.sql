@@ -1,0 +1,11 @@
+-- Libellé court d'usage des groupes politiques.
+--
+-- `nom` porte le sigle tel que la source le code, et sert de clé de matching
+-- (GROUP_ALIASES / buildGroupMatcher côté ingestion). Le Sénat gèle ses codes à
+-- travers les renommages pour que les données historiques continuent de se
+-- rattacher : « UMP » désigne toujours le groupe Les Républicains et « LREM » le
+-- RDPI. On ajoute donc une colonne d'affichage plutôt que d'écraser la clé.
+--
+-- Additive et nullable : les lignes existantes restent valides, l'affichage
+-- retombe sur `nom` tant que la colonne n'est pas alimentée.
+ALTER TABLE "groupes_politiques" ADD COLUMN "nom_court" TEXT;

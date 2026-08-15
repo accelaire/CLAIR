@@ -108,9 +108,20 @@ model Parlementaire {
 }
 
 model GroupePolitique {
-  id         String  @id @default(uuid())
-  slug       String
-  nom        String
+  id   String @id @default(uuid())
+  slug String
+
+  // `nom` porte le SIGLE tel que la source le code, et sert de clé de matching :
+  // `GROUP_ALIASES` et `buildGroupMatcher` (checks/ia-quality.ts) sont indexés
+  // dessus. Le Sénat gèle ses codes à travers les renommages pour que les données
+  // historiques continuent de se rattacher — d'où « UMP » pour Les Républicains
+  // et « LREM » pour le RDPI. Ne jamais y mettre un libellé lisible.
+  nom String
+
+  // Libellé court d'usage, à afficher. Vient de `libelleCourt` côté Sénat ; null
+  // pour l'AN, dont le sigle de `nom` est déjà celui d'usage.
+  nomCourt String? @map("nom_court")
+
   nomComplet String? @map("nom_complet")
   couleur    String?
   logoUrl    String? @map("logo_url")

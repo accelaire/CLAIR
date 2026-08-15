@@ -44,23 +44,11 @@ export interface GroupeRepartition {
 }
 
 /**
- * Nom affichable d'un groupe sénatorial.
- *
- * `nom` porte le code hérité de l'open data du Sénat : le groupe Les Républicains
- * y est encore « UMP » et le RDPI « LREM ». Sur une page consacrée au scrutin, ces
- * étiquettes seraient factuellement fausses — on affiche donc `nomComplet`, débarrassé
- * de son préfixe « Groupe » qui n'apporte rien dans une liste.
+ * Nom affichable d'un groupe. L'API résout déjà `nom` vers le libellé d'usage du
+ * Sénat ; il ne reste ici que le cas du mandat sans groupe rattaché.
  */
-export function nomGroupe(
-  groupe: { nom: string; nomComplet: string | null } | null,
-): string {
-  if (!groupe) return 'Sans groupe';
-  // L'article qui suit « Groupe » part avec lui, sans quoi le RDSE s'afficherait
-  // « du Rassemblement Démocratique et Social Européen ».
-  const complet = groupe.nomComplet
-    ?.replace(/^Groupe\s+(du\s+|de\s+la\s+|de\s+l['’]|des\s+|de\s+)?/i, '')
-    .trim();
-  return complet && complet.length > 0 ? complet : groupe.nom;
+export function nomGroupe(groupe: { nom: string } | null): string {
+  return groupe ? groupe.nom : 'Sans groupe';
 }
 
 export interface Sortant {

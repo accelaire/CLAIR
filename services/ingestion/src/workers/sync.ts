@@ -1002,27 +1002,49 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
 
   const { senateurs, groupes } = await senatClient.getSenateurs();
 
-  // D'abord synchroniser les groupes du Sénat
+  // D'abord synchroniser les groupes du Sénat.
+  //
+  // Les libellés sont rafraîchis à chaque passage. Sans ça, une ligne créée une
+  // fois restait figée : les neuf groupes du Sénat n'avaient plus bougé depuis
+  // leur création, et un renommage de groupe ne serait jamais remonté.
   for (const g of groupes) {
     const existing = await prisma.groupePolitique.findFirst({
       where: { OR: [{ sourceId: g.uid }, { AND: [{ slug: g.slug }, { chambre: g.chambre }] }] },
+      select: { id: true, couleur: true },
     });
 
-    if (!existing) {
-      await prisma.groupePolitique.create({
+    if (existing) {
+      await prisma.groupePolitique.update({
+        where: { id: existing.id },
         data: {
-          slug: g.slug,
-          chambre: g.chambre,
           nom: g.nom,
+          nomCourt: g.nomCourt,
           nomComplet: g.nomComplet,
-          couleur: g.couleur,
           position: g.position || 'centre',
-          ordre: 0,
-          actif: true,
-          sourceId: g.uid,
+          ordre: g.ordre,
+          // `getGroupeColor` est indexée sur des codes modernes (LR, RDPI, INDEP)
+          // que la source ne renvoie pas : elle rend null pour les neuf groupes.
+          // Écraser sans garde effacerait les couleurs déjà en base.
+          ...(g.couleur ? { couleur: g.couleur } : {}),
         },
       });
+      continue;
     }
+
+    await prisma.groupePolitique.create({
+      data: {
+        slug: g.slug,
+        chambre: g.chambre,
+        nom: g.nom,
+        nomCourt: g.nomCourt,
+        nomComplet: g.nomComplet,
+        couleur: g.couleur,
+        position: g.position || 'centre',
+        ordre: g.ordre,
+        actif: true,
+        sourceId: g.uid,
+      },
+    });
   }
 
   // Récupérer les maps pour les relations (groupes Sénat uniquement)

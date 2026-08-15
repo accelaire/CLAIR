@@ -598,7 +598,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         // actuel du parlementaire, faux dès qu'on remonte d'une législature.
         fastify.prisma.$queryRawUnsafe<{ groupe_nom: string | null; position: string; count: bigint }[]>(
           `
-          SELECT COALESCE(gm.nom, gp.nom) as groupe_nom, v.position, COUNT(*) as count
+          SELECT COALESCE(gm.nom_court, gm.nom, gp.nom_court, gp.nom) as groupe_nom, v.position, COUNT(*) as count
           FROM "votes" v
           JOIN "scrutins" s ON s.id = v.scrutin_id
           JOIN "parlementaires" p ON v.parlementaire_id = p.id
@@ -606,7 +606,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           LEFT JOIN "groupes_politiques" gm ON m.groupe_id = gm.id
           LEFT JOIN "groupes_politiques" gp ON p.groupe_id = gp.id
           WHERE v.scrutin_id = $1
-          GROUP BY COALESCE(gm.nom, gp.nom), v.position
+          GROUP BY COALESCE(gm.nom_court, gm.nom, gp.nom_court, gp.nom), v.position
           `,
           scrutin.id,
         ),

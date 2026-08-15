@@ -427,7 +427,7 @@ export class SujetsService {
       count: bigint;
     }>>`
       SELECT
-        gp.nom as groupe_nom,
+        COALESCE(gp.nom_court, gp.nom) as groupe_nom,
         gp.slug as groupe_slug,
         gp.couleur as groupe_couleur,
         gp.chambre as groupe_chambre,
@@ -439,7 +439,7 @@ export class SujetsService {
       JOIN parlementaires p ON v.parlementaire_id = p.id
       LEFT JOIN groupes_politiques gp ON p.groupe_id = gp.id
       WHERE dl.sujet_id = ${sujet.id}
-      GROUP BY gp.nom, gp.slug, gp.couleur, gp.chambre, v.position
+      GROUP BY gp.nom_court, gp.nom, gp.slug, gp.couleur, gp.chambre, v.position
     `;
 
     // Amendements par groupe (parallel query)
