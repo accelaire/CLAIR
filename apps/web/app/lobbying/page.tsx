@@ -1,5 +1,11 @@
 import type { Metadata } from 'next';
-import PageClient from './PageClient';
+import { fetchFromApi } from '@/lib/api-server';
+import { REVALIDATE_LISTE_S } from '@/lib/liste-ssr';
+import PageClient, { type LobbyistesResponse } from './PageClient';
+
+// Rendu à la demande : sans ça, le HTML servi n'est que le squelette de
+// chargement. Motif et contreparties détaillés dans `lib/liste-ssr`.
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'Lobbying',
@@ -15,6 +21,11 @@ export const metadata: Metadata = {
   },
 };
 
-export default function LobbyingPage() {
-  return <PageClient />;
+export default async function LobbyingPage() {
+  const initialLobbyistes = await fetchFromApi<LobbyistesResponse>(
+    '/lobbying?page=1&limit=20&sort=nom&order=asc',
+    REVALIDATE_LISTE_S,
+  );
+
+  return <PageClient initialLobbyistes={initialLobbyistes ?? undefined} />;
 }

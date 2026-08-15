@@ -34,7 +34,7 @@
       ]
     },
     {
-      "source": "/senatoriales-2026",
+      "source": "/:page(deputes|senateurs|scrutins|dossiers|lobbying|groupes|sujets|commissions|senatoriales-2026)",
       "headers": [
         {
           "key": "Vercel-CDN-Cache-Control",

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ChevronDown, Users, Calendar, Building2, Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
+import { aucunFiltre, STALE_TIME_LISTE_MS } from '@/lib/liste-ssr';
 import { FilterBar } from '@/components/FilterBar';
 
 interface Commission {
@@ -23,7 +24,7 @@ interface Commission {
   nbReunions: number;
 }
 
-interface CommissionsResponse {
+export interface CommissionsResponse {
   data: Commission[];
   pagination: {
     page: number;
@@ -113,7 +114,12 @@ function CommissionCard({ commission }: { commission: Commission }) {
   );
 }
 
-function CommissionsPageContent() {
+interface PageClientProps {
+  /** Vue canonique, récupérée côté serveur (cf. `lib/liste-ssr`). */
+  initialCommissions?: CommissionsResponse;
+}
+
+function CommissionsPageContent({ initialCommissions }: PageClientProps) {
   const [filters, setFilter, , clearAll] = useUrlFilters<{
     chambre: string;
     type: string;
@@ -137,7 +143,11 @@ function CommissionsPageContent() {
           },
         })
         .then((res) => res.data),
-    staleTime: 60000,
+    // La donnée du rendu serveur ne vaut que pour la vue canonique : dès qu'un
+    // filtre est actif, on repart sur un chargement client.
+    initialData:
+      initialCommissions && aucunFiltre([filters.chambre, filters.type]) && !showAll ? initialCommissions : undefined,
+    staleTime: STALE_TIME_LISTE_MS,
   });
 
   const allCommissions = useMemo(() => data?.data ?? [], [data]);
@@ -314,7 +324,7 @@ function CommissionsPageContent() {
   );
 }
 
-export default function PageClient() {
+export default function PageClient({ initialCommissions }: PageClientProps) {
   return (
     <Suspense
       fallback={
@@ -334,7 +344,7 @@ export default function PageClient() {
         </div>
       }
     >
-      <CommissionsPageContent />
+      <CommissionsPageContent initialCommissions={initialCommissions} />
     </Suspense>
   );
 }

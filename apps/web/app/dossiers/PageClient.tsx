@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
 import { useUrlFilters, useUrlDateRange } from '@/hooks/useUrlFilters';
+import { aucunFiltre, STALE_TIME_LISTE_MS } from '@/lib/liste-ssr';
 import { FilterBar } from '@/components/FilterBar';
 
 interface Dossier {
@@ -28,7 +29,7 @@ interface Dossier {
   };
 }
 
-interface DossiersResponse {
+export interface DossiersResponse {
   data: Dossier[];
   meta: {
     total: number;
@@ -60,7 +61,12 @@ const formatDate = (dateStr: string) => {
   });
 };
 
-function DossiersPageContent() {
+interface PageClientProps {
+  /** Première page sans filtre, récupérée côté serveur (cf. `lib/liste-ssr`). */
+  initialDossiers?: DossiersResponse;
+}
+
+function DossiersPageContent({ initialDossiers }: PageClientProps) {
   const [filters, setFilter, , clearAll] = useUrlFilters<{
     search: string;
     etat: string;
@@ -103,6 +109,14 @@ function DossiersPageContent() {
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
     initialPageParam: 1,
+    // La donnée du rendu serveur ne vaut que pour la vue canonique : dès qu'un
+    // filtre est actif, on repart sur un chargement client.
+    initialData:
+      initialDossiers && aucunFiltre([filters.search, filters.etat, filters.chambre, filters.procedureCode, filters.procedureLibelle]) &&
+      Object.keys(dateParams).length === 0
+        ? { pages: [initialDossiers], pageParams: [1] }
+        : undefined,
+    staleTime: STALE_TIME_LISTE_MS,
   });
 
   const { loadMoreRef } = useInfiniteScroll({
@@ -325,7 +339,7 @@ function DossiersPageContent() {
   );
 }
 
-export default function PageClient() {
+export default function PageClient({ initialDossiers }: PageClientProps) {
   return (
     <Suspense fallback={
       <div className="container mx-auto px-4 py-8">
@@ -339,7 +353,7 @@ export default function PageClient() {
         </div>
       </div>
     }>
-      <DossiersPageContent />
+      <DossiersPageContent initialDossiers={initialDossiers} />
     </Suspense>
   );
 }

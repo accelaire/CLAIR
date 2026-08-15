@@ -8,6 +8,7 @@ import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
+import { aucunFiltre, STALE_TIME_LISTE_MS } from '@/lib/liste-ssr';
 import { LobbyisteLogo } from '@/components/lobbying';
 import { FilterBar } from '@/components/FilterBar';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
@@ -30,7 +31,7 @@ interface Lobbyiste {
   secteursList?: SecteurRef[];
 }
 
-interface LobbyistesResponse {
+export interface LobbyistesResponse {
   data: Lobbyiste[];
   meta: {
     total: number;
@@ -131,7 +132,12 @@ const getSecteurColor = (secteur: string): string => {
   return secteurColorClasses[Math.abs(hash) % secteurColorClasses.length];
 };
 
-function LobbyingPageContent() {
+interface PageClientProps {
+  /** Première page sans filtre, récupérée côté serveur (cf. `lib/liste-ssr`). */
+  initialLobbyistes?: LobbyistesResponse;
+}
+
+function LobbyingPageContent({ initialLobbyistes }: PageClientProps) {
   // Sync filters with URL for back button preservation
   const [filters, setFilter, setFilters, clearAll] = useUrlFilters<{
     search: string;
@@ -172,6 +178,15 @@ function LobbyingPageContent() {
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
     initialPageParam: 1,
+    // La donnée du rendu serveur ne vaut que pour la vue canonique : dès qu'un
+    // filtre est actif, on repart sur un chargement client.
+    initialData:
+      initialLobbyistes && aucunFiltre([filters.search, filters.type, filters.secteurs]) &&
+      sort === 'nom' &&
+      order === 'asc'
+        ? { pages: [initialLobbyistes], pageParams: [1] }
+        : undefined,
+    staleTime: STALE_TIME_LISTE_MS,
   });
 
   // Fetch secteurs
@@ -547,7 +562,7 @@ function LobbyingPageContent() {
   );
 }
 
-export default function PageClient() {
+export default function PageClient({ initialLobbyistes }: PageClientProps) {
   return (
     <Suspense fallback={
       <div className="container mx-auto px-4 py-8">
@@ -561,7 +576,7 @@ export default function PageClient() {
         </div>
       </div>
     }>
-      <LobbyingPageContent />
+      <LobbyingPageContent initialLobbyistes={initialLobbyistes} />
     </Suspense>
   );
 }

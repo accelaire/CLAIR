@@ -10,6 +10,7 @@ import { useDebouncedCallback } from 'use-debounce';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
+import { aucunFiltre, STALE_TIME_LISTE_MS } from '@/lib/liste-ssr';
 import { legislatureLabel } from '@/lib/periodes';
 import {
   useComparisonSelection,
@@ -44,7 +45,7 @@ interface Depute {
   votesCount?: number;
 }
 
-interface DeputesResponse {
+export interface DeputesResponse {
   data: Depute[];
   meta: {
     total: number;
@@ -55,7 +56,12 @@ interface DeputesResponse {
   };
 }
 
-function DeputesPageContent() {
+interface PageClientProps {
+  /** Première page sans filtre, récupérée côté serveur (cf. `lib/liste-ssr`). */
+  initialDeputes?: DeputesResponse;
+}
+
+function DeputesPageContent({ initialDeputes }: PageClientProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -139,6 +145,13 @@ function DeputesPageContent() {
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
     initialPageParam: 1,
+    // La donnée du rendu serveur ne vaut que pour la vue canonique : dès qu'un
+    // filtre est actif, on repart sur un chargement client.
+    initialData:
+      initialDeputes && aucunFiltre([filters.search, filters.groupe, filters.legislature])
+        ? { pages: [initialDeputes], pageParams: [1] }
+        : undefined,
+    staleTime: STALE_TIME_LISTE_MS,
   });
 
   // Fetch groupes pour le filtre
@@ -491,10 +504,10 @@ function DeputesPageContent() {
   );
 }
 
-export default function PageClient() {
+export default function PageClient({ initialDeputes }: PageClientProps) {
   return (
     <Suspense fallback={<DeputesPageSkeleton />}>
-      <DeputesPageContent />
+      <DeputesPageContent initialDeputes={initialDeputes} />
     </Suspense>
   );
 }

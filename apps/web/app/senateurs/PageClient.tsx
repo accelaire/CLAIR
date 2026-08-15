@@ -9,6 +9,7 @@ import { Search, ChevronDown, Users, Loader2, Check, GitCompareArrows, X } from 
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
+import { aucunFiltre, STALE_TIME_LISTE_MS } from '@/lib/liste-ssr';
 import {
   useComparisonSelection,
   ComparisonSelectionBar,
@@ -42,7 +43,7 @@ interface Senateur {
   } | null;
 }
 
-interface SenateursResponse {
+export interface SenateursResponse {
   data: Senateur[];
   meta: {
     total: number;
@@ -53,7 +54,12 @@ interface SenateursResponse {
   };
 }
 
-function SenateursPageContent() {
+interface PageClientProps {
+  /** Première page sans filtre, récupérée côté serveur (cf. `lib/liste-ssr`). */
+  initialSenateurs?: SenateursResponse;
+}
+
+function SenateursPageContent({ initialSenateurs }: PageClientProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -126,6 +132,13 @@ function SenateursPageContent() {
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
     initialPageParam: 1,
+    // La donnée du rendu serveur ne vaut que pour la vue canonique : dès qu'un
+    // filtre est actif, on repart sur un chargement client.
+    initialData:
+      initialSenateurs && aucunFiltre([filters.search, filters.groupe, filters.session])
+        ? { pages: [initialSenateurs], pageParams: [1] }
+        : undefined,
+    staleTime: STALE_TIME_LISTE_MS,
   });
 
   // Fetch groupes pour le filtre
@@ -468,10 +481,10 @@ function SenateursPageContent() {
   );
 }
 
-export default function PageClient() {
+export default function PageClient({ initialSenateurs }: PageClientProps) {
   return (
     <Suspense fallback={<SenateursPageSkeleton />}>
-      <SenateursPageContent />
+      <SenateursPageContent initialSenateurs={initialSenateurs} />
     </Suspense>
   );
 }

@@ -1,5 +1,11 @@
 import type { Metadata } from 'next';
-import PageClient from './PageClient';
+import { fetchFromApi } from '@/lib/api-server';
+import { REVALIDATE_LISTE_S } from '@/lib/liste-ssr';
+import PageClient, { type DossiersResponse } from './PageClient';
+
+// Rendu à la demande : sans ça, le HTML servi n'est que le squelette de
+// chargement. Motif et contreparties détaillés dans `lib/liste-ssr`.
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'Dossiers législatifs',
@@ -15,6 +21,11 @@ export const metadata: Metadata = {
   },
 };
 
-export default function DossiersPage() {
-  return <PageClient />;
+export default async function DossiersPage() {
+  const initialDossiers = await fetchFromApi<DossiersResponse>(
+    '/dossiers?page=1&limit=20',
+    REVALIDATE_LISTE_S,
+  );
+
+  return <PageClient initialDossiers={initialDossiers ?? undefined} />;
 }
