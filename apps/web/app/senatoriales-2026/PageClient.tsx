@@ -51,6 +51,21 @@ export function nomGroupe(groupe: { nom: string } | null): string {
   return groupe ? groupe.nom : 'Sans groupe';
 }
 
+/**
+ * Ancre d'une section de département : `#gironde`, `#bouches-du-rhone`.
+ *
+ * Dérivée du libellé et non du code INSEE, pour que l'URL partagée reste lisible
+ * et corresponde à ce qu'un lecteur taperait.
+ */
+export function ancreDepartement(libelle: string): string {
+  return libelle
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 export interface Sortant {
   mandatId: string;
   personne: {
@@ -189,11 +204,13 @@ function SenatorialesPageContent({ initialApercu, initialSortants }: PageClientP
   // correctement, '01' avant '10'), mais le titre affiché est le libellé.
   const groupedSortants = useMemo(() => {
     if (filters.tri && filters.tri !== 'departement') return null;
-    const map = new Map<string, { libelle: string; sortants: Sortant[] }>();
+    const map = new Map<string, { libelle: string; ancre: string; sortants: Sortant[] }>();
     for (const s of filteredSortants) {
       const code = s.circonscription?.departement ?? 'zzz';
       const libelle = s.circonscription?.nom ?? 'Circonscription non renseignée';
-      if (!map.has(code)) map.set(code, { libelle, sortants: [] });
+      if (!map.has(code)) {
+        map.set(code, { libelle, ancre: ancreDepartement(libelle), sortants: [] });
+      }
       map.get(code)!.sortants.push(s);
     }
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
@@ -385,17 +402,22 @@ function SenatorialesPageContent({ initialApercu, initialSortants }: PageClientP
         <p className="text-sm text-muted-foreground">Aucun sortant ne correspond aux critères.</p>
       ) : groupedSortants ? (
         <div className="space-y-8">
-          {groupedSortants.map(([code, { libelle, sortants: list }]) => (
-            <div key={code}>
+          {groupedSortants.map(([code, { libelle, ancre, sortants: list }]) => (
+            // `scroll-mt` réserve la hauteur de l'en-tête collant : sans lui, une
+            // arrivée sur l'ancre place le titre de section sous la barre de navigation.
+            <section key={code} id={ancre} className="scroll-mt-24">
               <h3 className="mb-3 text-lg font-semibold">
-                {libelle} · {list.length} siège{list.length > 1 ? 's' : ''}
+                <a href={`#${ancre}`} className="hover:underline">
+                  {libelle}
+                </a>{' '}
+                · {list.length} siège{list.length > 1 ? 's' : ''}
               </h3>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {list.map((sortant) => (
                   <SortantCard key={sortant.mandatId} sortant={sortant} />
                 ))}
               </div>
-            </div>
+            </section>
           ))}
         </div>
       ) : (
