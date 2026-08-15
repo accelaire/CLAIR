@@ -219,7 +219,10 @@ export class SenatorialesService {
       groupes.set(slug, {
         slug,
         nom: sortant.groupe?.nom ?? SANS_GROUPE.nom,
-        nomComplet: sortant.groupe?.nomComplet ?? SANS_GROUPE.nom,
+        // `nomComplet` est nullable en base : un `??` ici ferait porter l'étiquette
+        // « Sans groupe » à un groupe bien réel dont le libellé long manque. Le
+        // repli sur la valeur sentinelle ne vaut que pour un mandat sans groupe.
+        nomComplet: sortant.groupe ? sortant.groupe.nomComplet : SANS_GROUPE.nom,
         couleur: sortant.groupe?.couleur ?? null,
         position: sortant.groupe?.position ?? null,
         sieges: 1,
@@ -408,11 +411,25 @@ export class SenatorialesService {
     return data;
   }
 
+  /**
+   * Pas de cache par combinaison de filtres, volontairement.
+   *
+   * La version précédente indexait le résultat sur
+   * `…:${departement ?? 'tous'}:${groupe ?? 'tous'}:${tri}`. Comme `departement`
+   * n'est validé que comme une chaîne libre, un appel `?departement=tous`
+   * reconstruisait mot pour mot la clé de l'appel sans filtre — et comme aucun
+   * département ne porte ce nom, il y écrivait une liste vide pour une heure.
+   * La page servait alors « aucun sortant » à tout le monde, rendu serveur
+   * compris, au prix d'une seule requête anonyme.
+   *
+   * Plutôt que de rendre la clé injective, on retire l'étage de cache : il ne
+   * servait à rien. Tout ce qui coûte (la requête SQL, l'agrégation des
+   * segments) est déjà mémorisé par `chargerSortants`. Il ne reste ici qu'un
+   * filtre et un tri sur 178 objets déjà en mémoire, soit quelques dizaines de
+   * microsecondes — moins que l'aller-retour Redis qu'on vient de supprimer.
+   */
   async getSortants(query: SortantsQuery): Promise<{ data: Sortant[]; meta: { total: number } }> {
     const { departement, groupe, tri } = query;
-    const cacheKey = `senatoriales:2026:sortants:${departement ?? 'tous'}:${groupe ?? 'tous'}:${tri}`;
-    const cached = await this.redis.get(cacheKey);
-    if (cached) return JSON.parse(cached);
 
     const tous = await this.chargerSortants();
 
@@ -423,10 +440,9 @@ export class SenatorialesService {
       return true;
     });
 
+    // `filter` a déjà produit un tableau neuf : le tri ne touche pas la liste
+    // mémorisée par `chargerSortants`.
     const data = retenus.sort(comparateur(tri));
-    const result = { data, meta: { total: data.length } };
-
-    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
-    return result;
+    return { data, meta: { total: data.length } };
   }
 }

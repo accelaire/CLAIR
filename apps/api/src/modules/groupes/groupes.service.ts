@@ -538,6 +538,39 @@ export class GroupesService {
     return stats;
   }
 
+  /**
+   * Filtre « scrutins initiés par le groupe », à concaténer à un WHERE portant
+   * sur la table `scrutins` aliasée `s`.
+   *
+   * Le demandeur est du texte libre — « Mme Monique Lubin et les membres du
+   * groupe Socialiste » — qu'on rapproche des trois libellés connus du groupe :
+   * le code de la source (`nom`), le libellé d'usage (`nom_court`) et le libellé
+   * long (`nom_complet`). Les trois, parce qu'aucun ne suffit : le Sénat cite
+   * tantôt « groupe Socialiste » (le code), tantôt « groupe Les Républicains »
+   * (le libellé d'usage).
+   *
+   * La comparaison reste en SQL, sur les colonnes, et ne passe jamais par un
+   * `groupe.nom` lu via Prisma : l'extension d'affichage de l'API y substitue le
+   * libellé d'usage. Le groupe codé `SOC` se comparait ainsi sur « SER », que
+   * les libellés de demandeur ne contiennent pas ; le filtre était tombé de 169
+   * scrutins à un seul faux positif (« M. Serge Babary »).
+   */
+  private demandeurInitieParSql(groupeId: string): Prisma.Sql {
+    return Prisma.sql`
+      AND s.demandeur_texte IS NOT NULL
+      AND EXISTS (
+        SELECT 1
+        FROM groupes_politiques gd
+        WHERE gd.id = ${groupeId}
+          AND (
+            s.demandeur_texte ILIKE '%' || gd.nom || '%'
+            OR (gd.nom_court IS NOT NULL AND s.demandeur_texte ILIKE '%' || gd.nom_court || '%')
+            OR (gd.nom_complet IS NOT NULL AND s.demandeur_texte ILIKE '%' || gd.nom_complet || '%')
+          )
+      )
+    `;
+  }
+
   // ===========================================================================
   // STATISTIQUES DE VOTES AGRÉGÉES PAR GROUPE
   // Optimisé avec une seule requête SQL pour éviter les O(n) queries
@@ -606,11 +639,7 @@ export class GroupesService {
                    AND (m.date_fin IS NULL OR m.date_fin >= s.date))
                 )
           WHERE m.groupe_id = ${groupe.id}
-            AND s.demandeur_texte IS NOT NULL
-            AND (
-              s.demandeur_texte ILIKE ${'%' + groupe.nom + '%'}
-              OR s.demandeur_texte ILIKE ${'%' + (groupe.nomComplet || groupe.nom) + '%'}
-            )
+            ${this.demandeurInitieParSql(groupe.id)}
             ${sessionSql}
           GROUP BY v.position
         `
@@ -649,22 +678,11 @@ export class GroupesService {
     const tauxParticipation = totalVotes > 0 ? Math.round((votesExprimes / totalVotes) * 100) : 0;
 
     // Requête SQL optimisée: récupère les 20 derniers scrutins avec les votes du groupe EN UNE SEULE REQUÊTE
-    // Si groupeInitie=true, filtre sur les scrutins où demandeur_texte contient le nom du groupe
-    const groupeNom = groupe.nom;
-    const groupeNomComplet = groupe.nomComplet || groupe.nom;
-
     // Scrutins « initiés par le groupe » : le demandeur est libellé en clair.
     // Seul fragment qui distinguait les deux variantes de la requête ci-dessous,
     // recopiée à l'identique sur 80 lignes — d'où l'extraction, sur le modèle de
     // `sessionSql`.
-    const demandeurSql = groupeInitie
-      ? Prisma.sql`
-          AND s.demandeur_texte IS NOT NULL
-          AND (
-            s.demandeur_texte ILIKE ${'%' + groupeNom + '%'}
-            OR s.demandeur_texte ILIKE ${'%' + groupeNomComplet + '%'}
-          )`
-      : Prisma.empty;
+    const demandeurSql = groupeInitie ? this.demandeurInitieParSql(groupe.id) : Prisma.empty;
 
     const scrutinsWithVotes = await this.prisma.$queryRaw<
       {
@@ -945,10 +963,6 @@ export class GroupesService {
     }[];
 
     if (groupeInitie) {
-      // Calcul à la volée pour les scrutins initiés par le groupe
-      const groupeNom = groupe.nom;
-      const groupeNomComplet = groupe.nomComplet || groupe.nom;
-
       // Requête SQL qui calcule les stats par thématique pour les scrutins initiés par le groupe
       // Limite à 500 scrutins max pour éviter les requêtes trop lourdes
       const thematiquesData = await this.prisma.$queryRaw<
@@ -964,11 +978,7 @@ export class GroupesService {
           SELECT DISTINCT s.id, s.tags
           FROM scrutins s
           WHERE s.chambre = ${chambre}
-            AND s.demandeur_texte IS NOT NULL
-            AND (
-              s.demandeur_texte ILIKE ${'%' + groupeNom + '%'}
-              OR s.demandeur_texte ILIKE ${'%' + groupeNomComplet + '%'}
-            )
+            ${this.demandeurInitieParSql(groupe.id)}
           ORDER BY s.date DESC
           LIMIT 500
         ),
