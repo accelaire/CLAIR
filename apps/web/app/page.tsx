@@ -302,23 +302,27 @@ function EcheancesStrip({ echeances }: { echeances: AgendaEvenement[] }) {
   if (echeances.length === 0) return null;
 
   return (
-    <div className="mt-4 flex flex-wrap items-center gap-2">
+    <div className="mt-4">
       <span className="text-xs font-medium text-muted-foreground">Prochaines échéances</span>
-      {echeances.map((e) => {
-        const meta = TYPE_EVENEMENT_META[e.type];
-        const Icon = meta.icon;
-        return (
-          <Link
-            key={e.id}
-            href={`/agenda?date=${e.dateDebut.slice(0, 10)}`}
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-all hover:shadow-sm ${meta.card}`}
-          >
-            <Icon className="h-3.5 w-3.5" aria-hidden />
-            <span className="font-medium">{e.titre}</span>
-            <span className="opacity-75">{formatDateEvenement(e)}</span>
-          </Link>
-        );
-      })}
+      {/* Défilement horizontal plutôt qu'un retour à la ligne : empilées, les trois
+          puces occupaient toute la hauteur du bloc sur mobile. */}
+      <div className="mt-2 flex gap-2 overflow-x-auto scrollbar-none">
+        {echeances.map((e) => {
+          const meta = TYPE_EVENEMENT_META[e.type];
+          const Icon = meta.icon;
+          return (
+            <Link
+              key={e.id}
+              href={`/agenda?date=${e.dateDebut.slice(0, 10)}`}
+              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs transition-all hover:shadow-sm ${meta.card}`}
+            >
+              <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span className="font-medium">{e.titre}</span>
+              <span className="opacity-75">{formatDateEvenement(e)}</span>
+            </Link>
+          );
+        })}
+      </div>
     </div>
   );
 }
