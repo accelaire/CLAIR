@@ -97,7 +97,12 @@ export interface Sortant {
 // Effectif du Sénat fixé par l'article L.O. 274 du code électoral.
 const SIEGES_SENAT = 348;
 
-function SenatorialesPageContent() {
+interface PageClientProps {
+  initialApercu?: ApercuSenatoriales;
+  initialSortants?: { data: Sortant[]; meta: { total: number } };
+}
+
+function SenatorialesPageContent({ initialApercu, initialSortants }: PageClientProps) {
   const [filters, setFilter, , clearAll] = useUrlFilters<{
     search: string;
     departement: string;
@@ -124,6 +129,11 @@ function SenatorialesPageContent() {
   const { data, isLoading, error } = useQuery<ApercuSenatoriales>({
     queryKey: ['senatoriales-2026'],
     queryFn: () => api.get('/senatoriales/2026').then((res) => res.data),
+    initialData: initialApercu,
+    // Aligné sur le `revalidate` du rendu serveur : sans délai de péremption,
+    // React Query juge les données hydratées périmées dès le montage et relance
+    // la requête, faisant transiter la liste une seconde fois pour rien.
+    staleTime: 3_600_000,
   });
 
   const {
@@ -142,6 +152,14 @@ function SenatorialesPageContent() {
           },
         })
         .then((res) => res.data),
+    initialData:
+      !filters.departement && !filters.groupe && (!filters.tri || filters.tri === 'departement')
+        ? initialSortants
+        : undefined,
+    // Aligné sur le `revalidate` du rendu serveur : sans délai de péremption,
+    // React Query juge les données hydratées périmées dès le montage et relance
+    // la requête, faisant transiter la liste une seconde fois pour rien.
+    staleTime: 3_600_000,
   });
 
   const sortants = useMemo(() => sortantsData?.data ?? [], [sortantsData]);
@@ -412,10 +430,13 @@ function SenatorialesPageContent() {
   );
 }
 
-export default function PageClient() {
+export default function PageClient({ initialApercu, initialSortants }: PageClientProps) {
   return (
     <Suspense fallback={<SenatorialesPageSkeleton />}>
-      <SenatorialesPageContent />
+      <SenatorialesPageContent
+        initialApercu={initialApercu}
+        initialSortants={initialSortants}
+      />
     </Suspense>
   );
 }
