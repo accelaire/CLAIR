@@ -1,14 +1,34 @@
 'use client';
 
-import { useState, useEffect, useMemo, Suspense } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Search, ChevronDown, ExternalLink } from 'lucide-react';
+import { Search, ChevronDown, ExternalLink, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
 import { FilterBar } from '@/components/FilterBar';
 import { SortantCard } from './components/SortantCard';
 import { RepartitionGroupes } from './components/RepartitionGroupes';
+import { SelecteurLecture } from './components/SelecteurLecture';
+import { CadreGraphique } from './components/graphiques/CadreGraphique';
+import { CarteDepartements } from './components/graphiques/CarteDepartements';
+import { PartRemiseEnJeu } from './components/graphiques/PartRemiseEnJeu';
+import { DistributionBilan } from './components/graphiques/DistributionBilan';
+import { NuageActivite } from './components/graphiques/NuageActivite';
+import { PyramideAges } from './components/graphiques/PyramideAges';
+import { BarresComptage } from './components/graphiques/BarresComptage';
+import {
+  GRAPHIQUES,
+  GRAPHIQUE_PAR_TRI,
+  SANS_COMMISSION,
+  SANS_PROFESSION,
+  familleProfession,
+  type FiltresSortants,
+  parCommission,
+  parFamilleProfession,
+  repartitionParGroupe,
+  siegesParDepartement,
+} from '@/lib/senatoriales/graphiques';
 
 export interface ApercuSenatoriales {
   scrutin: {
@@ -40,7 +60,16 @@ export interface GroupeRepartition {
   nomComplet: string | null;
   couleur: string | null;
   position: string | null;
+  /** Sièges du groupe remis en jeu. */
   sieges: number;
+  /**
+   * Sièges du groupe dans le Sénat entier, série 1 comprise.
+   *
+   * Optionnel côté client : l'aperçu est mis en cache une heure par l'API, et un
+   * déploiement peut donc servir un instant des charges utiles antérieures à ce
+   * champ. Les graphiques retombent alors sur les seuls sièges sortants.
+   */
+  siegesSenat?: number;
 }
 
 /**
@@ -57,11 +86,16 @@ export function nomGroupe(groupe: { nom: string } | null): string {
  * Dérivée du libellé et non du code INSEE, pour que l'URL partagée reste lisible
  * et corresponde à ce qu'un lecteur taperait.
  */
-export function ancreDepartement(libelle: string): string {
-  return libelle
+/** Minuscules sans accents — la forme sur laquelle se comparent les saisies. */
+function sansAccents(valeur: string): string {
+  return valeur
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
+    .toLowerCase();
+}
+
+export function ancreDepartement(libelle: string): string {
+  return sansAccents(libelle)
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 }
@@ -76,6 +110,8 @@ export interface Sortant {
     photoUrl: string | null;
     profession: string | null;
     dateNaissance: string | null;
+    /** 'M' | 'F', déduit de la civilité par la source. */
+    sexe: string | null;
   };
   groupe: {
     slug: string;
@@ -112,12 +148,87 @@ export interface Sortant {
 // Effectif du Sénat fixé par l'article L.O. 274 du code électoral.
 const SIEGES_SENAT = 348;
 
+/**
+ * Regroupe les identifiants de mandat par libellé.
+ *
+ * `BarresComptage` ne reçoit que des couples libellé/effectif : il ne peut pas
+ * deviner quels sortants se cachent derrière une barre. Cet index le lui dit,
+ * et doit donc dériver exactement de la même clé que le comptage affiché.
+ */
+function indexerPar(
+  sortants: Sortant[],
+  cle: (sortant: Sortant) => string,
+): Record<string, string[]> {
+  const index: Record<string, string[]> = {};
+  for (const sortant of sortants) {
+    const libelle = cle(sortant);
+    (index[libelle] ??= []).push(sortant.mandatId);
+  }
+  return index;
+}
+
+/** Tris qui rassemblent les sortants en sections plutôt que de les classer. */
+const TRIS_REGROUPANTS = ['departement', 'groupe', 'commission', 'profession'];
+
+/**
+ * Clé de regroupement d'un sortant et libellé de sa section.
+ *
+ * Les deux diffèrent : la clé ordonne, le libellé s'affiche. Pour un département
+ * la clé est le code INSEE — il range '01' avant '10', ce que le libellé ne fait
+ * pas — et le titre reste le nom du département. Les valeurs absentes prennent
+ * une clé préfixée `zzz`, qui les envoie en fin de liste sans les confondre avec
+ * une section réelle dont le nom commencerait par un z.
+ */
+function clefDeSection(tri: string, sortant: Sortant): { cle: string; libelle: string } {
+  switch (tri) {
+    case 'groupe':
+      return {
+        cle: sortant.groupe?.slug ?? 'zzz-sans-groupe',
+        libelle: nomGroupe(sortant.groupe),
+      };
+    case 'commission':
+      return {
+        cle: sortant.commissionPermanente ?? 'zzz-sans-commission',
+        libelle: sortant.commissionPermanente ?? SANS_COMMISSION,
+      };
+    case 'profession': {
+      // Même découpage que l'API et que le graphique : « Salariés (Cadres
+      // divers) » et « Salariés (Retraités) » tombent dans la même section.
+      const famille = familleProfession(sortant.personne.profession);
+      return {
+        cle: famille ?? 'zzz-sans-profession',
+        libelle: famille ?? SANS_PROFESSION,
+      };
+    }
+    default:
+      return {
+        cle: sortant.circonscription?.departement ?? 'zzz',
+        libelle: sortant.circonscription?.nom ?? 'Circonscription non renseignée',
+      };
+  }
+}
+
 interface PageClientProps {
   initialApercu?: ApercuSenatoriales;
   initialSortants?: { data: Sortant[]; meta: { total: number } };
+  /**
+   * Les 178 sortants sans aucun filtre, pour la carte — qui décrit toujours le
+   * renouvellement entier, quels que soient les filtres appliqués à la liste.
+   *
+   * Absente quand `initialSortants` n'est lui-même pas filtré : la transmettre
+   * alors ferait voyager deux fois la même liste.
+   */
+  initialTousSortants?: Sortant[];
+  /** Filtres avec lesquels `initialSortants` a été demandé côté serveur. */
+  initialFiltres?: FiltresSortants;
 }
 
-function SenatorialesPageContent({ initialApercu, initialSortants }: PageClientProps) {
+function SenatorialesPageContent({
+  initialApercu,
+  initialSortants,
+  initialTousSortants,
+  initialFiltres,
+}: PageClientProps) {
   const [filters, setFilter, , clearAll] = useUrlFilters<{
     search: string;
     departement: string;
@@ -126,6 +237,58 @@ function SenatorialesPageContent({ initialApercu, initialSortants }: PageClientP
   }>(['search', 'departement', 'groupe', 'tri']);
 
   const [countdownText, setCountdownText] = useState<string | null>(null);
+
+  /**
+   * Sortants désignés par un clic dans un graphique.
+   *
+   * Une sélection ne filtre pas la liste, elle la surligne : filtrer ferait
+   * disparaître le reste, et le lecteur perdrait l'échelle à laquelle comparer.
+   * Cliquer sur « moins de 50 % de présence » doit montrer ces dix sortants
+   * *parmi* les autres, pas à leur place.
+   */
+  const [surbrillance, setSurbrillance] = useState<{
+    ids: Set<string>;
+    libelle: string;
+  } | null>(null);
+
+  const listeRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Amène la liste sous les yeux après une action faite plus haut.
+   *
+   * Sans ça, cliquer sur un département de la carte ne semble rien faire : le
+   * résultat existe, mais mille pixels plus bas. Le défilement est différé d'une
+   * image pour laisser React poser la liste filtrée avant de viser sa position.
+   */
+  const glisserVersListe = useCallback(() => {
+    requestAnimationFrame(() => {
+      listeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, []);
+
+  const selectionnerDepartement = useCallback(
+    (code: string) => {
+      setFilter('departement', code);
+      setSurbrillance(null);
+      if (code) glisserVersListe();
+    },
+    [setFilter, glisserVersListe],
+  );
+
+  const selectionnerDepuisGraphique = useCallback(
+    (mandatIds: string[], libelle: string) => {
+      if (mandatIds.length === 0) return;
+      setSurbrillance({ ids: new Set(mandatIds), libelle });
+      glisserVersListe();
+    },
+    [glisserVersListe],
+  );
+
+  // Changer de tri ou de filtre invalide la sélection : les cartes surlignées
+  // ne sont plus forcément à l'écran, et le bandeau annoncerait un décompte faux.
+  useEffect(() => {
+    setSurbrillance(null);
+  }, [filters.tri, filters.departement, filters.groupe, filters.search]);
 
   useEffect(() => {
     const target = new Date('2026-09-27');
@@ -167,10 +330,10 @@ function SenatorialesPageContent({ initialApercu, initialSortants }: PageClientP
           },
         })
         .then((res) => res.data),
-    initialData:
-      !filters.departement && !filters.groupe && (!filters.tri || filters.tri === 'departement')
-        ? initialSortants
-        : undefined,
+    // Les données du serveur ne servent d'amorce que si elles ont été demandées
+    // avec les mêmes filtres : sinon on afficherait une liste qui ne correspond
+    // pas à ce que l'URL réclame, le temps que la requête revienne.
+    initialData: memesFiltres(filters, initialFiltres) ? initialSortants : undefined,
     // Aligné sur le `revalidate` du rendu serveur : sans délai de péremption,
     // React Query juge les données hydratées périmées dès le montage et relance
     // la requête, faisant transiter la liste une seconde fois pour rien.
@@ -178,6 +341,26 @@ function SenatorialesPageContent({ initialApercu, initialSortants }: PageClientP
   });
 
   const sortants = useMemo(() => sortantsData?.data ?? [], [sortantsData]);
+
+  /**
+   * Les 178 sortants, hors de toute sélection.
+   *
+   * Les graphiques décrivent le renouvellement dans son ensemble ; les calculer
+   * sur la liste filtrée les viderait au premier clic sur la carte — laquelle
+   * ne montrerait plus que le département qu'on vient de choisir, sans moyen
+   * d'en choisir un autre. La liste complète est déjà chargée par le rendu
+   * serveur, qui l'appelle sans filtre : la réutiliser n'ajoute aucune requête.
+   */
+  const tousSortants = useMemo(() => {
+    // Trois sources, dans l'ordre de fiabilité : la liste complète que le serveur
+    // joint quand il a filtré ; à défaut sa liste principale, qui est alors elle
+    // -même complète ; en dernier recours la liste affichée, si les deux appels
+    // serveur ont échoué.
+    if (initialTousSortants?.length) return initialTousSortants;
+    const serveurNonFiltre = !initialFiltres?.departement && !initialFiltres?.groupe;
+    if (serveurNonFiltre && initialSortants?.data?.length) return initialSortants.data;
+    return sortants;
+  }, [initialTousSortants, initialSortants, initialFiltres, sortants]);
 
   // Le tri n'entre pas dans le compte : il réordonne la liste, il ne la restreint pas.
   const activeFilterCount = useMemo(() => {
@@ -194,27 +377,155 @@ function SenatorialesPageContent({ initialApercu, initialSortants }: PageClientP
 
   const filteredSortants = useMemo(() => {
     if (!filters.search) return sortants;
-    const q = filters.search.toLowerCase();
+    // Les accents sont retirés des deux côtés, comme partout ailleurs dans les
+    // listes du site : sans ça « Herve » ne trouve pas « Hervé » et la recherche
+    // paraît cassée à qui tape au clavier sans se relire.
+    const q = sansAccents(filters.search);
     return sortants.filter((s) =>
-      `${s.personne.prenom} ${s.personne.nom}`.toLowerCase().includes(q)
+      sansAccents(`${s.personne.prenom} ${s.personne.nom}`).includes(q)
     );
   }, [sortants, filters.search]);
 
-  // Regroupement par circonscription. La clé est le code INSEE (il ordonne
-  // correctement, '01' avant '10'), mais le titre affiché est le libellé.
+  // Regroupement des cartes en sections.
+  //
+  // Quatre tris produisent des sections — département, groupe, commission,
+  // profession. Les autres sont des classements : présence, âge, nombre
+  // d'amendements. Les découper en paquets casserait précisément l'ordre qu'on
+  // demande à voir.
   const groupedSortants = useMemo(() => {
-    if (filters.tri && filters.tri !== 'departement') return null;
+    const tri = filters.tri || 'departement';
+    if (!TRIS_REGROUPANTS.includes(tri)) return null;
+
     const map = new Map<string, { libelle: string; ancre: string; sortants: Sortant[] }>();
     for (const s of filteredSortants) {
-      const code = s.circonscription?.departement ?? 'zzz';
-      const libelle = s.circonscription?.nom ?? 'Circonscription non renseignée';
-      if (!map.has(code)) {
-        map.set(code, { libelle, ancre: ancreDepartement(libelle), sortants: [] });
+      const { cle, libelle } = clefDeSection(tri, s);
+      if (!map.has(cle)) {
+        map.set(cle, { libelle, ancre: ancreDepartement(libelle), sortants: [] });
       }
-      map.get(code)!.sortants.push(s);
+      map.get(cle)!.sortants.push(s);
     }
-    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+
+    const sections = Array.from(map.entries());
+    // Le département s'ordonne sur le code INSEE, qui range '01' avant '10' là où
+    // le libellé placerait l'Ain après l'Aube. Les autres regroupements n'ont pas
+    // d'ordre naturel : on met les plus gros effectifs en tête, ce qui répond à
+    // la question qu'on se pose en les demandant — lesquels pèsent le plus.
+    if (tri === 'departement') {
+      return sections.sort((a, b) => a[0].localeCompare(b[0]));
+    }
+    // Départage par libellé : deux sections de même effectif s'échangeraient
+    // sinon d'un rendu à l'autre.
+    return sections.sort(
+      (a, b) =>
+        b[1].sortants.length - a[1].sortants.length ||
+        a[1].libelle.localeCompare(b[1].libelle, 'fr'),
+    );
   }, [filteredSortants, filters.tri]);
+
+  /**
+   * Le graphique qu'appelle le tri courant, calculé sur la sélection.
+   *
+   * Contrairement à la carte, il décrit ce qui est affiché en dessous et pas le
+   * renouvellement entier : filtrer sur la Gironde puis trier par présence doit
+   * montrer les présences des sortants de Gironde, sinon le graphique et la liste
+   * qu'il surplombe raconteraient deux choses différentes.
+   */
+  const graphiqueContextuel = useMemo(() => {
+    const tri = filters.tri || 'departement';
+    const slug = GRAPHIQUE_PAR_TRI[tri];
+    // La carte a déjà sa place en haut de page ; la répéter ici n'apprendrait rien.
+    if (!slug || slug === 'carte' || filteredSortants.length === 0) return null;
+
+    const meta = GRAPHIQUES[slug];
+    const contenu = (() => {
+      switch (tri) {
+        case 'groupe':
+          return (
+            <PartRemiseEnJeu
+              parGroupe={repartitionParGroupe(
+                filteredSortants,
+                data?.sortants.parGroupe ?? [],
+              )}
+              sortants={filteredSortants}
+              onSelection={selectionnerDepuisGraphique}
+            />
+          );
+        case 'commission':
+          return (
+            <BarresComptage
+              donnees={parCommission(filteredSortants)}
+              total={filteredSortants.length}
+              sortantsParLabel={indexerPar(filteredSortants, (s) =>
+                s.commissionPermanente ?? SANS_COMMISSION,
+              )}
+              onSelection={selectionnerDepuisGraphique}
+            />
+          );
+        case 'profession':
+          return (
+            <BarresComptage
+              donnees={parFamilleProfession(filteredSortants)}
+              total={filteredSortants.length}
+              couleur="#8b5cf6"
+              sortantsParLabel={indexerPar(
+                filteredSortants,
+                (s) => familleProfession(s.personne.profession) ?? SANS_PROFESSION,
+              )}
+              onSelection={selectionnerDepuisGraphique}
+            />
+          );
+        case 'age':
+          return (
+            <PyramideAges
+              sortants={filteredSortants}
+              onSelection={selectionnerDepuisGraphique}
+            />
+          );
+        case 'presence':
+          return (
+            <DistributionBilan
+              sortants={filteredSortants}
+              metrique="presence"
+              onSelection={selectionnerDepuisGraphique}
+            />
+          );
+        case 'loyaute':
+          return (
+            <DistributionBilan
+              sortants={filteredSortants}
+              metrique="loyaute"
+              onSelection={selectionnerDepuisGraphique}
+            />
+          );
+        case 'amendements':
+        case 'interventions':
+          return (
+            <NuageActivite
+              sortants={filteredSortants}
+              onSelection={selectionnerDepuisGraphique}
+            />
+          );
+        default:
+          return null;
+      }
+    })();
+
+    if (!contenu) return null;
+
+    // Le sous-titre annonce la base de calcul dès qu'elle n'est plus l'ensemble
+    // des sortants : sans ça, un lecteur arrivé sur un filtre prendrait ces
+    // chiffres pour ceux des 178.
+    const filtre = activeFilterCount > 0;
+    const sousTitre = filtre
+      ? `${meta.sousTitre} Calculé sur les ${filteredSortants.length} sortants correspondant aux filtres.`
+      : meta.sousTitre;
+
+    return (
+      <CadreGraphique slug={slug} titre={meta.titre} sousTitre={sousTitre} lienPageDediee>
+        {contenu}
+      </CadreGraphique>
+    );
+  }, [filters.tri, filteredSortants, data, activeFilterCount, selectionnerDepuisGraphique]);
 
   // L'erreur se teste avant le chargement : en cas d'échec `data` reste indéfini,
   // et l'ordre inverse afficherait le squelette indéfiniment.
@@ -312,6 +623,26 @@ function SenatorialesPageContent({ initialApercu, initialSortants }: PageClientP
         <RepartitionGroupes parGroupe={apercuSortants.parGroupe} total={apercuSortants.total} />
       </div>
 
+      {/* La carte est le seul graphique affiché en permanence, et le seul calculé
+          sur l'ensemble des 178 sortants. C'est qu'elle ne sert pas seulement à
+          décrire : on clique dedans pour filtrer. La recalculer sur la sélection
+          la réduirait au département qu'on vient de choisir, sans plus aucun
+          moyen d'en désigner un autre. */}
+      <CadreGraphique
+        slug="carte"
+        titre={GRAPHIQUES.carte.titre}
+        sousTitre={GRAPHIQUES.carte.sousTitre}
+        lienPageDediee
+      >
+        <CarteDepartements
+          sieges={siegesParDepartement(tousSortants)}
+          selection={filters.departement}
+          onSelect={selectionnerDepartement}
+        />
+      </CadreGraphique>
+
+      <SelecteurLecture valeur={filters.tri} onChange={(tri) => setFilter('tri', tri)} />
+
       <FilterBar
         activeFilterCount={activeFilterCount}
         onClear={handleClearFilters}
@@ -362,23 +693,28 @@ function SenatorialesPageContent({ initialApercu, initialSortants }: PageClientP
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>
 
-        <div className="relative w-full md:w-52">
-          <select
-            value={filters.tri}
-            onChange={(e) => setFilter('tri', e.target.value)}
-            className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
-          >
-            <option value="">Trier par</option>
-            <option value="departement">Par département</option>
-            <option value="nom">Par nom</option>
-            <option value="presence">Présence la plus forte</option>
-            <option value="loyaute">Loyauté la plus forte</option>
-            <option value="amendements">Le plus d&apos;amendements</option>
-            <option value="interventions">Le plus d&apos;interventions</option>
-          </select>
-          <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-        </div>
       </FilterBar>
+
+      {graphiqueContextuel}
+
+      <div ref={listeRef} className="scroll-mt-20 space-y-4">
+        {surbrillance && (
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-primary/40 bg-primary/5 px-4 py-2 text-sm">
+            <span>
+              <strong>{surbrillance.libelle}</strong> — {surbrillance.ids.size} sortant
+              {surbrillance.ids.size > 1 ? 's' : ''} surligné
+              {surbrillance.ids.size > 1 ? 's' : ''} dans la liste
+            </span>
+            <button
+              type="button"
+              onClick={() => setSurbrillance(null)}
+              className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+              Retirer la surbrillance
+            </button>
+          </div>
+        )}
 
       {sortantsLoading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -414,7 +750,11 @@ function SenatorialesPageContent({ initialApercu, initialSortants }: PageClientP
               </h3>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {list.map((sortant) => (
-                  <SortantCard key={sortant.mandatId} sortant={sortant} />
+                  <SortantCard
+                    key={sortant.mandatId}
+                    sortant={sortant}
+                    surbrillance={surbrillance?.ids.has(sortant.mandatId)}
+                  />
                 ))}
               </div>
             </section>
@@ -423,10 +763,15 @@ function SenatorialesPageContent({ initialApercu, initialSortants }: PageClientP
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredSortants.map((sortant) => (
-            <SortantCard key={sortant.mandatId} sortant={sortant} />
+            <SortantCard
+              key={sortant.mandatId}
+              sortant={sortant}
+              surbrillance={surbrillance?.ids.has(sortant.mandatId)}
+            />
           ))}
         </div>
       )}
+      </div>
 
       <div className="text-sm text-muted-foreground space-y-2">
         <p>
@@ -452,14 +797,40 @@ function SenatorialesPageContent({ initialApercu, initialSortants }: PageClientP
   );
 }
 
-export default function PageClient({ initialApercu, initialSortants }: PageClientProps) {
+export default function PageClient({
+  initialApercu,
+  initialSortants,
+  initialTousSortants,
+  initialFiltres,
+}: PageClientProps) {
   return (
     <Suspense fallback={<SenatorialesPageSkeleton />}>
       <SenatorialesPageContent
         initialApercu={initialApercu}
         initialSortants={initialSortants}
+        initialTousSortants={initialTousSortants}
+        initialFiltres={initialFiltres}
       />
     </Suspense>
+  );
+}
+
+/**
+ * Les filtres de l'URL sont-ils ceux avec lesquels le serveur a chargé la liste ?
+ *
+ * Le tri par défaut de l'API est `departement` : une URL sans `tri` et une URL
+ * avec `tri=departement` demandent donc la même liste, et l'amorce du serveur
+ * vaut pour les deux.
+ */
+function memesFiltres(
+  courants: { departement: string; groupe: string; tri: string },
+  serveur: FiltresSortants | undefined,
+): boolean {
+  const normaliserTri = (tri: string | undefined) => tri || 'departement';
+  return (
+    courants.departement === (serveur?.departement ?? '') &&
+    courants.groupe === (serveur?.groupe ?? '') &&
+    normaliserTri(courants.tri) === normaliserTri(serveur?.tri)
   );
 }
 

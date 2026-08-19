@@ -10,6 +10,11 @@ function sortant(partiel: {
   loyaute?: number | null;
   amendements?: number | null;
   interventions?: number | null;
+  groupeSlug?: string | null;
+  groupeNom?: string;
+  commission?: string | null;
+  profession?: string | null;
+  dateNaissance?: string | null;
 } = {}): Sortant {
   return {
     mandatId: partiel.mandatId ?? 'mandat-defaut',
@@ -19,16 +24,22 @@ function sortant(partiel: {
       nom: partiel.nom ?? 'Dupont',
       prenom: partiel.prenom ?? 'Jean',
       photoUrl: null,
-      profession: 'Profession par défaut',
-      dateNaissance: '1975-05-20',
+      profession:
+        partiel.profession === undefined ? 'Profession par défaut' : partiel.profession,
+      dateNaissance:
+        partiel.dateNaissance === undefined ? '1975-05-20' : partiel.dateNaissance,
+      sexe: 'M',
     },
-    groupe: {
-      slug: 'groupe-defaut',
-      nom: 'Groupe par défaut',
-      nomComplet: 'Groupe par défaut au complet',
-      couleur: '#CCCCCC',
-      position: 'gauche',
-    },
+    groupe:
+      partiel.groupeSlug === null
+        ? null
+        : {
+            slug: partiel.groupeSlug ?? 'groupe-defaut',
+            nom: partiel.groupeNom ?? 'Groupe par défaut',
+            nomComplet: 'Groupe par défaut au complet',
+            couleur: '#CCCCCC',
+            position: 'gauche',
+          },
     circonscription:
       partiel.departement === null
         ? null
@@ -36,7 +47,8 @@ function sortant(partiel: {
             departement: partiel.departement ?? '01',
             nom: 'Ain',
           },
-    commissionPermanente: 'Affaires étrangères',
+    commissionPermanente:
+      partiel.commission === undefined ? 'Affaires étrangères' : partiel.commission,
     mandat: {
       dateDebut: '2020-10-01T00:00:00.000Z',
       dateFin: null,
@@ -108,6 +120,91 @@ describe('comparateur', () => {
 
       expect(comparateur('departement')(avec, sans)).toBeLessThan(0);
       expect(comparateur('departement')(sans, avec)).toBeGreaterThan(0);
+    });
+  });
+
+  describe('tri par groupe', () => {
+    it('range les groupes par ordre alphabétique de libellé', () => {
+      const socialiste = sortant({ groupeSlug: 'ser', groupeNom: 'SER' });
+      const republicain = sortant({ groupeSlug: 'lr', groupeNom: 'Les Républicains' });
+      expect(comparateur('groupe')(republicain, socialiste)).toBeLessThan(0);
+      expect(comparateur('groupe')(socialiste, republicain)).toBeGreaterThan(0);
+    });
+
+    it('garde les membres d’un même groupe contigus, ordonnés par identité', () => {
+      const dupont = sortant({ groupeSlug: 'lr', groupeNom: 'Les Républicains', nom: 'Dupont' });
+      const bernard = sortant({ groupeSlug: 'lr', groupeNom: 'Les Républicains', nom: 'Bernard' });
+      expect(comparateur('groupe')(bernard, dupont)).toBeLessThan(0);
+    });
+
+    it('rejette les mandats sans groupe en fin de liste', () => {
+      // Un mandat non rattaché n'est pas un groupe politique : il ne doit pas
+      // s'intercaler alphabétiquement au milieu de groupes réels.
+      const avec = sortant({ groupeSlug: 'zzz-tres-loin', groupeNom: 'Zèbres' });
+      const sans = sortant({ groupeSlug: null });
+      expect(comparateur('groupe')(avec, sans)).toBeLessThan(0);
+      expect(comparateur('groupe')(sans, avec)).toBeGreaterThan(0);
+    });
+
+    it('est un ordre total : deux sortants ne sont jamais à égalité', () => {
+      // Sans départage, une liste triée peut changer d'ordre d'un appel à
+      // l'autre et faire sauter des lignes d'une page à la suivante.
+      const a = sortant({ groupeSlug: 'lr', groupeNom: 'Les Républicains', nom: 'Martin', prenom: 'Anne', mandatId: 'm1' });
+      const b = sortant({ groupeSlug: 'lr', groupeNom: 'Les Républicains', nom: 'Martin', prenom: 'Anne', mandatId: 'm2' });
+      expect(comparateur('groupe')(a, b)).not.toBe(0);
+      expect(comparateur('groupe')(a, b)).toBe(-comparateur('groupe')(b, a));
+    });
+  });
+
+  describe('tri par commission', () => {
+    it('rassemble les membres d’une même commission, commissions par ordre alphabétique', () => {
+      const finances = sortant({ commission: 'Commission des finances' });
+      const lois = sortant({ commission: 'Commission des lois' });
+      expect(comparateur('commission')(finances, lois)).toBeLessThan(0);
+    });
+
+    it('place les sortants sans commission en dernier', () => {
+      const avec = sortant({ commission: 'Zèbres' });
+      const sans = sortant({ commission: null });
+      expect(comparateur('commission')(avec, sans)).toBeLessThan(0);
+      expect(comparateur('commission')(sans, avec)).toBeGreaterThan(0);
+    });
+  });
+
+  describe('tri par profession', () => {
+    it('regroupe sur la famille, pas sur la catégorie détaillée', () => {
+      // « Salariés (Cadres divers) » et « Salariés (Retraités) » sont la même
+      // famille : ils doivent rester contigus, donc être départagés à l'identité.
+      const cadre = sortant({ profession: 'Salariés (Cadres divers)', nom: 'Bernard' });
+      const retraite = sortant({ profession: 'Salariés (Retraités)', nom: 'Zola' });
+      const fonctionnaire = sortant({ profession: 'Fonctionnaires (Divers)', nom: 'Aaron' });
+
+      expect(comparateur('profession')(cadre, retraite)).toBeLessThan(0);
+      // Fonctionnaires précède Salariés, quel que soit le nom.
+      expect(comparateur('profession')(fonctionnaire, cadre)).toBeLessThan(0);
+    });
+
+    it('place les sortants sans profession déclarée en dernier', () => {
+      const avec = sortant({ profession: 'Zèbres' });
+      const sans = sortant({ profession: null });
+      expect(comparateur('profession')(avec, sans)).toBeLessThan(0);
+      expect(comparateur('profession')(sans, avec)).toBeGreaterThan(0);
+    });
+  });
+
+  describe('tri par âge', () => {
+    it('ordonne du plus âgé au plus jeune', () => {
+      const doyen = sortant({ dateNaissance: '1943-02-11' });
+      const benjamin = sortant({ dateNaissance: '1991-09-27' });
+      expect(comparateur('age')(doyen, benjamin)).toBeLessThan(0);
+      expect(comparateur('age')(benjamin, doyen)).toBeGreaterThan(0);
+    });
+
+    it('place les dates de naissance inconnues en dernier, sans les traiter comme une jeunesse', () => {
+      const connu = sortant({ dateNaissance: '1991-09-27' });
+      const inconnu = sortant({ dateNaissance: null });
+      expect(comparateur('age')(connu, inconnu)).toBeLessThan(0);
+      expect(comparateur('age')(inconnu, connu)).toBeGreaterThan(0);
     });
   });
 

@@ -11,13 +11,28 @@ function fmt(v: number | null | undefined, suffixe = '') {
   return `${v.toLocaleString('fr-FR')}${suffixe}`;
 }
 
-export function SortantCard({ sortant }: { sortant: Sortant }) {
+export function SortantCard({
+  sortant,
+  surbrillance = false,
+}: {
+  sortant: Sortant;
+  /**
+   * Carte désignée par une sélection faite dans un graphique.
+   *
+   * Marquée par un anneau plutôt que par un fond : la carte reste lisible, et le
+   * repère survit au thème sombre comme au thème clair.
+   */
+  surbrillance?: boolean;
+}) {
   const initials = `${sortant.personne.prenom.charAt(0)}${sortant.personne.nom.charAt(0)}`.toUpperCase();
 
   return (
     <Link
       href={`/senateurs/${sortant.personne.slug}`}
-      className="group block rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
+      data-surbrillance={surbrillance || undefined}
+      className={`group block rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md ${
+        surbrillance ? 'border-primary ring-2 ring-primary/40' : ''
+      }`}
     >
       <div className="flex items-start gap-3">
         {sortant.personne.photoUrl ? (

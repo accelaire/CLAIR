@@ -1,6 +1,7 @@
 import { MetadataRoute } from 'next';
 import { scrutinHref } from '@/lib/scrutin-url';
 import { internalHeaders } from '@/lib/internal-headers';
+import { SLUGS_GRAPHIQUES } from '@/lib/senatoriales/graphiques';
 
 // Régénération quotidienne, calée sur l'ingestion (04:00 UTC) : rien ne change
 // entre deux passages, donc rien ne justifie de reconstruire plus souvent.
@@ -286,6 +287,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'daily',
       priority: 0.9,
     },
+    // Les pages de graphiques portent chacune leur propre image Open Graph : ce
+    // sont elles qui circulent quand un graphique est partagé, elles doivent
+    // donc être indexables au même titre que la page mère. Priorité un cran en
+    // dessous : ce sont sept vues d'un même sujet, pas sept sujets.
+    ...SLUGS_GRAPHIQUES.map((slug) => ({
+      url: `${BASE_URL}/senatoriales-2026/graphiques/${slug}`,
+      lastModified: ingestion,
+      changeFrequency: 'daily' as const,
+      priority: 0.7,
+    })),
     {
       url: `${BASE_URL}/classements`,
       lastModified: ingestion,

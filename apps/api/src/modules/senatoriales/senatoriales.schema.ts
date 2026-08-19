@@ -1,8 +1,21 @@
 import { z } from 'zod';
 
+/**
+ * Tris acceptés pour la liste des sortants.
+ *
+ * Deux familles s'y côtoient. Les tris de regroupement — département, groupe,
+ * commission, profession — rassemblent les sortants en sections ; les tris de
+ * classement — présence, loyauté, amendements, interventions, âge — les
+ * ordonnent sur une valeur. Chacun a son graphique côté web, qui illustre
+ * précisément la lecture demandée.
+ */
 export const TRIS_SORTANTS = [
   'departement',
+  'groupe',
+  'commission',
+  'profession',
   'nom',
+  'age',
   'presence',
   'loyaute',
   'amendements',

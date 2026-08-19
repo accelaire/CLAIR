@@ -37,7 +37,17 @@ export interface ApercuSenatoriales {
       nomComplet: string | null;
       couleur: string | null;
       position: string | null;
+      /** Sièges du groupe remis en jeu le 27 septembre. */
       sieges: number;
+      /**
+       * Sièges du groupe dans le Sénat entier, série 1 comprise.
+       *
+       * Sans lui, le nombre de sièges renouvelés ne dit rien de l'enjeu : trente
+       * sièges remis en jeu pèsent tout autrement selon qu'un groupe en compte
+       * soixante ou trente-cinq. Le rapport des deux est le seul chiffre qui
+       * indique qui joue gros.
+       */
+      siegesSenat: number;
     }[];
   };
   // `departement` est le code INSEE ('01', '2A', '997') : il identifie à lui seul
@@ -59,6 +69,8 @@ export interface Sortant {
     photoUrl: string | null;
     profession: string | null;
     dateNaissance: string | null;
+    /** 'M' | 'F' tel que déduit de la civilité par la source. */
+    sexe: string | null;
   };
   groupe: {
     slug: string;
@@ -140,6 +152,43 @@ function parIdentite(a: Sortant, b: Sortant): number {
 }
 
 /**
+ * Famille d'une catégorie professionnelle : la part qui précède la parenthèse.
+ *
+ * « Salariés (Cadres divers) » et « Salariés (Retraités) » relèvent de la même
+ * famille. Exporté parce que l'affichage regroupe sur exactement la même clé :
+ * deux découpages différents produiraient des sections dont le graphique ne
+ * saurait plus rendre compte.
+ */
+export function familleProfession(profession: string | null): string | null {
+  const valeur = profession?.trim();
+  if (!valeur) return null;
+  const [famille] = valeur.split(' (');
+  return famille ? famille.trim() : valeur;
+}
+
+/**
+ * Comparateur de regroupement : rassemble les sortants partageant une même clé,
+ * clés par ordre alphabétique, sortants sans clé en fin de liste.
+ *
+ * Factorisé parce que groupe, commission et profession posent exactement le même
+ * problème — ne jamais couper un ensemble en deux, ne jamais laisser les
+ * non-renseignés s'intercaler au milieu — et qu'écrit trois fois, ce traitement
+ * finirait par diverger sur l'un des trois.
+ */
+function parRegroupement(
+  cle: (sortant: Sortant) => string | null,
+): (a: Sortant, b: Sortant) => number {
+  return (a, b) => {
+    const cleA = cle(a);
+    const cleB = cle(b);
+    if (cleA === cleB) return parIdentite(a, b);
+    if (!cleA) return 1;
+    if (!cleB) return -1;
+    return cleA.localeCompare(cleB, 'fr') || parIdentite(a, b);
+  };
+}
+
+/**
  * Le tri se fait en mémoire, sur le bilan agrégé — pas en SQL sur la ligne de
  * siège, dont les statistiques ne couvrent qu'un segment pour un mandat interrompu.
  * Trier en base afficherait un classement en désaccord avec les chiffres affichés.
@@ -154,6 +203,41 @@ export function comparateur(tri: SortantsQuery['tri']): (a: Sortant, b: Sortant)
       (a.circonscription?.departement ?? 'zzz').localeCompare(
         b.circonscription?.departement ?? 'zzz',
       ) || parIdentite(a, b);
+  }
+
+  if (tri === 'groupe') {
+    // Rassemble les sortants d'un même groupe, groupes par ordre alphabétique.
+    // L'ordre des groupes entre eux est laissé à l'affichage, qui les présente
+    // en sections et peut vouloir les ranger par effectif ; ce qui se joue ici,
+    // c'est seulement qu'un groupe ne soit jamais coupé en deux.
+    return parRegroupement((s) => s.groupe?.nom ?? null);
+  }
+
+  if (tri === 'commission') {
+    return parRegroupement((s) => s.commissionPermanente);
+  }
+
+  if (tri === 'profession') {
+    // Regroupement sur la famille — « Salariés », « Fonctionnaires » — et non sur
+    // la catégorie détaillée. Le Sénat en publie une vingtaine, du type
+    // « Salariés (Cadres divers) » : prises telles quelles elles feraient des
+    // sections d'un ou deux sortants, qui ne regroupent plus rien.
+    return parRegroupement((s) => familleProfession(s.personne.profession));
+  }
+
+  if (tri === 'age') {
+    // Du plus âgé au plus jeune : c'est la lecture attendue d'un « tri par âge »
+    // sur une assemblée, celle qui met les doyens en tête.
+    return (a, b) => {
+      const na = a.personne.dateNaissance;
+      const nb = b.personne.dateNaissance;
+      if (na === nb) return parIdentite(a, b);
+      // Une date de naissance inconnue n'est pas une jeunesse : elle ferme la liste.
+      if (!na) return 1;
+      if (!nb) return -1;
+      // Naître plus tôt, c'est être plus âgé : l'ordre des dates est celui des âges.
+      return na.localeCompare(nb) || parIdentite(a, b);
+    };
   }
 
   const cle = {
@@ -190,12 +274,13 @@ export class SenatorialesService {
 
     // L'aperçu dérive de la même liste que le détail : deux comptages issus de
     // requêtes distinctes finiraient par diverger sur les mandats interrompus.
-    const [evenement, sortants] = await Promise.all([
+    const [evenement, sortants, effectifsSenat] = await Promise.all([
       this.prisma.evenementInstitutionnel.findUnique({
         where: { slug: EVENEMENT_SLUG },
         select: { dateDebut: true, sources: true },
       }),
       this.chargerSortants(),
+      this.effectifsParGroupe(),
     ]);
 
     // La date de scrutin vient de l'agenda institutionnel, qui porte aussi les
@@ -226,7 +311,17 @@ export class SenatorialesService {
         couleur: sortant.groupe?.couleur ?? null,
         position: sortant.groupe?.position ?? null,
         sieges: 1,
+        // Un groupe absent du comptage global n'existe pas au Sénat d'aujourd'hui :
+        // on retombe alors sur ses seuls sièges sortants plutôt que sur zéro, qui
+        // afficherait une part remise en jeu infinie.
+        siegesSenat: effectifsSenat.get(slug) ?? 0,
       });
+    }
+
+    // Le repli sur les sièges sortants se fait après le comptage : avant, il
+    // porterait sur un total encore incomplet.
+    for (const groupe of groupes.values()) {
+      if (groupe.siegesSenat < groupe.sieges) groupe.siegesSenat = groupe.sieges;
     }
 
     const parGroupe = Array.from(groupes.values())
@@ -275,6 +370,42 @@ export class SenatorialesService {
   }
 
   /**
+   * Effectif de chaque groupe dans le Sénat entier, à la veille du scrutin.
+   *
+   * Sert de dénominateur à la part remise en jeu. Le comptage porte sur les
+   * mandats ouverts des deux séries, sans filtre de mandature : la série 1 a été
+   * renouvelée en 2023 et ne partage donc pas la mandature de la série 2.
+   */
+  private async effectifsParGroupe(): Promise<Map<string, number>> {
+    const lignes = await this.prisma.mandatParlementaire.groupBy({
+      by: ['groupeId'],
+      where: {
+        chambre: 'senat',
+        dateDebut: { lte: DATE_REFERENCE },
+        OR: [{ dateFin: null }, { dateFin: { gte: DATE_REFERENCE } }],
+      },
+      _count: { _all: true },
+    });
+
+    const groupeIds = lignes
+      .map((l) => l.groupeId)
+      .filter((id): id is string => id !== null);
+    const groupes = await this.prisma.groupePolitique.findMany({
+      where: { id: { in: groupeIds } },
+      select: { id: true, slug: true },
+    });
+    const slugParId = new Map(groupes.map((g) => [g.id, g.slug]));
+
+    const effectifs = new Map<string, number>();
+    for (const ligne of lignes) {
+      const slug = ligne.groupeId ? slugParId.get(ligne.groupeId) : SANS_GROUPE.slug;
+      if (!slug) continue;
+      effectifs.set(slug, (effectifs.get(slug) ?? 0) + ligne._count._all);
+    }
+    return effectifs;
+  }
+
+  /**
    * Les 178 sièges remis en jeu, bilan agrégé, sans filtre ni tri.
    *
    * Le chargement est mutualisé : la liste tient en quelques centaines de
@@ -316,6 +447,7 @@ export class SenatorialesService {
             photoUrl: true,
             profession: true,
             dateNaissance: true,
+            sexe: true,
             statsCarrierePresence: true,
             statsCarriereLoyaute: true,
             statsCarriereParticipation: true,
@@ -381,6 +513,7 @@ export class SenatorialesService {
           photoUrl: personne.photoUrl,
           profession: personne.profession,
           dateNaissance: personne.dateNaissance?.toISOString() ?? null,
+          sexe: personne.sexe ?? null,
         },
         groupe: siege.groupe,
         circonscription: siege.circonscription,
