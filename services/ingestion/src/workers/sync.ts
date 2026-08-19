@@ -1018,7 +1018,12 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
         where: { id: existing.id },
         data: {
           nom: g.nom,
-          nomCourt: g.nomCourt,
+          // Même garde que `couleur` plus bas, et pour la même raison : la
+          // source ne garantit pas `libelleCourt`. Une nuit où elle l'omet
+          // suffirait à vider `nom_court` des neuf groupes — et tout le site
+          // réafficherait les codes bruts (UMP, LREM, CRC) à la place des
+          // libellés d'usage, puisque l'affichage repose sur ce champ.
+          ...(g.nomCourt ? { nomCourt: g.nomCourt } : {}),
           nomComplet: g.nomComplet,
           position: g.position || 'centre',
           ordre: g.ordre,
