@@ -31,6 +31,26 @@
  *    `app/api/v1/[...path]/route.ts` : `Vercel-CDN-Cache-Control` porte le TTL
  *    côté CDN, `Cache-Control` laisse le navigateur revalider.
  *
+ * ## La même pièce 3, pour les pages de détail
+ *
+ * Les fiches (`/deputes/:slug`, `/scrutins/:numero`, `/dossiers/:uid`…) ont les
+ * mêmes entrées dans `vercel.json`, pour une raison voisine mais distincte :
+ * `useSearchParams` dans leur `PageClient` — la chambre et la session font
+ * partie de l'identité d'un scrutin — suffit à les faire rendre à la demande.
+ * Elles répondaient donc `no-store` sur les ~30 000 URLs du sitemap, sans
+ * jamais toucher le cache edge : un rendu serverless complet par visite, y
+ * compris pour chaque passage d'un robot.
+ *
+ * Leur TTL est d'une heure là où les listes tiennent dix minutes : leur contenu
+ * ne bouge qu'au passage du cron d'ingestion, à 5 h. C'est aussi la fenêtre de
+ * `REVALIDATE_LISTE_S` et le `revalidate` par défaut de `fetchFromApi`, donc
+ * rien ne se périme plus vite que le maillon en amont.
+ *
+ * Ce cache est sûr parce que le HTML rendu n'est jamais personnalisé :
+ * l'authentification est entièrement côté client, et aucun `cookies()` ni
+ * `headers()` n'est lu dans `app/`. Toute évolution sur ce point invaliderait
+ * ces entrées, pas seulement celles des listes.
+ *
  * ## Ce que la donnée initiale couvre
  *
  * Uniquement la vue sans filtre, première page. C'est l'URL canonique, la seule
