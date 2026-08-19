@@ -1,13 +1,21 @@
 import type { Metadata } from 'next';
-import { fetchFromApi } from '@/lib/api-server';
+import { notFound } from 'next/navigation';
+import { fetchRessource } from '@/lib/api-server';
 import { PersonJsonLd, BreadcrumbJsonLd } from '@/components/seo/JsonLd';
 import PageClient from './PageClient';
 import type { DeputeDetail } from './PageClient';
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
 
+// Rendue à la demande puis conservée, au lieu d'être rejouée à chaque visite.
+// Motif et garde-fous dans `lib/liste-ssr`.
+export const revalidate = 3600;
+export function generateStaticParams() {
+  return [];
+}
+
 async function getDepute(slug: string) {
-  const res = await fetchFromApi<{ data: DeputeDetail }>(
+  const res = await fetchRessource<{ data: DeputeDetail }>(
     `/deputes/${slug}?include=stats`,
   );
   return res?.data ?? null;
@@ -60,6 +68,11 @@ export default async function DeputeDetailPage({
   params: { slug: string };
 }) {
   const data = await getDepute(params.slug);
+
+  // Sans ça, un slug inconnu rendait la coquille du client en HTTP 200 : un
+  // soft 404 que Google indexe puis garde. `fetchRessource` ne renvoie `null`
+  // que sur un vrai 404 de l'API, jamais sur une panne.
+  if (!data) notFound();
 
   const sameAs: string[] = [];
   if (data?.twitter)

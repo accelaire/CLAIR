@@ -51,6 +51,28 @@
  * `headers()` n'est lu dans `app/`. Toute évolution sur ce point invaliderait
  * ces entrées, pas seulement celles des listes.
  *
+ * ## Et pour les quatre fiches qui n'ont aucun paramètre d'URL
+ *
+ * `/deputes/:slug`, `/senateurs/:slug`, `/lobbying/:id` et `/sujets/:slug` ne
+ * lisent aucun paramètre de recherche, ni côté serveur ni côté client. Elles
+ * étaient pourtant rendues à la demande (`λ` au build), pour une raison de
+ * cadrage Next : un segment dynamique sans `generateStaticParams` n'est jamais
+ * pré-rendu, donc jamais conservé.
+ *
+ * D'où le couple `revalidate` + `generateStaticParams` renvoyant un tableau
+ * vide : rien n'est généré au build — pré-rendre 6 612 fiches y coûterait
+ * autant d'appels API — mais chaque page rendue à la première visite est
+ * ensuite conservée et resservie. C'est ce que le cache edge seul ne donne pas
+ * sur un corpus de longue traîne, où une entrée CDN est évincée bien avant
+ * d'être redemandée.
+ *
+ * Ce régime déplace un risque : une page en échec n'est plus une requête ratée,
+ * c'est un résultat conservé et resservi. Un `notFound()` déclenché par une
+ * panne passagère de l'API se figerait donc en 404 pour tout le monde. C'est
+ * exactement ce que `fetchRessource` (`lib/api-server`) empêche, en ne
+ * renvoyant `null` que sur un vrai 404. Toute fiche passée en ISR doit l'
+ * utiliser, jamais `fetchFromApi`.
+ *
  * ## Ce que la donnée initiale couvre
  *
  * Uniquement la vue sans filtre, première page. C'est l'URL canonique, la seule

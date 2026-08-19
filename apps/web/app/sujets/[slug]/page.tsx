@@ -1,14 +1,24 @@
 import type { Metadata } from 'next';
 import { notFound, permanentRedirect } from 'next/navigation';
-import { fetchFromApi } from '@/lib/api-server';
+// Le repli sur l'archive reste en `fetchFromApi` : on sait déjà que le sujet
+// est absent, et une panne sur cette recherche de redirection ne doit pas
+// empêcher de rendre le 404 qu'elle est censée éviter.
+import { fetchFromApi, fetchRessource } from '@/lib/api-server';
 import { BreadcrumbJsonLd } from '@/components/seo/JsonLd';
 import PageClient from './PageClient';
 import type { SujetDetail } from './PageClient';
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
 
+// Rendue à la demande puis conservée, au lieu d'être rejouée à chaque visite.
+// Motif et garde-fous dans `lib/liste-ssr`.
+export const revalidate = 3600;
+export function generateStaticParams() {
+  return [];
+}
+
 async function getSujet(slug: string) {
-  return fetchFromApi<{ data: SujetDetail }>(`/sujets/${slug}`);
+  return fetchRessource<{ data: SujetDetail }>(`/sujets/${slug}`);
 }
 
 export async function generateMetadata({
