@@ -7,12 +7,15 @@ import type { SenateurDetail } from './PageClient';
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
 
-// Rendue à la demande puis conservée, au lieu d'être rejouée à chaque visite.
-// Motif et garde-fous dans `lib/liste-ssr`.
-export const revalidate = 3600;
-export function generateStaticParams() {
-  return [];
-}
+// Cette page NE PEUT PAS être générée statiquement, malgré l'absence de
+// paramètre d'URL dans son propre code : elle rend `interventions-list`, qui appelle `useUrlFilters`.
+// Un `useSearchParams` non enveloppé d'une `<Suspense>` fait sortir tout le
+// rendu statique en « deopted into client-side rendering », ce qui répond 500.
+//
+// L'enrober d'une `<Suspense>` lèverait le 500 mais servirait le squelette à la
+// place du contenu — précisément la panne SEO décrite dans `lib/liste-ssr`. Le
+// rendu à la demande est donc le bon régime ici ; le cache edge de `vercel.json`
+// est ce qui l'amortit.
 
 async function getSenateur(slug: string) {
   const res = await fetchRessource<{ data: SenateurDetail }>(
