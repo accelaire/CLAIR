@@ -103,6 +103,21 @@ export interface SyncSenateursHistoriquesResult {
   senateursIgnores: number;
 }
 
+/** Forme comparable d'un libellé : sans accents, sans casse, espaces normalisés. */
+function sansAccents(valeur: string): string {
+  return valeur
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Nombre de caractères accentués d'un libellé. */
+function compteAccents(valeur: string): number {
+  return (valeur.normalize('NFD').match(/[\u0300-\u036f]/g) ?? []).length;
+}
+
 export async function syncSenateursHistoriques(
   options: { perimetreDebut?: Date } = {},
 ): Promise<SyncSenateursHistoriquesResult> {
@@ -127,7 +142,7 @@ export async function syncSenateursHistoriques(
 
   const existants = await prisma.parlementaire.findMany({
     where: { chambre: 'senat' },
-    select: { id: true, sourceId: true, serie: true, dateNaissance: true },
+    select: { id: true, sourceId: true, serie: true, dateNaissance: true, profession: true },
   });
   const existantBySource = new Map(
     existants.filter((e) => e.sourceId).map((e) => [e.sourceId!, e]),
@@ -178,6 +193,51 @@ export async function syncSenateursHistoriques(
     // faute de date (remplaçants, retours de ministre entrés en cours de mandature).
     const mandatCourantSource = ctxDerives.find((ctx) => ctx.dateFin === null) ?? null;
 
+    // Enrichissement bio non destructif, AVANT tout arbitrage sur les mandats.
+    //
+    // Les deux fichiers ODSEN n'ont pas la même fraîcheur : GENERAL suit le roster
+    // courant (les 348 sénateurs en exercice y figurent en ACTIF, date de naissance
+    // comprise) alors que ELUSEN est figé avant le renouvellement de septembre 2023.
+    // Un sénateur entré depuis — un remplaçant, typiquement — n'a donc aucune ligne
+    // de mandat dans la source, et l'arbitrage ci-dessous l'écartait avec elle : sa
+    // date de naissance, pourtant présente dans GENERAL, n'était jamais écrite.
+    // Neuf des 178 sortants de la série 2 étaient dans ce cas.
+    //
+    // L'identité ne dépend d'aucun mandat : on l'écrit dès qu'on tient la personne.
+    if (existant) {
+      const corrections: { dateNaissance?: Date; profession?: string } = {};
+
+      if (!existant.dateNaissance && identite.dateNaissance) {
+        corrections.dateNaissance = identite.dateNaissance;
+      }
+
+      // Réparation des accents perdus par l'autre source.
+      //
+      // `senateurs.json` publie « Salaries (Cadres divers) » et « Sans profession
+      // declarée » là où le CSV ODSEN écrit les mêmes libellés correctement. Les
+      // deux sources officielles se contredisent sur l'orthographe d'une même
+      // nomenclature, et c'est la version fautive qui s'affiche sur les fiches.
+      //
+      // L'écrasement est strictement borné : il n'a lieu que si les deux
+      // libellés sont identiques une fois les accents retirés, et si celui
+      // d'ODSEN en porte davantage. Une catégorie réellement différente n'est
+      // donc jamais remplacée — on ne corrige que la graphie.
+      if (
+        existant.profession &&
+        identite.profession &&
+        existant.profession !== identite.profession &&
+        sansAccents(existant.profession) === sansAccents(identite.profession) &&
+        compteAccents(identite.profession) > compteAccents(existant.profession)
+      ) {
+        corrections.profession = identite.profession;
+      }
+
+      if (Object.keys(corrections).length > 0) {
+        await prisma.parlementaire.update({ where: { id: existant.id }, data: corrections });
+        result.personnesEnrichies++;
+      }
+    }
+
     // Rien à importer et rien à raffiner (personne absente = pas de mandat ouvert) → ignore.
     if (mandatsAImporter.length === 0 && !(existant && mandatCourantSource)) {
       result.senateursIgnores++;
@@ -189,15 +249,8 @@ export async function syncSenateursHistoriques(
     // 1) Résoudre la personne -------------------------------------------
     let personneId: string;
     if (existant) {
+      // L'enrichissement bio a déjà eu lieu plus haut, avant l'arbitrage des mandats.
       personneId = existant.id;
-      // Enrichissement bio non destructif (senateurs.json n'a pas la date de naissance).
-      if (!existant.dateNaissance && identite.dateNaissance) {
-        await prisma.parlementaire.update({
-          where: { id: existant.id },
-          data: { dateNaissance: identite.dateNaissance },
-        });
-        result.personnesEnrichies++;
-      }
     } else {
       // Ancien pur : créer une personne inactive. Groupe = dernier mandat importé.
       const dernier = mandatsAImporter.reduce((a, b) => (a.dateDebut >= b.dateDebut ? a : b));

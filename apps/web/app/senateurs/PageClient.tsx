@@ -9,6 +9,7 @@ import { Search, ChevronDown, Users, Loader2, Check, GitCompareArrows, X } from 
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
+import { aucunFiltre, STALE_TIME_LISTE_MS } from '@/lib/liste-ssr';
 import {
   useComparisonSelection,
   ComparisonSelectionBar,
@@ -42,7 +43,7 @@ interface Senateur {
   } | null;
 }
 
-interface SenateursResponse {
+export interface SenateursResponse {
   data: Senateur[];
   meta: {
     total: number;
@@ -53,7 +54,18 @@ interface SenateursResponse {
   };
 }
 
-function SenateursPageContent() {
+interface PageClientProps {
+  /** Première page sans filtre, récupérée côté serveur (cf. `lib/liste-ssr`). */
+  initialSenateurs?: SenateursResponse;
+  /**
+   * Page rendue côté serveur, quand l'URL en demande une autre que la première
+   * (cf. `pageListe` dans `lib/liste-ssr`). Le défilement infini enchaîne à
+   * partir de là, il ne repart pas du début.
+   */
+  initialPage?: number;
+}
+
+function SenateursPageContent({ initialSenateurs, initialPage = 1 }: PageClientProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -125,7 +137,14 @@ function SenateursPageContent() {
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
-    initialPageParam: 1,
+    initialPageParam: initialPage,
+    // La donnée du rendu serveur ne vaut que pour la vue canonique : dès qu'un
+    // filtre est actif, on repart sur un chargement client.
+    initialData:
+      initialSenateurs && aucunFiltre([filters.search, filters.groupe, filters.session])
+        ? { pages: [initialSenateurs], pageParams: [initialPage] }
+        : undefined,
+    staleTime: STALE_TIME_LISTE_MS,
   });
 
   // Fetch groupes pour le filtre
@@ -468,10 +487,10 @@ function SenateursPageContent() {
   );
 }
 
-export default function PageClient() {
+export default function PageClient({ initialSenateurs, initialPage }: PageClientProps) {
   return (
     <Suspense fallback={<SenateursPageSkeleton />}>
-      <SenateursPageContent />
+      <SenateursPageContent initialSenateurs={initialSenateurs} initialPage={initialPage} />
     </Suspense>
   );
 }

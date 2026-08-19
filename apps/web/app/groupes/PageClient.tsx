@@ -7,11 +7,12 @@ import Link from 'next/link';
 import { Search, ChevronDown, Users, Loader2, Building2, ArrowRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
+import { aucunFiltre, STALE_TIME_LISTE_MS } from '@/lib/liste-ssr';
 import { getGroupColor } from '@/lib/colors';
 import { legislatureLabel, sessionLabel } from '@/lib/periodes';
 import { HemicycleChart } from '@/components/charts/HemicycleChart';
 
-interface GroupePolitique {
+export interface GroupePolitique {
   id: string;
   slug: string;
   chambre: 'assemblee' | 'senat';
@@ -124,7 +125,12 @@ function GroupeCard({ groupe, session }: { groupe: GroupePolitique; session?: st
   );
 }
 
-function GroupesPageContent() {
+interface PageClientProps {
+  /** Vue canonique, récupérée côté serveur (cf. `lib/liste-ssr`). */
+  initialGroupes?: { data: GroupePolitique[] };
+}
+
+function GroupesPageContent({ initialGroupes }: PageClientProps) {
   const router = useRouter();
 
   // Sync filters with URL for back button preservation
@@ -193,6 +199,11 @@ function GroupesPageContent() {
         })
         .then((res) => res.data);
     },
+    // La donnée du rendu serveur ne vaut que pour la vue canonique : dès qu'un
+    // filtre est actif, on repart sur un chargement client.
+    initialData:
+      initialGroupes && aucunFiltre([filters.chambre, filters.legislature, filters.session]) ? initialGroupes : undefined,
+    staleTime: STALE_TIME_LISTE_MS,
   });
 
   const groupes = data?.data || [];
@@ -445,7 +456,7 @@ function GroupesPageContent() {
   );
 }
 
-export default function PageClient() {
+export default function PageClient({ initialGroupes }: PageClientProps) {
   return (
     <Suspense
       fallback={
@@ -456,7 +467,7 @@ export default function PageClient() {
         </div>
       }
     >
-      <GroupesPageContent />
+      <GroupesPageContent initialGroupes={initialGroupes} />
     </Suspense>
   );
 }

@@ -28,6 +28,8 @@ export interface SenatSenateur {
   groupe?: {
     code: string;
     libelle: string;
+    /** Libellé court d'usage : « Les Républicains » pour le code « UMP ». */
+    libelleCourt?: string;
     ordre: number;
   };
   circonscription?: {
@@ -83,10 +85,14 @@ export interface TransformedGroupeSenat {
   uid: string;
   slug: string;
   chambre: 'senat';
+  /** Sigle codé par la source, clé de matching. */
   nom: string;
+  /** Libellé court d'usage, à afficher. */
+  nomCourt: string | null;
   nomComplet: string;
   couleur: string | null;
   position: string | null;
+  ordre: number;
 }
 
 // =============================================================================
@@ -197,17 +203,29 @@ export class SenatSenateursClient {
     };
   }
 
-  private transformGroupe(groupe: { code: string; libelle: string; ordre: number }): TransformedGroupeSenat {
+  private transformGroupe(groupe: {
+    code: string;
+    libelle: string;
+    libelleCourt?: string;
+    ordre: number;
+  }): TransformedGroupeSenat {
     const slug = this.buildSlug(groupe.code);
 
     return {
       uid: `SENAT-${groupe.code}`,
       slug,
       chambre: 'senat',
+      // Le code, pas un libellé : il sert de clé de matching et le Sénat le gèle
+      // à travers les renommages (« UMP » vaut toujours pour Les Républicains).
       nom: groupe.code,
+      // Ce que la source publie pour l'affichage. Présent dans la charge utile
+      // depuis toujours, mais absent de notre interface : il était donc jeté.
+      nomCourt: groupe.libelleCourt ?? null,
       nomComplet: groupe.libelle,
       couleur: this.getGroupeColor(groupe.code),
       position: this.guessPosition(groupe.libelle),
+      // Ordre de l'hémicycle, de la gauche vers la droite.
+      ordre: groupe.ordre,
     };
   }
 

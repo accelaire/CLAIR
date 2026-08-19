@@ -102,6 +102,59 @@ export function OgLayout({
 }
 
 /** Stat pill used in parlementaire OG images. */
+/**
+ * Visuel Open Graph d'une page de rubrique.
+ *
+ * Factorisé parce que ces images ne diffèrent que par leur texte : sans ça, chaque
+ * rubrique recopie la même trentaine de lignes de styles, et l'identité visuelle
+ * dérive au premier oubli.
+ *
+ * Volontairement sans appel réseau : une image OG doit se générer même quand l'API
+ * ne répond pas, sinon l'aperçu du lien casse au pire moment.
+ */
+export function OgPage({
+  badge,
+  badgeColor,
+  surtitre,
+  titre,
+  sousTitre,
+  stats,
+}: {
+  badge: string;
+  badgeColor?: string;
+  surtitre?: string;
+  titre: string;
+  sousTitre: string;
+  stats?: { label: string; value: string }[];
+}) {
+  return (
+    <OgLayout badge={badge} badgeColor={badgeColor}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {surtitre && (
+          <span style={{ fontSize: '28px', color: badgeColor ?? '#3b82f6' }}>{surtitre}</span>
+        )}
+        <span
+          style={{ fontSize: '64px', fontWeight: 700, color: '#f8fafc', lineHeight: 1.15 }}
+        >
+          {titre}
+        </span>
+        <span
+          style={{ fontSize: '32px', color: '#e2e8f0', lineHeight: 1.3, maxWidth: '900px' }}
+        >
+          {sousTitre}
+        </span>
+        {stats && stats.length > 0 && (
+          <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+            {stats.map((s) => (
+              <OgStat key={s.label} label={s.label} value={s.value} />
+            ))}
+          </div>
+        )}
+      </div>
+    </OgLayout>
+  );
+}
+
 export function OgStat({ label, value }: { label: string; value: string }) {
   return (
     <div

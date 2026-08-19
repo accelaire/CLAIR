@@ -1,5 +1,18 @@
 import Link from 'next/link';
 
+/**
+ * Pagination rendue côté serveur, en vrais liens.
+ *
+ * Écrite pour les archives `/votes/:year/:month`, elle sert désormais aussi de
+ * chemin d'exploration aux pages de liste, dont la navigation est un défilement
+ * infini. Un robot n'exécute pas ce défilement : sans ces liens, tout ce qui
+ * suit la première page n'a aucun lien entrant sur le site et n'est connu que
+ * du sitemap.
+ *
+ * D'où la contrainte tenue ici : que des `<a href>` présents dans le HTML
+ * servi, jamais un `onClick`.
+ */
+
 interface Props {
   basePath: string;
   currentPage: number;
@@ -30,7 +43,7 @@ function pageRange(current: number, total: number, span = 2): (number | '…')[]
   return out;
 }
 
-export function ArchivePagination({ basePath, currentPage, totalPages }: Props) {
+export function Pagination({ basePath, currentPage, totalPages }: Props) {
   if (totalPages <= 1) return null;
 
   const items = pageRange(currentPage, totalPages);

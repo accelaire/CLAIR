@@ -407,12 +407,12 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
           couleur: string;
           count: bigint;
         }>>`
-          SELECT gp.slug, gp.nom, gp.couleur, COUNT(*) as count
+          SELECT gp.slug, COALESCE(gp.nom_court, gp.nom) as nom, gp.couleur, COUNT(*) as count
           FROM amendements a
           JOIN parlementaires p ON a.parlementaire_id = p.id
           JOIN groupes_politiques gp ON p.groupe_id = gp.id
           WHERE a.dossier_id = ${dossier.id}
-          GROUP BY gp.slug, gp.nom, gp.couleur
+          GROUP BY gp.slug, gp.nom_court, gp.nom, gp.couleur
           ORDER BY count DESC
         `,
       ]);

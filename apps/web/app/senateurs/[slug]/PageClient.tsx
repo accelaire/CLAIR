@@ -41,6 +41,7 @@ import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
 import { InterventionsList } from '@/components/parlementaire/interventions-list';
 import { MandatsBlock } from '@/components/parlementaire/mandats-timeline';
+import { SiegeRenouvelableCallout } from '@/components/SiegeRenouvelableCallout';
 
 export interface SenateurDetail {
   id: string;
@@ -56,6 +57,8 @@ export interface SenateurDetail {
   email: string | null;
   siteWeb: string | null;
   serie: string | null;
+  actif: boolean | null;
+  chambre: string | null;
   commissionPermanente: string | null;
   groupe: {
     slug: string;
@@ -775,6 +778,8 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
         </div>
       </div>
 
+      <SiegeRenouvelableCallout parlementaire={senateur} />
+
       {/* Statistiques */}
       {senateur.stats && (
         <div className="mb-8">
@@ -785,7 +790,7 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
               value={senateur.stats.presence}
               suffix="%"
               icon={ShieldCheck}
-              tooltip="Pourcentage de scrutins publics auxquels ce parlementaire a participé (voté pour, contre ou abstention)."
+              tooltip="Pourcentage de scrutins publics auxquels ce parlementaire a participé (voté pour, contre ou abstention). Calculé sur l'ensemble de la carrière au Sénat, tous mandats confondus."
               tooltipHref="/comprendre/parlementaire"
             />
             <StatCard
@@ -793,21 +798,21 @@ export default function PageClient({ initialData }: { initialData?: SenateurDeta
               value={senateur.stats.loyaute}
               suffix="%"
               icon={Users}
-              tooltip="Pourcentage de votes alignés avec la position majoritaire du groupe politique."
+              tooltip="Pourcentage de votes alignés avec la position majoritaire du groupe politique. Calculé sur l'ensemble de la carrière au Sénat, tous mandats confondus."
               tooltipHref="/comprendre/parlementaire"
             />
             <StatCard
               label="Votes"
               value={senateur.stats.participation}
               icon={Vote}
-              tooltip="Nombre total de scrutins publics auxquels ce parlementaire a pris part."
+              tooltip="Nombre total de scrutins publics auxquels ce parlementaire a pris part. Calculé sur l'ensemble de la carrière au Sénat, tous mandats confondus."
               tooltipHref="/comprendre/parlementaire"
             />
             <StatCard
               label="Interventions"
               value={senateur.stats.interventions}
               icon={MessageSquare}
-              tooltip="Nombre de prises de parole en séance publique."
+              tooltip="Nombre de prises de parole en séance publique. Calculé sur l'ensemble de la carrière au Sénat, tous mandats confondus."
               tooltipHref="/comprendre/parlementaire"
             />
           </div>

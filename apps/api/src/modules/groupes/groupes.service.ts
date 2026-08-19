@@ -538,6 +538,78 @@ export class GroupesService {
     return stats;
   }
 
+  /**
+   * Filtre « scrutins initiés par le groupe », à concaténer à un WHERE portant
+   * sur la table `scrutins` aliasée `s`.
+   *
+   * Le demandeur est du texte libre — « Mme Monique Lubin et les membres du
+   * groupe Socialiste » — qu'on rapproche des trois libellés connus du groupe :
+   * le code de la source (`nom`), le libellé d'usage (`nom_court`) et le libellé
+   * long (`nom_complet`). Les trois, parce qu'aucun ne suffit : le Sénat cite
+   * tantôt « groupe Socialiste » (le code), tantôt « groupe Les Républicains »
+   * (le libellé d'usage).
+   *
+   * La comparaison reste en SQL, sur les colonnes, et ne passe jamais par un
+   * `groupe.nom` lu via Prisma : l'extension d'affichage de l'API y substitue le
+   * libellé d'usage. Le groupe codé `SOC` se comparait ainsi sur « SER », que
+   * les libellés de demandeur ne contiennent pas ; le filtre était tombé de 169
+   * scrutins à un seul faux positif (« M. Serge Babary »).
+   *
+   * ## Pourquoi un début de mot, et pas une sous-chaîne
+   *
+   * Les codes font deux à quatre lettres. Cherchés n'importe où dans du texte
+   * libre, ils tombent en plein milieu de mots français courants, et le filtre
+   * attribuait alors des scrutins à des groupes qui ne les avaient jamais
+   * demandés — mesuré en base :
+   *
+   * - `RE` matchait « P**ré**sidente », « Nouveau Front Populai**re** » et
+   *   « Socialistes et appa**re**ntés » : 2 212 scrutins de trois autres
+   *   groupes, dont 661 de La France insoumise, affichés comme initiés par
+   *   Renaissance.
+   * - `NI` matchait « commu**ni**ste », « Mo**ni**que », « Vér**oni**que » :
+   *   1 054 scrutins attribués aux non-inscrits sur les deux chambres.
+   * - `UC` matchait « Jean-L**uc** » et « Kerro**uc**he ».
+   *
+   * L'ancrage `\m` (début de mot) conserve ce qui fonctionnait — `SOC` retrouve
+   * bien « **Soc**ialiste », `RN` ses 4 020 scrutins — et fait tomber les
+   * coïncidences, qui sont toutes en milieu de mot.
+   *
+   * Les codes de moins de trois caractères sont écartés : `NI` et `UC` ne
+   * portent pas assez d'information pour se distinguer d'un prénom, même ancrés
+   * (« **Ni**cole Bonnefoy »). Ces groupes restent rapprochés par leur libellé
+   * long, assez discriminant pour rester en sous-chaîne — c'est d'ailleurs lui
+   * qui fait tout le travail à l'Assemblée, dont les demandeurs citent le nom
+   * du groupe entre guillemets.
+   */
+  private demandeurInitieParSql(groupeId: string): Prisma.Sql {
+    return Prisma.sql`
+      AND s.demandeur_texte IS NOT NULL
+      AND EXISTS (
+        SELECT 1
+        FROM groupes_politiques gd
+        WHERE gd.id = ${groupeId}
+          AND (
+            -- L'ancre de début de mot est \\m. Le test de forme sur le libellé
+            -- n'est pas une validation de donnée : il garantit que le libellé,
+            -- qui entre ici dans un motif, ne contient aucun métacaractère. Un
+            -- libellé exotique retombe simplement sur le libellé long ci-dessous.
+            (
+              length(gd.nom) >= 3
+              AND gd.nom ~ '^[[:alnum:] _-]+$'
+              AND s.demandeur_texte ~* ('\\m' || gd.nom)
+            )
+            OR (
+              gd.nom_court IS NOT NULL
+              AND length(gd.nom_court) >= 3
+              AND gd.nom_court ~ '^[[:alnum:] _-]+$'
+              AND s.demandeur_texte ~* ('\\m' || gd.nom_court)
+            )
+            OR (gd.nom_complet IS NOT NULL AND s.demandeur_texte ILIKE '%' || gd.nom_complet || '%')
+          )
+      )
+    `;
+  }
+
   // ===========================================================================
   // STATISTIQUES DE VOTES AGRÉGÉES PAR GROUPE
   // Optimisé avec une seule requête SQL pour éviter les O(n) queries
@@ -606,11 +678,7 @@ export class GroupesService {
                    AND (m.date_fin IS NULL OR m.date_fin >= s.date))
                 )
           WHERE m.groupe_id = ${groupe.id}
-            AND s.demandeur_texte IS NOT NULL
-            AND (
-              s.demandeur_texte ILIKE ${'%' + groupe.nom + '%'}
-              OR s.demandeur_texte ILIKE ${'%' + (groupe.nomComplet || groupe.nom) + '%'}
-            )
+            ${this.demandeurInitieParSql(groupe.id)}
             ${sessionSql}
           GROUP BY v.position
         `
@@ -649,22 +717,11 @@ export class GroupesService {
     const tauxParticipation = totalVotes > 0 ? Math.round((votesExprimes / totalVotes) * 100) : 0;
 
     // Requête SQL optimisée: récupère les 20 derniers scrutins avec les votes du groupe EN UNE SEULE REQUÊTE
-    // Si groupeInitie=true, filtre sur les scrutins où demandeur_texte contient le nom du groupe
-    const groupeNom = groupe.nom;
-    const groupeNomComplet = groupe.nomComplet || groupe.nom;
-
     // Scrutins « initiés par le groupe » : le demandeur est libellé en clair.
     // Seul fragment qui distinguait les deux variantes de la requête ci-dessous,
     // recopiée à l'identique sur 80 lignes — d'où l'extraction, sur le modèle de
     // `sessionSql`.
-    const demandeurSql = groupeInitie
-      ? Prisma.sql`
-          AND s.demandeur_texte IS NOT NULL
-          AND (
-            s.demandeur_texte ILIKE ${'%' + groupeNom + '%'}
-            OR s.demandeur_texte ILIKE ${'%' + groupeNomComplet + '%'}
-          )`
-      : Prisma.empty;
+    const demandeurSql = groupeInitie ? this.demandeurInitieParSql(groupe.id) : Prisma.empty;
 
     const scrutinsWithVotes = await this.prisma.$queryRaw<
       {
@@ -945,10 +1002,6 @@ export class GroupesService {
     }[];
 
     if (groupeInitie) {
-      // Calcul à la volée pour les scrutins initiés par le groupe
-      const groupeNom = groupe.nom;
-      const groupeNomComplet = groupe.nomComplet || groupe.nom;
-
       // Requête SQL qui calcule les stats par thématique pour les scrutins initiés par le groupe
       // Limite à 500 scrutins max pour éviter les requêtes trop lourdes
       const thematiquesData = await this.prisma.$queryRaw<
@@ -961,19 +1014,27 @@ export class GroupesService {
         }[]
       >`
         WITH scrutins_groupe AS (
-          SELECT DISTINCT s.id, s.tags
+          -- Pas de DISTINCT : s.id est la clé primaire et le filtre du
+          -- demandeur est un EXISTS, qui ne duplique pas de ligne. Il y en avait
+          -- un, et comme il ne couvrait pas la colonne de tri, Postgres
+          -- refusait la requête (42P10).
+          --
+          -- chambre, legislature et date sont portées jusqu'ici pour
+          -- rattacher chaque vote au groupe d'époque de son auteur, plus bas.
+          SELECT s.id, s.tags, s.chambre, s.legislature, s.date
           FROM scrutins s
           WHERE s.chambre = ${chambre}
-            AND s.demandeur_texte IS NOT NULL
-            AND (
-              s.demandeur_texte ILIKE ${'%' + groupeNom + '%'}
-              OR s.demandeur_texte ILIKE ${'%' + groupeNomComplet + '%'}
-            )
+            ${this.demandeurInitieParSql(groupe.id)}
           ORDER BY s.date DESC
           LIMIT 500
         ),
         scrutin_tags AS (
-          SELECT sg.id as scrutin_id, unnest(sg.tags) as tag
+          SELECT
+            sg.id as scrutin_id,
+            sg.chambre,
+            sg.legislature,
+            sg.date,
+            unnest(sg.tags) as tag
           FROM scrutins_groupe sg
         ),
         votes_par_tag AS (
@@ -985,14 +1046,18 @@ export class GroupesService {
             SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) as abstention
           FROM scrutin_tags st
           JOIN votes v ON v.scrutin_id = st.scrutin_id
+          -- Groupe d'époque : on retient le mandat que le votant exerçait au
+          -- moment du scrutin, et non son groupe actuel. Les colonnes viennent
+          -- de scrutin_tags ; elles étaient lues sur un alias s absent de
+          -- ce FROM, ce qui faisait échouer la requête (42P01).
           JOIN mandats_parlementaires m
             ON m.personne_id = v.parlementaire_id
-            AND m.chambre = s.chambre
+            AND m.chambre = st.chambre
             AND (
-                  (s.chambre = 'assemblee' AND s.legislature IS NOT NULL
-                   AND m.legislature = s.legislature)
-               OR (s.chambre = 'senat' AND m.date_debut <= s.date
-                   AND (m.date_fin IS NULL OR m.date_fin >= s.date))
+                  (st.chambre = 'assemblee' AND st.legislature IS NOT NULL
+                   AND m.legislature = st.legislature)
+               OR (st.chambre = 'senat' AND m.date_debut <= st.date
+                   AND (m.date_fin IS NULL OR m.date_fin >= st.date))
                 )
           WHERE m.groupe_id = ${groupe.id}
           GROUP BY st.tag, v.scrutin_id

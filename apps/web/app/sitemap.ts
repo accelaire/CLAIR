@@ -1,6 +1,7 @@
 import { MetadataRoute } from 'next';
 import { scrutinHref } from '@/lib/scrutin-url';
 import { internalHeaders } from '@/lib/internal-headers';
+import { SLUGS_GRAPHIQUES } from '@/lib/senatoriales/graphiques';
 
 // Régénération quotidienne, calée sur l'ingestion (04:00 UTC) : rien ne change
 // entre deux passages, donc rien ne justifie de reconstruire plus souvent.
@@ -166,123 +167,179 @@ async function fetchGroupes(): Promise<GroupeItem[]> {
   }
 }
 
+/**
+ * Date de la dernière ingestion, déduite des données du sitemap.
+ *
+ * Sert de `lastModified` aux pages de liste, dont le contenu ne bouge qu'au
+ * passage du cron. Le sitemap se régénérant une fois par jour, l'horodatage de
+ * sa régénération en était une approximation — mais une approximation qui
+ * changeait même les jours où l'ingestion n'avait rien rapporté.
+ */
+function derniereIngestion(data: SitemapData, repli: string): string {
+  const dates = [
+    ...data.deputes.map((d) => d.updatedAt),
+    ...data.senateurs.map((s) => s.updatedAt),
+    ...data.sujets.map((s) => s.updatedAt),
+    ...data.lobbyistes.map((l) => l.updatedAt),
+  ].filter((d): d is string => typeof d === 'string' && d.length > 0);
+
+  if (dates.length === 0) return repli;
+  return dates.reduce((max, d) => (d > max ? d : max));
+}
+
+/** Date du scrutin le plus récent d'une période d'archive (`2025` ou `2025/03`). */
+function finDePeriode(scrutins: ScrutinItem[], prefixe: string): string | null {
+  let max: string | null = null;
+  for (const s of scrutins) {
+    if (typeof s.date !== 'string') continue;
+    const cle = prefixe.length === 4 ? s.date.slice(0, 4) : s.date.slice(0, 7).replace('-', '/');
+    if (cle !== prefixe) continue;
+    if (!max || s.date > max) max = s.date;
+  }
+  return max;
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date().toISOString();
 
-  // Static pages
+  // Les données sont chargées avant les pages statiques : c'est d'elles qu'on
+  // déduit la date de la dernière ingestion, qui date les pages de liste.
+  const [data, groupes] = await Promise.all([fetchSitemapData(), fetchGroupes()]);
+  const { deputes, senateurs, scrutins, lobbyistes, dossiers, sujets } = data;
+
+  const ingestion = derniereIngestion(data, now);
+
+  // Pages statiques.
+  //
+  // Celles qui listent du contenu ingéré portent la date de la dernière
+  // ingestion. Les pages outils — recherche, explorateur, simulateur,
+  // comparateurs, soutien — n'en portent aucune : `lastmod` est facultatif, et
+  // rien ne permet de dater honnêtement leur dernière modification depuis le
+  // runtime. Mieux vaut l'omettre que l'inventer — un `lastmod` faux apprend au
+  // moteur à ignorer ceux de tout le site, y compris les bons.
   const staticPages: MetadataRoute.Sitemap = [
     {
       url: BASE_URL,
-      lastModified: now,
+      lastModified: ingestion,
       changeFrequency: 'daily',
       priority: 1.0,
     },
     {
       url: `${BASE_URL}/deputes`,
-      lastModified: now,
+      lastModified: ingestion,
       changeFrequency: 'daily',
       priority: 0.9,
     },
     {
       url: `${BASE_URL}/senateurs`,
-      lastModified: now,
+      lastModified: ingestion,
       changeFrequency: 'daily',
       priority: 0.9,
     },
     {
       url: `${BASE_URL}/scrutins`,
-      lastModified: now,
+      lastModified: ingestion,
       changeFrequency: 'daily',
       priority: 0.9,
     },
     {
       url: `${BASE_URL}/votes`,
-      lastModified: now,
+      lastModified: ingestion,
       changeFrequency: 'monthly',
       priority: 0.8,
     },
     {
       url: `${BASE_URL}/lobbying`,
-      lastModified: now,
+      lastModified: ingestion,
       changeFrequency: 'weekly',
       priority: 0.8,
     },
     {
       url: `${BASE_URL}/lobbying/actions`,
-      lastModified: now,
+      lastModified: ingestion,
       changeFrequency: 'weekly',
       priority: 0.7,
     },
     {
       url: `${BASE_URL}/groupes`,
-      lastModified: now,
+      lastModified: ingestion,
       changeFrequency: 'weekly',
       priority: 0.8,
     },
     {
       url: `${BASE_URL}/recherche`,
-      lastModified: now,
       changeFrequency: 'weekly',
       priority: 0.7,
     },
     {
       url: `${BASE_URL}/explorateur`,
-      lastModified: now,
       changeFrequency: 'weekly',
       priority: 0.7,
     },
     {
       url: `${BASE_URL}/simulateur`,
-      lastModified: now,
       changeFrequency: 'weekly',
       priority: 0.8,
     },
     {
+      url: `${BASE_URL}/senatoriales-2026`,
+      lastModified: ingestion,
+      changeFrequency: 'daily',
+      priority: 0.9,
+    },
+    // Les pages de graphiques portent chacune leur propre image Open Graph : ce
+    // sont elles qui circulent quand un graphique est partagé, elles doivent
+    // donc être indexables au même titre que la page mère. Priorité un cran en
+    // dessous : ce sont sept vues d'un même sujet, pas sept sujets.
+    ...SLUGS_GRAPHIQUES.map((slug) => ({
+      url: `${BASE_URL}/senatoriales-2026/graphiques/${slug}`,
+      lastModified: ingestion,
+      changeFrequency: 'daily' as const,
+      priority: 0.7,
+    })),
+    {
       url: `${BASE_URL}/classements`,
-      lastModified: now,
+      lastModified: ingestion,
       changeFrequency: 'daily',
       priority: 0.9,
     },
     {
       url: `${BASE_URL}/soutenir`,
-      lastModified: now,
       changeFrequency: 'monthly',
       priority: 0.5,
     },
     {
       url: `${BASE_URL}/deputes/comparer`,
-      lastModified: now,
       changeFrequency: 'weekly',
       priority: 0.6,
     },
     {
       url: `${BASE_URL}/senateurs/comparer`,
-      lastModified: now,
       changeFrequency: 'weekly',
       priority: 0.6,
     },
     {
       url: `${BASE_URL}/dossiers`,
-      lastModified: now,
+      lastModified: ingestion,
       changeFrequency: 'daily',
       priority: 0.9,
     },
     {
       url: `${BASE_URL}/sujets`,
-      lastModified: now,
+      lastModified: ingestion,
       changeFrequency: 'weekly',
       priority: 0.8,
     },
   ];
 
-  // Fetch dynamic content
-  const [data, groupes] = await Promise.all([fetchSitemapData(), fetchGroupes()]);
-  const { deputes, senateurs, scrutins, lobbyistes, dossiers, sujets } = data;
-
-  // Deputes pages
+  // Pages de détail.
+  //
+  // `lastmod` est omis quand la source ne fournit pas de date, plutôt que
+  // remplacé par l'heure courante : un repli sur `now` faisait déclarer 785
+  // URLs « modifiées aujourd'hui » à chaque régénération, tous les jours.
   const deputePages: MetadataRoute.Sitemap = deputes.map((depute) => ({
     url: `${BASE_URL}/deputes/${depute.slug}`,
-    lastModified: depute.updatedAt || now,
+    ...(depute.updatedAt ? { lastModified: depute.updatedAt } : {}),
     changeFrequency: 'weekly' as const,
     priority: 0.8,
   }));
@@ -290,7 +347,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Senateurs pages
   const senateurPages: MetadataRoute.Sitemap = senateurs.map((senateur) => ({
     url: `${BASE_URL}/senateurs/${senateur.slug}`,
-    lastModified: senateur.updatedAt || now,
+    ...(senateur.updatedAt ? { lastModified: senateur.updatedAt } : {}),
     changeFrequency: 'weekly' as const,
     priority: 0.8,
   }));
@@ -321,7 +378,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const yearArchivePages: MetadataRoute.Sitemap = Array.from(yearSet).map(
     (year) => ({
       url: `${BASE_URL}/votes/${year}`,
-      lastModified: now,
+      // Une année révolue ne bouge plus : sa date est celle de son dernier
+      // scrutin. Seule l'année en cours continue d'avancer.
+      lastModified: finDePeriode(scrutins, year) ?? ingestion,
       changeFrequency: 'monthly' as const,
       priority: 0.6,
     }),
@@ -330,7 +389,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const monthArchivePages: MetadataRoute.Sitemap = Array.from(archiveKeys).map(
     (key) => ({
       url: `${BASE_URL}/votes/${key}`,
-      lastModified: now,
+      lastModified: finDePeriode(scrutins, key) ?? ingestion,
       changeFrequency: 'monthly' as const,
       priority: 0.5,
     }),
@@ -339,7 +398,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Lobbyistes pages
   const lobbyistePages: MetadataRoute.Sitemap = lobbyistes.map((lobbyiste) => ({
     url: `${BASE_URL}/lobbying/${lobbyiste.id}`,
-    lastModified: lobbyiste.updatedAt || now,
+    ...(lobbyiste.updatedAt ? { lastModified: lobbyiste.updatedAt } : {}),
     changeFrequency: 'monthly' as const,
     priority: 0.6,
   }));
@@ -347,7 +406,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Groupes pages
   const groupePages: MetadataRoute.Sitemap = groupes.map((groupe) => ({
     url: `${BASE_URL}/groupes/${groupe.chambre}/${groupe.slug}`,
-    lastModified: groupe.updatedAt || now,
+    ...(groupe.updatedAt ? { lastModified: groupe.updatedAt } : {}),
     changeFrequency: 'weekly' as const,
     priority: 0.7,
   }));
@@ -355,7 +414,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Dossiers pages
   const dossierPages: MetadataRoute.Sitemap = dossiers.map((dossier) => ({
     url: `${BASE_URL}/dossiers/${dossier.uid}`,
-    lastModified: dossier.dateDepot || now,
+    ...(dossier.dateDepot ? { lastModified: dossier.dateDepot } : {}),
     changeFrequency: 'weekly' as const,
     priority: 0.7,
   }));
@@ -363,7 +422,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Sujets pages
   const sujetPages: MetadataRoute.Sitemap = sujets.map((sujet) => ({
     url: `${BASE_URL}/sujets/${sujet.slug}`,
-    lastModified: sujet.updatedAt || now,
+    ...(sujet.updatedAt ? { lastModified: sujet.updatedAt } : {}),
     changeFrequency: 'weekly' as const,
     priority: 0.7,
   }));

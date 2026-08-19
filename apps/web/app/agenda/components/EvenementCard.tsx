@@ -1,6 +1,7 @@
 'use client';
 
-import { Vote, DoorOpen, PauseCircle, Coins, Landmark, ExternalLink } from 'lucide-react';
+import Link from 'next/link';
+import { Vote, DoorOpen, PauseCircle, Coins, Landmark, ExternalLink, ArrowRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 export interface AgendaEvenement {
@@ -118,9 +119,28 @@ const CHAMBRE_LABEL: Record<string, string> = {
   senat: 'Sénat',
 };
 
+/**
+ * Événements auxquels CLAIR consacre une page.
+ *
+ * Indexé par slug et non par type : deux élections ne se valent pas, seule celle
+ * qu'on a réellement instruite mérite d'envoyer le lecteur ailleurs. Une entrée
+ * s'ajoute ici le jour où la page correspondante existe.
+ */
+const PAGES_DEDIEES: Record<string, { href: string; label: string }> = {
+  'senatoriales-2026': {
+    href: '/senatoriales-2026',
+    label: 'Le bilan des sortants',
+  },
+};
+
+export function pageDedieePour(slug: string): { href: string; label: string } | null {
+  return PAGES_DEDIEES[slug] ?? null;
+}
+
 export function EvenementCard({ evenement }: { evenement: AgendaEvenement }) {
   const meta = TYPE_EVENEMENT_META[evenement.type];
   const Icon = meta.icon;
+  const page = pageDedieePour(evenement.slug);
 
   return (
     <article className={`rounded-lg border p-4 ${meta.card}`}>
@@ -145,6 +165,16 @@ export function EvenementCard({ evenement }: { evenement: AgendaEvenement }) {
 
           {evenement.description && (
             <p className='mt-2 text-sm leading-relaxed opacity-90'>{evenement.description}</p>
+          )}
+
+          {page && (
+            <Link
+              href={page.href}
+              className='mt-3 inline-flex items-center gap-1.5 rounded-md border border-current/40 px-2.5 py-1 text-sm font-medium transition-colors hover:bg-current/10'
+            >
+              {page.label}
+              <ArrowRight className='h-3.5 w-3.5' aria-hidden />
+            </Link>
           )}
 
           {evenement.sources && evenement.sources.length > 0 && (

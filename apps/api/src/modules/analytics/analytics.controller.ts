@@ -536,7 +536,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
               p.nom,
               p.prenom,
               p.photo_url as photo_url,
-              g.nom as groupe_nom,
+              COALESCE(g.nom_court, g.nom) as groupe_nom,
               g.couleur as groupe_couleur,
               COUNT(*) as total_votes,
               SUM(CASE WHEN v.position != gm.majority_position THEN 1 ELSE 0 END) as dissidences
@@ -547,7 +547,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
             JOIN group_majority gm ON v.scrutin_id = gm.scrutin_id AND p.groupe_id = gm.groupe_id
             WHERE v.position IN ('pour', 'contre')
               AND s.date >= ${dateFrom}
-            GROUP BY p.id, p.slug, p.nom, p.prenom, p.photo_url, g.nom, g.couleur
+            GROUP BY p.id, p.slug, p.nom, p.prenom, p.photo_url, g.nom_court, g.nom, g.couleur
             HAVING COUNT(*) >= 10
           )
           SELECT *
@@ -582,7 +582,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
               p.nom,
               p.prenom,
               p.photo_url as photo_url,
-              g.nom as groupe_nom,
+              COALESCE(g.nom_court, g.nom) as groupe_nom,
               g.couleur as groupe_couleur,
               COUNT(*) as total_votes,
               SUM(CASE WHEN v.position != gm.majority_position THEN 1 ELSE 0 END) as dissidences
@@ -591,7 +591,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
             JOIN groupes_politiques g ON p.groupe_id = g.id
             JOIN group_majority gm ON v.scrutin_id = gm.scrutin_id AND p.groupe_id = gm.groupe_id
             WHERE v.position IN ('pour', 'contre')
-            GROUP BY p.id, p.slug, p.nom, p.prenom, p.photo_url, g.nom, g.couleur
+            GROUP BY p.id, p.slug, p.nom, p.prenom, p.photo_url, g.nom_court, g.nom, g.couleur
             HAVING COUNT(*) >= 10
           )
           SELECT *

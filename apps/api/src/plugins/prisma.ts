@@ -35,6 +35,36 @@ function getDatabaseUrl(): string {
   return urlObj.toString();
 }
 
+/**
+ * Substitue le libellé d'usage au code de groupe, à la lecture.
+ *
+ * En base, `groupes_politiques.nom` porte le code de la source : le Sénat gèle
+ * ses codes à travers les renommages pour que les données historiques continuent
+ * de se rattacher, si bien que le groupe Les Républicains y est codé « UMP » et
+ * le RDPI « LREM ». L'ingestion s'appuie sur ce code (`GROUP_ALIASES` et
+ * `buildGroupMatcher` sont indexés dessus, les prompts LLM le citent), on ne peut
+ * donc pas le remplacer en base sans invalider les hash IA.
+ *
+ * L'extension est posée sur le client de l'API seulement : la lecture publique
+ * voit le nom d'usage, l'ingestion garde sa clé. `needs` fait charger `nom_court`
+ * même quand un `select` ne le demande pas, donc aucun appelant n'a à changer.
+ * Les requêtes SQL brutes ne passent pas par là et font leur propre COALESCE.
+ */
+function withNomGroupeAffiche(client: PrismaClient) {
+  return client.$extends({
+    name: 'nom-groupe-affiche',
+    result: {
+      groupePolitique: {
+        nom: {
+          needs: { nom: true, nomCourt: true },
+          compute: (groupe: { nom: string; nomCourt: string | null }) =>
+            groupe.nomCourt ?? groupe.nom,
+        },
+      },
+    },
+  }) as unknown as PrismaClient;
+}
+
 const prismaPlugin: FastifyPluginAsync = async (fastify) => {
   const prisma = new PrismaClient({
     log: process.env.NODE_ENV === 'development'
@@ -55,7 +85,7 @@ const prismaPlugin: FastifyPluginAsync = async (fastify) => {
     throw error;
   }
 
-  fastify.decorate('prisma', prisma);
+  fastify.decorate('prisma', withNomGroupeAffiche(prisma));
 
   fastify.addHook('onClose', async (instance) => {
     fastify.log.info('Disconnecting Prisma...');

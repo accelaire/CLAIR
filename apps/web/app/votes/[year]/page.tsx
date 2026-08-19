@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { BreadcrumbJsonLd } from '@/components/seo/JsonLd';
 import { ScrutinListCard } from '@/components/scrutins/ScrutinListCard';
-import { ArchivePagination } from '@/components/scrutins/ArchivePagination';
+import { Pagination } from '@/components/Pagination';
 import {
   MONTH_NAMES_FR,
   YEAR_ARCHIVE_PAGE_SIZE,
@@ -147,7 +147,7 @@ export default async function VotesYearPage({
           </div>
         )}
 
-        <ArchivePagination
+        <Pagination
           basePath={`/votes/${year}`}
           currentPage={result.page}
           totalPages={result.totalPages}

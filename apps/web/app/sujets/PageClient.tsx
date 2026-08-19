@@ -6,11 +6,12 @@ import Link from 'next/link';
 import { Search, Vote, Loader2, Layers, Sparkles, ChevronDown, CheckCircle2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
+import { aucunFiltre, STALE_TIME_LISTE_MS } from '@/lib/liste-ssr';
 
 const INITIAL_VISIBLE = 12;
 const LOAD_MORE_STEP = 12;
 
-interface Sujet {
+export interface Sujet {
   id: string;
   slug: string;
   label: string;
@@ -28,7 +29,7 @@ interface Sujet {
   createdAt: string;
 }
 
-interface SujetsResponse {
+export interface SujetsResponse {
   data: Sujet[];
   meta: {
     total: number;
@@ -215,7 +216,12 @@ function CollapsibleSection({
 
 // ── Main Page ──
 
-function SujetsPageContent() {
+interface PageClientProps {
+  /** Vue canonique, récupérée côté serveur (cf. `lib/liste-ssr`). */
+  initialSujets?: Sujet[];
+}
+
+function SujetsPageContent({ initialSujets }: PageClientProps) {
   const [filters, setFilter] = useUrlFilters<{ search: string }>(['search']);
 
   // Load all sujets by fetching all pages (API max 100/page)
@@ -235,6 +241,10 @@ function SujetsPageContent() {
       }
       return all;
     },
+    // La donnée du rendu serveur ne vaut que pour la vue canonique : dès qu'une
+    // recherche est active, on repart sur un chargement client.
+    initialData: initialSujets && aucunFiltre([filters.search]) ? initialSujets : undefined,
+    staleTime: STALE_TIME_LISTE_MS,
   });
 
   const sujets = useMemo(() => data ?? [], [data]);
@@ -451,7 +461,7 @@ function SujetsPageContent() {
   );
 }
 
-export default function PageClient() {
+export default function PageClient({ initialSujets }: PageClientProps) {
   return (
     <Suspense fallback={
       <div className="container mx-auto px-4 py-8">
@@ -460,7 +470,7 @@ export default function PageClient() {
         </div>
       </div>
     }>
-      <SujetsPageContent />
+      <SujetsPageContent initialSujets={initialSujets} />
     </Suspense>
   );
 }

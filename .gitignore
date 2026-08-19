@@ -47,3 +47,6 @@ apps/api/prisma/*.db
 apps/api/prisma/*.db-journal
 # TypeScript incremental build info
 *.tsbuildinfo
+
+# Cache local des contours d'outre-mer (régénérable via scripts/build-geo-departements.mjs)
+scripts/.cache-contours-outre-mer.json
