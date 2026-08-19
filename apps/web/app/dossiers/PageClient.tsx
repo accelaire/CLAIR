@@ -64,9 +64,15 @@ const formatDate = (dateStr: string) => {
 interface PageClientProps {
   /** Première page sans filtre, récupérée côté serveur (cf. `lib/liste-ssr`). */
   initialDossiers?: DossiersResponse;
+  /**
+   * Page rendue côté serveur, quand l'URL en demande une autre que la première
+   * (cf. `pageListe` dans `lib/liste-ssr`). Le défilement infini enchaîne à
+   * partir de là, il ne repart pas du début.
+   */
+  initialPage?: number;
 }
 
-function DossiersPageContent({ initialDossiers }: PageClientProps) {
+function DossiersPageContent({ initialDossiers, initialPage = 1 }: PageClientProps) {
   const [filters, setFilter, , clearAll] = useUrlFilters<{
     search: string;
     etat: string;
@@ -108,13 +114,13 @@ function DossiersPageContent({ initialDossiers }: PageClientProps) {
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
-    initialPageParam: 1,
+    initialPageParam: initialPage,
     // La donnée du rendu serveur ne vaut que pour la vue canonique : dès qu'un
     // filtre est actif, on repart sur un chargement client.
     initialData:
       initialDossiers && aucunFiltre([filters.search, filters.etat, filters.chambre, filters.procedureCode, filters.procedureLibelle]) &&
       Object.keys(dateParams).length === 0
-        ? { pages: [initialDossiers], pageParams: [1] }
+        ? { pages: [initialDossiers], pageParams: [initialPage] }
         : undefined,
     staleTime: STALE_TIME_LISTE_MS,
   });
@@ -339,7 +345,7 @@ function DossiersPageContent({ initialDossiers }: PageClientProps) {
   );
 }
 
-export default function PageClient({ initialDossiers }: PageClientProps) {
+export default function PageClient({ initialDossiers, initialPage }: PageClientProps) {
   return (
     <Suspense fallback={
       <div className="container mx-auto px-4 py-8">
@@ -353,7 +359,7 @@ export default function PageClient({ initialDossiers }: PageClientProps) {
         </div>
       </div>
     }>
-      <DossiersPageContent initialDossiers={initialDossiers} />
+      <DossiersPageContent initialDossiers={initialDossiers} initialPage={initialPage} />
     </Suspense>
   );
 }

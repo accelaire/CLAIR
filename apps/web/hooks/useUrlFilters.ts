@@ -43,6 +43,12 @@ export function useUrlFilters<T extends Record<string, FilterValue>>(
         params.delete(key as string);
       }
 
+      // Changer un filtre remet la liste au début : `page` décrit une tranche
+      // du corpus complet (cf. `pageListe` dans `lib/liste-ssr`), elle n'a plus
+      // de sens une fois le résultat filtré. La laisser dans l'URL ne changeait
+      // rien à l'affichage, mais la rendait fausse au partage et au rechargement.
+      params.delete('page');
+
       // Use replace to avoid adding to history for filter changes
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     },
@@ -62,6 +68,8 @@ export function useUrlFilters<T extends Record<string, FilterValue>>(
         }
       }
 
+      params.delete('page');
+
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     },
     [searchParams, router, pathname]
@@ -77,6 +85,7 @@ export function useUrlFilters<T extends Record<string, FilterValue>>(
       for (const key of extraKeys) {
         params.delete(key);
       }
+      params.delete('page');
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     },
     [searchParams, router, pathname, keys]

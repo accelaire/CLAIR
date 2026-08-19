@@ -70,8 +70,8 @@
  * c'est un résultat conservé et resservi. Un `notFound()` déclenché par une
  * panne passagère de l'API se figerait donc en 404 pour tout le monde. C'est
  * exactement ce que `fetchRessource` (`lib/api-server`) empêche, en ne
- * renvoyant `null` que sur un vrai 404. Toute fiche passée en ISR doit l'
- * utiliser, jamais `fetchFromApi`.
+ * renvoyant `null` que sur un vrai 404. Toute fiche passée en ISR doit passer
+ * par elle, jamais par `fetchFromApi`.
  *
  * ## Ce que la donnée initiale couvre
  *
@@ -98,6 +98,10 @@
  *   coûterait sans rien produire.
  */
 
+import type { Metadata } from 'next';
+
+const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
+
 /**
  * Durée de fraîcheur des données hydratées, alignée sur le `revalidate` des
  * appels serveur.
@@ -120,4 +124,76 @@ export const REVALIDATE_LISTE_S = 3600;
  */
 export function aucunFiltre(valeurs: (string | undefined | null)[]): boolean {
   return valeurs.every((v) => !v);
+}
+
+export type ParametresUrl = Record<string, string | string[] | undefined>;
+
+/**
+ * Numéro de page à rendre côté serveur, ou `null` si la liste ne doit pas
+ * exposer de pagination explorable.
+ *
+ * Les listes se parcourent au défilement infini, que les robots n'exécutent
+ * pas : au-delà de la première page, aucune fiche n'a de lien entrant sur le
+ * site. `?page=N` rouvre ce chemin, en rendant côté serveur la tranche
+ * demandée et en l'accompagnant de vrais liens (`components/Pagination`).
+ *
+ * Renvoie `null` dans deux cas, qui appellent le même traitement — rendre la
+ * première page, sans navigation :
+ *
+ * - un filtre est actif. La donnée initiale ne vaut que pour la vue sans
+ *   filtre (cf. `aucunFiltre`), et le nombre de pages affiché porterait sur le
+ *   corpus complet, pas sur le résultat filtré. C'est aussi ce qui garde
+ *   l'espace explorable borné : on ne veut pas ouvrir aux moteurs le produit
+ *   cartésien des filtres et des pages.
+ * - la valeur n'est pas un entier positif. Un `?page=abc` n'a pas à devenir une
+ *   URL canonique.
+ */
+export function pageListe(
+  searchParams: ParametresUrl,
+  clesFiltre: readonly string[],
+): number | null {
+  const actif = (cle: string) => {
+    const valeur = searchParams[cle];
+    return Array.isArray(valeur) ? valeur.length > 0 : Boolean(valeur);
+  };
+  if (clesFiltre.some(actif)) return null;
+
+  const brut = searchParams.page;
+  const valeur = Array.isArray(brut) ? brut[0] : brut;
+  if (valeur === undefined || valeur === '') return 1;
+  if (!/^[1-9]\d*$/.test(valeur)) return null;
+
+  return Number(valeur);
+}
+
+/**
+ * Métadonnées d'une page de liste, ajustées à la page demandée.
+ *
+ * Deux corrections, toutes deux nécessaires pour que la pagination serve à
+ * quelque chose :
+ *
+ * - la canonique pointe sur elle-même. Laisser les 1 087 pages de `/scrutins`
+ *   se déclarer canoniques vers `/scrutins` revient à dire au moteur qu'elles
+ *   sont la même page, ce qui les fait retomber dans le motif « page en double »
+ *   au lieu d'être explorées.
+ * - le titre porte le numéro de page, sans quoi elles sont indiscernables les
+ *   unes des autres.
+ *
+ * La description reste commune : elle décrit la liste, qui ne change pas d'une
+ * page à l'autre.
+ */
+export function metadonneesListe(
+  base: Metadata,
+  cheminCanonique: string,
+  page: number | null,
+): Metadata {
+  if (page === null || page === 1) return base;
+
+  const url = `${BASE_URL}${cheminCanonique}?page=${page}`;
+
+  return {
+    ...base,
+    title: typeof base.title === 'string' ? `${base.title} — page ${page}` : base.title,
+    alternates: { ...base.alternates, canonical: url },
+  };
 }

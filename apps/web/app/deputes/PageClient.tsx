@@ -59,9 +59,15 @@ export interface DeputesResponse {
 interface PageClientProps {
   /** Première page sans filtre, récupérée côté serveur (cf. `lib/liste-ssr`). */
   initialDeputes?: DeputesResponse;
+  /**
+   * Page rendue côté serveur, quand l'URL en demande une autre que la première
+   * (cf. `pageListe` dans `lib/liste-ssr`). Le défilement infini enchaîne à
+   * partir de là, il ne repart pas du début.
+   */
+  initialPage?: number;
 }
 
-function DeputesPageContent({ initialDeputes }: PageClientProps) {
+function DeputesPageContent({ initialDeputes, initialPage = 1 }: PageClientProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -144,12 +150,12 @@ function DeputesPageContent({ initialDeputes }: PageClientProps) {
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
-    initialPageParam: 1,
+    initialPageParam: initialPage,
     // La donnée du rendu serveur ne vaut que pour la vue canonique : dès qu'un
     // filtre est actif, on repart sur un chargement client.
     initialData:
       initialDeputes && aucunFiltre([filters.search, filters.groupe, filters.legislature])
-        ? { pages: [initialDeputes], pageParams: [1] }
+        ? { pages: [initialDeputes], pageParams: [initialPage] }
         : undefined,
     staleTime: STALE_TIME_LISTE_MS,
   });
@@ -504,10 +510,10 @@ function DeputesPageContent({ initialDeputes }: PageClientProps) {
   );
 }
 
-export default function PageClient({ initialDeputes }: PageClientProps) {
+export default function PageClient({ initialDeputes, initialPage }: PageClientProps) {
   return (
     <Suspense fallback={<DeputesPageSkeleton />}>
-      <DeputesPageContent initialDeputes={initialDeputes} />
+      <DeputesPageContent initialDeputes={initialDeputes} initialPage={initialPage} />
     </Suspense>
   );
 }

@@ -57,9 +57,15 @@ export interface SenateursResponse {
 interface PageClientProps {
   /** Première page sans filtre, récupérée côté serveur (cf. `lib/liste-ssr`). */
   initialSenateurs?: SenateursResponse;
+  /**
+   * Page rendue côté serveur, quand l'URL en demande une autre que la première
+   * (cf. `pageListe` dans `lib/liste-ssr`). Le défilement infini enchaîne à
+   * partir de là, il ne repart pas du début.
+   */
+  initialPage?: number;
 }
 
-function SenateursPageContent({ initialSenateurs }: PageClientProps) {
+function SenateursPageContent({ initialSenateurs, initialPage = 1 }: PageClientProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -131,12 +137,12 @@ function SenateursPageContent({ initialSenateurs }: PageClientProps) {
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
-    initialPageParam: 1,
+    initialPageParam: initialPage,
     // La donnée du rendu serveur ne vaut que pour la vue canonique : dès qu'un
     // filtre est actif, on repart sur un chargement client.
     initialData:
       initialSenateurs && aucunFiltre([filters.search, filters.groupe, filters.session])
-        ? { pages: [initialSenateurs], pageParams: [1] }
+        ? { pages: [initialSenateurs], pageParams: [initialPage] }
         : undefined,
     staleTime: STALE_TIME_LISTE_MS,
   });
@@ -481,10 +487,10 @@ function SenateursPageContent({ initialSenateurs }: PageClientProps) {
   );
 }
 
-export default function PageClient({ initialSenateurs }: PageClientProps) {
+export default function PageClient({ initialSenateurs, initialPage }: PageClientProps) {
   return (
     <Suspense fallback={<SenateursPageSkeleton />}>
-      <SenateursPageContent initialSenateurs={initialSenateurs} />
+      <SenateursPageContent initialSenateurs={initialSenateurs} initialPage={initialPage} />
     </Suspense>
   );
 }

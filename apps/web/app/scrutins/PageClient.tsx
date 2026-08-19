@@ -64,9 +64,15 @@ const capitalize = (str: string): string => {
 interface PageClientProps {
   /** Première page sans filtre, récupérée côté serveur (cf. `lib/liste-ssr`). */
   initialScrutins?: ScrutinsResponse;
+  /**
+   * Page rendue côté serveur, quand l'URL en demande une autre que la première
+   * (cf. `pageListe` dans `lib/liste-ssr`). Le défilement infini enchaîne à
+   * partir de là, il ne repart pas du début.
+   */
+  initialPage?: number;
 }
 
-function ScrutinsPageContent({ initialScrutins }: PageClientProps) {
+function ScrutinsPageContent({ initialScrutins, initialPage = 1 }: PageClientProps) {
   // Sync filters with URL for back button preservation
   const [filters, setFilter, setFilters, clearAll] = useUrlFilters<{
     search: string;
@@ -104,13 +110,13 @@ function ScrutinsPageContent({ initialScrutins }: PageClientProps) {
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
-    initialPageParam: 1,
+    initialPageParam: initialPage,
     // La donnée du rendu serveur ne vaut que pour la vue canonique : dès qu'un
     // filtre est actif, on repart sur un chargement client.
     initialData:
       initialScrutins && aucunFiltre([filters.search, filters.chambre, filters.type, filters.tag]) &&
       Object.keys(dateParams).length === 0
-        ? { pages: [initialScrutins], pageParams: [1] }
+        ? { pages: [initialScrutins], pageParams: [initialPage] }
         : undefined,
     staleTime: STALE_TIME_LISTE_MS,
   });
@@ -354,7 +360,7 @@ function ScrutinsPageContent({ initialScrutins }: PageClientProps) {
   );
 }
 
-export default function PageClient({ initialScrutins }: PageClientProps) {
+export default function PageClient({ initialScrutins, initialPage }: PageClientProps) {
   return (
     <Suspense fallback={
       <div className="container mx-auto px-4 py-8">
@@ -368,7 +374,7 @@ export default function PageClient({ initialScrutins }: PageClientProps) {
         </div>
       </div>
     }>
-      <ScrutinsPageContent initialScrutins={initialScrutins} />
+      <ScrutinsPageContent initialScrutins={initialScrutins} initialPage={initialPage} />
     </Suspense>
   );
 }
