@@ -1,3 +1,25 @@
+
+/**
+ * Statut du sujet, énoncé en toutes lettres pour le modèle.
+ *
+ * La valeur brute de la colonne est ambiguë à la lecture : `promulgue` se laisse
+ * comprendre comme « promulgation », donc comme une étape en cours. Le modèle
+ * écrivait ainsi « le texte est en cours de promulgation » pour des lois déjà
+ * publiées, et deux régénérations successives ont reproduit la même phrase — le
+ * contrôle qualité la signale, à juste titre.
+ *
+ * Chaque statut est donc accompagné de ce qu'il implique de la procédure :
+ * terminée ou non. C'est précisément ce dont le résumé doit rendre compte.
+ */
+const STATUTS_SUJET: Record<string, string> = {
+  promulgue: 'promulgué — la loi est définitivement adoptée et publiée, la procédure est CLOSE',
+  rejete: 'rejeté — le texte n’a pas été adopté, la procédure est CLOSE',
+  adopte: 'adopté — voté par le Parlement, la promulgation reste à venir',
+  caduc: 'caduc — la procédure s’est arrêtée sans vote final',
+  retire: 'retiré — le texte a été retiré par son auteur',
+  en_cours: 'en cours d’examen — la procédure n’est pas terminée',
+};
+
 // =============================================================================
 // Prompts FR pour l'enrichissement IA des entités parlementaires
 // =============================================================================
@@ -229,7 +251,7 @@ export function buildDossierResumePrompt(data: DossierPromptData): string {
     parts.push(`Procédure : ${data.procedureLibelle}`);
   }
   if (data.etat) {
-    parts.push(`État : ${data.etat}`);
+    parts.push(`État : ${STATUTS_SUJET[data.etat] ?? data.etat}`);
   }
 
   // Scrutins clés avec leurs résumés IA
@@ -332,7 +354,7 @@ interface SujetPromptData {
 export function buildSujetResumePrompt(data: SujetPromptData): string {
   const parts: string[] = [
     `Sujet parlementaire : ${data.label}`,
-    `Statut : ${data.status}`,
+    `Statut : ${STATUTS_SUJET[data.status] ?? data.status}`,
   ];
 
   if (data.description) {
@@ -349,7 +371,7 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
     parts.push('\n--- Dossiers législatifs liés (synthèses rédigées, à recouper) ---');
     for (const d of data.dossiersResumes) {
       const chambreLabel = d.chambre === 'senat' ? 'Sénat' : d.chambre === 'assemblee' ? 'AN' : 'AN+Sénat';
-      const etatStr = d.etat ? ` [${d.etat}]` : '';
+      const etatStr = d.etat ? ` [${STATUTS_SUJET[d.etat] ?? d.etat}]` : '';
       if (d.resumeIA) {
         parts.push(`${chambreLabel}${etatStr} : ${d.resumeIA}`);
       } else {
