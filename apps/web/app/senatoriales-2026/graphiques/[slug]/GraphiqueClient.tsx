@@ -1,14 +1,34 @@
 'use client';
 
 import { useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { GRAPHIQUES, siegesParDepartement, parCommission, parFamilleProfession, type SlugGraphique } from '@/lib/senatoriales/graphiques';
 import { CadreGraphique } from '../../components/graphiques/CadreGraphique';
-import { CarteDepartements } from '../../components/graphiques/CarteDepartements';
-import { PartRemiseEnJeu } from '../../components/graphiques/PartRemiseEnJeu';
-import { DistributionBilan } from '../../components/graphiques/DistributionBilan';
-import { NuageActivite } from '../../components/graphiques/NuageActivite';
-import { PyramideAges } from '../../components/graphiques/PyramideAges';
-import { BarresComptage } from '../../components/graphiques/BarresComptage';
+
+/**
+ * Même découpage que sur la page mère, et pour une raison plus forte encore :
+ * chacune de ces pages ne montre qu'un seul graphique. Importés statiquement,
+ * les sept partaient dans le paquet des sept pages — la page de la pyramide des
+ * âges embarquait les tracés de la carte.
+ */
+const CarteDepartements = dynamic(
+  () => import('../../components/graphiques/CarteDepartements').then((m) => m.CarteDepartements),
+);
+const PartRemiseEnJeu = dynamic(
+  () => import('../../components/graphiques/PartRemiseEnJeu').then((m) => m.PartRemiseEnJeu),
+);
+const DistributionBilan = dynamic(
+  () => import('../../components/graphiques/DistributionBilan').then((m) => m.DistributionBilan),
+);
+const NuageActivite = dynamic(
+  () => import('../../components/graphiques/NuageActivite').then((m) => m.NuageActivite),
+);
+const PyramideAges = dynamic(
+  () => import('../../components/graphiques/PyramideAges').then((m) => m.PyramideAges),
+);
+const BarresComptage = dynamic(
+  () => import('../../components/graphiques/BarresComptage').then((m) => m.BarresComptage),
+);
 import type { ApercuSenatoriales, Sortant } from '../../PageClient';
 
 interface GraphiqueClientProps {

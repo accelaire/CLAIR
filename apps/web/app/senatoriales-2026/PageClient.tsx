@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { Search, ChevronDown, ExternalLink, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
@@ -11,12 +12,37 @@ import { SortantCard } from './components/SortantCard';
 import { RepartitionGroupes } from './components/RepartitionGroupes';
 import { SelecteurLecture } from './components/SelecteurLecture';
 import { CadreGraphique } from './components/graphiques/CadreGraphique';
-import { CarteDepartements } from './components/graphiques/CarteDepartements';
-import { PartRemiseEnJeu } from './components/graphiques/PartRemiseEnJeu';
-import { DistributionBilan } from './components/graphiques/DistributionBilan';
-import { NuageActivite } from './components/graphiques/NuageActivite';
-import { PyramideAges } from './components/graphiques/PyramideAges';
-import { BarresComptage } from './components/graphiques/BarresComptage';
+
+/**
+ * Les graphiques sont chargés à l'affichage, pas au chargement de la page.
+ *
+ * Une seule lecture est visible à la fois, mais les sept partaient dans le
+ * paquet initial — dont la carte et ses cinquante-trois kilo-octets de tracés
+ * de départements, payés même par qui arrive sur `?tri=presence` et ne verra
+ * jamais de carte.
+ *
+ * `ssr` reste actif : le rendu serveur est la raison d'être de cette page, et
+ * la couper du HTML servi reviendrait à défaire le travail d'indexation.
+ * Seul le découpage du JavaScript change.
+ */
+const CarteDepartements = dynamic(
+  () => import('./components/graphiques/CarteDepartements').then((m) => m.CarteDepartements),
+);
+const PartRemiseEnJeu = dynamic(
+  () => import('./components/graphiques/PartRemiseEnJeu').then((m) => m.PartRemiseEnJeu),
+);
+const DistributionBilan = dynamic(
+  () => import('./components/graphiques/DistributionBilan').then((m) => m.DistributionBilan),
+);
+const NuageActivite = dynamic(
+  () => import('./components/graphiques/NuageActivite').then((m) => m.NuageActivite),
+);
+const PyramideAges = dynamic(
+  () => import('./components/graphiques/PyramideAges').then((m) => m.PyramideAges),
+);
+const BarresComptage = dynamic(
+  () => import('./components/graphiques/BarresComptage').then((m) => m.BarresComptage),
+);
 import {
   GRAPHIQUES,
   GRAPHIQUE_PAR_TRI,
