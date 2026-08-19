@@ -554,6 +554,32 @@ export class GroupesService {
    * libellé d'usage. Le groupe codé `SOC` se comparait ainsi sur « SER », que
    * les libellés de demandeur ne contiennent pas ; le filtre était tombé de 169
    * scrutins à un seul faux positif (« M. Serge Babary »).
+   *
+   * ## Pourquoi un début de mot, et pas une sous-chaîne
+   *
+   * Les codes font deux à quatre lettres. Cherchés n'importe où dans du texte
+   * libre, ils tombent en plein milieu de mots français courants, et le filtre
+   * attribuait alors des scrutins à des groupes qui ne les avaient jamais
+   * demandés — mesuré en base :
+   *
+   * - `RE` matchait « P**ré**sidente », « Nouveau Front Populai**re** » et
+   *   « Socialistes et appa**re**ntés » : 2 212 scrutins de trois autres
+   *   groupes, dont 661 de La France insoumise, affichés comme initiés par
+   *   Renaissance.
+   * - `NI` matchait « commu**ni**ste », « Mo**ni**que », « Vér**oni**que » :
+   *   1 054 scrutins attribués aux non-inscrits sur les deux chambres.
+   * - `UC` matchait « Jean-L**uc** » et « Kerro**uc**he ».
+   *
+   * L'ancrage `\m` (début de mot) conserve ce qui fonctionnait — `SOC` retrouve
+   * bien « **Soc**ialiste », `RN` ses 4 020 scrutins — et fait tomber les
+   * coïncidences, qui sont toutes en milieu de mot.
+   *
+   * Les codes de moins de trois caractères sont écartés : `NI` et `UC` ne
+   * portent pas assez d'information pour se distinguer d'un prénom, même ancrés
+   * (« **Ni**cole Bonnefoy »). Ces groupes restent rapprochés par leur libellé
+   * long, assez discriminant pour rester en sous-chaîne — c'est d'ailleurs lui
+   * qui fait tout le travail à l'Assemblée, dont les demandeurs citent le nom
+   * du groupe entre guillemets.
    */
   private demandeurInitieParSql(groupeId: string): Prisma.Sql {
     return Prisma.sql`
@@ -563,8 +589,21 @@ export class GroupesService {
         FROM groupes_politiques gd
         WHERE gd.id = ${groupeId}
           AND (
-            s.demandeur_texte ILIKE '%' || gd.nom || '%'
-            OR (gd.nom_court IS NOT NULL AND s.demandeur_texte ILIKE '%' || gd.nom_court || '%')
+            -- L'ancre de début de mot est \\m. Le test de forme sur le libellé
+            -- n'est pas une validation de donnée : il garantit que le libellé,
+            -- qui entre ici dans un motif, ne contient aucun métacaractère. Un
+            -- libellé exotique retombe simplement sur le libellé long ci-dessous.
+            (
+              length(gd.nom) >= 3
+              AND gd.nom ~ '^[[:alnum:] _-]+$'
+              AND s.demandeur_texte ~* ('\\m' || gd.nom)
+            )
+            OR (
+              gd.nom_court IS NOT NULL
+              AND length(gd.nom_court) >= 3
+              AND gd.nom_court ~ '^[[:alnum:] _-]+$'
+              AND s.demandeur_texte ~* ('\\m' || gd.nom_court)
+            )
             OR (gd.nom_complet IS NOT NULL AND s.demandeur_texte ILIKE '%' || gd.nom_complet || '%')
           )
       )
