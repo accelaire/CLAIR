@@ -9,7 +9,6 @@ import {
   SLUGS_DEPARTEMENTS,
   codeDepuisSlug,
   locutionDepuisCode,
-  slugDepuisCode,
 } from '@/lib/senatoriales/departements';
 import type { ApercuSenatoriales, Sortant } from '../PageClient';
 import { SortantCard } from '../components/SortantCard';
@@ -152,11 +151,8 @@ export default async function CirconscriptionPage({
   const liste = sortants?.data ?? [];
   const url = `${BASE_URL}/senatoriales-2026/${params.departement}`;
 
-  const autres = (apercu?.circonscriptions ?? [])
-    .filter((c) => c.departement !== code)
-    .map((c) => ({ nom: libelle(c.nom), slug: slugDepuisCode(c.departement), nbSieges: c.nbSieges }))
-    .filter((c): c is { nom: string; slug: string; nbSieges: number } => Boolean(c.slug))
-    .sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+  const nbCirconscriptions =
+    apercu?.circonscriptions?.length ?? apercu?.scrutin.nbCirconscriptions ?? 64;
 
   return (
     <>
@@ -258,28 +254,20 @@ export default async function CirconscriptionPage({
           )}
         </div>
 
-        {/* Les 63 autres circonscriptions, en clair dans le HTML.
-            C'est le maillage qui fait exister ces pages : sans lien depuis un
-            document déjà exploré, une URL présente au seul sitemap est découverte
-            tard, et l'élection est le 27 septembre. */}
-        {autres.length > 0 && (
-          <div className="space-y-3 border-t pt-6">
-            <h2 className="text-lg font-semibold">Les autres départements concernés</h2>
-            <ul className="flex flex-wrap gap-x-3 gap-y-1.5 text-sm">
-              {autres.map((autre) => (
-                <li key={autre.slug}>
-                  <Link
-                    href={`/senatoriales-2026/${autre.slug}`}
-                    className="text-muted-foreground hover:text-foreground hover:underline"
-                  >
-                    {autre.nom}{' '}
-                    <span className="tabular-nums opacity-60">({autre.nbSieges})</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        {/* Un lien vers le répertoire, et non les 63 autres circonscriptions.
+            La liste complète en pied de page servait à la découverte ; elle
+            n'est plus nécessaire depuis que la page mère porte les 64 liens sur
+            les titres de ses sections. Un moteur qui a trouvé cette page-ci est
+            passé par là, et y retrouvera les autres. Restait le coût : soixante-
+            trois noms sous chaque fiche, pour un lecteur qui en cherchait un. */}
+        <div className="border-t pt-6">
+          <Link
+            href="/senatoriales-2026"
+            className="text-sm text-muted-foreground hover:text-foreground hover:underline"
+          >
+            Voir les {nbCirconscriptions} départements concernés par le renouvellement
+          </Link>
+        </div>
       </div>
     </>
   );

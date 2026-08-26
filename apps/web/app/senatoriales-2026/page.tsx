@@ -1,9 +1,7 @@
 import type { Metadata } from 'next';
 import { fetchFromApi } from '@/lib/api-server';
-import Link from 'next/link';
 import { BreadcrumbJsonLd, ElectionJsonLd, FaqJsonLd } from '@/components/seo/JsonLd';
 import { SENATORIALES_2026 } from '@/lib/senatoriales';
-import { slugDepuisCode } from '@/lib/senatoriales/departements';
 import PageClient from './PageClient';
 import type { ApercuSenatoriales, Sortant } from './PageClient';
 import { TRIS_SORTANTS, type FiltresSortants } from '@/lib/senatoriales/graphiques';
@@ -156,17 +154,6 @@ export default async function Senatoriales2026Page({
   const filtres = lireFiltres(searchParams);
   const { apercu, sortants, tousSortants } = await chargerDonnees(filtres);
 
-  // Trié par libellé et non par code INSEE : c'est un index que l'on parcourt à
-  // l'œil pour y trouver un nom, pas une table de référence.
-  const circonscriptions = (apercu?.circonscriptions ?? [])
-    .map((c) => ({
-      nom: c.nom.replace(/\s*\(Série \d+\)\s*$/, '').trim(),
-      nbSieges: c.nbSieges,
-      slug: slugDepuisCode(c.departement),
-    }))
-    .filter((c): c is { nom: string; nbSieges: number; slug: string } => Boolean(c.slug))
-    .sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
-
   return (
     <>
       <BreadcrumbJsonLd
@@ -216,39 +203,6 @@ export default async function Senatoriales2026Page({
         initialFiltres={filtres}
       />
 
-      {/* Index des 64 circonscriptions, rendu ici plutôt que dans `PageClient`.
-          Le sélecteur de département de la page filtre la liste par paramètre de
-          requête, sous un canonique figé sur cette URL : il ne désigne aucune
-          autre page, et n'en fait donc découvrir aucune. Ces liens-là sont le
-          seul chemin depuis un document exploré vers les 64 pages de
-          circonscription — et ils sont dans le HTML servi, sans quoi ils
-          n'existeraient pas pour un robot qui n'exécute pas le JavaScript.
-          C'est précisément le défaut que cette page a déjà corrigé pour sa
-          propre liste. */}
-      {circonscriptions.length > 0 && (
-        <div className="container mx-auto px-4 pb-12">
-          <div className="space-y-3 border-t pt-6">
-            <h2 className="text-lg font-semibold">Le renouvellement département par département</h2>
-            <p className="text-sm text-muted-foreground">
-              Le détail du scrutin et le bilan des sortants, pour chacune des{' '}
-              {circonscriptions.length} circonscriptions concernées.
-            </p>
-            <ul className="flex flex-wrap gap-x-3 gap-y-1.5 text-sm">
-              {circonscriptions.map((circo) => (
-                <li key={circo.slug}>
-                  <Link
-                    href={`/senatoriales-2026/${circo.slug}`}
-                    className="text-muted-foreground hover:text-foreground hover:underline"
-                  >
-                    {circo.nom}{' '}
-                    <span className="tabular-nums opacity-60">({circo.nbSieges})</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
     </>
   );
 }
