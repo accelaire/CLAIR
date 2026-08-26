@@ -178,7 +178,12 @@ export default async function CirconscriptionPage({
           data={{
             '@context': 'https://schema.org',
             '@type': 'ItemList',
-            name: `Sénateurs sortants de ${nom} — série 2`,
+            // Le nom du département en tête plutôt qu'en complément : « de
+            // ${nom} » demandait un génitif que les libellés ne supportent pas
+            // tous — « de Alpes-Maritimes », « de Ain ». Contourné plutôt que
+            // décliné, une colonne de plus dans la table n'ayant pas lieu d'être
+            // pour un champ que seules les machines lisent.
+            name: `${nom} — sénateurs sortants de la série 2`,
             numberOfItems: liste.length,
             itemListElement: liste.map((sortant, index) => ({
               '@type': 'ListItem',
