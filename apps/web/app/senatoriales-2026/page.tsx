@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { fetchFromApi } from '@/lib/api-server';
-import { BreadcrumbJsonLd } from '@/components/seo/JsonLd';
+import { BreadcrumbJsonLd, ElectionJsonLd, FaqJsonLd } from '@/components/seo/JsonLd';
+import { SENATORIALES_2026 } from '@/lib/senatoriales';
 import PageClient from './PageClient';
 import type { ApercuSenatoriales, Sortant } from './PageClient';
 import { TRIS_SORTANTS, type FiltresSortants } from '@/lib/senatoriales/graphiques';
@@ -161,12 +162,47 @@ export default async function Senatoriales2026Page({
           { name: 'Sénatoriales 2026', url: `${BASE_URL}/senatoriales-2026` },
         ]}
       />
+      <ElectionJsonLd
+        name="Élections sénatoriales françaises du 27 septembre 2026"
+        description={description}
+        url={`${BASE_URL}/senatoriales-2026`}
+        startDate={SENATORIALES_2026.scrutin}
+      />
+      {/* Les mêmes questions et les mêmes réponses que le bloc « Comment
+          fonctionne une élection sénatoriale ? » rendu par `PageClient`. Le
+          balisage décrit un contenu visible ; il ne doit rien ajouter que le
+          lecteur ne verrait pas, sous peine d'être traité comme trompeur. */}
+      <FaqJsonLd
+        items={[
+          {
+            question: 'Qui élit les sénateurs ?',
+            reponse:
+              'Les sénateurs sont élus au suffrage indirect, par environ 162 000 grands électeurs : députés, conseillers régionaux et départementaux, et surtout délégués des conseils municipaux, qui forment près de 95 % du collège.',
+          },
+          {
+            question: 'Combien de sièges sont renouvelés en 2026 ?',
+            reponse:
+              'Le Sénat se renouvelle par moitié tous les trois ans. Le 27 septembre 2026, c’est la série 2 : 178 sièges sur 348, dans 64 circonscriptions.',
+          },
+          {
+            question: 'Quel est le mode de scrutin des élections sénatoriales ?',
+            reponse:
+              'Le mode de scrutin dépend du département : majoritaire à deux tours là où il y a un ou deux sièges à pourvoir, proportionnel de liste à un tour à partir de trois sièges.',
+          },
+          {
+            question: 'Quand les sénateurs élus en 2026 prennent-ils leurs fonctions ?',
+            reponse:
+              'Les élus prennent leurs fonctions le 1er octobre 2026, pour un mandat de six ans.',
+          },
+        ]}
+      />
       <PageClient
         initialApercu={apercu ?? undefined}
         initialSortants={sortants ?? undefined}
         initialTousSortants={tousSortants?.data ?? undefined}
         initialFiltres={filtres}
       />
+
     </>
   );
 }

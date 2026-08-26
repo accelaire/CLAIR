@@ -317,3 +317,87 @@ export function FAQJsonLd({ questions }: FAQJsonLdProps) {
 
   return <JsonLd data={data} />;
 }
+
+interface FaqItem {
+  question: string;
+  reponse: string;
+}
+
+/**
+ * Questions/réponses d'une page, au format `FAQPage`.
+ *
+ * Google n'accepte ce balisage que si les mêmes questions et les mêmes réponses
+ * sont visibles à l'écran : le rôle du bloc est de décrire un contenu existant,
+ * jamais d'en ajouter un réservé au moteur. Les appelants passent donc le texte
+ * déjà rendu dans la page, et non une variante réécrite pour l'occasion.
+ */
+export function FaqJsonLd({ items }: { items: FaqItem[] }) {
+  const data = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: items.map((item) => ({
+      '@type': 'Question',
+      name: item.question,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: item.reponse,
+      },
+    })),
+  };
+
+  return <JsonLd data={data} />;
+}
+
+interface ElectionJsonLdProps {
+  name: string;
+  description: string;
+  url: string;
+  /** Jour du scrutin, au format `AAAA-MM-JJ`. */
+  startDate: string;
+  location?: string;
+}
+
+/**
+ * Un scrutin, au format `Event`.
+ *
+ * `eventAttendanceMode` est renseigné hors ligne et `location` porte un lieu
+ * physique : sans ces deux champs, Google classe l'événement comme incomplet et
+ * n'affiche rien. Le lieu d'une sénatoriale n'a rien d'évident — le collège des
+ * grands électeurs vote au chef-lieu de chaque département — d'où un libellé
+ * par défaut à l'échelle du pays, que les pages de circonscription précisent.
+ */
+export function ElectionJsonLd({
+  name,
+  description,
+  url,
+  startDate,
+  location = 'France',
+}: ElectionJsonLdProps) {
+  const data = {
+    '@context': 'https://schema.org',
+    '@type': 'Event',
+    name,
+    description,
+    url,
+    startDate,
+    endDate: startDate,
+    eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
+    eventStatus: 'https://schema.org/EventScheduled',
+    location: {
+      '@type': 'Place',
+      name: location,
+      address: {
+        '@type': 'PostalAddress',
+        addressCountry: 'FR',
+        addressLocality: location,
+      },
+    },
+    organizer: {
+      '@type': 'GovernmentOrganization',
+      name: 'Ministère de l’Intérieur',
+      url: 'https://www.interieur.gouv.fr',
+    },
+  };
+
+  return <JsonLd data={data} />;
+}

@@ -7,6 +7,7 @@ import dynamic from 'next/dynamic';
 import { Search, ChevronDown, ExternalLink, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
+import { slugDepuisCode } from '@/lib/senatoriales/departements';
 import { FilterBar } from '@/components/FilterBar';
 import { SortantCard } from './components/SortantCard';
 import { RepartitionGroupes } from './components/RepartitionGroupes';
@@ -764,14 +765,38 @@ function SenatorialesPageContent({
         <p className="text-sm text-muted-foreground">Aucun sortant ne correspond aux critères.</p>
       ) : groupedSortants ? (
         <div className="space-y-8">
-          {groupedSortants.map(([code, { libelle, ancre, sortants: list }]) => (
+          {groupedSortants.map(([code, { libelle, ancre, sortants: list }]) => {
+            // Regroupé par département, le titre de section mène à la page de la
+            // circonscription plutôt qu'à lui-même.
+            //
+            // C'était déjà un lien, mais vers sa propre ancre : un permalien, utile
+            // à qui veut partager la section, et sans destination nouvelle. Les
+            // pages de circonscription, elles, ont besoin d'être atteintes depuis
+            // un document exploré pour exister — et l'endroit juste pour le dire
+            // est le nom du département, pas une liste de sluggards en pied de
+            // page. L'`id` reste posé sur la section : la carte y fait toujours
+            // défiler, et les `#gironde` déjà partagés continuent de tomber juste.
+            //
+            // Les trois autres regroupements — groupe, commission, profession —
+            // n'ont pas de page dédiée et gardent leur permalien.
+            const slug = (filters.tri || 'departement') === 'departement'
+              ? slugDepuisCode(code)
+              : undefined;
+
+            return (
             // `scroll-mt` réserve la hauteur de l'en-tête collant : sans lui, une
             // arrivée sur l'ancre place le titre de section sous la barre de navigation.
             <section key={code} id={ancre} className="scroll-mt-24">
               <h3 className="mb-3 text-lg font-semibold">
-                <a href={`#${ancre}`} className="hover:underline">
-                  {libelle}
-                </a>{' '}
+                {slug ? (
+                  <Link href={`/senatoriales-2026/${slug}`} className="hover:underline">
+                    {libelle}
+                  </Link>
+                ) : (
+                  <a href={`#${ancre}`} className="hover:underline">
+                    {libelle}
+                  </a>
+                )}{' '}
                 · {list.length} siège{list.length > 1 ? 's' : ''}
               </h3>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -784,7 +809,8 @@ function SenatorialesPageContent({
                 ))}
               </div>
             </section>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
