@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
 import { fetchFromApi } from '@/lib/api-server';
-import { BreadcrumbJsonLd } from '@/components/seo/JsonLd';
+import Link from 'next/link';
+import { BreadcrumbJsonLd, ElectionJsonLd, FaqJsonLd } from '@/components/seo/JsonLd';
+import { SENATORIALES_2026 } from '@/lib/senatoriales';
+import { slugDepuisCode } from '@/lib/senatoriales/departements';
 import PageClient from './PageClient';
 import type { ApercuSenatoriales, Sortant } from './PageClient';
 import { TRIS_SORTANTS, type FiltresSortants } from '@/lib/senatoriales/graphiques';
@@ -153,6 +156,17 @@ export default async function Senatoriales2026Page({
   const filtres = lireFiltres(searchParams);
   const { apercu, sortants, tousSortants } = await chargerDonnees(filtres);
 
+  // Trié par libellé et non par code INSEE : c'est un index que l'on parcourt à
+  // l'œil pour y trouver un nom, pas une table de référence.
+  const circonscriptions = (apercu?.circonscriptions ?? [])
+    .map((c) => ({
+      nom: c.nom.replace(/\s*\(Série \d+\)\s*$/, '').trim(),
+      nbSieges: c.nbSieges,
+      slug: slugDepuisCode(c.departement),
+    }))
+    .filter((c): c is { nom: string; nbSieges: number; slug: string } => Boolean(c.slug))
+    .sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+
   return (
     <>
       <BreadcrumbJsonLd
@@ -161,12 +175,80 @@ export default async function Senatoriales2026Page({
           { name: 'Sénatoriales 2026', url: `${BASE_URL}/senatoriales-2026` },
         ]}
       />
+      <ElectionJsonLd
+        name="Élections sénatoriales françaises du 27 septembre 2026"
+        description={description}
+        url={`${BASE_URL}/senatoriales-2026`}
+        startDate={SENATORIALES_2026.scrutin}
+      />
+      {/* Les mêmes questions et les mêmes réponses que le bloc « Comment
+          fonctionne une élection sénatoriale ? » rendu par `PageClient`. Le
+          balisage décrit un contenu visible ; il ne doit rien ajouter que le
+          lecteur ne verrait pas, sous peine d'être traité comme trompeur. */}
+      <FaqJsonLd
+        items={[
+          {
+            question: 'Qui élit les sénateurs ?',
+            reponse:
+              'Les sénateurs sont élus au suffrage indirect, par environ 162 000 grands électeurs : députés, conseillers régionaux et départementaux, et surtout délégués des conseils municipaux, qui forment près de 95 % du collège.',
+          },
+          {
+            question: 'Combien de sièges sont renouvelés en 2026 ?',
+            reponse:
+              'Le Sénat se renouvelle par moitié tous les trois ans. Le 27 septembre 2026, c’est la série 2 : 178 sièges sur 348, dans 64 circonscriptions.',
+          },
+          {
+            question: 'Quel est le mode de scrutin des élections sénatoriales ?',
+            reponse:
+              'Le mode de scrutin dépend du département : majoritaire à deux tours là où il y a un ou deux sièges à pourvoir, proportionnel de liste à un tour à partir de trois sièges.',
+          },
+          {
+            question: 'Quand les sénateurs élus en 2026 prennent-ils leurs fonctions ?',
+            reponse:
+              'Les élus prennent leurs fonctions le 1er octobre 2026, pour un mandat de six ans.',
+          },
+        ]}
+      />
       <PageClient
         initialApercu={apercu ?? undefined}
         initialSortants={sortants ?? undefined}
         initialTousSortants={tousSortants?.data ?? undefined}
         initialFiltres={filtres}
       />
+
+      {/* Index des 64 circonscriptions, rendu ici plutôt que dans `PageClient`.
+          Le sélecteur de département de la page filtre la liste par paramètre de
+          requête, sous un canonique figé sur cette URL : il ne désigne aucune
+          autre page, et n'en fait donc découvrir aucune. Ces liens-là sont le
+          seul chemin depuis un document exploré vers les 64 pages de
+          circonscription — et ils sont dans le HTML servi, sans quoi ils
+          n'existeraient pas pour un robot qui n'exécute pas le JavaScript.
+          C'est précisément le défaut que cette page a déjà corrigé pour sa
+          propre liste. */}
+      {circonscriptions.length > 0 && (
+        <div className="container mx-auto px-4 pb-12">
+          <div className="space-y-3 border-t pt-6">
+            <h2 className="text-lg font-semibold">Le renouvellement département par département</h2>
+            <p className="text-sm text-muted-foreground">
+              Le détail du scrutin et le bilan des sortants, pour chacune des{' '}
+              {circonscriptions.length} circonscriptions concernées.
+            </p>
+            <ul className="flex flex-wrap gap-x-3 gap-y-1.5 text-sm">
+              {circonscriptions.map((circo) => (
+                <li key={circo.slug}>
+                  <Link
+                    href={`/senatoriales-2026/${circo.slug}`}
+                    className="text-muted-foreground hover:text-foreground hover:underline"
+                  >
+                    {circo.nom}{' '}
+                    <span className="tabular-nums opacity-60">({circo.nbSieges})</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
     </>
   );
 }

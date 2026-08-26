@@ -2,6 +2,7 @@ import { MetadataRoute } from 'next';
 import { scrutinHref } from '@/lib/scrutin-url';
 import { internalHeaders } from '@/lib/internal-headers';
 import { SLUGS_GRAPHIQUES } from '@/lib/senatoriales/graphiques';
+import { SLUGS_DEPARTEMENTS } from '@/lib/senatoriales/departements';
 
 // Régénération quotidienne, calée sur l'ingestion (04:00 UTC) : rien ne change
 // entre deux passages, donc rien ne justifie de reconstruire plus souvent.
@@ -287,6 +288,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'daily',
       priority: 0.9,
     },
+    // Les 64 circonscriptions, à la priorité de la page mère : ce sont elles qui
+    // portent la requête réellement tapée — un nom de département suivi de
+    // « sénatoriales 2026 » — et le contenu qu'on est seul à publier, le bilan
+    // de mandature des sortants. Elles ne sont pas une déclinaison de la page
+    // mère mais 64 sujets distincts.
+    ...SLUGS_DEPARTEMENTS.map((slug) => ({
+      url: `${BASE_URL}/senatoriales-2026/${slug}`,
+      lastModified: ingestion,
+      changeFrequency: 'daily' as const,
+      priority: 0.9,
+    })),
     // Les pages de graphiques portent chacune leur propre image Open Graph : ce
     // sont elles qui circulent quand un graphique est partagé, elles doivent
     // donc être indexables au même titre que la page mère. Priorité un cran en
