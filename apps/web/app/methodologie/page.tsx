@@ -87,21 +87,28 @@ export default function MethodologiePage() {
             </div>
             <div className="space-y-3 p-4 text-sm text-muted-foreground">
               <p>
-                Le Sénat publie également ses données en open data via son portail dédié.
+                Le Sénat publie ses données en open data via son portail dédié (data.senat.fr),
+                complété par le scraping de pages publiques (senat.fr, videos.senat.fr) lorsque
+                l&apos;open data ne couvre pas un périmètre.
               </p>
               <div>
                 <p className="font-medium text-foreground">Données collectées :</p>
                 <ul className="mt-2 list-inside list-disc space-y-1">
-                  <li><strong>Sénateurs</strong> : identité, groupe politique, circonscription, série</li>
-                  <li><strong>Scrutins publics</strong> : votes avec résultats par groupe</li>
+                  <li><strong>Sénateurs</strong> : identité, groupe politique, circonscription, série (en cours) + historique complet des anciens sénateurs, mandats et appartenances de groupe datés (ODSEN, data.senat.fr)</li>
+                  <li><strong>Scrutins publics</strong> : votes avec résultats par groupe, y compris l&apos;historique complet via la base DOSLEG (data.senat.fr)</li>
                   <li><strong>Votes individuels</strong> : position de chaque sénateur</li>
                   <li><strong>Amendements</strong> : propositions de modification des textes</li>
                   <li><strong>Interventions</strong> : prises de parole en séance</li>
-                  <li><strong>Commissions</strong> : commissions permanentes, spéciales et d&apos;enquête</li>
+                  <li><strong>Commissions</strong> : commissions permanentes, spéciales et d&apos;enquête, avec composition des bureaux (président, vice-présidents, secrétaires, rapporteur général — scraping senat.fr)</li>
                   <li><strong>Réunions</strong> : comptes rendus des commissions avec participants identifiés</li>
+                  <li><strong>Dossiers législatifs</strong> : base DOSLEG (data.senat.fr) avec commissions saisies au fond et pour avis (scraping senat.fr)</li>
                   <li><strong>Agenda des séances</strong> : séances publiques à venir avec ordres du jour (via l&apos;API senat.fr)</li>
+                  <li><strong>Vidéos</strong> : replays des séances publiques (scraping videos.senat.fr)</li>
                 </ul>
               </div>
+              <p>
+                <span className="font-medium text-foreground">Format :</span> Archives ZIP (DOSLEG), CSV latin1 (ODSEN), JSON (API senat.fr), HTML scraping (bureaux, commissions saisies, vidéos)
+              </p>
             </div>
           </div>
 
@@ -247,7 +254,7 @@ export default function MethodologiePage() {
                 <strong>Commissions et réunions</strong> : Synchronisation biquotidienne
               </li>
               <li>
-                <strong>Vidéos et directs</strong> : Détection en temps réel (proxy vers l&apos;API vidéo de l&apos;Assemblée nationale)
+                <strong>Vidéos et directs</strong> : Détection en temps réel pour l&apos;Assemblée nationale (proxy vers l&apos;API vidéo), synchronisation biquotidienne pour le Sénat (scraping videos.senat.fr)
               </li>
             </ul>
           </div>
@@ -282,6 +289,47 @@ export default function MethodologiePage() {
               , une entreprise française spécialisée dans l&apos;IA générative.
               Le modèle <strong>Mistral Small</strong> est utilisé pour sa capacité
               à traiter du texte en français avec précision et sobriété.
+              Le modèle <strong>mistral-embed</strong> calcule les vecteurs sémantiques
+              utilisés pour le classement et le rattachement des dossiers aux sujets
+              parlementaires.
+            </p>
+          </div>
+
+          <div className="rounded-lg border p-6">
+            <h3 className="font-semibold">Sources complémentaires</h3>
+            <p className="mt-4 text-sm text-muted-foreground">
+              Pour enrichir les fiches de parlementaires et le rattachement des sujets,
+              CLAIR s&apos;appuie sur des sources publiques complémentaires, toujours
+              signalées comme telles :
+            </p>
+            <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
+              <li>
+                <a
+                  href="https://fr.wikipedia.org"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  Wikipédia
+                </a>{' '}
+                : biographies des parlementaires (API publique, extrait textuel).
+              </li>
+              <li>
+                <a
+                  href="https://www.wikidata.org"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  Wikidata
+                </a>{' '}
+                : faits structurés et sourcés (appartenances politiques, fonctions,
+                dates) avec lien citable vers chaque entité.
+              </li>
+            </ul>
+            <p className="mt-4 text-sm text-muted-foreground">
+              Ces sources ne remplacent jamais les données officielles : elles apportent
+              uniquement du contexte biographique ou thématique.
             </p>
           </div>
 
@@ -306,7 +354,7 @@ export default function MethodologiePage() {
                 d&apos;une fiche de synthèse (résumé, parcours, positions clés, faits notables)
                 rédigée à partir de ses données officielles (mandats, statistiques de votes et
                 d&apos;interventions, déclarations HATVP) complétées par des sources publiques
-                (Wikipédia, articles de presse).
+                (Wikipédia, Wikidata).
               </li>
               <li>
                 <strong>Positions des groupes par sujet</strong> : Sur un sujet donné, l&apos;action
@@ -323,7 +371,7 @@ export default function MethodologiePage() {
                 <strong>Données factuelles en entrée</strong> : Pour les résumés de scrutins, dossiers
                 et sujets, l&apos;IA reçoit uniquement des données officielles (titres, résultats de
                 votes, positions des groupes) et non des opinions. Les fiches de parlementaires
-                s&apos;appuient en complément sur des sources publiques (Wikipédia, articles de presse),
+                s&apos;appuient en complément sur des sources publiques (Wikipédia, Wikidata),
                 toujours signalées comme générées par IA.
               </li>
               <li>
@@ -473,8 +521,8 @@ export default function MethodologiePage() {
           <div className="rounded-lg border p-4">
             <h3 className="font-semibold">Ingestion</h3>
             <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-              <li>Mistral AI (enrichissement)</li>
-              <li>Connecteurs sources</li>
+              <li>Mistral AI (résumés + embeddings)</li>
+              <li>Connecteurs sources (open data + scraping)</li>
             </ul>
           </div>
         </div>
