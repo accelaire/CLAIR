@@ -643,25 +643,44 @@ export async function reslugTechnicalSujets(options: { dryRun?: boolean } = {}):
  * garde donc un `scrutin_count` périmé et reste `actif`, donnant une page vide
  * mais crédible. L'API filtre sur `actif = true`, la désactivation suffit à la
  * retirer du site sans casser d'URL ni supprimer d'historique.
+ *
+ * Le recalcul ne touche que les lignes dont une valeur change réellement. Écrit
+ * sans garde, il posait `updated_at = NOW()` sur les 1 749 sujets chaque nuit,
+ * et `sitemap.ts` publie ce champ en `lastModified` : le sitemap déclarait donc
+ * chaque jour 1 749 pages modifiées, dont une poignée l'étaient vraiment. Un
+ * sitemap qui crie au loup sur tout son contenu perd sa valeur de signal et
+ * détourne le budget d'exploration des pages réellement fraîches.
  */
 export async function refreshSujetStats(): Promise<{ deactivated: number; reactivated: number }> {
   const prisma = new PrismaClient();
 
   try {
-    await prisma.$executeRawUnsafe(`
+    const refreshed = await prisma.$executeRawUnsafe(`
+      WITH calcul AS (
+        SELECT
+          s.id,
+          (SELECT COUNT(*) FROM dossiers_legislatifs d WHERE d.sujet_id = s.id) AS dossier_count,
+          (
+            SELECT COUNT(*) FROM scrutins sc
+            JOIN dossiers_legislatifs d ON sc.dossier_id = d.id
+            WHERE d.sujet_id = s.id
+          ) AS scrutin_count,
+          (
+            SELECT MAX(sc.date) FROM scrutins sc
+            JOIN dossiers_legislatifs d ON sc.dossier_id = d.id
+            WHERE d.sujet_id = s.id
+          ) AS date_dernier_vote
+        FROM sujets s
+      )
       UPDATE sujets s SET
-        dossier_count = (SELECT COUNT(*) FROM dossiers_legislatifs d WHERE d.sujet_id = s.id),
-        scrutin_count = (
-          SELECT COUNT(*) FROM scrutins sc
-          JOIN dossiers_legislatifs d ON sc.dossier_id = d.id
-          WHERE d.sujet_id = s.id
-        ),
-        date_dernier_vote = (
-          SELECT MAX(sc.date) FROM scrutins sc
-          JOIN dossiers_legislatifs d ON sc.dossier_id = d.id
-          WHERE d.sujet_id = s.id
-        ),
+        dossier_count = c.dossier_count,
+        scrutin_count = c.scrutin_count,
+        date_dernier_vote = c.date_dernier_vote,
         updated_at = NOW()
+      FROM calcul c
+      WHERE c.id = s.id
+        AND (s.dossier_count, s.scrutin_count, s.date_dernier_vote)
+            IS DISTINCT FROM (c.dossier_count::int, c.scrutin_count::int, c.date_dernier_vote)
     `);
 
     const deactivated = await prisma.$executeRawUnsafe(
@@ -671,7 +690,7 @@ export async function refreshSujetStats(): Promise<{ deactivated: number; reacti
       `UPDATE sujets SET actif = true, updated_at = NOW() WHERE actif = false AND scrutin_count > 0`,
     );
 
-    logger.info({ deactivated, reactivated }, 'Sujet stats refreshed');
+    logger.info({ refreshed, deactivated, reactivated }, 'Sujet stats refreshed');
     return { deactivated, reactivated };
   } finally {
     await prisma.$disconnect();
