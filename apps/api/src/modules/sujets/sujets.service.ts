@@ -242,24 +242,44 @@ export class SujetsService {
    * restent appelées, et le front servait un « introuvable » en HTTP 200 — un
    * soft 404 que Google continue d'indexer.
    *
-   * Renvoie le dossier de destination quand le sujet n'en portait qu'un : la page
-   * dossier reste le contenu le plus proche de ce que l'URL promettait. Au-delà
-   * d'un dossier, aucune cible n'est légitime et l'appelant doit rendre un 404.
+   * Renvoie le dossier de destination : la page dossier reste le contenu le plus
+   * proche de ce que l'URL promettait.
+   *
+   * Le cas à plusieurs dossiers renvoyait `null`, donc un 404 — 26 URLs, toutes
+   * celles dont le slug est resté un identifiant technique. Ce sont des sujets
+   * inter-chambres : un dossier AN et son homologue Sénat portant le même texte.
+   * Le dossier AN de ces 26 n'a pas de titre (`titre_court` = son propre uid,
+   * ce qui est précisément la raison pour laquelle le label, puis le slug, sont
+   * retombés sur l'uid). Le seul des deux qui porte un intitulé lisible est donc
+   * la seule cible défendable, et l'ordre ci-dessous la désigne sans arbitraire.
+   *
+   * Le tri est total — il départage jusqu'à l'uid — pour que la cible d'une URL
+   * ne dépende jamais de l'ordre de lecture de Postgres.
    */
   async resolveArchivedSlug(slug: string) {
     const sujet = await this.prisma.sujet.findUnique({
       where: { slug },
-      select: {
-        actif: true,
-        dossiers: { select: { uid: true }, take: 2 },
-      },
+      select: { id: true, actif: true },
     });
 
     if (!sujet || sujet.actif) return null;
 
-    return {
-      dossierUid: sujet.dossiers.length === 1 ? sujet.dossiers[0]!.uid : null,
-    };
+    // Agrégat écrit à la main plutôt qu'un `_count` Prisma : sur une relation,
+    // `_count` déclenche un comptage non borné de toute la table liée à chaque
+    // appel (cf. le spill temporaire en prod).
+    const cibles = await this.prisma.$queryRaw<{ uid: string }[]>`
+      SELECT d.uid
+      FROM dossiers_legislatifs d
+      WHERE d.sujet_id = ${sujet.id}
+      ORDER BY
+        (SELECT COUNT(*) FROM scrutins sc WHERE sc.dossier_id = d.id) DESC,
+        (d.titre_court IS NOT NULL AND d.titre_court <> d.uid) DESC,
+        d.date_depot DESC NULLS LAST,
+        d.uid ASC
+      LIMIT 1
+    `;
+
+    return { dossierUid: cibles[0]?.uid ?? null };
   }
 
   /**
