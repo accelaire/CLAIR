@@ -434,9 +434,14 @@ export async function syncGroupes(): Promise<{ created: number; updated: number 
     });
 
     if (existing) {
+      // Le slug est l'URL publique du groupe : il est posé à la création et n'est
+      // plus retouché. Réécrit ici, il suivait `libelleAbrev` de la source, et un
+      // simple changement de sigle en amont tuait /groupes/assemblee/<slug> au
+      // matin, sans redirection.
+      const { slug: _slug, ...sansSlug } = data;
       await prisma.groupePolitique.update({
         where: { id: existing.id },
-        data,
+        data: sansSlug,
       });
       updated++;
     } else {
@@ -790,7 +795,11 @@ async function syncSingleParlementaireAN(
     where: {
       OR: [
         { sourceId: p.uid },
-        { slug: p.slug },
+        // Le rapprochement par slug est borné à la chambre. Sans cette borne, un
+        // nouvel élu homonyme d'une personne de l'autre chambre était résolu sur
+        // SA ligne, qui était alors écrasée : l'URL survivait en pointant vers
+        // quelqu'un d'autre.
+        { AND: [{ chambre: p.chambre }, { slug: p.slug }] },
         {
           AND: [
             { chambre: p.chambre },
@@ -808,13 +817,17 @@ async function syncSingleParlementaireAN(
 
   if (existing) {
     // Une personne déjà en base : on rafraîchit toujours la bio. Les champs de mandat
-    // courant (groupe/circo/actif/slug) ne sont touchés que par la législature courante.
+    // courant (groupe/circo/actif) ne sont touchés que par la législature courante.
+    //
+    // Le slug n'est plus du lot. Recalculé chaque nuit depuis prénom+nom de la
+    // source, il faisait de /deputes/<slug> une URL révocable : une correction
+    // d'accent ou un nom d'usage ajouté en amont suffisait à la tuer au matin,
+    // et rien ne redirige les pages de personnes.
     await prisma.parlementaire.update({
       where: { id: existing.id },
       data: isCurrent
         ? {
             ...bioData,
-            slug: p.slug,
             actif: true,
             groupe: groupeId ? { connect: { id: groupeId } } : { disconnect: true },
             circonscription: circonscriptionId
@@ -1227,7 +1240,8 @@ async function syncSingleSenateur(
     where: {
       OR: [
         { sourceId: s.uid },
-        { slug: s.slug },
+        // Borné à la chambre, cf. le même rapprochement côté Assemblée.
+        { AND: [{ chambre: s.chambre }, { slug: s.slug }] },
         {
           AND: [
             { chambre: s.chambre },
@@ -1242,11 +1256,15 @@ async function syncSingleSenateur(
   let parlementaireId: string;
 
   if (existing) {
+    // Le slug reste celui de la création, cf. le gel côté Assemblée. Ici il n'y
+    // avait même pas le garde-fou `isCurrent` : la réécriture touchait toutes
+    // les lignes rencontrées, chaque nuit. `data` sert aussi à la création, où
+    // le slug est requis : on ne l'écarte que sur ce chemin de mise à jour.
+    const { slug: _slug, ...donneesSansSlug } = data;
     await prisma.parlementaire.update({
       where: { id: existing.id },
       data: {
-        ...data,
-        slug: s.slug,
+        ...donneesSansSlug,
         groupe: groupeId ? { connect: { id: groupeId } } : { disconnect: true },
         circonscription: circonscriptionId ? { connect: { id: circonscriptionId } } : undefined,
       },
