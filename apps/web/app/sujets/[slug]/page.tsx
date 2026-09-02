@@ -73,8 +73,8 @@ export default async function SujetDetailPage({
       `/sujets/${params.slug}/archive`,
     );
     const dossierUid = archive?.data?.dossierUid;
-    // Un seul dossier derrière le sujet : sa page est le contenu le plus proche
-    // de ce que l'URL promettait. Au-delà, aucune cible n'est légitime.
+    // La page du dossier est le contenu le plus proche de ce que l'URL
+    // promettait. `null` ne reste que pour un sujet sans aucun dossier.
     if (dossierUid) permanentRedirect(`/dossiers/${dossierUid}`);
     notFound();
   }

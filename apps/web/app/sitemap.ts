@@ -349,9 +349,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // `lastmod` est omis quand la source ne fournit pas de date, plutôt que
   // remplacé par l'heure courante : un repli sur `now` faisait déclarer 785
   // URLs « modifiées aujourd'hui » à chaque régénération, tous les jours.
+  // `lastModified` est volontairement absent des pages de personnes et de
+  // lobbyistes. Le champ disponible est `updatedAt`, que la synchronisation
+  // nocturne repose sur chaque ligne qu'elle visite, qu'un contenu ait changé ou
+  // non : les 925 parlementaires actifs et 4 075 des 4 077 lobbyistes se
+  // déclaraient donc modifiés tous les jours. Une date fausse sur l'essentiel du
+  // sitemap ne hiérarchise rien et décrédibilise celles qui sont justes. Omettre
+  // le champ est licite et laisse le moteur s'en remettre à ses propres signaux.
+  // Les scrutins et dossiers gardent le leur : il vient d'une date de contenu.
   const deputePages: MetadataRoute.Sitemap = deputes.map((depute) => ({
     url: `${BASE_URL}/deputes/${depute.slug}`,
-    ...(depute.updatedAt ? { lastModified: depute.updatedAt } : {}),
     changeFrequency: 'weekly' as const,
     priority: 0.8,
   }));
@@ -359,7 +366,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Senateurs pages
   const senateurPages: MetadataRoute.Sitemap = senateurs.map((senateur) => ({
     url: `${BASE_URL}/senateurs/${senateur.slug}`,
-    ...(senateur.updatedAt ? { lastModified: senateur.updatedAt } : {}),
     changeFrequency: 'weekly' as const,
     priority: 0.8,
   }));
@@ -410,7 +416,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Lobbyistes pages
   const lobbyistePages: MetadataRoute.Sitemap = lobbyistes.map((lobbyiste) => ({
     url: `${BASE_URL}/lobbying/${lobbyiste.id}`,
-    ...(lobbyiste.updatedAt ? { lastModified: lobbyiste.updatedAt } : {}),
     changeFrequency: 'monthly' as const,
     priority: 0.6,
   }));

@@ -155,7 +155,7 @@ export const sujetsRoutes: FastifyPluginAsync = async (fastify) => {
       tags: ['Sujets'],
       summary: 'Destination d\'un sujet désactivé',
       description:
-        'Pour un sujet désactivé, renvoie l\'UID de son dossier unique s\'il n\'en portait qu\'un (cible de redirection permanente), sinon null. 404 si le slug est inconnu ou toujours actif.',
+        'Pour un sujet désactivé, renvoie l\'UID du dossier qui en est la meilleure cible de redirection permanente, ou null s\'il n\'en portait aucun. 404 si le slug est inconnu ou toujours actif.',
       params: {
         type: 'object',
         required: ['slug'],
