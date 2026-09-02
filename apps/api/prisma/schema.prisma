@@ -90,6 +90,7 @@ model Parlementaire {
   mandatsParlementaires MandatParlementaire[]
   declarations          DeclarationHATVP[]
   reunionParticipants   ReunionParticipant[]
+  candidatures          Candidature[]
 
   // Métadonnées source
   sourceId   String? @map("source_id") // PA123456 (AN) ou 14133K (Sénat)
@@ -518,6 +519,7 @@ model Circonscription {
 
   parlementaires        Parlementaire[]
   mandatsParlementaires MandatParlementaire[]
+  candidaturesListes    CandidatureListe[]
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -525,6 +527,113 @@ model Circonscription {
   @@index([type])
   @@index([departement])
   @@map("circonscriptions")
+}
+
+// =============================================================================
+// CANDIDATURES AUX ÉLECTIONS
+//
+// Source unique : les fichiers XLSX du ministère de l'Intérieur publiés sur
+// data.gouv (le Sénat, lui, ne publie que les élus, une fois qu'ils le sont).
+// Voir SPEC-SENATORIALES-CANDIDATS.md.
+//
+// Deux tables et non une, parce que l'unité de vote n'est PAS la personne : au
+// scrutin proportionnel les voix et les sièges vont à la liste, au scrutin
+// majoritaire au binôme titulaire/suppléant. Tout aplatir sur la personne
+// obligerait à recopier le résultat sur chaque ligne d'une liste, avec la
+// divergence pour seule perspective.
+//
+// Les voix, les sièges et la participation ne sont pas modélisés ici : le
+// format du fichier de résultats 2026 n'existera pas avant le soir du scrutin,
+// et l'écrire d'après 2023 reviendrait à deviner. Ils feront l'objet d'une
+// seconde migration. `elu` et `tourElection` sont là dès maintenant parce
+// qu'ils viennent de l'open data du Sénat, dès le soir du 27 septembre.
+// =============================================================================
+
+/// Unité de vote : une liste au proportionnel, un binôme au majoritaire.
+model CandidatureListe {
+  id      String @id @default(uuid())
+  scrutin String // 'senatoriales-2026'
+
+  circonscriptionId String          @map("circonscription_id")
+  circonscription   Circonscription @relation(fields: [circonscriptionId], references: [id])
+
+  /// 'proportionnel' | 'majoritaire' — découle du nombre de sièges (art. L. 295).
+  modeScrutin String @map("mode_scrutin")
+
+  numeroDepot Int?    @map("numero_depot")
+  libelle     String? // libellé de la liste ; null au majoritaire
+
+  /// Code nuance brut de la préfecture (LDVD, DVC…). N'EST PAS un groupe
+  /// politique : il est attribué par l'administration et régulièrement
+  /// contesté. Ne jamais l'afficher comme l'appartenance du candidat.
+  nuance String?
+
+  /// Famille politique dérivée de la nuance, pour regrouper à l'affichage.
+  famille String?
+
+  candidatures Candidature[]
+
+  /// 'senatoriales-2026:<code circo>:<numéro de dépôt ou libellé normalisé>'
+  sourceUid String @unique @map("source_uid")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([scrutin, circonscriptionId])
+  @@index([scrutin, modeScrutin])
+  @@map("candidatures_listes")
+}
+
+model Candidature {
+  id      String           @id @default(uuid())
+  listeId String           @map("liste_id")
+  liste   CandidatureListe @relation(fields: [listeId], references: [id], onDelete: Cascade)
+
+  /// Rang sur la liste ; 1 pour le titulaire au majoritaire.
+  ordre Int
+  /// 'titulaire' | 'suppleant' — le suppléant n'existe qu'au majoritaire.
+  role String
+
+  nom    String
+  prenom String
+  sexe   String?
+
+  /// Affichée. On publie l'âge, jamais la date de naissance : environ 1 850
+  /// des candidats ne seront jamais élus, et l'année suffit à situer une
+  /// génération.
+  anneeNaissance Int? @map("annee_naissance")
+
+  /// Sert UNIQUEMENT au rattachement à une personne connue (§4 de la spec).
+  /// N'est exposée par aucune route ni aucun DTO.
+  dateNaissance DateTime? @map("date_naissance")
+
+  professionCode  String? @map("profession_code")
+  professionLabel String? @map("profession_label")
+
+  /// Ce que dit le fichier. Absent de l'édition 2020, donc jamais une source
+  /// de vérité : le rattachement ci-dessous le recalcule, et les recouper est
+  /// un contrôle qualité.
+  sortantDeclare Boolean @default(false) @map("sortant_declare")
+
+  personneId String?        @map("personne_id")
+  personne   Parlementaire? @relation(fields: [personneId], references: [id], onDelete: SetNull)
+
+  /// 'A' (nom + prénom + date de naissance) ou 'B' (nom + date de naissance,
+  /// prénom d'usage divergent). Null si non rattaché : on ne rattache jamais
+  /// sur les seuls noms.
+  matchConfiance String? @map("match_confiance")
+
+  elu Boolean @default(false)
+  /// 1 ou 2 — le scrutin majoritaire a deux tours.
+  tourElection Int? @map("tour_election")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([listeId, role, ordre])
+  @@index([personneId])
+  @@index([nom, prenom])
+  @@map("candidatures")
 }
 
 // =============================================================================
