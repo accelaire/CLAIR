@@ -237,7 +237,14 @@ export interface EnrichmentOptions {
 // =============================================================================
 
 export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise<EnrichmentResult> {
-  const { limit, dryRun = false, concurrency = 3, force = false } = options;
+  const { limit, dryRun = false, concurrency = 3, force = false, only } = options;
+
+  // `only` cible des ID de scrutin, et non des numéros : le numéro n'est unique
+  // dans aucune des deux chambres (réinitialisé à chaque session au Sénat, à
+  // chaque législature à l'Assemblée). Le n°2076 existe en 15e, 16e ET 17e —
+  // le passer en argument corrigerait un scrutin au hasard parmi les trois.
+  const onlyFilter: Prisma.ScrutinWhereInput | undefined =
+    only && only.length > 0 ? { id: { in: only } } : undefined;
 
   const result: EnrichmentResult = {
     enriched: 0, skipped: 0, errors: 0, totalTokensIn: 0, totalTokensOut: 0,
@@ -251,7 +258,7 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
   const mistral = new CLAIRMistralClient();
   const limiter = pLimit(concurrency);
 
-  logger.info({ dryRun, concurrency, limit, force }, 'Starting scrutins IA enrichment...');
+  logger.info({ dryRun, concurrency, limit, force, only }, 'Starting scrutins IA enrichment...');
 
   // `limit` borne le nombre de fiches RÉGÉNÉRÉES, pas le nombre examinées : les
   // fiches inchangées ne doivent pas le consommer. Le budget est décrémenté au
@@ -269,6 +276,7 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
   // l'une d'elles n'est jamais examinée.
   while (budget > 0) {
     const scrutins = await prisma.scrutin.findMany({
+      ...(onlyFilter ? { where: onlyFilter } : {}),
       select: {
         id: true,
         titre: true,
