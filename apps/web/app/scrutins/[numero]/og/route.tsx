@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { fetchFromApi } from '@/lib/api-server';
 import { OgLayout, OgVoteBar, OG_SIZE, loadFont } from '@/lib/og';
 import { scrutinQuery } from '@/lib/scrutin-url';
+import { isScrutinAdopte } from '@/lib/scrutin-sort';
 
 export const runtime = 'nodejs';
 
@@ -40,7 +41,7 @@ export async function GET(
 
   const chambreLabel =
     data.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale';
-  const isAdopted = data.sort === 'adopté';
+  const isAdopted = isScrutinAdopte(data.sort);
   const dateStr = new Date(data.date).toLocaleDateString('fr-FR', {
     day: 'numeric',
     month: 'long',

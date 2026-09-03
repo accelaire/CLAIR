@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { fetchFromApi } from '@/lib/api-server';
 import { VoteEventJsonLd, BreadcrumbJsonLd } from '@/components/seo/JsonLd';
 import { scrutinQuery } from '@/lib/scrutin-url';
+import { isScrutinAdopte, scrutinSortLabel } from '@/lib/scrutin-sort';
 import PageClient from './PageClient';
 import type { ScrutinDetail } from './PageClient';
 
@@ -52,7 +53,7 @@ export async function generateMetadata({
   const chambreLabel =
     data.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale';
   const title = `Scrutin n\u00b0${data.numero} — ${data.titre}`;
-  const resultLabel = data.sort === 'adopté' ? 'Adopté' : 'Rejeté';
+  const resultLabel = scrutinSortLabel(data.sort);
   const description = `${chambreLabel} — ${resultLabel} (${data.nombrePour} pour, ${data.nombreContre} contre, ${data.nombreAbstention} abstentions). ${data.titre}`;
   const url = scrutinCanonicalUrl(data);
   // L'image OG est servie par un route handler qui doit recevoir chambre+session
@@ -107,7 +108,7 @@ export default async function ScrutinDetailPage({
             description={data.titre}
             url={canonicalUrl}
             dateCreated={data.date}
-            result={data.sort === 'adopté' ? 'adopted' : 'rejected'}
+            result={isScrutinAdopte(data.sort) ? 'adopted' : 'rejected'}
             votesFor={data.nombrePour}
             votesAgainst={data.nombreContre}
             abstentions={data.nombreAbstention}
