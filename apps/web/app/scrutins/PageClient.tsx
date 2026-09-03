@@ -10,6 +10,7 @@ import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker
 import { toPeriodePresets, type PeriodeApi } from '@/lib/periodes';
 import { useUrlFilters, useUrlDateRange } from '@/hooks/useUrlFilters';
 import { aucunFiltre, STALE_TIME_LISTE_MS } from '@/lib/liste-ssr';
+import { NATURES_FILTRABLES, natureLabelsCourts } from '@/lib/nature-scrutin';
 import { FilterBar } from '@/components/FilterBar';
 import {
   ScrutinListCard,
@@ -55,6 +56,18 @@ export interface ScrutinsResponse {
   };
 }
 
+/**
+ * Largeur fixe des menus déroulants de la barre de filtres.
+ *
+ * Un `<select>` natif prend la largeur de son option la plus longue, pas celle
+ * de la valeur affichée : « Déclaration du Gouvernement » suffisait à faire
+ * 285 px et à pousser le filtre de période sur une deuxième ligne. À largeur
+ * fixe, les cinq contrôles tiennent sur une ligne (1 220 px pour 1 248 px
+ * disponibles) et la liste déroulante reste lisible, le navigateur l'affichant
+ * plus large que le champ.
+ */
+const FILTRE_SELECT_WRAPPER = 'relative md:w-[180px]';
+
 // Capitalize first letter of a string
 const capitalize = (str: string): string => {
   if (!str) return str;
@@ -78,10 +91,11 @@ function ScrutinsPageContent({ initialScrutins, initialPage = 1 }: PageClientPro
     search: string;
     chambre: string;
     type: string;
+    nature: string;
     tag: string;
     dateFrom: string;
     dateTo: string;
-  }>(['search', 'chambre', 'type', 'tag']);
+  }>(['search', 'chambre', 'type', 'nature', 'tag']);
 
   const [dateRange, setDateRange] = useUrlDateRange();
   const dateParams = dateRangeToParams(dateRange);
@@ -102,6 +116,7 @@ function ScrutinsPageContent({ initialScrutins, initialPage = 1 }: PageClientPro
           search: filters.search || undefined,
           chambre: filters.chambre || undefined,
           type: filters.type || undefined,
+          nature: filters.nature || undefined,
           tag: filters.tag || undefined,
           page: pageParam,
           limit: 20,
@@ -114,7 +129,7 @@ function ScrutinsPageContent({ initialScrutins, initialPage = 1 }: PageClientPro
     // La donnée du rendu serveur ne vaut que pour la vue canonique : dès qu'un
     // filtre est actif, on repart sur un chargement client.
     initialData:
-      initialScrutins && aucunFiltre([filters.search, filters.chambre, filters.type, filters.tag]) &&
+      initialScrutins && aucunFiltre([filters.search, filters.chambre, filters.type, filters.nature, filters.tag]) &&
       Object.keys(dateParams).length === 0
         ? { pages: [initialScrutins], pageParams: [initialPage] }
         : undefined,
@@ -164,10 +179,11 @@ function ScrutinsPageContent({ initialScrutins, initialPage = 1 }: PageClientPro
     let count = 0;
     if (filters.chambre) count++;
     if (filters.type) count++;
+    if (filters.nature) count++;
     if (filters.tag) count++;
     if (dateRange.from || dateRange.to) count++;
     return count;
-  }, [filters.chambre, filters.type, filters.tag, dateRange.from, dateRange.to]);
+  }, [filters.chambre, filters.type, filters.nature, filters.tag, dateRange.from, dateRange.to]);
 
   const handleClearFilters = () => {
     clearAll(['dateFrom', 'dateTo']);
@@ -236,11 +252,11 @@ function ScrutinsPageContent({ initialScrutins, initialPage = 1 }: PageClientPro
         activeFilterCount={activeFilterCount}
         onClear={handleClearFilters}
         search={
-          <div className="relative flex-1 min-w-[200px]">
+          <div className="relative flex-1 min-w-[200px] md:max-w-[260px]">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Rechercher un scrutin..."
+              placeholder="Rechercher un scrutin"
               value={filters.search}
               onChange={(e) => setFilter('search', e.target.value)}
               className="w-full rounded-lg border bg-background px-10 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
@@ -249,13 +265,13 @@ function ScrutinsPageContent({ initialScrutins, initialPage = 1 }: PageClientPro
         }
       >
         {/* Filtre par chambre */}
-        <div className="relative md:w-auto">
+        <div className={FILTRE_SELECT_WRAPPER}>
           <select
             value={filters.chambre}
             onChange={(e) => setFilter('chambre', e.target.value)}
             className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
-            <option value="">Toutes les chambres</option>
+            <option value="">Chambre</option>
             <option value="assemblee">Assemblée nationale</option>
             <option value="senat">Sénat</option>
           </select>
@@ -263,13 +279,13 @@ function ScrutinsPageContent({ initialScrutins, initialPage = 1 }: PageClientPro
         </div>
 
         {/* Filtre par type */}
-        <div className="relative md:w-auto">
+        <div className={FILTRE_SELECT_WRAPPER}>
           <select
             value={filters.type}
             onChange={(e) => setFilter('type', e.target.value)}
             className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
-            <option value="">Tous les types</option>
+            <option value="">Type de vote</option>
             <option value="solennel">Solennel</option>
             <option value="ordinaire">Ordinaire</option>
             <option value="motion">Motion</option>
@@ -277,14 +293,34 @@ function ScrutinsPageContent({ initialScrutins, initialPage = 1 }: PageClientPro
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>
 
+        {/* Filtre par nature : sur quoi porte le vote, indépendamment du mode de
+            scrutin. C'est ce qui permet d'isoler les adoptions de texte parmi les
+            75 % de scrutins qui ne sont que des amendements de séance. */}
+        <div className={FILTRE_SELECT_WRAPPER}>
+          <select
+            value={filters.nature}
+            onChange={(e) => setFilter('nature', e.target.value)}
+            aria-label="Filtrer par objet du vote"
+            className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="">Objet du vote</option>
+            {NATURES_FILTRABLES.map((n) => (
+              <option key={n} value={n}>
+                {natureLabelsCourts[n]}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+        </div>
+
         {/* Filtre par tag */}
-        <div className="relative md:w-auto">
+        <div className={FILTRE_SELECT_WRAPPER}>
           <select
             value={filters.tag}
             onChange={(e) => setFilter('tag', e.target.value)}
             className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
           >
-            <option value="">Toutes les thématiques</option>
+            <option value="">Thématique</option>
             {tagsData?.map((t: { name: string; count: number }) => (
               <option key={t.name} value={t.name}>
                 {capitalize(t.name)} ({t.count})

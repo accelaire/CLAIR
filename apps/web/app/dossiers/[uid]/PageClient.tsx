@@ -11,6 +11,7 @@ import {
 import { FilterBar } from '@/components/FilterBar';
 import { api } from '@/lib/api';
 import { scrutinHref } from '@/lib/scrutin-url';
+import { NATURES_FILTRABLES, natureLabels } from '@/lib/nature-scrutin';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { LoiPromulgueeCard } from '@/components/LoiPromulgueeCard';
 import { ExpandableAmendementCard } from '@/components/ExpandableAmendementCard';
@@ -111,6 +112,8 @@ export interface DossierDetail {
     totalAdopte: number;
     totalRejete: number;
   };
+  /** Nombre de scrutins par objet du vote, sur tout le dossier (pas la page chargée). */
+  naturesCount?: Record<string, number>;
   /** Rapports et missions d'application citant la loi de ce dossier. */
   travauxApplication: Array<{
     uid: string;
@@ -172,8 +175,10 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
   const searchParams = useSearchParams();
   const uid = params.uid as string;
   const [showVotedOnly, setShowVotedOnly] = useState(false);
-  const [showSolennelOnly, setShowSolennelOnly] = useState(false);
-  const [showMotionOnly, setShowMotionOnly] = useState(false);
+  // Objet du vote sélectionné ('' = tous). Le filtrage se fait côté serveur :
+  // trier en JS ne portait que sur les pages déjà chargées, ce qui masquait des
+  // scrutins sur les gros dossiers.
+  const [natureFilter, setNatureFilter] = useState('');
   const [activeTab, setActiveTab] = useState<'amendements' | 'scrutins'>(
     searchParams.get('tab') === 'scrutins' ? 'scrutins' : 'amendements',
   );
@@ -228,15 +233,18 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
     hasNextPage: hasNextScrutins,
     isFetchingNextPage: isFetchingNextScrutins,
   } = useInfiniteQuery<PaginatedResponse<DossierScrutin>>({
-    queryKey: ['dossier-scrutins', uid, showSolennelOnly],
-    queryFn: ({ pageParam = 2 }) =>
+    queryKey: ['dossier-scrutins', uid, natureFilter],
+    queryFn: ({ pageParam = 1 }) =>
       api.get(`/dossiers/${uid}/scrutins`, {
-        params: { page: pageParam, limit: 20 },
+        params: { page: pageParam, limit: 20, nature: natureFilter || undefined },
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
-    initialPageParam: 2,
-    enabled: !!dossier && (showSolennelOnly || dossier.scrutinsCount > 20),
+    // Sans filtre, le détail du dossier fournit déjà les 20 premiers scrutins et
+    // cette requête reprend en page 2. Avec un filtre, elle devient la seule
+    // source et doit repartir de la page 1.
+    initialPageParam: natureFilter ? 1 : 2,
+    enabled: !!dossier && (!!natureFilter || dossier.scrutinsCount > 20),
   });
 
   const { loadMoreRef: loadMoreScrutinsRef } = useInfiniteScroll({
@@ -339,15 +347,12 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
     );
   }
 
-  const allScrutins = [
-    ...dossier.scrutins,
-    ...(moreScrutins?.pages.flatMap((p) => p.data) ?? []),
-  ];
-  const filteredScrutins = showSolennelOnly
-    ? allScrutins.filter((s) => s.typeVote === 'solennel' || s.titre.includes("l'ensemble") || s.titre.includes("l'ensemble de la"))
-    : showMotionOnly
-    ? allScrutins.filter((s) => s.typeVote === 'motion')
-    : allScrutins;
+  // Avec un filtre actif, la requête paginée porte déjà le filtre et fait
+  // autorité ; sans filtre, elle complète les 20 scrutins du détail.
+  const scrutinsPagines = moreScrutins?.pages.flatMap((p) => p.data) ?? [];
+  const filteredScrutins = natureFilter
+    ? scrutinsPagines
+    : [...dossier.scrutins, ...scrutinsPagines];
   const totalVotes = dossier.stats.totalAdopte + dossier.stats.totalRejete;
 
   // Amendements: filtered → use filtered query; unfiltered → detail batch + extras
@@ -372,11 +377,10 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
     new Set(allAmendements.map((a) => a.sort).filter(Boolean) as string[])
   ).sort();
 
-  // Counts for filter badges (from all loaded scrutins)
-  const solennelCount = allScrutins.filter(
-    (s) => s.typeVote === 'solennel' || s.titre.toLowerCase().includes("l'ensemble"),
-  ).length;
-  const motionCount = allScrutins.filter((s) => s.typeVote === 'motion').length;
+  // Compteurs des filtres : servis par l'API pour tout le dossier. Ils étaient
+  // calculés sur les seuls scrutins chargés, donc faux dès la deuxième page.
+  const naturesCount = dossier.naturesCount ?? {};
+  const naturesDisponibles = NATURES_FILTRABLES.filter((n) => (naturesCount[n] ?? 0) > 0);
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -790,44 +794,57 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
       {/* ================================================================== */}
       {effectiveTab === 'scrutins' && (
         <>
-          {/* Filter bar */}
-          <div className="flex flex-wrap items-center gap-2 mb-6">
-            <button
-              onClick={() => { setShowSolennelOnly(!showSolennelOnly); setShowMotionOnly(false); }}
-              className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                showSolennelOnly
-                  ? 'bg-indigo-100 border-indigo-300 text-indigo-700 hover:bg-indigo-200'
-                  : 'bg-background border-input hover:bg-accent'
-              }`}
-            >
-              <Scale className={`h-4 w-4 ${showSolennelOnly ? 'text-indigo-600' : 'text-muted-foreground'}`} />
-              Votes solennels
-              <span className={`px-1.5 py-0.5 rounded text-xs ${
-                showSolennelOnly ? 'bg-indigo-200 text-indigo-800' : 'bg-muted text-muted-foreground'
-              }`}>
-                {solennelCount}
-              </span>
-            </button>
-
-            {motionCount > 0 && (
+          {/* Filtre par objet du vote. Un dossier budgétaire dépasse les 800
+              scrutins, dont un seul porte sur l'adoption du texte : sans ce
+              filtre, il faut dérouler 40 pages pour le trouver. */}
+          {naturesDisponibles.length > 1 && (
+            // Sur mobile, une rangée unique qui défile horizontalement plutôt
+            // qu'un retour à la ligne en escalier : même parti pris que les
+            // rangées de puces de l'accueil. Le débord jusqu'aux bords de
+            // l'écran (`-mx-4 px-4`) signale qu'il y a à faire défiler.
+            <div className="mb-6 -mx-4 flex items-center gap-2 overflow-x-auto scrollbar-none px-4 md:mx-0 md:flex-wrap md:overflow-visible md:px-0">
               <button
-                onClick={() => { setShowMotionOnly(!showMotionOnly); setShowSolennelOnly(false); }}
-                className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                  showMotionOnly
+                onClick={() => setNatureFilter('')}
+                className={`inline-flex shrink-0 items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                  natureFilter === ''
                     ? 'bg-indigo-100 border-indigo-300 text-indigo-700 hover:bg-indigo-200'
                     : 'bg-background border-input hover:bg-accent'
                 }`}
               >
-                <Gavel className={`h-4 w-4 ${showMotionOnly ? 'text-indigo-600' : 'text-muted-foreground'}`} />
-                Motions
+                <Filter className={`h-4 w-4 ${natureFilter === '' ? 'text-indigo-600' : 'text-muted-foreground'}`} />
+                Tous les votes
                 <span className={`px-1.5 py-0.5 rounded text-xs ${
-                  showMotionOnly ? 'bg-indigo-200 text-indigo-800' : 'bg-muted text-muted-foreground'
+                  natureFilter === '' ? 'bg-indigo-200 text-indigo-800' : 'bg-muted text-muted-foreground'
                 }`}>
-                  {motionCount}
+                  {dossier.scrutinsCount}
                 </span>
               </button>
-            )}
-          </div>
+
+              {naturesDisponibles.map((n) => {
+                const actif = natureFilter === n;
+                const Icone = n === 'motion' ? Gavel : Scale;
+                return (
+                  <button
+                    key={n}
+                    onClick={() => setNatureFilter(actif ? '' : n)}
+                    className={`inline-flex shrink-0 items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                      actif
+                        ? 'bg-indigo-100 border-indigo-300 text-indigo-700 hover:bg-indigo-200'
+                        : 'bg-background border-input hover:bg-accent'
+                    }`}
+                  >
+                    <Icone className={`h-4 w-4 ${actif ? 'text-indigo-600' : 'text-muted-foreground'}`} />
+                    {natureLabels[n]}
+                    <span className={`px-1.5 py-0.5 rounded text-xs ${
+                      actif ? 'bg-indigo-200 text-indigo-800' : 'bg-muted text-muted-foreground'
+                    }`}>
+                      {naturesCount[n]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {filteredScrutins.length > 0 ? (
             <>

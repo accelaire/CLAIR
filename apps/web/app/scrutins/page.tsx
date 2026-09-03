@@ -21,6 +21,7 @@ const FILTRES = [
   'search',
   'chambre',
   'type',
+  'nature',
   'tag',
   'dateFrom',
   'dateTo',

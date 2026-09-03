@@ -54,6 +54,10 @@ const scrutinsListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   chambre: z.enum(['assemblee', 'senat']).optional(),
   type: z.enum(['solennel', 'ordinaire', 'motion']).optional(),
+  // `type` dit comment on vote (mode de scrutin), `nature` sur quoi porte le vote.
+  nature: z
+    .enum(['ensemble', 'article', 'amendement', 'credits', 'motion', 'declaration', 'autre'])
+    .optional(),
   sort: z.enum(['adopte', 'rejete']).optional(),
   tag: z.string().optional(),
   importance: z.coerce.number().int().min(1).max(5).optional(),
@@ -79,7 +83,12 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           page: { type: 'integer', minimum: 1, default: 1 },
           limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
           chambre: { type: 'string', enum: ['assemblee', 'senat'], description: 'Filtrer par chambre' },
-          type: { type: 'string', enum: ['solennel', 'ordinaire', 'motion'] },
+          type: { type: 'string', enum: ['solennel', 'ordinaire', 'motion'], description: 'Mode de scrutin (comment on vote)' },
+          nature: {
+            type: 'string',
+            enum: ['ensemble', 'article', 'amendement', 'credits', 'motion', 'declaration', 'autre'],
+            description: "Objet du vote (sur quoi on vote) : ensemble du texte, article, amendement, crédits budgétaires, motion ou procédure, déclaration du Gouvernement",
+          },
           sort: { type: 'string', enum: ['adopte', 'rejete'] },
           tag: { type: 'string', description: 'Filtrer par thématique' },
           importance: { type: 'integer', minimum: 1, maximum: 5 },
@@ -91,7 +100,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, _reply) => {
       const query = scrutinsListQuerySchema.parse(request.query);
-      const { page, limit, chambre, type, sort, tag, importance, dateFrom, dateTo, search } = query;
+      const { page, limit, chambre, type, nature, sort, tag, importance, dateFrom, dateTo, search } = query;
 
       // Cache key based on query params
       const cacheKey = `scrutins:list:${JSON.stringify(query)}`;
@@ -159,6 +168,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       const where = {
         ...(chambre && { chambre }),
         ...(type && { typeVote: type }),
+        ...(nature && { natureVote: nature }),
         ...(sort && { sort }),
         ...(tag && { tags: { has: tag } }),
         ...(importance && { importance }),
@@ -185,6 +195,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
             date: true,
             titre: true,
             typeVote: true,
+            natureVote: true,
             sort: true,
             nombreVotants: true,
             nombrePour: true,

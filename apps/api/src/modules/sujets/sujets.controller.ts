@@ -267,6 +267,11 @@ export const sujetsRoutes: FastifyPluginAsync = async (fastify) => {
           page: { type: 'integer', minimum: 1, default: 1 },
           limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
           chambre: { type: 'string', enum: ['assemblee', 'senat'] },
+          nature: {
+            type: 'string',
+            enum: ['ensemble', 'article', 'amendement', 'credits', 'motion', 'declaration', 'autre'],
+            description: 'Objet du vote (sur quoi on vote)',
+          },
         },
       },
     },

@@ -5,7 +5,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
-import { dossiersListQuerySchema, paginationQuerySchema, amendementsQuerySchema, trendingQuerySchema } from './dossiers.schema';
+import { dossiersListQuerySchema, scrutinsQuerySchema, amendementsQuerySchema, trendingQuerySchema } from './dossiers.schema';
 import { ApiError } from '../../utils/errors';
 import { buildMultiFieldSearchCondition } from '../../utils/search';
 import { buildJournalOfficielUrl } from '../../utils/journal-officiel';
@@ -335,6 +335,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
               titre: true,
               sort: true,
               typeVote: true,
+              natureVote: true,
               nombrePour: true,
               nombreContre: true,
               nombreAbstention: true,
@@ -389,9 +390,18 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       // Stats aggregation + voted amendements count + groupes with amendements
-      const [statsResult, votedAmendementsCount, amendementsGroupes] = await Promise.all([
+      const [statsResult, naturesResult, votedAmendementsCount, amendementsGroupes] = await Promise.all([
         fastify.prisma.scrutin.groupBy({
           by: ['sort'],
+          where: { dossierId: dossier.id },
+          _count: true,
+        }),
+        // Facette des natures : les compteurs des filtres doivent porter sur tout
+        // le dossier, pas sur la page chargée. Un dossier budgétaire dépasse les
+        // 800 scrutins — compter côté client donnait un « 1 » là où il fallait lire
+        // « 1 sur 803 ».
+        fastify.prisma.scrutin.groupBy({
+          by: ['natureVote'],
           where: { dossierId: dossier.id },
           _count: true,
         }),
@@ -421,6 +431,14 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
         totalAdopte: statsResult.find((s: { sort: string; _count: number }) => s.sort === 'adopte')?._count || 0,
         totalRejete: statsResult.find((s: { sort: string; _count: number }) => s.sort === 'rejete')?._count || 0,
       };
+
+      // Les scrutins pas encore classés (natureVote NULL) sont volontairement
+      // omis : la page ne propose de filtre que pour les natures qu'elle sait
+      // nommer, et le backfill nocturne fait disparaître ce cas.
+      const naturesCount: Record<string, number> = {};
+      for (const n of naturesResult as Array<{ natureVote: string | null; _count: number }>) {
+        if (n.natureVote) naturesCount[n.natureVote] = n._count;
+      }
 
       // Agrège les infos loi à travers les dossiers du même sujet (le n° est
       // souvent porté côté Sénat, les URLs côté AN) pour une carte cohérente
@@ -527,6 +545,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
           count: Number(g.count),
         })),
         stats,
+        naturesCount,
       };
 
       await fastify.redis.setex(cacheKey, CACHE_TTL_1H, JSON.stringify(result));
@@ -542,13 +561,25 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
       tags: ['Dossiers'],
       summary: 'Scrutins d\'un dossier législatif',
       description: 'Retourne les scrutins paginés d\'un dossier',
+      querystring: {
+        type: 'object',
+        properties: {
+          page: { type: 'integer', minimum: 1, default: 1 },
+          limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          type: { type: 'string', enum: ['solennel', 'ordinaire', 'motion'], description: 'Mode de scrutin (comment on vote)' },
+          nature: {
+            type: 'string',
+            enum: ['ensemble', 'article', 'amendement', 'credits', 'motion', 'declaration', 'autre'],
+            description: 'Objet du vote (sur quoi on vote)',
+          },
+        },
+      },
     },
     handler: async (request, _reply) => {
       const { uid } = z.object({ uid: z.string() }).parse(request.params);
-      const { page, limit, ...rest } = paginationQuerySchema.parse(request.query);
-      const typeFilter = rest as { type?: string } | undefined;
+      const { page, limit, type, nature } = scrutinsQuerySchema.parse(request.query);
 
-      const cacheKey = `dossiers:${uid}:scrutins:${page}:${limit}:${typeFilter?.type ?? 'all'}`;
+      const cacheKey = `dossiers:${uid}:scrutins:${page}:${limit}:${type ?? 'all'}:${nature ?? 'all'}`;
       const cached = await fastify.redis.get(cacheKey);
       if (cached) return JSON.parse(cached);
 
@@ -563,9 +594,8 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
 
       const skip = (page - 1) * limit;
       const whereClause: Record<string, unknown> = { dossierId: dossier.id };
-      if (typeFilter?.type) {
-        whereClause.typeVote = typeFilter.type as 'solennel' | 'ordinaire' | 'motion';
-      }
+      if (type) whereClause.typeVote = type;
+      if (nature) whereClause.natureVote = nature;
 
       const [scrutins, total] = await Promise.all([
         fastify.prisma.scrutin.findMany({
@@ -582,6 +612,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
             titre: true,
             sort: true,
             typeVote: true,
+            natureVote: true,
             nombrePour: true,
             nombreContre: true,
             nombreAbstention: true,

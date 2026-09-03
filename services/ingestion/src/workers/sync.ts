@@ -22,6 +22,7 @@ import { logger } from '../utils/logger';
 import { errorMessage } from '../utils/errors';
 import { asArray, isRecord, readString } from '../utils/json';
 import { extractCommissionSaisines } from '../utils/dossier-commissions';
+import { classifyNatureScrutin } from '../utils/nature-scrutin';
 import {
   LEGISLATURE_AN_COURANTE,
   LEGISLATURE_FIN,
@@ -1420,6 +1421,7 @@ export async function syncScrutins(
         date: scrutin.date,
         titre: scrutin.titre,
         typeVote: scrutin.typeVote,
+        natureVote: classifyNatureScrutin(scrutin.objetLibelle, scrutin.titre),
         sort: scrutin.sort,
         nombreVotants: scrutin.nombreVotants,
         nombrePour: scrutin.nombrePour,
@@ -1631,6 +1633,7 @@ export async function syncScrutinsSenat(
         date: scrutin.date,
         titre: scrutin.titre,
         typeVote: scrutin.typeVote,
+        natureVote: classifyNatureScrutin(scrutin.objetLibelle, scrutin.titre),
         sort: scrutin.sort,
         nombreVotants: scrutin.nombreVotants,
         nombrePour: scrutin.nombrePour,
@@ -3482,6 +3485,25 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.error({ error: errorMessage(error) }, 'Sibling texte_ref dossier propagation failed (non-blocking)');
     }
 
+  }
+
+  if (hasScrutinsChanged) {
+    // Rattrapage de la nature des scrutins. Les scrutins écrits par ce sync la
+    // portent déjà (elle est calculée à l'upsert) : ce passage ne concerne que
+    // l'historique antérieur à la colonne, et les législatures anciennes qui ne
+    // sont pas dans la fenêtre quotidienne. Il ne touche que les lignes à NULL,
+    // donc il ne coûte plus rien une fois le corpus rattrapé.
+    logger.info('Backfilling nature_vote on unclassified scrutins...');
+    try {
+      const { backfillNatureVote } = await import('./backfill-nature-vote.js');
+      const natureResult = await backfillNatureVote();
+      logger.info({
+        scanned: natureResult.scanned,
+        updated: natureResult.updated,
+      }, 'Nature_vote backfill completed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Nature_vote backfill failed (non-blocking)');
+    }
   }
 
   // Recalculer les stats si des sources ont changé (sauf si skip demandé)
