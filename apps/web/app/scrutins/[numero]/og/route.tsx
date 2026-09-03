@@ -103,6 +103,18 @@ export async function GET(
     {
       ...OG_SIZE,
       fonts: [{ name: 'Inter', data: font, weight: 600 }],
+      headers: {
+        // `ImageResponse` pose par défaut `public, immutable, max-age=31536000` :
+        // un an, sans revalidation possible. Le résultat d'un scrutin ne bouge
+        // effectivement plus une fois publié, mais le RENDU, lui, peut être
+        // faux — il l'a été. Les cartes ont annoncé « Rejeté » sur les 8 050
+        // scrutins adoptés, et `immutable` garantissait que ni Twitter, ni
+        // Slack, ni aucun navigateur ne redemanderait jamais la bonne.
+        //
+        // On garde donc un cache long mais révocable : frais une heure, puis
+        // servi périmé pendant qu'il se rafraîchit en fond.
+        'Cache-Control': 'public, max-age=3600, stale-while-revalidate=604800',
+      },
     },
   );
 }

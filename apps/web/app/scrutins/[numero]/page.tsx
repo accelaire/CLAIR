@@ -3,6 +3,7 @@ import { fetchFromApi } from '@/lib/api-server';
 import { VoteEventJsonLd, BreadcrumbJsonLd } from '@/components/seo/JsonLd';
 import { scrutinQuery } from '@/lib/scrutin-url';
 import { isScrutinAdopte, scrutinSortLabel } from '@/lib/scrutin-sort';
+import { OG_CARD_VERSION } from '@/lib/og-version';
 import PageClient from './PageClient';
 import type { ScrutinDetail } from './PageClient';
 
@@ -61,8 +62,10 @@ export async function generateMetadata({
   // URL relative : résolue via metadataBase (cf. layout.tsx), comme les images
   // file-convention des autres pages. Le descripteur reprend les mêmes champs
   // (type/width/height) pour émettre exactement les mêmes balises meta.
+  // `v` force les caches par URL (Twitter, Slack, navigateurs) à redemander la
+  // carte quand son rendu a été corrigé : cf. OG_CARD_VERSION.
   const ogImage = {
-    url: `/scrutins/${data.numero}/og?${scrutinQuery(data)}`,
+    url: `/scrutins/${data.numero}/og?${scrutinQuery(data)}&v=${OG_CARD_VERSION}`,
     width: 1200,
     height: 630,
     type: 'image/png',
