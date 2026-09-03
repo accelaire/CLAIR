@@ -18,10 +18,160 @@ import {
   buildSujetResumePrompt,
   buildGroupeAmendementPrompt,
 } from '../llm/prompts.js';
+import {
+  articleNumeroFromTitre,
+  articleLookupKeys,
+  porteSurArticleEntier,
+} from '../utils/article-scrutin.js';
+import { articleKeyFromArticleVise } from '../sources/assemblee-nationale/textes-client.js';
 import { logger } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
 
 const prisma = new PrismaClient();
+
+// =============================================================================
+// RATTACHEMENT D'UN SCRUTIN AU TEXTE DE SON ARTICLE
+// =============================================================================
+
+interface ScrutinPourResolution {
+  id: string;
+  titre: string;
+  date: Date;
+  dossierId: string | null;
+  amendements: { texteRef: string | null; articleVise: string | null }[];
+}
+
+export interface ArticleResolu {
+  numero: string;
+  libelle: string;
+  contenu: string;
+}
+
+/**
+ * Retrouve, pour chaque scrutin d'un lot, le texte de l'article qu'il vise.
+ *
+ * Deux inconnues à lever : QUEL article, et dans QUELLE version du texte.
+ *
+ * L'article vient de `articleVise` quand un amendement est rattaché — c'est la
+ * donnée de l'Assemblée, pas une lecture de libellé — et du titre sinon.
+ *
+ * La version du texte est la vraie difficulté : un dossier en compte plusieurs
+ * (texte de commission, texte adopté en séance, nouvelle lecture), et l'article
+ * 15 de l'une n'est pas celui de l'autre. Le scrutin, lui, ne dit pas laquelle.
+ * On la déduit des amendements votés le MÊME JOUR sur le MÊME dossier : ils
+ * portent le `texteRef` en vigueur à cette séance. Déduction fondée sur des
+ * données plutôt que sur un ordre supposé des lectures.
+ *
+ * Tout est résolu par lot : deux requêtes pour cent scrutins, et non deux par
+ * scrutin — l'enrichissement balaie 21 731 lignes à chaque exécution.
+ */
+export async function resolveArticlesForBatch(
+  scrutins: ScrutinPourResolution[]
+): Promise<Map<string, ArticleResolu>> {
+  const resultat = new Map<string, ArticleResolu>();
+
+  // Étape 1 — quel article, et quel texte si un amendement nous le donne.
+  type Besoin = { scrutinId: string; numero: string; texteRef: string | null };
+  const besoins: Besoin[] = [];
+
+  for (const scrutin of scrutins) {
+    const amdt = scrutin.amendements[0];
+    let numero: string | null = null;
+
+    if (amdt?.articleVise) {
+      const vise = articleKeyFromArticleVise(amdt.articleVise);
+      // Un amendement « APRÈS ART. 3 » crée un article nouveau : le texte de
+      // l'article 3 ne dit pas ce qu'il fait. Mieux vaut ne rien injecter que
+      // de laisser croire qu'il le modifie.
+      if (vise && !vise.apres) numero = vise.key;
+    }
+    if (!numero) numero = articleNumeroFromTitre(scrutin.titre);
+    if (!numero) continue;
+
+    besoins.push({ scrutinId: scrutin.id, numero, texteRef: amdt?.texteRef ?? null });
+  }
+
+  if (besoins.length === 0) return resultat;
+
+  // Étape 2 — pour les scrutins sans amendement rattaché (les votes sur article
+  // eux-mêmes), déduire le texte en vigueur des scrutins voisins du même jour.
+  const aDeduire = besoins.filter(b => !b.texteRef);
+  if (aDeduire.length > 0) {
+    const cles = scrutins
+      .filter(s => s.dossierId && aDeduire.some(b => b.scrutinId === s.id))
+      .map(s => ({ dossierId: s.dossierId!, jour: s.date }));
+
+    if (cles.length > 0) {
+      const lignes = await prisma.$queryRaw<
+        { dossier_id: string; jour: Date; texte_ref: string }[]
+      >`
+        SELECT s.dossier_id, DATE(s.date) AS jour, a.texte_ref
+        FROM scrutins s
+        JOIN "_AmendementToScrutin" j ON j."B" = s.id
+        JOIN amendements a ON a.id = j."A"
+        WHERE a.texte_ref IS NOT NULL
+          AND (s.dossier_id, DATE(s.date)) IN (
+            SELECT * FROM UNNEST(
+              ${Prisma.sql`ARRAY[${Prisma.join(cles.map(c => c.dossierId))}]::text[]`},
+              ${Prisma.sql`ARRAY[${Prisma.join(cles.map(c => c.jour))}]::date[]`}
+            )
+          )
+        GROUP BY 1, 2, 3
+        -- Départage explicite : sans lui, deux textes à égalité feraient varier
+        -- le résumé d'une exécution à l'autre, donc le hash, donc le corpus.
+        ORDER BY 1, 2, count(*) DESC, 3
+      `;
+
+      const texteParJour = new Map<string, string>();
+      for (const l of lignes) {
+        const cle = `${l.dossier_id}|${new Date(l.jour).toISOString().slice(0, 10)}`;
+        if (!texteParJour.has(cle)) texteParJour.set(cle, l.texte_ref);
+      }
+
+      const scrutinsParId = new Map(scrutins.map(s => [s.id, s]));
+      for (const besoin of aDeduire) {
+        const scrutin = scrutinsParId.get(besoin.scrutinId);
+        if (!scrutin?.dossierId) continue;
+        const cle = `${scrutin.dossierId}|${scrutin.date.toISOString().slice(0, 10)}`;
+        besoin.texteRef = texteParJour.get(cle) ?? null;
+      }
+    }
+  }
+
+  // Étape 3 — charger les articles en une requête.
+  const paires = besoins.filter(b => b.texteRef);
+  if (paires.length === 0) return resultat;
+
+  const articles = await prisma.texteArticle.findMany({
+    where: {
+      OR: paires.map(b => ({
+        texteRef: b.texteRef!,
+        // « Article 1er » côté texte, « ART. PREMIER » côté amendement,
+        // « l'article 1 » dans certains libellés : on tente les graphies.
+        numero: { in: articleLookupKeys(b.numero) },
+      })),
+    },
+    select: { texteRef: true, numero: true, libelle: true, contenu: true },
+  });
+
+  const parCle = new Map(articles.map(a => [`${a.texteRef}|${a.numero}`, a]));
+  for (const besoin of paires) {
+    for (const cle of articleLookupKeys(besoin.numero)) {
+      const trouve = parCle.get(`${besoin.texteRef}|${cle}`);
+      if (trouve) {
+        resultat.set(besoin.scrutinId, {
+          numero: trouve.numero,
+          libelle: trouve.libelle,
+          contenu: trouve.contenu,
+        });
+        break;
+      }
+    }
+  }
+
+  return resultat;
+}
+
 
 const BATCH_SIZE = 100;
 
@@ -127,9 +277,20 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
         objetLibelle: true,
         tags: true,
         iaContentHash: true,
+        date: true,
+        dossierId: true,
         dossier: { select: { titre: true } },
         amendements: {
-          select: { numero: true, exposeSommaire: true, dispositif: true },
+          // `texteRef` et `articleVise` ne servent pas au prompt mais à
+          // retrouver le TEXTE de l'article visé : ce sont les seules clés
+          // fiables, le libellé du scrutin n'étant qu'un repli.
+          select: {
+            numero: true,
+            exposeSommaire: true,
+            dispositif: true,
+            texteRef: true,
+            articleVise: true,
+          },
           take: 3,
         },
       },
@@ -140,18 +301,27 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
 
     if (scrutins.length === 0) break;
 
+    const articlesParScrutin = await resolveArticlesForBatch(scrutins);
+
     const tasks = scrutins.map(scrutin =>
       limiter(async () => {
         try {
           const amendementsHash = scrutin.amendements
             .map(a => `${a.numero}:${a.exposeSommaire ?? ''}:${a.dispositif ?? ''}`)
             .join('|');
+          const article = articlesParScrutin.get(scrutin.id) ?? null;
           const contentHash = computeContentHash(
             scrutin.titre, scrutin.sort, scrutin.typeVote,
             scrutin.objetLibelle, scrutin.tags?.join(','), amendementsHash,
             // Le titre du dossier est injecté dans le prompt : un scrutin
             // rattaché à un autre dossier change de contexte, donc de résumé.
             scrutin.dossier?.titre ?? '',
+            // Le texte de l'article aussi. Il est absent des résumés déjà
+            // produits : l'inclure les fait tous régénérer une fois, ce qui est
+            // précisément le but — ce sont eux qui inventaient leur contenu.
+            // C'est une donnée SOURCE, jamais réécrite par le modèle : elle ne
+            // peut pas déclencher de régénération en boucle.
+            article ? `${article.numero}:${article.contenu}` : '',
           );
 
           if (!force && scrutin.iaContentHash === contentHash) {
@@ -176,6 +346,8 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
             tags: scrutin.tags,
             dossierTitre: scrutin.dossier?.titre,
             amendements: scrutin.amendements,
+            article,
+            porteSurArticleEntier: porteSurArticleEntier(scrutin.titre),
           });
 
           const resumeIA = cleanLLMOutput(await mistral.complete(SYSTEM_PROMPT, userPrompt));

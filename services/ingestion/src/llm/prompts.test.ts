@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDossierResumePrompt } from './prompts';
+import { buildDossierResumePrompt, buildScrutinResumePrompt } from './prompts';
 
 // =============================================================================
 // Tendance et divergences dans le prompt dossier
@@ -96,5 +96,87 @@ describe('positionDominante — divergences ensemble / articles', () => {
     );
 
     expect(prompt).not.toContain("sur l'ensemble, MAIS");
+  });
+});
+
+// =============================================================================
+// Injection du texte de l'article dans le prompt scrutin
+// =============================================================================
+//
+// C'est la pièce dont l'absence faisait inventer au modèle le contenu des
+// articles : un vote « l'article 15 de la PPL … » ne lui offrait que le numéro.
+// Ce qui se joue ici n'est pas un format mais la véracité de ce qui sera publié,
+// d'où des tests sur la consigne elle-même autant que sur le contenu injecté.
+
+describe('buildScrutinResumePrompt — texte de l’article', () => {
+  const base = {
+    titre: "l'article 15 de la proposition de loi relative au droit à l'aide à mourir (première lecture).",
+    sort: 'adopte',
+    typeVote: 'ordinaire',
+  };
+  const article = {
+    numero: '15',
+    libelle: 'Article 15',
+    contenu: 'Une commission de contrôle et d’évaluation assure le contrôle a posteriori.',
+  };
+
+  it("injecte le texte de l'article pour un vote sur article", () => {
+    const prompt = buildScrutinResumePrompt({ ...base, article, porteSurArticleEntier: true });
+    expect(prompt).toContain('Une commission de contrôle et d’évaluation');
+    expect(prompt).toContain("Texte de l'article 15, tel que soumis au vote");
+  });
+
+  it("demande d'expliquer l'article, en s'en tenant au texte fourni", () => {
+    const prompt = buildScrutinResumePrompt({ ...base, article, porteSurArticleEntier: true });
+    expect(prompt).toContain('ce que dit cet article');
+    expect(prompt).toContain('sans extrapoler');
+  });
+
+  it("pour un amendement, demande ce que le changement implique", () => {
+    const prompt = buildScrutinResumePrompt({
+      titre: "l'amendement n° 74 de M. Hetzel à l'article 15 de la proposition de loi.",
+      sort: 'adopte',
+      typeVote: 'ordinaire',
+      amendements: [{ numero: '74', dispositif: 'À l’alinéa 8, substituer « saisit » à « peut saisir ».' }],
+      article,
+      porteSurArticleEntier: false,
+    });
+    expect(prompt).toContain('substituer');
+    expect(prompt).toContain('Une commission de contrôle');
+    expect(prompt).toContain("cet amendement change dans l'article");
+  });
+
+  it("place l'amendement avant l'article qu'il modifie", () => {
+    const prompt = buildScrutinResumePrompt({
+      titre: "l'amendement n° 74 à l'article 15.",
+      sort: 'adopte',
+      typeVote: 'ordinaire',
+      amendements: [{ numero: '74', dispositif: 'DISPOSITIF_AMENDEMENT' }],
+      article,
+      porteSurArticleEntier: false,
+    });
+    expect(prompt.indexOf('DISPOSITIF_AMENDEMENT')).toBeLessThan(
+      prompt.indexOf('Une commission de contrôle')
+    );
+  });
+
+  it("sans article, cadre la consigne sans parler de ce qui manque", () => {
+    const prompt = buildScrutinResumePrompt({ ...base, porteSurArticleEntier: true });
+    expect(prompt).toContain("Tiens-toi à ce qu'établissent le libellé");
+    // La consigne ne doit pas décrire le contexte comme lacunaire : le modèle
+    // recopie ces tournures et le lecteur y lit « le site ne sait pas ».
+    expect(prompt).not.toMatch(/n'est pas fourni|non fourni|absence/i);
+    expect(prompt).not.toContain('sans extrapoler');
+  });
+
+  it('tronque les articles-fleuves plutôt que de les envoyer entiers', () => {
+    const long = 'A'.repeat(9000);
+    const prompt = buildScrutinResumePrompt({
+      ...base,
+      article: { ...article, contenu: long },
+      porteSurArticleEntier: true,
+    });
+    expect(prompt).toContain('…');
+    expect(prompt.length).toBeLessThan(7000);
   });
 });

@@ -31,7 +31,11 @@ Règles :
 - N'utilise pas de jargon juridique sans l'expliquer.
 - Ne prends pas parti politiquement.
 - Réponds en texte brut, sans markdown ni bullet points.
-- 1 à 3 phrases maximum.`;
+- 1 à 3 phrases maximum.
+- N'affirme que ce que le contexte permet d'établir : ne déduis jamais l'objet
+  d'un article de son numéro.
+- Ne commente jamais ce qui manque dans le contexte. Écris ce que tu sais, et
+  rien sur ce que tu ignores : le lecteur ne doit pas lire tes limites.`;
 
 export const SYSTEM_PROMPT_DOSSIER = `Tu es un analyste parlementaire expert. Tu résumes les dossiers législatifs et analyses les positions des groupes politiques de manière factuelle et accessible.
 
@@ -63,7 +67,28 @@ interface ScrutinPromptData {
   tags?: string[];
   dossierTitre?: string | null;
   amendements?: { numero: string; exposeSommaire?: string | null; dispositif?: string | null }[];
+  /**
+   * Texte de l'article sur lequel porte le scrutin, quand on le connaît.
+   *
+   * C'est la pièce qui manquait : sans elle, un scrutin « l'article 15 de la
+   * PPL … » n'offrait au modèle que le numéro de l'article, et il en inventait
+   * le contenu (retour utilisateur sur le scrutin 2076, où le résumé décrivait
+   * les critères d'accès à l'aide à mourir quand l'article 15 crée la
+   * commission de contrôle).
+   */
+  article?: { numero: string; libelle: string; contenu: string } | null;
+  /** Le vote porte sur l'article lui-même, et non sur un amendement le visant. */
+  porteSurArticleEntier?: boolean;
 }
+
+/**
+ * Plafond du texte d'article injecté.
+ *
+ * Les articles vont de 200 à 7 400 caractères. Tronquer haut garde le
+ * dispositif complet dans l'immense majorité des cas, sans faire exploser le
+ * coût sur les quelques articles-fleuves (codes réécrits en bloc).
+ */
+const MAX_ARTICLE_CHARS = 6000;
 
 export function buildScrutinResumePrompt(data: ScrutinPromptData): string {
   const parts: string[] = [
@@ -102,10 +127,38 @@ export function buildScrutinResumePrompt(data: ScrutinPromptData): string {
     }
   }
 
-  parts.push(
-    '',
-    'Explique en 1 à 3 phrases simples ce qui a été voté et quel impact concret cela peut avoir pour les citoyens.'
-  );
+  // Le texte de l'article est placé APRÈS les amendements : pour un vote sur
+  // amendement, on veut que le modèle lise d'abord ce que l'amendement change,
+  // puis le texte dans lequel ce changement s'inscrit.
+  if (data.article) {
+    const contenu =
+      data.article.contenu.length > MAX_ARTICLE_CHARS
+        ? data.article.contenu.slice(0, MAX_ARTICLE_CHARS) + '…'
+        : data.article.contenu;
+    const entete = data.porteSurArticleEntier
+      ? `\nTexte de l'${data.article.libelle.toLowerCase()}, tel que soumis au vote :`
+      : `\n${data.article.libelle} du texte, que cet amendement vise :`;
+    parts.push(entete, contenu);
+  }
+
+  // La consigne dépend de ce qu'on a pu fournir : demander « quel impact
+  // concret » sans donner le texte revient à demander une invention.
+  if (data.article && data.porteSurArticleEntier) {
+    parts.push(
+      '',
+      "Explique en 1 à 3 phrases simples ce que dit cet article et quel impact concret il peut avoir pour les citoyens. Appuie-toi sur le texte fourni, sans extrapoler au-delà."
+    );
+  } else if (data.article) {
+    parts.push(
+      '',
+      "Explique en 1 à 3 phrases simples ce que cet amendement change dans l'article, et ce que ce changement implique concrètement. Appuie-toi sur le texte fourni, sans extrapoler au-delà."
+    );
+  } else {
+    parts.push(
+      '',
+      "Explique en 1 à 3 phrases simples ce qui a été voté et ce que cela implique pour la suite du parcours législatif. Tiens-toi à ce qu'établissent le libellé, le dossier et le résultat."
+    );
+  }
 
   return parts.join('\n');
 }
