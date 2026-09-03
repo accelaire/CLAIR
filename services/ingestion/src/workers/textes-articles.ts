@@ -9,9 +9,9 @@
 // Périmètre : Assemblée nationale uniquement. Les `texteRef` du Sénat suivent
 // un autre schéma (`SENAT-TXT-105426`) que la source AN ne sert pas.
 //
-// Idempotence : chaque exécution recalcule l'état complet d'un texte. Les
-// articles qui n'existent plus dans la version publiée sont supprimés, sans
-// quoi un article renuméroté resterait affiché indéfiniment. Un texte déjà
+// Idempotence : chaque exécution réécrit l'état complet d'un texte, articles
+// disparus compris — sans quoi un article renuméroté resterait indéfiniment en
+// base. Un texte déjà
 // ingéré est ignoré sauf `force` — les versions publiées ne bougent plus une
 // fois le texte voté, l'intérêt d'un rafraîchissement systématique est nul et
 // le CDN de l'AN throttle au-delà de quelques dizaines de requêtes.
@@ -47,9 +47,9 @@ export interface TextesArticlesSyncResult {
   textesGabaritInconnu: number;
   /** `texteRef` des textes au gabarit non couvert, pour mesurer le trou. */
   refsGabaritInconnu: string[];
-  articlesCrees: number;
-  articlesMisAJour: number;
-  articlesSupprimes: number;
+  articlesEcrits: number;
+  /** Articles remplacés lors d'une réingestion (`--force`). */
+  articlesRemplaces: number;
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -119,9 +119,8 @@ export async function syncTextesArticles(
     textesNonServis: 0,
     textesGabaritInconnu: 0,
     refsGabaritInconnu: [],
-    articlesCrees: 0,
-    articlesMisAJour: 0,
-    articlesSupprimes: 0,
+    articlesEcrits: 0,
+    articlesRemplaces: 0,
   };
 
   const candidates = await selectTexteRefs(options);
@@ -160,46 +159,40 @@ export async function syncTextesArticles(
 
     result.textesTraites++;
     if (dryRun) {
-      result.articlesCrees += fetched.articles.length;
+      result.articlesEcrits += fetched.articles.length;
       continue;
     }
 
-    for (const article of fetched.articles) {
-      const data = {
-        libelle: article.libelle,
-        ordre: article.ordre,
-        contenu: article.contenu,
-        chambre: 'assemblee',
-        legislature: candidate.legislature,
-        dossierId: candidate.dossierId,
-        sourceUrl: fetched.sourceUrl,
-      };
-      try {
-        const upserted = await prisma.texteArticle.upsert({
-          where: { texteRef_numero: { texteRef: candidate.texteRef, numero: article.numero } },
-          create: { texteRef: candidate.texteRef, numero: article.numero, ...data },
-          update: data,
-          select: { createdAt: true, updatedAt: true },
-        });
-        if (upserted.createdAt.getTime() === upserted.updatedAt.getTime()) {
-          result.articlesCrees++;
-        } else {
-          result.articlesMisAJour++;
-        }
-      } catch (error) {
-        logger.warn(
-          { texteRef: candidate.texteRef, article: article.numero, error: errorMessage(error) },
-          'Échec upsert article'
-        );
-      }
-    }
+    // Un `upsert` par article ferait un aller-retour réseau par article — un
+    // texte en compte jusqu'à 261, et la base de prod est derrière un proxy.
+    // C'était le goulot du backfill (~68 s par texte, contre 3 à 8 s de fetch).
+    // On réécrit donc le texte d'un bloc : deux requêtes, dans une transaction
+    // pour qu'aucun lecteur ne voie le texte amputé de ses articles.
+    const rows = fetched.articles.map((article) => ({
+      texteRef: candidate.texteRef,
+      numero: article.numero,
+      libelle: article.libelle,
+      ordre: article.ordre,
+      contenu: article.contenu,
+      chambre: 'assemblee',
+      legislature: candidate.legislature,
+      dossierId: candidate.dossierId,
+      sourceUrl: fetched.sourceUrl,
+    }));
 
-    // Un article disparu de la version publiée doit disparaître de la base.
-    const numerosPublies = fetched.articles.map((a) => a.numero);
-    const supprimes = await prisma.texteArticle.deleteMany({
-      where: { texteRef: candidate.texteRef, numero: { notIn: numerosPublies } },
-    });
-    result.articlesSupprimes += supprimes.count;
+    try {
+      const [supprimes] = await prisma.$transaction([
+        prisma.texteArticle.deleteMany({ where: { texteRef: candidate.texteRef } }),
+        prisma.texteArticle.createMany({ data: rows }),
+      ]);
+      result.articlesEcrits += rows.length;
+      result.articlesRemplaces += supprimes.count;
+    } catch (error) {
+      logger.warn(
+        { texteRef: candidate.texteRef, articles: rows.length, error: errorMessage(error) },
+        'Échec écriture des articles'
+      );
+    }
   }
 
   logger.info({ ...result }, 'Textes-articles sync completed');

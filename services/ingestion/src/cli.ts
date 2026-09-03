@@ -1227,9 +1227,8 @@ program
       console.log(`Textes déjà ingérés : ${result.textesIgnores}`);
       console.log(`Textes non servis    : ${result.textesNonServis}`);
       console.log(`Gabarit non couvert : ${result.textesGabaritInconnu}`);
-      console.log(`Articles créés      : ${result.articlesCrees}`);
-      console.log(`Articles mis à jour : ${result.articlesMisAJour}`);
-      console.log(`Articles supprimés  : ${result.articlesSupprimes}`);
+      console.log(`Articles écrits     : ${result.articlesEcrits}`);
+      console.log(`Articles remplacés  : ${result.articlesRemplaces}`);
       if (result.refsGabaritInconnu.length > 0) {
         console.log(`\nTextes au gabarit non couvert (budgets) :`);
         for (const ref of result.refsGabaritInconnu) console.log(`  - ${ref}`);
