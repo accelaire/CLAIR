@@ -5,6 +5,7 @@
 
 import 'dotenv/config';
 import { Command } from 'commander';
+import { syncTextesArticles } from './workers/textes-articles';
 import {
   fullSync,
   incrementalSync,
@@ -49,6 +50,7 @@ import {
   calculateAllGroupeThematiques,
 } from './workers/stats-calculator.js';
 import { backfillMandatsParlementaires } from './workers/backfill-mandats.js';
+import { backfillNatureVote } from './workers/backfill-nature-vote.js';
 import { syncSenateursHistoriques } from './workers/senat-histo.js';
 import { SENAT_SESSION_MIN } from './workers/mandats.js';
 import { logger } from './utils/logger';
@@ -716,6 +718,32 @@ program
   });
 
 // =============================================================================
+// COMMANDE: backfill-nature-vote
+// =============================================================================
+program
+  .command('backfill-nature-vote')
+  .description('Classer la nature des scrutins (ensemble / article / amendement / motion…) à partir de leur objet')
+  .option('--force', 'Reclasser tout le corpus, et pas seulement les scrutins sans nature')
+  .action(async (options: { force?: boolean }) => {
+    try {
+      logger.info('Starting backfill nature_vote...');
+      const result = await backfillNatureVote({ force: options.force });
+      console.log('\n📊 Nature des scrutins :');
+      console.log(`   Scrutins examinés : ${result.scanned}`);
+      console.log(`   Natures écrites   : ${result.updated}`);
+      const total = Object.values(result.parNature).reduce((s, n) => s + n, 0);
+      for (const [nature, n] of Object.entries(result.parNature).sort((a, b) => b[1] - a[1])) {
+        const pct = total > 0 ? ((n / total) * 100).toFixed(1) : '0.0';
+        console.log(`     ${nature.padEnd(12)} ${String(n).padStart(6)}  ${pct}%`);
+      }
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'backfill-nature-vote failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
 // COMMANDE: sync-senateurs-histo
 // =============================================================================
 program
@@ -1172,6 +1200,43 @@ program
       }
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'IA quality check failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: sync-textes-articles
+// =============================================================================
+program
+  .command('sync-textes-articles')
+  .description("Récupérer le texte des articles des textes législatifs AN (matière des résumés IA)")
+  .option('--texte <ref>', 'Ne traiter que ce texteRef (ex: PIONANR5L17BTC1364)')
+  .option('--limit <n>', 'Nombre maximum de textes traités', (v: string) => parseInt(v, 10))
+  .option('--force', 'Retraiter les textes déjà en base')
+  .option('--dry-run', "Ne rien écrire, afficher ce qui serait ingéré")
+  .action(async (options: { texte?: string; limit?: number; force?: boolean; dryRun?: boolean }) => {
+    try {
+      const result = await syncTextesArticles({
+        texteRef: options.texte,
+        limit: options.limit,
+        force: options.force,
+        dryRun: options.dryRun,
+      });
+      console.log(`\nTextes considérés   : ${result.textesConsideres}`);
+      console.log(`Textes traités      : ${result.textesTraites}`);
+      console.log(`Textes déjà ingérés : ${result.textesIgnores}`);
+      console.log(`Textes non servis    : ${result.textesNonServis}`);
+      console.log(`Gabarit non couvert : ${result.textesGabaritInconnu}`);
+      console.log(`Articles créés      : ${result.articlesCrees}`);
+      console.log(`Articles mis à jour : ${result.articlesMisAJour}`);
+      console.log(`Articles supprimés  : ${result.articlesSupprimes}`);
+      if (result.refsGabaritInconnu.length > 0) {
+        console.log(`\nTextes au gabarit non couvert (budgets) :`);
+        for (const ref of result.refsGabaritInconnu) console.log(`  - ${ref}`);
+      }
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-textes-articles failed');
       process.exit(1);
     }
   });

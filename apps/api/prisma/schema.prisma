@@ -564,6 +564,7 @@ model DossierLegislatif {
   scrutins     Scrutin[]
   amendements  Amendement[]
   dossierCommissions  DossierCommission[]
+  articles     TexteArticle[]
 
   // Contenu enrichi par IA
   resumeIA       String?   @map("resume_ia")
@@ -703,7 +704,11 @@ model Scrutin {
 
   date             DateTime
   titre            String
-  typeVote         String   @map("type_vote") // 'solennel', 'ordinaire', 'motion'
+  typeVote         String   @map("type_vote") // 'solennel', 'ordinaire', 'motion' — COMMENT on vote
+  // Sur QUOI porte le vote, déduit de `objetLibelle` à l'ingestion :
+  // 'ensemble' | 'article' | 'amendement' | 'credits' | 'motion' | 'declaration' | 'autre'.
+  // Nullable : NULL = pas encore classé (scrutin antérieur à la mise en place).
+  natureVote       String?  @map("nature_vote")
   sort             String // 'adopte', 'rejete'
   nombreVotants    Int      @map("nombre_votants")
   nombrePour       Int      @map("nombre_pour")
@@ -751,6 +756,7 @@ model Scrutin {
   @@index([legislature])
   @@index([date])
   @@index([typeVote])
+  @@index([natureVote])
   @@index([tags])
   @@index([importance])
   @@index([texteId])
@@ -883,6 +889,50 @@ model Amendement {
   @@index([chambre, texteRef, numero])
   @@index([numeroOrdre])
   @@map("amendements")
+}
+
+// =============================================================================
+// ARTICLES DES TEXTES LÉGISLATIFS
+// =============================================================================
+
+// Texte d'un article, tel qu'il figure dans une version d'un texte législatif.
+//
+// Le contenu des articles n'existait nulle part : on stockait les amendements
+// mais jamais le texte qu'ils modifient. Un scrutin « l'article 15 de la PPL … »
+// n'avait donc pour toute matière que son propre titre, ce qui suffisait au
+// modèle pour en inventer le contenu.
+//
+// La clé est (texteRef, numero) : un article n'existe que dans une version
+// donnée d'un texte (l'article 15 du texte de commission n'est pas celui du
+// texte adopté en séance), et c'est ce couple que porte déjà Amendement.
+model TexteArticle {
+  id          String @id @default(uuid())
+
+  /// Version du texte, au format de `Amendement.texteRef` (ex: PIONANR5L17BTC1364)
+  texteRef    String @map("texte_ref")
+  /// Clé normalisée alignée sur `Amendement.articleVise` : "PREMIER", "15", "UNIQUE", "4 BIS"
+  numero      String
+  /// Libellé d'origine dans le texte : "Article 1er", "Article 1er A (nouveau)"
+  libelle     String
+  /// Rang de l'article dans le texte, à partir de 1
+  ordre       Int
+  contenu     String
+
+  chambre     String @default("assemblee")
+  legislature Int
+
+  dossierId   String?            @map("dossier_id")
+  dossier     DossierLegislatif? @relation(fields: [dossierId], references: [id], onDelete: SetNull)
+
+  sourceUrl   String?  @map("source_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([texteRef, numero])
+  @@index([texteRef])
+  @@index([dossierId])
+  @@index([chambre, legislature])
+  @@map("textes_articles")
 }
 
 // =============================================================================

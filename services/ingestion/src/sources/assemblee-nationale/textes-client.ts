@@ -167,27 +167,39 @@ export function texteUrl(texteRef: string): string {
 }
 
 /**
- * Récupère les articles d'un texte AN. Retourne `null` si le texte n'est pas
- * exposé (404/500) — c'est le cas de tous les `texteRef` du Sénat.
+ * Issue d'une récupération de texte.
+ *
+ * `unparsed` est distingué de `unavailable` à dessein : une page servie en 200
+ * dont on n'extrait rien signale un gabarit non couvert, pas une absence. C'est
+ * le cas des textes budgétaires (PLF/PLFSS), bâtis sur un gabarit `assnatFPF*`
+ * où les articles sont majoritairement des tableaux de crédits (états A, B, C).
+ * Les confondre masquerait le trou de couverture.
  */
-export async function fetchTexteArticles(
-  texteRef: string
-): Promise<{ articles: TexteArticle[]; sourceUrl: string } | null> {
+export type FetchTexteResult =
+  | { status: 'ok'; articles: TexteArticle[]; sourceUrl: string }
+  | { status: 'unavailable'; httpStatus: number | null }
+  | { status: 'unparsed'; sourceUrl: string; bytes: number };
+
+/** Récupère les articles d'un texte AN. */
+export async function fetchTexteArticles(texteRef: string): Promise<FetchTexteResult> {
   const url = texteUrl(texteRef);
   try {
     const { status, body } = await httpsGet(url);
     if (status !== 200) {
       logger.debug({ texteRef, status }, 'Texte AN indisponible');
-      return null;
+      return { status: 'unavailable', httpStatus: status };
     }
     const articles = parseArticles(body);
     if (articles.length === 0) {
-      logger.debug({ texteRef }, 'Aucun article extrait du texte AN');
-      return null;
+      logger.warn(
+        { texteRef, url, bytes: body.length },
+        'Texte AN servi mais aucun article extrait : gabarit non couvert'
+      );
+      return { status: 'unparsed', sourceUrl: url, bytes: body.length };
     }
-    return { articles, sourceUrl: url };
+    return { status: 'ok', articles, sourceUrl: url };
   } catch (error) {
     logger.warn({ texteRef, error: (error as Error).message }, 'Échec de récupération du texte AN');
-    return null;
+    return { status: 'unavailable', httpStatus: null };
   }
 }
