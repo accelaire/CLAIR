@@ -11,6 +11,7 @@ import {
   familyOf,
   computeTendency,
   checkGrounding,
+  checkInversions,
   type GroupeVote,
 } from './ia-quality.js';
 
@@ -184,5 +185,84 @@ describe('checkGrounding', () => {
       new Set([familyOf('SOC')]),
     );
     expect(issues.filter(i => i.kind === 'group_missing_from_text')).toHaveLength(1);
+  });
+});
+
+describe('checkInversions — bornage aux charnières adversatives', () => {
+  // SOC a voté contre : 0 pour, 93 contre.
+  const soc = groupeVote('SOC', 'Socialiste, Écologiste et Républicain', 0, 93, 0);
+  // UMP a voté pour : 206 pour, 0 contre.
+  const ump = groupeVote('UMP', 'Les Républicains', 206, 0, 0);
+
+  it('ne signale rien quand le « voté pour » appartient à la proposition précédente', () => {
+    const texte =
+      "Le groupe UMP et l'Union Centriste ont voté massivement en faveur du texte, " +
+      "tandis que le groupe Socialiste, Écologiste et Républicain et le groupe CRC s'y sont opposés.";
+    expect(checkInversions(texte, [soc])).toHaveLength(0);
+  });
+
+  it('ne signale rien après « à l’inverse »', () => {
+    const texte =
+      "La majorité a systématiquement voté pour l'ensemble du texte. " +
+      "À l'inverse, le groupe Socialiste, Écologiste et Républicain a voté contre.";
+    expect(checkInversions(texte, [soc])).toHaveLength(0);
+  });
+
+  it('ne signale rien quand la charnière suit la mention', () => {
+    const texte =
+      "Au Sénat, le groupe UMP a voté à l'unanimité pour le texte, " +
+      "mais d'autres groupes s'y sont fermement opposés.";
+    expect(checkInversions(texte, [ump])).toHaveLength(0);
+  });
+
+  it('signale toujours une vraie inversion, sans charnière', () => {
+    const texte = "Le groupe Socialiste, Écologiste et Républicain a voté pour le texte.";
+    const issues = checkInversions(texte, [soc]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.describedAs).toBe('FAVORABLE');
+  });
+
+  it('signale une vraie inversion située après une charnière', () => {
+    const texte =
+      "La droite s'est opposée au texte. " +
+      "À l'inverse, le groupe Socialiste, Écologiste et Républicain a voté pour.";
+    const issues = checkInversions(texte, [soc]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.describedAs).toBe('FAVORABLE');
+  });
+
+  it('signale une vraie inversion sur un groupe décrit comme opposé alors qu’il a voté pour', () => {
+    const texte = "Le groupe UMP s'est fermement opposé au texte.";
+    const issues = checkInversions(texte, [ump]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.describedAs).toBe('OPPOSED');
+  });
+});
+
+describe('checkInversions — bornage aux phrases et négations', () => {
+  const soc = groupeVote('SOC', 'Socialiste, Écologiste et Républicain', 91, 0, 0);
+  const lr = groupeVote('LR', 'Les Républicains', 67, 0, 0);
+
+  it('ne reprend pas la polarité de la phrase précédente', () => {
+    const texte =
+      "Le groupe UMP s'est montré très opposé au texte, votant contre à l'unanimité. " +
+      "Le groupe Socialiste, Écologiste et Républicain et le groupe CRC ont voté pour.";
+    expect(checkInversions(texte, [soc])).toHaveLength(0);
+  });
+
+  it('ne lit pas « aucun groupe n’a voté contre » comme une opposition', () => {
+    const texte =
+      "L'article a été adopté à l'unanimité par les groupes LAREM, DEM et LR. " +
+      "Aucun groupe n'a voté contre ou s'est abstenu sur cet article.";
+    expect(checkInversions(texte, [lr])).toHaveLength(0);
+  });
+
+  it('signale toujours une inversion réelle dans une phrase isolée', () => {
+    const texte =
+      "Le débat a été vif. Le groupe Socialiste, Écologiste et Républicain s'est fermement opposé au texte. " +
+      "La suite de l'examen est reportée.";
+    const issues = checkInversions(texte, [soc]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.describedAs).toBe('OPPOSED');
   });
 });
