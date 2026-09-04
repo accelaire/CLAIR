@@ -5262,6 +5262,7 @@ export async function linkScrutinsToAmendements(
           SELECT
             s.id,
             s.dossier_id,
+            s.legislature,
             SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero,
             (s.titre ILIKE '%rectifi%' OR s.titre ILIKE '%(rect.)%') as is_rectifie,
             LOWER(SUBSTRING(s.titre FROM '(?:après l''article|à l''article|article)\s+(premier|\d+)')) as article_numero,
@@ -5279,6 +5280,7 @@ export async function linkScrutinsToAmendements(
           SELECT
             a.id,
             a.dossier_id,
+            a.legislature,
             a.numero,
             SPLIT_PART(a.numero, ' ', 1) as numero_clean,
             a.numero LIKE '% (Rect%' as is_rect,
@@ -5293,6 +5295,11 @@ export async function linkScrutinsToAmendements(
           FROM scrutins_with_info swn
           LEFT JOIN amendements_with_texte awt ON
             awt.numero_clean = swn.amendement_numero
+            -- Garde-fou législature : les textes sont renumérotés à chaque
+            -- législature, le n°3 existe en 15e, 16e ET 17e. texte_numero est
+            -- extrait sans le préfixe de législature, il ne discrimine donc
+            -- rien à lui seul (cf. enrichScrutinsANAmendements, même piège).
+            AND awt.legislature = swn.legislature
             -- REQUIRE at least texte_numero OR dossier_id to avoid cross-dossier false positives
             AND (
               (swn.texte_numero IS NOT NULL AND awt.amendement_texte_numero = swn.texte_numero)
@@ -5322,6 +5329,7 @@ export async function linkScrutinsToAmendements(
           SELECT
             s.id,
             s.dossier_id,
+            s.legislature,
             SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero,
             (s.titre ILIKE '%rectifi%' OR s.titre ILIKE '%(rect.)%') as is_rectifie,
             LOWER(SUBSTRING(s.titre FROM '(?:après l''article|à l''article|article)\s+(premier|\d+)')) as article_numero,
@@ -5339,6 +5347,7 @@ export async function linkScrutinsToAmendements(
           SELECT
             a.id,
             a.dossier_id,
+            a.legislature,
             a.numero,
             SPLIT_PART(a.numero, ' ', 1) as numero_clean,
             a.numero LIKE '% (Rect%' as is_rect,
@@ -5353,6 +5362,11 @@ export async function linkScrutinsToAmendements(
           FROM scrutins_with_info swn
           INNER JOIN amendements_with_texte awt ON
             awt.numero_clean = swn.amendement_numero
+            -- Garde-fou législature : les textes sont renumérotés à chaque
+            -- législature, le n°3 existe en 15e, 16e ET 17e. texte_numero est
+            -- extrait sans le préfixe de législature, il ne discrimine donc
+            -- rien à lui seul (cf. enrichScrutinsANAmendements, même piège).
+            AND awt.legislature = swn.legislature
             -- REQUIRE at least texte_numero OR dossier_id to avoid cross-dossier false positives
             AND (
               (swn.texte_numero IS NOT NULL AND awt.amendement_texte_numero = swn.texte_numero)
@@ -5561,7 +5575,11 @@ export async function linkScrutinsToAmendements(
  * Le lien a le format: /dyn/17/amendements/{texteNumero}/{commission}/{amendementNumero}
  * Exemple: /dyn/17/amendements/2364/AN/2
  *
- * On utilise ce lien pour construire la clé de matching : texteNumero + amendementNumero
+ * On utilise ce lien pour construire la clé de matching : législature + texteNumero
+ * + amendementNumero. La législature n'est pas décorative : les textes sont
+ * renumérotés à chaque législature, si bien que le texte n°3 existe en 15e, en
+ * 16e et en 17e. Sans elle, un scrutin de 2017 se rattachait à l'amendement
+ * homonyme d'un texte de 2024 — et son résumé décrivait ce dernier.
  */
 export async function enrichScrutinsANAmendements(
   options: { limit?: number; dryRun?: boolean; concurrency?: number; reset?: boolean } = {}
@@ -5616,6 +5634,7 @@ export async function enrichScrutinsANAmendements(
       titre: true,
       sourceUrl: true,
       session: true,
+      legislature: true,
       dossierId: true,
     },
     take: limitCount,
@@ -5629,10 +5648,10 @@ export async function enrichScrutinsANAmendements(
   }
 
   // Charger tous les amendements AN pour le matching rapide
-  // Clé: "{texteNumero}-{amendementNumero}" -> { id, dossierId }
+  // Clé: "{legislature}-{texteNumero}-{amendementNumero}" -> { id, dossierId }
   const amendementsAN = await prisma.amendement.findMany({
     where: { chambre: 'assemblee' },
-    select: { id: true, numero: true, texteRef: true, dossierId: true },
+    select: { id: true, numero: true, texteRef: true, legislature: true, dossierId: true },
   });
 
   const amendementMap = new Map<string, { id: string; dossierId: string | null }>();
@@ -5642,13 +5661,14 @@ export async function enrichScrutinsANAmendements(
       const texteMatch = a.texteRef.match(/B(?:TC)?(\d+)/);
       if (texteMatch) {
         const texteNumero = texteMatch[1];
-        const key = `${texteNumero}-${a.numero}`.toUpperCase();
+        const prefixe = `${a.legislature}-${texteNumero}`;
+        const key = `${prefixe}-${a.numero}`.toUpperCase();
         amendementMap.set(key, { id: a.id, dossierId: a.dossierId });
         // Also map base number without "(Rect)" suffix for rectified amendments
         // HTML links use bare number "4" but DB stores "4 (Rect)"
         const baseNumero = a.numero.replace(/\s*\(Rect[^)]*\)/i, '').trim();
         if (baseNumero !== a.numero) {
-          const baseKey = `${texteNumero}-${baseNumero}`.toUpperCase();
+          const baseKey = `${prefixe}-${baseNumero}`.toUpperCase();
           if (!amendementMap.has(baseKey)) {
             amendementMap.set(baseKey, { id: a.id, dossierId: a.dossierId });
           }
@@ -5704,7 +5724,7 @@ export async function enrichScrutinsANAmendements(
           let dossierFiltered = 0;
           for (const match of allMatches) {
             const [, texteNumero, , amendementNumero] = match;
-            const key = `${texteNumero}-${amendementNumero}`.toUpperCase();
+            const key = `${scrutin.legislature}-${texteNumero}-${amendementNumero}`.toUpperCase();
             const amendement = amendementMap.get(key);
             if (amendement) {
               // Skip if both scrutin and amendement have dossier_id but they differ

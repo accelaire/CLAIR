@@ -160,6 +160,19 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // législature, faute de dossier ingéré pour la leur.
     query: `SELECT COUNT(*)::int AS value FROM scrutins s JOIN dossiers_legislatifs d ON s.dossier_id = d.id WHERE s.chambre = 'assemblee' AND d.uid NOT LIKE 'SENAT%' AND s.session ~ '^[0-9]+$' AND d.legislature <> s.session::int`,
   },
+  cross_legislature_amendements: {
+    type: 'invariant',
+    label: 'Liens scrutin-amendement inter-législatures (AN)',
+    min: 0,
+    max: 0,
+    // Même piège que ci-dessus, sur l'autre relation. Les textes sont
+    // renumérotés à chaque législature : le texte n°3 existe en 15e, en 16e et
+    // en 17e. Les deux chemins de rattachement (scraping HTML et CTE) ne
+    // gardaient que le numéro de texte, préfixe de législature retiré — 531
+    // scrutins de 2017-2024 se sont retrouvés rattachés à un amendement de 2024
+    // ou 2026, et leurs résumés publiés décrivaient ce dernier.
+    query: `SELECT COUNT(*)::int AS value FROM scrutins s JOIN "_AmendementToScrutin" j ON j."B" = s.id JOIN amendements a ON a.id = j."A" WHERE s.chambre = 'assemblee' AND s.legislature IS NOT NULL AND a.legislature <> s.legislature`,
+  },
   resume_contredit_statut: {
     type: 'invariant',
     label: 'Résumés IA contredisant le statut du sujet',
