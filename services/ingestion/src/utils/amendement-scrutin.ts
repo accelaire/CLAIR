@@ -28,11 +28,31 @@ export interface CandidatAmendement {
   id: string;
   dossierId: string | null;
   articleVise: string | null;
+  /** `uid` AN, qui encode la délibération : `…P0D1…`, `…P0D2…`. */
+  uid: string;
 }
 
 /** Le libellé du scrutin porte-t-il sur un ajout APRÈS l'article, et non dessus ? */
 function viseApres(titre: string): boolean {
   return /apr[èe]s\s+l['’]article\s/i.test(titre);
+}
+
+/**
+ * Délibération que le libellé du scrutin désigne.
+ *
+ * Une seconde délibération rouvre des articles déjà votés et renumérote ses
+ * amendements à partir de 1 : sur le texte constitutionnel corse, l'amendement
+ * n°3 de la première délibération et celui de la seconde visent tous deux
+ * l'article unique. Seul le libellé du scrutin les sépare, et il le dit.
+ */
+function deliberationVisee(titre: string): 1 | 2 {
+  return /(?:seconde|deuxi[èe]me|nouvelle)\s+d[ée]lib[ée]ration/i.test(titre) ? 2 : 1;
+}
+
+/** Délibération encodée dans l'uid AN, ou `null` si l'uid ne suit pas le schéma. */
+function deliberationDeLUid(uid: string): number | null {
+  const m = uid.match(/P0D(\d+)N/);
+  return m ? Number(m[1]) : null;
 }
 
 /**
@@ -66,6 +86,14 @@ export function choisirAmendement(
     if (!vise) return false;
     return vise.apres === apres && cles.has(vise.key.toUpperCase());
   });
+  if (restants.length === 1) return restants[0]!;
+  if (restants.length === 0) return null;
 
-  return restants.length === 1 ? restants[0]! : null;
+  // Même article des deux côtés : il ne reste que la délibération pour trancher.
+  const deliberation = deliberationVisee(titreScrutin);
+  const surLaBonneDeliberation = restants.filter(
+    (c) => deliberationDeLUid(c.uid) === deliberation,
+  );
+
+  return surLaBonneDeliberation.length === 1 ? surLaBonneDeliberation[0]! : null;
 }

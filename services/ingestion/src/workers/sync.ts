@@ -5583,14 +5583,29 @@ export async function linkScrutinsToAmendements(
  * homonyme d'un texte de 2024 — et son résumé décrivait ce dernier.
  */
 export async function enrichScrutinsANAmendements(
-  options: { limit?: number; dryRun?: boolean; concurrency?: number; reset?: boolean } = {}
+  options: {
+    limit?: number;
+    dryRun?: boolean;
+    concurrency?: number;
+    reset?: boolean;
+    /**
+     * Restreindre à des ID de scrutin précis.
+     *
+     * Sans lui, rattraper une poignée de scrutins impose de rescraper les
+     * ~6 800 candidats sans lien. L'écrasante majorité n'en ont pas parce que
+     * l'AN ne publie pas le lien : les repasser ne change rien et martèle son
+     * site pour rien.
+     */
+    only?: string[];
+  } = {}
 ): Promise<{ enriched: number; notFound: number; errors: number; resetCount?: number }> {
   const dryRun = options.dryRun ?? false;
   const concurrency = options.concurrency ?? 3; // Limiter les requêtes parallèles pour éviter le rate limiting
   const limitCount = options.limit;
   const reset = options.reset ?? false;
+  const only = options.only && options.only.length > 0 ? options.only : undefined;
 
-  logger.info({ dryRun, concurrency, limit: limitCount, reset }, 'Starting AN scrutins enrichment (scraping HTML)...');
+  logger.info({ dryRun, concurrency, limit: limitCount, reset, only: only?.length }, 'Starting AN scrutins enrichment (scraping HTML)...');
 
   // Si reset demandé, réinitialiser les liens existants via la table de jonction
   let resetCount = 0;
@@ -5628,6 +5643,7 @@ export async function enrichScrutinsANAmendements(
       chambre: 'assemblee',
       titre: { contains: 'amendement', mode: 'insensitive' },
       amendements: { none: {} },
+      ...(only ? { id: { in: only } } : {}),
     },
     select: {
       id: true,
@@ -5659,7 +5675,7 @@ export async function enrichScrutinsANAmendements(
   const amendementsAN = await prisma.amendement.findMany({
     where: { chambre: 'assemblee' },
     select: {
-      id: true, numero: true, texteRef: true, legislature: true,
+      id: true, uid: true, numero: true, texteRef: true, legislature: true,
       dossierId: true, articleVise: true,
     },
   });
@@ -5678,7 +5694,7 @@ export async function enrichScrutinsANAmendements(
         const texteNumero = texteMatch[1];
         const prefixe = `${a.legislature}-${texteNumero}`;
         const candidat: CandidatAmendement = {
-          id: a.id, dossierId: a.dossierId, articleVise: a.articleVise,
+          id: a.id, uid: a.uid, dossierId: a.dossierId, articleVise: a.articleVise,
         };
         ajouter(`${prefixe}-${a.numero}`.toUpperCase(), candidat);
         // Also map base number without "(Rect)" suffix for rectified amendments

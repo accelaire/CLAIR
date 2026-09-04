@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { choisirAmendement, type CandidatAmendement } from './amendement-scrutin';
 
-const amdt = (id: string, articleVise: string | null, dossierId: string | null = null): CandidatAmendement =>
-  ({ id, articleVise, dossierId });
+const amdt = (
+  id: string,
+  articleVise: string | null,
+  dossierId: string | null = null,
+  uid = `AMANR5L17PO838901B2697P0D1N00000${id.length}`,
+): CandidatAmendement => ({ id, articleVise, dossierId, uid });
 
 const TITRE_8429 =
   "l'amendement n° 1 du Gouvernement de rétablissement de l'article 11 (supprimé) du projet de loi relatif à la protection des enfants (seconde délibération) (première lecture).";
@@ -69,5 +73,32 @@ describe('choisirAmendement', () => {
 
   it('ne rend rien quand le dossier écarte tout le monde', () => {
     expect(choisirAmendement([amdt('a', 'ART. 11', 'dossier-B')], TITRE_8429, 'dossier-A')).toBeNull();
+  });
+});
+
+describe('choisirAmendement — délibérations d’un même article', () => {
+  const premiere = amdt('D1', 'ART. UNIQUE', null, 'AMANR5L17PO838901B2697P0D1N000003');
+  const seconde = amdt('D2', 'ART. UNIQUE', null, 'AMANR5L17PO838901B2697P0D2N000003');
+  const TITRE =
+    "l'amendement n° 3 de la commission des lois et les amendements identiques suivants à l'article unique du projet de loi constitutionnelle pour une Corse autonome au sein de la République (première lecture).";
+
+  it('prend la première délibération par défaut', () => {
+    expect(choisirAmendement([seconde, premiere], TITRE, null)).toBe(premiere);
+  });
+
+  it('prend la seconde quand le libellé la nomme', () => {
+    const titre = TITRE.replace('(première lecture)', '(seconde délibération) (première lecture)');
+    expect(choisirAmendement([premiere, seconde], titre, null)).toBe(seconde);
+  });
+
+  it('ne tranche pas si aucun candidat ne porte la délibération visée', () => {
+    const autreSeconde = amdt('D2bis', 'ART. UNIQUE', null, 'AMANR5L17PO838901B2697P0D2N000009');
+    expect(choisirAmendement([seconde, autreSeconde], TITRE, null)).toBeNull();
+  });
+
+  it('ne tranche pas quand l’uid ne suit pas le schéma AN', () => {
+    const a = amdt('x', 'ART. UNIQUE', null, 'uid-inconnu-1');
+    const b = amdt('y', 'ART. UNIQUE', null, 'uid-inconnu-2');
+    expect(choisirAmendement([a, b], TITRE, null)).toBeNull();
   });
 });

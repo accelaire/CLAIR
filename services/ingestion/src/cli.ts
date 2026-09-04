@@ -106,6 +106,7 @@ program
   .option('--link', 'Lier les scrutins aux interventions (--in) ou amendements (--am)')
   .option('--enrich', 'Enrichir les scrutins par scraping HTML (avec --am, filtrer avec --an/--se)')
   .option('--reset', 'Réinitialiser les liens existants avant de re-lier')
+  .option('--only <ids...>', 'Avec --enrich --am --an : restreindre à des ID de scrutin précis, plutôt que de rescraper tous les scrutins sans lien')
   .action(async (options) => {
     try {
       logger.info({ options }, 'Starting sync command');
@@ -155,6 +156,7 @@ program
             limit: options.limit,
             dryRun: options.dryRun,
             reset: options.reset,
+            only: options.only,
           });
           console.log(`\n📊 Enrichissement scrutins AN (scraping HTML):`);
           if (options.reset && result.resetCount) {
