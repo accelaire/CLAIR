@@ -24,6 +24,7 @@ import { asArray, isRecord, readString } from '../utils/json';
 import { extractCommissionSaisines } from '../utils/dossier-commissions';
 import { classifyNatureScrutin } from '../utils/nature-scrutin';
 import { choisirAmendement, type CandidatAmendement } from '../utils/amendement-scrutin';
+import { uidCanoniqueAmendement } from '../utils/uid-amendement';
 import {
   LEGISLATURE_AN_COURANTE,
   LEGISLATURE_FIN,
@@ -3891,14 +3892,20 @@ export async function syncAmendements(
           }
         }
 
+        // Recherche sur la clé canonique, et non sur l'uid brut : l'AN republie
+        // le même amendement sous un second uid quand le texte passe en
+        // commission (cf. uidCanoniqueAmendement). Chercher l'uid créait une
+        // deuxième ligne pour un amendement déjà en base.
+        const uidCanonique = uidCanoniqueAmendement(transformed.uid);
         const existing = await prisma.amendement.findUnique({
-          where: { uid: transformed.uid },
+          where: { uidCanonique },
         });
 
         const numeroOrdre = parseInt(transformed.numero.replace(/[^0-9]/g, ''), 10) || null;
 
         const data = {
           uid: transformed.uid,
+          uidCanonique,
           numero: transformed.numero,
           legislature: transformed.legislature,
           chambre,
@@ -3918,7 +3925,7 @@ export async function syncAmendements(
 
         if (existing) {
           await prisma.amendement.update({
-            where: { uid: transformed.uid },
+            where: { uidCanonique },
             data,
           });
           updated++;
@@ -3934,7 +3941,7 @@ export async function syncAmendements(
             .filter((id): id is string => !!id);
           if (cosignataireIds.length > 0) {
             await prisma.amendement.update({
-              where: { uid: transformed.uid },
+              where: { uidCanonique },
               data: { cosignataires: { set: cosignataireIds.map(id => ({ id })) } },
             });
           }
@@ -4032,14 +4039,19 @@ export async function syncAmendementsSenat(
           }
         }
 
+        // Le schéma d'uid du Sénat ne porte pas la forme « texte de commission » :
+        // la canonique y est l'uid lui-même. On passe malgré tout par la même
+        // fonction, pour qu'il n'existe qu'une définition de la clé.
+        const uidCanonique = uidCanoniqueAmendement(amd.uid);
         const existing = await prisma.amendement.findUnique({
-          where: { uid: amd.uid },
+          where: { uidCanonique },
         });
 
         const numeroOrdre = parseInt(amd.numero.replace(/[^0-9]/g, ''), 10) || null;
 
         const data = {
           uid: amd.uid,
+          uidCanonique,
           numero: amd.numero,
           legislature: 0, // Non applicable pour le Sénat
           chambre,
@@ -4059,7 +4071,7 @@ export async function syncAmendementsSenat(
 
         if (existing) {
           await prisma.amendement.update({
-            where: { uid: amd.uid },
+            where: { uidCanonique },
             data,
           });
           updated++;
@@ -4075,7 +4087,7 @@ export async function syncAmendementsSenat(
             .filter((id): id is string => !!id);
           if (cosignataireIds.length > 0) {
             await prisma.amendement.update({
-              where: { uid: amd.uid },
+              where: { uidCanonique },
               data: { cosignataires: { set: cosignataireIds.map(id => ({ id })) } },
             });
           }
@@ -4239,14 +4251,14 @@ export async function syncAmendementsSenatCsv(
       // arrive, le lookup par texteRef ratait alors les rows existantes (update
       // silencieusement sauté via skipDuplicates, texteRef jamais rafraîchi).
       const existingAmds = await prisma.amendement.findMany({
-        where: { uid: { in: amendments.map(a => a.uid) } },
-        select: { id: true, uid: true },
+        where: { uidCanonique: { in: amendments.map(a => uidCanoniqueAmendement(a.uid)) } },
+        select: { id: true, uidCanonique: true },
       });
-      const existingByUid = new Map(existingAmds.map(a => [a.uid, a.id]));
+      const existingByUid = new Map(existingAmds.map(a => [a.uidCanonique, a.id]));
 
       // 2. Partition into creates and updates
       const toCreate: Array<{
-        uid: string; numero: string; legislature: number; chambre: string;
+        uid: string; uidCanonique: string; numero: string; legislature: number; chambre: string;
         parlementaireId: string | null; auteurRef: string | null; groupeRef: string | null;
         auteurLibelle: string | null; texteRef: string; articleVise: string | null;
         dispositif: string | null; exposeSommaire: string | null; sort: string | null;
@@ -4280,11 +4292,12 @@ export async function syncAmendementsSenatCsv(
           numeroOrdre,
         };
 
-        const existingId = existingByUid.get(amd.uid);
+        const uidCanonique = uidCanoniqueAmendement(amd.uid);
+        const existingId = existingByUid.get(uidCanonique);
         if (existingId) {
           toUpdate.push({ id: existingId, data });
         } else {
-          toCreate.push({ uid: amd.uid, ...data });
+          toCreate.push({ uid: amd.uid, uidCanonique, ...data });
         }
       }
 
@@ -4292,7 +4305,7 @@ export async function syncAmendementsSenatCsv(
       if (toCreate.length > 0) {
         await prisma.amendement.createMany({
           data: toCreate,
-          skipDuplicates: true, // safety: skip if uid already exists
+          skipDuplicates: true, // safety: skip if uidCanonique already exists
         });
         created += toCreate.length;
       }

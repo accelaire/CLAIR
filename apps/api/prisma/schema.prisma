@@ -832,7 +832,13 @@ model Intervention {
 
 model Amendement {
   id     String @id @default(uuid())
-  uid    String @unique // Identifiant unique (AN ou Sénat)
+  uid    String @unique // Identifiant unique (AN ou Sénat), tel que publié par la source
+  // Clé de déduplication. L'AN republie un amendement sous un nouvel uid quand le
+  // texte passe du projet initial (B1364) au texte de la commission (BTC1364), et
+  // laisse les deux fichiers dans son archive : 346 amendements de la 17e y
+  // figurent en double, identiques hors uid, datePublication et chronotag.
+  // La canonique retire le TC ; c'est elle qui sert de clé d'upsert.
+  uidCanonique String @unique @map("uid_canonique")
   numero String
   legislature Int @default(17)
 

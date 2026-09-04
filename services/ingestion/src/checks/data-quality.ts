@@ -160,6 +160,17 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // législature, faute de dossier ingéré pour la leur.
     query: `SELECT COUNT(*)::int AS value FROM scrutins s JOIN dossiers_legislatifs d ON s.dossier_id = d.id WHERE s.chambre = 'assemblee' AND d.uid NOT LIKE 'SENAT%' AND s.session ~ '^[0-9]+$' AND d.legislature <> s.session::int`,
   },
+  amendements_uid_canonique_doublons: {
+    type: 'invariant',
+    label: 'Amendements en double sous une même clé canonique',
+    min: 0,
+    max: 0,
+    // L'index unique sur `uid_canonique` rend ce compte structurellement nul.
+    // Il est vérifié malgré tout : l'invariant documente la règle là où on la
+    // lit, et signalerait immédiatement un index perdu lors d'une restauration
+    // ou d'une migration jouée à la main.
+    query: `SELECT COUNT(*)::int AS value FROM (SELECT uid_canonique FROM amendements GROUP BY uid_canonique HAVING COUNT(*) > 1) sub`,
+  },
   cross_legislature_amendements: {
     type: 'invariant',
     label: 'Liens scrutin-amendement inter-législatures (AN)',
