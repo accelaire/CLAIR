@@ -402,9 +402,41 @@ interface SujetPromptData {
   dossiersResumes: { titre: string; chambre: string; etat?: string | null; resumeIA?: string | null }[];
   positionsEnsemble: GroupePosition[];
   votesArticles: VoteArticle[];
+  /**
+   * Chambres où des voix ont RÉELLEMENT été comptées sur ce sujet.
+   *
+   * Un sujet peut porter un dossier d'une chambre sans en avoir le moindre
+   * scrutin — texte transmis, pas encore examiné. Sans cette liste, la consigne
+   * « qu'est-ce qui a été voté à l'Assemblée et au Sénat » invitait le modèle à
+   * remplir la moitié manquante : sur `renforcement-des-regles-contre-les-
+   * campements-illicites`, qui n'a que des votes du Sénat, le résumé publié
+   * détaillait la position de treize groupes de l'Assemblée. Aucun n'avait voté.
+   */
+  chambresAvecVotes: ('assemblee' | 'senat')[];
 }
 
 export function buildSujetResumePrompt(data: SujetPromptData): string {
+  const chambres = data.chambresAvecVotes;
+  const aAN = chambres.includes('assemblee');
+  const auSenat = chambres.includes('senat');
+  const chambresPhrase = aAN && auSenat
+    ? "à l'Assemblée et au Sénat"
+    : aAN
+      ? "à l'Assemblée nationale"
+      : auSenat
+        ? 'au Sénat'
+        : 'sur ce sujet';
+  // Nommer la chambre absente vaut mieux que se taire : sans interdiction
+  // explicite, le modèle comble le silence.
+  const contrainteChambres =
+    aAN && auSenat
+      ? '- Les votes fournis couvrent les deux chambres : ne confonds pas ceux de l\'Assemblée avec ceux du Sénat.'
+      : aAN
+        ? '- Les votes fournis ne concernent QUE l\'Assemblée nationale. N\'écris rien sur un vote, une position ou un groupe du Sénat : il n\'y en a aucun ici.'
+        : auSenat
+          ? '- Les votes fournis ne concernent QUE le Sénat. N\'écris rien sur un vote, une position ou un groupe de l\'Assemblée nationale : il n\'y en a aucun ici.'
+          : '- Aucun vote n\'est fourni : ne décris aucune position de groupe, dans aucune chambre.';
+
   const parts: string[] = [
     `Sujet parlementaire : ${data.label}`,
     `Statut : ${STATUTS_SUJET[data.status] ?? data.status}`,
@@ -465,7 +497,7 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
     'Génère une réponse structurée en trois parties séparées par les lignes exactes "---RESUME---" et "---ENJEUX---" :',
     '1. TITRE (une seule ligne, pas de préfixe) : Un titre court et clair en français pour ce sujet parlementaire, compréhensible par un citoyen (ex: "Financement de la sécurité sociale pour 2026", "Droit à l\'aide à mourir", "Organisation des JO 2030"). Pas d\'acronymes, pas de numéro de législature.',
     '---RESUME---',
-    '2. RÉSUMÉ (3 à 5 phrases) : Synthèse accessible de ce sujet pour un citoyen. De quoi s\'agit-il, où en est-on, qu\'est-ce qui a été voté à l\'Assemblée et au Sénat. RÈGLES STRICTES :',
+    `2. RÉSUMÉ (3 à 5 phrases) : Synthèse accessible de ce sujet pour un citoyen. De quoi s'agit-il, où en est-on, qu'est-ce qui a été voté ${chambresPhrase}. RÈGLES STRICTES :`,
     '- Les synthèses de dossiers ci-dessus sont des textes rédigés, pas des données brutes : ne recopie pas une affirmation qui contredit les votes chiffrés.',
     '- N\'attribue un contenu à un article numéroté que si les données ci-dessus le disent explicitement.',
     '- Ne présente pas une mesure de portée limitée (dérogation locale, cas particulier) comme une mesure principale du texte.',
@@ -483,6 +515,7 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
     '- Utilise l\'orientation politique entre crochets pour classifier les groupes. Ne JAMAIS inventer de classification.',
     '- Nomme les groupes EXACTEMENT comme ci-dessus (ex: "LFI-NFP", pas "LFI-NUPES"). N\'utilise aucun sigle ou intitulé venant de tes connaissances.',
     '- Si un groupe n\'apparaît pas dans les données, ne lui attribue AUCUNE position.',
+    contrainteChambres,
     '- Si un groupe vote contre son camp habituel, mentionne-le.',
     '- Ne regroupe JAMAIS des groupes de familles opposées dans la même catégorie.',
     '- Ne conclus pas à un "soutien transpartisan" ou à un "large consensus" si une famille politique entière a voté contre ou s\'est abstenue.',

@@ -745,6 +745,20 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
               `
             : [];
 
+          // Chambres où des voix ont réellement été comptées. Un sujet peut
+          // porter un dossier d'une chambre sans en avoir le moindre scrutin :
+          // le prompt doit le savoir, sinon le modèle invente la moitié
+          // manquante (cf. SujetPromptData.chambresAvecVotes).
+          const chambresAvecVotes = dossierIds.length > 0
+            ? (await prisma.$queryRaw<{ chambre: string }[]>`
+                SELECT DISTINCT s.chambre
+                FROM scrutins s
+                JOIN votes v ON v.scrutin_id = s.id
+                WHERE s.dossier_id = ANY(${dossierIds}) AND v.position != 'absent'
+                ORDER BY s.chambre
+              `).map(r => r.chambre as 'assemblee' | 'senat')
+            : [];
+
           // Votes sur les articles clés, les plus clivants d'abord.
           // L'abstention compte dans le seuil et le tri (cf. scoreClivage) : sans ça,
           // un groupe qui s'abstient en bloc disparaît du prompt et le modèle lui
@@ -815,6 +829,8 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
             dossiersForHash,
             ensembleForHash,
             articlesForHash,
+            // Change la consigne envoyée au modèle, donc le résumé attendu.
+            chambresAvecVotes.join(','),
           ];
           const contentHash = computeContentHash(...hashParts);
 
@@ -867,6 +883,7 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
               sort: va.sort,
               groupes: toGroupeArray(va.groupes),
             })),
+            chambresAvecVotes,
           });
 
           const response = await mistral.complete(SYSTEM_PROMPT_SUJET, userPrompt, { maxTokens: 1024 });

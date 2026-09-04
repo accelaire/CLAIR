@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { buildDossierResumePrompt, buildScrutinResumePrompt } from './prompts';
+import {
+  buildDossierResumePrompt,
+  buildScrutinResumePrompt,
+  buildSujetResumePrompt,
+} from './prompts';
 
 // =============================================================================
 // Tendance et divergences dans le prompt dossier
@@ -178,5 +182,51 @@ describe('buildScrutinResumePrompt — texte de l’article', () => {
     });
     expect(prompt).toContain('…');
     expect(prompt.length).toBeLessThan(7000);
+  });
+});
+
+describe('buildSujetResumePrompt — chambres réellement pourvues en votes', () => {
+  const base = {
+    label: 'Lutte contre les installations illicites',
+    description: null,
+    category: null,
+    status: 'en_cours',
+    dossiersResumes: [
+      { titre: 'Proposition de loi (AN)', chambre: 'assemblee', etat: 'adopte', resumeIA: null },
+      { titre: 'Proposition de loi (Sénat)', chambre: 'senat', etat: 'en_cours', resumeIA: null },
+    ],
+    positionsEnsemble: [
+      { nom: 'UMP', nomComplet: 'Les Républicains', slug: 'ump', pour: 129, contre: 0, abstention: 0, orientation: 'droite' },
+    ],
+    votesArticles: [],
+  };
+
+  it('interdit de parler de l’Assemblée quand seuls des votes du Sénat existent', () => {
+    const prompt = buildSujetResumePrompt({ ...base, chambresAvecVotes: ['senat'] });
+    expect(prompt).toContain('ne concernent QUE le Sénat');
+    expect(prompt).toContain("N'écris rien sur un vote, une position ou un groupe de l'Assemblée nationale");
+    expect(prompt).toContain("qu'est-ce qui a été voté au Sénat");
+    expect(prompt).not.toContain("qu'est-ce qui a été voté à l'Assemblée et au Sénat");
+  });
+
+  it('interdit de parler du Sénat quand seuls des votes de l’Assemblée existent', () => {
+    const prompt = buildSujetResumePrompt({ ...base, chambresAvecVotes: ['assemblee'] });
+    expect(prompt).toContain("ne concernent QUE l'Assemblée nationale");
+    expect(prompt).toContain("N'écris rien sur un vote, une position ou un groupe du Sénat");
+  });
+
+  it('laisse les deux chambres ouvertes quand les deux ont voté', () => {
+    const prompt = buildSujetResumePrompt({ ...base, chambresAvecVotes: ['assemblee', 'senat'] });
+    expect(prompt).toContain('couvrent les deux chambres');
+    expect(prompt).toContain("qu'est-ce qui a été voté à l'Assemblée et au Sénat");
+  });
+
+  it('interdit toute position quand aucune chambre n’a voté', () => {
+    // Sans vote, la consigne « ENJEUX » bascule sur sa variante sans positions :
+    // la contrainte de chambre n'a pas à s'y ajouter, elle serait redondante.
+    const prompt = buildSujetResumePrompt({ ...base, positionsEnsemble: [], chambresAvecVotes: [] });
+    expect(prompt).toContain('Ne décris AUCUNE position de groupe politique');
+    expect(prompt).toContain("qu'est-ce qui a été voté sur ce sujet");
+    expect(prompt).not.toContain("qu'est-ce qui a été voté à l'Assemblée et au Sénat");
   });
 });
