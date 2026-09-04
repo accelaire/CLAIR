@@ -23,6 +23,7 @@ import { errorMessage } from '../utils/errors';
 import { asArray, isRecord, readString } from '../utils/json';
 import { extractCommissionSaisines } from '../utils/dossier-commissions';
 import { classifyNatureScrutin } from '../utils/nature-scrutin';
+import { choisirAmendement, type CandidatAmendement } from '../utils/amendement-scrutin';
 import {
   LEGISLATURE_AN_COURANTE,
   LEGISLATURE_FIN,
@@ -5648,13 +5649,27 @@ export async function enrichScrutinsANAmendements(
   }
 
   // Charger tous les amendements AN pour le matching rapide
-  // Clé: "{legislature}-{texteNumero}-{amendementNumero}" -> { id, dossierId }
+  // Clé: "{legislature}-{texteNumero}-{amendementNumero}" -> candidats
+  //
+  // La valeur est une LISTE, et non un amendement : la clé n'est pas unique.
+  // `B3018` et `BTC3018` sont deux textes différents que la regex réduit au même
+  // numéro, et une seconde délibération renumérote ses amendements à partir de 1
+  // sur le même texte. 396 clés portent ainsi plusieurs amendements. Un `set()`
+  // écrasant laissait l'ordre de la requête choisir — cf. choisirAmendement().
   const amendementsAN = await prisma.amendement.findMany({
     where: { chambre: 'assemblee' },
-    select: { id: true, numero: true, texteRef: true, legislature: true, dossierId: true },
+    select: {
+      id: true, numero: true, texteRef: true, legislature: true,
+      dossierId: true, articleVise: true,
+    },
   });
 
-  const amendementMap = new Map<string, { id: string; dossierId: string | null }>();
+  const amendementMap = new Map<string, CandidatAmendement[]>();
+  const ajouter = (key: string, candidat: CandidatAmendement): void => {
+    const liste = amendementMap.get(key);
+    if (liste) liste.push(candidat);
+    else amendementMap.set(key, [candidat]);
+  };
   for (const a of amendementsAN) {
     if (a.texteRef && a.numero) {
       // Extraire le numéro de texte depuis texte_ref (format: PIONANR5L17B2364 ou PRJLANR5L17BTC2364)
@@ -5662,22 +5677,27 @@ export async function enrichScrutinsANAmendements(
       if (texteMatch) {
         const texteNumero = texteMatch[1];
         const prefixe = `${a.legislature}-${texteNumero}`;
-        const key = `${prefixe}-${a.numero}`.toUpperCase();
-        amendementMap.set(key, { id: a.id, dossierId: a.dossierId });
+        const candidat: CandidatAmendement = {
+          id: a.id, dossierId: a.dossierId, articleVise: a.articleVise,
+        };
+        ajouter(`${prefixe}-${a.numero}`.toUpperCase(), candidat);
         // Also map base number without "(Rect)" suffix for rectified amendments
         // HTML links use bare number "4" but DB stores "4 (Rect)"
         const baseNumero = a.numero.replace(/\s*\(Rect[^)]*\)/i, '').trim();
         if (baseNumero !== a.numero) {
-          const baseKey = `${prefixe}-${baseNumero}`.toUpperCase();
-          if (!amendementMap.has(baseKey)) {
-            amendementMap.set(baseKey, { id: a.id, dossierId: a.dossierId });
-          }
+          ajouter(`${prefixe}-${baseNumero}`.toUpperCase(), candidat);
         }
       }
     }
   }
 
-  logger.info({ amendementMapSize: amendementMap.size }, 'Amendment map built');
+  logger.info(
+    {
+      amendementMapSize: amendementMap.size,
+      clesAmbigues: [...amendementMap.values()].filter((l) => l.length > 1).length,
+    },
+    'Amendment map built'
+  );
 
   let enriched = 0;
   let notFound = 0;
@@ -5722,20 +5742,23 @@ export async function enrichScrutinsANAmendements(
           // Collecter tous les amendements trouvés (avec validation dossier)
           const foundAmendementIds: string[] = [];
           let dossierFiltered = 0;
+          let ambigus = 0;
           for (const match of allMatches) {
             const [, texteNumero, , amendementNumero] = match;
             const key = `${scrutin.legislature}-${texteNumero}-${amendementNumero}`.toUpperCase();
-            const amendement = amendementMap.get(key);
-            if (amendement) {
-              // Skip if both scrutin and amendement have dossier_id but they differ
-              // This prevents cross-dossier false links when BTC texte references are shared
-              if (scrutin.dossierId && amendement.dossierId && scrutin.dossierId !== amendement.dossierId) {
-                dossierFiltered++;
-                continue;
-              }
-              if (!foundAmendementIds.includes(amendement.id)) {
-                foundAmendementIds.push(amendement.id);
-              }
+            const candidats = amendementMap.get(key);
+            if (!candidats || candidats.length === 0) continue;
+            // Le filtre dossier reste la première barrière ; choisirAmendement()
+            // départage ensuite les homonymes sur l'article que nomme le libellé,
+            // et rend null plutôt que de deviner.
+            const amendement = choisirAmendement(candidats, scrutin.titre, scrutin.dossierId);
+            if (!amendement) {
+              if (candidats.length === 1) dossierFiltered++;
+              else ambigus++;
+              continue;
+            }
+            if (!foundAmendementIds.includes(amendement.id)) {
+              foundAmendementIds.push(amendement.id);
             }
           }
 
@@ -5758,6 +5781,9 @@ export async function enrichScrutinsANAmendements(
 
           if (dossierFiltered > 0) {
             logger.debug({ scrutinNumero: scrutin.numero, dossierFiltered }, 'Skipped cross-dossier amendment matches');
+          }
+          if (ambigus > 0) {
+            logger.debug({ scrutinNumero: scrutin.numero, ambigus }, 'Skipped ambiguous amendment matches');
           }
           logger.debug({ scrutinNumero: scrutin.numero, amendementCount: foundAmendementIds.length, dryRun }, 'Amendments linked');
           return { status: 'enriched' as const };
