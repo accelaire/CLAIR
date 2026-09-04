@@ -210,3 +210,52 @@ describe('Data Quality Checks (intégration)', () => {
     }
   }, 30_000);
 });
+
+// =============================================================================
+// Motif du garde-fou « résumé contredisant le statut »
+// =============================================================================
+//
+// Le motif vit dans une requête SQL, donc hors de portée du typage. Il décide
+// pourtant, à lui seul, si l'invariant passe ou bloque : on l'extrait de la
+// configuration et on l'exerce ici sur les cas qui l'ont fait dériver.
+describe('resume_contredit_statut — motif', () => {
+  const motif = (() => {
+    const query = THRESHOLDS.resume_contredit_statut!.query;
+    const m = query.match(/resume ~\* '(.+)'/s);
+    if (!m) throw new Error('motif introuvable dans la requête');
+    // `.` y remplace l'apostrophe côté SQL ; on garde le motif tel quel.
+    return new RegExp(m[1]!, 'i');
+  })();
+
+  it('repère une procédure annoncée comme inachevée', () => {
+    for (const resume of [
+      "La loi a été votée. Le texte est encore en cours d'examen au Sénat.",
+      'La proposition en cours d’examen sera débattue à l’automne.',
+      'La loi doit encore être promulguée par le président.',
+      'Son examen est encore en cours.',
+      "Le projet n'a pas encore été adopté définitivement.",
+    ]) {
+      expect(motif.test(resume), resume).toBe(true);
+    }
+  });
+
+  it('laisse passer une mention d’un AUTRE texte encore en discussion', () => {
+    // Le résumé décrivait correctement un sujet rejeté ; « en cours d'examen »
+    // portait sur une résolution européenne distincte.
+    expect(
+      motif.test(
+        "Cette motion cherchait à influencer une résolution européenne en cours d'examen."
+      )
+    ).toBe(false);
+  });
+
+  it('laisse passer les tournures où « en cours » ne parle pas de procédure', () => {
+    for (const resume of [
+      'Le texte a été retiré en cours de route.',
+      'Les crédits ont été annulés en cours d’année.',
+      'Le débat a été abandonné en cours de discussion.',
+    ]) {
+      expect(motif.test(resume), resume).toBe(false);
+    }
+  });
+});

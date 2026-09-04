@@ -230,3 +230,33 @@ describe('buildSujetResumePrompt — chambres réellement pourvues en votes', ()
     expect(prompt).not.toContain("qu'est-ce qui a été voté à l'Assemblée et au Sénat");
   });
 });
+
+describe('buildSujetResumePrompt — procédure close', () => {
+  const base = {
+    label: 'Aide à mourir',
+    description: null,
+    category: null,
+    status: 'en_cours',
+    dossiersResumes: [{ titre: 'PPL', chambre: 'assemblee', etat: 'adopte', resumeIA: null }],
+    positionsEnsemble: [],
+    votesArticles: [],
+    chambresAvecVotes: ['assemblee'] as ('assemblee' | 'senat')[],
+  };
+
+  it('interdit d’annoncer une étape à venir sur une loi promulguée', () => {
+    const prompt = buildSujetResumePrompt({ ...base, status: 'promulgue' });
+    expect(prompt).toContain('La procédure est CLOSE (loi promulguée)');
+    expect(prompt).toContain("N'annonce aucune étape à venir");
+  });
+
+  it('le dit aussi pour un texte rejeté', () => {
+    const prompt = buildSujetResumePrompt({ ...base, status: 'rejete' });
+    expect(prompt).toContain('La procédure est CLOSE (texte rejeté)');
+  });
+
+  it('reste muet quand la procédure court toujours', () => {
+    for (const status of ['en_cours', 'adopte', 'caduc', 'retire']) {
+      expect(buildSujetResumePrompt({ ...base, status })).not.toContain('La procédure est CLOSE');
+    }
+  });
+});

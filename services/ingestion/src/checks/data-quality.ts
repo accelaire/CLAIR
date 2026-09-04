@@ -198,11 +198,16 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // assertions portant sur l'inachèvement de la procédure elle-même.
     //
     // Le `.` remplace l'apostrophe : les résumés mélangent ' et ’.
+    //
+    // `en cours d'examen` est ancré à un sujet grammatical désignant CE texte.
+    // Sans cet ancrage, il attrapait « cette motion cherchait à influencer une
+    // résolution européenne en cours d'examen » — une phrase juste, sur un
+    // AUTRE texte, dans le résumé d'un sujet correctement décrit comme rejeté.
     query: `SELECT COUNT(*)::int AS value FROM sujets
       WHERE actif = true
         AND status IN ('promulgue', 'rejete')
         AND resume IS NOT NULL
-        AND resume ~* '(doit encore (être )?(promulgu|examin|adopt|vot|discut|débattu|passer)|n.a pas encore été (promulgu|adopt|examin|vot)|en cours d.examen|examen (est |se poursuit)?(encore )?en cours|sera (prochainement )?examiné|en cours de promulgation|doit désormais être examiné)'`,
+        AND resume ~* '(doit encore (être )?(promulgu|examin|adopt|vot|discut|débattu|passer)|n.a pas encore été (promulgu|adopt|examin|vot)|(ce |le |la |cette )?(texte|proposition|projet|loi|résolution) (est |reste |demeure )?(toujours |encore )?en cours d.examen|examen (est |se poursuit)?(encore )?en cours|sera (prochainement )?examiné|en cours de promulgation|doit désormais être examiné)'`,
   },
 
   evenements_a_revoir: {

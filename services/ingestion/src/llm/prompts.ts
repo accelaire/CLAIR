@@ -437,6 +437,18 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
           ? '- Les votes fournis ne concernent QUE le Sénat. N\'écris rien sur un vote, une position ou un groupe de l\'Assemblée nationale : il n\'y en a aucun ici.'
           : '- Aucun vote n\'est fourni : ne décris aucune position de groupe, dans aucune chambre.';
 
+  // Procédure close : le résumé ne doit rien annoncer qui reste à faire.
+  //
+  // Le libellé de statut le dit déjà (« la procédure est CLOSE »), mais c'est du
+  // contexte, pas une consigne — et le modèle continuait d'écrire « le texte
+  // doit encore être examiné » sur des lois promulguées. 19 sujets sont sortis
+  // ainsi de la régénération du 4 septembre 2026, tous rattrapés par
+  // l'invariant `resume_contredit_statut`. On l'interdit explicitement.
+  const procedureClose = data.status === 'promulgue' || data.status === 'rejete';
+  const contrainteStatut = procedureClose
+    ? `- La procédure est CLOSE (${data.status === 'promulgue' ? 'loi promulguée' : 'texte rejeté'}). N'annonce aucune étape à venir : ni examen, ni lecture, ni vote, ni promulgation restant à faire. Écris au passé ce qui a eu lieu.`
+    : null;
+
   const parts: string[] = [
     `Sujet parlementaire : ${data.label}`,
     `Statut : ${STATUTS_SUJET[data.status] ?? data.status}`,
@@ -499,6 +511,7 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
     '---RESUME---',
     `2. RÉSUMÉ (3 à 5 phrases) : Synthèse accessible de ce sujet pour un citoyen. De quoi s'agit-il, où en est-on, qu'est-ce qui a été voté ${chambresPhrase}. RÈGLES STRICTES :`,
     '- Les synthèses de dossiers ci-dessus sont des textes rédigés, pas des données brutes : ne recopie pas une affirmation qui contredit les votes chiffrés.',
+    ...(contrainteStatut ? [contrainteStatut] : []),
     '- N\'attribue un contenu à un article numéroté que si les données ci-dessus le disent explicitement.',
     '- Ne présente pas une mesure de portée limitée (dérogation locale, cas particulier) comme une mesure principale du texte.',
     '---ENJEUX---',
