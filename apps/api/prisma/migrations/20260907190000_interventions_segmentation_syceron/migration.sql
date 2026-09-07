@@ -18,6 +18,7 @@ ALTER TABLE "interventions"
   ADD COLUMN "code_grammaire" TEXT,
   ADD COLUMN "article_vise" TEXT,
   ADD COLUMN "texte_numero" TEXT,
+  ADD COLUMN "amendements_vises" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
   ADD COLUMN "est_presidence" BOOLEAN NOT NULL DEFAULT false;
 
 -- `source_uid` reste nullable : les interventions héritées de DILA n'en ont

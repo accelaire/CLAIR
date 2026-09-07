@@ -827,19 +827,22 @@ model Intervention {
   // afficher que la séance entière — 945 interventions pour un seul vote.
 
   /// `id_syceron` du paragraphe : rend la réingestion idempotente.
-  sourceUid     String? @unique @map("source_uid")
+  sourceUid        String?  @unique @map("source_uid")
   /// `uid` du compte rendu (`CRSANR5L17S2025O1N214`), distinct de `seanceId` (DILA).
-  seanceUid     String? @map("seance_uid")
+  seanceUid        String?  @map("seance_uid")
   /// Rang total et stable dans la séance (`ordre_absolu_seance`).
-  ordreAbsolu   Int?    @map("ordre_absolu")
+  ordreAbsolu      Int?     @map("ordre_absolu")
   /// Code de grammaire AN : distingue une prise de parole d'une annonce de vote.
-  codeGrammaire String? @map("code_grammaire")
+  codeGrammaire    String?  @map("code_grammaire")
   /// Article en discussion : `15`, `Après 14`.
-  articleVise   String? @map("article_vise")
+  articleVise      String?  @map("article_vise")
   /// Numéro du texte en discussion, tel qu'annoncé au perchoir.
-  texteNumero   String? @map("texte_numero")
+  texteNumero      String?  @map("texte_numero")
+  /// Numéros d'amendement nommés par ce paragraphe. Sur une annonce de mise aux
+  /// voix, c'est la cible du scrutin : la clé du rattachement au vote.
+  amendementsVises String[] @default([]) @map("amendements_vises")
   /// Mécanique de séance (« La parole est à… ») : porte la segmentation, ne s'affiche pas.
-  estPresidence Boolean @default(false) @map("est_presidence")
+  estPresidence    Boolean  @default(false) @map("est_presidence")
 
   scrutinsLies InterventionScrutin[]
 

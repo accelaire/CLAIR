@@ -42,6 +42,7 @@ interface InterventionAEcrire {
   codeGrammaire: string;
   articleVise: string | null;
   texteNumero: string | null;
+  amendementsVises: string[];
   estPresidence: boolean;
   orateurRef: string | null;
   orateurNom: string;
@@ -84,6 +85,7 @@ export function regrouperPrises(prises: PriseDeParoleSyceron[]): InterventionAEc
       codeGrammaire: prise.codeGrammaire,
       articleVise: prise.articleVise,
       texteNumero: prise.texteNumero,
+      amendementsVises: prise.amendementsVises,
       estPresidence: prise.estPresidence,
       orateurRef: prise.orateurRef,
       orateurNom: prise.orateurNom,
@@ -204,6 +206,7 @@ async function ecrireSeance(
       codeGrammaire: g.codeGrammaire,
       articleVise: g.articleVise,
       texteNumero: g.texteNumero,
+      amendementsVises: g.amendementsVises,
       estPresidence: g.estPresidence,
       type: g.type,
       contenu: g.contenu,
