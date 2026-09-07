@@ -6,6 +6,7 @@
 import 'dotenv/config';
 import { Command } from 'commander';
 import { syncTextesArticles } from './workers/textes-articles';
+import { syncInterventionsSyceron } from './workers/interventions-syceron';
 import {
   fullSync,
   incrementalSync,
@@ -1209,6 +1210,32 @@ program
 // =============================================================================
 // COMMANDE: sync-textes-articles
 // =============================================================================
+program
+  .command('sync-debats-an')
+  .description("Ingérer les comptes rendus de séance AN (source syceron, remplace DILA)")
+  .option('--legislature <n>', 'Législature à moissonner', (v: string) => parseInt(v, 10), 17)
+  .option('--max-seances <n>', 'Borne de sécurité pour les essais', (v: string) => parseInt(v, 10))
+  .option('--repertoire <chemin>', 'Archive déjà décompressée, au lieu de la retélécharger')
+  .option('--reingerer', 'Relire les séances déjà en base au lieu de les sauter')
+  .action(async (options: { legislature: number; maxSeances?: number; repertoire?: string; reingerer?: boolean }) => {
+    try {
+      const result = await syncInterventionsSyceron({
+        legislature: options.legislature,
+        maxSeances: options.maxSeances,
+        repertoireLocal: options.repertoire,
+        reingerer: options.reingerer,
+      });
+      console.log(`\nSéances lues          : ${result.seances}`);
+      console.log(`Séances déjà en base  : ${result.seancesIgnorees}`);
+      console.log(`Interventions écrites : ${result.interventions}`);
+      console.log(`Orateurs non résolus  : ${result.sansParlementaire}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-debats-an failed');
+      process.exit(1);
+    }
+  });
+
 program
   .command('sync-textes-articles')
   .description("Récupérer le texte des articles des textes législatifs AN (matière des résumés IA)")
