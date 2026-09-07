@@ -18,25 +18,25 @@ datasource db {
 // =============================================================================
 
 model Parlementaire {
-  id              String    @id @default(uuid())
-  slug            String    @unique
+  id   String @id @default(uuid())
+  slug String @unique
 
   // Chambre: distingue députés et sénateurs
-  chambre         String    @default("assemblee") // 'assemblee' | 'senat'
+  chambre String @default("assemblee") // 'assemblee' | 'senat'
 
   // Identité
-  nom             String
-  prenom          String
-  sexe            String?
-  dateNaissance   DateTime? @map("date_naissance")
-  lieuNaissance   String?   @map("lieu_naissance")
-  profession      String?
-  photoUrl        String?   @map("photo_url")
-  twitter         String?
-  facebook        String?
-  email           String?
-  siteWeb         String?   @map("site_web")
-  actif           Boolean   @default(true)
+  nom           String
+  prenom        String
+  sexe          String?
+  dateNaissance DateTime? @map("date_naissance")
+  lieuNaissance String?   @map("lieu_naissance")
+  profession    String?
+  photoUrl      String?   @map("photo_url")
+  twitter       String?
+  facebook      String?
+  email         String?
+  siteWeb       String?   @map("site_web")
+  actif         Boolean   @default(true)
 
   // Relations
   groupeId          String?          @map("groupe_id")
@@ -45,19 +45,19 @@ model Parlementaire {
   circonscription   Circonscription? @relation(fields: [circonscriptionId], references: [id])
 
   // Champs spécifiques Sénat (nullable pour députés)
-  serie             String?  // Série électorale sénatoriale (1, 2, 3)
+  serie                String? // Série électorale sénatoriale (1, 2, 3)
   commissionPermanente String? @map("commission_permanente")
 
   // Stats pré-calculées (recalculées lors de l'ingestion quotidienne)
-  statsPresence       Int?      @map("stats_presence")      // % de présence aux scrutins (tous types)
-  statsPresenceSolennel Int?    @map("stats_presence_solennel") // % de présence aux scrutins solennels uniquement
-  statsLoyaute        Int?      @map("stats_loyaute")       // % de vote avec le groupe
-  statsParticipation  Int?      @map("stats_participation") // Nombre de votes (hors absences)
-  statsInterventions  Int?      @map("stats_interventions") // Nombre total d'interventions
-  statsAmendements    Int?      @map("stats_amendements")   // Nombre d'amendements proposés
-  statsAmendementsAdoptes Int?  @map("stats_amendements_adoptes") // Nombre d'amendements adoptés
-  statsQuestions      Int?      @map("stats_questions")     // Nombre de questions posées
-  statsCalculatedAt   DateTime? @map("stats_calculated_at") // Date du dernier calcul
+  statsPresence           Int?      @map("stats_presence") // % de présence aux scrutins (tous types)
+  statsPresenceSolennel   Int?      @map("stats_presence_solennel") // % de présence aux scrutins solennels uniquement
+  statsLoyaute            Int?      @map("stats_loyaute") // % de vote avec le groupe
+  statsParticipation      Int?      @map("stats_participation") // Nombre de votes (hors absences)
+  statsInterventions      Int?      @map("stats_interventions") // Nombre total d'interventions
+  statsAmendements        Int?      @map("stats_amendements") // Nombre d'amendements proposés
+  statsAmendementsAdoptes Int?      @map("stats_amendements_adoptes") // Nombre d'amendements adoptés
+  statsQuestions          Int?      @map("stats_questions") // Nombre de questions posées
+  statsCalculatedAt       DateTime? @map("stats_calculated_at") // Date du dernier calcul
 
   // Stats de CARRIÈRE : tous les mandats cumulés (les stats_* ci-dessus ne portent
   // que le mandat en cours). Deux jeux de colonnes car les classements doivent
@@ -65,31 +65,31 @@ model Parlementaire {
   // Comparer des élus entre eux suppose la même période (défaut = mandat en cours) ;
   // la carrière répond à une autre question : « qui a le plus siégé, tout compris ».
   // Voir SPEC-MULTI-LEGISLATURES.md (ticket #13).
-  statsCarrierePresence     Int? @map("stats_carriere_presence")
-  statsCarriereLoyaute      Int? @map("stats_carriere_loyaute")
+  statsCarrierePresence      Int? @map("stats_carriere_presence")
+  statsCarriereLoyaute       Int? @map("stats_carriere_loyaute")
   statsCarriereParticipation Int? @map("stats_carriere_participation")
   statsCarriereInterventions Int? @map("stats_carriere_interventions")
-  statsCarriereAmendements  Int? @map("stats_carriere_amendements")
+  statsCarriereAmendements   Int? @map("stats_carriere_amendements")
 
   // Enrichissement IA (fiches parlementaires enrichies)
-  resumeIA          String?   @map("resume_ia")
-  parcoursIA        String?   @map("parcours_ia")
-  positionsClesIA   String?   @map("positions_cles_ia")
-  faitsNotablesIA   String?   @map("faits_notables_ia")
-  iaContentHash     String?   @map("ia_content_hash")
-  iaGeneratedAt     DateTime? @map("ia_generated_at")
-  iaSources         Json?     @map("ia_sources") // provenance des sources web {wikipedia, wikidata: {url, fetchedAt}}
+  resumeIA        String?   @map("resume_ia")
+  parcoursIA      String?   @map("parcours_ia")
+  positionsClesIA String?   @map("positions_cles_ia")
+  faitsNotablesIA String?   @map("faits_notables_ia")
+  iaContentHash   String?   @map("ia_content_hash")
+  iaGeneratedAt   DateTime? @map("ia_generated_at")
+  iaSources       Json?     @map("ia_sources") // provenance des sources web {wikipedia, wikidata: {url, fetchedAt}}
 
   // Relations
-  votes         Vote[]
-  interventions Intervention[]
-  amendements          Amendement[]
-  amendementsCoSignes  Amendement[] @relation("AmendementCosignataires")
-  actionsLobby  ActionLobby[]
-  mandats       Mandat[]
+  votes                 Vote[]
+  interventions         Intervention[]
+  amendements           Amendement[]
+  amendementsCoSignes   Amendement[]          @relation("AmendementCosignataires")
+  actionsLobby          ActionLobby[]
+  mandats               Mandat[]
   mandatsParlementaires MandatParlementaire[]
-  declarations  DeclarationHATVP[]
-  reunionParticipants ReunionParticipant[]
+  declarations          DeclarationHATVP[]
+  reunionParticipants   ReunionParticipant[]
 
   // Métadonnées source
   sourceId   String? @map("source_id") // PA123456 (AN) ou 14133K (Sénat)
@@ -130,31 +130,31 @@ model GroupePolitique {
   actif      Boolean @default(true)
 
   // Chambre (les groupes AN et Sénat sont distincts)
-  chambre    String  @default("assemblee") // 'assemblee' | 'senat'
+  chambre String @default("assemblee") // 'assemblee' | 'senat'
 
   // Législature AN (15,16,17). Null pour le Sénat (groupes continus, dédup applicative par sourceId).
   legislature Int?
 
   // Stats pré-calculées (recalculées lors de l'ingestion quotidienne)
-  statsMembresActifs           Int?      @map("stats_membres_actifs")            // Nombre de membres actifs
-  statsPresenceMoyenne         Int?      @map("stats_presence_moyenne")          // % moyen de présence aux scrutins
+  statsMembresActifs           Int?      @map("stats_membres_actifs") // Nombre de membres actifs
+  statsPresenceMoyenne         Int?      @map("stats_presence_moyenne") // % moyen de présence aux scrutins
   statsPresenceSolennelMoyenne Int?      @map("stats_presence_solennel_moyenne") // % moyen de présence aux scrutins solennels
-  statsLoyauteMoyenne          Int?      @map("stats_loyaute_moyenne")           // % moyen de loyauté (cohésion)
-  statsCohesion                Int?      @map("stats_cohesion")                  // % de cohésion sur TOUS les scrutins
-  statsParticipation           Int?      @map("stats_participation")             // Nombre total de votes exprimés
-  statsCalculatedAt            DateTime? @map("stats_calculated_at")             // Date du dernier calcul
+  statsLoyauteMoyenne          Int?      @map("stats_loyaute_moyenne") // % moyen de loyauté (cohésion)
+  statsCohesion                Int?      @map("stats_cohesion") // % de cohésion sur TOUS les scrutins
+  statsParticipation           Int?      @map("stats_participation") // Nombre total de votes exprimés
+  statsCalculatedAt            DateTime? @map("stats_calculated_at") // Date du dernier calcul
 
   // Agrégation des votes (pré-calculées pour le camembert)
-  statsVotesPour        Int?      @map("stats_votes_pour")       // Total des votes Pour
-  statsVotesContre      Int?      @map("stats_votes_contre")     // Total des votes Contre
-  statsVotesAbstention  Int?      @map("stats_votes_abstention") // Total des votes Abstention
-  statsVotesAbsent      Int?      @map("stats_votes_absent")     // Total des absences
+  statsVotesPour       Int? @map("stats_votes_pour") // Total des votes Pour
+  statsVotesContre     Int? @map("stats_votes_contre") // Total des votes Contre
+  statsVotesAbstention Int? @map("stats_votes_abstention") // Total des votes Abstention
+  statsVotesAbsent     Int? @map("stats_votes_absent") // Total des absences
 
-  parlementaires Parlementaire[]
+  parlementaires        Parlementaire[]
   mandatsParlementaires MandatParlementaire[]
-  alliancesFrom  GroupeAlliance[] @relation("GroupeFrom")
-  alliancesTo    GroupeAlliance[] @relation("GroupeTo")
-  statsThematiques GroupeThematique[]
+  alliancesFrom         GroupeAlliance[]      @relation("GroupeFrom")
+  alliancesTo           GroupeAlliance[]      @relation("GroupeTo")
+  statsThematiques      GroupeThematique[]
 
   sourceId  String?  @map("source_id")
   createdAt DateTime @default(now()) @map("created_at")
@@ -174,7 +174,7 @@ model GroupePolitique {
 // =============================================================================
 
 model MandatParlementaire {
-  id     String @id @default(uuid())
+  id String @id @default(uuid())
 
   // Personne titulaire (identité stable, table `parlementaires`)
   personneId String        @map("personne_id")
@@ -184,19 +184,19 @@ model MandatParlementaire {
   chambre String @default("assemblee") // 'assemblee' | 'senat'
 
   // Périodisation (selon la chambre) :
-  legislature Int?    // AN : 15,16,17 — null pour le Sénat
-  mandature   Int?    // Sénat : année du renouvellement (2017/2020/2023/2026) — null pour l'AN
+  legislature Int? // AN : 15,16,17 — null pour le Sénat
+  mandature   Int? // Sénat : année du renouvellement (2017/2020/2023/2026) — null pour l'AN
   serie       String? // Sénat : série électorale (1,2,3)
 
   dateDebut DateTime  @map("date_debut")
   dateFin   DateTime? @map("date_fin") // null = mandat en cours
 
   // Contexte de la période
-  groupeId          String?          @map("groupe_id")
-  groupe            GroupePolitique? @relation(fields: [groupeId], references: [id])
-  circonscriptionId String?          @map("circonscription_id")
-  circonscription   Circonscription? @relation(fields: [circonscriptionId], references: [id])
-  commissionPermanente String?       @map("commission_permanente")
+  groupeId             String?          @map("groupe_id")
+  groupe               GroupePolitique? @relation(fields: [groupeId], references: [id])
+  circonscriptionId    String?          @map("circonscription_id")
+  circonscription      Circonscription? @relation(fields: [circonscriptionId], references: [id])
+  commissionPermanente String?          @map("commission_permanente")
 
   // Stats PAR MANDAT (copiées depuis Parlementaire en Phase 0 ; recalculées en Phase 4)
   statsPresence           Int?      @map("stats_presence")
@@ -233,21 +233,21 @@ model MandatParlementaire {
 // =============================================================================
 
 model Mandat {
-  id     String @id @default(uuid())
+  id String @id @default(uuid())
 
   parlementaireId String        @map("parlementaire_id")
   parlementaire   Parlementaire @relation(fields: [parlementaireId], references: [id], onDelete: Cascade)
 
   // Type de mandat/organe (AN: COMPER, DELEG, ORGEXTPARL, CMP, GOUVERNEMENT... Sénat: COMMISSION, DELEGATION/OFFICE, ETUDE...)
-  typeOrgane   String  @map("type_organe")
-  institution  String? // Libellé de l'organe (ex: "Commission des finances", "Office parlementaire...")
-  qualite      String? // "Membre", "Président", "Vice-Président", "Rapporteur"...
+  typeOrgane  String  @map("type_organe")
+  institution String? // Libellé de l'organe (ex: "Commission des finances", "Office parlementaire...")
+  qualite     String? // "Membre", "Président", "Vice-Président", "Rapporteur"...
 
   dateDebut DateTime  @map("date_debut")
   dateFin   DateTime? @map("date_fin")
 
   // Relation vers la commission (si le mandat est lié à une commission)
-  commissionId String? @map("commission_id")
+  commissionId String?     @map("commission_id")
   commission   Commission? @relation(fields: [commissionId], references: [id])
 
   // Identifiants source (pour dédoublonnage)
@@ -272,11 +272,11 @@ model Mandat {
 // =============================================================================
 
 model Commission {
-  id          String    @id @default(uuid())
-  uid         String    @unique              // AN organe UID (ex: PO59048)
-  organeRef   String?   @map("organe_ref")  // Raw organeRef (PO59048 for AN, COM-AFCL for Senate)
-  slug        String    @unique              // "finances", "affaires-etrangeres"
-  chambre     String                         // 'assemblee' | 'senat'
+  id        String    @id @default(uuid())
+  uid       String    @unique // AN organe UID (ex: PO59048)
+  organeRef String?   @map("organe_ref") // Raw organeRef (PO59048 for AN, COM-AFCL for Senate)
+  slug      String    @unique // "finances", "affaires-etrangeres"
+  chambre   String // 'assemblee' | 'senat'
   // Types d'organes valides (String, pas d'enum SQL — validation côté code) :
   // - 'permanente'              — commissions permanentes (COMPER, COMSENAT)
   // - 'enquete'                 — commissions d'enquête (CNPE)
@@ -290,17 +290,17 @@ model Commission {
   // - 'assemblee_internationale' — assemblées parlementaires internationales (API)
   // - 'hemicycle'               — organe racine pour séances publiques (ASSEMBLEE, SENAT)
   // - 'autre'                   — fallback (COMNL, BUREAU, CONFPT, GROUPESENAT)
-  type        String                         // voir liste ci-dessus
-  nom         String                         // Libellé complet
-  nomCourt    String?   @map("nom_court")    // Libellé abrégé
-  dateDebut   DateTime  @map("date_debut")
-  dateFin     DateTime? @map("date_fin")
-  actif       Boolean   @default(true)
+  type      String // voir liste ci-dessus
+  nom       String // Libellé complet
+  nomCourt  String?   @map("nom_court") // Libellé abrégé
+  dateDebut DateTime  @map("date_debut")
+  dateFin   DateTime? @map("date_fin")
+  actif     Boolean   @default(true)
 
   // Relations
-  mandats     Mandat[]
-  reunions    Reunion[]
-  dossierCommissions  DossierCommission[]
+  mandats            Mandat[]
+  reunions           Reunion[]
+  dossierCommissions DossierCommission[]
 
   @@index([chambre])
   @@index([type])
@@ -314,28 +314,28 @@ model Commission {
 // =============================================================================
 
 model Reunion {
-  id              String    @id @default(uuid())
-  uid             String    @unique              // AN reunion UID
-  type            String                         // 'commission', 'seance', 'initiative_parlementaire'
-  dateDebut       DateTime  @map("date_debut")
-  dateFin         DateTime? @map("date_fin")
-  lieu            String?
-  etat            String                         // 'confirme', 'annule', 'supprime', 'eventuel'
-  odjResume       String?   @map("odj_resume")   // Ordre du jour (texte)
-  odjComplet      String?   @map("odj_complet")  // ODJ détaillé
-  captationVideo  Boolean   @default(false) @map("captation_video")
-  ouvertePresse   Boolean   @default(false) @map("ouverte_presse")
-  compteRenduRef  String?   @map("compte_rendu_ref") // Référence vers le CR
-  urlVideo        String?   @map("url_video")         // URL vidéo directe (Sénat: videos.senat.fr)
+  id             String    @id @default(uuid())
+  uid            String    @unique // AN reunion UID
+  type           String // 'commission', 'seance', 'initiative_parlementaire'
+  dateDebut      DateTime  @map("date_debut")
+  dateFin        DateTime? @map("date_fin")
+  lieu           String?
+  etat           String // 'confirme', 'annule', 'supprime', 'eventuel'
+  odjResume      String?   @map("odj_resume") // Ordre du jour (texte)
+  odjComplet     String?   @map("odj_complet") // ODJ détaillé
+  captationVideo Boolean   @default(false) @map("captation_video")
+  ouvertePresse  Boolean   @default(false) @map("ouverte_presse")
+  compteRenduRef String?   @map("compte_rendu_ref") // Référence vers le CR
+  urlVideo       String?   @map("url_video") // URL vidéo directe (Sénat: videos.senat.fr)
 
   // Relations
-  commissionId    String?   @map("commission_id")
-  commission      Commission? @relation(fields: [commissionId], references: [id])
+  commissionId String?     @map("commission_id")
+  commission   Commission? @relation(fields: [commissionId], references: [id])
 
   // Référence organe brute (même si non résolue vers une Commission)
-  organeRef       String?   @map("organe_ref")
+  organeRef String? @map("organe_ref")
 
-  participants    ReunionParticipant[]
+  participants ReunionParticipant[]
 
   @@index([dateDebut])
   @@index([commissionId])
@@ -351,8 +351,8 @@ model ReunionParticipant {
   parlementaireId String @map("parlementaire_id")
   presence        String // 'present', 'absent', 'excuse'
 
-  reunion         Reunion       @relation(fields: [reunionId], references: [id], onDelete: Cascade)
-  parlementaire   Parlementaire @relation(fields: [parlementaireId], references: [id], onDelete: Cascade)
+  reunion       Reunion       @relation(fields: [reunionId], references: [id], onDelete: Cascade)
+  parlementaire Parlementaire @relation(fields: [parlementaireId], references: [id], onDelete: Cascade)
 
   @@unique([reunionId, parlementaireId])
   @@index([parlementaireId])
@@ -420,24 +420,24 @@ model EvenementInstitutionnel {
 // =============================================================================
 
 model DeclarationHATVP {
-  id     String @id @default(uuid())
+  id String @id @default(uuid())
 
   parlementaireId String        @map("parlementaire_id")
   parlementaire   Parlementaire @relation(fields: [parlementaireId], references: [id], onDelete: Cascade)
 
   // Type: di (intérêts), dia (intérêts initiale), diam (intérêts modif),
   //        dsp (patrimoine), dspm (patrimoine modif), dspfm (patrimoine fin mandat)
-  typeDocument     String  @map("type_document")
-  datePublication  DateTime? @map("date_publication")
-  dateDepot        DateTime? @map("date_depot")
+  typeDocument    String    @map("type_document")
+  datePublication DateTime? @map("date_publication")
+  dateDepot       DateTime? @map("date_depot")
 
   // Liens HATVP
-  urlDossier    String?  @map("url_dossier")   // /pages_nominatives/nom-prenom-XXX
-  nomFichier    String?  @map("nom_fichier")    // PDF
-  xmlFichier    String?  @map("xml_fichier")    // Open data XML (si disponible)
+  urlDossier String? @map("url_dossier") // /pages_nominatives/nom-prenom-XXX
+  nomFichier String? @map("nom_fichier") // PDF
+  xmlFichier String? @map("xml_fichier") // Open data XML (si disponible)
 
-  statut        String?  // 'Livrée', 'En cours', 'Déclaration déposée - publication à venir'
-  departement   String?
+  statut      String? // 'Livrée', 'En cours', 'Déclaration déposée - publication à venir'
+  departement String?
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -462,9 +462,9 @@ model GroupeAlliance {
   groupeTo   GroupePolitique @relation("GroupeTo", fields: [groupeToId], references: [id], onDelete: Cascade)
 
   // Stats d'accord
-  votesCommuns    Int   @map("votes_communs")    // Nombre de scrutins où les deux groupes ont la même position majoritaire
-  votesTotaux     Int   @map("votes_totaux")     // Nombre total de scrutins communs
-  tauxAccord      Int   @map("taux_accord")      // % d'accord (votesCommuns / votesTotaux * 100)
+  votesCommuns Int @map("votes_communs") // Nombre de scrutins où les deux groupes ont la même position majoritaire
+  votesTotaux  Int @map("votes_totaux") // Nombre total de scrutins communs
+  tauxAccord   Int @map("taux_accord") // % d'accord (votesCommuns / votesTotaux * 100)
 
   calculatedAt DateTime @map("calculated_at")
 
@@ -489,12 +489,12 @@ model GroupeThematique {
   thematique String // Tag/thème: 'économie', 'social', 'sécurité', 'europe', 'environnement', etc.
 
   // Stats de vote sur cette thématique
-  votesTotaux       Int   @map("votes_totaux")        // Nombre de scrutins sur ce thème
-  votesPour         Int   @map("votes_pour")          // Nombre de fois position majoritaire = Pour
-  votesContre       Int   @map("votes_contre")        // Nombre de fois position majoritaire = Contre
-  votesAbstention   Int   @map("votes_abstention")    // Nombre de fois position majoritaire = Abstention
-  positionMoyenne   Float @map("position_moyenne")    // Score de -100 (Contre) à +100 (Pour)
-  cohesionMoyenne   Int   @map("cohesion_moyenne")    // % de cohésion sur ce thème
+  votesTotaux     Int   @map("votes_totaux") // Nombre de scrutins sur ce thème
+  votesPour       Int   @map("votes_pour") // Nombre de fois position majoritaire = Pour
+  votesContre     Int   @map("votes_contre") // Nombre de fois position majoritaire = Contre
+  votesAbstention Int   @map("votes_abstention") // Nombre de fois position majoritaire = Abstention
+  positionMoyenne Float @map("position_moyenne") // Score de -100 (Contre) à +100 (Pour)
+  cohesionMoyenne Int   @map("cohesion_moyenne") // % de cohésion sur ce thème
 
   calculatedAt DateTime @map("calculated_at")
 
@@ -512,9 +512,9 @@ model Circonscription {
   population  Int?
 
   // Type de circonscription
-  type        String @default("legislative") // 'legislative' | 'senatoriale'
+  type String @default("legislative") // 'legislative' | 'senatoriale'
 
-  parlementaires Parlementaire[]
+  parlementaires        Parlementaire[]
   mandatsParlementaires MandatParlementaire[]
 
   createdAt DateTime @default(now()) @map("created_at")
@@ -530,51 +530,51 @@ model Circonscription {
 // =============================================================================
 
 model DossierLegislatif {
-  id           String   @id @default(uuid())
-  uid          String   @unique  // Ex: DLR5L17N50168
+  id  String @id @default(uuid())
+  uid String @unique // Ex: DLR5L17N50168
 
-  legislature  Int
-  titre        String
-  titreCourt   String?  @map("titre_court")
+  legislature Int
+  titre       String
+  titreCourt  String? @map("titre_court")
 
   // Type de procédure
-  procedureCode    String?  @map("procedure_code")     // Ex: "1", "2", "5"
-  procedureLibelle String?  @map("procedure_libelle")  // Ex: "Proposition de loi ordinaire"
+  procedureCode    String? @map("procedure_code") // Ex: "1", "2", "5"
+  procedureLibelle String? @map("procedure_libelle") // Ex: "Proposition de loi ordinaire"
 
   // URLs
-  urlAN        String?  @map("url_an")      // URL sur assemblee-nationale.fr
-  urlSenat     String?  @map("url_senat")   // URL sur senat.fr
+  urlAN    String? @map("url_an") // URL sur assemblee-nationale.fr
+  urlSenat String? @map("url_senat") // URL sur senat.fr
 
   // État du dossier
-  etat         String?  // 'en_cours', 'adopte', 'rejete', 'promulgue', 'caduc', 'fusionne', 'retire'
+  etat         String? // 'en_cours', 'adopte', 'rejete', 'promulgue', 'caduc', 'fusionne', 'retire'
   dateDepot    DateTime? @map("date_depot")
   dateAdoption DateTime? @map("date_adoption")
 
   // Loi promulguée (si applicable)
-  loiNumero    String?  @map("loi_numero")     // Ex: "2024-1177"
-  loiTitre     String?  @map("loi_titre")
-  loiDateJO    DateTime? @map("loi_date_jo")   // Date publication JO
-  urlLegifrance String?  @map("url_legifrance") // URL Légifrance pour les lois promulguées
+  loiNumero     String?   @map("loi_numero") // Ex: "2024-1177"
+  loiTitre      String?   @map("loi_titre")
+  loiDateJO     DateTime? @map("loi_date_jo") // Date publication JO
+  urlLegifrance String?   @map("url_legifrance") // URL Légifrance pour les lois promulguées
 
   // Sujet parlementaire (regroupement cross-chambre)
-  sujetId      String?  @map("sujet_id")
-  sujet        Sujet?   @relation(fields: [sujetId], references: [id])
+  sujetId String? @map("sujet_id")
+  sujet   Sujet?  @relation(fields: [sujetId], references: [id])
 
   // Relations
-  scrutins     Scrutin[]
-  amendements  Amendement[]
-  dossierCommissions  DossierCommission[]
-  articles     TexteArticle[]
+  scrutins           Scrutin[]
+  amendements        Amendement[]
+  dossierCommissions DossierCommission[]
+  articles           TexteArticle[]
 
   // Contenu enrichi par IA
-  resumeIA       String?   @map("resume_ia")
-  iaContentHash  String?   @map("ia_content_hash")
-  iaGeneratedAt  DateTime? @map("ia_generated_at")
+  resumeIA      String?   @map("resume_ia")
+  iaContentHash String?   @map("ia_content_hash")
+  iaGeneratedAt DateTime? @map("ia_generated_at")
 
   // Métadonnées source
-  sourceData   Json?    @map("source_data")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  sourceData Json?    @map("source_data")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
   @@index([legislature])
   @@index([etat])
@@ -588,16 +588,16 @@ model DossierLegislatif {
 // =============================================================================
 
 model DossierCommission {
-  id           String    @id @default(uuid())
-  dossierId    String    @map("dossier_id")
-  commissionId String    @map("commission_id")
-  role         String    // "fond" | "avis"
+  id           String @id @default(uuid())
+  dossierId    String @map("dossier_id")
+  commissionId String @map("commission_id")
+  role         String // "fond" | "avis"
 
-  dossier      DossierLegislatif @relation(fields: [dossierId], references: [id], onDelete: Cascade)
-  commission   Commission        @relation(fields: [commissionId], references: [id], onDelete: Cascade)
+  dossier    DossierLegislatif @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+  commission Commission        @relation(fields: [commissionId], references: [id], onDelete: Cascade)
 
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@unique([dossierId, commissionId, role])
   @@index([commissionId])
@@ -610,32 +610,32 @@ model DossierCommission {
 // =============================================================================
 
 model Sujet {
-  id            String    @id @default(uuid())
-  slug          String    @unique
-  label         String
-  description   String?
-  category      String?
+  id          String  @id @default(uuid())
+  slug        String  @unique
+  label       String
+  description String?
+  category    String?
 
-  dossierCount  Int       @default(0) @map("dossier_count")
-  scrutinCount  Int       @default(0) @map("scrutin_count")
+  dossierCount Int @default(0) @map("dossier_count")
+  scrutinCount Int @default(0) @map("scrutin_count")
 
   dateDebut       DateTime? @map("date_debut")
   dateFin         DateTime? @map("date_fin")
   dateDernierVote DateTime? @map("date_dernier_vote")
 
-  actif         Boolean   @default(true)
-  featured      Boolean   @default(false)
-  featuredOrder Int       @default(0) @map("featured_order")
+  actif         Boolean @default(true)
+  featured      Boolean @default(false)
+  featuredOrder Int     @default(0) @map("featured_order")
 
-  matchMethod   String?   @map("match_method")  // 'cross_ref' | 'loi_numero' | 'solo'
-  status        String    @default("en_cours")  // 'en_cours' | 'adopte' | 'rejete' | 'promulgue' | 'caduc' | 'retire'
+  matchMethod String? @map("match_method") // 'cross_ref' | 'loi_numero' | 'solo'
+  status      String  @default("en_cours") // 'en_cours' | 'adopte' | 'rejete' | 'promulgue' | 'caduc' | 'retire'
 
   // Contenu enrichi (généré par LLM)
-  resume        String?   // Résumé du sujet en langage accessible
-  enjeux        String?   // Enjeux et implications du texte
+  resume String? // Résumé du sujet en langage accessible
+  enjeux String? // Enjeux et implications du texte
 
-  iaContentHash  String?   @map("ia_content_hash")
-  iaGeneratedAt  DateTime? @map("ia_generated_at")
+  iaContentHash String?   @map("ia_content_hash")
+  iaGeneratedAt DateTime? @map("ia_generated_at")
 
   // Descriptions IA des amendements par groupe politique (JSON: { [groupeSlug-chambre]: string })
   groupeAmendementDescriptions Json?   @map("groupe_amendement_descriptions")
@@ -647,11 +647,11 @@ model Sujet {
   contextResolvedAt DateTime? @map("context_resolved_at")
   contextInputHash  String?   @map("context_input_hash")
 
-  dossiers      DossierLegislatif[]
-  liens         SujetLien[]
+  dossiers DossierLegislatif[]
+  liens    SujetLien[]
 
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([actif])
   @@index([category])
@@ -666,19 +666,19 @@ model Sujet {
 model SujetLien {
   id              String    @id @default(uuid())
   sujetId         String    @map("sujet_id")
-  famille         String    // 'construction' | 'contexte'
+  famille         String // 'construction' | 'contexte'
   titre           String
   url             String
-  source          String    // 'an' | 'senat' | 'wikipedia' | 'vie-publique'
+  source          String // 'an' | 'senat' | 'wikipedia' | 'vie-publique'
   sourceLabel     String?   @map("source_label")
   datePublication DateTime? @map("date_publication")
-  provenance      String    @default("auto")  // 'auto' | 'manual'
+  provenance      String    @default("auto") // 'auto' | 'manual'
   ordre           Int       @default(0)
 
-  sujet           Sujet     @relation(fields: [sujetId], references: [id], onDelete: Cascade)
+  sujet Sujet @relation(fields: [sujetId], references: [id], onDelete: Cascade)
 
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@unique([sujetId, url])
   @@index([sujetId, famille, ordre])
@@ -690,17 +690,17 @@ model SujetLien {
 // =============================================================================
 
 model Scrutin {
-  id               String   @id @default(uuid())
-  numero           Int
+  id     String @id @default(uuid())
+  numero Int
 
   // Chambre où a eu lieu le scrutin
-  chambre          String   @default("assemblee") // 'assemblee' | 'senat'
+  chambre String @default("assemblee") // 'assemblee' | 'senat'
 
   // Session parlementaire (ex: "2024" pour 2024-2025, "17" pour 17e législature AN)
-  session          String   @default("17")
+  session String @default("17")
 
   // Législature AN (15,16,17) pour filtrage propre. Null pour le Sénat (périodisé par `session`).
-  legislature      Int?
+  legislature Int?
 
   date             DateTime
   titre            String
@@ -725,24 +725,25 @@ model Scrutin {
   texteTitre  String? @map("texte_titre")
 
   // Enrichissement contexte (extrait des données brutes AN/Sénat)
-  objetLibelle    String? @map("objet_libelle")    // Description détaillée de l'objet voté
-  demandeurTexte  String? @map("demandeur_texte")  // Qui a demandé le vote (groupe, président, etc.)
-  seanceRef       String? @map("seance_ref")       // Référence de la séance (pour lier aux débats)
+  objetLibelle   String? @map("objet_libelle") // Description détaillée de l'objet voté
+  demandeurTexte String? @map("demandeur_texte") // Qui a demandé le vote (groupe, président, etc.)
+  seanceRef      String? @map("seance_ref") // Référence de la séance (pour lier aux débats)
 
   // Relation vers le dossier législatif
-  dossierId       String? @map("dossier_id")
-  dossier         DossierLegislatif? @relation(fields: [dossierId], references: [id])
+  dossierId String?            @map("dossier_id")
+  dossier   DossierLegislatif? @relation(fields: [dossierId], references: [id])
 
   // Relation M:N vers les amendements votés (un scrutin peut porter sur plusieurs amendements)
-  amendements     Amendement[]
+  amendements Amendement[]
 
-  votes         Vote[]
-  interventions Intervention[]  // Interventions liées (explications de vote, débats)
+  votes              Vote[]
+  interventions      Intervention[] // Interventions liées (explications de vote, débats)
+  interventionsLiees InterventionScrutin[]
 
   // Contenu enrichi par IA
-  resumeIA       String?   @map("resume_ia")
-  iaContentHash  String?   @map("ia_content_hash")
-  iaGeneratedAt  DateTime? @map("ia_generated_at")
+  resumeIA      String?   @map("resume_ia")
+  iaContentHash String?   @map("ia_content_hash")
+  iaGeneratedAt DateTime? @map("ia_generated_at")
 
   // Métadonnées source
   sourceUrl  String? @map("source_url")
@@ -767,7 +768,7 @@ model Scrutin {
 model Vote {
   id String @id @default(uuid())
 
-  parlementaireId String @map("parlementaire_id")
+  parlementaireId String        @map("parlementaire_id")
   parlementaire   Parlementaire @relation(fields: [parlementaireId], references: [id], onDelete: Cascade)
 
   scrutinId String  @map("scrutin_id")
@@ -795,20 +796,20 @@ model Intervention {
   id String @id @default(uuid())
 
   // Parlementaire (optionnel — null pour les non-parlementaires : ministres, etc.)
-  parlementaireId String? @map("parlementaire_id")
+  parlementaireId String?        @map("parlementaire_id")
   parlementaire   Parlementaire? @relation(fields: [parlementaireId], references: [id], onDelete: Cascade)
 
   // Infos orateur (toujours renseignées, indispensables quand parlementaire est null)
-  orateurNom     String?  @map("orateur_nom")
-  orateurPrenom  String?  @map("orateur_prenom")
-  orateurQualite String?  @map("orateur_qualite") // 'ministre', 'secrétaire d\'état', etc.
+  orateurNom     String? @map("orateur_nom")
+  orateurPrenom  String? @map("orateur_prenom")
+  orateurQualite String? @map("orateur_qualite") // 'ministre', 'secrétaire d\'état', etc.
 
   // Chambre (pour cohérence, même si lié au parlementaire)
-  chambre  String   @default("assemblee") // 'assemblee' | 'senat'
+  chambre String @default("assemblee") // 'assemblee' | 'senat'
 
   seanceId String?  @map("seance_id")
   date     DateTime
-  ordre    Int?     // Ordre chronologique dans la séance (1, 2, 3...)
+  ordre    Int? // Ordre chronologique dans la séance (1, 2, 3...)
   type     String // 'question', 'intervention', 'explication_vote'
 
   contenu  String
@@ -818,7 +819,31 @@ model Intervention {
   scrutinId String?  @map("scrutin_id")
   scrutin   Scrutin? @relation(fields: [scrutinId], references: [id], onDelete: SetNull)
 
-  sourceUrl String? @map("source_url")
+  // ---------------------------------------------------------------------------
+  // Segmentation du débat (source syceron, AN)
+  // ---------------------------------------------------------------------------
+  // Le compte rendu de l'AN situe chaque prise de parole dans le texte discuté.
+  // Sans ces colonnes on ne sait que la date, et une page de scrutin ne peut
+  // afficher que la séance entière — 945 interventions pour un seul vote.
+
+  /// `id_syceron` du paragraphe : rend la réingestion idempotente.
+  sourceUid     String? @unique @map("source_uid")
+  /// `uid` du compte rendu (`CRSANR5L17S2025O1N214`), distinct de `seanceId` (DILA).
+  seanceUid     String? @map("seance_uid")
+  /// Rang total et stable dans la séance (`ordre_absolu_seance`).
+  ordreAbsolu   Int?    @map("ordre_absolu")
+  /// Code de grammaire AN : distingue une prise de parole d'une annonce de vote.
+  codeGrammaire String? @map("code_grammaire")
+  /// Article en discussion : `15`, `Après 14`.
+  articleVise   String? @map("article_vise")
+  /// Numéro du texte en discussion, tel qu'annoncé au perchoir.
+  texteNumero   String? @map("texte_numero")
+  /// Mécanique de séance (« La parole est à… ») : porte la segmentation, ne s'affiche pas.
+  estPresidence Boolean @default(false) @map("est_presidence")
+
+  scrutinsLies InterventionScrutin[]
+
+  sourceUrl String?  @map("source_url")
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([parlementaireId])
@@ -827,47 +852,49 @@ model Intervention {
   @@index([type])
   @@index([scrutinId])
   @@index([seanceId])
+  @@index([seanceUid, ordreAbsolu])
+  @@index([articleVise])
   @@map("interventions")
 }
 
 model Amendement {
-  id     String @id @default(uuid())
-  uid    String @unique // Identifiant unique (AN ou Sénat), tel que publié par la source
+  id           String @id @default(uuid())
+  uid          String @unique // Identifiant unique (AN ou Sénat), tel que publié par la source
   // Clé de déduplication. L'AN republie un amendement sous un nouvel uid quand le
   // texte passe du projet initial (B1364) au texte de la commission (BTC1364), et
   // laisse les deux fichiers dans son archive : 346 amendements de la 17e y
   // figurent en double, identiques hors uid, datePublication et chronotag.
   // La canonique retire le TC ; c'est elle qui sert de clé d'upsert.
   uidCanonique String @unique @map("uid_canonique")
-  numero String
-  legislature Int @default(17)
+  numero       String
+  legislature  Int    @default(17)
 
   // Chambre d'origine
   chambre String @default("assemblee") // 'assemblee' | 'senat'
 
   // Auteur - peut être lié à un parlementaire ou juste un libellé
-  parlementaireId  String? @map("parlementaire_id")
-  parlementaire    Parlementaire? @relation(fields: [parlementaireId], references: [id], onDelete: SetNull)
-  auteurRef    String? @map("auteur_ref")
-  groupeRef    String? @map("groupe_ref")
-  auteurLibelle String? @map("auteur_libelle")
+  parlementaireId String?        @map("parlementaire_id")
+  parlementaire   Parlementaire? @relation(fields: [parlementaireId], references: [id], onDelete: SetNull)
+  auteurRef       String?        @map("auteur_ref")
+  groupeRef       String?        @map("groupe_ref")
+  auteurLibelle   String?        @map("auteur_libelle")
 
   // Texte législatif et article visé
   texteRef    String? @map("texte_ref")
   articleVise String? @map("article_vise")
 
   // Relation vers le dossier législatif
-  dossierId   String? @map("dossier_id")
-  dossier     DossierLegislatif? @relation(fields: [dossierId], references: [id])
+  dossierId String?            @map("dossier_id")
+  dossier   DossierLegislatif? @relation(fields: [dossierId], references: [id])
 
   // Contenu
   dispositif     String?
   exposeSommaire String? @map("expose_sommaire")
 
   // Résultat
-  sort       String?
+  sort String?
 
-  dateDepot DateTime?  @map("date_depot")
+  dateDepot DateTime? @map("date_depot")
   dateSort  DateTime? @map("date_sort")
 
   // URL source de l'amendement (ex: page senat.fr)
@@ -880,7 +907,7 @@ model Amendement {
   cosignataires Parlementaire[] @relation("AmendementCosignataires")
 
   // Scrutins portant sur cet amendement
-  scrutins  Scrutin[]
+  scrutins Scrutin[]
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -912,27 +939,27 @@ model Amendement {
 // donnée d'un texte (l'article 15 du texte de commission n'est pas celui du
 // texte adopté en séance), et c'est ce couple que porte déjà Amendement.
 model TexteArticle {
-  id          String @id @default(uuid())
+  id String @id @default(uuid())
 
   /// Version du texte, au format de `Amendement.texteRef` (ex: PIONANR5L17BTC1364)
-  texteRef    String @map("texte_ref")
+  texteRef String @map("texte_ref")
   /// Clé normalisée alignée sur `Amendement.articleVise` : "PREMIER", "15", "UNIQUE", "4 BIS"
-  numero      String
+  numero   String
   /// Libellé d'origine dans le texte : "Article 1er", "Article 1er A (nouveau)"
-  libelle     String
+  libelle  String
   /// Rang de l'article dans le texte, à partir de 1
-  ordre       Int
-  contenu     String
+  ordre    Int
+  contenu  String
 
   chambre     String @default("assemblee")
   legislature Int
 
-  dossierId   String?            @map("dossier_id")
-  dossier     DossierLegislatif? @relation(fields: [dossierId], references: [id], onDelete: SetNull)
+  dossierId String?            @map("dossier_id")
+  dossier   DossierLegislatif? @relation(fields: [dossierId], references: [id], onDelete: SetNull)
 
-  sourceUrl   String?  @map("source_url")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  sourceUrl String?  @map("source_url")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@unique([texteRef, numero])
   @@index([texteRef])
@@ -946,18 +973,18 @@ model TexteArticle {
 // =============================================================================
 
 model Lobbyiste {
-  id     String  @id @default(uuid())
-  siren  String? // Not unique: multiple entities can share same SIREN (regional branches, etc.)
-  nom    String
-  type   String // 'entreprise', 'association', 'cabinet', 'syndicat', 'organisation_pro'
+  id      String  @id @default(uuid())
+  siren   String? // Not unique: multiple entities can share same SIREN (regional branches, etc.)
+  nom     String
+  type    String // 'entreprise', 'association', 'cabinet', 'syndicat', 'organisation_pro'
   secteur String?
 
   adresse    String?
   codePostal String? @map("code_postal")
   ville      String?
 
-  budgetAnnuel Float? @map("budget_annuel")
-  nbLobbyistes Int?   @map("nb_lobbyistes")
+  budgetAnnuel Float?  @map("budget_annuel")
+  nbLobbyistes Int?    @map("nb_lobbyistes")
   siteWeb      String? @map("site_web")
 
   actions  ActionLobby[]
@@ -985,27 +1012,27 @@ model ActionLobby {
   lobbyiste   Lobbyiste @relation(fields: [lobbyisteId], references: [id], onDelete: Cascade)
 
   // Cible de l'action (peut être député OU sénateur)
-  parlementaireId String? @map("parlementaire_id")
+  parlementaireId String?        @map("parlementaire_id")
   parlementaire   Parlementaire? @relation(fields: [parlementaireId], references: [id])
-  cible    String? // 'parlementaire', 'ministre', 'administration', 'autre'
+  cible           String? // 'parlementaire', 'ministre', 'administration', 'autre'
 
   // Cible nom normalisé (lookup table)
   cibleTypeId Int?       @map("cible_type_id")
   cibleType   CibleType? @relation(fields: [cibleTypeId], references: [id])
 
   // Description normalisée (lookup table)
-  descriptionId Int                @map("description_id")
+  descriptionId     Int               @map("description_id")
   actionDescription ActionDescription @relation(fields: [descriptionId], references: [id])
 
-  dateDebut   DateTime  @map("date_debut")
-  dateFin     DateTime? @map("date_fin")
+  dateDebut DateTime  @map("date_debut")
+  dateFin   DateTime? @map("date_fin")
 
   budget   Float?
   resultat String? // 'succes', 'echec', 'en_cours', 'inconnu'
 
   // Texte de loi concerné
-  texteVise     String? @map("texte_vise")
-  texteViseNom  String? @map("texte_vise_nom")
+  texteVise    String? @map("texte_vise")
+  texteViseNom String? @map("texte_vise_nom")
 
   secteurs ActionSecteur[]
 
@@ -1021,11 +1048,11 @@ model ActionLobby {
 }
 
 model Secteur {
-  id         String   @id // slug: "agriculture-agroalimentaire"
-  label      String   @unique // "Agriculture, agroalimentaire"
+  id         String             @id // slug: "agriculture-agroalimentaire"
+  label      String             @unique // "Agriculture, agroalimentaire"
   lobbyistes LobbyisteSecteur[]
   actions    ActionSecteur[]
-  createdAt  DateTime @default(now()) @map("created_at")
+  createdAt  DateTime           @default(now()) @map("created_at")
 
   @@map("secteurs")
 }
@@ -1084,20 +1111,20 @@ model Promesse {
   id String @id @default(uuid())
 
   parlementaireId String? @map("parlementaire_id")
-  partiId  String? @map("parti_id")
+  partiId         String? @map("parti_id")
 
-  texte       String
-  sourceUrl   String?   @map("source_url")
+  texte        String
+  sourceUrl    String?   @map("source_url")
   datePromesse DateTime? @map("date_promesse")
-  categorie   String?
+  categorie    String?
 
   statut String @default("non_evaluee") // 'non_evaluee', 'tenue', 'partiellement_tenue', 'non_tenue', 'en_cours'
 
   // Scrutins liés pour évaluation
   scrutinsLies String[] @map("scrutins_lies")
 
-  evaluation      String?
-  evaluationDate  DateTime? @map("evaluation_date")
+  evaluation     String?
+  evaluationDate DateTime? @map("evaluation_date")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1106,8 +1133,6 @@ model Promesse {
   @@index([statut])
   @@map("promesses")
 }
-
-
 
 // =============================================================================
 // SYNC ET LOGS
@@ -1139,17 +1164,17 @@ model SyncLog {
 
 // État des sources pour sync incrémental (ETag, Last-Modified)
 model SourceState {
-  id           String   @id @default(uuid())
-  source       String   // 'assemblee_nationale', 'senat', 'hatvp', 'dila'
-  dataType     String   @map("data_type") // 'deputes', 'scrutins', 'interventions', etc.
-  resourceUrl  String   @map("resource_url") // URL de la ressource
+  id          String @id @default(uuid())
+  source      String // 'assemblee_nationale', 'senat', 'hatvp', 'dila'
+  dataType    String @map("data_type") // 'deputes', 'scrutins', 'interventions', etc.
+  resourceUrl String @map("resource_url") // URL de la ressource
 
-  lastEtag     String?  @map("last_etag")
+  lastEtag     String?   @map("last_etag")
   lastModified DateTime? @map("last_modified") // Date de dernière modification de la source
   lastSyncAt   DateTime  @map("last_sync_at") // Date de dernière sync réussie
   lastCheckAt  DateTime  @map("last_check_at") // Date de dernière vérification (même si pas de changement)
 
-  metadata     Json?    // Infos supplémentaires (nombre d'items, etc.)
+  metadata Json? // Infos supplémentaires (nombre d'items, etc.)
 
   @@unique([source, dataType])
   @@index([source])
@@ -1161,16 +1186,16 @@ model SourceState {
 // =============================================================================
 
 model Feedback {
-  id        String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  sentiment String?  // 'positif' | 'neutre' | 'negatif' (émoji) — nullable
-  type      String   // 'bug' | 'idee' | 'autre'
-  message   String?  // texte libre optionnel
-  email     String?  // contact optionnel (rappel)
+  sentiment String? // 'positif' | 'neutre' | 'negatif' (émoji) — nullable
+  type      String // 'bug' | 'idee' | 'autre'
+  message   String? // texte libre optionnel
+  email     String? // contact optionnel (rappel)
 
-  page      String?  // pathname depuis lequel le retour a été envoyé
-  trigger   String?  @default("passif") // 'passif' (bouton) | 'nudge' (sollicitation)
-  userAgent String?  @map("user_agent")
+  page      String? // pathname depuis lequel le retour a été envoyé
+  trigger   String? @default("passif") // 'passif' (bouton) | 'nudge' (sollicitation)
+  userAgent String? @map("user_agent")
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -1179,3 +1204,27 @@ model Feedback {
   @@map("feedbacks")
 }
 
+/// Rattachement d'une prise de parole au scrutin qu'elle précède.
+///
+/// Relation N-N assumée : une intervention porte sur un amendement, lequel est
+/// discuté à l'intérieur d'un article qui fait lui-même l'objet d'un vote. Elle
+/// concerne donc légitimement deux scrutins.
+///
+/// `via` garde la provenance du lien, pour pouvoir rejouer ou purger un mode de
+/// rattachement sans toucher aux autres.
+model InterventionScrutin {
+  interventionId String @map("intervention_id")
+  scrutinId      String @map("scrutin_id")
+
+  /// 'amendement' | 'article' — comment le rattachement a été établi.
+  via String
+
+  intervention Intervention @relation(fields: [interventionId], references: [id], onDelete: Cascade)
+  scrutin      Scrutin      @relation(fields: [scrutinId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([interventionId, scrutinId])
+  @@index([scrutinId, via])
+  @@map("intervention_scrutin")
+}
