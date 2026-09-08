@@ -183,6 +183,24 @@ export interface Sortant {
     interrompu: boolean;
   };
   /**
+   * Candidature du sortant au renouvellement.
+   *
+   * `null` a deux sens qu'il faut distinguer à l'affichage : le sortant ne se
+   * représente pas, ou le fichier du ministère n'est pas encore publié. Le
+   * bloc `candidatures` de l'aperçu tranche entre les deux — s'il est `null`,
+   * on ne sait encore rien de personne.
+   */
+  candidature: {
+    circonscription: { departement: string; nom: string };
+    modeScrutin: string;
+    libelle: string | null;
+    nuance: string | null;
+    famille: string | null;
+    /** Rang sur la liste : au proportionnel, être 1er ou dernier n'est pas pareil. */
+    ordre: number;
+    role: 'titulaire' | 'suppleant';
+  } | null;
+  /**
    * Statistiques de carrière de la personne — les mêmes que sa fiche. Il n'existe
    * pas d'équivalent carrière pour la présence en scrutin solennel, les amendements
    * adoptés ni les questions : ces mesures ne sont donc pas exposées ici.
@@ -214,6 +232,37 @@ const MANDATS_SORTANTS: Prisma.MandatParlementaireWhereInput = {
 };
 
 
+
+/**
+ * Candidature de chaque personne rattachée, indexée par son slug.
+ *
+ * Une personne ne peut se présenter qu'une fois : le premier rattachement
+ * rencontré fait foi. Le titulaire l'emporte sur le suppléant, l'ordre des
+ * candidats de chaque unité de vote étant déjà celui de `parRang`.
+ */
+export function indexerCandidaturesParSlug(
+  listes: ListeCandidature[],
+): Map<string, NonNullable<Sortant['candidature']>> {
+  const index = new Map<string, NonNullable<Sortant['candidature']>>();
+
+  for (const liste of listes) {
+    for (const candidat of liste.candidats) {
+      if (!candidat.personne || index.has(candidat.personne.slug)) continue;
+
+      index.set(candidat.personne.slug, {
+        circonscription: liste.circonscription,
+        modeScrutin: liste.modeScrutin,
+        libelle: liste.libelle,
+        nuance: liste.nuance,
+        famille: liste.famille,
+        ordre: candidat.ordre,
+        role: candidat.role,
+      });
+    }
+  }
+
+  return index;
+}
 
 /**
  * Ordre d'affichage des candidats d'une unité de vote.
@@ -781,6 +830,10 @@ export class SenatorialesService {
           segments: dates.length,
           interrompu: dates.length > 1,
         },
+        // Renseignée par `getSortants` : la remplir ici créerait un cycle,
+        // `chargerCandidats` ayant besoin des sortants pour marquer ses propres
+        // candidats.
+        candidature: null,
         bilan: {
           presence: personne.statsCarrierePresence,
           loyaute: personne.statsCarriereLoyaute,
@@ -814,14 +867,28 @@ export class SenatorialesService {
    * microsecondes — moins que l'aller-retour Redis qu'on vient de supprimer.
    */
   async getSortants(query: SortantsQuery): Promise<{ data: Sortant[]; meta: { total: number } }> {
-    const { departement, groupe, tri } = query;
+    const { departement, groupe, tri, candidat } = query;
 
-    const tous = await this.chargerSortants();
+    const [tous, candidatures] = await Promise.all([
+      this.chargerSortants(),
+      this.chargerCandidats(),
+    ]);
 
-    const retenus = tous.filter((s) => {
+    // La candidature est greffée ici, et pas dans `chargerSortants` : celui-ci
+    // est lu par `chargerCandidats`, et les faire dépendre l'un de l'autre
+    // dans les deux sens créerait un cycle.
+    const parSlug = indexerCandidaturesParSlug(candidatures);
+    const enrichis = tous.map((sortant) => ({
+      ...sortant,
+      candidature: parSlug.get(sortant.personne.slug) ?? null,
+    }));
+
+    const retenus = enrichis.filter((s) => {
       if (departement && s.circonscription?.departement !== departement) return false;
       if (groupe === 'sans-groupe') return s.groupe === null;
       if (groupe && s.groupe?.slug !== groupe) return false;
+      if (candidat === 'oui' && s.candidature === null) return false;
+      if (candidat === 'non' && s.candidature !== null) return false;
       return true;
     });
 

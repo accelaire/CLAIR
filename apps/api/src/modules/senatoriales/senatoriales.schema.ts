@@ -28,6 +28,10 @@ export const sortantsQuerySchema = z.object({
   // rattaché, que le slug d'un groupe réel ne peut pas exprimer.
   groupe: z.string().min(1).max(120).optional(),
   tri: z.enum(TRIS_SORTANTS).default('departement'),
+  // « Qui remet son siège en jeu ? » — la question centrale du scrutin. Une
+  // énumération plutôt qu'un booléen : les trois états (tous, candidats,
+  // partants) sont bien trois valeurs, et aucune n'est l'absence de l'autre.
+  candidat: z.enum(['oui', 'non']).optional(),
 });
 
 export type SortantsQuery = z.infer<typeof sortantsQuerySchema>;

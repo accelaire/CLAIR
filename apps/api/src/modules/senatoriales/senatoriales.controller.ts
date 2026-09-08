@@ -45,6 +45,13 @@ export const senatorialesRoutes: FastifyPluginAsync = async (fastify) => {
             enum: [...TRIS_SORTANTS],
             default: 'departement',
           },
+          candidat: {
+            type: 'string',
+            enum: ['oui', 'non'],
+            description:
+              'Ne retenir que les sortants qui se représentent (`oui`) ou que ceux qui ne se ' +
+              'représentent pas (`non`). Sans effet tant que les candidatures ne sont pas publiées.',
+          },
         },
       },
     },

@@ -50,6 +50,9 @@ function sortant(partiel: {
           },
     commissionPermanente:
       partiel.commission === undefined ? 'Affaires étrangères' : partiel.commission,
+    // Greffée par `getSortants`, jamais par `chargerSortants` : les tris et le
+    // calcul de durée testés ici n'en dépendent pas.
+    candidature: null,
     mandat: {
       dateDebut: '2020-10-01T00:00:00.000Z',
       dateFin: null,

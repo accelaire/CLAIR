@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+  indexerCandidaturesParSlug,
   parRang,
   synthetiserCandidatures,
   type Candidat,
@@ -121,6 +122,40 @@ describe('synthetiserCandidatures', () => {
       sortantsCandidats: 0,
       sortantsNonCandidats: 1,
       anciensParlementaires: 0,
+    });
+  });
+});
+
+describe('indexerCandidaturesParSlug', () => {
+  const personne = { slug: 'alice-martin', chambre: 'senat', photoUrl: null };
+
+  it('rattache une candidature à la personne', () => {
+    const listes = [liste([candidat({ id: 'c1', personne, ordre: 3 })], '39')];
+
+    expect(indexerCandidaturesParSlug(listes).get('alice-martin')).toMatchObject({
+      circonscription: { departement: '39' },
+      nuance: 'LDVD',
+      ordre: 3,
+      role: 'titulaire',
+    });
+  });
+
+  it('ignore les candidats non rattachés', () => {
+    expect(indexerCandidaturesParSlug([liste([candidat({ id: 'c1' })])]).size).toBe(0);
+  });
+
+  it('retient la première candidature rencontrée', () => {
+    // Une personne ne peut se présenter qu'une fois. Si elle apparaît deux
+    // fois, l'ordre d'entrée fait foi plutôt qu'un écrasement silencieux par
+    // la dernière ligne lue.
+    const listes = [
+      liste([candidat({ id: 'c1', personne })], '39'),
+      liste([candidat({ id: 'c2', personne, role: 'suppleant' })], '01'),
+    ];
+
+    expect(indexerCandidaturesParSlug(listes).get('alice-martin')).toMatchObject({
+      circonscription: { departement: '39' },
+      role: 'titulaire',
     });
   });
 });
