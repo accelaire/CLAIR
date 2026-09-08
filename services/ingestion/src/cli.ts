@@ -1549,6 +1549,87 @@ program
     }
   });
 
+// =============================================================================
+// COMMANDE: sync-candidatures
+// =============================================================================
+program
+  .command('sync-candidatures')
+  .description(
+    'Candidatures à une élection, depuis le classeur XLSX du ministère de l\'Intérieur (data.gouv)'
+  )
+  .requiredOption('--fichier <chemin|url>', 'Classeur XLSX : chemin local ou URL')
+  .option('--scrutin <slug>', 'Identifiant du scrutin', 'senatoriales-2026')
+  .option('--simulation', 'Analyser et rapporter sans rien écrire en base')
+  .action(async (options: { fichier: string; scrutin: string; simulation?: boolean }) => {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+    let fichierTemporaire: string | null = null;
+
+    try {
+      let fichier = options.fichier;
+
+      // Le fichier vit sur data.gouv : accepter l'URL évite un aller-retour par
+      // curl le jour de la publication, où chaque étape manuelle est un risque.
+      if (/^https?:\/\//.test(fichier)) {
+        const os = await import('os');
+        const path = await import('path');
+        const { downloadWithRetry } = await import('./utils/download.js');
+
+        fichierTemporaire = path.join(os.tmpdir(), `candidatures-${Date.now()}.xlsx`);
+        console.log(`\n⬇️  Téléchargement de ${fichier}`);
+        await downloadWithRetry(fichier, fichierTemporaire);
+        fichier = fichierTemporaire;
+      }
+
+      const { ingererCandidatures } = await import('./sources/senatoriales/candidatures-client.js');
+      const rapport = await ingererCandidatures(prisma, {
+        fichier,
+        scrutin: options.scrutin,
+        simulation: options.simulation ?? false,
+      });
+
+      const { rattachement: r } = rapport;
+      console.log(`\n🗳️  Candidatures — ${rapport.scrutin}${rapport.simulation ? ' (SIMULATION, rien écrit)' : ''}`);
+      console.log(`   Unités de vote     : ${rapport.listes}`);
+      console.log(`   Candidats          : ${rapport.candidats}`);
+      console.log(`   Circonscriptions   : ${rapport.circonscriptions}`);
+      console.log('\n   Rattachement aux parlementaires connus :');
+      console.log(`     niveau A (nom + prénom + date) : ${r.niveauA}`);
+      console.log(`     niveau B (prénom divergent)    : ${r.niveauB}`);
+      console.log(`     ambigus (non rattachés)        : ${r.ambigus}`);
+      console.log(`     sans date de naissance         : ${r.sansDate}`);
+      console.log(`     inconnus du corpus             : ${r.inconnus}`);
+
+      // Le contrôle qui compte : le fichier désigne lui-même les sortants, et
+      // ceux-là doivent tous se retrouver dans notre corpus. Un écart ici
+      // signale un rapprochement cassé, pas une réalité politique.
+      const ecart = rapport.sortantsDeclares - rapport.sortantsDeclaresRattaches;
+      console.log(
+        `\n   Sortants déclarés par le fichier : ${rapport.sortantsDeclares}, ` +
+          `rattachés : ${rapport.sortantsDeclaresRattaches}` +
+          (ecart > 0 ? `  ⚠️  ${ecart} non rattaché(s)` : '  ✅')
+      );
+
+      if (rapport.nuancesInconnues.length > 0) {
+        console.log(
+          `\n   ⚠️  Nuances absentes de la grille, écrites sans famille : ${rapport.nuancesInconnues.join(', ')}`
+        );
+        console.log('      → compléter services/ingestion/src/sources/senatoriales/nuances.ts');
+      }
+
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-candidatures failed');
+      process.exit(1);
+    } finally {
+      await prisma.$disconnect();
+      if (fichierTemporaire) {
+        const fs = await import('fs');
+        await fs.promises.rm(fichierTemporaire, { force: true });
+      }
+    }
+  });
+
 // pnpm forwards '--' from 'pnpm run script -- args' into the child process argv.
 // Commander treats '--' as end-of-options, so flags after it are ignored.
 // Strip the first '--' that appears after the subcommand name.

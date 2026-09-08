@@ -14,6 +14,7 @@
     "backfill": "tsx src/cli.ts backfill",
     "calculate-stats": "tsx src/cli.ts calculate-stats",
     "check-quality": "tsx src/cli.ts check-quality",
+    "sync-candidatures": "tsx src/cli.ts sync-candidatures",
     "lint": "eslint src --ext .ts",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
