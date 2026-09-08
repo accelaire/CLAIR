@@ -171,6 +171,21 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // ou d'une migration jouée à la main.
     query: `SELECT COUNT(*)::int AS value FROM (SELECT uid_canonique FROM amendements GROUP BY uid_canonique HAVING COUNT(*) > 1) sub`,
   },
+  interventions_date_seance: {
+    type: 'invariant',
+    label: 'Interventions dont la date contredit leur séance',
+    min: 0,
+    max: 0,
+    // Le client Sénat construisait la date de séance dans le fuseau local :
+    // `new Date(2026, 1, 25)` donne minuit à Paris, enregistré 23h00 UTC la
+    // veille. Les 91 017 interventions du Sénat dataient du jour précédent —
+    // 23h00 en hiver, 22h00 en été. Le décalage était invisible à l'écran mais
+    // cassait tout rapprochement par la date : scrutins du jour, regroupement
+    // par séance sur la fiche, et la segmentation publiée par le Sénat, qui ne
+    // retrouvait que 13,6 % de nos interventions au lieu de 75,9 %.
+    query: `SELECT COUNT(*)::int AS value FROM interventions WHERE seance_id ~ '^d[0-9]{8}$' AND to_date(substring(seance_id from 2), 'YYYYMMDD') <> date::date`,
+  },
+
   cross_legislature_amendements: {
     type: 'invariant',
     label: 'Liens scrutin-amendement inter-législatures (AN)',

@@ -67,6 +67,26 @@ function generateSeanceUrl(date: Date): string {
 }
 
 /**
+ * Date de la séance, lue dans le nom du fichier `dAAAAMMJJ.xml`.
+ *
+ * Construite en UTC, et non dans le fuseau local. `new Date(2026, 1, 25)` donne
+ * minuit à Paris, que PostgreSQL enregistre en `2026-02-24T23:00:00Z` : la
+ * séance du 25 février se retrouvait datée du 24. Les 91 017 interventions du
+ * Sénat étaient toutes décalées d'un jour — 23h00 en hiver, 22h00 en été.
+ *
+ * Le décalage cassait aussi tout rapprochement par la date : scrutins du jour,
+ * regroupement par séance sur la fiche, et la segmentation publiée par le Sénat,
+ * qui ne retrouvait que 13,6 % de nos interventions au lieu de 75,9 %.
+ */
+export function dateDeSeanceSenat(nomFichier: string): Date | null {
+  const m = nomFichier.match(/^d(\d{4})(\d{2})(\d{2})\.xml$/i);
+  if (!m) return null;
+  const [, yyyy = '', mm = '', dd = ''] = m;
+  const date = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd)));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/**
  * Matricule du sénateur, extrait du lien vers sa fiche.
  *
  * Le compte rendu renvoie vers `/senateur/narassiguin_corinne18231d.html`, dont
@@ -187,15 +207,9 @@ export class SenatInterventionsClient {
       // Les fichiers sont nommés comme dYYYYMMDD.xml (ex: d20250212.xml)
       const sortedFiles = xmlFiles
         .map(f => {
-          const match = path.basename(f).match(/^d(\d{4})(\d{2})(\d{2})\.xml$/i);
-          if (match) {
-            const [, yyyy = '', mm = '', dd = ''] = match;
-            const year = parseInt(yyyy, 10);
-            const month = parseInt(mm, 10);
-            const day = parseInt(dd, 10);
-            return { path: f, date: new Date(year, month - 1, day), year };
-          }
-          return null;
+          const nom = path.basename(f);
+          const date = dateDeSeanceSenat(nom);
+          return date ? { path: f, date, year: date.getUTCFullYear() } : null;
         })
         .filter((f): f is { path: string; date: Date; year: number } => f !== null && f.year >= minYear && f.date <= new Date())
         .sort((a, b) => b.date.getTime() - a.date.getTime())

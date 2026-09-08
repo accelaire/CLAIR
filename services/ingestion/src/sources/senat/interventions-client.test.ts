@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { matriculeDepuisLien } from './interventions-client';
+import { matriculeDepuisLien, dateDeSeanceSenat } from './interventions-client';
 
 describe('matriculeDepuisLien', () => {
   it('extrait le matricule du lien vers la fiche du sénateur', () => {
@@ -27,5 +27,26 @@ describe('matriculeDepuisLien', () => {
 
   it('ignore les liens qui ne pointent pas vers une fiche de sénateur', () => {
     expect(matriculeDepuisLien('<a href="/dossier-legislatif/pjl25-123.html">texte</a>')).toBeUndefined();
+  });
+});
+
+describe('dateDeSeanceSenat', () => {
+  it('lit la date en UTC, pas dans le fuseau local', () => {
+    // `new Date(2026, 1, 25)` donnerait minuit à Paris, enregistré
+    // `2026-02-24T23:00:00Z` : la séance daterait de la veille.
+    expect(dateDeSeanceSenat('d20260225.xml')?.toISOString()).toBe('2026-02-25T00:00:00.000Z');
+  });
+
+  it("ne décale pas davantage en heure d'été", () => {
+    expect(dateDeSeanceSenat('d20260624.xml')?.toISOString()).toBe('2026-06-24T00:00:00.000Z');
+  });
+
+  it('accepte la casse du nom de fichier', () => {
+    expect(dateDeSeanceSenat('D20250217.XML')?.toISOString()).toBe('2025-02-17T00:00:00.000Z');
+  });
+
+  it('ignore un fichier qui ne porte pas de date de séance', () => {
+    expect(dateDeSeanceSenat('sommaire.xml')).toBeNull();
+    expect(dateDeSeanceSenat('d2026.xml')).toBeNull();
   });
 });
