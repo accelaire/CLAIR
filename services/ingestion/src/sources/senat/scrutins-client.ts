@@ -98,6 +98,32 @@ function sessionToYear(session: string): string {
   return session.split('-')[0] || session;
 }
 
+const MOIS_FR: Record<string, number> = {
+  janvier: 0, février: 1, mars: 2, avril: 3, mai: 4, juin: 5,
+  juillet: 6, août: 7, septembre: 8, octobre: 9, novembre: 10, décembre: 11,
+};
+
+/**
+ * Date du scrutin, lue dans le texte de la page HTML ("10 juin 2026").
+ *
+ * Construite en UTC, comme `dateDeSeanceSenat()` côté interventions
+ * (`senat/interventions-client.ts`) — le même bug de fuseau, à la source
+ * près : `new Date(year, month, day)` donne minuit dans le fuseau local du
+ * process, que PostgreSQL enregistre 23h00 UTC la veille en hiver, 22h00 en
+ * été.
+ *
+ * Interventions et scrutins portaient ce bug des deux côtés : le
+ * rapprochement par date fonctionnait par accident. Recaler un seul des deux
+ * les aurait fait diverger d'un jour et aurait cassé l'appariement — voir la
+ * même migration `20260908150000_senat_dates_de_seance_et_liens_scrutins`.
+ */
+export function dateDuScrutinSenat(jour: string, moisTexte: string, annee: string): Date | null {
+  const mois = MOIS_FR[moisTexte.toLowerCase()];
+  if (mois === undefined) return null;
+  const date = new Date(Date.UTC(parseInt(annee, 10), mois, parseInt(jour, 10)));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 // =============================================================================
 // CLIENT
 // =============================================================================
@@ -410,14 +436,7 @@ export class SenatScrutinsClient {
     let date: Date | null = null;
     const dateMatch = decoded.match(/(\d{1,2})\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})/i);
     if (dateMatch?.[1] && dateMatch[2] && dateMatch[3]) {
-      const months: Record<string, number> = {
-        janvier: 0, février: 1, mars: 2, avril: 3, mai: 4, juin: 5,
-        juillet: 6, août: 7, septembre: 8, octobre: 9, novembre: 10, décembre: 11
-      };
-      const month = months[dateMatch[2].toLowerCase()];
-      if (month !== undefined) {
-        date = new Date(parseInt(dateMatch[3]), month, parseInt(dateMatch[1]));
-      }
+      date = dateDuScrutinSenat(dateMatch[1], dateMatch[2], dateMatch[3]);
     }
 
     if (!date) {

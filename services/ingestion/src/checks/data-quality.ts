@@ -183,7 +183,30 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // cassait tout rapprochement par la date : scrutins du jour, regroupement
     // par séance sur la fiche, et la segmentation publiée par le Sénat, qui ne
     // retrouvait que 13,6 % de nos interventions au lieu de 75,9 %.
-    query: `SELECT COUNT(*)::int AS value FROM interventions WHERE seance_id ~ '^d[0-9]{8}$' AND to_date(substring(seance_id from 2), 'YYYYMMDD') <> date::date`,
+    //
+    // `chambre = 'senat'` : le format `dAAAAMMJJ` de `seance_id` n'existe que
+    // côté Sénat (l'AN utilise un autre format, ex. `2026013`) ; la migration
+    // qui a corrigé ces lignes portait déjà ce filtre, l'invariant devait le
+    // porter aussi.
+    query: `SELECT COUNT(*)::int AS value FROM interventions WHERE chambre = 'senat' AND seance_id ~ '^d[0-9]{8}$' AND to_date(substring(seance_id from 2), 'YYYYMMDD') <> date::date`,
+  },
+  scrutins_date_seance: {
+    type: 'invariant',
+    label: 'Scrutins du Sénat dont la date porte un décalage de fuseau',
+    min: 0,
+    max: 0,
+    // Bug jumeau du précédent, autre source : `scrutins.date` pour le Sénat
+    // vient de `parseTimestamp()` dans `dosleg-client.ts`, qui lisait le champ
+    // `scrdat` du dump DOSLEG ("2026-06-10 00:00:00", sans fuseau) avec
+    // `new Date(ts)` — interprété dans le fuseau local du process. Les 4 775
+    // scrutins du Sénat en production étaient TOUS décalés d'un jour, jamais
+    // à minuit (22h00 UTC en été, 23h00 en hiver).
+    //
+    // Faute de clé indépendante du type `seance_id` pour reconstruire la
+    // vraie date (voir la migration `20260908150000_senat_dates_de_seance_et_liens_scrutins`),
+    // la signature du bug sert elle-même de garde-fou : un scrutin du Sénat à
+    // minuit est correct, un scrutin à 22h ou 23h a de nouveau le bug.
+    query: `SELECT COUNT(*)::int AS value FROM scrutins WHERE chambre = 'senat' AND EXTRACT(HOUR FROM date) IN (22, 23)`,
   },
 
   cross_legislature_amendements: {
