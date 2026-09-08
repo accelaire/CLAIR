@@ -55,7 +55,7 @@ export interface PriseDeParoleSyceron {
 /** Une mise aux voix annoncée au perchoir : la charnière vers nos scrutins. */
 export interface VoteAnnonceSyceron {
   ordreAbsolu: number;
-  cible: 'article' | 'amendement';
+  cible: 'article' | 'amendement' | 'sous-amendement';
   /** Numéro d'article, ou numéros d'amendements mis aux voix ensemble. */
   numeros: string[];
   articleVise: string | null;
@@ -79,18 +79,31 @@ export interface SeanceSyceron {
 // CODES DE GRAMMAIRE
 // =============================================================================
 
-/** Annonce d'une mise aux voix : « Je mets aux voix… ». */
-const ANNONCE_VOTE: Record<string, 'article' | 'amendement'> = {
-  SCRUT_ART_PUB_1_6: 'article',
-  SCRUT_PUB_ADT_1_2: 'amendement',
-  SCRUT_ADTS_1_2: 'amendement',
-};
+// L'AN numérote deux fois chaque famille de vote — `_1_2` à `_1_5` et `_1_6` à
+// `_1_9` — selon que le scrutin public est direct ou fait suite à un vote à
+// main levée non concluant. En ajoutant les sous-amendements et les variantes
+// `_ANN_`, une énumération des codes d'annonce en compte une quinzaine, et
+// toute liste incomplète perd des votes sans rien signaler.
+//
+// On s'ancre donc sur ce qui ne varie pas : la proclamation chiffrée, dont le
+// libellé est stable (« Nombre de votants … Pour l'adoption … Contre … »).
+// L'annonce est le dernier paragraphe `SCRUT_` porteur d'une cible qui la
+// précède. Sur la 17e législature, cette règle relève 7 699 mises aux voix là
+// où l'énumération des trois codes les plus courants n'en voyait que 5 148.
 
-/** Proclamation chiffrée du résultat, qui suit l'annonce de quelques rangs. */
-const RESULTAT_VOTE = new Set(['SCRUT_ART_PUB_1_8', 'SCRUT_PUB_ADT_1_4', 'SCRUT_ADTS_1_4']);
+/** Distance arrière maximale entre une proclamation et son annonce. */
+const PORTEE_ANNONCE = 5;
 
-/** Distance maximale entre l'annonce et la proclamation, en paragraphes. */
-const PORTEE_RESULTAT = 4;
+/** Codes portant le sort d'un vote (« L'amendement n'est pas adopté ») : ils
+ *  suivent la proclamation et ne doivent jamais être pris pour une annonce. */
+const CODE_SORT = /_1_(?:5|9|10|100)$/;
+
+/** Ce sur quoi porte une mise aux voix, lu dans la famille du code. */
+function cibleDuCode(code: string): VoteAnnonceSyceron['cible'] {
+  if (code.includes('SOUS_AMEND')) return 'sous-amendement';
+  if (code.includes('_ART')) return 'article';
+  return 'amendement';
+}
 
 // =============================================================================
 // NORMALISATION
@@ -206,8 +219,11 @@ export function parseCompteRendu(xml: string): SeanceSyceron | null {
     return null;
   }
 
-  const prises: PriseDeParoleSyceron[] = [];
-  const votes: VoteAnnonceSyceron[] = [];
+  // On collecte d'abord tous les paragraphes à plat, dans l'ordre du document,
+  // avant d'en tirer les prises de parole et les mises aux voix : le
+  // rattachement d'une proclamation à son annonce est une lecture arrière, qui
+  // suppose la séquence complète.
+  const paragraphes: ParagrapheBrut[] = [];
 
   const contenu = $('compteRendu > contenu').first();
   if (contenu.length === 0) return null;
@@ -229,7 +245,7 @@ export function parseCompteRendu(xml: string): SeanceSyceron | null {
       }
 
       if (enfant.name === 'paragraphe') {
-        collecter($, enfant, herite, prises, votes);
+        paragraphes.push(lireParagraphe($, enfant, herite));
         continue;
       }
 
@@ -239,15 +255,13 @@ export function parseCompteRendu(xml: string): SeanceSyceron | null {
 
   parcourir(contenu.get(0) as Element, { articleVise: null, texteNumero: null });
 
-  rattacherResultats(prises, votes);
-
   return {
     uid,
     seanceRef: $('compteRendu > seanceRef').first().text().trim() || null,
     legislature,
     date,
-    prises,
-    votes,
+    prises: paragraphes.map(enPriseDeParole).filter((p): p is PriseDeParoleSyceron => p !== null),
+    votes: releverVotes(paragraphes),
   };
 }
 
@@ -255,86 +269,112 @@ function estElement(noeud: AnyNode): noeud is Element {
   return noeud.type === 'tag';
 }
 
-function collecter(
+/** Un paragraphe tel qu'il figure au compte rendu, avec le contexte hérité. */
+interface ParagrapheBrut {
+  sourceUid: string;
+  ordreAbsolu: number;
+  codeGrammaire: string;
+  valeur: string | undefined;
+  orateurRef: string | null;
+  nomBrut: string;
+  qualite: string;
+  contenu: string;
+  contexte: ContextePoint;
+}
+
+function lireParagraphe(
   $: cheerio.CheerioAPI,
   paragraphe: Element,
   contexte: ContextePoint,
-  prises: PriseDeParoleSyceron[],
-  votes: VoteAnnonceSyceron[],
-): void {
+): ParagrapheBrut {
   const attribs = paragraphe.attribs;
-  const codeGrammaire = attribs['code_grammaire'] ?? '';
-  const ordreAbsolu = Number(attribs['ordre_absolu_seance']);
-  const valeur = attribs['valeur'];
-
   const noeud = $(paragraphe);
-  const contenu = nettoyer(noeud.children('texte').text());
-
   const orateur = noeud.children('orateurs').children('orateur').first();
-  const nomBrut = orateur.children('nom').text().trim();
-  const qualite = orateur.children('qualite').text().trim();
   const idActeur = attribs['id_acteur'];
+  const ordreAbsolu = Number(attribs['ordre_absolu_seance']);
 
-  const cibleVote = ANNONCE_VOTE[codeGrammaire];
-  if (cibleVote && Number.isFinite(ordreAbsolu)) {
-    const numeros =
-      cibleVote === 'article'
-        ? [normaliserArticle(valeur) ?? ''].filter((n) => n.length > 0)
-        : numerosAmendement(valeur);
-    votes.push({
-      ordreAbsolu,
-      cible: cibleVote,
-      numeros,
-      articleVise: contexte.articleVise,
-      texteNumero: contexte.texteNumero,
-      resultat: null,
-    });
-  }
-
-  if (!nomBrut || !Number.isFinite(ordreAbsolu)) return;
-
-  const { prenom, nom } = decouperNom(nomBrut);
-  const estPresidence = /^(le |la )?pr[ée]sident/i.test(nom) || /^pr[ée]sident/i.test(qualite);
-
-  prises.push({
+  return {
     sourceUid: attribs['id_syceron'] ?? `${attribs['id_preparation'] ?? ordreAbsolu}`,
     ordreAbsolu,
-    codeGrammaire,
+    codeGrammaire: attribs['code_grammaire'] ?? '',
+    valeur: attribs['valeur'],
     orateurRef: idActeur && /^PA\d+$/.test(idActeur) ? idActeur : null,
+    nomBrut: orateur.children('nom').text().trim(),
+    qualite: orateur.children('qualite').text().trim(),
+    contenu: nettoyer(noeud.children('texte').text()),
+    contexte,
+  };
+}
+
+function enPriseDeParole(p: ParagrapheBrut): PriseDeParoleSyceron | null {
+  if (!p.nomBrut || !Number.isFinite(p.ordreAbsolu)) return null;
+
+  const { prenom, nom } = decouperNom(p.nomBrut);
+  const estPresidence = /^(le |la )?pr[ée]sident/i.test(nom) || /^pr[ée]sident/i.test(p.qualite);
+
+  return {
+    sourceUid: p.sourceUid,
+    ordreAbsolu: p.ordreAbsolu,
+    codeGrammaire: p.codeGrammaire,
+    orateurRef: p.orateurRef,
     orateurNom: nom,
     orateurPrenom: prenom,
-    orateurQualite: qualite.length > 0 ? qualite : null,
-    contenu,
-    articleVise: contexte.articleVise,
-    amendementsVises: numerosAmendement(valeur),
-    texteNumero: contexte.texteNumero,
+    orateurQualite: p.qualite.length > 0 ? p.qualite : null,
+    contenu: p.contenu,
+    articleVise: p.contexte.articleVise,
+    amendementsVises: numerosAmendement(p.valeur),
+    texteNumero: p.contexte.texteNumero,
     estPresidence,
-  });
+  };
 }
 
 /**
- * Associe à chaque annonce la proclamation chiffrée qui la suit.
+ * Relève les mises aux voix en partant des proclamations chiffrées.
  *
- * On borne la recherche à quelques paragraphes : au-delà, on serait déjà dans
- * la mise aux voix suivante, et un résultat rattaché au mauvais scrutin est
- * pire qu'un résultat absent.
+ * Chaque proclamation est remontée jusqu'à son annonce — le dernier paragraphe
+ * `SCRUT_` porteur d'une cible qui la précède, en écartant les codes de sort
+ * qui closent le vote précédent. Sans annonce à portée, on n'invente rien : un
+ * résultat attribué au mauvais scrutin est pire qu'un résultat absent.
  */
-function rattacherResultats(prises: PriseDeParoleSyceron[], votes: VoteAnnonceSyceron[]): void {
-  const parOrdre = new Map<number, PriseDeParoleSyceron>();
-  for (const prise of prises) parOrdre.set(prise.ordreAbsolu, prise);
+export function releverVotes(paragraphes: ParagrapheBrut[]): VoteAnnonceSyceron[] {
+  const votes: VoteAnnonceSyceron[] = [];
 
-  const ordonnees = [...parOrdre.keys()].sort((a, b) => a - b);
+  for (let i = 0; i < paragraphes.length; i++) {
+    const proclamation = paragraphes[i];
+    if (!proclamation) continue;
+    const resultat = resultatProclame(proclamation.contenu);
+    if (!resultat) continue;
 
-  for (const vote of votes) {
-    const depart = ordonnees.findIndex((o) => o > vote.ordreAbsolu);
-    if (depart === -1) continue;
-    for (const ordre of ordonnees.slice(depart, depart + PORTEE_RESULTAT)) {
-      const prise = parOrdre.get(ordre);
-      if (!prise || !RESULTAT_VOTE.has(prise.codeGrammaire)) continue;
-      vote.resultat = resultatProclame(prise.contenu);
+    let annonce: ParagrapheBrut | undefined;
+    for (let k = i - 1; k >= 0 && k >= i - PORTEE_ANNONCE; k--) {
+      const candidat = paragraphes[k];
+      if (!candidat) continue;
+      const cible = (candidat.valeur ?? '').trim();
+      if (!candidat.codeGrammaire.startsWith('SCRUT_')) continue;
+      if (CODE_SORT.test(candidat.codeGrammaire)) continue;
+      if (cible.length === 0) continue;
+      annonce = candidat;
       break;
     }
+    if (!annonce || !Number.isFinite(annonce.ordreAbsolu)) continue;
+
+    const cible = cibleDuCode(annonce.codeGrammaire);
+    const numeros =
+      cible === 'article'
+        ? [normaliserArticle(annonce.valeur) ?? ''].filter((n) => n.length > 0)
+        : numerosAmendement(annonce.valeur);
+
+    votes.push({
+      ordreAbsolu: annonce.ordreAbsolu,
+      cible,
+      numeros,
+      articleVise: annonce.contexte.articleVise,
+      texteNumero: annonce.contexte.texteNumero,
+      resultat,
+    });
   }
+
+  return votes;
 }
 
 /** Texte lisible : le compte rendu encode les exposants et les insécables. */
