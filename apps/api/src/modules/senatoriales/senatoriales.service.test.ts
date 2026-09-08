@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { joursCouverts, comparateur, type Sortant } from './senatoriales.service';
 
 function sortant(partiel: {
+  personneId?: string;
   nom?: string;
   prenom?: string;
   mandatId?: string;
@@ -19,7 +20,7 @@ function sortant(partiel: {
   return {
     mandatId: partiel.mandatId ?? 'mandat-defaut',
     personne: {
-      id: 'personne-defaut',
+      id: partiel.personneId ?? 'personne-defaut',
       slug: 'jean-dupont',
       nom: partiel.nom ?? 'Dupont',
       prenom: partiel.prenom ?? 'Jean',

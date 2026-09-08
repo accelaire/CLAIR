@@ -1,6 +1,11 @@
 import { FastifyPluginAsync } from 'fastify';
 import { SenatorialesService } from './senatoriales.service';
-import { sortantsQuerySchema, TRIS_SORTANTS } from './senatoriales.schema';
+import {
+  candidatsQuerySchema,
+  FAMILLES_CANDIDATS,
+  sortantsQuerySchema,
+  TRIS_SORTANTS,
+} from './senatoriales.schema';
 
 export const senatorialesRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new SenatorialesService(fastify.prisma, fastify.redis);
@@ -46,6 +51,44 @@ export const senatorialesRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request) => {
       const query = sortantsQuerySchema.parse(request.query);
       return service.getSortants(query);
+    },
+  });
+
+  fastify.get('/2026/candidats', {
+    schema: {
+      tags: ['Senatoriales'],
+      summary: 'Candidats au renouvellement du 27 septembre 2026',
+      description:
+        'Les unités de vote du scrutin — une liste au scrutin proportionnel, un binôme ' +
+        'titulaire-suppléant au scrutin majoritaire — avec leurs candidats. Un candidat ' +
+        'déjà passé par le Parlement porte un lien vers sa fiche. La date de naissance ' +
+        "n'est pas exposée : seule l'année l'est. Réponse vide tant que le ministère de " +
+        "l'Intérieur n'a pas publié son fichier, une semaine environ avant le scrutin.",
+      querystring: {
+        type: 'object',
+        properties: {
+          departement: {
+            type: 'string',
+            description: 'Code INSEE du département de la circonscription',
+          },
+          famille: {
+            type: 'string',
+            enum: [...FAMILLES_CANDIDATS],
+            description:
+              'Famille politique dérivée de la nuance préfectorale. `sans-famille` cible ' +
+              'les nuances laissées volontairement sans rattachement.',
+          },
+          sortants: {
+            type: 'string',
+            enum: ['true', '1', 'false', '0'],
+            description: 'Ne retenir que les unités de vote portant au moins un sortant',
+          },
+        },
+      },
+    },
+    handler: async (request) => {
+      const query = candidatsQuerySchema.parse(request.query);
+      return service.getCandidats(query);
     },
   });
 };
