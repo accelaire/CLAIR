@@ -7,6 +7,7 @@ import 'dotenv/config';
 import { Command } from 'commander';
 import { syncTextesArticles } from './workers/textes-articles';
 import { syncInterventionsSyceron } from './workers/interventions-syceron';
+import { segmenterDebatsSenat } from './workers/segmenter-debats-senat';
 import {
   fullSync,
   incrementalSync,
@@ -1210,6 +1211,32 @@ program
 // =============================================================================
 // COMMANDE: sync-textes-articles
 // =============================================================================
+program
+  .command('segmenter-debats-senat')
+  .description("Situer les interventions du Sénat dans la structure du débat (index debats.zip)")
+  .option('--depuis-annee <n>', 'Année de départ', (v: string) => parseInt(v, 10), 2024)
+  .option('--chemin <fichier>', 'Dump debats.sql déjà décompressé')
+  .option('--dry-run', "Ne rien écrire, compter ce qui serait rapproché")
+  .action(async (options: { depuisAnnee: number; chemin?: string; dryRun?: boolean }) => {
+    try {
+      const result = await segmenterDebatsSenat({
+        depuisAnnee: options.depuisAnnee,
+        cheminLocal: options.chemin,
+        dryRun: options.dryRun,
+      });
+      console.log(`\nSegments dans l'index      : ${result.segments}`);
+      console.log(`Interventions rapprochées  : ${result.interventionsVisees}`);
+      if (!options.dryRun) {
+        console.log(`Sénat avec un article      : ${result.articlesPoses}`);
+        console.log(`Sénat explications de vote : ${result.typesCorriges}`);
+      }
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'segmenter-debats-senat failed');
+      process.exit(1);
+    }
+  });
+
 program
   .command('sync-debats-an')
   .description("Ingérer les comptes rendus de séance AN (source syceron, remplace DILA)")
