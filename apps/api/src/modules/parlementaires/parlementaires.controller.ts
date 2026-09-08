@@ -487,6 +487,9 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
         const baseWhere = {
           parlementaireId: parlementaire.id,
           seanceId: { not: null },
+          // La mécanique de séance (« La parole est à… », mises aux voix) n'est
+          // pas une prise de parole du parlementaire : cf. syceron-parser.ts.
+          estPresidence: false,
           ...(type && { type }),
           ...dateFilter,
         };
@@ -515,6 +518,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           where: {
             parlementaireId: parlementaire.id,
             seanceId: { in: seanceIds },
+            estPresidence: false,
             ...(type && { type }),
           },
           orderBy: [{ date: 'asc' }, { ordre: 'asc' }],

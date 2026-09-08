@@ -89,7 +89,9 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         }),
         fastify.prisma.groupePolitique.count({ where: { actif: true } }),
         fastify.prisma.intervention.count({
-          where: dateFrom ? { date: { gte: dateFrom } } : undefined,
+          // estPresidence: false — la mécanique de séance n'est pas une prise
+          // de parole, cf. syceron-parser.ts.
+          where: { estPresidence: false, ...(dateFrom && { date: { gte: dateFrom } }) },
         }),
         fastify.prisma.amendement.count({
           where: dateFrom ? { dateDepot: { gte: dateFrom } } : undefined,

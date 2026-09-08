@@ -176,7 +176,7 @@ describe('ParlementairesService', () => {
       // Le garde-fou du correctif : sans le `where`, Prisma agrège la TOTALITÉ de
       // votes / interventions / amendements à chaque appel (cf. countRelationsForPage).
       const pageIds = mockParlementaireList.map((p) => p.id);
-      for (const model of [mockPrisma.vote, mockPrisma.intervention, mockPrisma.amendement]) {
+      for (const model of [mockPrisma.vote, mockPrisma.amendement]) {
         expect(model.groupBy).toHaveBeenCalledWith(
           expect.objectContaining({
             by: ['parlementaireId'],
@@ -184,6 +184,15 @@ describe('ParlementairesService', () => {
           })
         );
       }
+
+      // Les interventions portent en plus le filtre de la mécanique de séance
+      // (syceron) : elle ne doit jamais compter dans le total affiché.
+      expect(mockPrisma.intervention.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          by: ['parlementaireId'],
+          where: { parlementaireId: { in: pageIds }, estPresidence: false },
+        })
+      );
     });
 
     it('devrait mettre en cache le résultat', async () => {

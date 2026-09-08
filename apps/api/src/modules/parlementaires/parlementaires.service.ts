@@ -325,7 +325,13 @@ export class ParlementairesService {
     const where = { parlementaireId: { in: pageIds } };
     const [votes, interventions, amendements] = await Promise.all([
       this.prisma.vote.groupBy({ by: ['parlementaireId'], where, _count: { _all: true } }),
-      this.prisma.intervention.groupBy({ by: ['parlementaireId'], where, _count: { _all: true } }),
+      // estPresidence: false — la mécanique de séance (« La parole est à… »)
+      // n'est pas une prise de parole du parlementaire, cf. syceron-parser.ts.
+      this.prisma.intervention.groupBy({
+        by: ['parlementaireId'],
+        where: { ...where, estPresidence: false },
+        _count: { _all: true },
+      }),
       this.prisma.amendement.groupBy({ by: ['parlementaireId'], where, _count: { _all: true } }),
     ]);
 
@@ -558,6 +564,9 @@ export class ParlementairesService {
         }),
         ...(include?.includes('interventions') && {
           interventions: {
+            // La mécanique de séance (« La parole est à… ») n'est pas une
+            // prise de parole du parlementaire : cf. syceron-parser.ts.
+            where: { estPresidence: false },
             orderBy: { date: 'desc' },
             take: 20,
           },
@@ -677,6 +686,7 @@ export class ParlementairesService {
         this.prisma.intervention.count({
           where: {
             parlementaireId,
+            estPresidence: false,
           },
         }),
         this.getAmendementsStats(parlementaireId),
@@ -684,6 +694,7 @@ export class ParlementairesService {
           where: {
             parlementaireId,
             type: 'question',
+            estPresidence: false,
           },
         }),
       ]);

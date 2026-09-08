@@ -70,7 +70,9 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         fastify.prisma.scrutin.count(),
         fastify.prisma.lobbyiste.count(),
         fastify.prisma.actionLobby.count(),
-        fastify.prisma.intervention.count(),
+        // estPresidence: false — la mécanique de séance n'est pas une prise
+        // de parole, cf. syceron-parser.ts.
+        fastify.prisma.intervention.count({ where: { estPresidence: false } }),
         fastify.prisma.amendement.count(),
         fastify.prisma.dossierLegislatif.count({ where: { scrutins: { some: {} } } }),
       ]);

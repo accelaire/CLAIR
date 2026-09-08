@@ -548,7 +548,9 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       };
 
-      const seanceWhere = { date: scrutin.date, chambre: scrutin.chambre };
+      // estPresidence: false — la mécanique de séance (« La parole est à… »,
+      // mises aux voix) n'est pas un débat de fond, cf. syceron-parser.ts.
+      const seanceWhere = { date: scrutin.date, chambre: scrutin.chambre, estPresidence: false };
 
       const [seanceInterventions, totalSeanceInterventions] = await Promise.all([
         fastify.prisma.intervention.findMany({
@@ -721,9 +723,14 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         throw new ApiError(404, 'Scrutin non trouvé');
       }
 
-      // Interventions de la séance (même date + chambre)
+      // Interventions de la séance (même date + chambre). estPresidence: false
+      // écarte la mécanique de séance, cf. syceron-parser.ts.
       const searchTerm = search?.trim();
-      const interventionWhere: Prisma.InterventionWhereInput = { date: scrutin.date, chambre: scrutin.chambre };
+      const interventionWhere: Prisma.InterventionWhereInput = {
+        date: scrutin.date,
+        chambre: scrutin.chambre,
+        estPresidence: false,
+      };
       if (searchTerm) {
         interventionWhere.OR = [
           { contenu: { contains: searchTerm, mode: 'insensitive' } },
@@ -805,8 +812,11 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, _reply) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
 
-      const intervention = await fastify.prisma.intervention.findUnique({
-        where: { id },
+      // estPresidence: false — un lien « lire la suite » ne peut mener qu'à une
+      // intervention de fond déjà filtrée en amont ; défense en profondeur
+      // contre un id de mécanique de séance deviné/forgé.
+      const intervention = await fastify.prisma.intervention.findFirst({
+        where: { id, estPresidence: false },
         select: { id: true, contenu: true, sourceUrl: true },
       });
 
