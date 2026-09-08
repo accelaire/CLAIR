@@ -66,6 +66,26 @@ function generateSeanceUrl(date: Date): string {
   return `https://www.senat.fr/cra/s${dateStr}/s${dateStr}_mono.html`;
 }
 
+/**
+ * Matricule du sénateur, extrait du lien vers sa fiche.
+ *
+ * Le compte rendu renvoie vers `/senateur/narassiguin_corinne18231d.html`, dont
+ * le suffixe est le matricule — la clé sur laquelle `parlementaires.source_id`
+ * est indexé. On renvoyait jusqu'ici le slug entier (`narassiguin_corinne18231d`),
+ * qui ne pouvait correspondre à aucun matricule : la résolution par identifiant
+ * échouait systématiquement et tout le Sénat retombait sur le rapprochement par
+ * le nom, avec ses homonymes et ses accents.
+ *
+ * Renvoie `undefined` plutôt qu'une valeur approchée : mieux vaut laisser le
+ * repli par le nom opérer que d'attribuer une prise de parole au mauvais élu.
+ */
+export function matriculeDepuisLien(html: string): string | undefined {
+  const lien = html.match(/href="\/senateur\/([^"]+)\.html"/);
+  if (!lien?.[1]) return undefined;
+  const matricule = lien[1].match(/(\d{4,6}[a-z])$/i);
+  return matricule?.[1] ? matricule[1].toUpperCase() : undefined;
+}
+
 // =============================================================================
 // CLIENT
 // =============================================================================
@@ -293,8 +313,7 @@ export class SenatInterventionsClient {
           finalizeSpeaker();
 
           // Extraire les infos du locuteur
-          const senateurLinkMatch = para.content.match(/href="\/senateur\/([^"]+)\.html"/);
-          const orateurRef = senateurLinkMatch ? senateurLinkMatch[1] : undefined;
+          const orateurRef = matriculeDepuisLien(para.content);
 
           const orateurSpans = para.content.match(/<span class="orateur_nom">([^<]*)<\/span>/g);
           let nomComplet = '';
