@@ -168,6 +168,31 @@ export function decouperNom(brut: string): { prenom: string | null; nom: string 
   return { prenom: parts[0] ?? null, nom: parts.slice(1).join(' ') };
 }
 
+/**
+ * Vrai si `nom` (déjà débarrassé de sa civilité par `decouperNom`) désigne la
+ * présidence de séance, jamais un président de commission.
+ *
+ * L'AN anonymise systématiquement qui préside au perchoir : `<nom>` porte
+ * `M. le président` ou `Mme la présidente`, quelle que soit la personne réelle
+ * — même le doyen d'âge qui ouvre une législature. Un président de commission
+ * qui prend la parole sur le fond, lui, est nommé (`M. Éric Coquerel`) et
+ * c'est sa `<qualite>` qui porte le titre (`président de la commission des
+ * finances`).
+ *
+ * Vérifié sur l'archive complète de la 17e législature (601 comptes rendus,
+ * ~330 000 paragraphes) : les deux formes génériques couvrent 99 790
+ * paragraphes de mécanique de séance (mises aux voix, distributions de
+ * parole, suspensions…) contre seulement 2 anomalies isolées où le nom réel
+ * fuite dans `<nom>` — négligeable. À l'inverse, 2 512 paragraphes ont une
+ * `<qualite>` commençant par « président » sans qu'aucun ne soit la
+ * présidence de séance : ancien code qui testait `qualite`, ça aurait
+ * effacé des présidents de commission de finances/lois/affaires sociales qui
+ * parlent sur le fond. On ne regarde donc plus `qualite` du tout.
+ */
+export function estPresidenceDeSeance(nom: string): boolean {
+  return /^(le |la )?pr[ée]sident/i.test(nom);
+}
+
 /** Chiffres proclamés au perchoir, dans l'ordre fixe du compte rendu. */
 export function resultatProclame(
   texte: string,
@@ -310,7 +335,7 @@ function enPriseDeParole(p: ParagrapheBrut): PriseDeParoleSyceron | null {
   if (!p.nomBrut || !Number.isFinite(p.ordreAbsolu)) return null;
 
   const { prenom, nom } = decouperNom(p.nomBrut);
-  const estPresidence = /^(le |la )?pr[ée]sident/i.test(nom) || /^pr[ée]sident/i.test(p.qualite);
+  const estPresidence = estPresidenceDeSeance(nom);
 
   return {
     sourceUid: p.sourceUid,

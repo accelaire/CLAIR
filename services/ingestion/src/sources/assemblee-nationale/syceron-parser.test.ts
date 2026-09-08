@@ -8,6 +8,7 @@ import {
   decouperNom,
   resultatProclame,
   nettoyer,
+  estPresidenceDeSeance,
 } from './syceron-parser';
 
 // Reproduit la structure réelle d'un compte rendu : <point> imbriqués sur
@@ -30,6 +31,10 @@ const SEANCE = `<?xml version='1.0' encoding='UTF-8'?>
         <paragraphe ordre_absolu_seance="332" id_acteur="PA793174" code_grammaire="PAROLE_GENERIQUE" id_syceron="3767289" valeur="">
           <orateurs><orateur><nom>M. Yannick Monnet</nom><id>793174</id><qualite/></orateur></orateurs>
           <texte>Cet article n[[o]]&#160;15 mérite un débat.</texte>
+        </paragraphe>
+        <paragraphe ordre_absolu_seance="333" id_acteur="PA721202" code_grammaire="PAROLE_GENERIQUE" id_syceron="3767290" valeur="">
+          <orateurs><orateur><nom>M. Éric Coquerel</nom><id>721202</id><qualite>président de la commission des finances</qualite></orateur></orateurs>
+          <texte>Cet amendement pose un vrai problème de recevabilité financière.</texte>
         </paragraphe>
         <paragraphe ordre_absolu_seance="653" id_acteur="PA795228" code_grammaire="SCRUT_PUB_ADT_1_2" id_syceron="3767650" valeur="2407">
           <orateurs><orateur><nom>Mme la présidente</nom><id>795228</id><qualite/></orateur></orateurs>
@@ -92,6 +97,21 @@ describe('normalisation syceron', () => {
     expect(nettoyer('article n[[o]] 15')).toBe('article no 15');
   });
 
+  it('reconnaît la présidence de séance à son nom générique', () => {
+    // L'AN anonymise systématiquement le perchoir : quel que soit qui préside,
+    // le nom reste « le président »/« la présidente » (jamais le nom réel).
+    expect(estPresidenceDeSeance('président')).toBe(true);
+    expect(estPresidenceDeSeance('présidente')).toBe(true);
+  });
+
+  it('ne prend pas un président de commission pour la présidence de séance', () => {
+    // Un président de commission qui parle sur le fond est nommé par son nom
+    // réel : « qualité » ne doit jamais entrer dans ce calcul, sous peine de
+    // faire disparaître ces parlementaires de l'affichage.
+    expect(estPresidenceDeSeance('Coquerel')).toBe(false);
+    expect(estPresidenceDeSeance('Boudié')).toBe(false);
+  });
+
   it('lit les chiffres proclamés au perchoir', () => {
     expect(
       resultatProclame(
@@ -137,6 +157,17 @@ describe('parseCompteRendu', () => {
     expect(presidence.length).toBeGreaterThan(0);
     expect(fond.map((p) => p.orateurNom)).toContain('Monnet');
     expect(fond.map((p) => p.orateurNom)).not.toContain('présidente');
+  });
+
+  it('ne marque pas un président de commission comme présidence de séance', () => {
+    // Éric Coquerel parle sur le fond (recevabilité financière) avec sa
+    // qualité de président de la commission des finances : ce n'est pas de la
+    // mécanique de séance et il doit rester affiché comme n'importe quelle
+    // autre prise de parole de fond.
+    const coquerel = seance?.prises.find((p) => p.orateurRef === 'PA721202');
+    expect(coquerel?.orateurNom).toBe('Coquerel');
+    expect(coquerel?.orateurQualite).toBe('président de la commission des finances');
+    expect(coquerel?.estPresidence).toBe(false);
   });
 
   it('lit la qualité déclarée plutôt que de la deviner dans le nom', () => {
