@@ -11,7 +11,7 @@
 // rendu, continue sur toute la journée. Sur 2025-2026, 75,9 % de nos
 // interventions retrouvent ainsi leur section.
 
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { errorMessage } from '../utils/errors';
 import {
@@ -22,8 +22,18 @@ import {
 
 const prisma = new PrismaClient();
 
-/** Taille des lots d'écriture : au-delà, la requête devient illisible en cas d'erreur. */
+/** Taille des lots : au-delà, une requête paramétrée en erreur reste illisible à déboguer. */
 const LOT = 500;
+
+/**
+ * Au-delà de cette proportion de lots en échec, le run est un échec, pas un
+ * succès partiel silencieux. Assez haut pour absorber un aléa isolé (verrou,
+ * coupure réseau ponctuelle) sur les ~240 lots d'un run complet (119 000
+ * lignes / 500) ; assez bas pour ne jamais laisser passer une panne
+ * systémique (mauvais SQL, connexion perdue) sous code de sortie 0 — le
+ * motif documenté dans le projet des « faux ✅ sur sources en échec ».
+ */
+const SEUIL_ECHEC_LOTS = 0.1;
 
 export interface OptionsSegmentation {
   depuisAnnee?: number;
@@ -34,11 +44,17 @@ export interface OptionsSegmentation {
 
 export interface ResultatSegmentation {
   segments: number;
+  /** Interventions retrouvées par le rapprochement date + ancre, changées ou non. */
   interventionsVisees: number;
-  /** Interventions Sénat portant un article, après coup. */
-  articlesPoses: number;
-  /** Interventions Sénat reconnues comme explications de vote, après coup. */
-  typesCorriges: number;
+  lots: number;
+  lotsEnEchec: number;
+  /**
+   * Lignes dont une valeur (article, section, type) a été effectivement écrite
+   * PAR CETTE EXÉCUTION — un delta, jamais l'état global de la table (qui
+   * inclut ce qu'un run précédent a déjà posé, et masque un run qui n'écrit
+   * plus rien). En dry-run, c'est ce que le run réel modifierait.
+   */
+  lignesModifiees: number;
 }
 
 export async function segmenterDebatsSenat(
@@ -61,40 +77,52 @@ export async function segmenterDebatsSenat(
   }
   if (collisions > 0) logger.warn({ collisions }, 'Ancres rattachées à plusieurs sections, premières retenues');
 
+  const lignes = [...parCle.values()];
+  const totalLots = Math.ceil(lignes.length / LOT);
+
   const resultat: ResultatSegmentation = {
     segments: parCle.size,
     interventionsVisees: 0,
-    articlesPoses: 0,
-    typesCorriges: 0,
+    lots: totalLots,
+    lotsEnEchec: 0,
+    lignesModifiees: 0,
   };
 
-  const lignes = [...parCle.values()];
-
   if (options.dryRun) {
-    resultat.interventionsVisees = await compterAppariables(lignes);
+    // Aucune écriture n'est en jeu : une erreur ici doit remonter telle
+    // quelle, pas être absorbée lot par lot — un aperçu partiel serait
+    // trompeur plutôt que rassurant.
+    for (let i = 0; i < lignes.length; i += LOT) {
+      const { visees, modifiees } = await previsualiserLot(lignes.slice(i, i + LOT));
+      resultat.interventionsVisees += visees;
+      resultat.lignesModifiees += modifiees;
+    }
     logger.info(resultat, 'Segmentation des débats Sénat (à blanc)');
     return resultat;
   }
 
   for (let i = 0; i < lignes.length; i += LOT) {
     try {
-      resultat.interventionsVisees += await appliquerLot(lignes.slice(i, i + LOT));
+      const { visees, modifiees } = await appliquerLot(lignes.slice(i, i + LOT));
+      resultat.interventionsVisees += visees;
+      resultat.lignesModifiees += modifiees;
     } catch (error) {
+      resultat.lotsEnEchec++;
       logger.warn({ lot: i / LOT, error: errorMessage(error) }, 'Lot de segmentation non écrit');
     }
   }
 
-  // Compté sur la base plutôt que sur les lots : c'est ce qui a réellement
-  // été écrit, pas ce qu'on espérait écrire.
-  const [etat] = await prisma.$queryRaw<{ articles: bigint; explications: bigint }[]>`
-    SELECT COUNT(*) FILTER (WHERE article_vise IS NOT NULL)::bigint AS articles,
-           COUNT(*) FILTER (WHERE type = 'explication_vote')::bigint AS explications
-    FROM interventions WHERE chambre = 'senat'
-  `;
-  resultat.articlesPoses = Number(etat?.articles ?? 0);
-  resultat.typesCorriges = Number(etat?.explications ?? 0);
-
   logger.info(resultat, 'Segmentation des débats Sénat terminée');
+
+  const tauxEchec = totalLots > 0 ? resultat.lotsEnEchec / totalLots : 0;
+  if (tauxEchec > SEUIL_ECHEC_LOTS) {
+    throw new Error(
+      `Segmentation des débats Sénat en échec : ${resultat.lotsEnEchec}/${totalLots} lots ` +
+        `n'ont pas pu être écrits (> ${Math.round(SEUIL_ECHEC_LOTS * 100)} %). ` +
+        `${resultat.lignesModifiees} lignes ont tout de même été modifiées avant l'arrêt.`,
+    );
+  }
+
   return resultat;
 }
 
@@ -106,49 +134,96 @@ export async function segmenterDebatsSenat(
  * enregistré en UTC), et repartir du nom du fichier de séance rend le
  * rapprochement correct que les lignes aient été recalées ou non.
  */
-const RAPPROCHEMENT = `
+const RAPPROCHEMENT = Prisma.raw(`
   i.chambre = 'senat'
   AND i.seance_id ~ '^d[0-9]{8}$'
   AND to_date(substring(i.seance_id from 2), 'YYYYMMDD') = v.date::date
   AND substring(i.source_url from '#par_([0-9]+)$') = v.ancre
-`;
+`);
 
-function valeursDuLot(lot: SegmentDebatSenat[]): string {
-  return lot
-    .map((s) => {
-      const article = s.articleVise ? `'${echapper(s.articleVise)}'` : 'NULL';
-      return `('${s.date}','${s.ancre}',${article},'${echapper(s.typeSection)}','${typeDInterventionSenat(s.typeSection)}')`;
-    })
-    .join(',');
+/** Une valeur diffère effectivement de ce qui est déjà en base — sinon écrire ne changerait rien. */
+const UN_CHANGEMENT = Prisma.raw(`
+  (i.article_vise IS DISTINCT FROM v.article
+    OR i.code_grammaire IS DISTINCT FROM v.section
+    OR i.type IS DISTINCT FROM v.type)
+`);
+
+/** Colonnes du lot, dénormalisées en tableaux parallèles pour `unnest`. */
+function colonnesDuLot(lot: SegmentDebatSenat[]) {
+  return {
+    dates: lot.map((s) => s.date),
+    ancres: lot.map((s) => s.ancre),
+    articles: lot.map((s) => s.articleVise),
+    sections: lot.map((s) => s.typeSection),
+    types: lot.map((s) => typeDInterventionSenat(s.typeSection)),
+  };
 }
 
-const COLONNES = 'v(date, ancre, article, section, type)';
-
-async function compterAppariables(lignes: SegmentDebatSenat[]): Promise<number> {
-  let total = 0;
-  for (let i = 0; i < lignes.length; i += LOT) {
-    const rows = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
-      `SELECT COUNT(*)::bigint AS n
-       FROM (VALUES ${valeursDuLot(lignes.slice(i, i + LOT))}) AS ${COLONNES}
-       JOIN interventions i ON ${RAPPROCHEMENT}`,
-    );
-    total += Number(rows[0]?.n ?? 0);
-  }
-  return total;
+/**
+ * Compte, sans rien écrire, ce que le lot rapprocherait (`visees`) et ce
+ * qu'il modifierait réellement (`modifiees`) — un dry-run honnête montre
+ * l'effet d'une écriture, pas seulement le nombre de lignes qu'elle touche.
+ */
+async function previsualiserLot(
+  lot: SegmentDebatSenat[],
+): Promise<{ visees: number; modifiees: number }> {
+  const { dates, ancres, articles, sections, types } = colonnesDuLot(lot);
+  const [rangee] = await prisma.$queryRaw<{ visees: bigint; modifiees: bigint }[]>`
+    SELECT
+      COUNT(*)::bigint AS visees,
+      COUNT(*) FILTER (WHERE ${UN_CHANGEMENT})::bigint AS modifiees
+    FROM unnest(
+      ${dates}::text[],
+      ${ancres}::text[],
+      ${articles}::text[],
+      ${sections}::text[],
+      ${types}::text[]
+    ) AS v(date, ancre, article, section, type)
+    JOIN interventions i ON ${RAPPROCHEMENT}
+  `;
+  return { visees: Number(rangee?.visees ?? 0), modifiees: Number(rangee?.modifiees ?? 0) };
 }
 
-async function appliquerLot(lot: SegmentDebatSenat[]): Promise<number> {
-  return prisma.$executeRawUnsafe(`
-    UPDATE interventions i
-    SET article_vise = v.article::text,
-        code_grammaire = v.section,
-        type = v.type
-    FROM (VALUES ${valeursDuLot(lot)}) AS ${COLONNES}
-    WHERE ${RAPPROCHEMENT}
-  `);
-}
+/**
+ * Écrit le lot et rapporte, en un seul aller-retour, ce qui a été rapproché
+ * (`visees`) et ce qui a réellement changé (`modifiees`) : la CTE `candidats`
+ * fige les lignes jointes AVANT l'écriture, pour que la comparaison porte sur
+ * la valeur d'avant, pas sur la ligne déjà mise à jour.
+ */
+async function appliquerLot(
+  lot: SegmentDebatSenat[],
+): Promise<{ visees: number; modifiees: number }> {
+  const { dates, ancres, articles, sections, types } = colonnesDuLot(lot);
 
-/** Les libellés du Sénat contiennent des apostrophes ; on ne construit pas de SQL sans les doubler. */
-function echapper(valeur: string): string {
-  return valeur.replace(/'/g, "''");
+  const [rangee] = await prisma.$queryRaw<{ visees: bigint; modifiees: bigint }[]>`
+    WITH candidats AS (
+      SELECT i.id, i.article_vise, i.code_grammaire, i.type,
+             v.article AS nouvel_article, v.section AS nouvelle_section, v.type AS nouveau_type
+      FROM unnest(
+        ${dates}::text[],
+        ${ancres}::text[],
+        ${articles}::text[],
+        ${sections}::text[],
+        ${types}::text[]
+      ) AS v(date, ancre, article, section, type)
+      JOIN interventions i ON ${RAPPROCHEMENT}
+    ),
+    maj AS (
+      UPDATE interventions i
+      SET article_vise = c.nouvel_article,
+          code_grammaire = c.nouvelle_section,
+          type = c.nouveau_type
+      FROM candidats c
+      WHERE i.id = c.id
+        AND (i.article_vise IS DISTINCT FROM c.nouvel_article
+          OR i.code_grammaire IS DISTINCT FROM c.nouvelle_section
+          OR i.type IS DISTINCT FROM c.nouveau_type)
+      RETURNING i.id
+    )
+    SELECT
+      (SELECT COUNT(*) FROM candidats)::bigint AS visees,
+      (SELECT COUNT(*) FROM maj)::bigint AS modifiees
+  `;
+
+  return { visees: Number(rangee?.visees ?? 0), modifiees: Number(rangee?.modifiees ?? 0) };
 }

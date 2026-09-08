@@ -6,8 +6,6 @@
 import 'dotenv/config';
 import { Command } from 'commander';
 import { syncTextesArticles } from './workers/textes-articles';
-import { syncInterventionsSyceron } from './workers/interventions-syceron';
-import { segmenterDebatsSenat } from './workers/segmenter-debats-senat';
 import {
   fullSync,
   incrementalSync,
@@ -1219,17 +1217,18 @@ program
   .option('--dry-run', "Ne rien écrire, compter ce qui serait rapproché")
   .action(async (options: { depuisAnnee: number; chemin?: string; dryRun?: boolean }) => {
     try {
+      const { segmenterDebatsSenat } = await import('./workers/segmenter-debats-senat.js');
       const result = await segmenterDebatsSenat({
         depuisAnnee: options.depuisAnnee,
         cheminLocal: options.chemin,
         dryRun: options.dryRun,
       });
-      console.log(`\nSegments dans l'index      : ${result.segments}`);
-      console.log(`Interventions rapprochées  : ${result.interventionsVisees}`);
-      if (!options.dryRun) {
-        console.log(`Sénat avec un article      : ${result.articlesPoses}`);
-        console.log(`Sénat explications de vote : ${result.typesCorriges}`);
-      }
+      console.log(`\nSegments dans l'index          : ${result.segments}`);
+      console.log(`Interventions rapprochées      : ${result.interventionsVisees}`);
+      console.log(`Lots traités / en échec        : ${result.lots} / ${result.lotsEnEchec}`);
+      console.log(
+        `Lignes ${options.dryRun ? 'qui seraient modifiées' : 'modifiées'}         : ${result.lignesModifiees}`,
+      );
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'segmenter-debats-senat failed');
@@ -1246,6 +1245,9 @@ program
   .option('--reingerer', 'Relire les séances déjà en base au lieu de les sauter')
   .action(async (options: { legislature: number; maxSeances?: number; repertoire?: string; reingerer?: boolean }) => {
     try {
+      // Chargé à l'exécution : le module instancie son client Prisma, et le
+      // conteneur d'ingestion tourne déjà au bord de l'OOM.
+      const { syncInterventionsSyceron } = await import('./workers/interventions-syceron.js');
       const result = await syncInterventionsSyceron({
         legislature: options.legislature,
         maxSeances: options.maxSeances,

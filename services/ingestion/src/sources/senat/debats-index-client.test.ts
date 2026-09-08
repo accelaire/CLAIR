@@ -23,6 +23,43 @@ describe('normaliserArticleSenat', () => {
     expect(normaliserArticleSenat('Article additionnel avant l&#8217;article 12')).toBe('Avant 12');
   });
 
+  it('décode l’apostrophe Windows-1252 mal réencodée (U+0092)', () => {
+    // Le dump contient ~26 000 apostrophes sous la forme U+0092 (octet 0x92
+    // relu comme du Latin-1 puis réencodé en UTF-8) : la regex « additionnel »
+    // ne la reconnaissait pas comme une apostrophe, et la capture gloutonne
+    // avalait alors toute la suite — jusqu'à 504 caractères sur le dump réel.
+    expect(normaliserArticleSenat('Article additionnel après larticle 11')).toBe('Après 11');
+  });
+
+  it('décode les entités numériques non traitées (espace insécable, accents)', () => {
+    // ~17 000 &#160;, ~4 400 &#232;, ~3 100 &#233; dans le dump : ni les
+    // espaces insécables ni les lettres accentuées n'étaient décodées.
+    expect(normaliserArticleSenat('Article&#160;7')).toBe('7');
+    expect(normaliserArticleSenat('Art. 11 (pr&#233;c&#233;demment examin&#233;)')).toBe(
+      '11 (précédemment examiné)',
+    );
+  });
+
+  it('retire l’énumération d’amendements collée après un tiret', () => {
+    // Sur le dump réel, 3 201 des 3 949 désignations uniques portent une
+    // énumération d'amendements introduite par « - » (jusqu'à 504 caractères
+    // pour la plus longue) : ce n'est pas une variante d'article, c'est le
+    // détail de ce qui s'y discute. On ne garde que la désignation.
+    expect(
+      normaliserArticleSenat(
+        "Article additionnel après l'article 9 - Amendements n° I-1387, n° I-1168 rectifié bis, n° I-2076",
+      ),
+    ).toBe('Après 9');
+    expect(normaliserArticleSenat('Art. 11 - Amendement n° 26')).toBe('11');
+  });
+
+  it('renvoie null plutôt qu’une désignation trop longue pour être affichée', () => {
+    // Filet de sécurité : après décodage et troncature, une valeur encore
+    // anormalement longue n'est plus une désignation d'article utilisable en
+    // colonne d'affichage. Mieux vaut son absence qu'une chaîne illisible.
+    expect(normaliserArticleSenat('Art. ' + 'x'.repeat(150))).toBeNull();
+  });
+
   it('laisse tel quel ce qui ne ressemble pas à un article', () => {
     expect(normaliserArticleSenat('Intitulé du projet de loi')).toBe('Intitulé du projet de loi');
   });

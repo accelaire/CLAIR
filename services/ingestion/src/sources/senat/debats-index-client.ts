@@ -51,6 +51,68 @@ export interface SegmentDebatSenat {
 // =============================================================================
 
 /**
+ * Entités nommées rencontrées dans le dump, en plus des entités numériques
+ * (`&#160;`, `&#232;`, `&#233;`…) traitées génériquement ci-dessous.
+ */
+const ENTITES_NOMMEES: Record<string, string> = {
+  '&rsquo;': '’',
+  '&lsquo;': '‘',
+  '&nbsp;': ' ',
+  '&amp;': '&',
+};
+
+/**
+ * Windows-1252 0x80-0x9F → caractère correct.
+ *
+ * Le dump contient des apostrophes et tirets Windows-1252 (octets 0x92, 0x96…)
+ * qui ont été relus comme du Latin-1 puis réencodés en UTF-8 : on obtient un
+ * caractère de contrôle C1 *valide* (U+0092, U+0096…) plutôt qu'une erreur de
+ * décodage, donc rien ne signale l'anomalie en amont. On couvre toute la
+ * plage 0x80-0x9F par prudence ; seuls 0x92 (apostrophe) et 0x96 (tiret) sont
+ * attestés dans le dump actuel.
+ */
+const CP1252_C1: Record<number, string> = {
+  0x80: '€', 0x82: '‚', 0x83: 'ƒ', 0x84: '„', 0x85: '…', 0x86: '†', 0x87: '‡',
+  0x88: 'ˆ', 0x89: '‰', 0x8a: 'Š', 0x8b: '‹', 0x8c: 'Œ', 0x8e: 'Ž',
+  0x91: '‘', 0x92: '’', 0x93: '“', 0x94: '”', 0x95: '•',
+  0x96: '–', 0x97: '—', 0x98: '˜', 0x99: '™', 0x9a: 'š', 0x9b: '›', 0x9c: 'œ',
+  0x9e: 'ž', 0x9f: 'Ÿ',
+};
+
+/** Décode les entités HTML et corrige le mojibake Windows-1252 → Latin-1 → UTF-8 du dump. */
+function decoderTexteSenat(brut: string): string {
+  return brut
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(parseInt(dec, 10)))
+    .replace(/&\w+;/g, (entite) => ENTITES_NOMMEES[entite] ?? entite)
+    .replace(/[\u0080-\u009f]/g, (c) => CP1252_C1[c.codePointAt(0)!] ?? c);
+}
+
+/**
+ * Au-delà de cette longueur, la valeur n'est plus une désignation d'article
+ * mais une énumération (amendements, articles multiples) : sur le dump 2024+,
+ * la quasi-totalité des désignations légitimes tient sous 100 caractères
+ * (p99 ≈ 64, le plus long intitulé de compte spécial observé fait 99) ; les
+ * dépassements viennent d'une énumération d'amendements collée après un
+ * séparateur ` - `, déjà retirée par `couperEnumeration`. Ce plafond n'est
+ * donc qu'un filet de sécurité contre un format encore plus dégénéré.
+ */
+const LONGUEUR_MAX_ARTICLE = 120;
+
+/**
+ * Retire le détail collé après la désignation d'article par un tiret :
+ * `"Après 9 - Amendements n° I-1387, n° I-1168 rectifié, ..."` → `"Après 9"`.
+ *
+ * Sur le dump 2024+, 3 201 des 3 949 désignations uniques portent une telle
+ * énumération, systématiquement introduite par ` - ` : aucune n'existe sans
+ * ce séparateur. C'est un artefact de source, pas une variante d'article.
+ */
+function couperEnumeration(texte: string): string {
+  const i = texte.indexOf(' - ');
+  return i === -1 ? texte : texte.slice(0, i).trim();
+}
+
+/**
  * `secdisnum` → désignation d'article comparable à celle de l'AN.
  *
  * `"Art. 11 bis"` → `"11 bis"`
@@ -64,7 +126,7 @@ export interface SegmentDebatSenat {
  */
 export function normaliserArticleSenat(brut: string | null | undefined): string | null {
   if (!brut) return null;
-  const texte = brut.replace(/&#8217;|&rsquo;/g, '’').replace(/\s+/g, ' ').trim();
+  const texte = decoderTexteSenat(brut).replace(/\s+/g, ' ').trim();
   if (texte.length === 0) return null;
 
   // Le Sénat abrège « article » des deux côtés, et de façon indépendante :
@@ -74,15 +136,24 @@ export function normaliserArticleSenat(brut: string | null | undefined): string 
   const additionnel = texte.match(
     new RegExp(`${ART}\\s+additionnels?\\s+(avant|apr[èe]s)\\s+l['’]?\\s*${ART}\\s+(.+)$`, 'i'),
   );
+
+  let resultat: string;
   if (additionnel) {
     const sens = additionnel[1]!.toLowerCase().startsWith('av') ? 'Avant' : 'Après';
-    return `${sens} ${additionnel[2]!.trim()}`;
+    resultat = `${sens} ${couperEnumeration(additionnel[2]!.trim())}`;
+  } else {
+    const simple = texte.match(/^art(?:icle)?\.?\s+(.+)$/i);
+    resultat = simple ? couperEnumeration(simple[1]!.trim()) : couperEnumeration(texte);
   }
 
-  const simple = texte.match(/^art(?:icle)?\.?\s+(.+)$/i);
-  if (simple) return simple[1]!.trim();
-
-  return texte;
+  // Filet de sécurité : une désignation d'article sert à l'affichage, pas à
+  // stocker une énumération. Mieux vaut l'absence que 500 caractères illisibles.
+  if (resultat.length === 0) return null;
+  if (resultat.length > LONGUEUR_MAX_ARTICLE) {
+    logger.warn({ brut, longueur: resultat.length }, 'Désignation d’article Sénat anormalement longue, ignorée');
+    return null;
+  }
+  return resultat;
 }
 
 /**
