@@ -5153,71 +5153,75 @@ export async function linkInterventionsToScrutins(
 ): Promise<{ linked: number; bySeanceRef: number; byDate: number }> {
   const chambre = options.chambre;
   const dryRun = options.dryRun ?? false;
-  // Pour le filtre SQL: si chambre est null, on matche tout
   const chambreFilter = chambre || '%';
 
-  logger.info({ chambre: chambre || 'all', dryRun }, 'Starting interventions-scrutins linking (SQL optimized)...');
+  logger.info({ chambre: chambre || 'all', dryRun }, 'Starting interventions-scrutins linking...');
 
-  let bySeanceRef = 0;
-  let byDate = 0;
+  // Une séance porte dix scrutins en moyenne, jusqu'à quatre-vingts. Rattacher
+  // une prise de parole à l'un d'eux au seul motif qu'ils partagent la séance
+  // ou la journée, c'est en désigner un au hasard : c'est ainsi que 214 277
+  // interventions se sont retrouvées liées au mauvais scrutin.
+  //
+  // On ne lie donc plus que ce qui est déterminé — une séance, ou un jour, qui
+  // ne porte qu'un seul scrutin. Le reste demande de savoir de quel article ou
+  // de quel amendement la prise de parole traite : c'est le rôle de la table
+  // `intervention_scrutin`, alimentée par la segmentation du débat, et non
+  // celui d'une jointure sur la date.
+  const seancesDeterminees = Prisma.sql`
+    SELECT s.seance_ref AS ref, s.chambre, MIN(s.id) AS scrutin_id
+    FROM scrutins s
+    WHERE s.seance_ref IS NOT NULL AND s.chambre LIKE ${chambreFilter}
+    GROUP BY s.seance_ref, s.chambre
+    HAVING COUNT(*) = 1
+  `;
+
+  const joursDetermines = Prisma.sql`
+    SELECT DATE(s.date) AS jour, s.chambre, MIN(s.id) AS scrutin_id
+    FROM scrutins s
+    WHERE s.chambre LIKE ${chambreFilter}
+    GROUP BY DATE(s.date), s.chambre
+    HAVING COUNT(*) = 1
+  `;
 
   if (dryRun) {
-    // Mode dry-run: compter sans modifier
-    const countBySeanceRef = await prisma.$queryRaw<{ count: bigint }[]>`
+    const [parSeance] = await prisma.$queryRaw<{ count: bigint }[]>`
       SELECT COUNT(*) as count
       FROM interventions i
-      JOIN scrutins s ON i.seance_id = s.seance_ref AND i.chambre = s.chambre
-      WHERE i.scrutin_id IS NULL
-        AND s.seance_ref IS NOT NULL
-        AND i.chambre LIKE ${chambreFilter}
+      JOIN (${seancesDeterminees}) z ON i.seance_id = z.ref AND i.chambre = z.chambre
+      WHERE i.scrutin_id IS NULL AND i.chambre LIKE ${chambreFilter}
     `;
-    bySeanceRef = Number(countBySeanceRef[0]?.count || 0);
-
-    const countByDate = await prisma.$queryRaw<{ count: bigint }[]>`
+    const [parJour] = await prisma.$queryRaw<{ count: bigint }[]>`
       SELECT COUNT(*) as count
       FROM interventions i
-      JOIN scrutins s ON DATE(i.date) = DATE(s.date) AND i.chambre = s.chambre
-      WHERE i.scrutin_id IS NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM interventions i2 WHERE i2.scrutin_id = s.id
-        )
-        AND i.chambre LIKE ${chambreFilter}
+      JOIN (${joursDetermines}) z ON DATE(i.date) = z.jour AND i.chambre = z.chambre
+      WHERE i.scrutin_id IS NULL AND i.chambre LIKE ${chambreFilter}
     `;
-    byDate = Number(countByDate[0]?.count || 0);
-
+    const bySeanceRef = Number(parSeance?.count ?? 0);
+    const byDate = Number(parJour?.count ?? 0);
     logger.info({ bySeanceRef, byDate, dryRun }, 'Interventions-scrutins linking completed (dry-run)');
     return { linked: bySeanceRef + byDate, bySeanceRef, byDate };
   }
 
-  // Stratégie 1: Matcher par seanceRef (le plus précis) - Single SQL UPDATE
-  const resultSeanceRef = await prisma.$executeRaw`
+  const bySeanceRef = await prisma.$executeRaw`
     UPDATE interventions i
-    SET scrutin_id = s.id
-    FROM scrutins s
-    WHERE i.seance_id = s.seance_ref
-      AND i.chambre = s.chambre
+    SET scrutin_id = z.scrutin_id
+    FROM (${seancesDeterminees}) z
+    WHERE i.seance_id = z.ref
+      AND i.chambre = z.chambre
       AND i.scrutin_id IS NULL
-      AND s.seance_ref IS NOT NULL
       AND i.chambre LIKE ${chambreFilter}
   `;
-  bySeanceRef = resultSeanceRef;
   logger.info({ bySeanceRef }, 'Linked interventions by seanceRef');
 
-  // Stratégie 2: Matcher par date + chambre - Single SQL UPDATE
-  // Seulement pour les scrutins qui n'ont toujours pas d'interventions liées
-  const resultByDate = await prisma.$executeRaw`
+  const byDate = await prisma.$executeRaw`
     UPDATE interventions i
-    SET scrutin_id = s.id
-    FROM scrutins s
-    WHERE DATE(i.date) = DATE(s.date)
-      AND i.chambre = s.chambre
+    SET scrutin_id = z.scrutin_id
+    FROM (${joursDetermines}) z
+    WHERE DATE(i.date) = z.jour
+      AND i.chambre = z.chambre
       AND i.scrutin_id IS NULL
-      AND NOT EXISTS (
-        SELECT 1 FROM interventions i2 WHERE i2.scrutin_id = s.id
-      )
       AND i.chambre LIKE ${chambreFilter}
   `;
-  byDate = resultByDate;
   logger.info({ byDate }, 'Linked interventions by date');
 
   const linked = bySeanceRef + byDate;
