@@ -300,8 +300,12 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
   },
   interventions_count: {
     type: 'threshold',
+    // Relevé de 70 000 à 600 000 au passage des débats AN à syceron : la
+    // 17e et la 16e législature pèsent 553 791 lignes à elles deux, plus
+    // 91 017 côté Sénat. Test de fumée sur le volume brut — il compte donc
+    // aussi la mécanique de séance et les interruptions.
     label: "Nombre d'interventions",
-    min: 70000,
+    min: 600000,
     query: `SELECT COUNT(*)::int AS value FROM interventions`,
   },
   lobbyistes_count: {

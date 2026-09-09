@@ -7,6 +7,7 @@ import { PrismaClient } from '@prisma/client';
 import pLimit from 'p-limit';
 import { logger } from '../utils/logger';
 import { errorMessage } from '../utils/errors';
+import { TYPE_INTERRUPTION } from '../utils/interventions';
 import { LEGISLATURE_AN_COURANTE } from './mandats';
 
 /**
@@ -166,9 +167,10 @@ export async function calculateAllStats(
         GROUP BY v.parlementaire_id
       ),
       intervention_stats AS (
-        -- est_presidence = false écarte la mécanique de séance (« La parole
-        -- est à… », mises aux voix) portée par syceron : ce n'est pas une
-        -- prise de parole du parlementaire.
+        -- Interventions de fond seulement (cf. TYPE_INTERRUPTION, utils) :
+        -- est_presidence écarte la mécanique de séance (« La parole est à… »,
+        -- mises aux voix), type <> 'interruption' écarte le chahut. Ni l'une
+        -- ni l'autre n'est une prise de parole à porter au crédit d'un élu.
         SELECT
           i.parlementaire_id,
           COUNT(*) as total_interventions,
@@ -176,6 +178,7 @@ export async function calculateAllStats(
         FROM interventions i
         WHERE i.chambre LIKE ${chambreFilter}
           AND i.est_presidence = false
+          AND i.type <> 'interruption'
         GROUP BY i.parlementaire_id
       ),
       amendement_stats AS (
@@ -402,7 +405,7 @@ export async function calculateAllStats(
       -- Interventions du mandat : rattachées par personne + chambre + fenêtre de dates
       -- (la table interventions n'a pas de législature ; la fenêtre suffit).
       interventions_mandat AS (
-        -- est_presidence = false : cf. intervention_stats plus haut, même raison.
+        -- Interventions de fond : cf. intervention_stats plus haut, même raison.
         SELECT m.id as mandat_id,
                COUNT(i.id) as total_interventions,
                COUNT(i.id) FILTER (WHERE i.type = 'question') as total_questions
@@ -413,6 +416,7 @@ export async function calculateAllStats(
           AND i.date >= m.date_debut
           AND (m.date_fin IS NULL OR i.date <= m.date_fin)
           AND i.est_presidence = false
+          AND i.type <> 'interruption'
         GROUP BY m.id
       ),
       -- Amendements du mandat : AN par législature (plus fiable que la date de dépôt) ;
@@ -717,11 +721,12 @@ async function calculateAndStoreStats(
       _count: { id: true },
     }),
 
-    // Interventions par type (hors mécanique de séance : cf. intervention_stats
-    // dans calculateAllStats, même raison)
+    // Interventions par type. Le résultat est sommé plus bas pour donner le
+    // total d'interventions : les interruptions en sont écartées, sans quoi
+    // elles gonfleraient ce total (cf. intervention_stats, même raison).
     prisma.intervention.groupBy({
       by: ['type'],
-      where: { parlementaireId: id, estPresidence: false },
+      where: { parlementaireId: id, estPresidence: false, type: { not: TYPE_INTERRUPTION } },
       _count: { id: true },
     }),
 

@@ -19,6 +19,7 @@ import {
   scrutinsDesMandats,
 } from '../../utils/groupe-epoque';
 import { fuzzySearchCandidates, FuzzyCandidate } from '../../utils/fuzzy-search';
+import { INTERVENTIONS_DE_FOND } from '../../utils/interventions';
 
 // =============================================================================
 // SESSIONS SÉNAT — l'axe temporel de la chambre haute
@@ -325,11 +326,9 @@ export class ParlementairesService {
     const where = { parlementaireId: { in: pageIds } };
     const [votes, interventions, amendements] = await Promise.all([
       this.prisma.vote.groupBy({ by: ['parlementaireId'], where, _count: { _all: true } }),
-      // estPresidence: false — la mécanique de séance (« La parole est à… »)
-      // n'est pas une prise de parole du parlementaire, cf. syceron-parser.ts.
       this.prisma.intervention.groupBy({
         by: ['parlementaireId'],
-        where: { ...where, estPresidence: false },
+        where: { ...where, ...INTERVENTIONS_DE_FOND },
         _count: { _all: true },
       }),
       this.prisma.amendement.groupBy({ by: ['parlementaireId'], where, _count: { _all: true } }),
@@ -564,9 +563,7 @@ export class ParlementairesService {
         }),
         ...(include?.includes('interventions') && {
           interventions: {
-            // La mécanique de séance (« La parole est à… ») n'est pas une
-            // prise de parole du parlementaire : cf. syceron-parser.ts.
-            where: { estPresidence: false },
+            where: INTERVENTIONS_DE_FOND,
             orderBy: { date: 'desc' },
             take: 20,
           },
@@ -684,18 +681,13 @@ export class ParlementairesService {
           },
         }),
         this.prisma.intervention.count({
-          where: {
-            parlementaireId,
-            estPresidence: false,
-          },
+          where: { parlementaireId, ...INTERVENTIONS_DE_FOND },
         }),
         this.getAmendementsStats(parlementaireId),
         this.prisma.intervention.count({
-          where: {
-            parlementaireId,
-            type: 'question',
-            estPresidence: false,
-          },
+          // `type: 'question'` exclut déjà les interruptions : pas de
+          // INTERVENTIONS_DE_FOND ici, il écraserait le type demandé.
+          where: { parlementaireId, type: 'question', estPresidence: false },
         }),
       ]);
 

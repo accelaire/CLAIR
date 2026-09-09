@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { regrouperPrises } from './interventions-syceron';
+import { TYPE_INTERRUPTION } from '../utils/interventions';
 import type { PriseDeParoleSyceron } from '../sources/assemblee-nationale/syceron-parser';
 
 function prise(p: Partial<PriseDeParoleSyceron> & { ordreAbsolu: number }): PriseDeParoleSyceron {
@@ -14,6 +15,7 @@ function prise(p: Partial<PriseDeParoleSyceron> & { ordreAbsolu: number }): Pris
     articleVise: '15',
     amendementsVises: [],
     texteNumero: '1364',
+    codeRubrique: null,
     estPresidence: false,
     ...p,
   };
@@ -90,5 +92,86 @@ describe('regrouperPrises', () => {
       prise({ ordreAbsolu: 1, contenu: 'La question posée par cet amendement est délicate.' }),
     ]);
     expect(groupes[0]?.type).toBe('intervention');
+  });
+
+  it('type les interruptions à part, pour les tenir hors des compteurs', () => {
+    const groupes = regrouperPrises([
+      prise({
+        ordreAbsolu: 1,
+        codeGrammaire: 'INTERRUPTION_1_10',
+        contenu: 'Nous avons déjà entendu ce discours !',
+      }),
+    ]);
+    expect(groupes[0]?.type).toBe(TYPE_INTERRUPTION);
+  });
+
+  it('fond les paragraphes consécutifs d\'un ministre, qui n\'a pas de fiche', () => {
+    const ministre = { orateurRef: null, orateurNom: 'Bayrou', orateurQualite: 'premier ministre' };
+    const groupes = regrouperPrises([
+      prise({ ordreAbsolu: 1, ...ministre, contenu: 'Premier paragraphe de mon propos.' }),
+      prise({ ordreAbsolu: 2, ...ministre, contenu: 'Second paragraphe de mon propos.' }),
+    ]);
+    expect(groupes).toHaveLength(1);
+  });
+
+  it('ne fond pas des paroles collectives, qui recouvrent plusieurs personnes', () => {
+    // « députés du groupe SOC » n'est pas quelqu'un : sans qualité, pas de fusion.
+    const collectif = { orateurRef: null, orateurNom: 'députés du groupe SOC', orateurQualite: null };
+    const groupes = regrouperPrises([
+      prise({ ordreAbsolu: 1, ...collectif, contenu: 'Une première exclamation de la part du groupe.' }),
+      prise({ ordreAbsolu: 2, ...collectif, contenu: 'Une seconde exclamation, d\'un autre député.' }),
+    ]);
+    expect(groupes).toHaveLength(2);
+  });
+
+  it('type en question ce qui relève de la rubrique des questions au Gouvernement', () => {
+    // Le paragraphe porte un code générique : seule la rubrique le dit.
+    const groupes = regrouperPrises([
+      prise({
+        ordreAbsolu: 1,
+        codeGrammaire: 'PAROLE_GENERIQUE',
+        codeRubrique: 'QG_1_1',
+        contenu: 'La canicule frappe durement les plus fragiles de nos concitoyens.',
+      }),
+    ]);
+    expect(groupes[0]?.type).toBe('question');
+  });
+
+  it.each([
+    ['QG_1_1', 'au Gouvernement'],
+    ['QOSD_1_1', 'orale sans débat'],
+    ['QPM_1_1', 'au Premier ministre'],
+  ])('type en question une prise sous la rubrique %s (question %s)', (codeRubrique) => {
+    const groupes = regrouperPrises([
+      prise({
+        ordreAbsolu: 1,
+        codeGrammaire: 'PAROLE_GENERIQUE',
+        codeRubrique,
+        contenu: 'Ma question porte sur la fermeture des services d\'urgence.',
+      }),
+    ]);
+    expect(groupes[0]?.type).toBe('question');
+  });
+
+  it('laisse une interruption sous rubrique QG au type interruption', () => {
+    const groupes = regrouperPrises([
+      prise({
+        ordreAbsolu: 1,
+        codeGrammaire: 'INTERRUPTION_1_10',
+        codeRubrique: 'QG_1_1',
+        contenu: 'Oui, c\'est un peu léger !',
+      }),
+    ]);
+    expect(groupes[0]?.type).toBe(TYPE_INTERRUPTION);
+  });
+
+  it("n'agrège pas une interruption avec le tour de parole qu'elle coupe", () => {
+    // Même orateur de part et d'autre : sans distinction de type, les deux
+    // prises fusionneraient et le chahut se retrouverait dans le propos.
+    const groupes = regrouperPrises([
+      prise({ ordreAbsolu: 1, contenu: 'Je défends cet amendement de repli.' }),
+      prise({ ordreAbsolu: 2, codeGrammaire: 'INTERRUPTION_1_10', contenu: 'Mais bien sûr !' }),
+    ]);
+    expect(groupes.map((g) => g.type)).toEqual(['intervention', TYPE_INTERRUPTION]);
   });
 });

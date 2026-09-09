@@ -48,6 +48,13 @@ export interface PriseDeParoleSyceron {
   amendementsVises: string[];
   /** Numéro du texte en discussion, tiré de `bibard`. */
   texteNumero: string | null;
+  /**
+   * Code de grammaire de la rubrique englobante (le `<point>` le plus proche
+   * qui en déclare un). C'est là, et non sur le paragraphe, que le compte
+   * rendu dit qu'on est dans les questions au Gouvernement : les paragraphes
+   * y portent un code générique.
+   */
+  codeRubrique: string | null;
   /** Vrai pour la mécanique de séance (« La parole est à… »), à ne pas afficher. */
   estPresidence: boolean;
 }
@@ -217,6 +224,7 @@ export function resultatProclame(
 interface ContextePoint {
   articleVise: string | null;
   texteNumero: string | null;
+  codeRubrique: string | null;
 }
 
 /**
@@ -264,6 +272,7 @@ export function parseCompteRendu(xml: string): SeanceSyceron | null {
         const propre: ContextePoint = {
           articleVise: normaliserArticle(enfant.attribs['art']) ?? herite.articleVise,
           texteNumero: numeroTexte(enfant.attribs['bibard']) ?? herite.texteNumero,
+          codeRubrique: enfant.attribs['code_grammaire'] || herite.codeRubrique,
         };
         parcourir(enfant, propre);
         continue;
@@ -278,7 +287,7 @@ export function parseCompteRendu(xml: string): SeanceSyceron | null {
     }
   };
 
-  parcourir(contenu.get(0) as Element, { articleVise: null, texteNumero: null });
+  parcourir(contenu.get(0) as Element, { articleVise: null, texteNumero: null, codeRubrique: null });
 
   return {
     uid,
@@ -349,6 +358,7 @@ function enPriseDeParole(p: ParagrapheBrut): PriseDeParoleSyceron | null {
     articleVise: p.contexte.articleVise,
     amendementsVises: numerosAmendement(p.valeur),
     texteNumero: p.contexte.texteNumero,
+    codeRubrique: p.contexte.codeRubrique,
     estPresidence,
   };
 }

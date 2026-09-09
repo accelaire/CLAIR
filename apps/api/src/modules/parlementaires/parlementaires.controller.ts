@@ -14,6 +14,7 @@ import {
   Chambre,
 } from './parlementaires.schema';
 import { ApiError } from '../../utils/errors';
+import { INTERVENTIONS_DE_FOND } from '../../utils/interventions';
 
 // ===========================================================================
 // FACTORY pour créer des routes avec chambre optionnelle
@@ -484,12 +485,13 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           },
         } : {};
 
+        // INTERVENTIONS_DE_FOND en premier : un `type` explicitement demandé
+        // doit pouvoir l'emporter — c'est ainsi qu'on sert la section
+        // « interruptions en séance », qui appelle avec type=interruption.
         const baseWhere = {
           parlementaireId: parlementaire.id,
           seanceId: { not: null },
-          // La mécanique de séance (« La parole est à… », mises aux voix) n'est
-          // pas une prise de parole du parlementaire : cf. syceron-parser.ts.
-          estPresidence: false,
+          ...INTERVENTIONS_DE_FOND,
           ...(type && { type }),
           ...dateFilter,
         };
@@ -518,7 +520,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           where: {
             parlementaireId: parlementaire.id,
             seanceId: { in: seanceIds },
-            estPresidence: false,
+            ...INTERVENTIONS_DE_FOND,
             ...(type && { type }),
           },
           orderBy: [{ date: 'asc' }, { ordre: 'asc' }],

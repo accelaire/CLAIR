@@ -5,6 +5,7 @@
 
 import { FastifyPluginAsync } from 'fastify';
 import { isStrictlyInternalRequest } from '../../utils/internal-auth';
+import { INTERVENTIONS_DE_FOND } from '../../utils/interventions';
 
 // Cache 27h — survit au sync (CRON 5h, durée max ~2h) + marge
 // Le cache est renouvelé activement par l'ingestion après chaque sync
@@ -70,9 +71,7 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         fastify.prisma.scrutin.count(),
         fastify.prisma.lobbyiste.count(),
         fastify.prisma.actionLobby.count(),
-        // estPresidence: false — la mécanique de séance n'est pas une prise
-        // de parole, cf. syceron-parser.ts.
-        fastify.prisma.intervention.count({ where: { estPresidence: false } }),
+        fastify.prisma.intervention.count({ where: INTERVENTIONS_DE_FOND }),
         fastify.prisma.amendement.count(),
         fastify.prisma.dossierLegislatif.count({ where: { scrutins: { some: {} } } }),
       ]);

@@ -1,0 +1,34 @@
+// =============================================================================
+// Ce qu'on appelle « une intervention » quand on la montre ou qu'on la compte
+// =============================================================================
+
+/**
+ * Type réservé aux interruptions de séance.
+ *
+ * Le compte rendu de l'Assemblée publie les interruptions comme des
+ * paragraphes nominatifs — « Quel scandale ! », « Mais oui, bien sûr ! », une
+ * quarantaine de caractères en moyenne. Elles pèsent un cinquième du corpus.
+ */
+export const TYPE_INTERRUPTION = 'interruption';
+
+/**
+ * Le filtre des interventions de fond : ce qu'un lecteur attend quand il
+ * demande « les interventions » d'un parlementaire ou d'une séance.
+ *
+ * Deux choses en sont écartées, pour deux raisons différentes :
+ *
+ * - `estPresidence` — la mécanique de séance (« La parole est à M. X »,
+ *   « Je mets aux voix… »). Ce n'est pas une prise de position, c'est de la
+ *   plomberie ; on l'ingère parce qu'elle porte la segmentation du débat.
+ * - `type: interruption` — le chahut. Ce sont de vraies prises de parole,
+ *   attribuées à leur auteur, et on les garde : elles se lisent à part. Mais
+ *   les mêler aux interventions de fond gonflerait l'activité d'un député de
+ *   plusieurs milliers de lignes qui ne disent rien de son travail.
+ *
+ * Les deux restent en base et interrogeables ; ce filtre ne décide que de ce
+ * qui est montré et compté par défaut.
+ */
+export const INTERVENTIONS_DE_FOND = {
+  estPresidence: false,
+  type: { not: TYPE_INTERRUPTION },
+} as const;

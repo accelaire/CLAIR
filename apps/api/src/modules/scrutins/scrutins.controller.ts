@@ -7,6 +7,7 @@ import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { ApiError } from '../../utils/errors';
 import { buildTextSearchCondition } from '../../utils/search';
+import { INTERVENTIONS_DE_FOND } from '../../utils/interventions';
 import {
   joinMandatEpoque,
   chargerGroupesEpoque,
@@ -548,9 +549,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       };
 
-      // estPresidence: false — la mécanique de séance (« La parole est à… »,
-      // mises aux voix) n'est pas un débat de fond, cf. syceron-parser.ts.
-      const seanceWhere = { date: scrutin.date, chambre: scrutin.chambre, estPresidence: false };
+      const seanceWhere = { date: scrutin.date, chambre: scrutin.chambre, ...INTERVENTIONS_DE_FOND };
 
       const [seanceInterventions, totalSeanceInterventions] = await Promise.all([
         fastify.prisma.intervention.findMany({
@@ -723,13 +722,12 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         throw new ApiError(404, 'Scrutin non trouvé');
       }
 
-      // Interventions de la séance (même date + chambre). estPresidence: false
-      // écarte la mécanique de séance, cf. syceron-parser.ts.
+      // Interventions de la séance (même date + chambre).
       const searchTerm = search?.trim();
       const interventionWhere: Prisma.InterventionWhereInput = {
         date: scrutin.date,
         chambre: scrutin.chambre,
-        estPresidence: false,
+        ...INTERVENTIONS_DE_FOND,
       };
       if (searchTerm) {
         interventionWhere.OR = [
@@ -812,11 +810,11 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request, _reply) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
 
-      // estPresidence: false — un lien « lire la suite » ne peut mener qu'à une
-      // intervention de fond déjà filtrée en amont ; défense en profondeur
-      // contre un id de mécanique de séance deviné/forgé.
+      // Un lien « lire la suite » ne peut mener qu'à une intervention de fond
+      // déjà filtrée en amont ; défense en profondeur contre un id de
+      // mécanique de séance ou d'interruption deviné/forgé.
       const intervention = await fastify.prisma.intervention.findFirst({
-        where: { id, estPresidence: false },
+        where: { id, ...INTERVENTIONS_DE_FOND },
         select: { id: true, contenu: true, sourceUrl: true },
       });
 

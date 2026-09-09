@@ -5,6 +5,7 @@
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { errorMessage } from '../utils/errors';
+import { TYPE_INTERRUPTION } from '../utils/interventions';
 import { SyceronClient } from '../sources/assemblee-nationale/syceron-client';
 import type { PriseDeParoleSyceron, SeanceSyceron } from '../sources/assemblee-nationale/syceron-parser';
 
@@ -65,12 +66,17 @@ export function regrouperPrises(prises: PriseDeParoleSyceron[]): InterventionAEc
 
   for (const prise of prises) {
     const precedent = groupes[groupes.length - 1];
+    const type = typeDIntervention(prise);
+    // Le type doit concorder : un orateur peut interrompre juste avant ou
+    // juste après avoir eu la parole, et fondre les deux ferait passer son
+    // chahut pour du propos de fond — ou l'inverse, sortirait une vraie
+    // intervention des compteurs sous le type de l'interruption.
     const memeTour =
       precedent !== undefined &&
       !prise.estPresidence &&
       !precedent.estPresidence &&
-      precedent.orateurRef !== null &&
-      precedent.orateurRef === prise.orateurRef &&
+      precedent.type === type &&
+      memeOrateur(precedent, prise) &&
       precedent.articleVise === prise.articleVise;
 
     if (memeTour && precedent) {
@@ -92,11 +98,38 @@ export function regrouperPrises(prises: PriseDeParoleSyceron[]): InterventionAEc
       orateurPrenom: prise.orateurPrenom,
       orateurQualite: prise.orateurQualite,
       contenu: prise.contenu,
-      type: typeDIntervention(prise),
+      type,
     });
   }
 
   return groupes.filter((g) => g.estPresidence || g.contenu.length >= LONGUEUR_MINIMALE);
+}
+
+/**
+ * Deux prises consécutives sont-elles du même orateur ?
+ *
+ * Les députés se reconnaissent à leur `orateurRef`. Les membres du
+ * gouvernement n'en ont pas — ils ne sont pas députés — et sans eux le
+ * Premier ministre voyait son discours haché en autant de blocs que de
+ * paragraphes : 90 pour une seule séance.
+ *
+ * Pour eux on se rabat sur le nom, mais seulement s'il porte une qualité :
+ * le compte rendu attribue aussi des paroles collectives (« députés du groupe
+ * SOC »), qui n'ont pas de qualité et recouvrent plusieurs personnes. Les
+ * fondre reviendrait à prêter à quelqu'un les mots d'un autre.
+ */
+function memeOrateur(
+  precedent: InterventionAEcrire,
+  prise: PriseDeParoleSyceron,
+): boolean {
+  if (precedent.orateurRef !== null || prise.orateurRef !== null) {
+    return precedent.orateurRef !== null && precedent.orateurRef === prise.orateurRef;
+  }
+  return (
+    !!precedent.orateurQualite &&
+    precedent.orateurNom === prise.orateurNom &&
+    precedent.orateurQualite === prise.orateurQualite
+  );
 }
 
 /**
@@ -105,11 +138,35 @@ export function regrouperPrises(prises: PriseDeParoleSyceron[]): InterventionAEc
  * L'ancien parseur DILA classait en « question » toute intervention contenant
  * le mot « question », et en « explication_vote » toute mention d'explication
  * de vote — y compris quand l'orateur ne faisait qu'y faire allusion.
+ *
+ * Les interruptions sont typées à part : le compte rendu les publie comme des
+ * paragraphes nominatifs (« Quel scandale ! »), soit 20 % du corpus. Ce sont
+ * de vraies prises de parole, qu'on garde, mais les mêler aux interventions de
+ * fond gonflerait l'activité d'un député de plusieurs milliers de lignes de
+ * chahut. Elles se lisent à part — voir INTERVENTIONS_DE_FOND côté API.
  */
+/**
+ * Les trois formats de questions du compte rendu : au Gouvernement, orales
+ * sans débat, au Premier ministre. Le corpus de la 17e législature n'en
+ * connaît pas d'autres.
+ */
+const PREFIXES_QUESTION = ['QG_', 'QOSD_', 'QPM_'];
+
+function estUneQuestion(code: string | null): boolean {
+  return code !== null && PREFIXES_QUESTION.some((prefixe) => code.startsWith(prefixe));
+}
+
 function typeDIntervention(prise: PriseDeParoleSyceron): string {
   const code = prise.codeGrammaire;
-  if (code.startsWith('QUESTION') || code.startsWith('QG_')) return 'question';
+  if (code.startsWith('INTERRUPTION')) return TYPE_INTERRUPTION;
   if (code.startsWith('EXPL_VOTE') || code.startsWith('EXPLICATION')) return 'explication_vote';
+  // Une question se reconnaît soit sur le paragraphe, soit — le plus souvent —
+  // sur la rubrique qui l'englobe : les paragraphes d'une séance de questions
+  // portent un code générique, et sans la rubrique elle ressemblerait à
+  // n'importe quel débat.
+  if (code.startsWith('QUESTION') || estUneQuestion(code) || estUneQuestion(prise.codeRubrique)) {
+    return 'question';
+  }
   return 'intervention';
 }
 
