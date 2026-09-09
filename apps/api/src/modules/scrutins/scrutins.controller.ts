@@ -7,7 +7,7 @@ import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { ApiError } from '../../utils/errors';
 import { buildTextSearchCondition } from '../../utils/search';
-import { INTERVENTIONS_DE_FOND } from '../../utils/interventions';
+import { INTERVENTIONS_DE_FOND, journeeDeSeance } from '../../utils/interventions';
 import {
   joinMandatEpoque,
   chargerGroupesEpoque,
@@ -549,7 +549,11 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       };
 
-      const seanceWhere = { date: scrutin.date, chambre: scrutin.chambre, ...INTERVENTIONS_DE_FOND };
+      const seanceWhere = {
+        date: journeeDeSeance(scrutin.date),
+        chambre: scrutin.chambre,
+        ...INTERVENTIONS_DE_FOND,
+      };
 
       const [seanceInterventions, totalSeanceInterventions] = await Promise.all([
         fastify.prisma.intervention.findMany({
@@ -725,7 +729,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       // Interventions de la séance (même date + chambre).
       const searchTerm = search?.trim();
       const interventionWhere: Prisma.InterventionWhereInput = {
-        date: scrutin.date,
+        date: journeeDeSeance(scrutin.date),
         chambre: scrutin.chambre,
         ...INTERVENTIONS_DE_FOND,
       };

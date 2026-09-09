@@ -32,3 +32,22 @@ export const INTERVENTIONS_DE_FOND = {
   estPresidence: false,
   type: { not: TYPE_INTERRUPTION },
 } as const;
+
+/**
+ * Fenêtre correspondant à la journée de séance d'une date donnée.
+ *
+ * Les scrutins sont datés à minuit, les interventions à l'heure d'ouverture de
+ * la séance dont elles relèvent — 9 h, 15 h, 21 h 30. Comparer les deux par
+ * égalité stricte ne rapproche donc jamais rien côté Assemblée : il faut
+ * cadrer sur la journée. L'heure de séance est une information réelle, qui
+ * distingue les séances du matin, de l'après-midi et du soir ; on l'interroge
+ * par intervalle plutôt que de l'écraser à minuit.
+ */
+export function journeeDeSeance(date: Date): { gte: Date; lt: Date } {
+  const debut = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+  );
+  const lendemain = new Date(debut);
+  lendemain.setUTCDate(lendemain.getUTCDate() + 1);
+  return { gte: debut, lt: lendemain };
+}
