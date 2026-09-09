@@ -2998,8 +2998,9 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       // 5. Dossiers législatifs (lie scrutins et amendements aux textes de loi)
       'assemblee_nationale:dossiers',
       'senat:dossiers',
-      // 6. Interventions
-      'dila:interventions',
+      // 6. Interventions. Côté AN c'est syceron : DILA ne publie plus rien
+      //    depuis janvier 2026, et sa matière n'était pas segmentée.
+      'assemblee_nationale:interventions',
       'senat:interventions',
       // 7. Lobbying
       'hatvp:lobbyistes',
@@ -3030,7 +3031,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       ...(options.includeScrutins ? ['assemblee_nationale:scrutins', 'senat:scrutins'] : []),
       ...(options.includeAmendements ? ['assemblee_nationale:amendements', 'senat:amendements'] : []),
       ...(options.includeDossiers ? ['assemblee_nationale:dossiers', 'senat:dossiers'] : []),
-      ...(options.includeInterventions ? ['dila:interventions', 'senat:interventions'] : []),
+      ...(options.includeInterventions ? ['assemblee_nationale:interventions', 'senat:interventions'] : []),
       ...(options.includeLobbying ? ['hatvp:lobbyistes'] : []),
       ...(options.includeReunions ? ['assemblee_nationale:reunions'] : []),
       ...(options.includeSeancesODJ ? ['assemblee_nationale:seances_odj'] : []),
@@ -3175,6 +3176,20 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
             break;
           }
 
+          case 'assemblee_nationale:interventions': {
+            // Chargé à l'exécution : le module instancie son client Prisma, et
+            // le conteneur d'ingestion tourne déjà au bord de l'OOM.
+            const { syncInterventionsSyceron } = await import('./interventions-syceron.js');
+            const syceronResult = await syncInterventionsSyceron({
+              legislature: LEGISLATURE_AN_COURANTE,
+              maxSeances: options.interventionsLimit,
+            });
+            syncResult = { created: syceronResult.interventions, updated: 0 };
+            break;
+          }
+
+          // Conservé pour la commande manuelle `sync --interventions` visant
+          // explicitement cette source ; hors du parcours du cron.
           case 'dila:interventions': {
             const dilaInterventionsResult = await syncInterventions({ maxSeances: options.interventionsLimit });
             syncResult = { created: dilaInterventionsResult.interventions, updated: 0 };

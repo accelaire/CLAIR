@@ -4,6 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { SOURCES, SourceConfig } from './source-freshness';
+import { LEGISLATURE_AN_COURANTE } from '../workers/mandats';
 
 describe('SOURCES Configuration', () => {
   describe('Assemblée Nationale', () => {
@@ -78,6 +79,21 @@ describe('SOURCES Configuration', () => {
       const config = SOURCES['dila:interventions']!;
       const currentYear = new Date().getFullYear();
       expect(config.url).toContain(currentYear.toString());
+    });
+  });
+
+  describe('Débats AN (syceron)', () => {
+    it('devrait avoir une configuration pour les interventions', () => {
+      const config = SOURCES['assemblee_nationale:interventions']!;
+      expect(config).toBeDefined();
+      expect(config.source).toBe('assemblee_nationale');
+      expect(config.dataType).toBe('interventions');
+      expect(config.url).toContain('syceronbrut/syseron.xml.zip');
+    });
+
+    it('devrait viser la législature courante', () => {
+      const config = SOURCES['assemblee_nationale:interventions']!;
+      expect(config.url).toContain(`/${LEGISLATURE_AN_COURANTE}/`);
     });
   });
 
