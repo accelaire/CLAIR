@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   Vote,
   MessageSquare,
+  HelpCircle,
   ArrowLeft,
   ThumbsUp,
   ThumbsDown,
@@ -644,7 +645,7 @@ export default function PageClient({ initialData }: { initialData?: DeputeDetail
       {depute.stats && (
         <div className="mb-8">
           <h2 className="mb-4 text-xl font-semibold">Statistiques</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <StatCard
               label="Présence solennelle"
               value={depute.stats.presenceSolennel ?? depute.stats.presence}
@@ -673,7 +674,14 @@ export default function PageClient({ initialData }: { initialData?: DeputeDetail
               label="Interventions"
               value={depute.stats.interventions}
               icon={MessageSquare}
-              tooltip="Nombre de prises de parole en séance publique."
+              tooltip="Nombre de prises de parole en séance publique, hors interruptions."
+              tooltipHref="/comprendre/parlementaire"
+            />
+            <StatCard
+              label="Questions posées"
+              value={depute.stats.questions}
+              icon={HelpCircle}
+              tooltip="Questions au Gouvernement, orales sans débat ou au Premier ministre. Les réponses d’un membre du Gouvernement n’y comptent pas, même lorsqu’il est aussi parlementaire."
               tooltipHref="/comprendre/parlementaire"
             />
           </div>

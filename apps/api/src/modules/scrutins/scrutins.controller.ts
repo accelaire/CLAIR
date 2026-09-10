@@ -549,11 +549,18 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       };
 
-      const seanceWhere = {
-        date: journeeDeSeance(scrutin.date),
-        chambre: scrutin.chambre,
-        ...INTERVENTIONS_DE_FOND,
-      };
+      // Même règle que sur l'onglet des débats : le rattachement fin quand il
+      // existe, la journée en repli. Voir GET /:numero/interventions.
+      const debatsDuScrutin = await fastify.prisma.interventionScrutin.count({
+        where: { scrutinId: scrutin.id },
+      });
+      const seanceWhere = debatsDuScrutin > 0
+        ? { scrutinsLies: { some: { scrutinId: scrutin.id } }, ...INTERVENTIONS_DE_FOND }
+        : {
+            date: journeeDeSeance(scrutin.date),
+            chambre: scrutin.chambre,
+            ...INTERVENTIONS_DE_FOND,
+          };
 
       const [seanceInterventions, totalSeanceInterventions] = await Promise.all([
         fastify.prisma.intervention.findMany({
@@ -728,11 +735,31 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Interventions de la séance (même date + chambre).
       const searchTerm = search?.trim();
-      const interventionWhere: Prisma.InterventionWhereInput = {
-        date: journeeDeSeance(scrutin.date),
-        chambre: scrutin.chambre,
-        ...INTERVENTIONS_DE_FOND,
-      };
+
+      // Le débat propre à ce scrutin, quand on le connaît.
+      //
+      // Le compte rendu de l'Assemblée annonce chaque vote au perchoir puis en
+      // proclame les chiffres : `intervention_scrutin` en tire, pour un scrutin
+      // donné, les prises de parole qui l'ont précédé et portent bien sur ce
+      // qui est mis aux voix. Sans cette table, on ne savait sélectionner que
+      // par la journée — et les 995 journées qui portent plusieurs scrutins
+      // (jusqu'à 195) montraient le même débat sur chacune de leurs pages.
+      //
+      // Le repli sur la journée reste nécessaire : le Sénat n'a pas ce
+      // rattachement, et 1,4 % des mises aux voix de l'Assemblée ne trouvent
+      // pas leur scrutin de façon certaine. Mieux vaut alors le débat du jour
+      // qu'une page vide.
+      const rattachementFin = await fastify.prisma.interventionScrutin.count({
+        where: { scrutinId: scrutin.id },
+      });
+
+      const interventionWhere: Prisma.InterventionWhereInput = rattachementFin > 0
+        ? { scrutinsLies: { some: { scrutinId: scrutin.id } }, ...INTERVENTIONS_DE_FOND }
+        : {
+            date: journeeDeSeance(scrutin.date),
+            chambre: scrutin.chambre,
+            ...INTERVENTIONS_DE_FOND,
+          };
       if (searchTerm) {
         interventionWhere.OR = [
           { contenu: { contains: searchTerm, mode: 'insensitive' } },
@@ -790,6 +817,9 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           totalPages,
           hasNext: page < totalPages,
           hasPrev: page > 1,
+          // Dit au lecteur ce qu'il regarde : le débat de ce vote, ou faute de
+          // mieux celui de la journée, qui peut porter sur de tout autres textes.
+          rattachement: rattachementFin > 0 ? 'scrutin' : 'journee',
         },
       };
     },

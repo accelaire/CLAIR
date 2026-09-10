@@ -119,6 +119,12 @@ interface InterventionsResponse {
     limit: number;
     totalPages: number;
     hasNext: boolean;
+    /**
+     * 'scrutin' : le débat qui a précédé ce vote précisément.
+     * 'journee' : faute de rattachement, tout ce qui s'est dit ce jour-là —
+     * y compris sur d'autres textes.
+     */
+    rattachement?: 'scrutin' | 'journee';
   };
 }
 
@@ -596,6 +602,7 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
           {currentTab === 'debats' && totalInterventions > 0 && (
             <ScrutinDebatsTab
               interventions={allInterventions}
+              rattachement={interventionsData?.pages[0]?.meta?.rattachement}
               chambre={chambre}
               interventionsSortAsc={interventionsSortAsc}
               onToggleSort={() => setInterventionsSortAsc(!interventionsSortAsc)}

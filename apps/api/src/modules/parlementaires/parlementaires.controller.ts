@@ -14,7 +14,7 @@ import {
   Chambre,
 } from './parlementaires.schema';
 import { ApiError } from '../../utils/errors';
-import { INTERVENTIONS_DE_FOND } from '../../utils/interventions';
+import { INTERVENTIONS_DE_FOND, journeeDeSeance } from '../../utils/interventions';
 
 // ===========================================================================
 // FACTORY pour créer des routes avec chambre optionnelle
@@ -539,16 +539,40 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           },
         });
 
-        // 3. Get scrutins linked to these seances
+        // 3. Les votes auxquels ces prises de parole se rapportent.
+        //
+        // `intervention_scrutin` dit, pour chaque intervention, le vote qu'elle
+        // a précédé et sur lequel elle porte. Sans cette table on ne savait
+        // rattacher les scrutins qu'à la séance entière, par `seanceRef` ou par
+        // date : Jean-Noël Barrot, le 23 juin, montrait 17 votes sous une seule
+        // prise de parole, dont aucun ne s'y rapportait forcément.
+        const liensFins = await fastify.prisma.interventionScrutin.findMany({
+          where: { interventionId: { in: interventions.map((i) => i.id) } },
+          select: { interventionId: true, scrutinId: true },
+        });
+        const scrutinsParIntervention = new Map<string, string[]>();
+        for (const lien of liensFins) {
+          const deja = scrutinsParIntervention.get(lien.interventionId) ?? [];
+          deja.push(lien.scrutinId);
+          scrutinsParIntervention.set(lien.interventionId, deja);
+        }
+
         const CONTENU_PREVIEW_LENGTH = 500;
         const scrutins = await fastify.prisma.scrutin.findMany({
           where: {
             chambre: parlementaire.chambre,
             OR: [
+              // Les votes rattachés nommément, d'abord : c'est la seule branche
+              // qui garantit qu'un vote lié à une intervention sera bien chargé,
+              // les suivantes ne servant qu'au repli.
+              { id: { in: liensFins.map((l) => l.scrutinId) } },
               { seanceRef: { in: seanceIds } },
-              {
-                date: { in: seanceRows.map(s => s.date) },
-              },
+              // Le repli se cadre sur la journée, jamais sur l'horodatage : les
+              // scrutins sont datés à minuit et les interventions à l'heure
+              // d'ouverture de leur séance, si bien qu'une égalité stricte ne
+              // rapprochait jamais rien côté Assemblée — une séance sans
+              // `seanceRef` correspondant n'affichait aucun vote.
+              ...seanceRows.map((r) => ({ date: journeeDeSeance(r.date) })),
             ],
           },
           select: {
@@ -601,17 +625,35 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           });
         }
 
-        // Assign scrutins to seances by seanceRef or date match
+        // Les votes de chaque séance : ceux que les interventions du
+        // parlementaire ont précédés, quand on le sait.
+        //
+        // Le repli sur la séance entière reste nécessaire — le Sénat n'a pas ce
+        // rattachement, et une partie des votes de l'Assemblée ne trouve pas le
+        // sien de façon certaine. Il se décide séance par séance : une séance
+        // dont au moins une intervention est rattachée n'affiche que ses votes,
+        // les autres continuent de montrer ceux de la journée.
+        const scrutinsRattaches = new Map<string, Set<string>>();
+        for (const [seanceId, group] of seanceMap) {
+          const ids = new Set<string>();
+          for (const i of group.interventions) {
+            for (const scrutinId of scrutinsParIntervention.get(i.id) ?? []) ids.add(scrutinId);
+          }
+          if (ids.size > 0) scrutinsRattaches.set(seanceId, ids);
+        }
+
         for (const s of scrutins) {
           for (const [seanceId, group] of seanceMap) {
-            const matchByRef = s.seanceRef === seanceId;
-            const matchByDate = new Date(s.date).toDateString() === new Date(group.date).toDateString();
-            if (matchByRef || matchByDate) {
-              // Avoid duplicate scrutins in same group
-              if (!group.scrutins.some((gs) => gs.id === s.id)) {
-                const { seanceRef: _r, ...scrutinData } = s;
-                group.scrutins.push(scrutinData);
-              }
+            const rattaches = scrutinsRattaches.get(seanceId);
+            const retenu = rattaches
+              ? rattaches.has(s.id)
+              : s.seanceRef === seanceId ||
+                new Date(s.date).toDateString() === new Date(group.date).toDateString();
+            if (!retenu) continue;
+            // Avoid duplicate scrutins in same group
+            if (!group.scrutins.some((gs) => gs.id === s.id)) {
+              const { seanceRef: _r, ...scrutinData } = s;
+              group.scrutins.push(scrutinData);
             }
           }
         }

@@ -33,6 +33,8 @@ interface InterventionScrutin {
 
 interface ScrutinDebatsTabProps {
   interventions: InterventionScrutin[];
+  /** D'où vient cette sélection : du vote lui-même, ou de sa seule journée. */
+  rattachement?: 'scrutin' | 'journee';
   chambre: string;
   interventionsSortAsc: boolean;
   onToggleSort: () => void;
@@ -45,6 +47,7 @@ interface ScrutinDebatsTabProps {
 
 export function ScrutinDebatsTab({
   interventions,
+  rattachement,
   chambre,
   interventionsSortAsc,
   onToggleSort,
@@ -56,6 +59,17 @@ export function ScrutinDebatsTab({
 }: ScrutinDebatsTabProps) {
   return (
     <div>
+      {/* Une journée de séance porte souvent plusieurs dizaines de scrutins.
+          Quand le compte rendu ne permet pas de savoir lequel ce débat a
+          précédé, on montre la journée entière — et on le dit, plutôt que de
+          laisser croire que ces prises de parole portent sur ce vote. */}
+      {rattachement === 'journee' && (
+        <p className="mb-4 rounded-lg border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          Ce vote n’a pas pu être relié à un moment précis du compte rendu :
+          voici les débats de la journée, qui peuvent porter sur d’autres textes.
+        </p>
+      )}
+
       {/* Search + sort controls */}
       <div className="flex items-center gap-3 mb-6">
         <div className="relative flex-1">

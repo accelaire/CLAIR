@@ -66,6 +66,10 @@ export function InterventionsList({
   const apiPrefix = chambre === 'senat' ? 'senateurs' : 'deputes';
   const [dateRange, setDateRange] = useUrlDateRange();
   const dateParams = dateRangeToParams(dateRange);
+  // '' = tout ce qui est compté comme prise de parole de fond. Le type
+  // `interruption` est proposé à part : ces lignes n'entrent dans aucun
+  // compteur et ne s'affichent que si on les demande.
+  const [typeFiltre, setTypeFiltre] = useState<string>('');
 
   const {
     data,
@@ -75,12 +79,13 @@ export function InterventionsList({
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['parlementaire-interventions', slug, chambre, dateParams],
+    queryKey: ['parlementaire-interventions', slug, chambre, dateParams, typeFiltre],
     queryFn: ({ pageParam = 1 }) =>
       api.get(`/${apiPrefix}/${slug}/interventions`, {
         params: {
           page: pageParam,
           limit: 10,
+          ...(typeFiltre && { type: typeFiltre }),
           ...dateParams,
         },
       }).then((res) => res.data),
@@ -110,7 +115,31 @@ export function InterventionsList({
 
   return (
     <div className="space-y-4">
-      <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Filtrer par période" />
+      <div className="flex flex-wrap items-center gap-3">
+        <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Filtrer par période" />
+        <select
+          value={typeFiltre}
+          onChange={(e) => setTypeFiltre(e.target.value)}
+          aria-label="Filtrer par nature de prise de parole"
+          className="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="">Toutes les prises de parole</option>
+          <option value="intervention">Interventions</option>
+          <option value="question">Questions posées</option>
+          <option value="reponse_gouvernement">Réponses du Gouvernement</option>
+          <option value="explication_vote">Explications de vote</option>
+          <option value="interruption">Interruptions en séance</option>
+        </select>
+      </div>
+
+      {typeFiltre === 'interruption' && (
+        <p className="rounded-lg border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          Les interruptions sont de vraies prises de parole, attribuées à leur
+          auteur par le compte rendu. Elles n’entrent dans aucun compteur
+          d’activité : les mêler aux interventions de fond ajouterait des
+          milliers de lignes de chahut à l’activité d’un parlementaire.
+        </p>
+      )}
 
       {isLoading ? (
         <div className="space-y-4">
@@ -124,7 +153,9 @@ export function InterventionsList({
         </div>
       ) : error || seances.length === 0 ? (
         <p className="text-center text-muted-foreground py-8">
-          Aucune intervention trouvée pour cette période.
+          {typeFiltre
+            ? 'Aucune prise de parole de cette nature pour cette période.'
+            : 'Aucune intervention trouvée pour cette période.'}
         </p>
       ) : (
         <div className="space-y-6">
