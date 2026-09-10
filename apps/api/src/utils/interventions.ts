@@ -12,6 +12,17 @@
 export const TYPE_INTERRUPTION = 'interruption';
 
 /**
+ * Réponse d'un membre du Gouvernement à une question parlementaire.
+ *
+ * Questions et réponses partagent la même rubrique au compte rendu ; les
+ * distinguer évite qu'un ministre qui répond voie sa réponse comptée comme une
+ * question qu'il aurait posée. C'est une prise de parole de fond : elle
+ * s'affiche et se compte comme les autres, seul le compteur de questions
+ * posées l'écarte.
+ */
+export const TYPE_REPONSE = 'reponse_gouvernement';
+
+/**
  * Le filtre des interventions de fond : ce qu'un lecteur attend quand il
  * demande « les interventions » d'un parlementaire ou d'une séance.
  *

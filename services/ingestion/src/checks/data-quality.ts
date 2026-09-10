@@ -308,6 +308,31 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     min: 600000,
     query: `SELECT COUNT(*)::int AS value FROM interventions`,
   },
+  interventions_explication_vote_an: {
+    type: 'threshold',
+    // L'Assemblée ne code pas ses explications de vote : `EXPL_VOTE`
+    // n'apparaît que 7 fois sur les 601 séances de la 17e législature, et les
+    // orateurs qui s'y succèdent portent un code générique. On ne les tenait
+    // donc que par l'annonce faite au perchoir — et tant qu'on ne la lisait
+    // pas, le corpus n'en comptait que 7 au lieu de 5 545, sans que rien ne le
+    // signale. Ce seuil est là pour que la panne se voie si la lecture de
+    // cette annonce cesse de fonctionner.
+    label: "Explications de vote de l'Assemblée",
+    min: 4500,
+    query: `SELECT COUNT(*)::int AS value FROM interventions
+            WHERE chambre = 'assemblee' AND type = 'explication_vote'`,
+  },
+  interventions_amendement_an: {
+    type: 'threshold',
+    // Même logique : le numéro d'amendement se lit sur l'attribut `adt` du
+    // paragraphe. Il avait d'abord été cherché sur `valeur`, qui porte tout
+    // autre chose : le champ est resté vide sur 276 137 lignes et faux sur les
+    // 4 autres, pendant des semaines, sans qu'aucun contrôle ne s'en émeuve.
+    label: "Interventions rattachées à un amendement (Assemblée)",
+    min: 45000,
+    query: `SELECT COUNT(*)::int AS value FROM interventions
+            WHERE chambre = 'assemblee' AND cardinality(amendements_vises) > 0`,
+  },
   lobbyistes_count: {
     type: 'threshold',
     label: 'Nombre de lobbyistes',

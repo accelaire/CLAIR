@@ -35,10 +35,22 @@ interface SeanceGroup {
   }[];
 }
 
+// Les types viennent de la base, où ils sont écrits sans accent ni espace :
+// les afficher tels quels donnait « Explication vote » et « Reponse
+// gouvernement ». Ce qui n'est pas nommé ici reste affiché brut plutôt que
+// masqué, pour qu'un type ajouté à l'ingestion se voie au lieu de disparaître.
+const LIBELLE_TYPE: Record<string, string> = {
+  intervention: 'Intervention',
+  question: 'Question',
+  reponse_gouvernement: 'Réponse du Gouvernement',
+  explication_vote: 'Explication de vote',
+  interruption: 'Interruption',
+};
+
 function InterventionTypeBadge({ type }: { type: string }) {
-  const label = type.replace('_', ' ');
+  const label = LIBELLE_TYPE[type] ?? type.replace(/_/g, ' ');
   return (
-    <span className="rounded bg-muted px-2 py-0.5 text-xs capitalize">
+    <span className="rounded bg-muted px-2 py-0.5 text-xs first-letter:capitalize">
       {label}
     </span>
   );

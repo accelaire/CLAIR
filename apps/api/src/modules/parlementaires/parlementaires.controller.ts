@@ -451,7 +451,10 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           properties: {
             page: { type: 'integer', minimum: 1, default: 1 },
             limit: { type: 'integer', minimum: 1, maximum: 20, default: 10 },
-            type: { type: 'string', enum: ['question', 'intervention', 'explication_vote'] },
+            type: {
+              type: 'string',
+              enum: ['question', 'intervention', 'explication_vote', 'reponse_gouvernement', 'interruption'],
+            },
             dateFrom: { type: 'string', format: 'date' },
             dateTo: { type: 'string', format: 'date' },
           },
