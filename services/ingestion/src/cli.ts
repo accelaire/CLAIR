@@ -1237,6 +1237,42 @@ program
   });
 
 program
+  .command('link-debats-scrutins')
+  .description("Rattacher les débats AN aux scrutins qu'ils ont précédés")
+  .option('--legislature <n>', 'Législature à traiter', (v: string) => parseInt(v, 10), 17)
+  .option('--max-seances <n>', 'Borne de sécurité pour les essais', (v: string) => parseInt(v, 10))
+  .option('--repertoire <chemin>', 'Archive déjà décompressée, au lieu de la retélécharger')
+  .option('--dry-run', 'Tout mesurer sans rien écrire')
+  .option('--refaire-tout', 'Refaire les séances déjà rattachées')
+  .option('--sortie <fichier>', 'Écrire les liens dans un fichier TSV au lieu de la base')
+  .action(async (options: { legislature: number; maxSeances?: number; repertoire?: string; dryRun?: boolean; refaireTout?: boolean; sortie?: string }) => {
+    try {
+      // Chargé à l'exécution, comme sync-debats-an : le module instancie son
+      // client Prisma et le conteneur tourne déjà au bord de l'OOM.
+      const { linkDebatsScrutins } = await import('./workers/link-debats-scrutins.js');
+      const result = await linkDebatsScrutins({
+        legislature: options.legislature,
+        maxSeances: options.maxSeances,
+        repertoireLocal: options.repertoire,
+        dryRun: options.dryRun,
+        refaireTout: options.refaireTout,
+        sortie: options.sortie,
+      });
+      console.log(`\nSéances traitées      : ${result.seances}`);
+      console.log(`Séances déjà faites   : ${result.seancesIgnorees}`);
+      console.log(`Mises aux voix        : ${result.misesAuxVoix}`);
+      console.log(`  rattachées          : ${result.votesApparies}`);
+      console.log(`  indiscernables      : ${result.votesAmbigus}`);
+      console.log(`  sans scrutin        : ${result.votesSansScrutin}`);
+      console.log(`Liens débat-scrutin   : ${result.liens}${options.dryRun ? ' (dry-run)' : ''}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'link-debats-scrutins failed');
+      process.exit(1);
+    }
+  });
+
+program
   .command('sync-debats-an')
   .description("Ingérer les comptes rendus de séance AN (source syceron, remplace DILA)")
   .option('--legislature <n>', 'Législature à moissonner', (v: string) => parseInt(v, 10), 17)

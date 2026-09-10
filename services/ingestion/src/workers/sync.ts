@@ -3350,6 +3350,23 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'Interventions linking failed (non-blocking)');
     }
+
+    // Rattachement fin, côté Assemblée : le linker ci-dessus ne relie que les
+    // séances et journées ne portant qu'un seul scrutin — 120 sur 1 115.
+    // Celui-ci lit les mises aux voix du compte rendu et rend à chaque scrutin
+    // le débat qui l'a précédé, ce qui est le seul moyen de distinguer les
+    // scrutins d'une même journée.
+    try {
+      logger.info('Rattachement fin des débats AN aux scrutins...');
+      const { linkDebatsScrutins } = await import('./link-debats-scrutins.js');
+      const finResult = await linkDebatsScrutins({ legislature: LEGISLATURE_AN_COURANTE });
+      logger.info(finResult, 'Rattachement fin des débats terminé');
+    } catch (error) {
+      logger.error(
+        { error: errorMessage(error) },
+        'Rattachement fin des débats échoué (non bloquant)',
+      );
+    }
   }
 
   if (hasAmendementsChanged || hasScrutinsChanged) {
