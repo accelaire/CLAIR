@@ -77,15 +77,20 @@ interface InterventionAEcrire {
  */
 export function regrouperPrises(prises: PriseDeParoleSyceron[]): InterventionAEcrire[] {
   const groupes: InterventionAEcrire[] = [];
+  // Le tour de parole en cours : le dernier propos de fond, qu'une interruption
+  // ne clôt pas. -1 quand aucun tour n'est ouvert.
+  let tourEnCours = -1;
 
   for (const prise of prises) {
-    const precedent = groupes[groupes.length - 1];
     const type = typeDIntervention(prise);
+    const estInterruption = type === TYPE_INTERRUPTION;
+    const precedent = tourEnCours >= 0 ? groupes[tourEnCours] : undefined;
     // Le type doit concorder : un orateur peut interrompre juste avant ou
     // juste après avoir eu la parole, et fondre les deux ferait passer son
     // chahut pour du propos de fond — ou l'inverse, sortirait une vraie
     // intervention des compteurs sous le type de l'interruption.
     const memeTour =
+      !estInterruption &&
       precedent !== undefined &&
       !prise.estPresidence &&
       !precedent.estPresidence &&
@@ -114,6 +119,20 @@ export function regrouperPrises(prises: PriseDeParoleSyceron[]): InterventionAEc
       contenu: prise.contenu,
       type,
     });
+
+    // Ce qui clôt un tour de parole, et ce qui ne le clôt pas.
+    //
+    // Une interruption traverse le propos sans l'interrompre vraiment : le
+    // compte rendu coupe le discours en autant de paragraphes qu'on a crié
+    // dessus, si bien qu'un député chahuté comptait quarante-cinq
+    // « interventions » là où il en avait prononcé une. Son activité mesurée
+    // dépendait du comportement des autres — et les plus chahutés sont ceux
+    // des groupes qui polarisent.
+    //
+    // La présidence, elle, clôt : elle ne reprend la parole que pour donner la
+    // suite, rappeler au règlement ou mettre aux voix.
+    if (prise.estPresidence) tourEnCours = -1;
+    else if (!estInterruption) tourEnCours = groupes.length - 1;
   }
 
   return groupes.filter((g) => g.estPresidence || g.contenu.length >= LONGUEUR_MINIMALE);

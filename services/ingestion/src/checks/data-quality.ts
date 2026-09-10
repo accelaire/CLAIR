@@ -300,13 +300,31 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
   },
   interventions_count: {
     type: 'threshold',
-    // Relevé de 70 000 à 600 000 au passage des débats AN à syceron : la
-    // 17e et la 16e législature pèsent 553 791 lignes à elles deux, plus
-    // 91 017 côté Sénat. Test de fumée sur le volume brut — il compte donc
-    // aussi la mécanique de séance et les interruptions.
+    // Relevé de 70 000 au passage des débats AN à syceron. Ramené de 600 000
+    // à 500 000 quand on a cessé de compter des paragraphes de compte rendu
+    // pour compter des tours de parole : recoller les propos que le chahut
+    // coupait a retiré un cinquième des lignes sans retirer un mot de texte.
+    // Test de fumée sur le volume brut — il compte donc aussi la mécanique de
+    // séance et les interruptions.
     label: "Nombre d'interventions",
-    min: 600000,
+    min: 500000,
     query: `SELECT COUNT(*)::int AS value FROM interventions`,
+  },
+  debats_rattaches_par_scrutin: {
+    type: 'threshold',
+    // Le rattachement grossier — une intervention prend le scrutin de sa
+    // journée quand il n'y en a qu'un — ne couvrait que 120 journées sur
+    // 1 115 : partout ailleurs la page d'un scrutin montrait le débat du jour
+    // entier, et trois scrutins du même jour affichaient les mêmes
+    // interventions. Ce seuil garde la trace du rattachement fin, celui qui
+    // lit les mises aux voix du compte rendu.
+    //
+    // 75 529 liens aujourd'hui, pour 11 091 mises aux voix rapprochées d'un
+    // scrutin sur 11 253. Le compte a baissé au passage aux tours de parole :
+    // moins de lignes à rattacher, pas moins de débats rattachés.
+    label: 'Liens débat-scrutin (Assemblée)',
+    min: 65000,
+    query: `SELECT COUNT(*)::int AS value FROM intervention_scrutin`,
   },
   interventions_explication_vote_an: {
     type: 'threshold',
@@ -314,11 +332,11 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // n'apparaît que 7 fois sur les 601 séances de la 17e législature, et les
     // orateurs qui s'y succèdent portent un code générique. On ne les tenait
     // donc que par l'annonce faite au perchoir — et tant qu'on ne la lisait
-    // pas, le corpus n'en comptait que 7 au lieu de 5 545, sans que rien ne le
+    // pas, le corpus n'en comptait que 7 au lieu de 2 220, sans que rien ne le
     // signale. Ce seuil est là pour que la panne se voie si la lecture de
     // cette annonce cesse de fonctionner.
     label: "Explications de vote de l'Assemblée",
-    min: 4500,
+    min: 1800,
     query: `SELECT COUNT(*)::int AS value FROM interventions
             WHERE chambre = 'assemblee' AND type = 'explication_vote'`,
   },
@@ -329,7 +347,7 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // autre chose : le champ est resté vide sur 276 137 lignes et faux sur les
     // 4 autres, pendant des semaines, sans qu'aucun contrôle ne s'en émeuve.
     label: "Interventions rattachées à un amendement (Assemblée)",
-    min: 45000,
+    min: 40000,
     query: `SELECT COUNT(*)::int AS value FROM interventions
             WHERE chambre = 'assemblee' AND cardinality(amendements_vises) > 0`,
   },

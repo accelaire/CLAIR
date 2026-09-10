@@ -247,3 +247,71 @@ describe('explications de vote', () => {
     expect(groupes.map((g) => g.type)).toEqual(['intervention', 'explication_vote']);
   });
 });
+
+describe('tours de parole traversés par le chahut', () => {
+  it("recolle un propos que des interruptions ont coupé", () => {
+    const groupes = regrouperPrises([
+      prise({ ordreAbsolu: 9, contenu: 'Je me fais le relais de nombreux Français.' }),
+      prise({
+        ordreAbsolu: 10,
+        codeGrammaire: 'INTERRUPTION_1_10',
+        orateurRef: 'PA2',
+        orateurNom: 'Cordier',
+        contenu: 'Moi, je ne suis pas d’accord !',
+      }),
+      prise({ ordreAbsolu: 11, contenu: '…il y voit un pacte de réconciliation.' }),
+    ]);
+
+    const fond = groupes.filter((g) => g.type !== TYPE_INTERRUPTION);
+    expect(fond).toHaveLength(1);
+    expect(fond[0]?.contenu).toContain('Je me fais le relais');
+    expect(fond[0]?.contenu).toContain('pacte de réconciliation');
+  });
+
+  it("garde l'interruption comme prise de parole distincte, à son auteur", () => {
+    const groupes = regrouperPrises([
+      prise({ ordreAbsolu: 9, contenu: 'Mon propos, première partie.' }),
+      prise({
+        ordreAbsolu: 10,
+        codeGrammaire: 'INTERRUPTION_1_10',
+        orateurRef: 'PA2',
+        orateurNom: 'Cordier',
+        contenu: 'Moi, je ne suis pas d’accord !',
+      }),
+      prise({ ordreAbsolu: 11, contenu: 'Mon propos, seconde partie.' }),
+    ]);
+    const chahut = groupes.filter((g) => g.type === TYPE_INTERRUPTION);
+    expect(chahut).toHaveLength(1);
+    expect(chahut[0]?.orateurNom).toBe('Cordier');
+  });
+
+  it('ne recolle pas par-dessus la présidence, qui donne la parole à un autre', () => {
+    const groupes = regrouperPrises([
+      prise({ ordreAbsolu: 9, contenu: 'Mon propos sur cet article.' }),
+      prise({
+        ordreAbsolu: 10,
+        orateurRef: null,
+        orateurNom: 'présidente',
+        estPresidence: true,
+        contenu: 'La parole est à Mme Géraldine Bannier.',
+      }),
+      prise({ ordreAbsolu: 11, contenu: 'Je reprends la parole plus tard, autre tour.' }),
+    ]);
+    expect(groupes.filter((g) => !g.estPresidence)).toHaveLength(2);
+  });
+
+  it("ne recolle pas deux orateurs différents séparés par une interruption", () => {
+    const groupes = regrouperPrises([
+      prise({ ordreAbsolu: 9, contenu: 'Le propos du premier orateur.' }),
+      prise({
+        ordreAbsolu: 10,
+        codeGrammaire: 'INTERRUPTION_1_10',
+        orateurRef: 'PA3',
+        orateurNom: 'Taurinya',
+        contenu: 'Ça ne règle rien !',
+      }),
+      prise({ ordreAbsolu: 11, orateurRef: 'PA9', orateurNom: 'Autre', contenu: 'Le propos du second orateur.' }),
+    ]);
+    expect(groupes.filter((g) => g.type !== TYPE_INTERRUPTION)).toHaveLength(2);
+  });
+});
