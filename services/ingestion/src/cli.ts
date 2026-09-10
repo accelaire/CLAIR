@@ -1242,7 +1242,7 @@ program
   .option('--legislature <n>', 'Législature à moissonner', (v: string) => parseInt(v, 10), 17)
   .option('--max-seances <n>', 'Borne de sécurité pour les essais', (v: string) => parseInt(v, 10))
   .option('--repertoire <chemin>', 'Archive déjà décompressée, au lieu de la retélécharger')
-  .option('--reingerer', 'Relire les séances déjà en base au lieu de les sauter')
+  .option('--reingerer', 'Relire les séances déjà en base et y remplacer les interventions')
   .action(async (options: { legislature: number; maxSeances?: number; repertoire?: string; reingerer?: boolean }) => {
     try {
       // Chargé à l'exécution : le module instancie son client Prisma, et le

@@ -200,3 +200,107 @@ describe('parseCompteRendu', () => {
     expect(parseCompteRendu('<compteRendu><contenu/></compteRendu>')).toBeNull();
   });
 });
+
+// Reproduit la discussion d'un amendement puis une séquence d'explications de
+// vote : deux contextes que rien ne signale sur le paragraphe lui-même.
+const SEANCE_AMENDEMENT_ET_EXPLICATIONS = `<?xml version='1.0' encoding='UTF-8'?>
+<compteRendu xmlns="http://schemas.assemblee-nationale.fr/referentiel">
+  <uid>CRSANR5L17S2025E1N003</uid>
+  <metadonnees>
+    <dateSeance>20250115150000000</dateSeance>
+    <legislature>17</legislature>
+  </metadonnees>
+  <contenu>
+    <point nivpoint="3" code_grammaire="DISC_ARTICLES_2_4" art=" 1er" bibard=" (n[[o]]&#160;1640)">
+      <point nivpoint="4" code_grammaire="DISC_ARTICLES_3_1" art=" 1er" adt=" 13">
+        <paragraphe ordre_absolu_seance="520" id_acteur="PA795228" code_grammaire="PAROLE_GENERIQUE" id_syceron="1">
+          <orateurs><orateur><nom>Mme la présidente</nom><id>795228</id><qualite/></orateur></orateurs>
+          <texte>La parole est à M. Antoine Léaument, pour soutenir l'amendement no 13.</texte>
+        </paragraphe>
+        <paragraphe ordre_absolu_seance="521" id_acteur="PA794022" code_grammaire="PAROLE_GENERIQUE" id_syceron="2" adt=" 13">
+          <orateurs><orateur><nom>M. Antoine Léaument</nom><id>794022</id><qualite/></orateur></orateurs>
+          <texte>Cet amendement vise à rétablir une garantie essentielle pour les justiciables.</texte>
+        </paragraphe>
+      </point>
+    </point>
+    <point nivpoint="2" code_grammaire="MOTION_RP_1_1" bibard=" (n[[o]]&#160;1640)">
+      <paragraphe ordre_absolu_seance="600" id_acteur="PA795228" code_grammaire="PAROLE_GENERIQUE" id_syceron="3">
+        <orateurs><orateur><nom>Mme la présidente</nom><id>795228</id><qualite/></orateur></orateurs>
+        <texte>Dans les explications de vote, la parole est à M. Alexandre Portier.</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="601" id_acteur="PA794994" code_grammaire="PAROLE_GENERIQUE" id_syceron="4">
+        <orateurs><orateur><nom>M. Alexandre Portier</nom><id>794994</id><qualite/></orateur></orateurs>
+        <texte>Notre groupe votera contre cette motion, et voici pourquoi.</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="602" id_acteur="PA700000" code_grammaire="INTERRUPTION_1_10" id_syceron="5">
+        <orateurs><orateur><nom>Mme Andrée Taurinya</nom><id>700000</id><qualite/></orateur></orateurs>
+        <texte>On en a connu d'autres, des discours comme celui-là !</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="603" id_acteur="PA795228" code_grammaire="PAROLE_GENERIQUE" id_syceron="6">
+        <orateurs><orateur><nom>Mme la présidente</nom><id>795228</id><qualite/></orateur></orateurs>
+        <texte>La parole est à Mme Géraldine Bannier.</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="604" id_acteur="PA794995" code_grammaire="PAROLE_GENERIQUE" id_syceron="7">
+        <orateurs><orateur><nom>Mme Géraldine Bannier</nom><id>794995</id><qualite/></orateur></orateurs>
+        <texte>Le groupe Les Démocrates ne votera pas cette motion de rejet.</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="605" id_acteur="PA795228" code_grammaire="SCR_MRJ_1_4" id_syceron="8">
+        <orateurs><orateur><nom>Mme la présidente</nom><id>795228</id><qualite/></orateur></orateurs>
+        <texte>Voici le résultat du scrutin : Nombre de votants 561 Nombre de suffrages exprimés 504 Majorité absolue 253 Pour l'adoption 199 Contre 305</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="606" id_acteur="PA794996" code_grammaire="PAROLE_GENERIQUE" id_syceron="9">
+        <orateurs><orateur><nom>M. Charles Rodwell</nom><id>794996</id><qualite/></orateur></orateurs>
+        <texte>J'en viens maintenant au fond du texte que nous examinons.</texte>
+      </paragraphe>
+    </point>
+  </contenu>
+</compteRendu>`;
+
+describe('amendements visés', () => {
+  const seance = parseCompteRendu(SEANCE_AMENDEMENT_ET_EXPLICATIONS);
+
+  it("lit le numéro sur l'attribut `adt` du paragraphe", () => {
+    const soutien = seance?.prises.find((p) => p.ordreAbsolu === 521);
+    expect(soutien?.amendementsVises).toEqual(['13']);
+  });
+
+  it("n'hérite pas l'amendement du <point> englobant", () => {
+    // Le <point> déclare adt=" 13", mais la distribution de parole qui l'ouvre
+    // ne le déclare pas : un point couvre la discussion commune de plusieurs
+    // amendements, et hériter prêterait à l'un ce qui se dit d'un autre.
+    const annonce = seance?.prises.find((p) => p.ordreAbsolu === 520);
+    expect(annonce?.amendementsVises).toEqual([]);
+  });
+
+  it("ne prête aucun amendement aux prises de parole hors d'une discussion d'amendement", () => {
+    const explication = seance?.prises.find((p) => p.ordreAbsolu === 601);
+    expect(explication?.amendementsVises).toEqual([]);
+  });
+});
+
+describe('séquences d’explications de vote', () => {
+  const seance = parseCompteRendu(SEANCE_AMENDEMENT_ET_EXPLICATIONS);
+  const marque = (ordre: number): boolean | undefined =>
+    seance?.prises.find((p) => p.ordreAbsolu === ordre)?.dansExplicationDeVote;
+
+  it("marque l'orateur appelé par l'annonce", () => {
+    expect(marque(601)).toBe(true);
+  });
+
+  it('marque les orateurs suivants, que la présidence appelle sans le redire', () => {
+    expect(marque(604)).toBe(true);
+  });
+
+  it("ne marque pas la mécanique de séance, qui n'explique aucun vote", () => {
+    expect(marque(600)).toBe(false);
+    expect(marque(603)).toBe(false);
+  });
+
+  it('ferme la séquence au scrutin', () => {
+    expect(marque(606)).toBe(false);
+  });
+
+  it("ne marque rien avant l'annonce", () => {
+    expect(marque(521)).toBe(false);
+  });
+});

@@ -44,7 +44,22 @@ export interface PriseDeParoleSyceron {
   contenu: string;
   /** Article en discussion : `15`, `Après 14`, `Avant 16`. */
   articleVise: string | null;
-  /** Numéros d'amendement nommés par ce paragraphe (souvent vide). */
+  /**
+   * Numéros d'amendement nommés par ce paragraphe, lus sur l'attribut `adt`.
+   *
+   * Surtout pas sur `valeur`, qui porte le rang du point à l'ordre du jour et
+   * de petits compteurs de séance : l'avoir pris pour la source des numéros
+   * laissait le champ vide sur 276 137 paragraphes et faux sur les 4 autres.
+   *
+   * On ne l'hérite pas du `<point>` englobant, contrairement à l'article et au
+   * texte. La contre-épreuve sur la 17e législature est sans appel : quand le
+   * paragraphe porte son propre `adt`, 77,9 % de ceux qui citent un numéro
+   * citent bien celui-là ; hérité du point, 41,5 % seulement. Un `<point>`
+   * ouvert sur l'amendement 46 couvre la discussion commune des suivants, si
+   * bien que l'héritage prête à l'un ce qui se dit d'un autre — 131 064 lignes
+   * mal rattachées contre 33 680 justes. Un rattachement faux est pire qu'un
+   * rattachement absent.
+   */
   amendementsVises: string[];
   /** Numéro du texte en discussion, tiré de `bibard`. */
   texteNumero: string | null;
@@ -55,6 +70,18 @@ export interface PriseDeParoleSyceron {
    * y portent un code générique.
    */
   codeRubrique: string | null;
+  /**
+   * Vrai si la prise de parole s'inscrit dans une séquence d'explications de
+   * vote ouverte au perchoir.
+   *
+   * L'Assemblée ne marque pas ses explications de vote dans la grammaire du
+   * compte rendu : `EXPL_VOTE` n'apparaît que 7 fois sur les 601 séances de la
+   * 17e législature, et les orateurs qui s'y succèdent portent le code
+   * générique `PAROLE_GENERIQUE`, sous la rubrique du texte débattu. Le seul
+   * repère est l'annonce de la présidence — « Dans les explications de vote,
+   * la parole est à… » — qui ouvre une séquence courant jusqu'au scrutin.
+   */
+  dansExplicationDeVote: boolean;
   /** Vrai pour la mécanique de séance (« La parole est à… »), à ne pas afficher. */
   estPresidence: boolean;
 }
@@ -294,9 +321,17 @@ export function parseCompteRendu(xml: string): SeanceSyceron | null {
     seanceRef: $('compteRendu > seanceRef').first().text().trim() || null,
     legislature,
     date,
-    prises: paragraphes.map(enPriseDeParole).filter((p): p is PriseDeParoleSyceron => p !== null),
+    prises: prisesDeParole(paragraphes),
     votes: releverVotes(paragraphes),
   };
+}
+
+/** Prises de parole du compte rendu, chacune sachant si elle explique un vote. */
+function prisesDeParole(paragraphes: ParagrapheBrut[]): PriseDeParoleSyceron[] {
+  const explications = marquerExplicationsDeVote(paragraphes);
+  return paragraphes
+    .map((p, i) => enPriseDeParole(p, explications[i] ?? false))
+    .filter((p): p is PriseDeParoleSyceron => p !== null);
 }
 
 function estElement(noeud: AnyNode): noeud is Element {
@@ -309,6 +344,8 @@ interface ParagrapheBrut {
   ordreAbsolu: number;
   codeGrammaire: string;
   valeur: string | undefined;
+  /** `adt` du paragraphe : l'amendement qu'il nomme, quand il en nomme un. */
+  adt: string | undefined;
   orateurRef: string | null;
   nomBrut: string;
   qualite: string;
@@ -332,6 +369,7 @@ function lireParagraphe(
     ordreAbsolu,
     codeGrammaire: attribs['code_grammaire'] ?? '',
     valeur: attribs['valeur'],
+    adt: attribs['adt'],
     orateurRef: idActeur && /^PA\d+$/.test(idActeur) ? idActeur : null,
     nomBrut: orateur.children('nom').text().trim(),
     qualite: orateur.children('qualite').text().trim(),
@@ -340,11 +378,12 @@ function lireParagraphe(
   };
 }
 
-function enPriseDeParole(p: ParagrapheBrut): PriseDeParoleSyceron | null {
+function enPriseDeParole(p: ParagrapheBrut, dansExplicationDeVote: boolean): PriseDeParoleSyceron | null {
   if (!p.nomBrut || !Number.isFinite(p.ordreAbsolu)) return null;
 
   const { prenom, nom } = decouperNom(p.nomBrut);
   const estPresidence = estPresidenceDeSeance(nom);
+
 
   return {
     sourceUid: p.sourceUid,
@@ -356,11 +395,77 @@ function enPriseDeParole(p: ParagrapheBrut): PriseDeParoleSyceron | null {
     orateurQualite: p.qualite.length > 0 ? p.qualite : null,
     contenu: p.contenu,
     articleVise: p.contexte.articleVise,
-    amendementsVises: numerosAmendement(p.valeur),
+    amendementsVises: numerosAmendement(p.adt),
     texteNumero: p.contexte.texteNumero,
     codeRubrique: p.contexte.codeRubrique,
+    dansExplicationDeVote,
     estPresidence,
   };
+}
+
+// =============================================================================
+// SÉQUENCES D'EXPLICATIONS DE VOTE
+// =============================================================================
+
+/**
+ * Annonce d'ouverture des explications de vote, au perchoir.
+ *
+ * Les formes relevées sur la 17e législature : « Dans les explications de
+ * vote, la parole est à… », « Nous en venons aux explications de vote », « Pour
+ * les explications de vote, la parole est à… ». Elles ont en commun de nommer
+ * l'exercice ; les orateurs suivants, eux, sont appelés d'un simple « La parole
+ * est à M. X » et ne se distinguent plus de n'importe quelle prise de parole.
+ */
+const ANNONCE_EXPLICATION_VOTE = /explications?\s+de\s+vote/i;
+
+/**
+ * Codes du scrutin lui-même, qui closent la séquence.
+ *
+ * L'AN en a trois familles — `SCR_MRJ_1_3` « Il est procédé au scrutin »,
+ * `SCRUT_ART_PUB_1_6`, `SCRUPUB_SSADTS_…` — et rien ne les rassemble qu'un
+ * préfixe commun.
+ *
+ * On ne ferme pas sur `ANN_SCR…` : cette annonce-là — « je suis saisi par le
+ * groupe X d'une demande de scrutin public » — tombe au milieu des
+ * explications de vote, avant que les derniers orateurs aient parlé.
+ */
+const CODE_SCRUTIN = /^SCR(?:UT|UPUB)?_/;
+
+/**
+ * Marque les paragraphes appartenant à une séquence d'explications de vote.
+ *
+ * La séquence s'ouvre sur l'annonce de la présidence et court jusqu'au
+ * scrutin. Elle se ferme aussi au changement de rubrique : les explications de
+ * vote se tiennent sous le `<point>` du texte débattu, et en sortir signifie
+ * qu'on est passé à autre chose — garde-fou contre une séquence qui resterait
+ * ouverte jusqu'à la fin de la séance faute d'avoir vu son scrutin.
+ */
+export function marquerExplicationsDeVote(paragraphes: ParagrapheBrut[]): boolean[] {
+  const marques = new Array<boolean>(paragraphes.length).fill(false);
+  let ouverte = false;
+  let rubrique: string | null = null;
+
+  for (let i = 0; i < paragraphes.length; i++) {
+    const p = paragraphes[i];
+    if (!p) continue;
+
+    if (ouverte && (p.contexte.codeRubrique !== rubrique || CODE_SCRUTIN.test(p.codeGrammaire))) {
+      ouverte = false;
+    }
+
+    const estPresidence = estPresidenceDeSeance(decouperNom(p.nomBrut).nom);
+    if (estPresidence && ANNONCE_EXPLICATION_VOTE.test(p.contenu)) {
+      ouverte = true;
+      rubrique = p.contexte.codeRubrique;
+      continue;
+    }
+
+    // L'annonce et les distributions de parole restent de la mécanique de
+    // séance : c'est ce que disent les orateurs qui est une explication de vote.
+    marques[i] = ouverte && !estPresidence;
+  }
+
+  return marques;
 }
 
 /**
@@ -416,7 +521,9 @@ export function releverVotes(paragraphes: ParagrapheBrut[]): VoteAnnonceSyceron[
 export function nettoyer(brut: string): string {
   return brut
     .replace(/\[\[o\]\]/g, 'o')
-    .replace(/ /g, ' ')
+    // \u00A0 plutôt que le caractère lui-même : une espace insécable dans une
+    // expression régulière est indiscernable d'une espace ordinaire à la lecture.
+    .replace(/\u00A0/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }

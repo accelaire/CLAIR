@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { regrouperPrises } from './interventions-syceron';
-import { TYPE_INTERRUPTION } from '../utils/interventions';
+import { regrouperPrises, estMembreDuGouvernement } from './interventions-syceron';
+import { TYPE_INTERRUPTION, TYPE_REPONSE } from '../utils/interventions';
 import type { PriseDeParoleSyceron } from '../sources/assemblee-nationale/syceron-parser';
 
 function prise(p: Partial<PriseDeParoleSyceron> & { ordreAbsolu: number }): PriseDeParoleSyceron {
@@ -16,6 +16,7 @@ function prise(p: Partial<PriseDeParoleSyceron> & { ordreAbsolu: number }): Pris
     amendementsVises: [],
     texteNumero: '1364',
     codeRubrique: null,
+    dansExplicationDeVote: false,
     estPresidence: false,
     ...p,
   };
@@ -173,5 +174,76 @@ describe('regrouperPrises', () => {
       prise({ ordreAbsolu: 2, codeGrammaire: 'INTERRUPTION_1_10', contenu: 'Mais bien sûr !' }),
     ]);
     expect(groupes.map((g) => g.type)).toEqual(['intervention', TYPE_INTERRUPTION]);
+  });
+});
+
+describe('estMembreDuGouvernement', () => {
+  it('reconnaît les qualités gouvernementales, quelle que soit leur forme', () => {
+    for (const qualite of [
+      'ministre',
+      'ministre déléguée chargée de l’énergie',
+      'Premier ministre',
+      'Première ministre',
+      'secrétaire d’État',
+      'garde des sceaux, ministre de la justice',
+      'porte-parole du gouvernement, ministre déléguée chargée de l’énergie',
+    ]) {
+      expect(estMembreDuGouvernement(qualite)).toBe(true);
+    }
+  });
+
+  it("ne prend pas un député pour un ministre à cause d'une sous-chaîne", () => {
+    // « administration » contient « ministr » : 562 paragraphes de la 17e
+    // législature portent cette qualité, tous des députés.
+    for (const qualite of [
+      'rapporteur de la commission des lois constitutionnelles, de la législation et de l’administration générale de la République',
+      'président de la commission des finances',
+      'rapporteure',
+      'administratrice nationale de la FCPE',
+    ]) {
+      expect(estMembreDuGouvernement(qualite)).toBe(false);
+    }
+  });
+
+  it('traite une qualité absente comme non gouvernementale', () => {
+    expect(estMembreDuGouvernement(null)).toBe(false);
+  });
+});
+
+describe('typage des questions au Gouvernement', () => {
+  const sousRubriqueQG = { codeRubrique: 'QG_1_1', codeGrammaire: 'PAROLE_GENERIQUE' };
+
+  it('compte la question du député qui interroge', () => {
+    const [groupe] = regrouperPrises([prise({ ordreAbsolu: 1, ...sousRubriqueQG })]);
+    expect(groupe?.type).toBe('question');
+  });
+
+  it("range la réponse du ministre à part, pour qu'elle ne compte pas comme une question", () => {
+    const [groupe] = regrouperPrises([
+      prise({ ordreAbsolu: 1, ...sousRubriqueQG, orateurRef: null, orateurQualite: 'Premier ministre' }),
+    ]);
+    expect(groupe?.type).toBe(TYPE_REPONSE);
+  });
+
+  it("ne sépare pas la réponse hors d'une séquence de questions", () => {
+    const [groupe] = regrouperPrises([
+      prise({ ordreAbsolu: 1, orateurRef: null, orateurQualite: 'ministre' }),
+    ]);
+    expect(groupe?.type).toBe('intervention');
+  });
+});
+
+describe('explications de vote', () => {
+  it('type la prise de parole marquée par le parseur', () => {
+    const [groupe] = regrouperPrises([prise({ ordreAbsolu: 1, dansExplicationDeVote: true })]);
+    expect(groupe?.type).toBe('explication_vote');
+  });
+
+  it("ne fond pas une explication de vote avec le propos de fond du même orateur", () => {
+    const groupes = regrouperPrises([
+      prise({ ordreAbsolu: 1, contenu: 'Mon propos dans la discussion générale.' }),
+      prise({ ordreAbsolu: 2, contenu: 'Mon explication de vote, ensuite.', dansExplicationDeVote: true }),
+    ]);
+    expect(groupes.map((g) => g.type)).toEqual(['intervention', 'explication_vote']);
   });
 });

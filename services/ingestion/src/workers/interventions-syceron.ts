@@ -5,7 +5,7 @@
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { errorMessage } from '../utils/errors';
-import { TYPE_INTERRUPTION } from '../utils/interventions';
+import { TYPE_INTERRUPTION, TYPE_REPONSE } from '../utils/interventions';
 import { SyceronClient } from '../sources/assemblee-nationale/syceron-client';
 import type { PriseDeParoleSyceron, SeanceSyceron } from '../sources/assemblee-nationale/syceron-parser';
 
@@ -16,12 +16,26 @@ const CHAMBRE = 'assemblee';
 /** Longueur en deçà de laquelle une prise de parole n'apporte rien à lire. */
 const LONGUEUR_MINIMALE = 15;
 
+/** Marge laissée au remplacement d'une séance, connexion distante comprise. */
+const DELAI_TRANSACTION = 120_000;
+
+/** Attente maximale d'une connexion libre dans le pool avant d'abandonner. */
+const DELAI_ATTENTE = 30_000;
+
 export interface OptionsSyceron {
   legislature: number;
   maxSeances?: number;
   /** Archive déjà décompressée, pour les essais en local. */
   repertoireLocal?: string;
-  /** Relire les séances déjà en base au lieu de les sauter. */
+  /**
+   * Relire les séances déjà en base et remplacer ce qu'elles y ont écrit.
+   *
+   * Nécessaire après un changement de lecture du compte rendu : les lignes
+   * existantes portent l'ancienne interprétation, et `skipDuplicates` les
+   * laisserait telles quelles. Le remplacement se fait séance par séance, dans
+   * une transaction : à aucun moment la base ne se retrouve sans ses débats,
+   * et une interruption ne coûte que la séance en cours.
+   */
   reingerer?: boolean;
 }
 
@@ -156,16 +170,42 @@ function estUneQuestion(code: string | null): boolean {
   return code !== null && PREFIXES_QUESTION.some((prefixe) => code.startsWith(prefixe));
 }
 
+/**
+ * Une qualité de membre du Gouvernement.
+ *
+ * Sert à distinguer, sous une rubrique de questions, celui qui interroge de
+ * celui qui répond : la rubrique vaut pour toute la séquence, si bien que sans
+ * cette distinction les réponses des ministres tombaient dans leur propre
+ * compteur de questions posées — 745 pour Gabriel Attal, dont 539 prononcées
+ * comme Premier ministre.
+ *
+ * Les limites de mot autour de « ministre » ne sont pas décoratives : 562
+ * paragraphes ont pour qualité « rapporteur de la commission des lois
+ * constitutionnelles, de la législation et de l'administration générale de la
+ * République », où « administration » contient la sous-chaîne. Ce sont des
+ * députés, et les compter comme gouvernement effacerait leurs questions.
+ */
+const QUALITE_GOUVERNEMENT =
+  /\bministres?\b|\bsecr[ée]taire\s+d[’']?[EÉ]tat\b|\bgarde\s+des\s+sceaux\b|\bporte-parole\s+du\s+gouvernement\b/i;
+
+export function estMembreDuGouvernement(qualite: string | null): boolean {
+  return qualite !== null && QUALITE_GOUVERNEMENT.test(qualite);
+}
+
 function typeDIntervention(prise: PriseDeParoleSyceron): string {
   const code = prise.codeGrammaire;
   if (code.startsWith('INTERRUPTION')) return TYPE_INTERRUPTION;
   if (code.startsWith('EXPL_VOTE') || code.startsWith('EXPLICATION')) return 'explication_vote';
+  // L'Assemblée ne code pas ses explications de vote : elles ne se
+  // reconnaissent qu'à l'annonce faite au perchoir, que le parseur suit d'un
+  // orateur à l'autre jusqu'au scrutin.
+  if (prise.dansExplicationDeVote) return 'explication_vote';
   // Une question se reconnaît soit sur le paragraphe, soit — le plus souvent —
   // sur la rubrique qui l'englobe : les paragraphes d'une séance de questions
   // portent un code générique, et sans la rubrique elle ressemblerait à
   // n'importe quel débat.
   if (code.startsWith('QUESTION') || estUneQuestion(code) || estUneQuestion(prise.codeRubrique)) {
-    return 'question';
+    return estMembreDuGouvernement(prise.orateurQualite) ? TYPE_REPONSE : 'question';
   }
   return 'intervention';
 }
@@ -199,7 +239,7 @@ export async function syncInterventionsSyceron(options: OptionsSyceron): Promise
     repertoireLocal: options.repertoireLocal,
   })) {
     try {
-      const ecrites = await ecrireSeance(seance, parlementaireParRef);
+      const ecrites = await ecrireSeance(seance, parlementaireParRef, options.reingerer ?? false);
       resultat.seances++;
       resultat.interventions += ecrites.ecrites;
       resultat.sansParlementaire += ecrites.sansParlementaire;
@@ -238,6 +278,7 @@ async function seancesDejaEnBase(legislature: number): Promise<Set<string>> {
 async function ecrireSeance(
   seance: SeanceSyceron,
   parlementaireParRef: Map<string, string>,
+  remplacer: boolean,
 ): Promise<{ ecrites: number; sansParlementaire: number }> {
   const groupes = regrouperPrises(seance.prises);
   if (groupes.length === 0) return { ecrites: 0, sansParlementaire: 0 };
@@ -274,7 +315,29 @@ async function ecrireSeance(
 
   // `skipDuplicates` sur `source_uid` : une séance déjà ingérée ne produit rien,
   // ce qui rend la commande rejouable sans précaution particulière.
-  const { count } = await prisma.intervention.createMany({ data: lignes, skipDuplicates: true });
+  if (!remplacer) {
+    const { count } = await prisma.intervention.createMany({ data: lignes, skipDuplicates: true });
+    return { ecrites: count, sansParlementaire };
+  }
+
+  // Réingestion : l'ancienne lecture de la séance cède la place à la nouvelle
+  // d'un seul tenant. La transaction garantit qu'on ne laisse jamais la séance
+  // à moitié écrite, et le `scrutin_id` posé par le linker se repose au
+  // rattachement suivant.
+  const count = await prisma.$transaction(
+    async (tx) => {
+      await tx.intervention.deleteMany({ where: { seanceUid: seance.uid } });
+      const { count: ecrites } = await tx.intervention.createMany({ data: lignes });
+      return ecrites;
+    },
+    // Prisma ferme une transaction interactive au bout de 5 secondes par
+    // défaut, ce qui suffit à la plupart des séances mais pas aux plus
+    // chargées : une séance de plus de deux mille paragraphes, à remplacer sur
+    // une base distante, dépasse la seconde de marge. La transaction faisait
+    // alors un rollback propre — la séance gardait son ancienne lecture, sans
+    // rien perdre, mais sans être corrigée non plus.
+    { timeout: DELAI_TRANSACTION, maxWait: DELAI_ATTENTE },
+  );
   return { ecrites: count, sansParlementaire };
 }
 
