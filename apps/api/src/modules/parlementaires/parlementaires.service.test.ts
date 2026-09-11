@@ -7,6 +7,7 @@ import { ParlementairesService } from './parlementaires.service';
 import { createMockPrismaClient, createMockRedisClient } from '../../test/mocks';
 import type { PrismaClient } from '@prisma/client';
 import type { Redis } from 'ioredis';
+import { INTERVENTIONS_DE_FOND } from '../../utils/interventions';
 import {
   mockParlementaireWithRelations,
   mockParlementaireList,
@@ -185,12 +186,13 @@ describe('ParlementairesService', () => {
         );
       }
 
-      // Les interventions portent en plus le filtre de la mécanique de séance
-      // (syceron) : elle ne doit jamais compter dans le total affiché.
+      // Les interventions portent en plus le filtre des interventions de fond :
+      // la mécanique de séance (syceron) et le chahut ne doivent jamais compter
+      // dans le total affiché.
       expect(mockPrisma.intervention.groupBy).toHaveBeenCalledWith(
         expect.objectContaining({
           by: ['parlementaireId'],
-          where: { parlementaireId: { in: pageIds }, estPresidence: false },
+          where: { parlementaireId: { in: pageIds }, ...INTERVENTIONS_DE_FOND },
         })
       );
     });
