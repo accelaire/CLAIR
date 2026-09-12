@@ -9,6 +9,7 @@ import {
   resultatProclame,
   nettoyer,
   estPresidenceDeSeance,
+  cibleDeLAnnonce,
 } from './syceron-parser';
 
 // Reproduit la structure réelle d'un compte rendu : <point> imbriqués sur
@@ -302,5 +303,165 @@ describe('séquences d’explications de vote', () => {
 
   it("ne marque rien avant l'annonce", () => {
     expect(marque(521)).toBe(false);
+  });
+});
+
+// Reproduit les familles de votes que la lecture par le seul `code_grammaire`
+// laissait tomber : l'ensemble d'un texte et la motion de rejet, dont la cible
+// n'est pas un numéro et n'est donc jamais portée par l'attribut `valeur`.
+const SEANCE_ENSEMBLE_ET_MOTION = `<?xml version='1.0' encoding='UTF-8'?>
+<compteRendu xmlns="http://schemas.assemblee-nationale.fr/referentiel">
+  <uid>CRSANR5L17S2025E1N002</uid>
+  <seanceRef>RUANR5L17S2025IDS29598</seanceRef>
+  <metadonnees>
+    <dateSeance>20250612150000000</dateSeance>
+    <legislature>17</legislature>
+  </metadonnees>
+  <contenu>
+    <point nivpoint="2" code_grammaire="DISC_GENERALE_1_1" bibard=" (n[[o]]&#160;1364)" art="">
+      <paragraphe ordre_absolu_seance="148" id_acteur="PA793174" code_grammaire="PAROLE_GENERIQUE" id_syceron="1" valeur="">
+        <orateurs><orateur><nom>M. Yannick Monnet</nom><id>793174</id><qualite/></orateur></orateurs>
+        <texte>Votre défense de cette motion ne tient pas.</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="149" id_acteur="PA795228" code_grammaire="SCR_MRJ_1_2" id_syceron="2" valeur="">
+        <orateurs><orateur><nom>Mme la présidente</nom><id>795228</id><qualite/></orateur></orateurs>
+        <texte>Je mets aux voix la motion de rejet préalable.</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="150" code_grammaire="SCR_MRJ_1_3" id_syceron="3" valeur="">
+        <orateurs/>
+        <texte>(Il est procédé au scrutin.)</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="151" id_acteur="PA795228" code_grammaire="SCR_MRJ_1_4" id_syceron="4" valeur="">
+        <orateurs><orateur><nom>Mme la présidente</nom><id>795228</id><qualite/></orateur></orateurs>
+        <texte>Voici le résultat du scrutin : Nombre de votants 218 Nombre de suffrages exprimés 215 Majorité absolue 108 Pour l'adoption 54 Contre 161</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="256" id_acteur="PA795228" code_grammaire="VOTE_ENS_PJL_S_2_20" id_syceron="5" valeur="">
+        <orateurs><orateur><nom>Mme la présidente</nom><id>795228</id><qualite/></orateur></orateurs>
+        <texte>Je mets aux voix l'ensemble du projet de loi de programmation pour la refondation de Mayotte.</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="257" code_grammaire="VOTE_ENS_PJL_S_2_30" id_syceron="6" valeur="">
+        <orateurs/>
+        <texte>(Il est procédé au scrutin.)</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="258" id_acteur="PA795228" code_grammaire="VOTE_ENS_PJL_S_2_40" id_syceron="7" valeur="">
+        <orateurs><orateur><nom>Mme la présidente</nom><id>795228</id><qualite/></orateur></orateurs>
+        <texte>Voici le résultat du scrutin : Nombre de votants 540 Nombre de suffrages exprimés 520 Majorité absolue 261 Pour l'adoption 310 Contre 210</texte>
+      </paragraphe>
+    </point>
+  </contenu>
+</compteRendu>`;
+
+// Deux formulations que l'ancre « je mets aux voix » seule ne verrait pas, et
+// une annonce logée dans le paragraphe même de la proclamation.
+const SEANCE_FORMULATIONS = `<?xml version='1.0' encoding='UTF-8'?>
+<compteRendu xmlns="http://schemas.assemblee-nationale.fr/referentiel">
+  <uid>CRSANR5L17S2025O1N010</uid>
+  <seanceRef>RUANR5L17S2025IDS29600</seanceRef>
+  <metadonnees>
+    <dateSeance>20250612150000000</dateSeance>
+    <legislature>17</legislature>
+  </metadonnees>
+  <contenu>
+    <point nivpoint="2" code_grammaire="DISC_ARTICLES_1_1" bibard=" (n[[o]]&#160;1364)" art=" 3">
+      <paragraphe ordre_absolu_seance="276" id_acteur="PA795228" code_grammaire="SCRUT_PUB_ADT_1_2" id_syceron="1" valeur=" 479">
+        <orateurs><orateur><nom>Mme la présidente</nom><id>795228</id><qualite/></orateur></orateurs>
+        <texte>Je le mets donc aux voix.</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="278" id_acteur="PA795228" code_grammaire="SCRUT_PUB_ADT_1_4" id_syceron="2" valeur="">
+        <orateurs><orateur><nom>Mme la présidente</nom><id>795228</id><qualite/></orateur></orateurs>
+        <texte>Voici le résultat du scrutin : Nombre de votants 63 Nombre de suffrages exprimés 62 Majorité absolue 32 Pour l'adoption 20 Contre 42</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="421" id_acteur="PA795228" code_grammaire="SCRUT_PUB_ADT_1_2" id_syceron="3" valeur=" 24">
+        <orateurs><orateur><nom>Mme la présidente</nom><id>795228</id><qualite/></orateur></orateurs>
+        <texte>Je mets aux voix l'amendement no 24. (Le vote à main levée n'ayant pas été concluant, il est procédé à un scrutin public.) Voici le résultat du scrutin : Nombre de votants 70 Nombre de suffrages exprimés 70 Majorité absolue 36 Pour l'adoption 12 Contre 58</texte>
+      </paragraphe>
+    </point>
+  </contenu>
+</compteRendu>`;
+
+describe('mises aux voix sans numéro', () => {
+  const seance = parseCompteRendu(SEANCE_ENSEMBLE_ET_MOTION);
+
+  it("relève la motion de rejet, dont le code ne commence pas par SCRUT_", () => {
+    const motion = seance?.votes.find((v) => v.cible === 'motion');
+    expect(motion).toBeDefined();
+    expect(motion?.numeros).toEqual([]);
+    expect(motion?.resultat).toEqual({ votants: 218, exprimes: 215, pour: 54, contre: 161 });
+  });
+
+  it("relève le vote sur l'ensemble du texte", () => {
+    const ensemble = seance?.votes.find((v) => v.cible === 'ensemble');
+    expect(ensemble).toBeDefined();
+    expect(ensemble?.numeros).toEqual([]);
+    expect(ensemble?.resultat?.votants).toBe(540);
+  });
+
+  it("ancre chaque vote sur son annonce, pas sur le « il est procédé au scrutin »", () => {
+    expect(seance?.votes.map((v) => v.ordreAbsolu)).toEqual([149, 256]);
+  });
+});
+
+describe('formulations de l’annonce', () => {
+  const seance = parseCompteRendu(SEANCE_FORMULATIONS);
+
+  it("apparie une annonce que la phrase seule ne désignerait pas", () => {
+    const vote = seance?.votes.find((v) => v.ordreAbsolu === 276);
+    expect(vote?.numeros).toEqual(['479']);
+  });
+
+  it('apparie une annonce logée dans le paragraphe de la proclamation', () => {
+    const vote = seance?.votes.find((v) => v.ordreAbsolu === 421);
+    expect(vote?.numeros).toEqual(['24']);
+    expect(vote?.resultat?.votants).toBe(70);
+  });
+
+  it('ne relève aucun vote en trop', () => {
+    expect(seance?.votes).toHaveLength(2);
+  });
+});
+
+describe('cibleDeLAnnonce', () => {
+  const cible = (texte: string) => cibleDeLAnnonce(texte);
+
+  it("lit l'ensemble d'un texte", () => {
+    expect(cible('Je mets aux voix l’ensemble de la proposition de loi.')?.cible).toBe('ensemble');
+    expect(cible('Je mets aux voix la proposition de résolution.')?.cible).toBe('ensemble');
+    expect(cible('Je mets aux voix l’ensemble de la première partie du projet de loi.')?.cible).toBe(
+      'ensemble',
+    );
+  });
+
+  it('lit une motion', () => {
+    expect(cible('Je mets aux voix la motion de rejet préalable.')?.cible).toBe('motion');
+  });
+
+  it("distingue le sous-amendement de l'amendement qu'il porte", () => {
+    expect(cible('Je mets aux voix le sous-amendement no 52.')).toEqual({
+      cible: 'sous-amendement',
+      numeros: ['52'],
+    });
+    expect(cible('Je mets aux voix les amendements identiques nos 255 et 286.')).toEqual({
+      cible: 'amendement',
+      numeros: ['255', '286'],
+    });
+  });
+
+  it("lit le rang de l'article, « unique » compris", () => {
+    expect(cible('Je mets aux voix l’article unique de la proposition de loi.')).toEqual({
+      cible: 'article',
+      numeros: ['unique'],
+    });
+    expect(cible('Je mets aux voix l’article 4 bis, tel qu’il a été amendé.')).toEqual({
+      cible: 'article',
+      numeros: ['4 bis'],
+    });
+  });
+
+  it('range à part ce qui ne porte pas sur le texte', () => {
+    expect(cible('Je mets aux voix la demande de suspension de séance.')?.cible).toBe('autre');
+  });
+
+  it("ne lit rien dans une phrase qui n'annonce pas de vote", () => {
+    expect(cible('La parole est à M. Yannick Monnet.')).toBeNull();
   });
 });

@@ -86,10 +86,27 @@ export interface PriseDeParoleSyceron {
   estPresidence: boolean;
 }
 
+/**
+ * Ce sur quoi porte une mise aux voix.
+ *
+ * Les trois premières valeurs désignent une portion du texte : elles portent un
+ * numéro, et le débat s'y rattache par ce numéro. Les trois dernières n'en ont
+ * pas — un vote sur l'ensemble, une motion ou une demande de suspension portent
+ * sur le texte entier ou sur la séance — et ne se rattachent que par la
+ * chronologie.
+ */
+export type CibleDuVote =
+  | 'article'
+  | 'amendement'
+  | 'sous-amendement'
+  | 'ensemble'
+  | 'motion'
+  | 'autre';
+
 /** Une mise aux voix annoncée au perchoir : la charnière vers nos scrutins. */
 export interface VoteAnnonceSyceron {
   ordreAbsolu: number;
-  cible: 'article' | 'amendement' | 'sous-amendement';
+  cible: CibleDuVote;
   /** Numéro d'article, ou numéros d'amendements mis aux voix ensemble. */
   numeros: string[];
   articleVise: string | null;
@@ -119,24 +136,86 @@ export interface SeanceSyceron {
 // `_ANN_`, une énumération des codes d'annonce en compte une quinzaine, et
 // toute liste incomplète perd des votes sans rien signaler.
 //
-// On s'ancre donc sur ce qui ne varie pas : la proclamation chiffrée, dont le
-// libellé est stable (« Nombre de votants … Pour l'adoption … Contre … »).
-// L'annonce est le dernier paragraphe `SCRUT_` porteur d'une cible qui la
-// précède. Sur la 17e législature, cette règle relève 7 699 mises aux voix là
-// où l'énumération des trois codes les plus courants n'en voyait que 5 148.
+// On s'ancre donc sur ce qui ne varie pas : les deux phrases du perchoir. La
+// proclamation — « Nombre de votants … Pour l'adoption … Contre … » — et
+// l'annonce qui la précède — « Je mets aux voix … ». Le code de grammaire ne
+// sert qu'en second recours, pour les annonces dont la formulation sort de
+// l'ordinaire (« Je le mets donc aux voix », « Je vais maintenant mettre aux
+// voix ») mais qui portent leur cible dans l'attribut `valeur`.
+//
+// La contre-épreuve sur la 17e législature justifie ce renversement. Sur 8 407
+// proclamations, la lecture par le code seul en appariait 7 699 ; les deux
+// phrases réunies en apparient 8 401, sans changer d'annonce dans aucun des
+// 7 644 cas que l'ancienne règle traitait déjà.
+//
+// Les 708 votes qui manquaient n'étaient pas des cas rares : ce sont les votes
+// sur l'ensemble d'un texte (`VOTE_ENS_*`) et les motions (`SCR_MRJ_*`), dont
+// le code ne commence pas par `SCRUT_` et dont la cible — « l'ensemble de la
+// proposition de loi », « la motion de rejet préalable » — n'est pas un numéro
+// et ne figure donc jamais dans `valeur`.
 
-/** Distance arrière maximale entre une proclamation et son annonce. */
-const PORTEE_ANNONCE = 5;
+/** L'annonce d'une mise aux voix, dans ses formulations attestées. */
+const MISE_AUX_VOIX = /\bje\s+(?:\S+\s+){0,3}?(?:mets|mettre)\s+(?:\S+\s+){0,2}?aux\s+voix\b/i;
 
 /** Codes portant le sort d'un vote (« L'amendement n'est pas adopté ») : ils
  *  suivent la proclamation et ne doivent jamais être pris pour une annonce. */
 const CODE_SORT = /_1_(?:5|9|10|100)$/;
 
 /** Ce sur quoi porte une mise aux voix, lu dans la famille du code. */
-function cibleDuCode(code: string): VoteAnnonceSyceron['cible'] {
+function cibleDuCode(code: string): CibleDuVote {
   if (code.includes('SOUS_AMEND')) return 'sous-amendement';
   if (code.includes('_ART')) return 'article';
+  if (code.startsWith('VOTE_ENS_')) return 'ensemble';
+  if (code.includes('_MRJ')) return 'motion';
   return 'amendement';
+}
+
+/**
+ * Ce sur quoi porte une mise aux voix, lu dans la phrase du perchoir.
+ *
+ * Sert quand l'attribut `valeur` est vide — 568 fois sur la 17e législature —
+ * ce qui est le cas systématique des votes sur l'ensemble et des motions, dont
+ * la cible n'est pas un numéro.
+ *
+ * L'ordre des essais compte : « le sous-amendement » contient « amendement »,
+ * et « l'ensemble de la première partie » contient « partie » mais reste un
+ * vote sur un ensemble.
+ */
+export function cibleDeLAnnonce(
+  texte: string,
+): { cible: CibleDuVote; numeros: string[] } | null {
+  const m = texte.match(MISE_AUX_VOIX);
+  if (!m || m.index === undefined) return null;
+  const suite = texte.slice(m.index + m[0].length);
+
+  if (/\bl['’]ensemble\b|\bla\s+proposition\s+de\s+r[ée]solution\b/i.test(suite)) {
+    return { cible: 'ensemble', numeros: [] };
+  }
+  if (/\bla\s+motion\b/i.test(suite)) return { cible: 'motion', numeros: [] };
+  if (/\bsous-amendements?\b/i.test(suite)) {
+    return { cible: 'sous-amendement', numeros: numerosAmendement(suite) };
+  }
+  if (/\bamendements?\b/i.test(suite)) {
+    return { cible: 'amendement', numeros: numerosAmendement(suite) };
+  }
+  if (/\bl['’]article\b/i.test(suite)) {
+    return { cible: 'article', numeros: numeroArticleAnnonce(suite) };
+  }
+  return { cible: 'autre', numeros: [] };
+}
+
+/**
+ * Le rang de l'article annoncé : `"l'article 4 bis, tel qu'il a…"` → `["4 bis"]`.
+ *
+ * « L'article unique » en est un comme un autre — c'est ainsi que le compte
+ * rendu le nomme, et l'attribut `art` du point le reprend tel quel.
+ */
+function numeroArticleAnnonce(suite: string): string[] {
+  // Le groupe « er » porte sa propre espace : sans cela `\s*` la consommerait
+  // pour rien et « l'article 4 bis » se lirait « 4 ».
+  const m = suite.match(/\bl['’]article\s+(unique|\d+(?:\s*(?:er|ère))?(?:\s+(?:bis|ter|quater))?)/i);
+  if (!m || !m[1]) return [];
+  return [m[1].replace(/\s+/g, ' ').trim()];
 }
 
 // =============================================================================
@@ -471,10 +550,14 @@ export function marquerExplicationsDeVote(paragraphes: ParagrapheBrut[]): boolea
 /**
  * Relève les mises aux voix en partant des proclamations chiffrées.
  *
- * Chaque proclamation est remontée jusqu'à son annonce — le dernier paragraphe
- * `SCRUT_` porteur d'une cible qui la précède, en écartant les codes de sort
- * qui closent le vote précédent. Sans annonce à portée, on n'invente rien : un
- * résultat attribué au mauvais scrutin est pire qu'un résultat absent.
+ * Chaque proclamation est remontée jusqu'à son annonce. On ne fixe pas de
+ * portée en nombre de paragraphes : la borne naturelle est la proclamation
+ * précédente, qui clôt le vote d'avant. Entre les deux se glissent les
+ * explications de vote et le chahut, d'où une distance qui va de 0 — annonce et
+ * résultat dans le même paragraphe, 29 fois — à 46.
+ *
+ * Sans annonce dans cet intervalle, on n'invente rien : un résultat attribué au
+ * mauvais scrutin est pire qu'un résultat absent.
  */
 export function releverVotes(paragraphes: ParagrapheBrut[]): VoteAnnonceSyceron[] {
   const votes: VoteAnnonceSyceron[] = [];
@@ -485,29 +568,12 @@ export function releverVotes(paragraphes: ParagrapheBrut[]): VoteAnnonceSyceron[
     const resultat = resultatProclame(proclamation.contenu);
     if (!resultat) continue;
 
-    let annonce: ParagrapheBrut | undefined;
-    for (let k = i - 1; k >= 0 && k >= i - PORTEE_ANNONCE; k--) {
-      const candidat = paragraphes[k];
-      if (!candidat) continue;
-      const cible = (candidat.valeur ?? '').trim();
-      if (!candidat.codeGrammaire.startsWith('SCRUT_')) continue;
-      if (CODE_SORT.test(candidat.codeGrammaire)) continue;
-      if (cible.length === 0) continue;
-      annonce = candidat;
-      break;
-    }
+    const annonce = annonceDuVote(paragraphes, i);
     if (!annonce || !Number.isFinite(annonce.ordreAbsolu)) continue;
-
-    const cible = cibleDuCode(annonce.codeGrammaire);
-    const numeros =
-      cible === 'article'
-        ? [normaliserArticle(annonce.valeur) ?? ''].filter((n) => n.length > 0)
-        : numerosAmendement(annonce.valeur);
 
     votes.push({
       ordreAbsolu: annonce.ordreAbsolu,
-      cible,
-      numeros,
+      ...cibleEtNumeros(annonce),
       articleVise: annonce.contexte.articleVise,
       texteNumero: annonce.contexte.texteNumero,
       resultat,
@@ -515,6 +581,55 @@ export function releverVotes(paragraphes: ParagrapheBrut[]): VoteAnnonceSyceron[
   }
 
   return votes;
+}
+
+/**
+ * L'annonce dont cette proclamation est le résultat.
+ *
+ * On remonte depuis la proclamation elle-même — elle porte parfois l'annonce
+ * dans le même paragraphe — jusqu'à la proclamation précédente exclue.
+ */
+function annonceDuVote(
+  paragraphes: ParagrapheBrut[],
+  indexProclamation: number,
+): ParagrapheBrut | undefined {
+  for (let k = indexProclamation; k >= 0; k--) {
+    const candidat = paragraphes[k];
+    if (!candidat) continue;
+    if (k < indexProclamation && resultatProclame(candidat.contenu)) return undefined;
+    if (MISE_AUX_VOIX.test(candidat.contenu)) return candidat;
+    // Second recours : l'annonce ne dit pas « je mets aux voix » mais son code
+    // la désigne et son attribut `valeur` porte la cible.
+    if (
+      k < indexProclamation &&
+      candidat.codeGrammaire.startsWith('SCRUT_') &&
+      !CODE_SORT.test(candidat.codeGrammaire) &&
+      (candidat.valeur ?? '').trim().length > 0
+    ) {
+      return candidat;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * La cible d'une annonce : l'attribut `valeur` d'abord, la phrase ensuite.
+ *
+ * `valeur` est la déclaration de la source et prime quand elle existe. Elle est
+ * vide pour tous les votes sur l'ensemble et toutes les motions, dont la cible
+ * n'est pas un numéro, et parfois pour un amendement que seule la phrase nomme.
+ */
+function cibleEtNumeros(annonce: ParagrapheBrut): { cible: CibleDuVote; numeros: string[] } {
+  const valeur = (annonce.valeur ?? '').trim();
+  if (valeur.length > 0) {
+    const cible = cibleDuCode(annonce.codeGrammaire);
+    const numeros =
+      cible === 'article'
+        ? [normaliserArticle(annonce.valeur) ?? ''].filter((n) => n.length > 0)
+        : numerosAmendement(annonce.valeur);
+    return { cible, numeros };
+  }
+  return cibleDeLAnnonce(annonce.contenu) ?? { cible: cibleDuCode(annonce.codeGrammaire), numeros: [] };
 }
 
 /** Texte lisible : le compte rendu encode les exposants et les insécables. */
