@@ -22,9 +22,27 @@
 //   - le sujet : l'intervention doit porter sur l'article ou l'amendement mis
 //     aux voix, tel que le compte rendu le déclare sur la rubrique.
 //
-// La fenêtre seule ne suffit pas — le premier vote d'une séance capterait la
-// discussion générale qui le précède, longue de plusieurs centaines de
-// paragraphes et sans rapport avec le texte voté.
+// Ce second critère a toutefois un plafond, que la mesure a révélé. Sur les
+// 2 875 scrutins de la 17e législature restés sans débat, 2 842 avaient
+// pourtant un compte rendu ce jour-là : 949 portaient sur l'ensemble d'un texte
+// ou sur une motion, qui n'ont ni article ni amendement, et 1 061 sur un
+// amendement que le compte rendu ne nomme jamais. Le sujet ne peut rien pour
+// eux.
+//
+// D'où un second recours : à défaut de rattachement par le sujet, la fenêtre
+// elle-même, bornée au texte en discussion. C'est un rattachement plus large,
+// pas un rattachement faux — c'est bien le débat qui a précédé ce vote — et il
+// se distingue des autres par son `via`, pour que la page puisse dire de quelle
+// finesse elle parle.
+//
+// La fenêtre nue, en revanche, ne suffirait pas : sans la borne du texte, le
+// premier vote d'une séance capterait tout ce qui s'est dit avant lui, y
+// compris sur une autre affaire.
+//
+// Dernier ajustement, dicté par la façon dont la séance se tient : quand le
+// président enchaîne plusieurs mises aux voix sans que personne ne parle entre
+// elles, ces votes n'ont pas chacun leur débat — ils partagent celui qui a
+// précédé la série. Leurs fenêtres sont donc fusionnées.
 
 import * as fs from 'fs';
 import { PrismaClient } from '@prisma/client';
@@ -70,6 +88,8 @@ export interface ResultatLinkDebats {
   votesAmbigus: number;
   votesSansScrutin: number;
   liens: number;
+  /** Part des liens établis par la seule fenêtre, faute de sujet commun. */
+  liensParFenetre: number;
 }
 
 /** Un scrutin tel qu'il faut le connaître pour l'apparier à une mise aux voix. */
@@ -88,6 +108,8 @@ export interface InterventionARattacher {
   ordreAbsolu: number;
   articleVise: string | null;
   amendementsVises: string[];
+  /** Le texte en discussion, qui borne le rattachement par la seule fenêtre. */
+  texteNumero: string | null;
 }
 
 /**
@@ -122,55 +144,110 @@ export function scrutinDeLaMiseAuxVoix(
  *
  * Les mises aux voix sont rendues dans l'ordre du compte rendu ; la première
  * d'une séance ouvre sa fenêtre au début de celle-ci.
+ *
+ * Une exception, quand on connaît les prises de parole : un vote entre lequel
+ * et le précédent personne n'a parlé n'a pas de débat propre. Le président
+ * enchaîne — « je mets aux voix l'amendement no 219… le sous-amendement
+ * no 222… » — et c'est la discussion qui a précédé la série qui les porte
+ * tous. Sa fenêtre remonte donc à celle du vote précédent, de proche en
+ * proche jusqu'au dernier échange.
  */
 export function fenetresDeDebat(
   votes: VoteAnnonceSyceron[],
+  interventions: InterventionARattacher[] = [],
 ): { vote: VoteAnnonceSyceron; debut: number; fin: number }[] {
   const ordonnes = [...votes].sort((a, b) => a.ordreAbsolu - b.ordreAbsolu);
-  let precedent = 0;
+  const aParle = (debut: number, fin: number): boolean =>
+    interventions.some((i) => i.ordreAbsolu > debut && i.ordreAbsolu <= fin);
+
+  let votePrecedent = 0;
+  let debutCourant = 0;
+
   return ordonnes.map((vote) => {
-    const fenetre = { vote, debut: precedent, fin: vote.ordreAbsolu };
-    precedent = vote.ordreAbsolu;
-    return fenetre;
+    // Rien n'a été dit depuis le vote précédent : ce vote n'a pas de débat
+    // propre, il reprend celui de la série à laquelle il appartient.
+    const propre = interventions.length === 0 || aParle(votePrecedent, vote.ordreAbsolu);
+    if (propre) debutCourant = votePrecedent;
+    votePrecedent = vote.ordreAbsolu;
+    return { vote, debut: debutCourant, fin: vote.ordreAbsolu };
   });
+}
+
+/**
+ * Une mise aux voix qui ne porte ni article ni amendement.
+ *
+ * Un vote sur l'ensemble d'un texte ou sur une motion n'a pas de sujet plus
+ * fin que le texte lui-même : le rattachement par le sujet ne peut rien en
+ * faire, et seule la fenêtre les sert.
+ */
+function sansSujetPrecis(vote: VoteAnnonceSyceron): boolean {
+  return vote.cible === 'ensemble' || vote.cible === 'motion';
 }
 
 /**
  * Les interventions dont ce vote est l'aboutissement.
  *
- * Il ne suffit pas d'être dans la fenêtre : encore faut-il parler du même
- * article — ou du même amendement, quand l'intervention le nomme. C'est ce
- * second critère qui écarte la discussion générale précédant le premier vote,
- * et les prises de parole sur un autre article discuté dans le même intervalle.
+ * Deux lectures s'additionnent, parce qu'elles saisissent deux moments d'un
+ * même débat :
+ *
+ *   - le numéro d'amendement prend la défense de l'amendement, seul paragraphe
+ *     que le compte rendu marque de son numéro. Une prise de parole qui nomme
+ *     l'amendement mis aux voix porte sur lui, où qu'elle se trouve dans la
+ *     séance : on ne la borne donc pas à la fenêtre, seulement au texte en
+ *     discussion et à ce qui précède le vote. C'est ce qui rattrape les séries
+ *     de sous-amendements votés en rafale, dont la défense a eu lieu avant le
+ *     premier vote et dont la fenêtre est vide ;
+ *   - l'article prend le reste de l'échange — les avis de la commission et du
+ *     gouvernement, les réponses — qui ne nomme jamais l'amendement. Celui-là
+ *     exige la fenêtre : un article est discuté sur toute une série de votes,
+ *     et sans borne chacun capterait les autres.
+ *
+ * Quand ni l'une ni l'autre ne répond, la fenêtre seule, bornée au texte. Ce
+ * dernier recours sert deux cas : le vote n'a pas de sujet plus fin que le
+ * texte — l'ensemble, une motion — ou bien il en a un que le compte rendu ne
+ * nomme nulle part. Dans les deux cas le débat existe, et c'est celui-là.
+ *
+ * Les demandes de suspension ou de seconde délibération (`autre`) n'y ont pas
+ * droit : ce qui les précède ne les concerne pas.
  */
 export function interventionsDuVote(
   fenetre: { vote: VoteAnnonceSyceron; debut: number; fin: number },
   interventions: InterventionARattacher[],
 ): { intervention: InterventionARattacher; via: string }[] {
   const { vote, debut, fin } = fenetre;
-  const retenues: { intervention: InterventionARattacher; via: string }[] = [];
+  const memeTexte = (i: InterventionARattacher): boolean =>
+    vote.texteNumero === null || i.texteNumero === null || i.texteNumero === vote.texteNumero;
 
-  for (const i of interventions) {
-    if (i.ordreAbsolu <= debut || i.ordreAbsolu > fin) continue;
+  // Une intervention peut répondre aux deux lectures ; on garde la plus fine.
+  const retenues = new Map<string, { intervention: InterventionARattacher; via: string }>();
 
-    const surLAmendement =
-      vote.cible !== 'article' && i.amendementsVises.some((a) => vote.numeros.includes(a));
-    if (surLAmendement) {
-      retenues.push({ intervention: i, via: 'amendement' });
-      continue;
-    }
-
-    // À défaut du numéro d'amendement — que la plupart des paragraphes ne
-    // portent pas — l'article suffit : dans la fenêtre d'un vote, parler de
-    // l'article mis aux voix, c'est participer au débat qu'il conclut.
-    const surLArticle =
-      vote.articleVise !== null && i.articleVise !== null && i.articleVise === vote.articleVise;
-    if (surLArticle) {
-      retenues.push({ intervention: i, via: vote.cible === 'article' ? 'article' : 'amendement' });
+  if (vote.cible !== 'article' && !sansSujetPrecis(vote)) {
+    for (const i of interventions) {
+      if (i.ordreAbsolu > fin || !memeTexte(i)) continue;
+      if (i.amendementsVises.some((a) => vote.numeros.includes(a))) {
+        retenues.set(i.id, { intervention: i, via: 'amendement' });
+      }
     }
   }
 
-  return retenues;
+  const dansLaFenetre = interventions.filter((i) => i.ordreAbsolu > debut && i.ordreAbsolu <= fin);
+
+  if (!sansSujetPrecis(vote) && vote.articleVise !== null) {
+    for (const i of dansLaFenetre) {
+      if (i.articleVise !== vote.articleVise || retenues.has(i.id)) continue;
+      retenues.set(i.id, {
+        intervention: i,
+        via: vote.cible === 'article' ? 'article' : 'amendement',
+      });
+    }
+  }
+
+  if (retenues.size > 0) return [...retenues.values()];
+  if (vote.cible === 'autre') return [];
+
+  return dansLaFenetre
+    .filter(memeTexte)
+    .map((intervention) => ({ intervention, via: 'fenetre' }));
 }
 
 // =============================================================================
@@ -209,6 +286,7 @@ export async function linkDebatsScrutins(
     votesAmbigus: 0,
     votesSansScrutin: 0,
     liens: 0,
+    liensParFenetre: 0,
   };
 
   for await (const seance of client.seances({
@@ -253,7 +331,7 @@ async function traiterSeance(
 
   const liens: { interventionId: string; scrutinId: string; via: string }[] = [];
 
-  for (const fenetre of fenetresDeDebat(seance.votes)) {
+  for (const fenetre of fenetresDeDebat(seance.votes, interventions)) {
     const scrutin = scrutinDeLaMiseAuxVoix(fenetre.vote, scrutins);
     if (!scrutin) {
       // Distinguer les deux échecs : aucun scrutin ne porte ces chiffres, ou
@@ -276,6 +354,7 @@ async function traiterSeance(
   }
 
   resultat.liens += liens.length;
+  resultat.liensParFenetre += liens.filter((l) => l.via === 'fenetre').length;
   if (dryRun || liens.length === 0) return;
 
   if (fichier) {
@@ -340,7 +419,13 @@ async function interventionsDeLaSeance(seanceUid: string): Promise<InterventionA
       estPresidence: false,
       type: { not: 'interruption' },
     },
-    select: { id: true, ordreAbsolu: true, articleVise: true, amendementsVises: true },
+    select: {
+      id: true,
+      ordreAbsolu: true,
+      articleVise: true,
+      amendementsVises: true,
+      texteNumero: true,
+    },
     orderBy: { ordreAbsolu: 'asc' },
   });
   return lignes
@@ -350,6 +435,7 @@ async function interventionsDeLaSeance(seanceUid: string): Promise<InterventionA
       ordreAbsolu: l.ordreAbsolu,
       articleVise: l.articleVise,
       amendementsVises: l.amendementsVises,
+      texteNumero: l.texteNumero,
     }));
 }
 

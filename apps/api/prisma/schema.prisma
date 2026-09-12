@@ -737,7 +737,6 @@ model Scrutin {
   amendements Amendement[]
 
   votes              Vote[]
-  interventions      Intervention[] // Interventions liées (explications de vote, débats)
   interventionsLiees InterventionScrutin[]
 
   // Contenu enrichi par IA
@@ -815,10 +814,6 @@ model Intervention {
   contenu  String
   motsCles String[] @default([]) @map("mots_cles")
 
-  // Relation optionnelle vers un scrutin (pour les explications de vote notamment)
-  scrutinId String?  @map("scrutin_id")
-  scrutin   Scrutin? @relation(fields: [scrutinId], references: [id], onDelete: SetNull)
-
   // ---------------------------------------------------------------------------
   // Segmentation du débat (source syceron, AN)
   // ---------------------------------------------------------------------------
@@ -853,7 +848,6 @@ model Intervention {
   @@index([chambre])
   @@index([date])
   @@index([type])
-  @@index([scrutinId])
   @@index([seanceId])
   @@index([seanceUid, ordreAbsolu])
   @@index([articleVise])
@@ -1219,7 +1213,12 @@ model InterventionScrutin {
   interventionId String @map("intervention_id")
   scrutinId      String @map("scrutin_id")
 
-  /// 'amendement' | 'article' — comment le rattachement a été établi.
+  /// Comment le rattachement a été établi, du plus fin au plus large :
+  /// 'amendement' — l'intervention nomme l'amendement mis aux voix ;
+  /// 'article'    — elle porte sur l'article mis aux voix ;
+  /// 'fenetre'    — elle est dans le débat qui précède le vote, sur le même
+  ///                texte, faute de sujet plus fin (vote sur l'ensemble,
+  ///                motion, ou amendement que le compte rendu ne nomme pas).
   via String
 
   intervention Intervention @relation(fields: [interventionId], references: [id], onDelete: Cascade)

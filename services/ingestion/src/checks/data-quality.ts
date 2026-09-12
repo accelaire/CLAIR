@@ -319,12 +319,29 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // interventions. Ce seuil garde la trace du rattachement fin, celui qui
     // lit les mises aux voix du compte rendu.
     //
-    // 75 529 liens aujourd'hui, pour 11 091 mises aux voix rapprochées d'un
-    // scrutin sur 11 253. Le compte a baissé au passage aux tours de parole :
-    // moins de lignes à rattacher, pas moins de débats rattachés.
+    // 144 546 liens aujourd'hui, pour 12 292 mises aux voix rapprochées d'un
+    // scrutin sur 12 471. Le compte a bondi quand le relevé des mises aux voix
+    // a cessé de dépendre du seul code de grammaire : les votes sur l'ensemble
+    // d'un texte et les motions y sont entrés.
     label: 'Liens débat-scrutin (Assemblée)',
-    min: 65000,
+    min: 130000,
     query: `SELECT COUNT(*)::int AS value FROM intervention_scrutin`,
+  },
+  scrutins_avec_debat_an: {
+    type: 'threshold',
+    // Le seuil précédent compte des lignes ; celui-ci compte ce que le lecteur
+    // constate — le nombre de votes dont la page montre le débat qui les a
+    // précédés. Un rattachement qui se replierait sur quelques gros scrutins
+    // garderait le volume de liens sans que la couverture suive : il faut donc
+    // les deux.
+    //
+    // 12 265 scrutins sur 12 539, soit 98 % de la 17e et 96 % de la 16e.
+    label: 'Scrutins de l\'Assemblée dont on montre le débat',
+    min: 11500,
+    query: `SELECT COUNT(DISTINCT isc.scrutin_id)::int AS value
+            FROM intervention_scrutin isc
+            JOIN scrutins s ON s.id = isc.scrutin_id
+            WHERE s.chambre = 'assemblee'`,
   },
   interventions_explication_vote_an: {
     type: 'threshold',
