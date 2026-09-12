@@ -6,6 +6,7 @@ import {
   Users, ExternalLink, ArrowDown, Loader2, Search,
 } from 'lucide-react';
 import { ExpandableText } from '@/components/ui/expandable-text';
+import { grouperParSujet } from '@/lib/debats';
 
 interface InterventionScrutin {
   id: string;
@@ -18,6 +19,9 @@ interface InterventionScrutin {
   orateurNom: string | null;
   orateurPrenom: string | null;
   orateurQualite: string | null;
+  articleVise: string | null;
+  amendementsVises: string[] | null;
+  texteNumero: string | null;
   parlementaire: {
     id: string;
     slug: string;
@@ -35,6 +39,8 @@ interface ScrutinDebatsTabProps {
   interventions: InterventionScrutin[];
   /** D'où vient cette sélection : du vote lui-même, ou de sa seule journée. */
   rattachement?: 'scrutin' | 'journee';
+  /** À quelle finesse le débat a été reconnu, quand il l'a été. */
+  precision?: 'amendement' | 'article' | 'fenetre' | null;
   chambre: string;
   interventionsSortAsc: boolean;
   onToggleSort: () => void;
@@ -48,6 +54,7 @@ interface ScrutinDebatsTabProps {
 export function ScrutinDebatsTab({
   interventions,
   rattachement,
+  precision,
   chambre,
   interventionsSortAsc,
   onToggleSort,
@@ -67,6 +74,16 @@ export function ScrutinDebatsTab({
         <p className="mb-4 rounded-lg border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
           Ce vote n’a pas pu être relié à un moment précis du compte rendu :
           voici les débats de la journée, qui peuvent porter sur d’autres textes.
+        </p>
+      )}
+
+      {/* Un vote sur l’ensemble d’un texte, ou sur un amendement que le compte
+          rendu ne nomme jamais, n’a pas de sujet plus fin que le texte : on
+          montre alors tout ce qui s’est dit avant lui sur ce texte. */}
+      {rattachement === 'scrutin' && precision === 'fenetre' && (
+        <p className="mb-4 rounded-lg border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          Voici le débat qui a précédé ce vote sur ce texte. Le compte rendu ne
+          permet pas de le resserrer davantage.
         </p>
       )}
 
@@ -100,7 +117,17 @@ export function ScrutinDebatsTab({
               : 'Aucune intervention'}
           </p>
         ) : (
-          interventions.map((intervention) => {
+          grouperParSujet(interventions).map((groupe) => (
+            <div key={groupe.cle} className="space-y-5">
+              {/* L’intertitre dit sur quoi porte le passage qu’on lit. Absent
+                  quand le compte rendu ne situe pas la prise de parole : mieux
+                  vaut ne rien annoncer que d’annoncer à tort. */}
+              {groupe.titre && (
+                <h4 className="sticky top-0 z-10 -mx-1 bg-background/95 px-1 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">
+                  {groupe.titre}
+                </h4>
+              )}
+              {groupe.interventions.map((intervention) => {
             const p = intervention.parlementaire;
             const displayNom = p ? `${p.prenom} ${p.nom}` : `${intervention.orateurPrenom || ''} ${intervention.orateurNom || ''}`.trim();
             const profileHref = p ? (chambre === 'senat' ? `/senateurs/${p.slug}` : `/deputes/${p.slug}`) : null;
@@ -170,7 +197,9 @@ export function ScrutinDebatsTab({
                 </div>
               </div>
             );
-          })
+              })}
+            </div>
+          ))
         )}
 
         {/* Infinite scroll trigger */}

@@ -536,6 +536,12 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
             motsCles: true,
             sourceUrl: true,
             ordre: true,
+            // La segmentation que le compte rendu déclare : sans elle, le
+            // client ne peut grouper les prises de parole que par date, alors
+            // qu'elles s'ordonnent par texte, puis par article et amendement.
+            articleVise: true,
+            amendementsVises: true,
+            texteNumero: true,
           },
         });
 

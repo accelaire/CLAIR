@@ -20,6 +20,52 @@ const CACHE_TTL_1H = 3600;
 // Longueur max du preview d'intervention (le reste est chargé à la demande)
 const CONTENU_PREVIEW_LENGTH = 500;
 
+/**
+ * Ce qu'il faut d'une intervention pour afficher un débat.
+ *
+ * Les quatre derniers champs sont la segmentation que le compte rendu déclare :
+ * l'article et l'amendement discutés, le texte en cours d'examen, et le code de
+ * grammaire qui dit la nature du paragraphe. Sans eux le client ne peut que
+ * dérouler une liste à plat, alors que le débat est structuré par article puis
+ * par amendement.
+ */
+const INTERVENTION_DEBAT_SELECT = {
+  id: true,
+  type: true,
+  contenu: true,
+  date: true,
+  ordre: true,
+  sourceUrl: true,
+  orateurNom: true,
+  orateurPrenom: true,
+  orateurQualite: true,
+  articleVise: true,
+  amendementsVises: true,
+  texteNumero: true,
+  codeGrammaire: true,
+  parlementaire: {
+    select: {
+      id: true,
+      slug: true,
+      nom: true,
+      prenom: true,
+      photoUrl: true,
+      groupe: {
+        select: {
+          nom: true,
+          couleur: true,
+        },
+      },
+    },
+  },
+} satisfies Prisma.InterventionSelect;
+
+/**
+ * La finesse du rattachement d'un débat à son scrutin, du plus fin au plus
+ * large. Le client s'en sert pour dire au lecteur ce qu'il regarde.
+ */
+const PRECISIONS_RATTACHEMENT = ['amendement', 'article', 'fenetre'] as const;
+
 /** Tronque le contenu et ajoute hasMore si nécessaire */
 function truncateContenu(intervention: { contenu: string; [key: string]: unknown }) {
   const { contenu, ...rest } = intervention;
@@ -521,34 +567,6 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         throw new ApiError(404, 'Scrutin non trouvé');
       }
 
-      // Interventions de la séance (même date + chambre) — pas juste celles liées au scrutin
-      const seanceInterventionSelect = {
-        id: true,
-        type: true,
-        contenu: true,
-        date: true,
-        ordre: true,
-        sourceUrl: true,
-        orateurNom: true,
-        orateurPrenom: true,
-        orateurQualite: true,
-        parlementaire: {
-          select: {
-            id: true,
-            slug: true,
-            nom: true,
-            prenom: true,
-            photoUrl: true,
-            groupe: {
-              select: {
-                nom: true,
-                couleur: true,
-              },
-            },
-          },
-        },
-      };
-
       // Même règle que sur l'onglet des débats : le rattachement fin quand il
       // existe, la journée en repli. Voir GET /:numero/interventions.
       const debatsDuScrutin = await fastify.prisma.interventionScrutin.count({
@@ -567,7 +585,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           where: seanceWhere,
           take: 5,
           orderBy: [{ date: 'asc' }, { ordre: 'asc' }],
-          select: seanceInterventionSelect,
+          select: INTERVENTION_DEBAT_SELECT,
         }),
         fastify.prisma.intervention.count({ where: seanceWhere }),
       ]);
@@ -749,9 +767,18 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       // rattachement, et 1,4 % des mises aux voix de l'Assemblée ne trouvent
       // pas leur scrutin de façon certaine. Mieux vaut alors le débat du jour
       // qu'une page vide.
-      const rattachementFin = await fastify.prisma.interventionScrutin.count({
+      const liensDuScrutin = await fastify.prisma.interventionScrutin.groupBy({
+        by: ['via'],
         where: { scrutinId: scrutin.id },
+        _count: { _all: true },
       });
+      const rattachementFin = liensDuScrutin.reduce((n, l) => n + l._count._all, 0);
+      // La finesse annoncée est la meilleure que porte le rattachement : un
+      // débat rattaché à l'amendement vaut mieux qu'un débat rattaché à la
+      // seule fenêtre, et c'est celle-là qu'il faut dire au lecteur.
+      const precision = PRECISIONS_RATTACHEMENT.find((p) =>
+        liensDuScrutin.some((l) => l.via === p),
+      );
 
       const interventionWhere: Prisma.InterventionWhereInput = rattachementFin > 0
         ? { scrutinsLies: { some: { scrutinId: scrutin.id } }, ...INTERVENTIONS_DE_FOND }
@@ -776,32 +803,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           orderBy: [{ date: sort }, { ordre: sort }],
           skip,
           take: limit,
-          select: {
-            id: true,
-            type: true,
-            contenu: true,
-            date: true,
-            ordre: true,
-            sourceUrl: true,
-            orateurNom: true,
-            orateurPrenom: true,
-            orateurQualite: true,
-            parlementaire: {
-              select: {
-                id: true,
-                slug: true,
-                nom: true,
-                prenom: true,
-                photoUrl: true,
-                groupe: {
-                  select: {
-                    nom: true,
-                    couleur: true,
-                  },
-                },
-              },
-            },
-          },
+          select: INTERVENTION_DEBAT_SELECT,
         }),
         fastify.prisma.intervention.count({ where: interventionWhere }),
       ]);
@@ -820,6 +822,10 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           // Dit au lecteur ce qu'il regarde : le débat de ce vote, ou faute de
           // mieux celui de la journée, qui peut porter sur de tout autres textes.
           rattachement: rattachementFin > 0 ? 'scrutin' : 'journee',
+          // Et, quand c'est bien le débat de ce vote, à quelle finesse il a été
+          // reconnu : sur l'amendement, sur l'article, ou sur la seule fenêtre
+          // qui précède le vote.
+          precision: precision ?? null,
         },
       };
     },

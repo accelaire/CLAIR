@@ -10,6 +10,7 @@ import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { ExpandableText } from '@/components/ui/expandable-text';
 import { scrutinHref } from '@/lib/scrutin-url';
+import { grouperParSujet } from '@/lib/debats';
 
 interface SeanceGroup {
   seanceId: string;
@@ -23,6 +24,9 @@ interface SeanceGroup {
     motsCles: string[];
     sourceUrl: string | null;
     ordre: number | null;
+    articleVise: string | null;
+    amendementsVises: string[] | null;
+    texteNumero: string | null;
   }[];
   scrutins: {
     id: string;
@@ -206,9 +210,18 @@ export function InterventionsList({
                     );
                   })()}
 
-                  {/* Interventions */}
+                  {/* Interventions, groupées comme la séance les a menées :
+                      une séance passe d'un texte à l'autre et d'un article au
+                      suivant, et une liste à plat efface ce déroulé. */}
                   <div className="divide-y">
-                    {seance.interventions.map((intervention) => (
+                    {grouperParSujet(seance.interventions).map((groupe) => (
+                      <div key={groupe.cle}>
+                        {groupe.titre && (
+                          <p className="bg-muted/40 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            {groupe.titre}
+                          </p>
+                        )}
+                        {groupe.interventions.map((intervention) => (
                       <div key={intervention.id} className="px-4 py-3">
                         <div className="flex items-center justify-between mb-2">
                           <InterventionTypeBadge type={intervention.type} />
@@ -230,6 +243,8 @@ export function InterventionsList({
                             ))}
                           </div>
                         )}
+                      </div>
+                        ))}
                       </div>
                     ))}
                   </div>
