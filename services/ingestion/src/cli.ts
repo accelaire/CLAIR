@@ -23,7 +23,6 @@ import {
   syncAmendementsSenatCsv,
   syncDossiers,
   syncDossiersSenat,
-  linkInterventionsToScrutins,
   linkScrutinsToAmendements,
   enrichScrutinsANAmendements,
   enrichScrutinsSenatAmendements,
@@ -122,11 +121,6 @@ program
 
       if (options.full) {
         await fullSync();
-      } else if (options.link && options.interventions) {
-        const result = await linkInterventionsToScrutins({ dryRun: options.dryRun });
-        console.log(`\n📊 Interventions liées: ${result.linked}`);
-        console.log(`   - Par seanceRef: ${result.bySeanceRef}`);
-        console.log(`   - Par date: ${result.byDate}`);
       } else if (options.link && options.amendements) {
         const result = await linkScrutinsToAmendements({
           dryRun: options.dryRun,

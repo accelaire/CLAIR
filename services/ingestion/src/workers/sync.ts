@@ -3339,23 +3339,10 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
   const hasDossiersChanged = results.sourcesChanged.some(s => s.includes('dossiers'));
 
   if (hasInterventionsChanged || hasScrutinsChanged) {
-    logger.info('Linking interventions to scrutins...');
-    try {
-      const linkResult = await linkInterventionsToScrutins();
-      logger.info({
-        linked: linkResult.linked,
-        bySeanceRef: linkResult.bySeanceRef,
-        byDate: linkResult.byDate,
-      }, 'Interventions linking completed');
-    } catch (error) {
-      logger.error({ error: errorMessage(error) }, 'Interventions linking failed (non-blocking)');
-    }
-
-    // Rattachement fin, côté Assemblée : le linker ci-dessus ne relie que les
-    // séances et journées ne portant qu'un seul scrutin — 120 sur 1 115.
-    // Celui-ci lit les mises aux voix du compte rendu et rend à chaque scrutin
-    // le débat qui l'a précédé, ce qui est le seul moyen de distinguer les
-    // scrutins d'une même journée.
+    // Rattachement des débats de l'Assemblée à leurs scrutins : on lit les
+    // mises aux voix du compte rendu et on rend à chaque scrutin le débat qui
+    // l'a précédé, ce qui est le seul moyen de distinguer les scrutins d'une
+    // même journée — une séance en porte dix en moyenne, jusqu'à quatre-vingts.
     try {
       logger.info('Rattachement fin des débats AN aux scrutins...');
       const { linkDebatsScrutins } = await import('./link-debats-scrutins.js');
@@ -5170,95 +5157,6 @@ function extractTexteRefsFromSourceData(sourceData: unknown): string[] {
   if (actes) asArray(actes).forEach(walk);
 
   return [...new Set(refs)];
-}
-
-// =============================================================================
-// LINK INTERVENTIONS TO SCRUTINS
-// =============================================================================
-
-/**
- * Lie les interventions aux scrutins via seanceRef ou date.
- * Utilise des requêtes SQL UPDATE avec JOIN pour éviter les OOM.
- */
-export async function linkInterventionsToScrutins(
-  options: { chambre?: 'assemblee' | 'senat'; dryRun?: boolean } = {}
-): Promise<{ linked: number; bySeanceRef: number; byDate: number }> {
-  const chambre = options.chambre;
-  const dryRun = options.dryRun ?? false;
-  const chambreFilter = chambre || '%';
-
-  logger.info({ chambre: chambre || 'all', dryRun }, 'Starting interventions-scrutins linking...');
-
-  // Une séance porte dix scrutins en moyenne, jusqu'à quatre-vingts. Rattacher
-  // une prise de parole à l'un d'eux au seul motif qu'ils partagent la séance
-  // ou la journée, c'est en désigner un au hasard : c'est ainsi que 214 277
-  // interventions se sont retrouvées liées au mauvais scrutin.
-  //
-  // On ne lie donc plus que ce qui est déterminé — une séance, ou un jour, qui
-  // ne porte qu'un seul scrutin. Le reste demande de savoir de quel article ou
-  // de quel amendement la prise de parole traite : c'est le rôle de la table
-  // `intervention_scrutin`, alimentée par la segmentation du débat, et non
-  // celui d'une jointure sur la date.
-  const seancesDeterminees = Prisma.sql`
-    SELECT s.seance_ref AS ref, s.chambre, MIN(s.id) AS scrutin_id
-    FROM scrutins s
-    WHERE s.seance_ref IS NOT NULL AND s.chambre LIKE ${chambreFilter}
-    GROUP BY s.seance_ref, s.chambre
-    HAVING COUNT(*) = 1
-  `;
-
-  const joursDetermines = Prisma.sql`
-    SELECT DATE(s.date) AS jour, s.chambre, MIN(s.id) AS scrutin_id
-    FROM scrutins s
-    WHERE s.chambre LIKE ${chambreFilter}
-    GROUP BY DATE(s.date), s.chambre
-    HAVING COUNT(*) = 1
-  `;
-
-  if (dryRun) {
-    const [parSeance] = await prisma.$queryRaw<{ count: bigint }[]>`
-      SELECT COUNT(*) as count
-      FROM interventions i
-      JOIN (${seancesDeterminees}) z ON i.seance_id = z.ref AND i.chambre = z.chambre
-      WHERE i.scrutin_id IS NULL AND i.chambre LIKE ${chambreFilter}
-    `;
-    const [parJour] = await prisma.$queryRaw<{ count: bigint }[]>`
-      SELECT COUNT(*) as count
-      FROM interventions i
-      JOIN (${joursDetermines}) z ON DATE(i.date) = z.jour AND i.chambre = z.chambre
-      WHERE i.scrutin_id IS NULL AND i.chambre LIKE ${chambreFilter}
-    `;
-    const bySeanceRef = Number(parSeance?.count ?? 0);
-    const byDate = Number(parJour?.count ?? 0);
-    logger.info({ bySeanceRef, byDate, dryRun }, 'Interventions-scrutins linking completed (dry-run)');
-    return { linked: bySeanceRef + byDate, bySeanceRef, byDate };
-  }
-
-  const bySeanceRef = await prisma.$executeRaw`
-    UPDATE interventions i
-    SET scrutin_id = z.scrutin_id
-    FROM (${seancesDeterminees}) z
-    WHERE i.seance_id = z.ref
-      AND i.chambre = z.chambre
-      AND i.scrutin_id IS NULL
-      AND i.chambre LIKE ${chambreFilter}
-  `;
-  logger.info({ bySeanceRef }, 'Linked interventions by seanceRef');
-
-  const byDate = await prisma.$executeRaw`
-    UPDATE interventions i
-    SET scrutin_id = z.scrutin_id
-    FROM (${joursDetermines}) z
-    WHERE DATE(i.date) = z.jour
-      AND i.chambre = z.chambre
-      AND i.scrutin_id IS NULL
-      AND i.chambre LIKE ${chambreFilter}
-  `;
-  logger.info({ byDate }, 'Linked interventions by date');
-
-  const linked = bySeanceRef + byDate;
-  logger.info({ linked, bySeanceRef, byDate }, 'Interventions-scrutins linking completed');
-  return { linked, bySeanceRef, byDate };
 }
 
 // =============================================================================
