@@ -48,6 +48,45 @@ describe('articleNumeroFromTitre', () => {
     ).toBe('3');
   });
 
+  it("écarte l'article d'une norme extérieure invoquée comme fondement du vote", () => {
+    // Le Sénat fonde ses résolutions et les déclarations du Gouvernement sur un
+    // article de la Constitution : il dit sous quel régime on vote, jamais ce
+    // sur quoi on vote. Le numéro y est écrit avec un tiret (« 34-1 »), qu'il
+    // faut lire d'un bloc — sinon on en retient un « article 34 » inexistant.
+    expect(
+      articleNumeroFromTitre(
+        "l'ensemble de la proposition de résolution en application de l'article 34-1 de la Constitution, visant à condamner l'offensive militaire de l'Azerbaïdjan.",
+      ),
+    ).toBeNull();
+    expect(
+      articleNumeroFromTitre(
+        "la déclaration du Gouvernement, en application de l'article 50-1 de la Constitution, portant sur la stratégie énergétique.",
+      ),
+    ).toBeNull();
+    expect(
+      articleNumeroFromTitre(
+        "l'ensemble du projet de loi spéciale prévue par l'article 45 de la loi organique n° 2001-692 du 1er août 2001.",
+      ),
+    ).toBeNull();
+    expect(
+      articleNumeroFromTitre("la motion, en application de l'article 44, alinéa 3, du Règlement."),
+    ).toBeNull();
+  });
+
+  it("retient l'article du texte même quand une norme extérieure est citée avant", () => {
+    expect(
+      articleNumeroFromTitre(
+        "l'amendement n° 12, présenté en application de l'article 44 du Règlement, à l'article 7 du projet de loi.",
+      ),
+    ).toBe('7');
+  });
+
+  it("lit l'article liminaire des lois de finances", () => {
+    expect(
+      articleNumeroFromTitre("l'article liminaire du projet de loi de finances pour 2026."),
+    ).toBe('LIMINAIRE');
+  });
+
   it('rend null quand le libellé ne vise aucun article', () => {
     expect(articleNumeroFromTitre("l'ensemble de la proposition de loi.")).toBeNull();
     expect(articleNumeroFromTitre('la motion de censure.')).toBeNull();

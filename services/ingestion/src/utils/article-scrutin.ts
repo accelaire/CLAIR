@@ -25,7 +25,33 @@ const SUFFIXES_ORDINAUX = new Set([
   'nonies', 'decies', 'undecies', 'duodecies', 'terdecies', 'quaterdecies',
 ]);
 
-const BASE_RE = /l['’]article\s+(\d+|premier|unique)/i;
+/**
+ * Le numéro se lit d'un bloc, tiret compris.
+ *
+ * Les articles de la Constitution s'écrivent « 34-1 », « 50-1 » : n'en retenir
+ * que « 34 » invente un article qui n'existe pas, et empêche surtout de
+ * reconnaître la mention pour l'écarter.
+ *
+ * « liminaire » est le premier article des lois de finances, qui n'est pas
+ * numéroté.
+ */
+const BASE_RE = /l['’]article\s+(\d+(?:-\d+)?|premier|unique|liminaire)/giu;
+
+/**
+ * Une norme extérieure, citée comme fondement du vote et non comme son objet.
+ *
+ * « en application de l'article 34-1 de la Constitution », « prévue par
+ * l'article 45 de la loi organique », « en application de l'article 44,
+ * alinéa 3, du Règlement » : ces mentions disent sous quel régime on vote,
+ * jamais sur quoi. Les retenir rattachait une résolution du Sénat à un
+ * « article 34 » de son propre texte.
+ *
+ * Le texte en discussion, lui, est toujours un PROJET ou une PROPOSITION de
+ * loi — jamais « la loi », « le code » ou « l'ordonnance », qui désignent du
+ * droit déjà en vigueur.
+ */
+const NORME_EXTERIEURE =
+  /^\s*(?:,\s*alin[ée]as?\s+[\dA-Za-z]+\s*,?\s*)?(?:de\s+la\s+Constitution|du\s+R[èe]glement|de\s+la\s+loi\b|de\s+l['’]ordonnance\b|du\s+code\b|de\s+la\s+charte\b)/iu;
 
 /**
  * Numéro d'article visé par un scrutin, normalisé sur la forme de
@@ -36,27 +62,34 @@ const BASE_RE = /l['’]article\s+(\d+|premier|unique)/i;
  */
 export function articleNumeroFromTitre(titre: string | null | undefined): string | null {
   if (!titre) return null;
-  const base = titre.match(BASE_RE);
-  if (!base) return null;
 
-  // Les suffixes sont consommés un par un, et non par une alternance unique :
-  // la casse les distingue de la suite de la phrase. Les ordinaux s'écrivent en
-  // minuscules (« 15 bis »), les lettres de rang en majuscules (« 15 A ») — une
-  // classe `[A-Z]` sous un flag insensible à la casse avalerait « de la … ».
-  let rest = titre.slice(base.index! + base[0].length);
-  const parts = [base[1]!];
-  for (;;) {
-    const next = rest.match(/^\s+([A-Za-z]{1,14})\b/);
-    if (!next) break;
-    const token = next[1]!;
-    const estOrdinal = SUFFIXES_ORDINAUX.has(token.toLowerCase());
-    const estLettreDeRang = /^[A-Z]{1,2}$/.test(token);
-    if (!estOrdinal && !estLettreDeRang) break;
-    parts.push(token);
-    rest = rest.slice(next[0].length);
+  // On parcourt les mentions successives plutôt que de s'arrêter à la première :
+  // un libellé peut invoquer le Règlement avant de nommer l'article voté.
+  // `lastIndex` impose une instance neuve à chaque appel.
+  const mentions = new RegExp(BASE_RE.source, BASE_RE.flags);
+  for (let base = mentions.exec(titre); base !== null; base = mentions.exec(titre)) {
+    // Les suffixes sont consommés un par un, et non par une alternance unique :
+    // la casse les distingue de la suite de la phrase. Les ordinaux s'écrivent en
+    // minuscules (« 15 bis »), les lettres de rang en majuscules (« 15 A ») — une
+    // classe `[A-Z]` sous un flag insensible à la casse avalerait « de la … ».
+    let rest = titre.slice(base.index + base[0].length);
+    const parts = [base[1]!];
+    for (;;) {
+      const next = rest.match(/^\s+([A-Za-z]{1,14})\b/);
+      if (!next) break;
+      const token = next[1]!;
+      const estOrdinal = SUFFIXES_ORDINAUX.has(token.toLowerCase());
+      const estLettreDeRang = /^[A-Z]{1,2}$/.test(token);
+      if (!estOrdinal && !estLettreDeRang) break;
+      parts.push(token);
+      rest = rest.slice(next[0].length);
+    }
+
+    if (NORME_EXTERIEURE.test(rest)) continue;
+    return normalizeArticleNumero(parts.join(' '));
   }
 
-  return normalizeArticleNumero(parts.join(' '));
+  return null;
 }
 
 /** Met un identifiant d'article sous la forme canonique : majuscules, espaces compactés. */
