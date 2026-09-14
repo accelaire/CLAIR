@@ -343,6 +343,27 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
             JOIN scrutins s ON s.id = isc.scrutin_id
             WHERE s.chambre = 'assemblee'`,
   },
+  scrutins_avec_debat_senat: {
+    type: 'threshold',
+    // Le Sénat se rattache par le sujet examiné et non par les chiffres
+    // proclamés, que son compte rendu ne publie pas : le libellé du scrutin
+    // d'un côté, la section de discussion de l'autre, bornées au même texte.
+    //
+    // Le périmètre atteignable est celui de nos comptes rendus, du 16/01/2024
+    // au 21/07/2026 : 812 scrutins sur les 4 775 du Sénat, le reste précédant
+    // le corpus. 759 d'entre eux ont un débat effectif — 43 autres ont bien
+    // trouvé leur section, mais l'article y a été voté sans discussion.
+    //
+    // Le plancher est volontairement bas devant les 759 constatés : il garde
+    // contre une panne franche du rattachement, pas contre la variation de
+    // quelques scrutins au fil des séances nouvelles.
+    label: 'Scrutins du Sénat dont on montre le débat',
+    min: 700,
+    query: `SELECT COUNT(DISTINCT isc.scrutin_id)::int AS value
+            FROM intervention_scrutin isc
+            JOIN scrutins s ON s.id = isc.scrutin_id
+            WHERE s.chambre = 'senat'`,
+  },
   interventions_explication_vote_an: {
     type: 'threshold',
     // L'Assemblée ne code pas ses explications de vote : `EXPL_VOTE`

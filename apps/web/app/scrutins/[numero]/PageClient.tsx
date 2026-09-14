@@ -133,7 +133,7 @@ interface InterventionsResponse {
      * mis aux voix, sur l'article, ou sur la seule fenêtre qui précède le vote
      * — faute de sujet plus fin, comme pour un vote sur l'ensemble d'un texte.
      */
-    precision?: 'amendement' | 'article' | 'fenetre' | null;
+    precision?: 'amendement' | 'article' | 'ensemble' | 'motion' | 'fenetre' | 'finances' | null;
   };
 }
 

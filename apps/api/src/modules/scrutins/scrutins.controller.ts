@@ -63,8 +63,24 @@ const INTERVENTION_DEBAT_SELECT = {
 /**
  * La finesse du rattachement d'un débat à son scrutin, du plus fin au plus
  * large. Le client s'en sert pour dire au lecteur ce qu'il regarde.
+ *
+ * Les deux chambres ne se rattachent pas de la même façon, et l'ordre les mêle
+ * par finesse réelle plutôt que par provenance. `amendement` et `article`
+ * valent pour les deux. Les trois suivants sont propres au Sénat, dont le
+ * compte rendu se découpe en sections typées : `ensemble` désigne les
+ * explications de vote, `motion` la section de la motion, `finances` le
+ * fascicule budgétaire — un texte de finances ne se discutant pas par
+ * articles, c'est la lecture la plus large. `fenetre`, propre à l'Assemblée,
+ * est ce qui a été dit entre deux votes, sans autre indice.
  */
-const PRECISIONS_RATTACHEMENT = ['amendement', 'article', 'fenetre'] as const;
+const PRECISIONS_RATTACHEMENT = [
+  'amendement',
+  'article',
+  'ensemble',
+  'motion',
+  'fenetre',
+  'finances',
+] as const;
 
 /** Tronque le contenu et ajoute hasMore si nécessaire */
 function truncateContenu(intervention: { contenu: string; [key: string]: unknown }) {

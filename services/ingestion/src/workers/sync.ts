@@ -3354,6 +3354,23 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         'Rattachement fin des débats échoué (non bloquant)',
       );
     }
+
+    // Le Sénat se rattache autrement : son compte rendu ne publie ni mise aux
+    // voix ni décompte des votants. On rapproche donc ce que le libellé du
+    // scrutin dit trancher de ce que la section de discussion dit examiner, les
+    // deux bornés au même texte. Incrémental lui aussi : il ne reprend que les
+    // scrutins qui n'ont pas encore leur débat.
+    try {
+      logger.info('Rattachement des débats du Sénat aux scrutins...');
+      const { linkDebatsScrutinsSenat } = await import('./link-debats-scrutins-senat.js');
+      const senatResult = await linkDebatsScrutinsSenat({});
+      logger.info(senatResult, 'Rattachement des débats du Sénat terminé');
+    } catch (error) {
+      logger.error(
+        { error: errorMessage(error) },
+        'Rattachement des débats du Sénat échoué (non bloquant)',
+      );
+    }
   }
 
   if (hasAmendementsChanged || hasScrutinsChanged) {

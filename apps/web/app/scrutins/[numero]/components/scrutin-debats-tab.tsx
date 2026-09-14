@@ -40,7 +40,7 @@ interface ScrutinDebatsTabProps {
   /** D'où vient cette sélection : du vote lui-même, ou de sa seule journée. */
   rattachement?: 'scrutin' | 'journee';
   /** À quelle finesse le débat a été reconnu, quand il l'a été. */
-  precision?: 'amendement' | 'article' | 'fenetre' | null;
+  precision?: 'amendement' | 'article' | 'ensemble' | 'motion' | 'fenetre' | 'finances' | null;
   chambre: string;
   interventionsSortAsc: boolean;
   onToggleSort: () => void;
@@ -84,6 +84,16 @@ export function ScrutinDebatsTab({
         <p className="mb-4 rounded-lg border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
           Voici le débat qui a précédé ce vote sur ce texte. Le compte rendu ne
           permet pas de le resserrer davantage.
+        </p>
+      )}
+
+      {/* Au Sénat, un texte budgétaire ne se discute pas par articles mais par
+          fascicules : un amendement de finances n’a pas de sujet plus fin que
+          la partie du budget où il a été appelé. */}
+      {rattachement === 'scrutin' && precision === 'finances' && (
+        <p className="mb-4 rounded-lg border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          Voici la discussion de la partie du budget où ce vote est intervenu.
+          Le compte rendu ne permet pas de le resserrer davantage.
         </p>
       )}
 
