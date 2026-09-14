@@ -145,12 +145,27 @@ describe('cleArticleSenat', () => {
   it('retire le qualificatif de procédure, qui ne change pas l’article', () => {
     expect(cleArticleSenat('4 (priorité)')).toBe('4');
     expect(cleArticleSenat('3 (texte supprimé par la commission)')).toBe('3');
-    expect(cleArticleSenat('1er (Texte non modifié par la commission)')).toBe('1ER');
+    expect(cleArticleSenat('1er (Texte non modifié par la commission)')).toBe('1');
     expect(cleArticleSenat('6 bis (précédemment réservé)')).toBe('6 BIS');
     expect(cleArticleSenat('5 (suite)')).toBe('5');
   });
 
-  it('laisse intacte une désignation sans qualificatif', () => {
+  it('ramène les trois graphies du premier article à une seule', () => {
+    // Le compte rendu écrit « Article 1er », le libellé du scrutin ne livre
+    // que « 1 », et certains textes disent « article premier ».
+    expect(cleArticleSenat('1er')).toBe('1');
+    expect(cleArticleSenat('1')).toBe('1');
+    expect(cleArticleSenat('premier')).toBe('1');
+    expect(cleArticleSenat('1er A')).toBe('1 A');
+    expect(cleArticleSenat('1er bis')).toBe('1 BIS');
+  });
+
+  it('ne confond pas le premier article avec le dixième', () => {
+    expect(cleArticleSenat('10')).toBe('10');
+    expect(cleArticleSenat('12 bis')).toBe('12 BIS');
+  });
+
+  it('laisse intacte une désignation sans qualificatif', () =>{
     expect(cleArticleSenat('11 bis')).toBe('11 BIS');
     expect(cleArticleSenat('Après 9')).toBe('APRÈS 9');
   });

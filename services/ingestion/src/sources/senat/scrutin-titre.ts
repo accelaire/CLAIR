@@ -93,7 +93,13 @@ export function cleArticleSenat(brut: string | null | undefined): string | null 
     .replace(/\s*\([^)]*\)/g, '')
     .replace(/\s+/g, ' ')
     .trim()
-    .toUpperCase();
+    .toUpperCase()
+    // Le premier article s'écrit de trois façons selon la source : le compte
+    // rendu dit « Article 1er », le libellé du scrutin « l'article 1er » — dont
+    // on ne lit que le nombre — et certains textes « article premier ». Sans
+    // cette mise en forme commune, 116 scrutins du Sénat perdaient leur débat.
+    .replace(/^1(?:ER|ÈRE|RE)\b/, '1')
+    .replace(/^PREMIER\b/, '1');
   return cle.length > 0 ? cle : null;
 }
 

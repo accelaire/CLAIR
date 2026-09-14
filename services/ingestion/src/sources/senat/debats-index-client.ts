@@ -29,6 +29,7 @@ import * as readline from 'readline';
 import { logger } from '../../utils/logger';
 import { errorMessage } from '../../utils/errors';
 import { downloadWithRetry } from '../../utils/download';
+import { cleArticleSenat, normaliserNumeroAmendementSenat } from './scrutin-titre';
 
 const URL_DEBATS = 'https://data.senat.fr/data/debats/debats.zip';
 
@@ -44,6 +45,43 @@ export interface SegmentDebatSenat {
   articleVise: string | null;
   /** Objet de la section, tel que rédigé par le Sénat. */
   objet: string | null;
+}
+
+/**
+ * Une section de discussion, avec les prises de parole qu'elle contient.
+ *
+ * `segments` regarde le débat par la parole, ce qui suffit à situer une
+ * intervention. Rattacher un scrutin demande l'inverse : partir de ce qui est
+ * discuté — un article, des amendements nommés, un texte — pour retrouver les
+ * paroles. D'où cette seconde lecture du même dump.
+ */
+export interface SectionDebatSenat {
+  /** Clé de section du Sénat (`secdiscle`). */
+  cle: string;
+  /** Date de séance, `AAAA-MM-JJ`. */
+  date: string;
+  /**
+   * Lectures dont relève la section (`lecassidt`).
+   *
+   * Il y en a deux lors d'une discussion générale commune à deux textes, le
+   * Sénat les collant alors avec un point-virgule.
+   */
+  lectures: string[];
+  /** Code de section publié par le Sénat (`typseccod`). */
+  typeSection: string;
+  /**
+   * Articles en discussion, normalisés. Plusieurs quand la section les
+   * regroupe (« Articles 2 et 3 »).
+   */
+  articles: string[];
+  /** Numéros d'amendements que la désignation de section énumère. */
+  amendements: string[];
+  /** Objet de la section, tel que rédigé par le Sénat. */
+  objet: string | null;
+  /** Ordre de la section dans la journée (`secdisordid`). */
+  ordre: number;
+  /** Ancres du compte rendu des prises de parole de la section. */
+  ancres: string[];
 }
 
 // =============================================================================
@@ -142,7 +180,9 @@ export function normaliserArticleSenat(brut: string | null | undefined): string 
     const sens = additionnel[1]!.toLowerCase().startsWith('av') ? 'Avant' : 'Après';
     resultat = `${sens} ${couperEnumeration(additionnel[2]!.trim())}`;
   } else {
-    const simple = texte.match(/^art(?:icle)?\.?\s+(.+)$/i);
+    // Le pluriel existe quand la section regroupe plusieurs articles
+    // (« Articles 2 et 3 ») : sans lui, le préfixe restait collé au numéro.
+    const simple = texte.match(/^art(?:icle)?s?\.?\s+(.+)$/i);
     resultat = simple ? couperEnumeration(simple[1]!.trim()) : couperEnumeration(texte);
   }
 
@@ -154,6 +194,48 @@ export function normaliserArticleSenat(brut: string | null | undefined): string 
     return null;
   }
   return resultat;
+}
+
+/**
+ * Numéros d'amendements énumérés par une désignation de section.
+ *
+ * `couperEnumeration` retire ce détail de la désignation d'article, où il n'a
+ * rien à faire. Il porte pourtant le seul lien nominatif entre un débat du
+ * Sénat et un amendement : le compte rendu, lui, ne numérote jamais les
+ * amendements dans le texte des orateurs (5 lignes sur 91 017). Sur la période
+ * couverte, 3 275 sections énumèrent ainsi 5 635 amendements distincts.
+ */
+export function amendementsDeLaDesignation(brut: string | null | undefined): string[] {
+  if (!brut) return [];
+  const texte = decoderTexteSenat(brut);
+  const numeros: string[] = [];
+  const vus = new Set<string>();
+  for (const m of texte.matchAll(/n°\s*((?:[IVX]+-|[A-Z]-)?\d+(?:\s+rectifi[ée]e?)?(?:\s+(?:bis|ter|quater|quinquies))?)/gi)) {
+    const numero = normaliserNumeroAmendementSenat(m[1]!);
+    if (numero.length === 0 || vus.has(numero)) continue;
+    vus.add(numero);
+    numeros.push(numero);
+  }
+  return numeros;
+}
+
+/**
+ * Articles d'une désignation de section, en clés de comparaison.
+ *
+ * Une section peut en regrouper plusieurs — « Articles 2 et 3 » — auquel cas un
+ * scrutin sur l'un ou l'autre relève bien de cette discussion. On ne découpe
+ * que sur « et » et la virgule, jamais sur l'espace : « 1er A » et « 3 bis »
+ * sont un seul article.
+ */
+export function articlesDeLaDesignation(brut: string | null | undefined): string[] {
+  const designation = cleArticleSenat(normaliserArticleSenat(brut));
+  if (!designation) return [];
+
+  const prefixe = designation.match(/^(AVANT|APRÈS)\s+(.*)$/);
+  const corps = prefixe ? prefixe[2]! : designation;
+  const morceaux = corps.split(/\s*(?:,|\bET\b)\s*/).filter((x) => x.trim().length > 0);
+  const articles = morceaux.map((x) => (prefixe ? `${prefixe[1]} ${x.trim()}` : x.trim()));
+  return [...new Set(articles)];
 }
 
 /**
@@ -233,6 +315,68 @@ export class SenatDebatsIndexClient {
 
       logger.info({ segments: segments.length }, 'Index des débats Sénat construit');
       return segments;
+    } finally {
+      await nettoyage();
+    }
+  }
+
+  /**
+   * Les sections de discussion de la période, avec leurs prises de parole.
+   *
+   * Même dump et mêmes deux passes que `segments`, lues dans l'autre sens :
+   * on garde ici la section comme unité, avec ce qu'elle discute et les ancres
+   * qu'elle contient.
+   */
+  async sections(
+    options: { depuisAnnee: number; cheminLocal?: string } = { depuisAnnee: 2024 },
+  ): Promise<SectionDebatSenat[]> {
+    const { chemin, nettoyage } = await this.preparer(options.cheminLocal);
+
+    try {
+      const annees = new Set<string>();
+      for (let a = options.depuisAnnee; a <= new Date().getUTCFullYear() + 1; a++) annees.add(String(a));
+
+      const sections = new Map<string, SectionDebatSenat>();
+      await this.parcourirTable(chemin, 'secdis', (champs) => {
+        const [cle, lecassidt, type, datsea, num, objet, , ordre] = champs;
+        if (!cle || !type || !datsea) return;
+        if (!annees.has(datsea.slice(0, 4))) return;
+        sections.set(cle, {
+          cle,
+          date: datsea.slice(0, 10),
+          // Une discussion générale commune à deux textes porte les deux
+          // lectures, collées par un point-virgule.
+          lectures: (lecassidt ?? '').split(';').map((x) => x.trim()).filter((x) => x.length > 0),
+          typeSection: type,
+          articles: type === '1' ? articlesDeLaDesignation(num) : [],
+          amendements: amendementsDeLaDesignation(num),
+          objet: objet ?? null,
+          ordre: ordre && /^\d+$/.test(ordre) ? Number(ordre) : 0,
+          ancres: [],
+        });
+      });
+
+      let parolesRetenues = 0;
+      await this.parcourirTable(chemin, 'intpjl', (champs) => {
+        const section = champs[2] ? sections.get(champs[2]) : undefined;
+        if (!section) return;
+        const ancre = ancreDepuisUrl(champs[5]);
+        if (!ancre) return;
+        section.ancres.push(ancre);
+        parolesRetenues++;
+      });
+
+      const resultat = [...sections.values()];
+      logger.info(
+        {
+          sections: resultat.length,
+          paroles: parolesRetenues,
+          avecAmendements: resultat.filter((s) => s.amendements.length > 0).length,
+          depuisAnnee: options.depuisAnnee,
+        },
+        'Sections de discussion Sénat construites',
+      );
+      return resultat;
     } finally {
       await nettoyage();
     }

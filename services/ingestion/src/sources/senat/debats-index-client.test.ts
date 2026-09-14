@@ -4,6 +4,8 @@ import {
   typeDInterventionSenat,
   ancreDepuisUrl,
   champsDeLigne,
+  amendementsDeLaDesignation,
+  articlesDeLaDesignation,
 } from './debats-index-client';
 
 describe('normaliserArticleSenat', () => {
@@ -108,5 +110,51 @@ describe('champsDeLigne', () => {
 
   it('conserve les champs vides, qui ne sont pas des NULL', () => {
     expect(champsDeLigne('a\t\tb')).toEqual(['a', '', 'b']);
+  });
+});
+
+describe('amendementsDeLaDesignation', () => {
+  it('relève les amendements que la section énumère', () => {
+    // Ce détail est retiré de la désignation d'article, mais il porte le seul
+    // lien nominatif entre un débat du Sénat et un amendement.
+    expect(
+      amendementsDeLaDesignation(
+        "Article additionnel après l\u2019article 9 - Amendements n° I-1387, n° I-1168 rectifié",
+      ),
+    ).toEqual(['I-1387', 'I-1168']);
+  });
+
+  it('ramène une rectification à l\u2019amendement qu\u2019elle corrige', () => {
+    expect(
+      amendementsDeLaDesignation('Article 22 - Amendements n° 86 rectifié bis, n° 171 rectifié'),
+    ).toEqual(['86', '171']);
+  });
+
+  it('rend une liste vide quand la désignation n\u2019énumère rien', () => {
+    expect(amendementsDeLaDesignation('Article 11 bis')).toEqual([]);
+    expect(amendementsDeLaDesignation(null)).toEqual([]);
+  });
+});
+
+describe('articlesDeLaDesignation', () => {
+  it('rend une clé de comparaison, qualificatif de procédure retiré', () => {
+    expect(articlesDeLaDesignation('Article 21 bis (nouveau)')).toEqual(['21 BIS']);
+    expect(articlesDeLaDesignation('Article 4 (priorité)')).toEqual(['4']);
+    expect(articlesDeLaDesignation('Art. 11 bis')).toEqual(['11 BIS']);
+  });
+
+  it('sépare une section qui regroupe plusieurs articles', () => {
+    // Un scrutin sur l\u2019un ou l\u2019autre relève bien de cette discussion.
+    expect(articlesDeLaDesignation('Articles 2 et 3')).toEqual(['2', '3']);
+  });
+
+  it('garde le sens d\u2019un article additionnel', () => {
+    expect(articlesDeLaDesignation("Article additionnel après l\u2019article 7 bis")).toEqual(['APRÈS 7 BIS']);
+    expect(articlesDeLaDesignation("Article additionnel avant l\u2019article 3")).toEqual(['AVANT 3']);
+  });
+
+  it('rend une liste vide sans désignation exploitable', () => {
+    expect(articlesDeLaDesignation(null)).toEqual([]);
+    expect(articlesDeLaDesignation('(priorité)')).toEqual([]);
   });
 });
