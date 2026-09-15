@@ -319,6 +319,26 @@ export function lireLigneDeTableau(ligne: string, colonnes: Colonne[]): Map<Role
   return out;
 }
 
+/**
+ * Les numéros de dépôt des textes que ce compte rendu examine.
+ *
+ * Le préambule les nomme toujours : « des amendements à la première partie du
+ * projet de loi de finances pour 2026 (n° 1906) ». C'est l'ancre dont le
+ * rapprochement des avis a besoin — un numéro d'amendement n'est unique qu'au
+ * sein d'un texte, et un dossier en traverse plusieurs : sur un même dossier,
+ * six amendements portent le numéro 1, un par lecture.
+ *
+ * Le pluriel existe (« n°s 1906 et 1999 » pour le budget de la sécurité
+ * sociale), d'où une liste.
+ */
+export function numerosDeTexteDuCompteRendu(texte: string): string[] {
+  const vus = new Set<string>();
+  for (const m of texte.matchAll(/\(\s*n°s?\s*([\d\s,et]+?)\s*\)/giu)) {
+    for (const n of m[1]!.matchAll(/\d{2,5}/gu)) vus.add(n[0]);
+  }
+  return [...vus];
+}
+
 /** Ce qu'une lecture de tableau a donné, et ce qu'elle a manqué. */
 export interface LectureDesAvis {
   avis: AvisSurAmendement[];

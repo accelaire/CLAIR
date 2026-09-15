@@ -5,6 +5,7 @@ import {
   lireLigneDeTableau,
   sensDeLAvis,
   avisAnnonce,
+  numerosDeTexteDuCompteRendu,
 } from './avis-commission-parser';
 
 // Toutes les mises en page ci-dessous sont recopiées de comptes rendus réels
@@ -198,5 +199,28 @@ Article     Amendement                Auteur                        Groupe      
 `);
     expect(avis).toEqual([]);
     expect(tableauNonLu).toBe(false);
+  });
+});
+
+describe('numerosDeTexteDuCompteRendu', () => {
+  it('lit le numéro du texte examiné', () => {
+    expect(
+      numerosDeTexteDuCompteRendu(
+        'des amendements à la première partie du projet de loi de finances pour 2026 (n° 1906)'
+      )
+    ).toEqual(['1906']);
+  });
+
+  it('lit les deux numéros d’un texte qui en porte deux', () => {
+    expect(
+      numerosDeTexteDuCompteRendu(
+        'les amendements à la troisième partie du projet de loi de financement de la sécurité sociale pour 2026 (n°s 1906 et 1999)'
+      )
+    ).toEqual(['1906', '1999']);
+  });
+
+  it('ignore les numéros qui ne désignent pas un texte', () => {
+    expect(numerosDeTexteDuCompteRendu('en application de l’article 88 du Règlement')).toEqual([]);
+    expect(numerosDeTexteDuCompteRendu('Compte rendu n° 90')).toEqual([]);
   });
 });

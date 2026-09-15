@@ -1357,6 +1357,44 @@ program
   });
 
 program
+  .command('sync-avis-commission')
+  .description("Ingérer les avis de commission sur les amendements (réunions articles 86/88/91)")
+  .option('--depuis <date>', 'Ne regarder que les réunions tenues depuis cette date (AAAA-MM-JJ)')
+  .option('--max-reunions <n>', 'Borne de sécurité pour les essais', (v: string) => parseInt(v, 10))
+  .option('--seulement <refs...>', 'Ne traiter que ces références de compte rendu')
+  .option('--reingerer', 'Relire les réunions déjà ingérées et y remplacer les avis')
+  .option('--dry-run', "Ne rien écrire, compter ce qui serait ingéré")
+  .action(async (options: {
+    depuis?: string;
+    maxReunions?: number;
+    seulement?: string[];
+    reingerer?: boolean;
+    dryRun?: boolean;
+  }) => {
+    try {
+      const { syncAvisCommission } = await import('./workers/avis-commission.js');
+      const r = await syncAvisCommission({
+        depuis: options.depuis ? new Date(options.depuis) : undefined,
+        maxReunions: options.maxReunions,
+        seulement: options.seulement,
+        reingerer: options.reingerer,
+        dryRun: options.dryRun,
+      });
+      console.log(`\nRéunions lues            : ${r.reunionsLues}`);
+      console.log(`Avis écrits              : ${r.avis}`);
+      console.log(`  dont liés à un amdt    : ${r.avisRattaches}`);
+      console.log(`Sans compte rendu publié : ${r.sansCompteRendu}`);
+      console.log(`Sans tableau (débats)    : ${r.sansTableau}`);
+      console.log(`Tableaux illisibles      : ${r.tableauxNonLus}`);
+      console.log(`Sans texte nommé         : ${r.sansTexteNomme}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-avis-commission failed');
+      process.exit(1);
+    }
+  });
+
+program
   .command('sync-debats-commission')
   .description("Ingérer les comptes rendus de réunion de commission AN (source : PDF du portail)")
   .option('--max-reunions <n>', 'Borne de sécurité pour les essais', (v: string) => parseInt(v, 10))

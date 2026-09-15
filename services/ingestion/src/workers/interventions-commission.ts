@@ -255,6 +255,12 @@ export async function syncInterventionsCommission(
     where: {
       compteRenduRef: { not: null },
       commission: { chambre: CHAMBRE },
+      // Les réunions de séance publique portent elles aussi une référence de
+      // compte rendu — 601 à l'Assemblée —, mais elle désigne le compte rendu
+      // de séance (`CRSA…`), déjà ingéré en XML par `sync-debats-an`. La page
+      // de notice n'existe pas pour elles : sans ce filtre, on ferait 601
+      // requêtes vouées au 404, et on les referait chaque nuit.
+      type: 'commission',
       ...(options.seulement && options.seulement.length > 0
         ? { compteRenduRef: { in: options.seulement } }
         : {}),

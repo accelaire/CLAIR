@@ -3427,6 +3427,26 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         'Ingestion des débats de commission échouée (non bloquante)',
       );
     }
+
+    // Les avis de commission sur les amendements. Même source, même fenêtre :
+    // les réunions tenues au titre des articles 86, 88 ou 91 du Règlement ne
+    // portent pas de débat mais un tableau, qui dit ce que la commission
+    // recommande de chaque amendement avant le passage en séance. C'est une
+    // information que `amendements.sort` ne porte pas : lui dit ce que
+    // l'hémicycle a finalement décidé.
+    try {
+      const depuis = new Date();
+      depuis.setDate(depuis.getDate() - FENETRE_COMPTES_RENDUS_COMMISSION_JOURS);
+      logger.info({ depuis }, 'Ingestion des avis de commission...');
+      const { syncAvisCommission } = await import('./avis-commission.js');
+      const avisResult = await syncAvisCommission({ depuis });
+      logger.info(avisResult, 'Ingestion des avis de commission terminée');
+    } catch (error) {
+      logger.error(
+        { error: errorMessage(error) },
+        'Ingestion des avis de commission échouée (non bloquante)',
+      );
+    }
   }
 
   if (hasAmendementsChanged || hasScrutinsChanged) {
