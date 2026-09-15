@@ -121,6 +121,19 @@ describe('enTeteDuParagraphe', () => {
     ).not.toBeNull();
   });
 
+  it('accepte le tiret qu’intercalent les organes partagés avec le Sénat', () => {
+    const t = enTeteDuParagraphe(
+      'M. Stéphane Piednoir, sénateur, président de l’Office. – Nous examinons ce matin le rapport.'
+    );
+    expect(t?.enTete).toBe('M. Stéphane Piednoir, sénateur, président de l’Office');
+    // Le tiret relève de la typographie, pas du propos.
+    expect(
+      'M. Stéphane Piednoir, sénateur, président de l’Office. – Nous examinons ce matin le rapport.'.slice(
+        t!.longueur
+      )
+    ).toBe('Nous examinons ce matin le rapport.');
+  });
+
   // Les quatre pièges du corpus, chacun rencontré pour de bon.
 
   it('ne prend pas une phrase pour un en-tête', () => {

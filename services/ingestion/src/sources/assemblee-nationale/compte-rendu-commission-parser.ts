@@ -226,6 +226,17 @@ export function paragraphes(corps: string): string[] {
 const LONGUEUR_MAX_EN_TETE = 220;
 
 /**
+ * Ce qui sépare l'en-tête du propos.
+ *
+ * L'Assemblée enchaîne directement (« M. Untel. Mes chers collègues »), tandis
+ * que les organes qu'elle partage avec le Sénat — l'OPECST, par exemple —
+ * suivent la typographie du Sénat et intercalent un tiret (« M. Untel. – Nous
+ * examinons »). Sans ce tiret dans la règle, un compte rendu entier de l'Office
+ * ressortait « de forme inconnue ».
+ */
+const APRES_EN_TETE = /^\s+(?:[-–—]\s*)?[«“(A-ZÀ-Þ]/u;
+
+/**
  * Le point qui clôt l'en-tête, ou `-1`.
  *
  * Ni le point d'une abréviation (« suppléant M. Untel. » en a deux), ni un point
@@ -236,7 +247,7 @@ function finDeLEnTete(paragraphe: string, depuis: number): number {
     if (paragraphe[i] !== '.') continue;
     const mot = /(\w+)$/u.exec(paragraphe.slice(0, i));
     if (mot && ABREVIATIONS.has(mot[1]!)) continue;
-    if (/^\s+[«“(A-ZÀ-Þ]/u.test(paragraphe.slice(i + 1))) return i;
+    if (APRES_EN_TETE.test(paragraphe.slice(i + 1))) return i;
     return -1;
   }
   return -1;
@@ -313,7 +324,7 @@ export function enTeteDuParagraphe(
   const fin = finDeLEnTete(paragraphe, i);
   if (fin < 0) return null;
 
-  const apres = /^\s+/u.exec(paragraphe.slice(fin + 1));
+  const apres = /^\s+(?:[-–—]\s*)?/u.exec(paragraphe.slice(fin + 1));
   return {
     enTete: paragraphe.slice(0, fin).replace(/\s+/gu, ' ').trim(),
     qualifBrut: paragraphe.slice(finDuNom, fin),
