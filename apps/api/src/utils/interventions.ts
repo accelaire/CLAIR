@@ -36,12 +36,22 @@ export const TYPE_REPONSE = 'reponse_gouvernement';
  *   les mêler aux interventions de fond gonflerait l'activité d'un député de
  *   plusieurs milliers de lignes qui ne disent rien de son travail.
  *
- * Les deux restent en base et interrogeables ; ce filtre ne décide que de ce
+ * - `reunionId: null` — la séance publique seulement. Les prises de parole en
+ *   réunion de commission vivent dans la même table, avec leur réunion en
+ *   référence. Les faire entrer dans ce filtre changerait d'un coup le chiffre
+ *   « interventions » affiché sur 577 fiches de députés, sur la page d'accueil
+ *   et dans les analytics : c'est une décision éditoriale à prendre, pas une
+ *   conséquence de l'ingestion. Le jour où elle est prise, ce filtre est le
+ *   seul endroit à modifier — c'est pourquoi la borne est ici plutôt que
+ *   répétée sur les cinq sites qui comptent.
+ *
+ * Les trois restent en base et interrogeables ; ce filtre ne décide que de ce
  * qui est montré et compté par défaut.
  */
 export const INTERVENTIONS_DE_FOND = {
   estPresidence: false,
   type: { not: TYPE_INTERRUPTION },
+  reunionId: null,
 } as const;
 
 /**

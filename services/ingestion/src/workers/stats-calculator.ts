@@ -726,7 +726,16 @@ async function calculateAndStoreStats(
     // elles gonfleraient ce total (cf. intervention_stats, même raison).
     prisma.intervention.groupBy({
       by: ['type'],
-      where: { parlementaireId: id, estPresidence: false, type: { not: TYPE_INTERRUPTION } },
+      where: {
+        parlementaireId: id,
+        estPresidence: false,
+        type: { not: TYPE_INTERRUPTION },
+        // Séance publique seulement : les prises de parole en commission
+        // partagent cette table (`reunion_id` renseigné). Les compter ici
+        // relèverait le chiffre « interventions » de chaque fiche sans que
+        // personne ne l'ait décidé. Voir apps/api/src/utils/interventions.ts.
+        reunionId: null,
+      },
       _count: { id: true },
     }),
 
