@@ -542,6 +542,9 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
             articleVise: true,
             amendementsVises: true,
             texteNumero: true,
+            // Le texte discuté, résolu à l'ingestion : le compte rendu ne le
+            // nomme que par son numéro de dépôt, qui ne dit rien au lecteur.
+            dossier: { select: { uid: true, titre: true, titreCourt: true } },
           },
         });
 
@@ -595,7 +598,11 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
 
         // 4. Group by seanceId
         // Formes réellement poussées dans les groupes (dérivées des requêtes ci-dessus).
-        type SeanceIntervention = Omit<(typeof interventions)[number], 'seanceId'> & { hasMore: boolean };
+        type SeanceIntervention = Omit<(typeof interventions)[number], 'seanceId'> & {
+          hasMore: boolean;
+          /** Les votes que cette prise de parole a précédés, quand on le sait. */
+          scrutinIds: string[];
+        };
         type SeanceScrutin = Omit<(typeof scrutins)[number], 'seanceRef'>;
 
         const seanceMap = new Map<string, {
@@ -628,6 +635,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
               ? contenu.substring(0, CONTENU_PREVIEW_LENGTH)
               : contenu,
             hasMore: contenu.length > CONTENU_PREVIEW_LENGTH,
+            scrutinIds: scrutinsParIntervention.get(i.id) ?? [],
           });
         }
 

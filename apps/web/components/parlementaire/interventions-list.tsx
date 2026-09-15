@@ -27,6 +27,8 @@ interface SeanceGroup {
     articleVise: string | null;
     amendementsVises: string[] | null;
     texteNumero: string | null;
+    dossier: { uid: string; titre: string; titreCourt: string | null } | null;
+    scrutinIds: string[];
   }[];
   scrutins: {
     id: string;
@@ -50,6 +52,30 @@ const LIBELLE_TYPE: Record<string, string> = {
   explication_vote: 'Explication de vote',
   interruption: 'Interruption',
 };
+
+/** Un vote, en pastille cliquable. */
+function ScrutinPuce({
+  scrutin,
+}: {
+  scrutin: { id: string; numero: number; sort: string; chambre: string; session: string; date: string };
+}) {
+  return (
+    <Link
+      href={scrutinHref(scrutin)}
+      className="inline-flex items-center gap-1.5 rounded bg-indigo-50 px-2 py-1 text-xs text-indigo-600 transition-colors hover:text-indigo-800 hover:underline dark:bg-indigo-950/40 dark:text-indigo-300"
+    >
+      <Vote className="h-3 w-3" />
+      Vote n&deg;{scrutin.numero}
+      <span
+        className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+          scrutin.sort === 'adopte' ? 'badge-adopte' : 'badge-rejete'
+        }`}
+      >
+        {scrutin.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
+      </span>
+    </Link>
+  );
+}
 
 function InterventionTypeBadge({ type }: { type: string }) {
   const label = LIBELLE_TYPE[type] ?? type.replace(/_/g, ' ');
@@ -163,7 +189,11 @@ export function InterventionsList({
         </p>
       ) : (
         <div className="space-y-6">
-          {seances.map((seance) => (
+          {seances.map((seance) => {
+            // Les prises de parole ne portent que l'identifiant de leurs votes ;
+            // le détail arrive une fois par séance.
+            const scrutinsParId = new Map(seance.scrutins.map((s) => [s.id, s]));
+            return (
             <div key={seance.seanceId} className="rounded-lg border bg-card overflow-hidden">
               {/* Séance header — clickable to fold/unfold */}
               <div className="flex items-center gap-2 px-4 py-3 bg-muted/50 border-b">
@@ -214,12 +244,43 @@ export function InterventionsList({
                       une séance passe d'un texte à l'autre et d'un article au
                       suivant, et une liste à plat efface ce déroulé. */}
                   <div className="divide-y">
-                    {grouperParSujet(seance.interventions).map((groupe) => (
+                    {grouperParSujet(seance.interventions, { avecTexte: true }).map((groupe) => (
                       <div key={groupe.cle}>
-                        {groupe.titre && (
-                          <p className="bg-muted/40 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                            {groupe.titre}
-                          </p>
+                        {(groupe.titre || groupe.scrutinIds.length > 0) && (
+                          <div className="flex flex-wrap items-center justify-between gap-2 bg-muted/40 px-4 py-1.5">
+                            {groupe.titre && (
+                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                {/* Le texte renvoie à son dossier : c'est là qu'on
+                                    lit ce dont il s'agit et où il en est. */}
+                                {groupe.dossier ? (
+                                  <>
+                                    <Link
+                                      href={`/dossiers/${groupe.dossier.uid}`}
+                                      className="text-primary hover:underline"
+                                    >
+                                      {groupe.dossier.titreCourt || groupe.dossier.titre}
+                                    </Link>
+                                    {groupe.sousTitre && <span> · {groupe.sousTitre}</span>}
+                                  </>
+                                ) : (
+                                  groupe.titre
+                                )}
+                              </p>
+                            )}
+                            {/* Les votes de ce passage précisément, et non ceux
+                                de la journée : c'est ce que le rattachement des
+                                débats aux scrutins permet enfin de dire. */}
+                            {groupe.scrutinIds.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {groupe.scrutinIds
+                                  .map((id) => scrutinsParId.get(id))
+                                  .filter((s): s is NonNullable<typeof s> => Boolean(s))
+                                  .map((scrutin) => (
+                                    <ScrutinPuce key={scrutin.id} scrutin={scrutin} />
+                                  ))}
+                              </div>
+                            )}
+                          </div>
                         )}
                         {groupe.interventions.map((intervention) => (
                       <div key={intervention.id} className="px-4 py-3">
@@ -249,33 +310,37 @@ export function InterventionsList({
                     ))}
                   </div>
 
-                  {/* Scrutins liés */}
-                  {seance.scrutins.length > 0 && (
-                    <div className="px-4 py-3 bg-muted/30 border-t">
-                      <p className="text-xs text-muted-foreground mb-2">Scrutins liés :</p>
-                      <div className="flex flex-wrap gap-2">
-                        {seance.scrutins.map((scrutin) => (
-                          <Link
-                            key={scrutin.id}
-                            href={scrutinHref(scrutin)}
-                            className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 hover:underline bg-indigo-50 px-2 py-1 rounded transition-colors"
-                          >
-                            <Vote className="h-3 w-3" />
-                            Vote n&deg;{scrutin.numero}
-                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                              scrutin.sort === 'adopte' ? 'badge-adopte' : 'badge-rejete'
-                            }`}>
-                              {scrutin.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
-                            </span>
-                          </Link>
-                        ))}
+                  {/* Les votes qu'aucune prise de parole ne revendique.
+                      Le Sénat n'a pas ce rattachement fin sur les fiches, et une
+                      partie des séances de l'Assemblée non plus : on montre alors
+                      les votes de la journée, en le disant, plutôt que de laisser
+                      croire qu'ils portent sur ce qui vient d'être lu. */}
+                  {(() => {
+                    const revendiques = new Set(
+                      seance.interventions.flatMap((i) => i.scrutinIds ?? []),
+                    );
+                    const restants = seance.scrutins.filter((s) => !revendiques.has(s.id));
+                    if (restants.length === 0) return null;
+                    return (
+                      <div className="px-4 py-3 bg-muted/30 border-t">
+                        <p className="text-xs text-muted-foreground mb-2">
+                          {revendiques.size > 0
+                            ? 'Autres votes de cette séance :'
+                            : 'Votes de cette séance, sans rattachement certain :'}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {restants.map((scrutin) => (
+                            <ScrutinPuce key={scrutin.id} scrutin={scrutin} />
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </>
               )}
             </div>
-          ))}
+            );
+          })}
 
           {/* Infinite scroll sentinel */}
           <div ref={loadMoreRef} className="h-4" />

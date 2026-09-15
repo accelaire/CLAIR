@@ -1335,6 +1335,28 @@ program
   });
 
 program
+  .command('link-interventions-dossiers')
+  .description("Rattacher les prises de parole à leur texte (numéro de dépôt → dossier)")
+  .option('--refaire-tout', 'Reposer le dossier même là où il est déjà renseigné')
+  .option('--dry-run', "Ne rien écrire, dire ce qui serait posé")
+  .action(async (options: { refaireTout?: boolean; dryRun?: boolean }) => {
+    try {
+      const { lierInterventionsAuxDossiers } = await import('./workers/link-interventions-dossiers.js');
+      const r = await lierInterventionsAuxDossiers({
+        refaireTout: options.refaireTout,
+        dryRun: options.dryRun,
+      });
+      console.log(`\nNuméros de texte vus     : ${r.numerosVus}`);
+      console.log(`Numéros résolus          : ${r.numerosResolus}`);
+      console.log(`Prises de parole situées : ${r.interventions}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'link-interventions-dossiers failed');
+      process.exit(1);
+    }
+  });
+
+program
   .command('sync-debats-commission')
   .description("Ingérer les comptes rendus de réunion de commission AN (source : PDF du portail)")
   .option('--max-reunions <n>', 'Borne de sécurité pour les essais', (v: string) => parseInt(v, 10))

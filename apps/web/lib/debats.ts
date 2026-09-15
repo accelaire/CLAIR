@@ -11,31 +11,73 @@
 // débat se déroule, il ne se trie pas. Deux passages sur le même article, de
 // part et d'autre d'un autre sujet, restent donc deux passages distincts —
 // c'est ainsi que la séance s'est tenue.
+//
+// LE TEXTE. Le compte rendu ne le nomme que par son numéro de dépôt (« 1364 »),
+// résolu en dossier à l'ingestion. Sur la fiche d'un député, qui traverse des
+// dizaines de textes, l'intertitre doit le dire : « Article 2 · Amendement
+// n° 512 » seul ne permet pas de savoir de quelle loi on parle. Sur la page
+// d'un scrutin, où tout porte sur le même texte, le répéter serait du bruit —
+// d'où l'option `avecTexte`.
+//
+// LES VOTES. Chaque prise de parole porte les scrutins qu'elle a précédés. On
+// les remonte au passage plutôt qu'à la séance : une journée de séance compte
+// souvent plusieurs dizaines de votes, et les afficher tous sous une seule
+// intervention laissait croire qu'elle portait sur chacun d'eux.
+
+/** Le texte en discussion, tel que l'API le rend. */
+export interface DossierDeDebat {
+  uid: string;
+  titre: string;
+  titreCourt?: string | null;
+}
 
 /** Ce qu'il faut d'une prise de parole pour la situer dans le débat. */
 export interface InterventionSituee {
   articleVise?: string | null;
   amendementsVises?: string[] | null;
   texteNumero?: string | null;
+  dossier?: DossierDeDebat | null;
+  /** Les votes que cette prise de parole a précédés, quand on le sait. */
+  scrutinIds?: string[];
 }
 
 export interface GroupeDeDebat<T> {
   /** Stable au sein d'une liste : sert de clé de rendu. */
   cle: string;
-  /** L'intertitre à afficher, ou `null` quand la séance ne dit rien. */
+  /** L'intertitre complet, ou `null` quand la séance ne dit rien. */
   titre: string | null;
+  /**
+   * L'intertitre SANS le texte : « Article 2 · Amendement n° 512 ».
+   *
+   * Rendu à part pour que l'appelant puisse faire du texte un lien sans
+   * redécouper `titre` — le titre d'un dossier peut contenir n'importe quoi.
+   */
+  sousTitre: string | null;
+  /** Le texte en discussion, pour en faire un lien. */
+  dossier: DossierDeDebat | null;
+  /** Les votes de ce passage, dédoublonnés et dans l'ordre rencontré. */
+  scrutinIds: string[];
   interventions: T[];
+}
+
+export interface OptionsDeGroupement {
+  /** Nommer le texte dans l'intertitre. Faux sur la page d'un scrutin. */
+  avecTexte?: boolean;
 }
 
 /**
  * Découpe une suite de prises de parole en passages consécutifs de même sujet.
  *
- * Le sujet est l'amendement quand il est nommé, l'article sinon. Les prises de
- * parole que le compte rendu ne situe pas forment leurs propres passages, sans
- * intertitre : mieux vaut ne rien annoncer que d'annoncer à tort.
+ * Le sujet est l'amendement quand il est nommé, l'article sinon, et le texte
+ * les englobe : passer d'un texte à l'autre ouvre toujours un nouveau passage,
+ * même à numéro d'article identique — l'article 2 d'une loi n'est pas l'article
+ * 2 de la suivante. Les prises de parole que le compte rendu ne situe pas
+ * forment leurs propres passages, sans intertitre : mieux vaut ne rien annoncer
+ * que d'annoncer à tort.
  */
 export function grouperParSujet<T extends InterventionSituee>(
   interventions: T[],
+  options: OptionsDeGroupement = {},
 ): GroupeDeDebat<T>[] {
   const groupes: GroupeDeDebat<T>[] = [];
 
@@ -45,37 +87,73 @@ export function grouperParSujet<T extends InterventionSituee>(
 
     if (dernier && dernier.cle.startsWith(`${cle}#`)) {
       dernier.interventions.push(intervention);
+      ajouterScrutins(dernier, intervention);
       continue;
     }
 
-    groupes.push({
+    const groupe: GroupeDeDebat<T> = {
       // Le rang suffixé distingue deux passages sur le même article séparés
       // par un autre sujet, que React confondrait sous une clé identique.
       cle: `${cle}#${groupes.length}`,
-      titre: titreDuSujet(intervention),
+      titre: titreDuSujet(intervention, options.avecTexte ?? false),
+      sousTitre: titreDuSujet(intervention, false),
+      dossier: options.avecTexte ? (intervention.dossier ?? null) : null,
+      scrutinIds: [],
       interventions: [intervention],
-    });
+    };
+    ajouterScrutins(groupe, intervention);
+    groupes.push(groupe);
   }
 
   return groupes;
 }
 
-function cleDuSujet(i: InterventionSituee): string {
-  const amendements = (i.amendementsVises ?? []).join(',');
-  return `${i.articleVise ?? ''}|${amendements}`;
+function ajouterScrutins<T extends InterventionSituee>(
+  groupe: GroupeDeDebat<T>,
+  intervention: InterventionSituee,
+): void {
+  for (const id of intervention.scrutinIds ?? []) {
+    if (!groupe.scrutinIds.includes(id)) groupe.scrutinIds.push(id);
+  }
 }
 
-function titreDuSujet(i: InterventionSituee): string | null {
-  const article = libelleArticle(i.articleVise);
-  const amendements = i.amendementsVises ?? [];
+function cleDuSujet(i: InterventionSituee): string {
+  const amendements = (i.amendementsVises ?? []).join(',');
+  const texte = i.dossier?.uid ?? i.texteNumero ?? '';
+  return `${texte}|${i.articleVise ?? ''}|${amendements}`;
+}
 
-  if (amendements.length > 0) {
-    const numeros = amendements.map((n) => `n° ${n}`).join(', ');
-    const libelle = amendements.length > 1 ? `Amendements ${numeros}` : `Amendement ${numeros}`;
-    return article ? `${article} · ${libelle}` : libelle;
+function titreDuSujet(i: InterventionSituee, avecTexte: boolean): string | null {
+  const parties: string[] = [];
+
+  if (avecTexte) {
+    const texte = libelleTexte(i);
+    if (texte) parties.push(texte);
   }
 
-  return article;
+  const article = libelleArticle(i.articleVise);
+  if (article) parties.push(article);
+
+  const amendements = i.amendementsVises ?? [];
+  if (amendements.length > 0) {
+    const numeros = amendements.map((n) => `n° ${n}`).join(', ');
+    parties.push(amendements.length > 1 ? `Amendements ${numeros}` : `Amendement ${numeros}`);
+  }
+
+  return parties.length > 0 ? parties.join(' · ') : null;
+}
+
+/**
+ * Le nom du texte, ou son numéro de dépôt à défaut.
+ *
+ * 88,6 % des prises de parole de la 17e législature trouvent leur dossier ;
+ * pour les autres — textes du Sénat, textes anciens, textes sans amendement —
+ * on affiche « Texte n° 3995 » plutôt que rien : le numéro est ce que le compte
+ * rendu dit, et il permet au moins de suivre d'un passage à l'autre.
+ */
+function libelleTexte(i: InterventionSituee): string | null {
+  if (i.dossier) return i.dossier.titreCourt || i.dossier.titre;
+  return i.texteNumero ? `Texte n° ${i.texteNumero}` : null;
 }
 
 /**

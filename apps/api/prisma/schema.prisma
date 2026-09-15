@@ -566,6 +566,7 @@ model DossierLegislatif {
   amendements        Amendement[]
   dossierCommissions DossierCommission[]
   articles           TexteArticle[]
+  interventions      Intervention[]
 
   // Contenu enrichi par IA
   resumeIA      String?   @map("resume_ia")
@@ -853,6 +854,16 @@ model Intervention {
   /// Réunion de commission d'où vient la prise de parole ; `null` en séance publique.
   reunionId     String?  @map("reunion_id")
   reunion       Reunion? @relation(fields: [reunionId], references: [id], onDelete: Cascade)
+
+  /// Le texte en discussion, résolu depuis `texteNumero`.
+  ///
+  /// Le compte rendu ne nomme le texte que par son numéro de dépôt (« 1364 »),
+  /// qui ne dit rien à un lecteur. Le résoudre à la lecture coûtait 5,8 s par
+  /// requête — il faut balayer les 189 734 amendements au motif qu'eux seuls
+  /// portent le lien entre un numéro de texte et un dossier. On le pose donc à
+  /// l'ingestion. Sert aussi à lister les prises de parole d'un dossier.
+  dossierId     String?            @map("dossier_id")
+  dossier       DossierLegislatif? @relation(fields: [dossierId], references: [id], onDelete: SetNull)
   /// Sigle du groupe tel que le compte rendu de commission l'imprime (« (LFI-NFP) »).
   /// La séance publique ne le donne pas : là, c'est le mandat d'époque qui l'apporte.
   orateurGroupe String?  @map("orateur_groupe")
@@ -870,6 +881,7 @@ model Intervention {
   @@index([seanceUid, ordreAbsolu])
   @@index([articleVise])
   @@index([reunionId, ordre])
+  @@index([dossierId])
   @@map("interventions")
 }
 
