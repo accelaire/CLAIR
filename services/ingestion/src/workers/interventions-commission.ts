@@ -224,8 +224,13 @@ export async function syncInterventionsCommission(
     sansParlementaire: 0,
   };
 
+  // Les deux chambres, pas seulement l'Assemblée : l'Office parlementaire
+  // d'évaluation des choix scientifiques et technologiques et les commissions
+  // mixtes paritaires siègent à l'Assemblée mais des sénateurs y prennent la
+  // parole — quatre des huit orateurs du premier compte rendu lu. Élargir
+  // l'index ne peut qu'ajouter des résolutions justes : un patronyme partagé
+  // entre les deux chambres devient ambigu, donc cesse de résoudre.
   const fiches = await prisma.parlementaire.findMany({
-    where: { chambre: CHAMBRE },
     select: { id: true, prenom: true, nom: true },
   });
   const index = indexerOrateurs(fiches);
