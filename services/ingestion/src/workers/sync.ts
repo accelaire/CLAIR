@@ -58,6 +58,15 @@ const limit = pLimit(2);
 // Rempli par syncCommissions()/syncSenatCommissions(), consommé par syncDossiers()
 const comsenatRedirects = new Map<string, string>();
 
+/**
+ * Fenêtre de la moisson nocturne des comptes rendus de commission, en jours.
+ *
+ * Deux mois : l'Assemblée publie un compte rendu quelques jours à quelques
+ * semaines après la réunion, et au-delà il n'en viendra plus. Le rattrapage de
+ * l'historique se lance à la main, sans borne.
+ */
+const FENETRE_COMPTES_RENDUS_COMMISSION_JOURS = 60;
+
 // =============================================================================
 // SYNC COMMISSIONS (depuis les organes AMO10)
 // =============================================================================
@@ -3369,6 +3378,53 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.error(
         { error: errorMessage(error) },
         'Rattachement des débats du Sénat échoué (non bloquant)',
+      );
+    }
+  }
+
+  // Le texte dont on parle. Le compte rendu ne nomme le texte en discussion que
+  // par son numéro de dépôt (« 1364 »), qui ne dit rien au lecteur : sans cette
+  // étape, une prise de parole nouvelle s'affiche « Article 2 · Amendement
+  // n° 512 » sans qu'on sache de quelle loi il s'agit. Les amendements comptent
+  // autant que les interventions dans la condition : eux seuls portent le lien
+  // entre un numéro de texte et un dossier, et un amendement ingéré cette nuit
+  // peut résoudre un numéro qui ne l'était pas hier.
+  if (hasInterventionsChanged || hasAmendementsChanged) {
+    try {
+      logger.info('Rattachement des prises de parole à leur texte...');
+      const { lierInterventionsAuxDossiers } = await import('./link-interventions-dossiers.js');
+      const texteResult = await lierInterventionsAuxDossiers({});
+      logger.info(texteResult, 'Rattachement des prises de parole à leur texte terminé');
+    } catch (error) {
+      logger.error(
+        { error: errorMessage(error) },
+        'Rattachement des prises de parole à leur texte échoué (non bloquant)',
+      );
+    }
+  }
+
+  // Les débats de commission. Ils n'existent qu'en PDF et se téléchargent un par
+  // un : le rattrapage des 3 443 réunions de la législature se lance à la main,
+  // la nuit ne regarde que la fenêtre récente.
+  //
+  // Cette fenêtre n'est pas une commodité, c'est une correction. Le filtre
+  // incrémental sélectionne les réunions sans prise de parole, et une réunion
+  // dont le compte rendu n'est jamais publié n'en aura jamais : sans borne, on
+  // la retesterait chaque nuit, pour toujours. C'est le défaut que le scraping
+  // des saisines du Sénat traîne déjà — 5 995 pages par nuit pour zéro trouvaille.
+  const hasReunionsChanged = results.sourcesChanged.some((s) => s.includes('reunions'));
+  if (hasReunionsChanged) {
+    try {
+      const depuis = new Date();
+      depuis.setDate(depuis.getDate() - FENETRE_COMPTES_RENDUS_COMMISSION_JOURS);
+      logger.info({ depuis }, 'Ingestion des débats de commission AN...');
+      const { syncInterventionsCommission } = await import('./interventions-commission.js');
+      const commissionResult = await syncInterventionsCommission({ depuis });
+      logger.info(commissionResult, 'Ingestion des débats de commission AN terminée');
+    } catch (error) {
+      logger.error(
+        { error: errorMessage(error) },
+        'Ingestion des débats de commission échouée (non bloquante)',
       );
     }
   }

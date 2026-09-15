@@ -46,6 +46,18 @@ const prisma = new PrismaClient();
 const CHAMBRE = 'assemblee';
 
 export interface OptionsInterventionsCommission {
+  /**
+   * Ne regarder que les réunions tenues depuis cette date.
+   *
+   * La moisson nocturne s'en sert pour ne pas retester indéfiniment les
+   * réunions dont le compte rendu n'a jamais été publié : elles n'ont aucune
+   * prise de parole, donc le filtre incrémental les resélectionne chaque nuit.
+   * Sans borne, on referait pour toujours plusieurs centaines de requêtes
+   * inutiles au site de l'Assemblée — c'est exactement ce que fait déjà le
+   * scraping des saisines du Sénat, 45 minutes par nuit pour rien. Le rattrapage
+   * de l'historique se lance à la main, sans cette borne.
+   */
+  depuis?: Date;
   /** Ne traiter que ces références de compte rendu (mise au point). */
   seulement?: string[];
   /** Borne de sécurité : nombre maximum de réunions traitées. */
@@ -246,6 +258,7 @@ export async function syncInterventionsCommission(
       ...(options.seulement && options.seulement.length > 0
         ? { compteRenduRef: { in: options.seulement } }
         : {}),
+      ...(options.depuis ? { dateDebut: { gte: options.depuis } } : {}),
       // Sauf réingestion, on ne relit pas ce qui est déjà en base : chaque
       // réunion coûte deux requêtes au site de l'Assemblée et un PDF.
       ...(options.reingerer ? {} : { interventions: { none: {} } }),
@@ -258,7 +271,12 @@ export async function syncInterventionsCommission(
   });
 
   logger.info(
-    { reunions: reunions.length, dryRun: options.dryRun ?? false, reingerer: options.reingerer ?? false },
+    {
+      reunions: reunions.length,
+      depuis: options.depuis?.toISOString().slice(0, 10) ?? null,
+      dryRun: options.dryRun ?? false,
+      reingerer: options.reingerer ?? false,
+    },
     'Ingestion des débats de commission AN...'
   );
 

@@ -1360,11 +1360,13 @@ program
   .command('sync-debats-commission')
   .description("Ingérer les comptes rendus de réunion de commission AN (source : PDF du portail)")
   .option('--max-reunions <n>', 'Borne de sécurité pour les essais', (v: string) => parseInt(v, 10))
+  .option('--depuis <date>', 'Ne regarder que les réunions tenues depuis cette date (AAAA-MM-JJ)')
   .option('--seulement <refs...>', 'Ne traiter que ces références de compte rendu')
   .option('--reingerer', 'Relire les réunions déjà ingérées et y remplacer les prises de parole')
   .option('--dry-run', "Ne rien écrire, compter ce qui serait ingéré")
   .action(async (options: {
     maxReunions?: number;
+    depuis?: string;
     seulement?: string[];
     reingerer?: boolean;
     dryRun?: boolean;
@@ -1375,6 +1377,7 @@ program
       const { syncInterventionsCommission } = await import('./workers/interventions-commission.js');
       const r = await syncInterventionsCommission({
         maxReunions: options.maxReunions,
+        depuis: options.depuis ? new Date(options.depuis) : undefined,
         seulement: options.seulement,
         reingerer: options.reingerer,
         dryRun: options.dryRun,
