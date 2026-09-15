@@ -335,8 +335,9 @@ model Reunion {
   // Référence organe brute (même si non résolue vers une Commission)
   organeRef String? @map("organe_ref")
 
-  participants  ReunionParticipant[]
-  interventions Intervention[]
+  participants   ReunionParticipant[]
+  interventions  Intervention[]
+  avisCommission AvisCommission[]
 
   @@index([dateDebut])
   @@index([commissionId])
@@ -937,6 +938,9 @@ model Amendement {
   // Scrutins portant sur cet amendement
   scrutins Scrutin[]
 
+  // Avis rendus en commission avant le passage en séance
+  avisCommission AvisCommission[]
+
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([parlementaireId])
@@ -950,6 +954,69 @@ model Amendement {
   @@index([chambre, texteRef, numero])
   @@index([numeroOrdre])
   @@map("amendements")
+}
+
+// =============================================================================
+// AVIS DE COMMISSION SUR LES AMENDEMENTS
+// =============================================================================
+//
+// Avant qu'un texte passe en séance, la commission se réunit au titre des
+// articles 86, 88 ou 91 du Règlement pour dire ce qu'elle pense des amendements
+// qui y seront débattus. Elle ne les adopte pas — ils sont déposés sur le texte
+// qui part en séance, pas sur le sien : elle donne un avis, qui oriente le vote.
+//
+// Cet avis n'existait nulle part chez nous. `Amendement.sort` porte le sort
+// FINAL (« Rejeté », « Adopté », « Tombé », « Non soutenu »), c'est-à-dire ce
+// que l'hémicycle a décidé. Ce que la commission avait recommandé est une autre
+// information, et c'est l'écart entre les deux qui se lit : un amendement
+// accepté en commission puis rejeté en séance dit quelque chose qu'aucune de
+// nos données ne disait.
+//
+// Le compte rendu ne publie qu'un tableau, sans identifiant : d'où le numéro
+// tel qu'imprimé, conservé même quand l'amendement n'est pas retrouvé en base.
+
+model AvisCommission {
+  id String @id @default(uuid())
+
+  /// La réunion qui a rendu l'avis.
+  reunionId String  @map("reunion_id")
+  reunion   Reunion @relation(fields: [reunionId], references: [id], onDelete: Cascade)
+
+  /// Le numéro d'amendement tel que le tableau l'imprime.
+  numero String
+
+  /// L'amendement, quand on le retrouve en base. Le tableau ne donne qu'un
+  /// numéro, qui n'est unique qu'au sein d'un texte : le rapprochement peut
+  /// échouer, et l'avis reste alors lisible sans lui.
+  amendementId String?     @map("amendement_id")
+  amendement   Amendement? @relation(fields: [amendementId], references: [id], onDelete: SetNull)
+
+  /// L'avis, tel qu'imprimé : « Accepté », « Repoussé », « Favorable »…
+  /// Normalisé dans `sens`, gardé brut ici parce que les libellés varient
+  /// d'une commission à l'autre.
+  position String
+
+  /// `favorable` | `defavorable` | `autre`. Ce que le tableau veut dire.
+  sens String
+
+  /// L'article visé, tel qu'imprimé : « 11 », « Ap. 18 », « ap 3 bis ».
+  place String?
+
+  /// L'auteur et son groupe, tels qu'imprimés : « Mme LEJEUNE Claire », « LFI-NFP ».
+  auteur String?
+  groupe String?
+
+  /// Rang dans le compte rendu : le tableau suit l'ordre d'examen.
+  ordre Int
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// Un amendement n'apparaît qu'une fois par réunion : la clé rend
+  /// l'ingestion rejouable sans doublon.
+  @@unique([reunionId, numero])
+  @@index([amendementId])
+  @@index([sens])
+  @@map("avis_commission")
 }
 
 // =============================================================================
