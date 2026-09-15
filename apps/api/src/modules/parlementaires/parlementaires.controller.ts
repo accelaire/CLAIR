@@ -14,6 +14,7 @@ import {
   Chambre,
 } from './parlementaires.schema';
 import { ApiError } from '../../utils/errors';
+import { INTERVENTIONS_DE_FOND, journeeDeSeance } from '../../utils/interventions';
 
 // ===========================================================================
 // FACTORY pour créer des routes avec chambre optionnelle
@@ -450,7 +451,10 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           properties: {
             page: { type: 'integer', minimum: 1, default: 1 },
             limit: { type: 'integer', minimum: 1, maximum: 20, default: 10 },
-            type: { type: 'string', enum: ['question', 'intervention', 'explication_vote'] },
+            type: {
+              type: 'string',
+              enum: ['question', 'intervention', 'explication_vote', 'reponse_gouvernement', 'interruption'],
+            },
             dateFrom: { type: 'string', format: 'date' },
             dateTo: { type: 'string', format: 'date' },
           },
@@ -484,9 +488,13 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           },
         } : {};
 
+        // INTERVENTIONS_DE_FOND en premier : un `type` explicitement demandé
+        // doit pouvoir l'emporter — c'est ainsi qu'on sert la section
+        // « interruptions en séance », qui appelle avec type=interruption.
         const baseWhere = {
           parlementaireId: parlementaire.id,
           seanceId: { not: null },
+          ...INTERVENTIONS_DE_FOND,
           ...(type && { type }),
           ...dateFilter,
         };
@@ -515,6 +523,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           where: {
             parlementaireId: parlementaire.id,
             seanceId: { in: seanceIds },
+            ...INTERVENTIONS_DE_FOND,
             ...(type && { type }),
           },
           orderBy: [{ date: 'asc' }, { ordre: 'asc' }],
@@ -527,19 +536,56 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
             motsCles: true,
             sourceUrl: true,
             ordre: true,
+            // La segmentation que le compte rendu déclare : sans elle, le
+            // client ne peut grouper les prises de parole que par date, alors
+            // qu'elles s'ordonnent par texte, puis par article et amendement.
+            articleVise: true,
+            amendementsVises: true,
+            texteNumero: true,
+            // Le texte discuté, résolu à l'ingestion : le compte rendu ne le
+            // nomme que par son numéro de dépôt, qui ne dit rien au lecteur.
+            //
+            // `titreCourt` n'est PAS un titre court : il vaut l'uid sur 1 966
+            // dossiers et, au Sénat, porte un mot-clé thématique (« Justice »,
+            // « agriculture ») qui ne nomme pas le texte. On ne le sert pas.
+            dossier: { select: { uid: true, titre: true } },
           },
         });
 
-        // 3. Get scrutins linked to these seances
+        // 3. Les votes auxquels ces prises de parole se rapportent.
+        //
+        // `intervention_scrutin` dit, pour chaque intervention, le vote qu'elle
+        // a précédé et sur lequel elle porte. Sans cette table on ne savait
+        // rattacher les scrutins qu'à la séance entière, par `seanceRef` ou par
+        // date : Jean-Noël Barrot, le 23 juin, montrait 17 votes sous une seule
+        // prise de parole, dont aucun ne s'y rapportait forcément.
+        const liensFins = await fastify.prisma.interventionScrutin.findMany({
+          where: { interventionId: { in: interventions.map((i) => i.id) } },
+          select: { interventionId: true, scrutinId: true },
+        });
+        const scrutinsParIntervention = new Map<string, string[]>();
+        for (const lien of liensFins) {
+          const deja = scrutinsParIntervention.get(lien.interventionId) ?? [];
+          deja.push(lien.scrutinId);
+          scrutinsParIntervention.set(lien.interventionId, deja);
+        }
+
         const CONTENU_PREVIEW_LENGTH = 500;
         const scrutins = await fastify.prisma.scrutin.findMany({
           where: {
             chambre: parlementaire.chambre,
             OR: [
+              // Les votes rattachés nommément, d'abord : c'est la seule branche
+              // qui garantit qu'un vote lié à une intervention sera bien chargé,
+              // les suivantes ne servant qu'au repli.
+              { id: { in: liensFins.map((l) => l.scrutinId) } },
               { seanceRef: { in: seanceIds } },
-              {
-                date: { in: seanceRows.map(s => s.date) },
-              },
+              // Le repli se cadre sur la journée, jamais sur l'horodatage : les
+              // scrutins sont datés à minuit et les interventions à l'heure
+              // d'ouverture de leur séance, si bien qu'une égalité stricte ne
+              // rapprochait jamais rien côté Assemblée — une séance sans
+              // `seanceRef` correspondant n'affichait aucun vote.
+              ...seanceRows.map((r) => ({ date: journeeDeSeance(r.date) })),
             ],
           },
           select: {
@@ -556,7 +602,11 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
 
         // 4. Group by seanceId
         // Formes réellement poussées dans les groupes (dérivées des requêtes ci-dessus).
-        type SeanceIntervention = Omit<(typeof interventions)[number], 'seanceId'> & { hasMore: boolean };
+        type SeanceIntervention = Omit<(typeof interventions)[number], 'seanceId'> & {
+          hasMore: boolean;
+          /** Les votes que cette prise de parole a précédés, quand on le sait. */
+          scrutinIds: string[];
+        };
         type SeanceScrutin = Omit<(typeof scrutins)[number], 'seanceRef'>;
 
         const seanceMap = new Map<string, {
@@ -589,20 +639,39 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
               ? contenu.substring(0, CONTENU_PREVIEW_LENGTH)
               : contenu,
             hasMore: contenu.length > CONTENU_PREVIEW_LENGTH,
+            scrutinIds: scrutinsParIntervention.get(i.id) ?? [],
           });
         }
 
-        // Assign scrutins to seances by seanceRef or date match
+        // Les votes de chaque séance : ceux que les interventions du
+        // parlementaire ont précédés, quand on le sait.
+        //
+        // Le repli sur la séance entière reste nécessaire — le Sénat n'a pas ce
+        // rattachement, et une partie des votes de l'Assemblée ne trouve pas le
+        // sien de façon certaine. Il se décide séance par séance : une séance
+        // dont au moins une intervention est rattachée n'affiche que ses votes,
+        // les autres continuent de montrer ceux de la journée.
+        const scrutinsRattaches = new Map<string, Set<string>>();
+        for (const [seanceId, group] of seanceMap) {
+          const ids = new Set<string>();
+          for (const i of group.interventions) {
+            for (const scrutinId of scrutinsParIntervention.get(i.id) ?? []) ids.add(scrutinId);
+          }
+          if (ids.size > 0) scrutinsRattaches.set(seanceId, ids);
+        }
+
         for (const s of scrutins) {
           for (const [seanceId, group] of seanceMap) {
-            const matchByRef = s.seanceRef === seanceId;
-            const matchByDate = new Date(s.date).toDateString() === new Date(group.date).toDateString();
-            if (matchByRef || matchByDate) {
-              // Avoid duplicate scrutins in same group
-              if (!group.scrutins.some((gs) => gs.id === s.id)) {
-                const { seanceRef: _r, ...scrutinData } = s;
-                group.scrutins.push(scrutinData);
-              }
+            const rattaches = scrutinsRattaches.get(seanceId);
+            const retenu = rattaches
+              ? rattaches.has(s.id)
+              : s.seanceRef === seanceId ||
+                new Date(s.date).toDateString() === new Date(group.date).toDateString();
+            if (!retenu) continue;
+            // Avoid duplicate scrutins in same group
+            if (!group.scrutins.some((gs) => gs.id === s.id)) {
+              const { seanceRef: _r, ...scrutinData } = s;
+              group.scrutins.push(scrutinData);
             }
           }
         }

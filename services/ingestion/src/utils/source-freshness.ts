@@ -178,11 +178,23 @@ export const SOURCES: Record<string, SourceConfig> = {
   // ==========================================================================
   // DILA (Débats AN - echanges.dila.gouv.fr)
   // ==========================================================================
+  // Conservée pour la commande manuelle `sync --interventions` : la source ne
+  // publie plus rien depuis janvier 2026 (13 archives pour l'année, contre 219
+  // séances au portail AN), et le cron lit désormais syceron ci-dessous.
   'dila:interventions': {
     source: 'dila',
     dataType: 'interventions',
     // Index de l'année courante (fallback vers année précédente géré dans checkSourceFreshness)
     url: `https://echanges.dila.gouv.fr/OPENDATA/Debats/AN/${new Date().getFullYear()}/`,
+  },
+
+  // Comptes rendus de séance du portail AN (syceron), qui remplacent DILA :
+  // même matière, mais segmentée — article, amendement, texte et orateur y
+  // sont déclarés, ce que le compte rendu DILA ne portait pas.
+  'assemblee_nationale:interventions': {
+    source: 'assemblee_nationale',
+    dataType: 'interventions',
+    url: `https://data.assemblee-nationale.fr/static/openData/repository/${LEGISLATURE}/vp/syceronbrut/syseron.xml.zip`,
   },
 
   // ==========================================================================

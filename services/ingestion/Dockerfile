@@ -32,8 +32,10 @@ RUN pnpm --filter @clair/ingestion build
 # Production stage
 FROM node:20-alpine AS runner
 
-# Install OpenSSL for Prisma
-RUN apk add --no-cache openssl
+# OpenSSL pour Prisma ; poppler-utils pour `pdftotext`, seul moyen de lire les
+# comptes rendus de réunion de commission de l'Assemblée, que le portail ne
+# publie qu'en PDF (cf. sources/assemblee-nationale/compte-rendu-commission-parser.ts).
+RUN apk add --no-cache openssl poppler-utils
 
 RUN corepack enable && corepack prepare pnpm@8.15.0 --activate
 

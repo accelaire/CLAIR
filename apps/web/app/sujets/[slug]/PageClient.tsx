@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { scrutinHref } from '@/lib/scrutin-url';
+import { NATURES_FILTRABLES, natureLabelsCourts } from '@/lib/nature-scrutin';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
 import { LegislativeStep } from '@/lib/legislative-steps';
@@ -685,6 +686,9 @@ function RessourcesSujet({ slug, liens }: { slug: string; liens?: SujetDetail['l
 
 function ScrutinsPanel({ slug, totalScrutins }: { slug: string; totalScrutins: number }) {
   const [chambreFilter, setChambreFilter] = useState<string>('all');
+  // Objet du vote ('' = tous). Un sujet agrège les scrutins de plusieurs
+  // dossiers et dépasse vite le millier, dont une poignée d'adoptions de texte.
+  const [natureFilter, setNatureFilter] = useState<string>('');
 
   const {
     data: scrutinsPages,
@@ -692,10 +696,18 @@ function ScrutinsPanel({ slug, totalScrutins }: { slug: string; totalScrutins: n
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery<PaginatedResponse<SujetScrutin>>({
-    queryKey: ['sujet-scrutins', slug],
+    // Les deux filtres partent au serveur. Filtrer en JS ne portait que sur les
+    // pages déjà chargées : « Sénat » n'affichait que les scrutins Sénat des 20
+    // premiers résultats, pas ceux du sujet.
+    queryKey: ['sujet-scrutins', slug, chambreFilter, natureFilter],
     queryFn: ({ pageParam = 1 }) =>
       api.get(`/sujets/${slug}/scrutins`, {
-        params: { page: pageParam, limit: 20 },
+        params: {
+          page: pageParam,
+          limit: 20,
+          chambre: chambreFilter === 'all' ? undefined : chambreFilter,
+          nature: natureFilter || undefined,
+        },
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
@@ -708,28 +720,53 @@ function ScrutinsPanel({ slug, totalScrutins }: { slug: string; totalScrutins: n
     fetchNextPage,
   });
 
-  const scrutins = scrutinsPages?.pages.flatMap((p) => p.data) ?? [];
-  const filteredScrutins = chambreFilter === 'all'
-    ? scrutins
-    : scrutins.filter(s => s.chambre === chambreFilter);
+  const filteredScrutins = scrutinsPages?.pages.flatMap((p) => p.data) ?? [];
+  const filtreActif = chambreFilter !== 'all' || natureFilter !== '';
+  // Sous filtre, le compteur d'en-tête doit refléter le résultat, pas le sujet.
+  const totalAffiche = filtreActif
+    ? scrutinsPages?.pages[0]?.meta.total ?? 0
+    : totalScrutins;
 
   return (
     <div className="rounded-lg border bg-card flex flex-col min-h-0">
-      <div className="px-4 py-3 border-b flex items-center justify-between">
+      {/* Deux menus à côté d'un titre ne tiennent pas sur un écran de téléphone :
+          en dessous de `sm` le titre garde sa ligne et les filtres passent en
+          dessous, en deux colonnes de largeur égale. */}
+      <div className="px-4 py-3 border-b flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-sm font-semibold flex items-center gap-2">
           <Vote className="h-4 w-4" />
           Scrutins
-          <span className="text-xs font-normal text-muted-foreground">({totalScrutins})</span>
+          <span className="text-xs font-normal text-muted-foreground">
+            ({totalAffiche}{filtreActif && totalAffiche !== totalScrutins ? ` sur ${totalScrutins}` : ''})
+          </span>
         </h2>
-        <select
-          value={chambreFilter}
-          onChange={(e) => setChambreFilter(e.target.value)}
-          className="text-xs border rounded-md px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-        >
-          <option value="all">Toutes les chambres</option>
-          <option value="assemblee">Assemblée Nationale</option>
-          <option value="senat">Sénat</option>
-        </select>
+        {/* Chambre en premier, comme dans l'en-tête « Stats par groupe » : les
+            deux panneaux se lisent côte à côte, leurs filtres doivent s'aligner. */}
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+          <select
+            value={chambreFilter}
+            onChange={(e) => setChambreFilter(e.target.value)}
+            aria-label="Filtrer par chambre"
+            className="min-w-0 text-xs border rounded-md px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="all">Chambre</option>
+            <option value="assemblee">Assemblée nationale</option>
+            <option value="senat">Sénat</option>
+          </select>
+          <select
+            value={natureFilter}
+            onChange={(e) => setNatureFilter(e.target.value)}
+            aria-label="Filtrer par objet du vote"
+            className="min-w-0 text-xs border rounded-md px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="">Objet du vote</option>
+            {NATURES_FILTRABLES.map((n) => (
+              <option key={n} value={n}>
+                {natureLabelsCourts[n]}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="overflow-y-auto flex-1 max-h-[600px]">
@@ -976,22 +1013,26 @@ function StatsPanel({ slug, dossiers }: { slug: string; dossiers: SujetDossier[]
     <div className="rounded-lg border bg-card flex flex-col min-h-0">
       <div className="px-4 py-3 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">Stats par groupe politique</h2>
-        <div className="flex items-center gap-2">
+        {/* Deux colonnes égales sous `sm` : côte à côte sur une seule ligne, les
+            deux menus débordaient de la carte sur un écran de téléphone. */}
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
           <select
             value={statsChambreFilter}
             onChange={(e) => setStatsChambreFilter(e.target.value)}
-            className="text-xs border rounded-md px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            aria-label="Filtrer par chambre"
+            className="min-w-0 text-xs border rounded-md px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
           >
-            <option value="all">Toutes les chambres</option>
-            <option value="assemblee">Assemblée Nationale</option>
+            <option value="all">Chambre</option>
+            <option value="assemblee">Assemblée nationale</option>
             <option value="senat">Sénat</option>
           </select>
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as 'votes' | 'chambre' | 'amendements')}
-            className="text-xs border rounded-md px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            aria-label="Trier les groupes"
+            className="min-w-0 text-xs border rounded-md px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
           >
-            <option value="votes">Par votes (total)</option>
+            <option value="votes">Par votes</option>
             <option value="chambre">Par chambre</option>
             <option value="amendements">Par amendements</option>
           </select>

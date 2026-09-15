@@ -60,6 +60,9 @@ interface InterventionScrutin {
   orateurNom: string | null;
   orateurPrenom: string | null;
   orateurQualite: string | null;
+  articleVise: string | null;
+  amendementsVises: string[] | null;
+  texteNumero: string | null;
   parlementaire: {
     id: string;
     slug: string;
@@ -119,6 +122,18 @@ interface InterventionsResponse {
     limit: number;
     totalPages: number;
     hasNext: boolean;
+    /**
+     * 'scrutin' : le débat qui a précédé ce vote précisément.
+     * 'journee' : faute de rattachement, tout ce qui s'est dit ce jour-là —
+     * y compris sur d'autres textes.
+     */
+    rattachement?: 'scrutin' | 'journee';
+    /**
+     * La finesse du rattachement, du plus fin au plus large : sur l'amendement
+     * mis aux voix, sur l'article, ou sur la seule fenêtre qui précède le vote
+     * — faute de sujet plus fin, comme pour un vote sur l'ensemble d'un texte.
+     */
+    precision?: 'amendement' | 'article' | 'ensemble' | 'motion' | 'fenetre' | 'finances' | null;
   };
 }
 
@@ -596,6 +611,8 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
           {currentTab === 'debats' && totalInterventions > 0 && (
             <ScrutinDebatsTab
               interventions={allInterventions}
+              rattachement={interventionsData?.pages[0]?.meta?.rattachement}
+              precision={interventionsData?.pages[0]?.meta?.precision}
               chambre={chambre}
               interventionsSortAsc={interventionsSortAsc}
               onToggleSort={() => setInterventionsSortAsc(!interventionsSortAsc)}

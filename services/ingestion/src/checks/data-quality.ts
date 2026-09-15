@@ -27,6 +27,13 @@ const SCRUTINS_PERIMETRE_LIE = `(s.chambre = 'senat' OR s.legislature = ${LEGISL
 // périmètre — à surveiller au premier run couvrant les sessions antérieures à 2020.
 const SENAT_SESSION_AMENDEMENTS_MIN = '2024';
 
+// Périmètre des vérifications qui comparent les AMENDEMENTS liés à un scrutin.
+// Au Sénat, il faut en plus borner aux sessions dont les amendements sont ingérés :
+// les scrutins antérieurs n'ont AUCUN amendement en base, donc les compter revient
+// à mesurer le périmètre d'ingestion et non la qualité du rattachement.
+const SCRUTINS_PERIMETRE_AMENDEMENTS =
+  `((s.chambre = 'senat' AND s.session >= '${SENAT_SESSION_AMENDEMENTS_MIN}') OR s.legislature = ${LEGISLATURE_AN_COURANTE})`;
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -160,6 +167,68 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // législature, faute de dossier ingéré pour la leur.
     query: `SELECT COUNT(*)::int AS value FROM scrutins s JOIN dossiers_legislatifs d ON s.dossier_id = d.id WHERE s.chambre = 'assemblee' AND d.uid NOT LIKE 'SENAT%' AND s.session ~ '^[0-9]+$' AND d.legislature <> s.session::int`,
   },
+  amendements_uid_canonique_doublons: {
+    type: 'invariant',
+    label: 'Amendements en double sous une même clé canonique',
+    min: 0,
+    max: 0,
+    // L'index unique sur `uid_canonique` rend ce compte structurellement nul.
+    // Il est vérifié malgré tout : l'invariant documente la règle là où on la
+    // lit, et signalerait immédiatement un index perdu lors d'une restauration
+    // ou d'une migration jouée à la main.
+    query: `SELECT COUNT(*)::int AS value FROM (SELECT uid_canonique FROM amendements GROUP BY uid_canonique HAVING COUNT(*) > 1) sub`,
+  },
+  interventions_date_seance: {
+    type: 'invariant',
+    label: 'Interventions dont la date contredit leur séance',
+    min: 0,
+    max: 0,
+    // Le client Sénat construisait la date de séance dans le fuseau local :
+    // `new Date(2026, 1, 25)` donne minuit à Paris, enregistré 23h00 UTC la
+    // veille. Les 91 017 interventions du Sénat dataient du jour précédent —
+    // 23h00 en hiver, 22h00 en été. Le décalage était invisible à l'écran mais
+    // cassait tout rapprochement par la date : scrutins du jour, regroupement
+    // par séance sur la fiche, et la segmentation publiée par le Sénat, qui ne
+    // retrouvait que 13,6 % de nos interventions au lieu de 75,9 %.
+    //
+    // `chambre = 'senat'` : le format `dAAAAMMJJ` de `seance_id` n'existe que
+    // côté Sénat (l'AN utilise un autre format, ex. `2026013`) ; la migration
+    // qui a corrigé ces lignes portait déjà ce filtre, l'invariant devait le
+    // porter aussi.
+    query: `SELECT COUNT(*)::int AS value FROM interventions WHERE chambre = 'senat' AND seance_id ~ '^d[0-9]{8}$' AND to_date(substring(seance_id from 2), 'YYYYMMDD') <> date::date`,
+  },
+  scrutins_date_seance: {
+    type: 'invariant',
+    label: 'Scrutins du Sénat dont la date porte un décalage de fuseau',
+    min: 0,
+    max: 0,
+    // Bug jumeau du précédent, autre source : `scrutins.date` pour le Sénat
+    // vient de `parseTimestamp()` dans `dosleg-client.ts`, qui lisait le champ
+    // `scrdat` du dump DOSLEG ("2026-06-10 00:00:00", sans fuseau) avec
+    // `new Date(ts)` — interprété dans le fuseau local du process. Les 4 775
+    // scrutins du Sénat en production étaient TOUS décalés d'un jour, jamais
+    // à minuit (22h00 UTC en été, 23h00 en hiver).
+    //
+    // Faute de clé indépendante du type `seance_id` pour reconstruire la
+    // vraie date (voir la migration `20260908150000_senat_dates_de_seance_et_liens_scrutins`),
+    // la signature du bug sert elle-même de garde-fou : un scrutin du Sénat à
+    // minuit est correct, un scrutin à 22h ou 23h a de nouveau le bug.
+    query: `SELECT COUNT(*)::int AS value FROM scrutins WHERE chambre = 'senat' AND EXTRACT(HOUR FROM date) IN (22, 23)`,
+  },
+
+  cross_legislature_amendements: {
+    type: 'invariant',
+    label: 'Liens scrutin-amendement inter-législatures (AN)',
+    min: 0,
+    max: 0,
+    // Même piège que ci-dessus, sur l'autre relation. Les textes sont
+    // renumérotés à chaque législature : le texte n°3 existe en 15e, en 16e et
+    // en 17e. Les deux chemins de rattachement (scraping HTML et CTE) ne
+    // gardaient que le numéro de texte, préfixe de législature retiré — 531
+    // scrutins de 2017-2024 se sont retrouvés rattachés à un amendement de 2024
+    // ou 2026, et leurs résumés publiés décrivaient ce dernier.
+    query: `SELECT COUNT(*)::int AS value FROM scrutins s JOIN "_AmendementToScrutin" j ON j."B" = s.id JOIN amendements a ON a.id = j."A" WHERE s.chambre = 'assemblee' AND s.legislature IS NOT NULL AND a.legislature <> s.legislature`,
+  },
   resume_contredit_statut: {
     type: 'invariant',
     label: 'Résumés IA contredisant le statut du sujet',
@@ -174,11 +243,16 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // assertions portant sur l'inachèvement de la procédure elle-même.
     //
     // Le `.` remplace l'apostrophe : les résumés mélangent ' et ’.
+    //
+    // `en cours d'examen` est ancré à un sujet grammatical désignant CE texte.
+    // Sans cet ancrage, il attrapait « cette motion cherchait à influencer une
+    // résolution européenne en cours d'examen » — une phrase juste, sur un
+    // AUTRE texte, dans le résumé d'un sujet correctement décrit comme rejeté.
     query: `SELECT COUNT(*)::int AS value FROM sujets
       WHERE actif = true
         AND status IN ('promulgue', 'rejete')
         AND resume IS NOT NULL
-        AND resume ~* '(doit encore (être )?(promulgu|examin|adopt|vot|discut|débattu|passer)|n.a pas encore été (promulgu|adopt|examin|vot)|en cours d.examen|examen (est |se poursuit)?(encore )?en cours|sera (prochainement )?examiné|en cours de promulgation|doit désormais être examiné)'`,
+        AND resume ~* '(doit encore (être )?(promulgu|examin|adopt|vot|discut|débattu|passer)|n.a pas encore été (promulgu|adopt|examin|vot)|(ce |le |la |cette )?(texte|proposition|projet|loi|résolution) (est |reste |demeure )?(toujours |encore )?en cours d.examen|examen (est |se poursuit)?(encore )?en cours|sera (prochainement )?examiné|en cours de promulgation|doit désormais être examiné)'`,
   },
 
   evenements_a_revoir: {
@@ -233,9 +307,101 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
   },
   interventions_count: {
     type: 'threshold',
+    // Relevé de 70 000 au passage des débats AN à syceron. Ramené de 600 000
+    // à 500 000 quand on a cessé de compter des paragraphes de compte rendu
+    // pour compter des tours de parole : recoller les propos que le chahut
+    // coupait a retiré un cinquième des lignes sans retirer un mot de texte.
+    // Test de fumée sur le volume brut — il compte donc aussi la mécanique de
+    // séance et les interruptions.
     label: "Nombre d'interventions",
-    min: 70000,
+    min: 500000,
     query: `SELECT COUNT(*)::int AS value FROM interventions`,
+  },
+  debats_rattaches_par_scrutin: {
+    type: 'threshold',
+    // Le rattachement grossier — une intervention prend le scrutin de sa
+    // journée quand il n'y en a qu'un — ne couvrait que 120 journées sur
+    // 1 115 : partout ailleurs la page d'un scrutin montrait le débat du jour
+    // entier, et trois scrutins du même jour affichaient les mêmes
+    // interventions. Ce seuil garde la trace du rattachement fin, celui qui
+    // lit les mises aux voix du compte rendu.
+    //
+    // 144 546 liens aujourd'hui, pour 12 292 mises aux voix rapprochées d'un
+    // scrutin sur 12 471. Le compte a bondi quand le relevé des mises aux voix
+    // a cessé de dépendre du seul code de grammaire : les votes sur l'ensemble
+    // d'un texte et les motions y sont entrés.
+    //
+    // La chambre est filtrée depuis que le Sénat écrit dans la même table :
+    // sans cela le compte mêlait les deux, et l'effondrement du rattachement
+    // d'une chambre pouvait être masqué par le volume de l'autre.
+    label: 'Liens débat-scrutin (Assemblée)',
+    min: 130000,
+    query: `SELECT COUNT(*)::int AS value
+            FROM intervention_scrutin isc
+            JOIN scrutins s ON s.id = isc.scrutin_id
+            WHERE s.chambre = 'assemblee'`,
+  },
+  scrutins_avec_debat_an: {
+    type: 'threshold',
+    // Le seuil précédent compte des lignes ; celui-ci compte ce que le lecteur
+    // constate — le nombre de votes dont la page montre le débat qui les a
+    // précédés. Un rattachement qui se replierait sur quelques gros scrutins
+    // garderait le volume de liens sans que la couverture suive : il faut donc
+    // les deux.
+    //
+    // 12 265 scrutins sur 12 539, soit 98 % de la 17e et 96 % de la 16e.
+    label: 'Scrutins de l\'Assemblée dont on montre le débat',
+    min: 11500,
+    query: `SELECT COUNT(DISTINCT isc.scrutin_id)::int AS value
+            FROM intervention_scrutin isc
+            JOIN scrutins s ON s.id = isc.scrutin_id
+            WHERE s.chambre = 'assemblee'`,
+  },
+  scrutins_avec_debat_senat: {
+    type: 'threshold',
+    // Le Sénat se rattache par le sujet examiné et non par les chiffres
+    // proclamés, que son compte rendu ne publie pas : le libellé du scrutin
+    // d'un côté, la section de discussion de l'autre, bornées au même texte.
+    //
+    // Le périmètre atteignable est celui de nos comptes rendus, du 16/01/2024
+    // au 21/07/2026 : 812 scrutins sur les 4 775 du Sénat, le reste précédant
+    // le corpus. 759 d'entre eux ont un débat effectif — 43 autres ont bien
+    // trouvé leur section, mais l'article y a été voté sans discussion.
+    //
+    // Le plancher est volontairement bas devant les 759 constatés : il garde
+    // contre une panne franche du rattachement, pas contre la variation de
+    // quelques scrutins au fil des séances nouvelles.
+    label: 'Scrutins du Sénat dont on montre le débat',
+    min: 700,
+    query: `SELECT COUNT(DISTINCT isc.scrutin_id)::int AS value
+            FROM intervention_scrutin isc
+            JOIN scrutins s ON s.id = isc.scrutin_id
+            WHERE s.chambre = 'senat'`,
+  },
+  interventions_explication_vote_an: {
+    type: 'threshold',
+    // L'Assemblée ne code pas ses explications de vote : `EXPL_VOTE`
+    // n'apparaît que 7 fois sur les 601 séances de la 17e législature, et les
+    // orateurs qui s'y succèdent portent un code générique. On ne les tenait
+    // donc que par l'annonce faite au perchoir — et tant qu'on ne la lisait
+    // pas, le corpus n'en comptait que 7 au lieu de 2 220, sans que rien ne le
+    // signale. Ce seuil est là pour que la panne se voie si la lecture de
+    // cette annonce cesse de fonctionner.
+    label: "Explications de vote de l'Assemblée",
+    min: 1800,
+    query: `SELECT COUNT(*)::int AS value FROM interventions
+            WHERE chambre = 'assemblee' AND type = 'explication_vote'`,
+  },
+  interventions_amendement_an: {
+    type: 'threshold',
+    // Même logique : le numéro d'amendement se lit sur l'attribut `adt` du
+    // paragraphe. Il avait d'abord été cherché sur `valeur`, qui porte tout
+    // autre chose : le champ est resté vide sur 276 137 lignes et faux sur les
+    // 4 autres, pendant des semaines, sans qu'aucun contrôle ne s'en émeuve.
+    label: "Interventions rattachées à un amendement (Assemblée)",
+    min: 40000,
+    query: `SELECT COUNT(*)::int AS value FROM interventions
+            WHERE chambre = 'assemblee' AND cardinality(amendements_vises) > 0`,
   },
   lobbyistes_count: {
     type: 'threshold',
@@ -364,7 +530,7 @@ export async function runMultiAmendmentCheck(prisma: PrismaClient): Promise<Mult
     LEFT JOIN "_AmendementToScrutin" ast ON ast."B" = s.id
     LEFT JOIN amendements a ON a.id = ast."A"
     WHERE s.titre ILIKE '%amendements identiques%'
-      AND ${SCRUTINS_PERIMETRE_LIE}
+      AND ${SCRUTINS_PERIMETRE_AMENDEMENTS}
     GROUP BY s.id, s.titre, s.chambre
   `);
 

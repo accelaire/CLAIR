@@ -5,6 +5,7 @@
 
 import 'dotenv/config';
 import { Command } from 'commander';
+import { syncTextesArticles } from './workers/textes-articles';
 import {
   fullSync,
   incrementalSync,
@@ -22,7 +23,6 @@ import {
   syncAmendementsSenatCsv,
   syncDossiers,
   syncDossiersSenat,
-  linkInterventionsToScrutins,
   linkScrutinsToAmendements,
   enrichScrutinsANAmendements,
   enrichScrutinsSenatAmendements,
@@ -49,6 +49,7 @@ import {
   calculateAllGroupeThematiques,
 } from './workers/stats-calculator.js';
 import { backfillMandatsParlementaires } from './workers/backfill-mandats.js';
+import { backfillNatureVote } from './workers/backfill-nature-vote.js';
 import { syncSenateursHistoriques } from './workers/senat-histo.js';
 import { SENAT_SESSION_MIN } from './workers/mandats.js';
 import { logger } from './utils/logger';
@@ -104,6 +105,7 @@ program
   .option('--link', 'Lier les scrutins aux interventions (--in) ou amendements (--am)')
   .option('--enrich', 'Enrichir les scrutins par scraping HTML (avec --am, filtrer avec --an/--se)')
   .option('--reset', 'Réinitialiser les liens existants avant de re-lier')
+  .option('--only <ids...>', 'Avec --enrich --am --an : restreindre à des ID de scrutin précis, plutôt que de rescraper tous les scrutins sans lien')
   .action(async (options) => {
     try {
       logger.info({ options }, 'Starting sync command');
@@ -119,11 +121,6 @@ program
 
       if (options.full) {
         await fullSync();
-      } else if (options.link && options.interventions) {
-        const result = await linkInterventionsToScrutins({ dryRun: options.dryRun });
-        console.log(`\n📊 Interventions liées: ${result.linked}`);
-        console.log(`   - Par seanceRef: ${result.bySeanceRef}`);
-        console.log(`   - Par date: ${result.byDate}`);
       } else if (options.link && options.amendements) {
         const result = await linkScrutinsToAmendements({
           dryRun: options.dryRun,
@@ -153,6 +150,7 @@ program
             limit: options.limit,
             dryRun: options.dryRun,
             reset: options.reset,
+            only: options.only,
           });
           console.log(`\n📊 Enrichissement scrutins AN (scraping HTML):`);
           if (options.reset && result.resetCount) {
@@ -716,6 +714,32 @@ program
   });
 
 // =============================================================================
+// COMMANDE: backfill-nature-vote
+// =============================================================================
+program
+  .command('backfill-nature-vote')
+  .description('Classer la nature des scrutins (ensemble / article / amendement / motion…) à partir de leur objet')
+  .option('--force', 'Reclasser tout le corpus, et pas seulement les scrutins sans nature')
+  .action(async (options: { force?: boolean }) => {
+    try {
+      logger.info('Starting backfill nature_vote...');
+      const result = await backfillNatureVote({ force: options.force });
+      console.log('\n📊 Nature des scrutins :');
+      console.log(`   Scrutins examinés : ${result.scanned}`);
+      console.log(`   Natures écrites   : ${result.updated}`);
+      const total = Object.values(result.parNature).reduce((s, n) => s + n, 0);
+      for (const [nature, n] of Object.entries(result.parNature).sort((a, b) => b[1] - a[1])) {
+        const pct = total > 0 ? ((n / total) * 100).toFixed(1) : '0.0';
+        console.log(`     ${nature.padEnd(12)} ${String(n).padStart(6)}  ${pct}%`);
+      }
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'backfill-nature-vote failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
 // COMMANDE: sync-senateurs-histo
 // =============================================================================
 program
@@ -1017,7 +1041,7 @@ program
   .option('-l, --limit <number>', 'Nombre max d\'entités à traiter', parseInt)
   .option('--dry-run', 'Mode simulation (calcule mais n\'écrit pas)')
   .option('--force', 'Ignorer le hash, regénérer tout')
-  .option('--only <ids...>', 'Restreindre à des entités précises (uid de dossier, slug de sujet). Corrige une fiche fautive sans relancer tout le corpus')
+  .option('--only <ids...>', 'Restreindre à des entités précises (id de scrutin, uid de dossier, slug de sujet). Corrige une fiche fautive sans relancer tout le corpus')
   .option('--rehash', 'Recalculer et stocker le hash de contenu SANS appeler le LLM ni modifier les textes. À utiliser après un changement de formule de hash sur un corpus déjà correct')
   .option('-c, --concurrency <number>', 'Nombre d\'appels LLM en parallèle (défaut: 3)', parseInt)
   .action(async (options) => {
@@ -1172,6 +1196,235 @@ program
       }
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'IA quality check failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: sync-textes-articles
+// =============================================================================
+program
+  .command('segmenter-debats-senat')
+  .description("Situer les interventions du Sénat dans la structure du débat (index debats.zip)")
+  .option('--depuis-annee <n>', 'Année de départ', (v: string) => parseInt(v, 10), 2024)
+  .option('--chemin <fichier>', 'Dump debats.sql déjà décompressé')
+  .option('--dry-run', "Ne rien écrire, compter ce qui serait rapproché")
+  .action(async (options: { depuisAnnee: number; chemin?: string; dryRun?: boolean }) => {
+    try {
+      const { segmenterDebatsSenat } = await import('./workers/segmenter-debats-senat.js');
+      const result = await segmenterDebatsSenat({
+        depuisAnnee: options.depuisAnnee,
+        cheminLocal: options.chemin,
+        dryRun: options.dryRun,
+      });
+      console.log(`\nSegments dans l'index          : ${result.segments}`);
+      console.log(`Interventions rapprochées      : ${result.interventionsVisees}`);
+      console.log(`Lots traités / en échec        : ${result.lots} / ${result.lotsEnEchec}`);
+      console.log(
+        `Lignes ${options.dryRun ? 'qui seraient modifiées' : 'modifiées'}         : ${result.lignesModifiees}`,
+      );
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'segmenter-debats-senat failed');
+      process.exit(1);
+    }
+  });
+
+program
+  .command('link-debats-scrutins')
+  .description("Rattacher les débats AN aux scrutins qu'ils ont précédés")
+  .option('--legislature <n>', 'Législature à traiter', (v: string) => parseInt(v, 10), 17)
+  .option('--max-seances <n>', 'Borne de sécurité pour les essais', (v: string) => parseInt(v, 10))
+  .option('--repertoire <chemin>', 'Archive déjà décompressée, au lieu de la retélécharger')
+  .option('--dry-run', 'Tout mesurer sans rien écrire')
+  .option('--refaire-tout', 'Refaire les séances déjà rattachées')
+  .option('--sortie <fichier>', 'Écrire les liens dans un fichier TSV au lieu de la base')
+  .action(async (options: { legislature: number; maxSeances?: number; repertoire?: string; dryRun?: boolean; refaireTout?: boolean; sortie?: string }) => {
+    try {
+      // Chargé à l'exécution, comme sync-debats-an : le module instancie son
+      // client Prisma et le conteneur tourne déjà au bord de l'OOM.
+      const { linkDebatsScrutins } = await import('./workers/link-debats-scrutins.js');
+      const result = await linkDebatsScrutins({
+        legislature: options.legislature,
+        maxSeances: options.maxSeances,
+        repertoireLocal: options.repertoire,
+        dryRun: options.dryRun,
+        refaireTout: options.refaireTout,
+        sortie: options.sortie,
+      });
+      console.log(`\nSéances traitées      : ${result.seances}`);
+      console.log(`Séances déjà faites   : ${result.seancesIgnorees}`);
+      console.log(`Mises aux voix        : ${result.misesAuxVoix}`);
+      console.log(`  rattachées          : ${result.votesApparies}`);
+      console.log(`  indiscernables      : ${result.votesAmbigus}`);
+      console.log(`  sans scrutin        : ${result.votesSansScrutin}`);
+      console.log(`Liens débat-scrutin   : ${result.liens}${options.dryRun ? ' (dry-run)' : ''}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'link-debats-scrutins failed');
+      process.exit(1);
+    }
+  });
+
+program
+  .command('link-debats-scrutins-senat')
+  .description('Rattacher les débats du Sénat aux scrutins, par le sujet examiné')
+  .option('--depuis-annee <n>', 'Borne basse des séances à lire', (v: string) => parseInt(v, 10), 2024)
+  .option('--debats <chemin>', 'Dump debats.sql déjà décompressé')
+  .option('--dosleg <chemin>', 'Dump dosleg.sql déjà décompressé')
+  .option('--dry-run', 'Tout mesurer sans rien écrire')
+  .option('--refaire-tout', 'Refaire les scrutins déjà rattachés')
+  .option('--sortie <fichier>', 'Écrire les liens dans un fichier TSV au lieu de la base')
+  .action(async (options: { depuisAnnee: number; debats?: string; dosleg?: string; dryRun?: boolean; refaireTout?: boolean; sortie?: string }) => {
+    try {
+      // Chargé à l'exécution, comme le rattachement de l'Assemblée : le module
+      // instancie son client Prisma et le conteneur tourne au bord de l'OOM.
+      const { linkDebatsScrutinsSenat } = await import('./workers/link-debats-scrutins-senat.js');
+      const result = await linkDebatsScrutinsSenat({
+        depuisAnnee: options.depuisAnnee,
+        cheminDebats: options.debats,
+        cheminDosleg: options.dosleg,
+        dryRun: options.dryRun,
+        refaireTout: options.refaireTout,
+        sortie: options.sortie,
+      });
+      console.log(`\nSections lues         : ${result.sections}`);
+      console.log(`Scrutins examinés     : ${result.scrutins}`);
+      console.log(`Scrutins déjà faits   : ${result.scrutinsIgnores}`);
+      console.log(`  rattachés           : ${result.rattaches}`);
+      console.log(`  sans débat          : ${result.sansDebat}`);
+      console.log(`  sans intervention   : ${result.rattachesSansIntervention}`);
+      for (const [via, n] of Object.entries(result.parVia).sort((a, b) => b[1] - a[1])) {
+        console.log(`    par ${via.padEnd(15)} ${n}`);
+      }
+      console.log(`Liens débat-scrutin   : ${result.liens}${options.dryRun ? ' (dry-run)' : ''}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'link-debats-scrutins-senat failed');
+      process.exit(1);
+    }
+  });
+
+program
+  .command('sync-debats-an')
+  .description("Ingérer les comptes rendus de séance AN (source syceron, remplace DILA)")
+  .option('--legislature <n>', 'Législature à moissonner', (v: string) => parseInt(v, 10), 17)
+  .option('--max-seances <n>', 'Borne de sécurité pour les essais', (v: string) => parseInt(v, 10))
+  .option('--repertoire <chemin>', 'Archive déjà décompressée, au lieu de la retélécharger')
+  .option('--reingerer', 'Relire les séances déjà en base et y remplacer les interventions')
+  .action(async (options: { legislature: number; maxSeances?: number; repertoire?: string; reingerer?: boolean }) => {
+    try {
+      // Chargé à l'exécution : le module instancie son client Prisma, et le
+      // conteneur d'ingestion tourne déjà au bord de l'OOM.
+      const { syncInterventionsSyceron } = await import('./workers/interventions-syceron.js');
+      const result = await syncInterventionsSyceron({
+        legislature: options.legislature,
+        maxSeances: options.maxSeances,
+        repertoireLocal: options.repertoire,
+        reingerer: options.reingerer,
+      });
+      console.log(`\nSéances lues          : ${result.seances}`);
+      console.log(`Séances déjà en base  : ${result.seancesIgnorees}`);
+      console.log(`Interventions écrites : ${result.interventions}`);
+      console.log(`Orateurs non résolus  : ${result.sansParlementaire}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-debats-an failed');
+      process.exit(1);
+    }
+  });
+
+program
+  .command('link-interventions-dossiers')
+  .description("Rattacher les prises de parole à leur texte (numéro de dépôt → dossier)")
+  .option('--refaire-tout', 'Reposer le dossier même là où il est déjà renseigné')
+  .option('--dry-run', "Ne rien écrire, dire ce qui serait posé")
+  .action(async (options: { refaireTout?: boolean; dryRun?: boolean }) => {
+    try {
+      const { lierInterventionsAuxDossiers } = await import('./workers/link-interventions-dossiers.js');
+      const r = await lierInterventionsAuxDossiers({
+        refaireTout: options.refaireTout,
+        dryRun: options.dryRun,
+      });
+      console.log(`\nNuméros de texte vus     : ${r.numerosVus}`);
+      console.log(`Numéros résolus          : ${r.numerosResolus}`);
+      console.log(`Prises de parole situées : ${r.interventions}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'link-interventions-dossiers failed');
+      process.exit(1);
+    }
+  });
+
+program
+  .command('sync-debats-commission')
+  .description("Ingérer les comptes rendus de réunion de commission AN (source : PDF du portail)")
+  .option('--max-reunions <n>', 'Borne de sécurité pour les essais', (v: string) => parseInt(v, 10))
+  .option('--depuis <date>', 'Ne regarder que les réunions tenues depuis cette date (AAAA-MM-JJ)')
+  .option('--seulement <refs...>', 'Ne traiter que ces références de compte rendu')
+  .option('--reingerer', 'Relire les réunions déjà ingérées et y remplacer les prises de parole')
+  .option('--dry-run', "Ne rien écrire, compter ce qui serait ingéré")
+  .action(async (options: {
+    maxReunions?: number;
+    depuis?: string;
+    seulement?: string[];
+    reingerer?: boolean;
+    dryRun?: boolean;
+  }) => {
+    try {
+      // Chargé à l'exécution, comme les débats de séance : le module instancie
+      // son client Prisma et le conteneur d'ingestion tourne au bord de l'OOM.
+      const { syncInterventionsCommission } = await import('./workers/interventions-commission.js');
+      const r = await syncInterventionsCommission({
+        maxReunions: options.maxReunions,
+        depuis: options.depuis ? new Date(options.depuis) : undefined,
+        seulement: options.seulement,
+        reingerer: options.reingerer,
+        dryRun: options.dryRun,
+      });
+      console.log(`\nRéunions lues            : ${r.reunionsLues}`);
+      console.log(`Prises de parole écrites : ${r.interventions}`);
+      console.log(`Sans compte rendu publié : ${r.sansCompteRendu}`);
+      console.log(`Réunions d'amendements   : ${r.reunionsDAmendements}`);
+      console.log(`Renvoyées à la vidéo     : ${r.videoSeule}`);
+      console.log(`Forme inconnue           : ${r.formeInconnue}`);
+      console.log(`Orateurs non résolus     : ${r.sansParlementaire}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-debats-commission failed');
+      process.exit(1);
+    }
+  });
+
+program
+  .command('sync-textes-articles')
+  .description("Récupérer le texte des articles des textes législatifs AN (matière des résumés IA)")
+  .option('--texte <ref>', 'Ne traiter que ce texteRef (ex: PIONANR5L17BTC1364)')
+  .option('--limit <n>', 'Nombre maximum de textes traités', (v: string) => parseInt(v, 10))
+  .option('--force', 'Retraiter les textes déjà en base')
+  .option('--dry-run', "Ne rien écrire, afficher ce qui serait ingéré")
+  .action(async (options: { texte?: string; limit?: number; force?: boolean; dryRun?: boolean }) => {
+    try {
+      const result = await syncTextesArticles({
+        texteRef: options.texte,
+        limit: options.limit,
+        force: options.force,
+        dryRun: options.dryRun,
+      });
+      console.log(`\nTextes considérés   : ${result.textesConsideres}`);
+      console.log(`Textes traités      : ${result.textesTraites}`);
+      console.log(`Textes déjà ingérés : ${result.textesIgnores}`);
+      console.log(`Textes non servis    : ${result.textesNonServis}`);
+      console.log(`Gabarit non couvert : ${result.textesGabaritInconnu}`);
+      console.log(`Articles écrits     : ${result.articlesEcrits}`);
+      console.log(`Articles remplacés  : ${result.articlesRemplaces}`);
+      if (result.refsGabaritInconnu.length > 0) {
+        console.log(`\nTextes au gabarit non couvert (budgets) :`);
+        for (const ref of result.refsGabaritInconnu) console.log(`  - ${ref}`);
+      }
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-textes-articles failed');
       process.exit(1);
     }
   });

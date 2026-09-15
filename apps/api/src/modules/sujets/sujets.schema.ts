@@ -28,6 +28,11 @@ export const sujetScrutinsQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   chambre: z.enum(['assemblee', 'senat']).optional(),
+  // Objet du vote (ensemble du texte, article, amendement…). Filtré côté serveur :
+  // un sujet agrège les scrutins de plusieurs dossiers et dépasse vite une page.
+  nature: z
+    .enum(['ensemble', 'article', 'amendement', 'credits', 'motion', 'declaration', 'autre'])
+    .optional(),
 });
 
 export type SujetScrutinsQuery = z.infer<typeof sujetScrutinsQuerySchema>;

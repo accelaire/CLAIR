@@ -31,7 +31,11 @@ Règles :
 - N'utilise pas de jargon juridique sans l'expliquer.
 - Ne prends pas parti politiquement.
 - Réponds en texte brut, sans markdown ni bullet points.
-- 1 à 3 phrases maximum.`;
+- 1 à 3 phrases maximum.
+- N'affirme que ce que le contexte permet d'établir : ne déduis jamais l'objet
+  d'un article de son numéro.
+- Ne commente jamais ce qui manque dans le contexte. Écris ce que tu sais, et
+  rien sur ce que tu ignores : le lecteur ne doit pas lire tes limites.`;
 
 export const SYSTEM_PROMPT_DOSSIER = `Tu es un analyste parlementaire expert. Tu résumes les dossiers législatifs et analyses les positions des groupes politiques de manière factuelle et accessible.
 
@@ -63,7 +67,28 @@ interface ScrutinPromptData {
   tags?: string[];
   dossierTitre?: string | null;
   amendements?: { numero: string; exposeSommaire?: string | null; dispositif?: string | null }[];
+  /**
+   * Texte de l'article sur lequel porte le scrutin, quand on le connaît.
+   *
+   * C'est la pièce qui manquait : sans elle, un scrutin « l'article 15 de la
+   * PPL … » n'offrait au modèle que le numéro de l'article, et il en inventait
+   * le contenu (retour utilisateur sur le scrutin 2076, où le résumé décrivait
+   * les critères d'accès à l'aide à mourir quand l'article 15 crée la
+   * commission de contrôle).
+   */
+  article?: { numero: string; libelle: string; contenu: string } | null;
+  /** Le vote porte sur l'article lui-même, et non sur un amendement le visant. */
+  porteSurArticleEntier?: boolean;
 }
+
+/**
+ * Plafond du texte d'article injecté.
+ *
+ * Les articles vont de 200 à 7 400 caractères. Tronquer haut garde le
+ * dispositif complet dans l'immense majorité des cas, sans faire exploser le
+ * coût sur les quelques articles-fleuves (codes réécrits en bloc).
+ */
+const MAX_ARTICLE_CHARS = 6000;
 
 export function buildScrutinResumePrompt(data: ScrutinPromptData): string {
   const parts: string[] = [
@@ -102,10 +127,38 @@ export function buildScrutinResumePrompt(data: ScrutinPromptData): string {
     }
   }
 
-  parts.push(
-    '',
-    'Explique en 1 à 3 phrases simples ce qui a été voté et quel impact concret cela peut avoir pour les citoyens.'
-  );
+  // Le texte de l'article est placé APRÈS les amendements : pour un vote sur
+  // amendement, on veut que le modèle lise d'abord ce que l'amendement change,
+  // puis le texte dans lequel ce changement s'inscrit.
+  if (data.article) {
+    const contenu =
+      data.article.contenu.length > MAX_ARTICLE_CHARS
+        ? data.article.contenu.slice(0, MAX_ARTICLE_CHARS) + '…'
+        : data.article.contenu;
+    const entete = data.porteSurArticleEntier
+      ? `\nTexte de l'${data.article.libelle.toLowerCase()}, tel que soumis au vote :`
+      : `\n${data.article.libelle} du texte, que cet amendement vise :`;
+    parts.push(entete, contenu);
+  }
+
+  // La consigne dépend de ce qu'on a pu fournir : demander « quel impact
+  // concret » sans donner le texte revient à demander une invention.
+  if (data.article && data.porteSurArticleEntier) {
+    parts.push(
+      '',
+      "Explique en 1 à 3 phrases simples ce que dit cet article et quel impact concret il peut avoir pour les citoyens. Appuie-toi sur le texte fourni, sans extrapoler au-delà."
+    );
+  } else if (data.article) {
+    parts.push(
+      '',
+      "Explique en 1 à 3 phrases simples ce que cet amendement change dans l'article, et ce que ce changement implique concrètement. Appuie-toi sur le texte fourni, sans extrapoler au-delà."
+    );
+  } else {
+    parts.push(
+      '',
+      "Explique en 1 à 3 phrases simples ce qui a été voté et ce que cela implique pour la suite du parcours législatif. Tiens-toi à ce qu'établissent le libellé, le dossier et le résultat."
+    );
+  }
 
   return parts.join('\n');
 }
@@ -349,9 +402,53 @@ interface SujetPromptData {
   dossiersResumes: { titre: string; chambre: string; etat?: string | null; resumeIA?: string | null }[];
   positionsEnsemble: GroupePosition[];
   votesArticles: VoteArticle[];
+  /**
+   * Chambres où des voix ont RÉELLEMENT été comptées sur ce sujet.
+   *
+   * Un sujet peut porter un dossier d'une chambre sans en avoir le moindre
+   * scrutin — texte transmis, pas encore examiné. Sans cette liste, la consigne
+   * « qu'est-ce qui a été voté à l'Assemblée et au Sénat » invitait le modèle à
+   * remplir la moitié manquante : sur `renforcement-des-regles-contre-les-
+   * campements-illicites`, qui n'a que des votes du Sénat, le résumé publié
+   * détaillait la position de treize groupes de l'Assemblée. Aucun n'avait voté.
+   */
+  chambresAvecVotes: ('assemblee' | 'senat')[];
 }
 
 export function buildSujetResumePrompt(data: SujetPromptData): string {
+  const chambres = data.chambresAvecVotes;
+  const aAN = chambres.includes('assemblee');
+  const auSenat = chambres.includes('senat');
+  const chambresPhrase = aAN && auSenat
+    ? "à l'Assemblée et au Sénat"
+    : aAN
+      ? "à l'Assemblée nationale"
+      : auSenat
+        ? 'au Sénat'
+        : 'sur ce sujet';
+  // Nommer la chambre absente vaut mieux que se taire : sans interdiction
+  // explicite, le modèle comble le silence.
+  const contrainteChambres =
+    aAN && auSenat
+      ? '- Les votes fournis couvrent les deux chambres : ne confonds pas ceux de l\'Assemblée avec ceux du Sénat.'
+      : aAN
+        ? '- Les votes fournis ne concernent QUE l\'Assemblée nationale. N\'écris rien sur un vote, une position ou un groupe du Sénat : il n\'y en a aucun ici.'
+        : auSenat
+          ? '- Les votes fournis ne concernent QUE le Sénat. N\'écris rien sur un vote, une position ou un groupe de l\'Assemblée nationale : il n\'y en a aucun ici.'
+          : '- Aucun vote n\'est fourni : ne décris aucune position de groupe, dans aucune chambre.';
+
+  // Procédure close : le résumé ne doit rien annoncer qui reste à faire.
+  //
+  // Le libellé de statut le dit déjà (« la procédure est CLOSE »), mais c'est du
+  // contexte, pas une consigne — et le modèle continuait d'écrire « le texte
+  // doit encore être examiné » sur des lois promulguées. 19 sujets sont sortis
+  // ainsi de la régénération du 4 septembre 2026, tous rattrapés par
+  // l'invariant `resume_contredit_statut`. On l'interdit explicitement.
+  const procedureClose = data.status === 'promulgue' || data.status === 'rejete';
+  const contrainteStatut = procedureClose
+    ? `- La procédure est CLOSE (${data.status === 'promulgue' ? 'loi promulguée' : 'texte rejeté'}). N'annonce aucune étape à venir : ni examen, ni lecture, ni vote, ni promulgation restant à faire. Écris au passé ce qui a eu lieu.`
+    : null;
+
   const parts: string[] = [
     `Sujet parlementaire : ${data.label}`,
     `Statut : ${STATUTS_SUJET[data.status] ?? data.status}`,
@@ -412,8 +509,9 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
     'Génère une réponse structurée en trois parties séparées par les lignes exactes "---RESUME---" et "---ENJEUX---" :',
     '1. TITRE (une seule ligne, pas de préfixe) : Un titre court et clair en français pour ce sujet parlementaire, compréhensible par un citoyen (ex: "Financement de la sécurité sociale pour 2026", "Droit à l\'aide à mourir", "Organisation des JO 2030"). Pas d\'acronymes, pas de numéro de législature.',
     '---RESUME---',
-    '2. RÉSUMÉ (3 à 5 phrases) : Synthèse accessible de ce sujet pour un citoyen. De quoi s\'agit-il, où en est-on, qu\'est-ce qui a été voté à l\'Assemblée et au Sénat. RÈGLES STRICTES :',
+    `2. RÉSUMÉ (3 à 5 phrases) : Synthèse accessible de ce sujet pour un citoyen. De quoi s'agit-il, où en est-on, qu'est-ce qui a été voté ${chambresPhrase}. RÈGLES STRICTES :`,
     '- Les synthèses de dossiers ci-dessus sont des textes rédigés, pas des données brutes : ne recopie pas une affirmation qui contredit les votes chiffrés.',
+    ...(contrainteStatut ? [contrainteStatut] : []),
     '- N\'attribue un contenu à un article numéroté que si les données ci-dessus le disent explicitement.',
     '- Ne présente pas une mesure de portée limitée (dérogation locale, cas particulier) comme une mesure principale du texte.',
     '---ENJEUX---',
@@ -430,6 +528,7 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
     '- Utilise l\'orientation politique entre crochets pour classifier les groupes. Ne JAMAIS inventer de classification.',
     '- Nomme les groupes EXACTEMENT comme ci-dessus (ex: "LFI-NFP", pas "LFI-NUPES"). N\'utilise aucun sigle ou intitulé venant de tes connaissances.',
     '- Si un groupe n\'apparaît pas dans les données, ne lui attribue AUCUNE position.',
+    contrainteChambres,
     '- Si un groupe vote contre son camp habituel, mentionne-le.',
     '- Ne regroupe JAMAIS des groupes de familles opposées dans la même catégorie.',
     '- Ne conclus pas à un "soutien transpartisan" ou à un "large consensus" si une famille politique entière a voté contre ou s\'est abstenue.',

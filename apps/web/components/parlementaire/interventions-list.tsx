@@ -10,6 +10,7 @@ import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { ExpandableText } from '@/components/ui/expandable-text';
 import { scrutinHref } from '@/lib/scrutin-url';
+import { grouperParSujet } from '@/lib/debats';
 
 interface SeanceGroup {
   seanceId: string;
@@ -23,6 +24,11 @@ interface SeanceGroup {
     motsCles: string[];
     sourceUrl: string | null;
     ordre: number | null;
+    articleVise: string | null;
+    amendementsVises: string[] | null;
+    texteNumero: string | null;
+    dossier: { uid: string; titre: string } | null;
+    scrutinIds: string[];
   }[];
   scrutins: {
     id: string;
@@ -35,10 +41,46 @@ interface SeanceGroup {
   }[];
 }
 
-function InterventionTypeBadge({ type }: { type: string }) {
-  const label = type.replace('_', ' ');
+// Les types viennent de la base, où ils sont écrits sans accent ni espace :
+// les afficher tels quels donnait « Explication vote » et « Reponse
+// gouvernement ». Ce qui n'est pas nommé ici reste affiché brut plutôt que
+// masqué, pour qu'un type ajouté à l'ingestion se voie au lieu de disparaître.
+const LIBELLE_TYPE: Record<string, string> = {
+  intervention: 'Intervention',
+  question: 'Question',
+  reponse_gouvernement: 'Réponse du Gouvernement',
+  explication_vote: 'Explication de vote',
+  interruption: 'Interruption',
+};
+
+/** Un vote, en pastille cliquable. */
+function ScrutinPuce({
+  scrutin,
+}: {
+  scrutin: { id: string; numero: number; sort: string; chambre: string; session: string; date: string };
+}) {
   return (
-    <span className="rounded bg-muted px-2 py-0.5 text-xs capitalize">
+    <Link
+      href={scrutinHref(scrutin)}
+      className="inline-flex items-center gap-1.5 rounded bg-indigo-50 px-2 py-1 text-xs text-indigo-600 transition-colors hover:text-indigo-800 hover:underline dark:bg-indigo-950/40 dark:text-indigo-300"
+    >
+      <Vote className="h-3 w-3" />
+      Vote n&deg;{scrutin.numero}
+      <span
+        className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+          scrutin.sort === 'adopte' ? 'badge-adopte' : 'badge-rejete'
+        }`}
+      >
+        {scrutin.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
+      </span>
+    </Link>
+  );
+}
+
+function InterventionTypeBadge({ type }: { type: string }) {
+  const label = LIBELLE_TYPE[type] ?? type.replace(/_/g, ' ');
+  return (
+    <span className="rounded bg-muted px-2 py-0.5 text-xs first-letter:capitalize">
       {label}
     </span>
   );
@@ -54,6 +96,10 @@ export function InterventionsList({
   const apiPrefix = chambre === 'senat' ? 'senateurs' : 'deputes';
   const [dateRange, setDateRange] = useUrlDateRange();
   const dateParams = dateRangeToParams(dateRange);
+  // '' = tout ce qui est compté comme prise de parole de fond. Le type
+  // `interruption` est proposé à part : ces lignes n'entrent dans aucun
+  // compteur et ne s'affichent que si on les demande.
+  const [typeFiltre, setTypeFiltre] = useState<string>('');
 
   const {
     data,
@@ -63,12 +109,13 @@ export function InterventionsList({
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['parlementaire-interventions', slug, chambre, dateParams],
+    queryKey: ['parlementaire-interventions', slug, chambre, dateParams, typeFiltre],
     queryFn: ({ pageParam = 1 }) =>
       api.get(`/${apiPrefix}/${slug}/interventions`, {
         params: {
           page: pageParam,
           limit: 10,
+          ...(typeFiltre && { type: typeFiltre }),
           ...dateParams,
         },
       }).then((res) => res.data),
@@ -98,7 +145,31 @@ export function InterventionsList({
 
   return (
     <div className="space-y-4">
-      <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Filtrer par période" />
+      <div className="flex flex-wrap items-center gap-3">
+        <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Filtrer par période" />
+        <select
+          value={typeFiltre}
+          onChange={(e) => setTypeFiltre(e.target.value)}
+          aria-label="Filtrer par nature de prise de parole"
+          className="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="">Toutes les prises de parole</option>
+          <option value="intervention">Interventions</option>
+          <option value="question">Questions posées</option>
+          <option value="reponse_gouvernement">Réponses du Gouvernement</option>
+          <option value="explication_vote">Explications de vote</option>
+          <option value="interruption">Interruptions en séance</option>
+        </select>
+      </div>
+
+      {typeFiltre === 'interruption' && (
+        <p className="rounded-lg border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          Les interruptions sont de vraies prises de parole, attribuées à leur
+          auteur par le compte rendu. Elles n’entrent dans aucun compteur
+          d’activité : les mêler aux interventions de fond ajouterait des
+          milliers de lignes de chahut à l’activité d’un parlementaire.
+        </p>
+      )}
 
       {isLoading ? (
         <div className="space-y-4">
@@ -112,11 +183,17 @@ export function InterventionsList({
         </div>
       ) : error || seances.length === 0 ? (
         <p className="text-center text-muted-foreground py-8">
-          Aucune intervention trouvée pour cette période.
+          {typeFiltre
+            ? 'Aucune prise de parole de cette nature pour cette période.'
+            : 'Aucune intervention trouvée pour cette période.'}
         </p>
       ) : (
         <div className="space-y-6">
-          {seances.map((seance) => (
+          {seances.map((seance) => {
+            // Les prises de parole ne portent que l'identifiant de leurs votes ;
+            // le détail arrive une fois par séance.
+            const scrutinsParId = new Map(seance.scrutins.map((s) => [s.id, s]));
+            return (
             <div key={seance.seanceId} className="rounded-lg border bg-card overflow-hidden">
               {/* Séance header — clickable to fold/unfold */}
               <div className="flex items-center gap-2 px-4 py-3 bg-muted/50 border-b">
@@ -163,9 +240,50 @@ export function InterventionsList({
                     );
                   })()}
 
-                  {/* Interventions */}
+                  {/* Interventions, groupées comme la séance les a menées :
+                      une séance passe d'un texte à l'autre et d'un article au
+                      suivant, et une liste à plat efface ce déroulé. */}
                   <div className="divide-y">
-                    {seance.interventions.map((intervention) => (
+                    {grouperParSujet(seance.interventions, { avecTexte: true }).map((groupe) => (
+                      <div key={groupe.cle}>
+                        {(groupe.titre || groupe.scrutinIds.length > 0) && (
+                          <div className="flex flex-wrap items-center justify-between gap-2 bg-muted/40 px-4 py-1.5">
+                            {groupe.titre && (
+                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                {/* Le texte renvoie à son dossier : c'est là qu'on
+                                    lit ce dont il s'agit et où il en est. */}
+                                {groupe.dossier ? (
+                                  <>
+                                    <Link
+                                      href={`/dossiers/${groupe.dossier.uid}`}
+                                      title={groupe.dossier.titre}
+                                      className="inline-block max-w-[26rem] truncate align-bottom text-primary hover:underline"
+                                    >
+                                      {groupe.dossier.titre}
+                                    </Link>
+                                    {groupe.sousTitre && <span> · {groupe.sousTitre}</span>}
+                                  </>
+                                ) : (
+                                  groupe.titre
+                                )}
+                              </p>
+                            )}
+                            {/* Les votes de ce passage précisément, et non ceux
+                                de la journée : c'est ce que le rattachement des
+                                débats aux scrutins permet enfin de dire. */}
+                            {groupe.scrutinIds.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {groupe.scrutinIds
+                                  .map((id) => scrutinsParId.get(id))
+                                  .filter((s): s is NonNullable<typeof s> => Boolean(s))
+                                  .map((scrutin) => (
+                                    <ScrutinPuce key={scrutin.id} scrutin={scrutin} />
+                                  ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {groupe.interventions.map((intervention) => (
                       <div key={intervention.id} className="px-4 py-3">
                         <div className="flex items-center justify-between mb-2">
                           <InterventionTypeBadge type={intervention.type} />
@@ -188,36 +306,42 @@ export function InterventionsList({
                           </div>
                         )}
                       </div>
+                        ))}
+                      </div>
                     ))}
                   </div>
 
-                  {/* Scrutins liés */}
-                  {seance.scrutins.length > 0 && (
-                    <div className="px-4 py-3 bg-muted/30 border-t">
-                      <p className="text-xs text-muted-foreground mb-2">Scrutins liés :</p>
-                      <div className="flex flex-wrap gap-2">
-                        {seance.scrutins.map((scrutin) => (
-                          <Link
-                            key={scrutin.id}
-                            href={scrutinHref(scrutin)}
-                            className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 hover:underline bg-indigo-50 px-2 py-1 rounded transition-colors"
-                          >
-                            <Vote className="h-3 w-3" />
-                            Vote n&deg;{scrutin.numero}
-                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                              scrutin.sort === 'adopte' ? 'badge-adopte' : 'badge-rejete'
-                            }`}>
-                              {scrutin.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
-                            </span>
-                          </Link>
-                        ))}
+                  {/* Les votes qu'aucune prise de parole ne revendique.
+                      Le Sénat n'a pas ce rattachement fin sur les fiches, et une
+                      partie des séances de l'Assemblée non plus : on montre alors
+                      les votes de la journée, en le disant, plutôt que de laisser
+                      croire qu'ils portent sur ce qui vient d'être lu. */}
+                  {(() => {
+                    const revendiques = new Set(
+                      seance.interventions.flatMap((i) => i.scrutinIds ?? []),
+                    );
+                    const restants = seance.scrutins.filter((s) => !revendiques.has(s.id));
+                    if (restants.length === 0) return null;
+                    return (
+                      <div className="px-4 py-3 bg-muted/30 border-t">
+                        <p className="text-xs text-muted-foreground mb-2">
+                          {revendiques.size > 0
+                            ? 'Autres votes de cette séance :'
+                            : 'Votes de cette séance, sans rattachement certain :'}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {restants.map((scrutin) => (
+                            <ScrutinPuce key={scrutin.id} scrutin={scrutin} />
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </>
               )}
             </div>
-          ))}
+            );
+          })}
 
           {/* Infinite scroll sentinel */}
           <div ref={loadMoreRef} className="h-4" />
