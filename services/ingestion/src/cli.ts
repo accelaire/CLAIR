@@ -1335,6 +1335,43 @@ program
   });
 
 program
+  .command('sync-debats-commission')
+  .description("Ingérer les comptes rendus de réunion de commission AN (source : PDF du portail)")
+  .option('--max-reunions <n>', 'Borne de sécurité pour les essais', (v: string) => parseInt(v, 10))
+  .option('--seulement <refs...>', 'Ne traiter que ces références de compte rendu')
+  .option('--reingerer', 'Relire les réunions déjà ingérées et y remplacer les prises de parole')
+  .option('--dry-run', "Ne rien écrire, compter ce qui serait ingéré")
+  .action(async (options: {
+    maxReunions?: number;
+    seulement?: string[];
+    reingerer?: boolean;
+    dryRun?: boolean;
+  }) => {
+    try {
+      // Chargé à l'exécution, comme les débats de séance : le module instancie
+      // son client Prisma et le conteneur d'ingestion tourne au bord de l'OOM.
+      const { syncInterventionsCommission } = await import('./workers/interventions-commission.js');
+      const r = await syncInterventionsCommission({
+        maxReunions: options.maxReunions,
+        seulement: options.seulement,
+        reingerer: options.reingerer,
+        dryRun: options.dryRun,
+      });
+      console.log(`\nRéunions lues            : ${r.reunionsLues}`);
+      console.log(`Prises de parole écrites : ${r.interventions}`);
+      console.log(`Sans compte rendu publié : ${r.sansCompteRendu}`);
+      console.log(`Réunions d'amendements   : ${r.reunionsDAmendements}`);
+      console.log(`Renvoyées à la vidéo     : ${r.videoSeule}`);
+      console.log(`Forme inconnue           : ${r.formeInconnue}`);
+      console.log(`Orateurs non résolus     : ${r.sansParlementaire}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-debats-commission failed');
+      process.exit(1);
+    }
+  });
+
+program
   .command('sync-textes-articles')
   .description("Récupérer le texte des articles des textes législatifs AN (matière des résumés IA)")
   .option('--texte <ref>', 'Ne traiter que ce texteRef (ex: PIONANR5L17BTC1364)')

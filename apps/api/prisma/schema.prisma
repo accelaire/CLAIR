@@ -335,7 +335,8 @@ model Reunion {
   // Référence organe brute (même si non résolue vers une Commission)
   organeRef String? @map("organe_ref")
 
-  participants ReunionParticipant[]
+  participants  ReunionParticipant[]
+  interventions Intervention[]
 
   @@index([dateDebut])
   @@index([commissionId])
@@ -839,6 +840,23 @@ model Intervention {
   /// Mécanique de séance (« La parole est à… ») : porte la segmentation, ne s'affiche pas.
   estPresidence    Boolean  @default(false) @map("est_presidence")
 
+  // ---------------------------------------------------------------------------
+  // Travail en commission
+  // ---------------------------------------------------------------------------
+  // L'essentiel du travail législatif se fait en commission, et rien n'en était
+  // ingéré. Les prises de parole de commission rejoignent cette table plutôt
+  // qu'une table jumelle : même forme, même affichage, même rattachement aux
+  // orateurs. `reunionId` est le discriminant — il vaut `null` pour la séance
+  // publique, ce qui laisse les comptes et statistiques existants continuer à ne
+  // mesurer que l'hémicycle jusqu'à décision contraire.
+
+  /// Réunion de commission d'où vient la prise de parole ; `null` en séance publique.
+  reunionId     String?  @map("reunion_id")
+  reunion       Reunion? @relation(fields: [reunionId], references: [id], onDelete: Cascade)
+  /// Sigle du groupe tel que le compte rendu de commission l'imprime (« (LFI-NFP) »).
+  /// La séance publique ne le donne pas : là, c'est le mandat d'époque qui l'apporte.
+  orateurGroupe String?  @map("orateur_groupe")
+
   scrutinsLies InterventionScrutin[]
 
   sourceUrl String?  @map("source_url")
@@ -851,6 +869,7 @@ model Intervention {
   @@index([seanceId])
   @@index([seanceUid, ordreAbsolu])
   @@index([articleVise])
+  @@index([reunionId, ordre])
   @@map("interventions")
 }
 
