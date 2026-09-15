@@ -544,7 +544,11 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
             texteNumero: true,
             // Le texte discuté, résolu à l'ingestion : le compte rendu ne le
             // nomme que par son numéro de dépôt, qui ne dit rien au lecteur.
-            dossier: { select: { uid: true, titre: true, titreCourt: true } },
+            //
+            // `titreCourt` n'est PAS un titre court : il vaut l'uid sur 1 966
+            // dossiers et, au Sénat, porte un mot-clé thématique (« Justice »,
+            // « agriculture ») qui ne nomme pas le texte. On ne le sert pas.
+            dossier: { select: { uid: true, titre: true } },
           },
         });
 

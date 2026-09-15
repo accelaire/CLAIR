@@ -27,7 +27,7 @@ interface SeanceGroup {
     articleVise: string | null;
     amendementsVises: string[] | null;
     texteNumero: string | null;
-    dossier: { uid: string; titre: string; titreCourt: string | null } | null;
+    dossier: { uid: string; titre: string } | null;
     scrutinIds: string[];
   }[];
   scrutins: {
@@ -256,9 +256,10 @@ export function InterventionsList({
                                   <>
                                     <Link
                                       href={`/dossiers/${groupe.dossier.uid}`}
-                                      className="text-primary hover:underline"
+                                      title={groupe.dossier.titre}
+                                      className="inline-block max-w-[26rem] truncate align-bottom text-primary hover:underline"
                                     >
-                                      {groupe.dossier.titreCourt || groupe.dossier.titre}
+                                      {groupe.dossier.titre}
                                     </Link>
                                     {groupe.sousTitre && <span> · {groupe.sousTitre}</span>}
                                   </>

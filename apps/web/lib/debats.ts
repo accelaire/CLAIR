@@ -28,7 +28,6 @@
 export interface DossierDeDebat {
   uid: string;
   titre: string;
-  titreCourt?: string | null;
 }
 
 /** Ce qu'il faut d'une prise de parole pour la situer dans le débat. */
@@ -152,7 +151,7 @@ function titreDuSujet(i: InterventionSituee, avecTexte: boolean): string | null 
  * rendu dit, et il permet au moins de suivre d'un passage à l'autre.
  */
 function libelleTexte(i: InterventionSituee): string | null {
-  if (i.dossier) return i.dossier.titreCourt || i.dossier.titre;
+  if (i.dossier) return i.dossier.titre;
   return i.texteNumero ? `Texte n° ${i.texteNumero}` : null;
 }
 
