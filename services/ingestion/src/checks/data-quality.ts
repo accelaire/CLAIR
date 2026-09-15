@@ -27,6 +27,13 @@ const SCRUTINS_PERIMETRE_LIE = `(s.chambre = 'senat' OR s.legislature = ${LEGISL
 // périmètre — à surveiller au premier run couvrant les sessions antérieures à 2020.
 const SENAT_SESSION_AMENDEMENTS_MIN = '2024';
 
+// Périmètre des vérifications qui comparent les AMENDEMENTS liés à un scrutin.
+// Au Sénat, il faut en plus borner aux sessions dont les amendements sont ingérés :
+// les scrutins antérieurs n'ont AUCUN amendement en base, donc les compter revient
+// à mesurer le périmètre d'ingestion et non la qualité du rattachement.
+const SCRUTINS_PERIMETRE_AMENDEMENTS =
+  `((s.chambre = 'senat' AND s.session >= '${SENAT_SESSION_AMENDEMENTS_MIN}') OR s.legislature = ${LEGISLATURE_AN_COURANTE})`;
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -323,9 +330,16 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // scrutin sur 12 471. Le compte a bondi quand le relevé des mises aux voix
     // a cessé de dépendre du seul code de grammaire : les votes sur l'ensemble
     // d'un texte et les motions y sont entrés.
+    //
+    // La chambre est filtrée depuis que le Sénat écrit dans la même table :
+    // sans cela le compte mêlait les deux, et l'effondrement du rattachement
+    // d'une chambre pouvait être masqué par le volume de l'autre.
     label: 'Liens débat-scrutin (Assemblée)',
     min: 130000,
-    query: `SELECT COUNT(*)::int AS value FROM intervention_scrutin`,
+    query: `SELECT COUNT(*)::int AS value
+            FROM intervention_scrutin isc
+            JOIN scrutins s ON s.id = isc.scrutin_id
+            WHERE s.chambre = 'assemblee'`,
   },
   scrutins_avec_debat_an: {
     type: 'threshold',
@@ -516,7 +530,7 @@ export async function runMultiAmendmentCheck(prisma: PrismaClient): Promise<Mult
     LEFT JOIN "_AmendementToScrutin" ast ON ast."B" = s.id
     LEFT JOIN amendements a ON a.id = ast."A"
     WHERE s.titre ILIKE '%amendements identiques%'
-      AND ${SCRUTINS_PERIMETRE_LIE}
+      AND ${SCRUTINS_PERIMETRE_AMENDEMENTS}
     GROUP BY s.id, s.titre, s.chambre
   `);
 
