@@ -140,6 +140,12 @@ export interface ListeCandidature {
   libelle: string | null;
   /** Code de nuance brut de la préfecture. N'est pas un groupe politique. */
   nuance: string | null;
+  /**
+   * Libellé de la nuance tel que le ministère l'écrit (« Liste d'union à
+   * gauche »). C'est celui-ci qu'il faut afficher : le code seul est illisible,
+   * et le paraphraser nous ferait dire ce que la source ne dit pas.
+   */
+  nuanceLibelle: string | null;
   /** Famille dérivée de la nuance ; `null` quand la grille ne tranche pas. */
   famille: string | null;
   candidats: Candidat[];
@@ -195,6 +201,7 @@ export interface Sortant {
     modeScrutin: string;
     libelle: string | null;
     nuance: string | null;
+    nuanceLibelle: string | null;
     famille: string | null;
     /** Rang sur la liste : au proportionnel, être 1er ou dernier n'est pas pareil. */
     ordre: number;
@@ -254,6 +261,7 @@ export function indexerCandidaturesParSlug(
         modeScrutin: liste.modeScrutin,
         libelle: liste.libelle,
         nuance: liste.nuance,
+        nuanceLibelle: liste.nuanceLibelle,
         famille: liste.famille,
         ordre: candidat.ordre,
         role: candidat.role,
@@ -603,6 +611,7 @@ export class SenatorialesService {
       modeScrutin: liste.modeScrutin,
       libelle: liste.libelle,
       nuance: liste.nuance,
+      nuanceLibelle: liste.nuanceLibelle,
       famille: liste.famille,
       candidats: liste.candidatures
         // Annotation nécessaire : sans elle `role` s'élargit en `string` et le

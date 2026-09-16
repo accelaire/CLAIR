@@ -10,8 +10,9 @@ import {
   codeDepuisSlug,
   locutionDepuisCode,
 } from '@/lib/senatoriales/departements';
-import type { ApercuSenatoriales, Sortant } from '../PageClient';
+import type { ApercuSenatoriales, ListeCandidature, Sortant } from '../PageClient';
 import { SortantCard } from '../components/SortantCard';
+import { ListeCandidatureCard } from '../components/ListeCandidatureCard';
 
 /**
  * Une page par circonscription — et non le filtre `?departement=` de la page mère.
@@ -38,6 +39,10 @@ export function generateStaticParams() {
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
 
 type ListeSortants = { data: Sortant[]; meta: { total: number } };
+type ListeCandidats = {
+  data: ListeCandidature[];
+  meta: { total: number; candidats: number };
+};
 
 /**
  * Mode de scrutin applicable à une circonscription.
@@ -75,7 +80,7 @@ function accorde(n: number, singulier: string, plurielVerbe: string) {
 }
 
 async function chargerDonnees(code: string) {
-  const [apercu, sortants] = await Promise.all([
+  const [apercu, sortants, candidats] = await Promise.all([
     fetchFromApi<ApercuSenatoriales>('/senatoriales/2026', 3600),
     // Le filtre est appliqué par l'API et non sur la liste complète reçue côté
     // page : c'est une entrée de cache par circonscription, mais chacune pèse
@@ -84,8 +89,12 @@ async function chargerDonnees(code: string) {
       `/senatoriales/2026/sortants?departement=${encodeURIComponent(code)}&tri=nom`,
       3600,
     ),
+    fetchFromApi<ListeCandidats>(
+      `/senatoriales/2026/candidats?departement=${encodeURIComponent(code)}`,
+      3600,
+    ),
   ]);
-  return { apercu, sortants };
+  return { apercu, sortants, candidats };
 }
 
 /** Libellé d'affichage : « Français établis hors de France (Série 2) » se passe
@@ -137,7 +146,7 @@ export default async function CirconscriptionPage({
   const code = codeDepuisSlug(params.departement);
   if (!code) notFound();
 
-  const { apercu, sortants } = await chargerDonnees(code);
+  const { apercu, sortants, candidats } = await chargerDonnees(code);
 
   const trouvee = apercu?.circonscriptions?.find((c) => c.departement === code);
   // Le slug est connu mais l'API ne rend pas la circonscription : plutôt qu'une
@@ -149,6 +158,12 @@ export default async function CirconscriptionPage({
   const scrutinLocal = modeDeScrutin(nbSieges);
   const ou = locutionDepuisCode(code, nom);
   const liste = sortants?.data ?? [];
+  const listesCandidats = candidats?.data ?? [];
+  // Les candidatures ne paraissent qu'une quinzaine de jours avant le scrutin :
+  // avant, la page se rend sans cette section, et sans rien affirmer sur les
+  // intentions des sortants.
+  const candidaturesPubliees = listesCandidats.length > 0;
+  const nbCandidats = candidats?.meta.candidats ?? 0;
   const url = `${BASE_URL}/senatoriales-2026/${params.departement}`;
 
   const nbCirconscriptions =
@@ -240,6 +255,33 @@ export default async function CirconscriptionPage({
           </div>
         </div>
 
+        {candidaturesPubliees && (
+          <div className="space-y-3">
+            <div>
+              <h2 className="text-lg font-semibold">
+                {nbCandidats} {pluriel(nbCandidats, 'candidat')} {ou}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {listesCandidats.length}{' '}
+                {scrutinLocal.court.startsWith('proportionnel')
+                  ? `${pluriel(listesCandidats.length, 'liste')} en lice pour ${nbSieges} ${pluriel(nbSieges, 'siège')}`
+                  : `${pluriel(listesCandidats.length, 'candidature')} pour ${nbSieges} ${pluriel(nbSieges, 'siège')}`}
+                . Les noms en couleur renvoient vers le bilan parlementaire de la personne.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {listesCandidats.map((listeCandidature) => (
+                <ListeCandidatureCard key={listeCandidature.id} liste={listeCandidature} />
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Source : candidatures déposées en préfecture, publiées par le ministère de
+              l&apos;Intérieur. La nuance politique est attribuée par l&apos;administration et
+              ne présume pas de l&apos;appartenance déclarée du candidat.
+            </p>
+          </div>
+        )}
+
         <div className="space-y-3">
           <h2 className="text-lg font-semibold">
             {liste.length} {pluriel(liste.length, 'sénateur')}{' '}
@@ -248,7 +290,11 @@ export default async function CirconscriptionPage({
           {liste.length > 0 ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {liste.map((sortant) => (
-                <SortantCard key={sortant.mandatId} sortant={sortant} />
+                <SortantCard
+                  key={sortant.mandatId}
+                  sortant={sortant}
+                  candidaturesPubliees={candidaturesPubliees}
+                />
               ))}
             </div>
           ) : (

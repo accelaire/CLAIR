@@ -79,6 +79,25 @@ export interface ApercuSenatoriales {
     nom: string;
     nbSieges: number;
   }[];
+  /**
+   * Chiffres sur les candidatures, ou `null` avant leur publication.
+   *
+   * Optionnel pour la même raison que `siegesSenat` : l'aperçu est mis en cache
+   * une heure par l'API, un déploiement peut donc servir un instant des charges
+   * utiles antérieures à ce champ.
+   *
+   * **Ce champ tranche entre les deux sens de `Sortant.candidature === null`** :
+   * tant qu'il vaut `null` ou `undefined`, on ne sait rien de personne et il ne
+   * faut écrire « ne se représente pas » nulle part.
+   */
+  candidatures?: {
+    listes: number;
+    candidats: number;
+    circonscriptions: number;
+    sortantsCandidats: number;
+    sortantsNonCandidats: number;
+    anciensParlementaires: number;
+  } | null;
 }
 
 export interface GroupeRepartition {
@@ -127,6 +146,48 @@ export function ancreDepartement(libelle: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+/**
+ * Un candidat.
+ *
+ * Pas de date de naissance : l'API n'expose que l'année, et c'est délibéré —
+ * la plupart de ces personnes ne seront jamais élues.
+ */
+export interface Candidat {
+  id: string;
+  nom: string;
+  prenom: string;
+  sexe: string | null;
+  anneeNaissance: number | null;
+  profession: string | null;
+  ordre: number;
+  role: 'titulaire' | 'suppleant';
+  /** Sénateur sortant dont le siège est remis en jeu. */
+  sortant: boolean;
+  /** Fiche de la personne si elle est déjà passée par le Parlement. */
+  personne: {
+    slug: string;
+    chambre: string;
+    photoUrl: string | null;
+  } | null;
+}
+
+/**
+ * Unité de vote : une liste au scrutin proportionnel, un binôme
+ * titulaire-remplaçant au scrutin majoritaire.
+ */
+export interface ListeCandidature {
+  id: string;
+  circonscription: { departement: string; nom: string };
+  modeScrutin: string;
+  libelle: string | null;
+  /** Code de nuance de la préfecture. N'est pas un groupe politique. */
+  nuance: string | null;
+  /** Libellé publié par le ministère ; c'est lui qu'on affiche. */
+  nuanceLibelle: string | null;
+  famille: string | null;
+  candidats: Candidat[];
+}
+
 export interface Sortant {
   mandatId: string;
   personne: {
@@ -161,6 +222,25 @@ export interface Sortant {
     segments: number;
     interrompu: boolean;
   };
+  /**
+   * Candidature du sortant au renouvellement.
+   *
+   * `null` ne veut pas dire « ne se représente pas » à lui seul : il veut aussi
+   * dire « les candidatures ne sont pas encore publiées ». C'est
+   * `ApercuSenatoriales.candidatures` qui tranche, et rien ne doit être affirmé
+   * sans l'avoir consulté.
+   */
+  candidature?: {
+    circonscription: { departement: string; nom: string };
+    modeScrutin: string;
+    libelle: string | null;
+    nuance: string | null;
+    nuanceLibelle: string | null;
+    famille: string | null;
+    /** Rang sur la liste : au proportionnel, être 1er ou dernier n'est pas pareil. */
+    ordre: number;
+    role: 'titulaire' | 'suppleant';
+  } | null;
   /** Statistiques de carrière — identiques à celles de la fiche du sénateur. */
   bilan: {
     presence: number | null;
@@ -573,6 +653,16 @@ function SenatorialesPageContent({
   const { scrutin, sortants: apercuSortants, circonscriptions } = data;
   const nonRenouveles = SIEGES_SENAT - scrutin.nbSieges;
 
+  /**
+   * Les candidatures sont-elles connues ?
+   *
+   * Tant que le ministère n'a pas publié son fichier, une candidature absente
+   * ne veut rien dire, et la page ne doit affirmer ni qu'un sortant se
+   * représente, ni le contraire.
+   */
+  const candidatures = data.candidatures ?? null;
+  const candidaturesPubliees = candidatures !== null;
+
   return (
     <div className="container mx-auto px-4 py-8 space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -644,6 +734,51 @@ function SenatorialesPageContent({
           <p className="text-sm text-muted-foreground">sièges non concernés</p>
         </div>
       </div>
+
+      {/*
+        Le bloc n'apparaît qu'une fois les candidatures publiées, soit à peu près
+        deux semaines avant le scrutin. Avant, il n'y a rien à en dire — et une
+        carte à zéro dirait quelque chose de faux.
+      */}
+      {candidatures && (
+        <div className="rounded-lg border bg-card p-5">
+          <h2 className="text-lg font-semibold">Qui remet son siège en jeu ?</h2>
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <p className="text-3xl font-bold text-primary">
+                {candidatures.sortantsCandidats.toLocaleString('fr-FR')}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                sortants sur {apercuSortants.total} se représentent
+              </p>
+            </div>
+            <div>
+              <p className="text-3xl font-bold">
+                {candidatures.sortantsNonCandidats.toLocaleString('fr-FR')}
+              </p>
+              <p className="text-sm text-muted-foreground">quittent le Sénat</p>
+            </div>
+            <div>
+              <p className="text-3xl font-bold">
+                {candidatures.candidats.toLocaleString('fr-FR')}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                candidats au total, dans {candidatures.circonscriptions} circonscriptions
+              </p>
+            </div>
+          </div>
+          <p className="mt-4 text-sm text-muted-foreground">
+            {candidatures.anciensParlementaires > 0 && (
+              <>
+                {candidatures.anciensParlementaires} autres candidats sont déjà passés par le
+                Parlement : leur fiche et leur historique de vote sont consultables depuis la
+                page de leur circonscription.{' '}
+              </>
+            )}
+            Source : fichier des candidatures du ministère de l&apos;Intérieur.
+          </p>
+        </div>
+      )}
 
       <div>
         <h2 className="mb-3 text-lg font-semibold">Répartition des sièges sortants par groupe</h2>
@@ -805,6 +940,7 @@ function SenatorialesPageContent({
                     key={sortant.mandatId}
                     sortant={sortant}
                     surbrillance={surbrillance?.ids.has(sortant.mandatId)}
+                    candidaturesPubliees={candidaturesPubliees}
                   />
                 ))}
               </div>
@@ -819,6 +955,7 @@ function SenatorialesPageContent({
               key={sortant.mandatId}
               sortant={sortant}
               surbrillance={surbrillance?.ids.has(sortant.mandatId)}
+              candidaturesPubliees={candidaturesPubliees}
             />
           ))}
         </div>

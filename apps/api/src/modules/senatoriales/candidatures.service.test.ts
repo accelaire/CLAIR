@@ -31,6 +31,7 @@ function liste(candidats: Candidat[], departement = '01'): ListeCandidature {
     modeScrutin: 'proportionnel',
     libelle: 'UNE LISTE',
     nuance: 'LDVD',
+    nuanceLibelle: 'Liste divers droite',
     famille: 'droite',
     candidats,
   };
