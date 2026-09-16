@@ -2217,6 +2217,146 @@ export async function syncAnVideos(): Promise<{ linked: number }> {
 // SYNC VIDÉOS SÉNAT (scraping videos.senat.fr)
 // =============================================================================
 
+/**
+ * Libellés de commission du catalogue vidéo qui diffèrent des nôtres.
+ *
+ * Le moteur imprime tantôt le nom complet — « Commission de la culture, de
+ * l'éducation, de la communication et du sport », qui correspond au nôtre mot
+ * pour mot — tantôt une forme courte. Relevé sur les 384 vidéos d'un an : cinq
+ * libellés seulement s'écartent, et les voici. Une table explicite plutôt qu'un
+ * rapprochement flou : c'est la recherche approximative sur les noms qui avait
+ * attribué 46 018 amendements au mauvais député.
+ *
+ * Restent non résolus, à dessein : l'OPECST, « Groupe d'études » et
+ * « Présidence » — les deux derniers ne sont pas des commissions, et l'OPECST
+ * n'a pas de réunion du Sénat en base.
+ */
+const VIDEO_SENAT_ALIAS_COMMISSION: Record<string, string> = {
+  'commission des lois':
+    "Commission des lois constitutionnelles, de législation, du suffrage universel, du Règlement et d'administration générale",
+  'delegation aux droits des femmes':
+    "Délégation aux droits des femmes et à l'égalité des chances entre les hommes et les femmes",
+  'delegation senatoriale aux outre mer': "Délégation sénatoriale à l'Outre-mer",
+  'delegation aux collectivites territoriales':
+    'Délégation sénatoriale aux collectivités territoriales et à la décentralisation',
+  'delegation aux entreprises': 'Délégation sénatoriale aux entreprises',
+};
+
+/** Clé de comparaison d'un nom de commission : sans accent, sans ponctuation. */
+function cleDeCommission(nom: string): string {
+  return nom
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .replace(/[^a-zA-Z0-9]+/gu, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+export interface ResultatVideosCommissionSenat {
+  /** Vidéos lues au catalogue. */
+  videos: number;
+  /** Réunions qui ont reçu leur vidéo. */
+  liees: number;
+  /** Vidéos dont le libellé d'instance ne désigne aucune commission connue. */
+  commissionInconnue: number;
+  /** Vidéos sans réunion en base à leur date : notre agenda ne la couvre pas. */
+  sansReunion: number;
+  /** Vidéos que plusieurs réunions pourraient réclamer : on ne tranche pas. */
+  reunionAmbigue: number;
+  /** Réunions pour lesquelles le catalogue offre plusieurs vidéos. */
+  plusieursVideos: number;
+}
+
+/**
+ * Rattache les vidéos de réunion de commission du Sénat.
+ *
+ * POURQUOI CETTE ÉTAPE EXISTE. `videos.senat.fr` diffuse les auditions de
+ * commission — 384 sur un an, contre 512 pour la séance publique — et nous n'en
+ * lisions aucune : le client filtrait sur « Séance publique » et rejetait tout
+ * slug qui ne commençait pas par `seance-publique-du-`. Les 459 réunions de
+ * commission du Sénat en base n'avaient donc jamais de vidéo, et
+ * `captationVideo` y était même écrit en dur à `false`.
+ *
+ * COMMENT ON RAPPROCHE. Le slug d'une vidéo de commission ne porte pas de date
+ * — « violences-dans-le-periscolaire--audition-d-emmanuel-gregoire » — mais sa
+ * fiche donne la commission et le jour. C'est donc (commission, date) qui
+ * désigne la réunion, et on exige les deux : rapprocher sur la seule date
+ * donnerait la vidéo d'une commission à une autre réunie le même jour.
+ *
+ * CE QU'ON NE RATTACHE PAS. 307 vidéos sur 384 n'ont aucune réunion à leur date
+ * dans notre base. Ce n'est pas un défaut de ce rapprochement mais de notre
+ * couverture de l'agenda du Sénat, qui n'est moissonné que sur une fenêtre
+ * autour du jour : le 24 juin, l'API du Sénat annonce une dizaine de réunions
+ * de commission et nous n'en avons aucune venant de l'agenda.
+ */
+export async function syncSenatVideosCommission(): Promise<ResultatVideosCommissionSenat> {
+  const { SenatVideosClient } = await import('../sources/senat/videos-client.js');
+
+  const resultat: ResultatVideosCommissionSenat = {
+    videos: 0, liees: 0, commissionInconnue: 0, sansReunion: 0,
+    reunionAmbigue: 0, plusieursVideos: 0,
+  };
+
+  const commissions = await prisma.commission.findMany({
+    where: { chambre: 'senat' },
+    select: { id: true, nom: true },
+  });
+  const parNom = new Map<string, string>();
+  for (const c of commissions) parNom.set(cleDeCommission(c.nom), c.id);
+
+  const resoudre = (libelle: string): string | null => {
+    const cle = cleDeCommission(libelle);
+    const alias = VIDEO_SENAT_ALIAS_COMMISSION[cle];
+    return parNom.get(cle) ?? (alias ? parNom.get(cleDeCommission(alias)) ?? null : null);
+  };
+
+  const reunions = await prisma.reunion.findMany({
+    where: { type: 'commission', commission: { chambre: 'senat' } },
+    select: { id: true, dateDebut: true, commissionId: true },
+  });
+  const parCle = new Map<string, string[]>();
+  for (const r of reunions) {
+    if (!r.commissionId) continue;
+    const cle = `${r.dateDebut.toISOString().slice(0, 10)}|${r.commissionId}`;
+    parCle.set(cle, [...(parCle.get(cle) ?? []), r.id]);
+  }
+
+  const fiches = await new SenatVideosClient().getCommissionVideos();
+  resultat.videos = fiches.length;
+
+  const dejaServies = new Set<string>();
+
+  for (const fiche of fiches) {
+    // Une réunion conjointe s'écrit « Commission A • Commission B ».
+    const ids = fiche.commission
+      .split('•')
+      .map((part) => resoudre(part.trim()))
+      .filter((id): id is string => id !== null);
+
+    if (ids.length === 0) { resultat.commissionInconnue += 1; continue; }
+
+    const cibles = [...new Set(ids.flatMap((id) => parCle.get(`${fiche.isoDate}|${id}`) ?? []))];
+    if (cibles.length === 0) { resultat.sansReunion += 1; continue; }
+    if (cibles.length > 1) { resultat.reunionAmbigue += 1; continue; }
+
+    const reunionId = cibles[0]!;
+    // Plusieurs auditions d'une même commission le même jour donnent plusieurs
+    // vidéos pour une seule réunion : on garde la première et on le compte,
+    // plutôt que de laisser la dernière écraser les autres en silence.
+    if (dejaServies.has(reunionId)) { resultat.plusieursVideos += 1; continue; }
+    dejaServies.add(reunionId);
+
+    await prisma.reunion.update({
+      where: { id: reunionId },
+      data: { urlVideo: fiche.url, captationVideo: true },
+    });
+    resultat.liees += 1;
+  }
+
+  logger.info(resultat, 'Vidéos de commission du Sénat rattachées');
+  return resultat;
+}
+
 export async function syncSenatVideos(): Promise<{ linked: number }> {
   const { SenatVideosClient } = await import('../sources/senat/videos-client.js');
 
@@ -3274,7 +3414,13 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
 
           case 'senat:videos': {
             const senatVideosResult = await syncSenatVideos();
-            syncResult = { created: 0, updated: senatVideosResult.linked };
+            // Les commissions sont un second catalogue : le moteur les range
+            // sous « Travaux de commission », pas sous « Séance publique ».
+            const senatVideosCommission = await syncSenatVideosCommission();
+            syncResult = {
+              created: 0,
+              updated: senatVideosResult.linked + senatVideosCommission.liees,
+            };
             break;
           }
 

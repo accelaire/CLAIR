@@ -1395,6 +1395,26 @@ program
   });
 
 program
+  .command('sync-videos-commission-senat')
+  .description('Rattacher les vidéos de réunion de commission du Sénat (videos.senat.fr)')
+  .action(async () => {
+    try {
+      const { syncSenatVideosCommission } = await import('./workers/sync.js');
+      const r = await syncSenatVideosCommission();
+      console.log(`\nVidéos au catalogue      : ${r.videos}`);
+      console.log(`Réunions liées           : ${r.liees}`);
+      console.log(`Commission inconnue      : ${r.commissionInconnue}`);
+      console.log(`Aucune réunion ce jour   : ${r.sansReunion}`);
+      console.log(`Réunion ambiguë          : ${r.reunionAmbigue}`);
+      console.log(`Plusieurs vidéos         : ${r.plusieursVideos}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-videos-commission-senat failed');
+      process.exit(1);
+    }
+  });
+
+program
   .command('sync-debats-commission')
   .description("Ingérer les comptes rendus de réunion de commission AN (source : PDF du portail)")
   .option('--max-reunions <n>', 'Borne de sécurité pour les essais', (v: string) => parseInt(v, 10))

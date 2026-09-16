@@ -27,11 +27,108 @@ const MONTHS_FR: Record<string, string> = {
 
 export type VideoMoment = 'matin' | 'apres-midi' | 'soir';
 
+/**
+ * Le type de vidéo, tel que le moteur du Sénat le nomme.
+ *
+ * Mesuré sur un an : « Séance publique » rend 512 vidéos, « Travaux de
+ * commission » 384, pour 917 au catalogue. Une valeur que le moteur ne connaît
+ * pas ne filtre RIEN et rend les 917 — d'où l'intérêt de vérifier le compte
+ * plutôt que de faire confiance au paramètre.
+ */
+const TYPE_SEANCE = 'Séance publique';
+const TYPE_COMMISSION = 'Travaux de commission';
+
 export interface SenatVideo {
   isoDate: string;      // 'YYYY-MM-DD'
   moment: VideoMoment;  // 'matin' | 'apres-midi' | 'soir'
   url: string;          // URL complète sans timecode
   slug: string;         // e.g. 'seance-publique-du-16-avril-2026-apres-midi'
+}
+
+/** Une vidéo de réunion de commission, telle que la fiche du moteur la décrit. */
+export interface SenatVideoCommission {
+  /** 'YYYY-MM-DD', lu sur la fiche — le slug d'une commission ne porte pas de date. */
+  isoDate: string;
+  /** Le nom de la commission, tel qu'il est imprimé : il correspond au nôtre. */
+  commission: string;
+  /** « Violences dans le périscolaire : audition d'Emmanuel Grégoire ». */
+  titre: string;
+  url: string;
+  slug: string;
+}
+
+/** Les mois, sans accent : la fiche écrit « février », le slug « fevrier ». */
+function moisEnNombre(mois: string): string | null {
+  const nu = mois
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLowerCase();
+  return MONTHS_FR[nu] ?? null;
+}
+
+/**
+ * La date d'une fiche : « Mercredi 16 septembre 2026 » → '2026-09-16'.
+ *
+ * Contrairement à la séance publique, dont le slug porte la date et le moment,
+ * une vidéo de commission n'a qu'un titre : « violences-dans-le-periscolaire--
+ * audition-d-emmanuel-gregoire ». La date ne se lit que sur la fiche.
+ */
+export function dateDeLaFiche(texte: string): string | null {
+  const m = /(\d{1,2})\s+([A-Za-zÀ-ÿ]+)\s+(\d{4})/u.exec(texte);
+  if (!m) return null;
+  const mois = moisEnNombre(m[2]!);
+  if (!mois) return null;
+  return `${m[3]}-${mois}-${String(m[1]).padStart(2, '0')}`;
+}
+
+/** Retire les balises et rend les entités d'un fragment de fiche. */
+function texteNu(html: string): string {
+  return html
+    .replace(/<[^>]*>/gu, ' ')
+    .replace(/&#39;|&apos;/gu, '’')
+    .replace(/&quot;/gu, '"')
+    .replace(/&amp;/gu, '&')
+    .replace(/&nbsp;/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
+/**
+ * Les fiches de commission d'une page de résultats.
+ *
+ * On lit la fiche entière plutôt que le seul lien : c'est elle qui porte le nom
+ * de la commission et la date, les deux seules prises pour rapprocher la vidéo
+ * d'une réunion. Une fiche à laquelle il manque l'un ou l'autre est ignorée —
+ * rapprocher sur la seule date attribuerait la vidéo d'une commission à une
+ * autre réunie le même jour.
+ */
+export function fichesDeCommission(html: string): SenatVideoCommission[] {
+  const fiches: SenatVideoCommission[] = [];
+  const vus = new Set<string>();
+
+  for (const bloc of html.split(/<div class="card card-/u).slice(1)) {
+    const lien = /href="video\.([^".?]+)\.([^".?]+)/u.exec(bloc);
+    if (!lien) continue;
+    const idHash = lien[1]!;
+    const slug = lien[2]!;
+    if (slug.startsWith('seance-publique-du-')) continue;
+    if (vus.has(idHash)) continue;
+
+    const commission = texteNu(/<p class="card-subtitle">([\s\S]*?)<\/p>/u.exec(bloc)?.[1] ?? '');
+    const isoDate = dateDeLaFiche(texteNu(/<time class="card-time">([\s\S]*?)<\/time>/u.exec(bloc)?.[1] ?? ''));
+    if (commission.length === 0 || !isoDate) continue;
+
+    vus.add(idHash);
+    fiches.push({
+      isoDate,
+      commission,
+      titre: texteNu(/<h3 class="card-title">([\s\S]*?)<\/h3>/u.exec(bloc)?.[1] ?? ''),
+      url: `${BASE_URL}/video.${idHash}.${slug}`,
+      slug,
+    });
+  }
+
+  return fiches;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -86,7 +183,7 @@ export class SenatVideosClient {
   private async fetchPage(page: number): Promise<SenatVideo[]> {
     const params = new URLSearchParams({
       search: 'true',
-      videotype: 'Séance publique',
+      videotype: TYPE_SEANCE,
       page: String(page),
     });
     const html = await httpsGet(`${SEARCH_ENDPOINT}?${params}`);
@@ -162,6 +259,47 @@ export class SenatVideosClient {
 
     logger.info({ total: all.length }, 'Sénat videos scraping done');
     return all;
+  }
+
+  /**
+   * Les vidéos de réunion de commission, toutes pages confondues.
+   *
+   * Le catalogue en compte 384 sur un an, contre 512 pour la séance publique.
+   * On s'arrête à la première page vide plutôt que d'aller au bout de
+   * MAX_PAGES : le moteur rend neuf fiches par page.
+   */
+  async getCommissionVideos(): Promise<SenatVideoCommission[]> {
+    const toutes: SenatVideoCommission[] = [];
+    const vues = new Set<string>();
+
+    logger.info('Vidéos de commission du Sénat : début de la moisson');
+
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      try {
+        const params = new URLSearchParams({
+          search: 'true',
+          videotype: TYPE_COMMISSION,
+          page: String(page),
+        });
+        const fiches = fichesDeCommission(await httpsGet(`${SEARCH_ENDPOINT}?${params}`));
+
+        if (fiches.length === 0) break;
+
+        for (const f of fiches) {
+          if (vues.has(f.url)) continue;
+          vues.add(f.url);
+          toutes.push(f);
+        }
+
+        if (page < MAX_PAGES) await sleep(REQUEST_DELAY_MS);
+      } catch (err) {
+        logger.warn({ page, error: errorMessage(err) }, 'Page de vidéos de commission illisible — arrêt');
+        break;
+      }
+    }
+
+    logger.info({ total: toutes.length }, 'Vidéos de commission du Sénat : moisson terminée');
+    return toutes;
   }
 }
 
