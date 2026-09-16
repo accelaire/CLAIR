@@ -1277,6 +1277,18 @@ async function syncSingleSenateur(
       where: { id: existing.id },
       data: {
         ...donneesSansSlug,
+        // L'annuaire du Sénat ne publie ni date ni lieu de naissance, ni
+        // adresse : le client les met à `null` faute de mieux. Les écrire tels
+        // quels EFFAÇAIT à chaque passage ce que l'open data ODSEN avait
+        // rempli — les 348 sénateurs en exercice y perdaient leur date de
+        // naissance toutes les nuits.
+        //
+        // `undefined` dit à Prisma de ne pas toucher au champ. Ici `null` ne
+        // veut pas dire « vide » mais « cette source ne sait pas », et les deux
+        // ne doivent pas s'écrire pareil.
+        dateNaissance: donneesSansSlug.dateNaissance ?? undefined,
+        lieuNaissance: donneesSansSlug.lieuNaissance ?? undefined,
+        email: donneesSansSlug.email ?? undefined,
         groupe: groupeId ? { connect: { id: groupeId } } : { disconnect: true },
         circonscription: circonscriptionId ? { connect: { id: circonscriptionId } } : undefined,
       },
