@@ -2992,7 +2992,6 @@ export async function syncSenatAgenda(
         etat: r.etat,
         odjResume: r.odjResume,
         odjComplet: r.odjItems.join('\n') || null,
-        captationVideo: false,
         ouvertePresse: false,
         organeRef: r.organeRef,
         commissionId,
@@ -3001,10 +3000,18 @@ export async function syncSenatAgenda(
       const existing = await prisma.reunion.findUnique({ where: { uid: r.uid } });
 
       if (existing) {
+        // `captationVideo` est volontairement absent de l'update, comme
+        // `compteRenduRef` : l'agenda du Sénat n'annonce pas si la réunion est
+        // filmée, c'est `syncSenatVideosCommission` qui l'établit en trouvant
+        // la vidéo. L'écrire à `false` ici défaisait ce qu'elle venait de
+        // poser — 204 réunions avaient une vidéo tout en étant marquées non
+        // filmées, et l'intraday refaisait le dégât toutes les deux heures.
         await prisma.reunion.update({ where: { id: existing.id }, data: reunionData });
         reunionsUpdated++;
       } else {
-        await prisma.reunion.create({ data: { ...reunionData, compteRenduRef: null } });
+        await prisma.reunion.create({
+          data: { ...reunionData, compteRenduRef: null, captationVideo: false },
+        });
         reunionsCreated++;
       }
     } catch (err) {
