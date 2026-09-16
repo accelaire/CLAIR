@@ -5954,15 +5954,19 @@ export async function enrichScrutinsANAmendements(
 
   logger.info({ dryRun, concurrency, limit: limitCount, reset, only: only?.length }, 'Starting AN scrutins enrichment (scraping HTML)...');
 
-  // Si reset demandé, réinitialiser les liens existants via la table de jonction
+  // Si reset demandé, réinitialiser les liens existants via la table de jonction.
+  // Borné à `only` quand il est fourni : sans ça, `--reset --only <id>` effacerait
+  // les liens de TOUS les scrutins AN "amendement", pas seulement celui ciblé.
   let resetCount = 0;
   if (reset) {
+    const onlyFilter = only ? Prisma.sql`AND s.id IN (${Prisma.join(only)})` : Prisma.empty;
     const countToReset = await prisma.$queryRaw<{ count: bigint }[]>`
       SELECT COUNT(DISTINCT ats."B") as count
       FROM "_AmendementToScrutin" ats
       JOIN scrutins s ON ats."B" = s.id
       WHERE s.chambre = 'assemblee'
         AND s.titre ILIKE '%amendement%'
+        ${onlyFilter}
     `;
     const countVal = Number(countToReset[0]?.count || 0);
 
@@ -5975,6 +5979,7 @@ export async function enrichScrutinsANAmendements(
         WHERE ats."B" = s.id
           AND s.chambre = 'assemblee'
           AND s.titre ILIKE '%amendement%'
+          ${onlyFilter}
       `;
       resetCount = Number(result);
       logger.info({ resetCount }, 'Reset existing AN amendement links');
@@ -5984,13 +5989,15 @@ export async function enrichScrutinsANAmendements(
     }
   }
 
-  // Charger les scrutins AN qui mentionnent "amendement" mais n'ont pas d'amendement lié
+  // Charger les scrutins AN qui mentionnent "amendement" mais n'ont pas d'amendement lié.
+  // Avec `only`, on saute le filtre `amendements: { none: {} }` : cibler explicitement un
+  // scrutin qui a déjà un lien (même faux) doit pouvoir le re-rattacher ; sinon `--only <id>`
+  // ne matche jamais rien sur ce cas, ce qui prive l'option de son usage de rattrapage.
   const scrutinsToEnrich = await prisma.scrutin.findMany({
     where: {
       chambre: 'assemblee',
       titre: { contains: 'amendement', mode: 'insensitive' },
-      amendements: { none: {} },
-      ...(only ? { id: { in: only } } : {}),
+      ...(only ? { id: { in: only } } : { amendements: { none: {} } }),
     },
     select: {
       id: true,

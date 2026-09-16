@@ -82,7 +82,7 @@ export async function backfillNatureVote(
     }
 
     scanned += lot.length;
-    curseur = lot[lot.length - 1].id;
+    curseur = lot[lot.length - 1]!.id;
     logger.info({ scanned, total, updated }, 'Backfill nature_vote: progression');
   }
 

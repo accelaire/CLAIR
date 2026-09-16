@@ -179,6 +179,10 @@ export async function calculateAllStats(
         WHERE i.chambre LIKE ${chambreFilter}
           AND i.est_presidence = false
           AND i.type <> 'interruption'
+          -- Séance publique seulement : sans ce filtre, les prises de parole
+          -- en réunion de commission (reunion_id renseigné) gonflent ce total
+          -- alors que l'API ne les liste pas (cf. reunionId: null ligne ~737).
+          AND i.reunion_id IS NULL
         GROUP BY i.parlementaire_id
       ),
       amendement_stats AS (
@@ -417,6 +421,8 @@ export async function calculateAllStats(
           AND (m.date_fin IS NULL OR i.date <= m.date_fin)
           AND i.est_presidence = false
           AND i.type <> 'interruption'
+          -- Séance publique seulement, même raison qu'intervention_stats plus haut.
+          AND i.reunion_id IS NULL
         GROUP BY m.id
       ),
       -- Amendements du mandat : AN par législature (plus fiable que la date de dépôt) ;
