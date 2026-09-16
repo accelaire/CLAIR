@@ -14,7 +14,12 @@ import {
   Chambre,
 } from './parlementaires.schema';
 import { ApiError } from '../../utils/errors';
-import { INTERVENTIONS_DE_FOND, journeeDeSeance } from '../../utils/interventions';
+import {
+  INTERVENTIONS_DE_FOND,
+  journeeDeSeance,
+  ANNONCE_ORDRE_DU_JOUR,
+  titreDOrdreDuJour,
+} from '../../utils/interventions';
 
 // ===========================================================================
 // FACTORY pour créer des routes avec chambre optionnelle
@@ -600,6 +605,29 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           },
         });
 
+        // 3 bis. Les annonces d'ordre du jour de ces séances.
+        //
+        // « L'ordre du jour appelle la discussion, sur le rapport de la
+        // commission mixte paritaire, de la proposition de loi visant à
+        // moderniser la gestion du patrimoine immobilier de l'État. » La
+        // présidence ouvre ainsi chaque point de la journée, et le filtre des
+        // prises de fond les écarte — à raison, c'est de la mécanique de
+        // séance. Mais elles portent l'ÉTAPE de lecture du texte, que le lien
+        // vers le dossier ne dit pas, et elles découpent la journée.
+        //
+        // Elles ne sont pas du parlementaire dont on lit la fiche : on les
+        // interroge à part, sur les séances déjà retenues, et le front les
+        // replace par leur rang.
+        const annonces = await fastify.prisma.intervention.findMany({
+          where: {
+            seanceId: { in: seanceIds },
+            estPresidence: true,
+            contenu: { startsWith: ANNONCE_ORDRE_DU_JOUR },
+          },
+          select: { seanceId: true, ordre: true, contenu: true },
+          orderBy: { ordre: 'asc' },
+        });
+
         // 4. Group by seanceId
         // Formes réellement poussées dans les groupes (dérivées des requêtes ci-dessus).
         type SeanceIntervention = Omit<(typeof interventions)[number], 'seanceId'> & {
@@ -609,11 +637,15 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
         };
         type SeanceScrutin = Omit<(typeof scrutins)[number], 'seanceRef'>;
 
+        /** Un point de l'ordre du jour, situé par le rang où la présidence l'annonce. */
+        type PointDeLOrdreDuJour = { ordre: number; titre: string };
+
         const seanceMap = new Map<string, {
           seanceId: string;
           date: string;
           interventions: SeanceIntervention[];
           scrutins: SeanceScrutin[];
+          ordreDuJour: PointDeLOrdreDuJour[];
         }>();
 
         // Init with seance order from pagination
@@ -624,8 +656,19 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
               date: s.date.toISOString(),
               interventions: [],
               scrutins: [],
+              ordreDuJour: [],
             });
           }
+        }
+
+        for (const a of annonces) {
+          const group = a.seanceId ? seanceMap.get(a.seanceId) : null;
+          if (!group) continue;
+          // Sans rang, on ne saurait pas où replacer l'annonce dans la séance :
+          // mieux vaut ne pas l'annoncer que l'annoncer au mauvais endroit.
+          if (a.ordre === null) continue;
+          const titre = titreDOrdreDuJour(a.contenu);
+          if (titre.length > 0) group.ordreDuJour.push({ ordre: a.ordre, titre });
         }
 
         // Assign interventions with truncation

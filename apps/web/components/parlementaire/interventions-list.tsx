@@ -10,7 +10,7 @@ import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { ExpandableText } from '@/components/ui/expandable-text';
 import { scrutinHref } from '@/lib/scrutin-url';
-import { grouperParSujet, libelleDeSeance } from '@/lib/debats';
+import { grouperParSujet, libelleDeSeance, annoterOrdreDuJour } from '@/lib/debats';
 
 interface SeanceGroup {
   seanceId: string;
@@ -39,6 +39,8 @@ interface SeanceGroup {
     chambre: string;
     session: string;
   }[];
+  /** Les points de l'ordre du jour annoncés par la présidence pendant la séance. */
+  ordreDuJour?: { ordre: number; titre: string }[];
 }
 
 // Les types viennent de la base, où ils sont écrits sans accent ni espace :
@@ -238,8 +240,23 @@ export function InterventionsList({
                       une séance passe d'un texte à l'autre et d'un article au
                       suivant, et une liste à plat efface ce déroulé. */}
                   <div className="divide-y">
-                    {grouperParSujet(seance.interventions, { avecTexte: true }).map((groupe) => (
+                    {annoterOrdreDuJour(
+                      grouperParSujet(seance.interventions, { avecTexte: true }),
+                      seance.ordreDuJour,
+                    ).map(({ groupe, ouverture }) => (
                       <div key={groupe.cle}>
+                        {/* Le point de l'ordre du jour que ce passage ouvre.
+                            La présidence l'annonce, et elle seule donne l'étape
+                            de lecture : « sur le rapport de la commission mixte
+                            paritaire », « en nouvelle lecture ». */}
+                        {ouverture && (
+                          <p
+                            title={ouverture}
+                            className="border-l-2 border-primary/40 bg-primary/5 px-4 py-2 text-xs font-medium leading-relaxed text-foreground/80"
+                          >
+                            {ouverture}
+                          </p>
+                        )}
                         {(groupe.titre || groupe.scrutinIds.length > 0) && (
                           <div className="flex flex-wrap items-center justify-between gap-2 bg-muted/40 px-4 py-1.5">
                             {groupe.titre && (

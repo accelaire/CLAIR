@@ -215,3 +215,67 @@ function libelleArticle(article: string | null | undefined): string | null {
   if (propre.length === 0) return null;
   return /^article\b/i.test(propre) ? propre : `Article ${propre}`;
 }
+
+// =============================================================================
+// L'ordre du jour comme fil de la séance
+// =============================================================================
+
+/** Un point de l'ordre du jour, situé par le rang où la présidence l'annonce. */
+export interface PointDeLOrdreDuJour {
+  ordre: number;
+  titre: string;
+}
+
+/** Un passage du débat, précédé du point de l'ordre du jour qu'il ouvre. */
+export interface GroupeAnnonce<T> {
+  groupe: GroupeDeDebat<T>;
+  /**
+   * Le point de l'ordre du jour que ce passage ouvre, ou `null` s'il poursuit
+   * celui du passage précédent. N'est donc renseigné qu'au changement.
+   */
+  ouverture: string | null;
+}
+
+/**
+ * Replace chaque passage sous le point de l'ordre du jour qui le gouverne.
+ *
+ * POURQUOI. La présidence annonce chaque point de la journée — « L'ordre du
+ * jour appelle la discussion, sur le rapport de la commission mixte paritaire,
+ * de la proposition de loi visant à… ». C'est elle qui donne l'étape de lecture
+ * du texte, que le seul lien vers le dossier ne dit pas, et c'est elle qui
+ * découpe la journée. Ces annonces sont écartées des prises de fond, à raison :
+ * elles ne comptent pas comme des interventions. Elles font en revanche de bons
+ * intertitres.
+ *
+ * COMMENT. Un passage relève du dernier point annoncé avant lui. On compare les
+ * rangs, qui ordonnent le compte rendu ; un passage dont on ignore le rang ne
+ * réclame aucun point plutôt que d'en réclamer un au hasard. Le titre n'est
+ * rendu qu'au changement : le répéter au-dessus de chaque passage d'une même
+ * discussion noierait le découpage par sujet qu'il est censé éclairer.
+ */
+export function annoterOrdreDuJour<T extends InterventionSituee & { ordre?: number | null }>(
+  groupes: GroupeDeDebat<T>[],
+  points: readonly PointDeLOrdreDuJour[] | undefined,
+): GroupeAnnonce<T>[] {
+  if (!points || points.length === 0) {
+    return groupes.map((groupe) => ({ groupe, ouverture: null }));
+  }
+
+  const ordonnes = [...points].sort((a, b) => a.ordre - b.ordre);
+  let dernierRendu: string | null = null;
+
+  return groupes.map((groupe) => {
+    const rang = groupe.interventions[0]?.ordre;
+    if (rang === null || rang === undefined) return { groupe, ouverture: null };
+
+    let courant: string | null = null;
+    for (const point of ordonnes) {
+      if (point.ordre > rang) break;
+      courant = point.titre;
+    }
+
+    if (courant === null || courant === dernierRendu) return { groupe, ouverture: null };
+    dernierRendu = courant;
+    return { groupe, ouverture: courant };
+  });
+}

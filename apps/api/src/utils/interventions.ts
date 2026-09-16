@@ -72,3 +72,75 @@ export function journeeDeSeance(date: Date): { gte: Date; lt: Date } {
   lendemain.setUTCDate(lendemain.getUTCDate() + 1);
   return { gte: debut, lt: lendemain };
 }
+
+// =============================================================================
+// Les annonces d'ordre du jour
+// =============================================================================
+
+/**
+ * L'ouverture exacte d'une annonce d'ordre du jour, apostrophe typographique
+ * comprise.
+ *
+ * Mesuré sur la base : 4 265 prises de parole commencent ainsi, et les cinq
+ * autres lignes où l'expression apparaît n'en sont pas — elle y est citée au
+ * fil d'une phrase. Le préfixe suffit donc à les désigner, sans recherche en
+ * sous-chaîne.
+ */
+export const ANNONCE_ORDRE_DU_JOUR = 'L’ordre du jour appelle';
+
+/** Le numéro de dépôt dont l'annonce se termine : « (no 3004). », « (nos 12, 15) ». */
+const NUMERO_EN_FIN = /\s*\(n[o°s]+[^)]*\)\s*\.?\s*$/u;
+
+/**
+ * Le titre à afficher pour une annonce d'ordre du jour.
+ *
+ * CE QUE CES ANNONCES APPORTENT. La présidence ouvre chaque point de la
+ * journée en le nommant : « L'ordre du jour appelle la discussion, sur le
+ * rapport de la commission mixte paritaire, de la proposition de loi visant à
+ * moderniser la gestion du patrimoine immobilier de l'État. » Le filtre des
+ * prises de fond les écarte — à raison pour les compteurs, c'est de la
+ * mécanique de séance — mais elles portent l'ÉTAPE de lecture du texte, que le
+ * lien vers le dossier ne dit pas.
+ *
+ * ON GARDE LES MOTS DE LA SÉANCE. Pas de reformulation : l'annonce est ce que
+ * la présidence a prononcé. Deux choses seulement sont retirées — la phrase
+ * suivante, quand l'annonce en compte plusieurs (« La parole est à… », qui
+ * n'appartient plus au titre), et le numéro de dépôt final, que la page
+ * affiche déjà comme lien vers le dossier.
+ */
+export function titreDOrdreDuJour(contenu: string): string {
+  const propre = contenu.replace(/\s+/gu, ' ').trim();
+
+  const fin = finDeLaPremierePhrase(propre);
+  const phrase = fin === -1 ? propre : propre.slice(0, fin);
+
+  return phrase.replace(NUMERO_EN_FIN, '').replace(/\s*[.,;]\s*$/u, '').trim();
+}
+
+/**
+ * Abréviations dont le point ne termine pas une phrase.
+ *
+ * Sans elles, « la proposition de loi de M. Dupont visant à… » se couperait
+ * net après « de M. ».
+ */
+const ABREVIATIONS = new Set(['M', 'MM', 'Mme', 'Mmes', 'no', 'nos', 'art', 'al', 'cf']);
+
+/**
+ * L'indice du point qui clôt la première phrase, ou -1.
+ *
+ * Le compte rendu colle souvent les phrases — « (nos 235, 273). Ce matin,
+ * l'Assemblée a poursuivi… » s'écrit aussi bien sans l'espace. On accepte donc
+ * un point suivi d'une majuscule avec ou sans blanc, et on écarte les
+ * abréviations qui en portent un.
+ */
+function finDeLaPremierePhrase(texte: string): number {
+  const separateur = /\.\s*(?=[A-ZÀ-Þ«])/gu;
+  let m: RegExpExecArray | null;
+
+  while ((m = separateur.exec(texte)) !== null) {
+    const avant = /([\p{L}]+)$/u.exec(texte.slice(0, m.index));
+    if (avant && ABREVIATIONS.has(avant[1]!)) continue;
+    return m.index;
+  }
+  return -1;
+}
