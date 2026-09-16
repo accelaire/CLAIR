@@ -52,7 +52,7 @@ export function Footer() {
               <XIcon className="h-4 w-4" />
             </a>
             <a
-              href="https://discord.gg/8wsKy8Wu"
+              href="https://discord.gg/pxHV4rNWck"
               target="_blank"
               rel="noopener noreferrer"
               className="rounded-lg border p-2 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"

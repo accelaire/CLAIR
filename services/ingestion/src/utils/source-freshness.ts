@@ -165,8 +165,15 @@ export const SOURCES: Record<string, SourceConfig> = {
   'senat:videos': {
     source: 'senat',
     dataType: 'videos',
-    // Page des vidéos de séances publiques (mise à jour quotidienne)
+    // Cette étape couvre DEUX catalogues : les séances publiques et les travaux
+    // de commission. La sonde ci-dessous ne regarde que le premier — un jour
+    // sans séance mais avec auditions ne l'aurait pas fait bouger, et les
+    // vidéos de commission auraient été sautées. Le moteur de recherche qui
+    // sert les commissions n'expose ni ETag ni Last-Modified, donc rien à
+    // interroger : on resynchronise systématiquement. Le coût est de l'ordre de
+    // la minute, pour 384 vidéos de commission et 512 de séance sur un an.
     url: 'https://videos.senat.fr/chaine.seance-publique',
+    alwaysSync: true,
   },
   'assemblee_nationale:videos': {
     source: 'assemblee_nationale',
@@ -178,11 +185,23 @@ export const SOURCES: Record<string, SourceConfig> = {
   // ==========================================================================
   // DILA (Débats AN - echanges.dila.gouv.fr)
   // ==========================================================================
+  // Conservée pour la commande manuelle `sync --interventions` : la source ne
+  // publie plus rien depuis janvier 2026 (13 archives pour l'année, contre 219
+  // séances au portail AN), et le cron lit désormais syceron ci-dessous.
   'dila:interventions': {
     source: 'dila',
     dataType: 'interventions',
     // Index de l'année courante (fallback vers année précédente géré dans checkSourceFreshness)
     url: `https://echanges.dila.gouv.fr/OPENDATA/Debats/AN/${new Date().getFullYear()}/`,
+  },
+
+  // Comptes rendus de séance du portail AN (syceron), qui remplacent DILA :
+  // même matière, mais segmentée — article, amendement, texte et orateur y
+  // sont déclarés, ce que le compte rendu DILA ne portait pas.
+  'assemblee_nationale:interventions': {
+    source: 'assemblee_nationale',
+    dataType: 'interventions',
+    url: `https://data.assemblee-nationale.fr/static/openData/repository/${LEGISLATURE}/vp/syceronbrut/syseron.xml.zip`,
   },
 
   // ==========================================================================

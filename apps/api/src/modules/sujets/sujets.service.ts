@@ -344,7 +344,7 @@ export class SujetsService {
    * Scrutins d'un sujet avec pagination (via les dossiers)
    */
   async getScrutins(slug: string, query: SujetScrutinsQuery) {
-    const { page, limit, chambre } = query;
+    const { page, limit, chambre, nature } = query;
     const skip = (page - 1) * limit;
 
     const sujet = await this.prisma.sujet.findUnique({
@@ -357,6 +357,7 @@ export class SujetsService {
     const where = {
       dossier: { sujetId: sujet.id },
       ...(chambre && { chambre }),
+      ...(nature && { natureVote: nature }),
     };
 
     const [scrutins, total] = await Promise.all([
@@ -373,6 +374,7 @@ export class SujetsService {
           date: true,
           titre: true,
           typeVote: true,
+          natureVote: true,
           sort: true,
           nombrePour: true,
           nombreContre: true,

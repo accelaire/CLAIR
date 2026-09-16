@@ -5,6 +5,7 @@
 
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
+import { INTERVENTIONS_DE_FOND } from '../../utils/interventions';
 
 // Cache TTL: 12 hours (analytics data doesn't change frequently)
 const CACHE_TTL_12H = 43200;
@@ -89,7 +90,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         }),
         fastify.prisma.groupePolitique.count({ where: { actif: true } }),
         fastify.prisma.intervention.count({
-          where: dateFrom ? { date: { gte: dateFrom } } : undefined,
+          where: { ...INTERVENTIONS_DE_FOND, ...(dateFrom && { date: { gte: dateFrom } }) },
         }),
         fastify.prisma.amendement.count({
           where: dateFrom ? { dateDepot: { gte: dateFrom } } : undefined,

@@ -135,11 +135,34 @@ function extractAmendementNumbers(scrint: string): string[] {
   return [...new Set(numbers)]; // Dédupliquer
 }
 
+const TIMESTAMP_PG_RE = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/;
+
 /**
- * Parse une date depuis le format PostgreSQL timestamp
+ * Parse une date depuis le format PostgreSQL timestamp (dump COPY du champ
+ * `scrdat`, ex. "2026-06-10 00:00:00").
+ *
+ * `new Date(ts)` sur cette chaîne sans "T" ni fuseau est interprétée par le
+ * moteur JS dans le fuseau LOCAL du process d'ingestion, pas en UTC — même
+ * bug que `dateDeSeanceSenat()` côté interventions, mais niché ici plutôt que
+ * dans `scrutins-client.ts` : c'est ce champ, et non le scraping HTML "legacy"
+ * (mort, jamais appelé depuis `getScrutins()`), qui alimente `scrutins.date`
+ * en production. Minuit à Paris devenait 23h00 UTC la veille en hiver, 22h00
+ * en été : les 4 775 scrutins du Sénat en base étaient TOUS décalés d'un
+ * jour, jamais à minuit (vérifié en lecture avant ce correctif — voir la
+ * migration `20260908150000_senat_dates_de_seance_et_liens_scrutins`).
+ *
+ * On construit donc la date en UTC explicitement plutôt que de laisser
+ * `Date` deviner un fuseau. Le repli sur `new Date(ts)` ne sert que pour un
+ * format qu'on n'a jamais observé dans le dump.
  */
 function parseTimestamp(ts: string | null | undefined): Date | null {
   if (!ts || ts === '\\N') return null;
+  const m = ts.match(TIMESTAMP_PG_RE);
+  if (m) {
+    const [, yyyy, mm, dd, hh, mi, ss] = m;
+    const d = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd), Number(hh), Number(mi), Number(ss)));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
   const d = new Date(ts);
   return isNaN(d.getTime()) ? null : d;
 }

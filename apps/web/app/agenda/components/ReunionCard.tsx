@@ -64,20 +64,9 @@ function isHappeningNow(reunion: AgendaReunion, now: number): boolean {
   return now >= start && now <= end;
 }
 
-function getCompteRenduUrl(ref: string): string | null {
-  if (ref.startsWith('CRSA')) {
-    return `https://www.assemblee-nationale.fr/dyn/17/comptes-rendus/seance/${ref}`;
-  }
-  if (ref.startsWith('CRSS')) {
-    const date = ref.slice(-8); // e.g. '20241016'
-    const yyyy = date.slice(0, 4);
-    const mm = date.slice(4, 6);
-    return `https://www.senat.fr/seances/s${yyyy}${mm}/s${date}/s${date}001.html`;
-  }
-  return null;
-}
 
 import { deriveChambre } from '@/lib/chambre';
+import { urlDuCompteRendu } from '@/lib/compte-rendu-url';
 
 export function ReunionCard({
   reunion,
@@ -227,7 +216,11 @@ export function ReunionCard({
                   En direct
                 </a>
               )}
-              {reunion.urlVideo && (
+              {/* Pendant la réunion, « En direct » dit déjà tout : la pastille
+                  « Vidéo » ferait doublon, et elle mènerait à un enregistrement
+                  que la séance n'a pas fini d'écrire. On la garde pour l'avant
+                  et l'après — c'est là qu'elle apprend quelque chose. */}
+              {reunion.urlVideo && !(happeningNow && liveUrl) && (
                 <a
                   href={reunion.urlVideo}
                   target='_blank'
@@ -240,7 +233,7 @@ export function ReunionCard({
               )}
               {(() => {
                 const isPast = new Date(reunion.dateDebut) < new Date();
-                const crUrl = isPast && reunion.compteRenduRef ? getCompteRenduUrl(reunion.compteRenduRef) : null;
+                const crUrl = isPast && reunion.compteRenduRef ? urlDuCompteRendu(reunion.compteRenduRef) : null;
                 if (!crUrl) return null;
                 return (
                   <a

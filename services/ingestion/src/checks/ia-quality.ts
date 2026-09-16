@@ -80,7 +80,11 @@ export interface IAQualityReport {
  * exprimées) qu'il faut auditer à la main.
  */
 export const IA_QUALITY_THRESHOLDS = {
-  maxInversions: 280,
+  // 280 → 70 le 2026-09-04 : le seuil couvrait le bruit du détecteur, pas des
+  // résumés fautifs. Bornage du contexte aux charnières, aux fins de phrase et
+  // neutralisation des négations : 300 signalements → 62, dont plus aucun
+  // n'est une inversion démontrable (cf. commentaire de checkInversions).
+  maxInversions: 70,
   maxAbstentionDescribedAsVote: 90,
   maxGroupNotInData: 20,
 };
@@ -256,9 +260,77 @@ export interface GroupeVote {
   matcher: GroupMatcher;
 }
 
-/** Fenêtre de contexte autour de la mention d'un groupe. */
+/**
+ * Charnières adversatives : elles séparent deux propositions qui parlent de
+ * groupes DIFFÉRENTS, avec des polarités opposées.
+ *
+ * « LR et UC ont voté en faveur du texte, TANDIS QUE le groupe SOC et le groupe
+ * CRC s'y sont opposés » : une fenêtre brute centrée sur SOC ramasse le « voté
+ * en faveur » de la proposition précédente et fait conclure à une inversion qui
+ * n'existe pas. C'était la quasi-totalité des 101 signalements de haute
+ * confiance relevés le 2026-09-04.
+ */
+//
+// Les bornes sont écrites en lookaround sur les classes Unicode, et non avec
+// `\b` : ce dernier ne connaît que les caractères ASCII, si bien que `\bà`
+// précédé d'une espace ne matche jamais — « À l'inverse » en tête de phrase
+// passait au travers. Un test le vérifie.
+const CHARNIERES = /(?<![\p{L}\p{N}])(?:[àa]\s+l['’]inverse|[àa]\s+l['’]oppos[ée]|en\s+revanche|au\s+contraire|inversement|tandis\s+qu[e']|alors\s+qu[e']|contrairement\s+[àa]|de\s+(?:son|leur)\s+c[ôo]t[ée]|pour\s+(?:sa|leur)\s+part|quant\s+[àa]|mais)(?![\p{L}\p{N}])/giu;
+
+/**
+ * Fenêtre de contexte autour de la mention d'un groupe, bornée à la proposition
+ * qui parle de LUI.
+ *
+ * Resserrer la fenêtre coûte de la sensibilité : une inversion dont le verbe est
+ * séparé de la mention par une charnière n'est plus vue. C'est le prix de la
+ * précision, et le bon arbitrage ici — un signalement faux use la confiance dans
+ * le garde-fou jusqu'à ce qu'on cesse de le lire.
+ */
 function contextAround(text: string, idx: number): string {
-  return text.slice(Math.max(0, idx - 120), Math.min(text.length, idx + 150)).replace(/\n/g, ' ');
+  const debut = Math.max(0, idx - 120);
+  const fin = Math.min(text.length, idx + 150);
+
+  let gauche = bornerAGauche(text, debut, idx, CHARNIERES);
+  let droite = bornerADroite(text, idx, fin, CHARNIERES);
+
+  // Une fin de phrase sépare aussi sûrement que « à l'inverse » : « Le groupe
+  // UMP s'est montré très opposé au texte. Le groupe SOC et le groupe CRC
+  // ont… » faisait décrire SOC comme opposé. On ne coupe que sur une
+  // ponctuation forte suivie d'une espace et d'une majuscule, pour ne pas
+  // trébucher sur « M. Dupont » ou « art. 3 ».
+  const FIN_DE_PHRASE = /[.;!?]\s+(?=[A-ZÀÂÉÈÊÎÔÙÜÇ])/g;
+  gauche = bornerAGauche(text, gauche, idx, FIN_DE_PHRASE);
+  droite = bornerADroite(text, idx, droite, FIN_DE_PHRASE);
+
+  return text.slice(gauche, Math.max(gauche, droite)).replace(/\n/g, ' ').trim();
+}
+
+/** Dernière occurrence de `motif` entre `depuis` et `idx`, bord droit compris. */
+function bornerAGauche(text: string, depuis: number, idx: number, motif: RegExp): number {
+  let borne = depuis;
+  motif.lastIndex = depuis;
+  for (let m = motif.exec(text); m && m.index < idx; m = motif.exec(text)) {
+    borne = m.index + m[0].length;
+  }
+  return borne;
+}
+
+/** Première occurrence de `motif` entre `idx` et `jusqu`. */
+function bornerADroite(text: string, idx: number, jusqu: number, motif: RegExp): number {
+  motif.lastIndex = idx;
+  const m = motif.exec(text);
+  return m && m.index < jusqu ? m.index : jusqu;
+}
+
+/**
+ * Neutralise les propositions négatives avant la recherche de polarité.
+ *
+ * « Aucun groupe n'a voté contre » disait le contraire de ce que la regex y
+ * lisait : les quatre groupes de `articles-loi-egalim`, tous unanimement pour,
+ * étaient signalés comme opposés.
+ */
+function sansNegations(contexte: string): string {
+  return contexte.replace(/\baucun[e]?\b[^.;!?]*/giu, ' ');
 }
 
 /**
@@ -274,8 +346,24 @@ function findGroup(text: string, v: GroupeVote, strict = false): number {
 // =============================================================================
 // Check 1 — inversions pour/contre (garde-fou historique, bruité)
 // =============================================================================
+//
+// Ce qu'il reste de bruit après le bornage du contexte tient à l'agrégat, pas au
+// texte : `votes` additionne les deux chambres, les législatures successives et
+// toutes les lectures d'un même sujet, sous un sigle unique. « SOC » couvre
+// ainsi le groupe socialiste de l'Assemblée ET celui du Sénat — sur
+// `election-des-representants-au-parlement-europeen`, 3P/20C à l'Assemblée en
+// février 2018 et 68P/4C au Sénat en avril additionnés en un seul « FAV »,
+// opposé à une phrase qui décrivait correctement la lecture de l'Assemblée.
+//
+// S'y ajoutent les résumés qui parlent d'un vote sur article ou d'une motion,
+// quand l'agrégat ne compte que les votes sur l'ensemble.
+//
+// Tant que la comparaison reste globale, ce détecteur signale des écarts de
+// périmètre autant que des erreurs. Le lire comme une alarme absolue conduit à
+// « corriger » des résumés justes.
+// =============================================================================
 
-function checkInversions(text: string, votes: GroupeVote[]) {
+export function checkInversions(text: string, votes: GroupeVote[]) {
   const issues: {
     groupe: string; orientation: string | null;
     describedAs: 'FAVORABLE' | 'OPPOSED';
@@ -295,8 +383,9 @@ function checkInversions(text: string, votes: GroupeVote[]) {
     if (idx < 0) continue;
 
     const context = contextAround(text, idx);
-    const isFav = FAV_PATTERN.test(context);
-    const isOpp = OPP_PATTERN.test(context);
+    const polarite = sansNegations(context);
+    const isFav = FAV_PATTERN.test(polarite);
+    const isOpp = OPP_PATTERN.test(polarite);
 
     if ((tendency === 'FAV' || tendency === 'PFAV') && isOpp && !isFav) {
       issues.push({ groupe: v.groupe, orientation: v.orientation, describedAs: 'OPPOSED', pour: v.pour, contre: v.contre, tendency, context });

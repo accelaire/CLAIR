@@ -7,6 +7,7 @@ import { ParlementairesService } from './parlementaires.service';
 import { createMockPrismaClient, createMockRedisClient } from '../../test/mocks';
 import type { PrismaClient } from '@prisma/client';
 import type { Redis } from 'ioredis';
+import { INTERVENTIONS_DE_FOND } from '../../utils/interventions';
 import {
   mockParlementaireWithRelations,
   mockParlementaireList,
@@ -176,7 +177,7 @@ describe('ParlementairesService', () => {
       // Le garde-fou du correctif : sans le `where`, Prisma agrège la TOTALITÉ de
       // votes / interventions / amendements à chaque appel (cf. countRelationsForPage).
       const pageIds = mockParlementaireList.map((p) => p.id);
-      for (const model of [mockPrisma.vote, mockPrisma.intervention, mockPrisma.amendement]) {
+      for (const model of [mockPrisma.vote, mockPrisma.amendement]) {
         expect(model.groupBy).toHaveBeenCalledWith(
           expect.objectContaining({
             by: ['parlementaireId'],
@@ -184,6 +185,16 @@ describe('ParlementairesService', () => {
           })
         );
       }
+
+      // Les interventions portent en plus le filtre des interventions de fond :
+      // la mécanique de séance (syceron) et le chahut ne doivent jamais compter
+      // dans le total affiché.
+      expect(mockPrisma.intervention.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          by: ['parlementaireId'],
+          where: { parlementaireId: { in: pageIds }, ...INTERVENTIONS_DE_FOND },
+        })
+      );
     });
 
     it('devrait mettre en cache le résultat', async () => {

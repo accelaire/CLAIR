@@ -1,0 +1,42 @@
+# =============================================================================
+# Service planifié « ingestion intraday »
+# =============================================================================
+#
+# Le lot complet ne tourne qu'une fois par nuit. Une audition qui s'achève à
+# 11 h voit sa vidéo mise en ligne dans l'heure, et nous l'ignorions jusqu'au
+# lendemain matin : dix-huit heures de retard sur une information déjà publique.
+#
+# Ce service ne rattrape que ce qui bouge à l'échelle de l'heure — agenda du
+# Sénat sur deux jours, vidéos du Sénat et de l'Assemblée. Ni dossiers, ni
+# amendements, ni scrutins, ni statistiques, ni comptes rendus : ces derniers
+# sont publiés avec plusieurs jours de retard côté Assemblée et par page
+# hebdomadaire côté Sénat.
+#
+# Mesuré : 15 secondes par passage. La première version en coûtait 9 min 11,
+# parce qu'elle réécrivait les 7 360 réunions de l'archive d'agenda de
+# l'Assemblée à chaque fois.
+#
+# ⚠ CE FICHIER N'EST PAS LU PAR RAILWAY — il documente, il ne décide pas.
+#
+# Le « Config as Code » est déprécié (les fichiers existants cessent d'être lus
+# le 01/12/2026, et un service qui n'en a jamais utilisé ne peut plus s'y
+# inscrire depuis le 28/08/2026). Le service « Ingestion intraday » est donc
+# configuré à la main dans le dashboard, à l'identique du service nocturne.
+#
+# Les valeurs ci-dessous sont RECOPIÉES du dashboard, vérifiées le 16/09/2026
+# par l'API Railway. Les modifier ici ne change rien en production — c'est le
+# piège dans lequel `railway.toml`, à côté, était tombé.
+# =============================================================================
+
+[build]
+# Indispensable : seul ce Dockerfile installe `poppler-utils`, donc `pdftotext`.
+dockerfilePath = "/services/ingestion/Dockerfile"
+
+[deploy]
+# Toutes les deux heures de 8 h à 22 h à Paris (l'heure de Railway est UTC).
+# Huit passages par jour à 15 secondes : deux minutes de calcul quotidien.
+cronSchedule = "0 6-20/2 * * *"
+startCommand = "node services/ingestion/dist/cli.js sync-intraday"
+# ON_FAILURE, à l'identique du service nocturne. L'écriture étant idempotente,
+# un rejeu ne peut pas faire de dégât.
+restartPolicyType = "ON_FAILURE"

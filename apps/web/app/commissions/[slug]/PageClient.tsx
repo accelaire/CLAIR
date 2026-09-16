@@ -24,6 +24,7 @@ import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
 import { FilterBar } from '@/components/FilterBar';
 import { ScrutinsByDossier } from '@/components/scrutins/ScrutinsByDossier';
+import { urlDuCompteRendu } from '@/lib/compte-rendu-url';
 
 export interface CommissionDetail {
   id: string;
@@ -176,18 +177,6 @@ function QualiteBadge({ qualite }: { qualite: string | null }) {
   );
 }
 
-function buildCompteRenduUrl(ref: string): string | null {
-  if (ref.startsWith('CRCA') || ref.startsWith('CRCO')) {
-    return `https://www.assemblee-nationale.fr/dyn/17/comptes-rendus/CRC/${ref}`;
-  }
-  if (ref.startsWith('CRSA')) {
-    return `https://www.assemblee-nationale.fr/dyn/17/comptes-rendus/seance/${ref}`;
-  }
-  if (ref.startsWith('CRSS') || ref.startsWith('CRSC') || ref.startsWith('CRSI')) {
-    return `https://www.senat.fr/compte-rendu-commissions/${ref}.html`;
-  }
-  return null;
-}
 
 /**
  * Ordre du jour d'une réunion.
@@ -254,7 +243,7 @@ function OrdreDuJour({ resume, complet }: { resume: string | null; complet: stri
 
 function ReunionItem({ reunion }: { reunion: Reunion }) {
   const isPast = new Date(reunion.dateDebut) < new Date();
-  const crUrl = isPast && reunion.compteRenduRef ? buildCompteRenduUrl(reunion.compteRenduRef) : null;
+  const crUrl = isPast && reunion.compteRenduRef ? urlDuCompteRendu(reunion.compteRenduRef) : null;
   const hasScrutins = reunion.scrutins && reunion.scrutins.length > 0;
 
   return (
