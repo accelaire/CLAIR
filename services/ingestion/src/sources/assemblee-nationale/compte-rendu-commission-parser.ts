@@ -364,7 +364,7 @@ export function decomposerEnTete(enTete: string): {
 
   // Un titre placé avant le nom tient lieu de qualité : « le président Coquerel »
   // donne la qualité « président » et le nom « Coquerel ».
-  const titreDevant = /^l[ae']\s?([\wÀ-ɏ’'\- ]+?)\s+((?:[A-ZÀ-Þ][\wÀ-ɏ’'\-]*)(?:\s+.*)?)$/u.exec(reste);
+  const titreDevant = /^l[ae']\s?([\wÀ-ɏ’' -]+?)\s+((?:[A-ZÀ-Þ][\wÀ-ɏ’'-]*)(?:\s+.*)?)$/u.exec(reste);
   let nom: string | null = reste.trim() || null;
   if (titreDevant) {
     qualite = qualite ?? titreDevant[1]!.trim();

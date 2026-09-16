@@ -96,7 +96,7 @@ export function cleDeNom(nom: string): string {
   return nom
     .normalize('NFD')
     .replace(/[̀-ͯ]/gu, '')
-    .replace(/[’'\-]/gu, ' ')
+    .replace(/[’'-]/gu, ' ')
     .replace(/[^\p{L}\p{N} ]/gu, '')
     .replace(/\s+/gu, ' ')
     .trim()
