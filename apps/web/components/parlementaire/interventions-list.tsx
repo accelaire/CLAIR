@@ -10,7 +10,7 @@ import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { ExpandableText } from '@/components/ui/expandable-text';
 import { scrutinHref } from '@/lib/scrutin-url';
-import { grouperParSujet } from '@/lib/debats';
+import { grouperParSujet, libelleDeSeance } from '@/lib/debats';
 
 interface SeanceGroup {
   seanceId: string;
@@ -204,13 +204,7 @@ export function InterventionsList({
                   <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform flex-shrink-0 ${!expandedSeances.has(seance.seanceId) ? '-rotate-90' : ''}`} />
                   <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                   <h3 className="text-sm font-semibold truncate">
-                    Séance du{' '}
-                    {new Date(seance.date).toLocaleDateString('fr-FR', {
-                      weekday: 'long',
-                      day: 'numeric',
-                      month: 'long',
-                      year: 'numeric',
-                    })}
+                    Séance du {libelleDeSeance(seance.date)}
                   </h3>
                 </button>
                 <span className="text-xs text-muted-foreground whitespace-nowrap">

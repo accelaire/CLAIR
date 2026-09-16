@@ -155,6 +155,54 @@ function libelleTexte(i: InterventionSituee): string | null {
   return i.texteNumero ? `Texte n° ${i.texteNumero}` : null;
 }
 
+// =============================================================================
+// Nommer une séance
+// =============================================================================
+
+/**
+ * « vendredi 26 juin 2026, 9 heures ».
+ *
+ * POURQUOI L'HEURE. L'Assemblée siège deux ou trois fois le même jour — 587
+ * jours sur 734 dans la 17e législature. Sans elle, la fiche d'un député
+ * empilait trois blocs « Séance du vendredi 26 juin 2026 » rigoureusement
+ * identiques, sans moyen de savoir laquelle on lisait.
+ *
+ * POURQUOI PAS « 1re SÉANCE ». C'est ainsi que l'Assemblée les numérote, mais
+ * le rang se compte sur les séances DU JOUR, pas sur celles où ce député a
+ * parlé. Le déduire de nos propres lignes donnerait « 2e séance » à qui n'a
+ * parlé qu'à la deuxième et à la troisième. L'heure, elle, est un fait porté
+ * par la donnée.
+ *
+ * POURQUOI UTC. La colonne est un horodatage sans fuseau : elle contient
+ * l'heure de Paris, et l'API la sérialise avec un `Z`. La rendre dans le fuseau
+ * du lecteur afficherait 11 heures pour une séance de 9 heures.
+ *
+ * Le Sénat ne nous donne pas l'heure — ses 91 017 prises sont toutes à minuit —
+ * et on n'annonce donc rien plutôt que « 0 heure ».
+ */
+export function libelleDeSeance(date: string | Date): string {
+  const quand = typeof date === 'string' ? new Date(date) : date;
+  if (Number.isNaN(quand.getTime())) return '';
+
+  const jour = quand.toLocaleDateString('fr-FR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+
+  const heures = quand.getUTCHours();
+  const minutes = quand.getUTCMinutes();
+  if (heures === 0 && minutes === 0) return jour;
+
+  const heure =
+    minutes === 0
+      ? `${heures} heure${heures > 1 ? 's' : ''}`
+      : `${heures} h ${String(minutes).padStart(2, '0')}`;
+  return `${jour}, ${heure}`;
+}
+
 /**
  * `"15"` → `"Article 15"`, `"unique"` → `"Article unique"`.
  *
