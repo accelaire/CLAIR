@@ -1,8 +1,33 @@
+# =============================================================================
+# Service planifié « Ingestion scheduler » — le lot complet de la nuit
+# =============================================================================
+#
+# ⚠ CE FICHIER N'EST PAS LU PAR RAILWAY.
+#
+# Le service a `railwayConfigFile` à null : il tient toute sa configuration du
+# dashboard. Le fichier avait silencieusement divergé du réel — il annonçait
+# `0 5,15 * * *` et `restartPolicyType = "NEVER"` quand le service tourne à
+# `0 3 * * *` avec `ON_FAILURE`. Quiconque s'y fiait pour savoir quand le cron
+# passe se trompait de deux heures et d'un passage par jour.
+#
+# Les valeurs ci-dessous sont donc RECOPIÉES du dashboard le 16/09/2026, pour
+# documentation. Les modifier ici ne change rien en production.
+#
+# Pour rendre ce fichier autoritaire, il faudrait renseigner « Config as code »
+# sur le service avec le chemin `services/ingestion/railway.toml`. C'est ce que
+# fait le service intraday, à côté : voir `railway.intraday.toml`.
+# =============================================================================
+
 [build]
-builder = "DOCKERFILE"
-dockerfilePath = "services/ingestion/Dockerfile"
+# Le dashboard porte `builder = RAILPACK` avec un `dockerfilePath` explicite :
+# c'est bien le Dockerfile qui construit l'image. Il compte, car lui seul
+# installe `poppler-utils`, sans quoi `pdftotext` manque et les comptes rendus
+# de commission de l'Assemblée — publiés uniquement en PDF — ne se lisent pas.
+dockerfilePath = "/services/ingestion/Dockerfile"
 
 [deploy]
-# Cron job: tous les jours à 5h et 15h (UTC) = 7h et 17h Paris
-cronSchedule = "0 5,15 * * *"
-restartPolicyType = "NEVER"
+# 3 h UTC = 5 h à Paris, une fois par jour.
+cronSchedule = "0 3 * * *"
+restartPolicyType = "ON_FAILURE"
+# La commande vient du CMD du Dockerfile :
+#   node --max-old-space-size=6144 services/ingestion/dist/cli.js smart-sync --all
