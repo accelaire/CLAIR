@@ -2289,7 +2289,129 @@ export interface ResultatVideosCommissionSenat {
  * autour du jour : le 24 juin, l'API du Sénat annonce une dizaine de réunions
  * de commission et nous n'en avons aucune venant de l'agenda.
  */
-export async function syncSenatVideosCommission(): Promise<ResultatVideosCommissionSenat> {
+/** Pages de catalogue vidéo lues par le passage intraday. Neuf fiches par page. */
+const PAGES_VIDEO_INTRADAY = 3;
+
+export interface ResultatIntraday {
+  agendaSenatReunions: number;
+  agendaSenatSeances: number;
+  videosSenatSeance: number;
+  videosSenatCommission: number;
+  videosAn: number;
+}
+
+/**
+ * Le rafraîchissement de la journée en cours.
+ *
+ * POURQUOI IL EXISTE. Le lot complet ne tourne qu'à 5 h. Une audition qui
+ * s'achève à 11 h voit sa vidéo mise en ligne dans l'heure, et nous l'ignorons
+ * jusqu'au lendemain matin : dix-huit heures de retard sur une information déjà
+ * publique. Ce passage-ci ne rattrape que ce qui bouge à l'échelle de l'heure.
+ *
+ * CE QU'IL NE FAIT PAS. Ni dossiers, ni amendements, ni scrutins, ni statistiques
+ * — rien de ce qui pèse la nuit. Et pas les comptes rendus : l'Assemblée publie
+ * ses PDF de commission avec plusieurs jours de retard et le Sénat par page
+ * hebdomadaire, ils n'ont donc rien à faire dans un passage horaire.
+ *
+ * NI L'AGENDA DE L'ASSEMBLÉE. Il ne se moissonne qu'en bloc, par l'archive
+ * `Agenda.json.zip` : 7 360 réunions réécrites à chaque passage, mesurées à
+ * l'essentiel des neuf minutes qu'a coûté la première version de cette
+ * fonction. L'Assemblée publie son agenda plusieurs jours à l'avance, le
+ * rafraîchir toutes les deux heures n'apporte rien. Ce qui bouge chez elle dans
+ * la journée, c'est la vidéo, et elle est ici.
+ *
+ * LA FENÊTRE EST VOLONTAIREMENT COURTE. Deux jours en arrière, deux en avant :
+ * de quoi voir une réunion ajoutée le matin même, un ordre du jour amendé après
+ * coup ou une séance qui déborde sur la nuit, sans refaire les 76 jours du
+ * passage nocturne. C'est ce qui garde le coût à quelques requêtes.
+ */
+export async function syncIntraday(): Promise<ResultatIntraday> {
+  logger.info('Rafraîchissement intraday : début');
+
+  const agenda = await syncSenatAgenda({ daysBack: 2, daysAhead: 2 });
+
+  // Les catalogues vidéo sont classés du plus récent au plus ancien : trois
+  // pages couvrent largement la journée. Les balayer en entier coûtait près de
+  // deux minutes pour retrouver, à chaque passage, des vidéos déjà en base.
+  const videosSenat = await syncSenatVideos({ maxPages: PAGES_VIDEO_INTRADAY });
+  const videosSenatCommission = await syncSenatVideosCommission({
+    maxPages: PAGES_VIDEO_INTRADAY,
+  });
+
+  // L'Assemblée sert ses vidéos en deux requêtes, sans pagination : rien à borner.
+  const videosAn = await syncAnVideos();
+
+  const resultat: ResultatIntraday = {
+    agendaSenatReunions: agenda.reunionsCreated + agenda.reunionsUpdated,
+    agendaSenatSeances: agenda.created + agenda.updated,
+    videosSenatSeance: videosSenat.linked,
+    videosSenatCommission: videosSenatCommission.liees,
+    videosAn: videosAn.linked,
+  };
+
+  logger.info(resultat, 'Rafraîchissement intraday terminé');
+  return resultat;
+}
+
+/**
+ * Les noms propres d'un libellé, pour départager deux réunions d'un même jour.
+ *
+ * Une commission auditionne souvent deux personnes dans la journée. La fiche
+ * vidéo les nomme — « Violences dans le périscolaire : Jean-Michel Blanquer » —
+ * et l'ordre du jour aussi — « Audition de M. Jean-Michel Blanquer, ancien
+ * ministre… ». On ne retient que les mots capitalisés d'au moins quatre
+ * lettres : ce sont les patronymes et les institutions, pas les « Audition »,
+ * « Commission » ou « Mme » qui reviennent partout.
+ */
+export function nomsPropres(libelle: string): Set<string> {
+  const mots = libelle.match(/\p{Lu}[\p{L}’'-]{3,}/gu) ?? [];
+  const communs = new Set([
+    'audition', 'auditions', 'commission', 'examen', 'rapport', 'table', 'ronde',
+    'projet', 'proposition', 'mission', 'information', 'table_ronde', 'monsieur',
+    'madame', 'president', 'presidente', 'ministre', 'ancien', 'ancienne',
+  ]);
+  const retenus = new Set<string>();
+  for (const mot of mots) {
+    const cle = mot.normalize('NFD').replace(/[\u0300-\u036f]/gu, '').toLowerCase();
+    if (!communs.has(cle)) retenus.add(cle);
+  }
+  return retenus;
+}
+
+/**
+ * La réunion dont l'ordre du jour partage le plus de noms propres avec le titre
+ * de la vidéo, à condition qu'elle soit seule à ce score.
+ *
+ * C'est un DÉPARTAGE, pas une recherche : il ne s'applique qu'entre deux ou
+ * trois réunions déjà retenues par leur commission et leur date. Sans nom
+ * propre commun, ou à égalité, on ne tranche pas.
+ */
+export function departagerParOrdreDuJour(
+  titreVideo: string,
+  candidats: Array<{ id: string; odjResume: string | null }>
+): string | null {
+  const attendus = nomsPropres(titreVideo);
+  if (attendus.size === 0) return null;
+
+  let meilleur: string | null = null;
+  let meilleurScore = 0;
+  let exAequo = false;
+
+  for (const candidat of candidats) {
+    const presents = nomsPropres(candidat.odjResume ?? '');
+    let score = 0;
+    for (const mot of attendus) if (presents.has(mot)) score += 1;
+
+    if (score > meilleurScore) { meilleurScore = score; meilleur = candidat.id; exAequo = false; }
+    else if (score === meilleurScore && score > 0) exAequo = true;
+  }
+
+  return meilleurScore > 0 && !exAequo ? meilleur : null;
+}
+
+export async function syncSenatVideosCommission(
+  options: { maxPages?: number } = {}
+): Promise<ResultatVideosCommissionSenat> {
   const { SenatVideosClient } = await import('../sources/senat/videos-client.js');
 
   const resultat: ResultatVideosCommissionSenat = {
@@ -2312,16 +2434,16 @@ export async function syncSenatVideosCommission(): Promise<ResultatVideosCommiss
 
   const reunions = await prisma.reunion.findMany({
     where: { type: 'commission', commission: { chambre: 'senat' } },
-    select: { id: true, dateDebut: true, commissionId: true },
+    select: { id: true, dateDebut: true, commissionId: true, odjResume: true },
   });
-  const parCle = new Map<string, string[]>();
+  const parCle = new Map<string, Array<{ id: string; odjResume: string | null }>>();
   for (const r of reunions) {
     if (!r.commissionId) continue;
     const cle = `${r.dateDebut.toISOString().slice(0, 10)}|${r.commissionId}`;
-    parCle.set(cle, [...(parCle.get(cle) ?? []), r.id]);
+    parCle.set(cle, [...(parCle.get(cle) ?? []), { id: r.id, odjResume: r.odjResume }]);
   }
 
-  const fiches = await new SenatVideosClient().getCommissionVideos();
+  const fiches = await new SenatVideosClient().getCommissionVideos(options.maxPages);
   resultat.videos = fiches.length;
 
   const dejaServies = new Set<string>();
@@ -2335,11 +2457,14 @@ export async function syncSenatVideosCommission(): Promise<ResultatVideosCommiss
 
     if (ids.length === 0) { resultat.commissionInconnue += 1; continue; }
 
-    const cibles = [...new Set(ids.flatMap((id) => parCle.get(`${fiche.isoDate}|${id}`) ?? []))];
+    const cibles = ids.flatMap((id) => parCle.get(`${fiche.isoDate}|${id}`) ?? []);
     if (cibles.length === 0) { resultat.sansReunion += 1; continue; }
-    if (cibles.length > 1) { resultat.reunionAmbigue += 1; continue; }
 
-    const reunionId = cibles[0]!;
+    // Une commission auditionne souvent deux personnes dans la journée :
+    // l'ordre du jour les nomme, la fiche vidéo aussi.
+    const reunionId =
+      cibles.length === 1 ? cibles[0]!.id : departagerParOrdreDuJour(fiche.titre, cibles);
+    if (!reunionId) { resultat.reunionAmbigue += 1; continue; }
     // Plusieurs auditions d'une même commission le même jour donnent plusieurs
     // vidéos pour une seule réunion : on garde la première et on le compte,
     // plutôt que de laisser la dernière écraser les autres en silence.
@@ -2357,13 +2482,13 @@ export async function syncSenatVideosCommission(): Promise<ResultatVideosCommiss
   return resultat;
 }
 
-export async function syncSenatVideos(): Promise<{ linked: number }> {
+export async function syncSenatVideos(options: { maxPages?: number } = {}): Promise<{ linked: number }> {
   const { SenatVideosClient } = await import('../sources/senat/videos-client.js');
 
   logger.info('Starting Sénat videos sync...');
 
   const client = new SenatVideosClient();
-  const videos = await client.getAllVideos();
+  const videos = await client.getAllVideos(options.maxPages);
 
   if (videos.length === 0) {
     logger.warn('No Sénat videos fetched — aborting');

@@ -165,8 +165,15 @@ export const SOURCES: Record<string, SourceConfig> = {
   'senat:videos': {
     source: 'senat',
     dataType: 'videos',
-    // Page des vidéos de séances publiques (mise à jour quotidienne)
+    // Cette étape couvre DEUX catalogues : les séances publiques et les travaux
+    // de commission. La sonde ci-dessous ne regarde que le premier — un jour
+    // sans séance mais avec auditions ne l'aurait pas fait bouger, et les
+    // vidéos de commission auraient été sautées. Le moteur de recherche qui
+    // sert les commissions n'expose ni ETag ni Last-Modified, donc rien à
+    // interroger : on resynchronise systématiquement. Le coût est de l'ordre de
+    // la minute, pour 384 vidéos de commission et 512 de séance sur un an.
     url: 'https://videos.senat.fr/chaine.seance-publique',
+    alwaysSync: true,
   },
   'assemblee_nationale:videos': {
     source: 'assemblee_nationale',

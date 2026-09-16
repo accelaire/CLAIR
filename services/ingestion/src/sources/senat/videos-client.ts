@@ -224,13 +224,13 @@ export class SenatVideosClient {
    * Fetch all séance publique videos, up to MAX_PAGES pages.
    * Returns a deduplicated list ordered by date desc.
    */
-  async getAllVideos(): Promise<SenatVideo[]> {
+  async getAllVideos(maxPages: number = MAX_PAGES): Promise<SenatVideo[]> {
     const all: SenatVideo[] = [];
     const seenUrls = new Set<string>();
 
     logger.info('Starting Sénat videos scraping...');
 
-    for (let page = 1; page <= MAX_PAGES; page++) {
+    for (let page = 1; page <= maxPages; page++) {
       try {
         const videos = await this.fetchPage(page);
 
@@ -250,7 +250,7 @@ export class SenatVideosClient {
 
         logger.debug({ page, newCount, total: all.length }, 'Page scraped');
 
-        if (page < MAX_PAGES) await sleep(REQUEST_DELAY_MS);
+        if (page < maxPages) await sleep(REQUEST_DELAY_MS);
       } catch (err) {
         logger.warn({ page, error: errorMessage(err) }, 'Failed to fetch video page — stopping');
         break;
@@ -266,15 +266,19 @@ export class SenatVideosClient {
    *
    * Le catalogue en compte 384 sur un an, contre 512 pour la séance publique.
    * On s'arrête à la première page vide plutôt que d'aller au bout de
-   * MAX_PAGES : le moteur rend neuf fiches par page.
+   * `maxPages` : le moteur rend neuf fiches par page.
+   *
+   * `maxPages` borne la moisson pour le passage intraday : le moteur classe du
+   * plus récent au plus ancien, donc les premières pages suffisent à rattraper
+   * la journée. Le passage nocturne, lui, balaie tout.
    */
-  async getCommissionVideos(): Promise<SenatVideoCommission[]> {
+  async getCommissionVideos(maxPages: number = MAX_PAGES): Promise<SenatVideoCommission[]> {
     const toutes: SenatVideoCommission[] = [];
     const vues = new Set<string>();
 
     logger.info('Vidéos de commission du Sénat : début de la moisson');
 
-    for (let page = 1; page <= MAX_PAGES; page++) {
+    for (let page = 1; page <= maxPages; page++) {
       try {
         const params = new URLSearchParams({
           search: 'true',
@@ -291,7 +295,7 @@ export class SenatVideosClient {
           toutes.push(f);
         }
 
-        if (page < MAX_PAGES) await sleep(REQUEST_DELAY_MS);
+        if (page < maxPages) await sleep(REQUEST_DELAY_MS);
       } catch (err) {
         logger.warn({ page, error: errorMessage(err) }, 'Page de vidéos de commission illisible — arrêt');
         break;

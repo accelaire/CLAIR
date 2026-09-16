@@ -1395,6 +1395,48 @@ program
   });
 
 program
+  .command('sync-intraday')
+  .description("Rafraîchir ce qui bouge dans la journée : agendas du jour et vidéos (AN + Sénat)")
+  .action(async () => {
+    try {
+      const { syncIntraday } = await import('./workers/sync.js');
+      const r = await syncIntraday();
+      console.log(`\nAgenda Sénat — réunions  : ${r.agendaSenatReunions}`);
+      console.log(`Agenda Sénat — séances   : ${r.agendaSenatSeances}`);
+      console.log(`Vidéos Sénat (séance)    : ${r.videosSenatSeance}`);
+      console.log(`Vidéos Sénat (commission): ${r.videosSenatCommission}`);
+      console.log(`Vidéos AN                : ${r.videosAn}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-intraday failed');
+      process.exit(1);
+    }
+  });
+
+program
+  .command('sync-agenda-senat')
+  .description("Moissonner l'agenda du Sénat sur une fenêtre de jours (API senat.fr, 1 requête par jour)")
+  .option('--jours-avant <n>', 'Jours à remonter dans le passé', (v: string) => parseInt(v, 10), 45)
+  .option('--jours-apres <n>', 'Jours à couvrir dans le futur', (v: string) => parseInt(v, 10), 30)
+  .action(async (options: { joursAvant: number; joursApres: number }) => {
+    try {
+      const { syncSenatAgenda } = await import('./workers/sync.js');
+      const r = await syncSenatAgenda({
+        daysBack: options.joursAvant,
+        daysAhead: options.joursApres,
+      });
+      console.log(`\nSéances créées   : ${r.created}`);
+      console.log(`Séances mises à jour : ${r.updated}`);
+      console.log(`Réunions créées  : ${r.reunionsCreated}`);
+      console.log(`Réunions mises à jour : ${r.reunionsUpdated}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-agenda-senat failed');
+      process.exit(1);
+    }
+  });
+
+program
   .command('sync-videos-commission-senat')
   .description('Rattacher les vidéos de réunion de commission du Sénat (videos.senat.fr)')
   .action(async () => {
