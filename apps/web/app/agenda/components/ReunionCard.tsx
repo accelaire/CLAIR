@@ -216,7 +216,11 @@ export function ReunionCard({
                   En direct
                 </a>
               )}
-              {reunion.urlVideo && (
+              {/* Pendant la réunion, « En direct » dit déjà tout : la pastille
+                  « Vidéo » ferait doublon, et elle mènerait à un enregistrement
+                  que la séance n'a pas fini d'écrire. On la garde pour l'avant
+                  et l'après — c'est là qu'elle apprend quelque chose. */}
+              {reunion.urlVideo && !(happeningNow && liveUrl) && (
                 <a
                   href={reunion.urlVideo}
                   target='_blank'
