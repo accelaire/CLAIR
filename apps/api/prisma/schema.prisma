@@ -568,6 +568,12 @@ model CandidatureListe {
   /// contesté. Ne jamais l'afficher comme l'appartenance du candidat.
   nuance String?
 
+  /// Libellé de la nuance tel que le ministère l'écrit (« Liste d'union à
+  /// gauche »). Publié par la source depuis 2026 ; null pour les éditions
+  /// antérieures, où l'affichage retombe sur notre propre grille. Le stocker,
+  /// c'est citer la source plutôt que la paraphraser.
+  nuanceLibelle String? @map("nuance_libelle")
+
   /// Famille politique dérivée de la nuance, pour regrouper à l'affichage.
   famille String?
 

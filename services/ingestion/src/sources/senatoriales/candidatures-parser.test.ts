@@ -188,6 +188,7 @@ describe('sourceUidListe', () => {
     libelleDepartement: 'Indre-et-Loire',
     modeScrutin: 'proportionnel' as const,
     nuance: 'LDVC',
+    nuanceLibelle: 'Liste divers centre',
     candidats: [],
   };
 

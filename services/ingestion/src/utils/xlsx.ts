@@ -40,19 +40,18 @@ import { parseStringPromise } from 'xml2js';
 
 import { logger } from './logger.js';
 import { errorMessage } from './errors.js';
+import type { Feuille } from './tableur.js';
 
 const execAsync = promisify(exec);
 
-export interface FeuilleXlsx {
-  /** Nom de l'onglet, tel qu'affiché dans Excel. */
-  nom: string;
-  /**
-   * Matrice dense. Les cellules absentes du XML valent `''`, jamais
-   * `undefined` : un appelant qui lit `ligne[7]` ne doit pas avoir à savoir si
-   * la colonne était vide ou absente.
-   */
-  lignes: string[][];
-}
+/**
+ * Une feuille de classeur.
+ *
+ * Alias du type commun à tous les formats tabulaires : le ministère a publié
+ * les candidatures en XLSX jusqu'en 2023 et en CSV en 2026, et le parser des
+ * candidatures travaille sur la même matrice dans les deux cas.
+ */
+export type FeuilleXlsx = Feuille;
 
 /**
  * Ouvre un classeur et rend ses feuilles dans l'ordre du classeur.

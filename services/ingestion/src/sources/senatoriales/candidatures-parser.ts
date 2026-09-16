@@ -41,6 +41,11 @@ export interface CandidatBrut {
   professionLabel: string | null;
   /** `true` seulement si le fichier le dit ; l'édition 2020 n'a pas la colonne. */
   sortantDeclare: boolean;
+  /**
+   * Qualité déclarée au dépôt : `SEN`, `DEP`, `MAI`… Apparue en 2026, absente
+   * avant. Sert à recouper le rattachement, jamais à le fonder.
+   */
+  codePersonnalite: string | null;
 }
 
 export interface ListeBrute {
@@ -52,6 +57,8 @@ export interface ListeBrute {
   /** Libellé de la liste ; `null` au scrutin majoritaire. */
   libelle: string | null;
   nuance: string | null;
+  /** Libellé de la nuance tel que le ministère l'écrit ; absent avant 2026. */
+  nuanceLibelle: string | null;
   candidats: CandidatBrut[];
 }
 
@@ -67,28 +74,52 @@ export interface ListeBrute {
  * ils ne se devinent pas.
  */
 const ALIAS = {
-  codeDepartement: ['code departement', 'code du departement'],
-  libelleDepartement: ['libelle departement', 'libelle du departement'],
+  codeDepartement: ['code circonscription', 'code departement', 'code du departement'],
+  libelleDepartement: [
+    'libelle circonscription',
+    'circonscription',
+    'libelle departement',
+    'libelle du departement',
+  ],
   numeroDepot: ['n° depot', 'n° depot liste', 'n° de depot du candidat'],
   libelleListe: ['libelle de la liste'],
+  // L'ordre compte : en 2026 « Nuance de liste » porte le LIBELLÉ et « Code
+  // nuance de liste » le code, alors qu'en 2020 « Nuance de liste » portait le
+  // code. Chercher le code en premier donne la bonne colonne dans les deux cas.
   nuanceListe: ['code nuance de liste', 'nuance de liste'],
   nuanceCandidat: ['code nuance', 'nuance candidat'],
-  ordre: ['ordre dans la liste', "n° d'ordre dans la liste"],
-  sexe: ['sexe candidat', 'sexe du candidat'],
-  nom: ['nom candidat', 'nom du candidat'],
-  prenom: ['prenom candidat', 'prenom du candidat'],
+  // Libellé lisible de la nuance, fourni par le ministère à partir de 2026.
+  // Le préférer à notre propre table, c'est citer la source plutôt que la
+  // paraphraser.
+  nuanceLibelle: ['nuance de liste', 'nuance du candidat'],
+  ordre: ['ordre dans la liste', "n° d'ordre dans la liste", 'ordre'],
+  sexe: ['sexe candidat', 'sexe du candidat', 'sexe'],
+  nom: ['nom sur le bulletin de vote', 'nom candidat', 'nom du candidat'],
+  prenom: ['prenom sur le bulletin de vote', 'prenom candidat', 'prenom du candidat'],
   dateNaissance: [
     'date de naissance candidat',
     'date naissance candidat',
     'date de naissance du candidat',
+    'date de naissance',
   ],
   professionCode: ['code de la profession'],
   professionLabel: ['profession candidat', 'profession'],
   sortant: ['sortant'],
-  sexeSuppleant: ['sexe suppleant', 'sexe supp.'],
-  nomSuppleant: ['nom suppleant', 'nom supp.'],
-  prenomSuppleant: ['prenom suppleant', 'prenom supp.'],
-  dateNaissanceSuppleant: ['date de naissance suppleant', 'date naiss. supp.'],
+  /**
+   * Qualité déclarée du candidat au moment du dépôt : `SEN` sénateur, `DEP`
+   * député, `MAI` maire… Apparue en 2026. Sert de recoupement indépendant du
+   * rattachement, jamais de source pour celui-ci.
+   */
+  codePersonnalite: ['code personnalite'],
+  // En 2026 le suppléant est appelé « remplaçant ».
+  sexeSuppleant: ['sexe remplacant', 'sexe suppleant', 'sexe supp.'],
+  nomSuppleant: ['nom remplacant', 'nom suppleant', 'nom supp.'],
+  prenomSuppleant: ['prenom remplacant', 'prenom suppleant', 'prenom supp.'],
+  dateNaissanceSuppleant: [
+    'date de naissance remplacant',
+    'date de naissance suppleant',
+    'date naiss. supp.',
+  ],
 } as const;
 
 type Champ = keyof typeof ALIAS;
@@ -132,14 +163,24 @@ export function lireDateNaissance(valeur: string): Date | null {
   const brut = valeur.trim();
   if (brut === '') return null;
 
+  // Midi UTC dans les deux branches, pour la même raison que
+  // `serieExcelVersDate` : minuit ferait reculer la date d'un jour à
+  // l'affichage en heure locale française l'hiver.
+
+  // ISO, format des fichiers 2026.
+  const iso = brut.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso?.[1] && iso[2] && iso[3]) {
+    return new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]), 12));
+  }
+
+  // Jour/mois/année, format du fichier 2023.
   const jourMoisAnnee = brut.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (jourMoisAnnee) {
+  if (jourMoisAnnee?.[1] && jourMoisAnnee[2] && jourMoisAnnee[3]) {
     const [, jour, mois, annee] = jourMoisAnnee;
-    // Midi UTC, pour la même raison que `serieExcelVersDate` : minuit ferait
-    // reculer la date d'un jour à l'affichage en heure locale.
     return new Date(Date.UTC(Number(annee), Number(mois) - 1, Number(jour), 12));
   }
 
+  // Série Excel, format du fichier 2020.
   if (/^\d+(\.\d+)?$/.test(brut)) return serieExcelVersDate(Number(brut));
 
   logger.warn({ valeur: brut }, 'date de naissance illisible, candidature sans date');
@@ -273,6 +314,7 @@ function analyserProportionnel(lignes: Array<Record<string, string>>): ListeBrut
         numeroDepot,
         libelle: libelle === '' ? null : libelle,
         nuance: lire(ligne, 'nuanceListe') || null,
+        nuanceLibelle: lire(ligne, 'nuanceLibelle') || null,
         candidats: [],
       };
       parListe.set(clef, liste);
@@ -292,6 +334,7 @@ function analyserProportionnel(lignes: Array<Record<string, string>>): ListeBrut
       professionCode: profession.code,
       professionLabel: profession.libelle,
       sortantDeclare: lireSortant(ligne),
+      codePersonnalite: lire(ligne, 'codePersonnalite') || null,
     });
   }
 
@@ -317,6 +360,7 @@ function analyserMajoritaire(lignes: Array<Record<string, string>>): ListeBrute[
         professionCode: profession.code,
         professionLabel: profession.libelle,
         sortantDeclare: lireSortant(ligne),
+        codePersonnalite: lire(ligne, 'codePersonnalite') || null,
       },
     ];
 
@@ -334,6 +378,7 @@ function analyserMajoritaire(lignes: Array<Record<string, string>>): ListeBrute[
         professionCode: null,
         professionLabel: null,
         sortantDeclare: false,
+        codePersonnalite: null,
       });
     }
 
@@ -344,6 +389,7 @@ function analyserMajoritaire(lignes: Array<Record<string, string>>): ListeBrute[
       numeroDepot: nombreOuNull(lire(ligne, 'numeroDepot')),
       libelle: null,
       nuance: lire(ligne, 'nuanceCandidat') || null,
+      nuanceLibelle: lire(ligne, 'nuanceLibelle') || null,
       candidats,
     };
   });

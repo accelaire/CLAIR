@@ -1557,33 +1557,49 @@ program
   .description(
     'Candidatures à une élection, depuis le classeur XLSX du ministère de l\'Intérieur (data.gouv)'
   )
-  .requiredOption('--fichier <chemin|url>', 'Classeur XLSX : chemin local ou URL')
+  .requiredOption(
+    '--fichier <chemin|url...>',
+    'Fichiers du ministère : chemins locaux ou URLs, CSV ou XLSX. Répétable — ' +
+      'l\'édition 2026 publie un CSV par mode de scrutin.'
+  )
   .option('--scrutin <slug>', 'Identifiant du scrutin', 'senatoriales-2026')
   .option('--simulation', 'Analyser et rapporter sans rien écrire en base')
-  .action(async (options: { fichier: string; scrutin: string; simulation?: boolean }) => {
+  .action(async (options: { fichier: string[]; scrutin: string; simulation?: boolean }) => {
     const { PrismaClient } = await import('@prisma/client');
     const prisma = new PrismaClient();
-    let fichierTemporaire: string | null = null;
+    const fichiersTemporaires: string[] = [];
 
     try {
-      let fichier = options.fichier;
+      const os = await import('os');
+      const path = await import('path');
 
-      // Le fichier vit sur data.gouv : accepter l'URL évite un aller-retour par
-      // curl le jour de la publication, où chaque étape manuelle est un risque.
-      if (/^https?:\/\//.test(fichier)) {
-        const os = await import('os');
-        const path = await import('path');
+      // Les fichiers vivent sur data.gouv : accepter l'URL évite un
+      // aller-retour par curl le jour de la publication, où chaque étape
+      // manuelle est un risque.
+      const fichiers: string[] = [];
+      for (const entree of options.fichier) {
+        if (!/^https?:\/\//.test(entree)) {
+          fichiers.push(entree);
+          continue;
+        }
+
         const { downloadWithRetry } = await import('./utils/download.js');
-
-        fichierTemporaire = path.join(os.tmpdir(), `candidatures-${Date.now()}.xlsx`);
-        console.log(`\n⬇️  Téléchargement de ${fichier}`);
-        await downloadWithRetry(fichier, fichierTemporaire);
-        fichier = fichierTemporaire;
+        // L'extension décide du lecteur : la conserver depuis l'URL est ce qui
+        // fait qu'un CSV n'est pas lu comme une archive.
+        const extension = path.extname(new URL(entree).pathname) || '.xlsx';
+        const destination = path.join(
+          os.tmpdir(),
+          `candidatures-${Date.now()}-${fichiers.length}${extension}`
+        );
+        console.log(`\n⬇️  Téléchargement de ${entree}`);
+        await downloadWithRetry(entree, destination);
+        fichiersTemporaires.push(destination);
+        fichiers.push(destination);
       }
 
       const { ingererCandidatures } = await import('./sources/senatoriales/candidatures-client.js');
       const rapport = await ingererCandidatures(prisma, {
-        fichier,
+        fichiers,
         scrutin: options.scrutin,
         simulation: options.simulation ?? false,
       });
@@ -1623,9 +1639,11 @@ program
       process.exit(1);
     } finally {
       await prisma.$disconnect();
-      if (fichierTemporaire) {
+      if (fichiersTemporaires.length > 0) {
         const fs = await import('fs');
-        await fs.promises.rm(fichierTemporaire, { force: true });
+        await Promise.all(
+          fichiersTemporaires.map(fichier => fs.promises.rm(fichier, { force: true }))
+        );
       }
     }
   });

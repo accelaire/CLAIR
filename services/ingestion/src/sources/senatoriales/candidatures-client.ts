@@ -21,11 +21,14 @@
 //   — un candidat non rattaché reste sans personne, et c'est le cas normal.
 // =============================================================================
 
+import path from 'path';
 import { randomUUID } from 'crypto';
 import type { PrismaClient } from '@prisma/client';
 
 import { logger } from '../../utils/logger.js';
 import { lireClasseurXlsx } from '../../utils/xlsx.js';
+import { lireCsvEnFeuille } from '../../utils/tableur.js';
+import type { Feuille } from '../../utils/tableur.js';
 import { analyserClasseurCandidatures, sourceUidListe } from './candidatures-parser.js';
 import type { ListeBrute } from './candidatures-parser.js';
 import { nuanceInconnue, resoudreNuance } from './nuances.js';
@@ -33,8 +36,13 @@ import { rattacherLot } from './rattachement.js';
 import type { StatistiquesRattachement } from './rattachement.js';
 
 export interface OptionsIngestionCandidatures {
-  /** Chemin local du classeur XLSX du ministère. */
-  fichier: string;
+  /**
+   * Fichiers locaux publiés par le ministère.
+   *
+   * Un seul classeur XLSX à deux feuilles jusqu'en 2023, deux CSV distincts en
+   * 2026 — un par mode de scrutin. D'où un tableau, et non un chemin.
+   */
+  fichiers: string[];
   /** Identifiant du scrutin, ex. `senatoriales-2026`. */
   scrutin: string;
   /** Écrit le rapport sans rien modifier en base. */
@@ -81,6 +89,7 @@ interface ListeAEcrire {
   numeroDepot: number | null;
   libelle: string | null;
   nuance: string | null;
+  nuanceLibelle: string | null;
   famille: string | null;
   sourceUid: string;
 }
@@ -95,11 +104,12 @@ export async function ingererCandidatures(
   prisma: PrismaClient,
   options: OptionsIngestionCandidatures
 ): Promise<RapportIngestionCandidatures> {
-  const { fichier, scrutin, simulation = false } = options;
+  const { fichiers, scrutin, simulation = false } = options;
 
-  const listesBrutes = analyserClasseurCandidatures(await lireClasseurXlsx(fichier));
+  const feuilles = (await Promise.all(fichiers.map(chargerFeuilles))).flat();
+  const listesBrutes = analyserClasseurCandidatures(feuilles);
   if (listesBrutes.length === 0) {
-    throw new Error(`Aucune candidature lue dans ${fichier} : format inattendu`);
+    throw new Error(`Aucune candidature lue dans ${fichiers.join(', ')} : format inattendu`);
   }
 
   const circonscriptions = await chargerCirconscriptions(prisma);
@@ -143,6 +153,20 @@ export async function ingererCandidatures(
     sortantsDeclaresRattaches: sortants.rattaches,
     simulation,
   };
+}
+
+/**
+ * Lit un fichier en feuilles, quel que soit son format.
+ *
+ * Le CSV prend le nom du fichier comme nom de feuille : celui du ministère
+ * porte le mode de scrutin (« …Scrutin Proportionnel.csv »), qui est
+ * exactement ce dont la reconnaissance a besoin.
+ */
+async function chargerFeuilles(fichier: string): Promise<Feuille[]> {
+  if (path.extname(fichier).toLowerCase() === '.csv') {
+    return [await lireCsvEnFeuille(fichier, path.basename(fichier, '.csv'))];
+  }
+  return lireClasseurXlsx(fichier);
 }
 
 /** Code de département → identifiant de la circonscription sénatoriale. */
@@ -196,6 +220,9 @@ function preparerEcritures(
       numeroDepot: brute.numeroDepot,
       libelle: brute.libelle,
       nuance: nuance?.code ?? null,
+      // Le libellé du ministère quand il le publie, le nôtre sinon : citer la
+      // source vaut mieux que la paraphraser.
+      nuanceLibelle: brute.nuanceLibelle ?? nuance?.libelle ?? null,
       famille: nuance?.famille ?? null,
       sourceUid: sourceUidListe(scrutin, brute),
     });

@@ -58,12 +58,20 @@ export interface Nuance {
  * Toutes les nuances rencontrées dans les fichiers de candidatures des
  * sénatoriales 2020 et 2023, sans exception (42 codes).
  *
- * `famille: null` n'est pas un oubli, c'est un refus de trancher :
- * — `DLF` / `LDLF` (Debout la France), dont le placement entre droite et
- *   extrême droite est précisément l'objet du débat public sur le nuançage ;
- * — `DIV` / `LDIV`, la catégorie fourre-tout de la grille elle-même, qui ne
- *   désigne aucun bloc (elle reçoit la famille `divers`, ce qui est son sens,
- *   et non une position).
+ * `famille: null` n'est pas un oubli, c'est un refus de trancher. Trois codes
+ * sont dans ce cas, tous pour la même raison : leur placement entre la droite
+ * et l'extrême droite est précisément ce que le débat public sur le nuançage
+ * conteste, et le ministère lui-même ne les rattache à aucun bloc.
+ *
+ *   `DLF` / `LDLF`   Debout la France
+ *   `DSV`            Droite souverainiste
+ *   `UDR` / `LUDR`   Union des droites pour la République
+ *
+ * `DIV` / `LDIV` reçoit la famille `divers`, qui est son sens propre dans la
+ * grille et non une position politique.
+ *
+ * À l'inverse, `LUXD` (« Liste d'union à l'extrême-droite ») est classée : le
+ * libellé du ministère la place lui-même, il n'y a rien à arbitrer.
  */
 const NUANCES: Record<string, { libelle: string; famille: FamillePolitique | null }> = {
   // --- Candidats au scrutin majoritaire -------------------------------------
@@ -80,10 +88,15 @@ const NUANCES: Record<string, { libelle: string; famille: FamillePolitique | nul
   REN: { libelle: 'Renaissance', famille: 'centre' },
   UDI: { libelle: 'Union des démocrates et indépendants', famille: 'centre' },
   HOR: { libelle: 'Horizons', famille: 'centre' },
+  GEN: { libelle: 'Génération.s', famille: 'gauche' },
+  PR: { libelle: 'Parti Radical', famille: 'centre' },
   LR: { libelle: 'Les Républicains', famille: 'droite' },
   DVD: { libelle: 'Divers droite', famille: 'droite' },
   DLF: { libelle: 'Debout la France', famille: null },
-  RN: { libelle: 'Rassemblement national', famille: 'extreme_droite' },
+  DSV: { libelle: 'Droite souverainiste', famille: null },
+  UDR: { libelle: 'Union des droites pour la République', famille: null },
+  REC: { libelle: 'Reconquête !', famille: 'extreme_droite' },
+  RN: { libelle: 'Rassemblement National', famille: 'extreme_droite' },
   EXD: { libelle: 'Extrême droite', famille: 'extreme_droite' },
   REG: { libelle: 'Régionaliste', famille: 'regionaliste' },
   DIV: { libelle: 'Divers', famille: 'divers' },
@@ -104,12 +117,15 @@ const NUANCES: Record<string, { libelle: string; famille: FamillePolitique | nul
   LUC: { libelle: 'Liste union du centre', famille: 'centre' },
   LUDI: { libelle: 'Liste Union des démocrates et indépendants', famille: 'centre' },
   LHOR: { libelle: 'Liste Horizons', famille: 'centre' },
-  LLR: { libelle: 'Liste Les Républicains', famille: 'droite' },
-  LUD: { libelle: 'Liste union de la droite', famille: 'droite' },
+  LLR: { libelle: 'Liste des Républicains', famille: 'droite' },
+  LUD: { libelle: "Liste d'union à droite", famille: 'droite' },
   LDVD: { libelle: 'Liste divers droite', famille: 'droite' },
   LDLF: { libelle: 'Liste Debout la France', famille: null },
-  LRN: { libelle: 'Liste Rassemblement national', famille: 'extreme_droite' },
-  LEXD: { libelle: 'Liste extrême droite', famille: 'extreme_droite' },
+  LUDR: { libelle: "Liste d'union des droites pour la République", famille: null },
+  LREC: { libelle: 'Liste Reconquête !', famille: 'extreme_droite' },
+  LRN: { libelle: 'Liste du Rassemblement National', famille: 'extreme_droite' },
+  LEXD: { libelle: "Liste d'extrême droite", famille: 'extreme_droite' },
+  LUXD: { libelle: "Liste d'union à l'extrême-droite", famille: 'extreme_droite' },
   LREG: { libelle: 'Liste régionaliste', famille: 'regionaliste' },
   LDIV: { libelle: 'Liste divers', famille: 'divers' },
 };
