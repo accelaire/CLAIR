@@ -1395,6 +1395,26 @@ program
   });
 
 program
+  .command('sync-videos-an')
+  .description("Rattacher les vidéos de l'Assemblée (videos.assemblee-nationale.fr)")
+  .option(
+    '--jours-avant <n>',
+    "Parcourir les N derniers jours un à un, pour rattraper l'historique. Sans cette option, seule la fenêtre récente (~120 vidéos) est lue.",
+    (v: string) => parseInt(v, 10)
+  )
+  .action(async (options: { joursAvant?: number }) => {
+    try {
+      const { syncAnVideos } = await import('./workers/sync.js');
+      const r = await syncAnVideos({ joursAvant: options.joursAvant });
+      console.log(`\nRéunions et séances liées : ${r.linked}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-videos-an failed');
+      process.exit(1);
+    }
+  });
+
+program
   .command('sync-intraday')
   .description("Rafraîchir ce qui bouge dans la journée : agendas du jour et vidéos (AN + Sénat)")
   .action(async () => {

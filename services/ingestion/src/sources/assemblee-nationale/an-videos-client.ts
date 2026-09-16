@@ -96,9 +96,27 @@ function parseSeanceOrder(title: string): number | null {
   return null;
 }
 
-async function fetchVideos(typeVideo: string): Promise<AnVideo[]> {
+/** `2026-02-04` → `04/02/2026`, seul format que l'endpoint accepte. */
+export function dateFrancaise(isoDate: string): string {
+  const [a, m, j] = isoDate.split('-');
+  return `${j}/${m}/${a}`;
+}
+
+/**
+ * Les vidéos d'un type, pour un jour donné ou pour la fenêtre récente.
+ *
+ * SANS `date`, l'endpoint rend environ 120 vidéos récentes et rien d'autre :
+ * c'est une fenêtre glissante, qui n'enrichit que vers l'avant. Tout ce qui
+ * précède la mise en service de la synchronisation restait donc invisible pour
+ * toujours — zéro vidéo de commission avant avril 2026 en base.
+ *
+ * AVEC `date` au format `JJ/MM/AAAA`, il rend la journée demandée, et son
+ * archive remonte au moins à mars 2023. C'est ce qui rend le rattrapage
+ * possible, une requête par jour.
+ */
+async function fetchVideos(typeVideo: string, date = ''): Promise<AnVideo[]> {
   const params = new URLSearchParams({
-    Date: '',
+    Date: date,
     Intervenant: '',
     Commission: '',
     Heure: '',
@@ -142,7 +160,15 @@ async function fetchVideos(typeVideo: string): Promise<AnVideo[]> {
     });
 }
 
+/** L'endpoint est un service public : on ne le martèle pas pendant un rattrapage. */
+const DELAI_ENTRE_JOURS_MS = 250;
+
+function pause(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 export class AnVideosClient {
+  /** La fenêtre récente : environ 120 vidéos, séances et commissions confondues. */
   async getAllVideos(): Promise<AnVideo[]> {
     logger.info('Starting AN videos fetch...');
 
@@ -154,6 +180,44 @@ export class AnVideosClient {
     const all = [...seances, ...commissions];
     logger.info({ seances: seances.length, commissions: commissions.length, total: all.length }, 'AN videos fetched');
     return all;
+  }
+
+  /**
+   * Les vidéos de chaque jour d'une liste de dates ISO.
+   *
+   * Une journée sans vidéo rend une liste vide sans lever : l'Assemblée ne
+   * siège pas tous les jours, et la dissolution de juin 2024 laisse des
+   * semaines entières sans commission.
+   */
+  async getVideosForDates(isoDates: string[]): Promise<AnVideo[]> {
+    const toutes: AnVideo[] = [];
+    const vues = new Set<string>();
+    let joursEnEchec = 0;
+
+    for (const [i, isoDate] of isoDates.entries()) {
+      const jour = dateFrancaise(isoDate);
+      try {
+        const [seances, commissions] = await Promise.all([
+          fetchVideos('Séance publique', jour),
+          fetchVideos('Commission', jour),
+        ]);
+        for (const v of [...seances, ...commissions]) {
+          if (vues.has(v.url)) continue;
+          vues.add(v.url);
+          toutes.push(v);
+        }
+      } catch (err) {
+        joursEnEchec += 1;
+        logger.warn({ isoDate, error: String(err) }, 'Journée de vidéos AN illisible');
+      }
+      if (i < isoDates.length - 1) await pause(DELAI_ENTRE_JOURS_MS);
+    }
+
+    logger.info(
+      { jours: isoDates.length, joursEnEchec, videos: toutes.length },
+      'Vidéos AN moissonnées par jour'
+    );
+    return toutes;
   }
 }
 

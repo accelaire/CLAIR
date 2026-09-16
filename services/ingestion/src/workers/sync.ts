@@ -2118,13 +2118,42 @@ function extractKeywords(text: string): string[] {
 // SYNC VIDÉOS AN (videos.assemblee-nationale.fr)
 // =============================================================================
 
-export async function syncAnVideos(): Promise<{ linked: number }> {
+/** Les dates ISO des N derniers jours, aujourd'hui compris, de la plus ancienne à la plus récente. */
+function joursEnArriere(n: number): string[] {
+  const dates: string[] = [];
+  const aujourdhui = new Date();
+  for (let i = n; i >= 0; i--) {
+    const d = new Date(aujourdhui);
+    d.setUTCDate(d.getUTCDate() - i);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+  return dates;
+}
+
+/**
+ * Rattache les vidéos de l'Assemblée aux séances et aux réunions de commission.
+ *
+ * SANS `joursAvant`, on interroge la fenêtre récente de l'endpoint — environ
+ * 120 vidéos. C'est ce que fait le passage nocturne, et c'est suffisant au
+ * quotidien.
+ *
+ * AVEC `joursAvant`, on parcourt les journées une à une. C'est le rattrapage :
+ * la fenêtre récente n'enrichit que vers l'avant, si bien qu'aucune vidéo de
+ * commission antérieure à avril 2026 n'était en base — la synchronisation n'a
+ * jamais vu ces journées et ne les aurait jamais vues. L'archive de l'endpoint
+ * remonte pourtant au moins à mars 2023.
+ */
+export async function syncAnVideos(
+  options: { joursAvant?: number } = {}
+): Promise<{ linked: number }> {
   const { AnVideosClient } = await import('../sources/assemblee-nationale/an-videos-client.js');
 
-  logger.info('Starting AN videos sync...');
+  logger.info({ joursAvant: options.joursAvant ?? null }, 'Starting AN videos sync...');
 
   const client = new AnVideosClient();
-  const videos = await client.getAllVideos();
+  const videos = options.joursAvant
+    ? await client.getVideosForDates(joursEnArriere(options.joursAvant))
+    : await client.getAllVideos();
 
   if (videos.length === 0) {
     logger.warn('No AN videos fetched — aborting');
