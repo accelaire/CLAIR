@@ -1,29 +1,6 @@
 import Link from 'next/link';
+import { couleurFamille, libelleFamille } from '@/lib/senatoriales/familles';
 import type { ListeCandidature } from '../PageClient';
-
-/**
- * Couleur de la famille politique.
- *
- * Les familles ne sont pas des groupes parlementaires : elles n'ont pas de
- * couleur officielle, et leur en emprunter une donnerait à croire à une
- * équivalence qui n'existe pas. Ces teintes ne servent qu'à distinguer les
- * blocs les uns des autres dans une liste.
- *
- * `null` — la famille que la grille refuse de trancher — reste volontairement
- * gris : ne pas savoir doit se voir.
- */
-const COULEUR_FAMILLE: Record<string, string> = {
-  gauche: '#d04a4a',
-  centre: '#e8a33d',
-  droite: '#3d6fb4',
-  extreme_droite: '#5b4a8a',
-  regionaliste: '#3f9e7c',
-  divers: '#8a8a8a',
-};
-
-function couleur(famille: string | null): string {
-  return (famille && COULEUR_FAMILLE[famille]) || '#9ca3af';
-}
 
 /**
  * Une unité de vote : une liste au scrutin proportionnel, un binôme
@@ -48,13 +25,27 @@ export function ListeCandidatureCard({ liste }: { liste: ListeCandidature }) {
       <div className="flex items-start gap-2.5">
         <span
           className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full"
-          style={{ backgroundColor: couleur(liste.famille) }}
+          style={{ backgroundColor: couleurFamille(liste.famille) }}
           aria-hidden
+          title={libelleFamille(liste.famille)}
         />
         <div className="min-w-0 flex-1">
           <h3 className="font-semibold leading-snug">{titre}</h3>
           {liste.nuanceLibelle && (
-            <p className="mt-0.5 text-sm text-muted-foreground">{liste.nuanceLibelle}</p>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {liste.nuanceLibelle}
+              {/*
+                La famille n'est rappelée que lorsqu'elle apporte quelque chose
+                au libellé : « Liste divers droite » se passe de « Droite ». En
+                revanche « Droite ou extrême droite » dit au lecteur ce que la
+                nuance seule ne dit pas.
+              */}
+              {liste.famille === 'droite_ou_extreme_droite' && (
+                <span className="ml-1.5 whitespace-nowrap rounded border px-1 py-0.5 text-xs">
+                  {libelleFamille(liste.famille)}
+                </span>
+              )}
+            </p>
           )}
         </div>
       </div>

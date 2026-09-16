@@ -123,11 +123,18 @@ export async function generateMetadata({
   const url = `${BASE_URL}/senatoriales-2026/${params.departement}`;
   const ou = locutionDepuisCode(circo.code, circo.nom);
   const titre = `Sénatoriales 2026 — ${circo.nom} : ${circo.nbSieges} ${pluriel(circo.nbSieges, 'siège')} à pourvoir`;
+  // Le nombre de candidats n'apparaît qu'une fois le fichier du ministère
+  // publié — soit une quinzaine de jours avant le scrutin. Avant, la
+  // description reste celle du bilan seul, sans promettre une liste qui
+  // n'existe pas encore.
+  const candidats =
+    circo.nbCandidats && circo.nbCandidats > 0
+      ? `Les ${circo.nbCandidats} candidats en lice, et le bilan de mandature`
+      : 'Présence, loyauté, interventions et amendements : le bilan de mandature';
   const description =
     `Le 27 septembre 2026, ${circo.nbSieges} ${pluriel(circo.nbSieges, 'siège')} de sénateur ` +
     `${accorde(circo.nbSieges, 'est renouvelé', 'sont renouvelés')} ${ou}, au scrutin ` +
-    `${modeDeScrutin(circo.nbSieges).court}. Présence, loyauté, interventions et amendements : ` +
-    `le bilan de mandature de chaque sénateur sortant.`;
+    `${modeDeScrutin(circo.nbSieges).court}. ${candidats} de chaque sénateur sortant.`;
 
   return {
     title: titre,

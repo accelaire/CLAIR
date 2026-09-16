@@ -62,6 +62,16 @@ export interface ApercuSenatoriales {
     departement: string;
     nom: string;
     nbSieges: number;
+    /**
+     * Unités de vote et candidats de la circonscription.
+     *
+     * `null` tant que les candidatures ne sont pas publiées. Ces deux nombres
+     * portent l'index des 64 circonscriptions côté web : sans eux, l'index ne
+     * serait qu'une liste de noms, et n'indiquerait pas où la compétition est
+     * la plus ouverte.
+     */
+    nbListes: number | null;
+    nbCandidats: number | null;
   }[];
   /**
    * `null` tant qu'aucune candidature n'est ingérée.
@@ -530,13 +540,37 @@ export class SenatorialesService {
     const sansGroupe = groupes.get(SANS_GROUPE.slug);
     if (sansGroupe) parGroupe.push(sansGroupe);
 
+    const candidatures = await this.chargerCandidats();
+
+    // Comptages par circonscription, faits une fois : l'index du web en a
+    // besoin pour les 64, et 64 requêtes séparées coûteraient bien plus que
+    // cette agrégation sur une liste déjà mémorisée.
+    const listesParCirco = new Map<string, number>();
+    const candidatsParCirco = new Map<string, number>();
+    for (const liste of candidatures) {
+      const code = liste.circonscription.departement;
+      listesParCirco.set(code, (listesParCirco.get(code) ?? 0) + 1);
+      candidatsParCirco.set(code, (candidatsParCirco.get(code) ?? 0) + liste.candidats.length);
+    }
+    const publiees = candidatures.length > 0;
+
     const circos = new Map<string, ApercuSenatoriales['circonscriptions'][number]>();
     for (const sortant of sortants) {
       const circo = sortant.circonscription;
       if (!circo) continue;
       const existant = circos.get(circo.departement);
       if (existant) existant.nbSieges += 1;
-      else circos.set(circo.departement, { ...circo, nbSieges: 1 });
+      else {
+        circos.set(circo.departement, {
+          ...circo,
+          nbSieges: 1,
+          // Zéro et « pas encore publié » ne disent pas la même chose : une
+          // circonscription sans aucun candidat serait une anomalie, pas un
+          // état d'attente.
+          nbListes: publiees ? (listesParCirco.get(circo.departement) ?? 0) : null,
+          nbCandidats: publiees ? (candidatsParCirco.get(circo.departement) ?? 0) : null,
+        });
+      }
     }
 
     const circonscriptions = Array.from(circos.values()).sort((a, b) =>
@@ -561,7 +595,7 @@ export class SenatorialesService {
         parGroupe,
       },
       circonscriptions,
-      candidatures: synthetiserCandidatures(await this.chargerCandidats(), sortants),
+      candidatures: synthetiserCandidatures(candidatures, sortants),
     };
 
     await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));

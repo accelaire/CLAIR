@@ -12,6 +12,7 @@ import { FilterBar } from '@/components/FilterBar';
 import { SortantCard } from './components/SortantCard';
 import { RepartitionGroupes } from './components/RepartitionGroupes';
 import { SelecteurLecture } from './components/SelecteurLecture';
+import { IndexCirconscriptions } from './components/IndexCirconscriptions';
 import { CadreGraphique } from './components/graphiques/CadreGraphique';
 
 /**
@@ -78,6 +79,9 @@ export interface ApercuSenatoriales {
     departement: string;
     nom: string;
     nbSieges: number;
+    /** `null` tant que les candidatures ne sont pas publiées. Optionnels : cf. `siegesSenat`. */
+    nbListes?: number | null;
+    nbCandidats?: number | null;
   }[];
   /**
    * Chiffres sur les candidatures, ou `null` avant leur publication.
@@ -669,8 +673,10 @@ function SenatorialesPageContent({
         <div>
           <h1 className="text-3xl font-bold">Sénatoriales du 27 septembre 2026</h1>
           <p className="mt-2 text-muted-foreground">
-            {scrutin.nbSieges} des {SIEGES_SENAT} sièges du Sénat sont renouvelés. Voici le
-            bilan de mandature des sortants.
+            {scrutin.nbSieges} des {SIEGES_SENAT} sièges du Sénat sont renouvelés.
+            {candidaturesPubliees
+              ? ' Les candidats, circonscription par circonscription, et le bilan de mandature des sortants.'
+              : ' Voici le bilan de mandature des sortants.'}
           </p>
           {countdownText && (
             <p className="mt-3 inline-flex items-center rounded-lg border bg-muted px-3 py-1 text-sm font-medium text-muted-foreground">
@@ -779,6 +785,11 @@ function SenatorialesPageContent({
           </p>
         </div>
       )}
+
+      {/* L'index vient avant les graphiques et la liste : c'est le chemin le
+          plus court vers « et chez moi ? », et il ne dépendait jusqu'ici que du
+          tri par département. */}
+      <IndexCirconscriptions circonscriptions={circonscriptions} />
 
       <div>
         <h2 className="mb-3 text-lg font-semibold">Répartition des sièges sortants par groupe</h2>

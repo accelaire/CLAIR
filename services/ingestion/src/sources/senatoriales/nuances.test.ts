@@ -3,13 +3,13 @@ import { describe, it, expect } from 'vitest';
 import { codesNuancesConnus, nuanceInconnue, resoudreNuance } from './nuances.js';
 
 /**
- * Les 42 codes relevés dans les fichiers de candidatures des sénatoriales 2020
- * et 2023, extraits des deux fichiers du ministère.
+ * Les codes relevés dans les fichiers de candidatures des sénatoriales 2020,
+ * 2023 et 2026, extraits des fichiers du ministère.
  *
- * Ce test est là pour le jour où la grille 2026 arrivera : si un code manque,
+ * Il vaut pour la prochaine édition : si un code manque,
  * il ne doit pas être deviné, il doit apparaître ici.
  */
-const CODES_OBSERVES_2020_2023 = [
+const CODES_OBSERVES = [
   // Nuances de liste (scrutin proportionnel)
   'LCOM', 'LDIV', 'LDLF', 'LDVC', 'LDVD', 'LDVG', 'LECO', 'LENS', 'LEXD', 'LFI',
   'LHOR', 'LLR', 'LMDM', 'LREG', 'LREM', 'LREN', 'LRN', 'LSOC', 'LUC', 'LUD',
@@ -17,12 +17,14 @@ const CODES_OBSERVES_2020_2023 = [
   // Nuances individuelles (scrutin majoritaire)
   'COM', 'DIV', 'DVC', 'DVD', 'DVG', 'ECO', 'FI', 'HOR', 'LR', 'MDM', 'RDG',
   'REG', 'REM', 'REN', 'RN', 'SOC', 'UDI', 'VEC',
+  // Apparues en 2026
+  'LREC', 'LUDR', 'LUXD', 'REC', 'UDR', 'DSV', 'GEN', 'PR',
 ];
 
 describe('grille des nuances', () => {
-  it('couvre tous les codes observés en 2020 et 2023', () => {
+  it('couvre tous les codes observés en 2020, 2023 et 2026', () => {
     const connus = new Set(codesNuancesConnus());
-    const manquants = CODES_OBSERVES_2020_2023.filter(code => !connus.has(code));
+    const manquants = CODES_OBSERVES.filter(code => !connus.has(code));
 
     expect(manquants).toEqual([]);
   });
@@ -63,12 +65,21 @@ describe('resoudreNuance', () => {
     expect(nuanceInconnue('LXYZ')).toBe(true);
   });
 
-  it('ne tranche pas les placements qui relèvent de l’arbitrage éditorial', () => {
-    // Debout la France : son placement entre droite et extrême droite est
-    // exactement ce que le débat public sur le nuançage conteste.
-    expect(resoudreNuance('LDLF')?.famille).toBeNull();
-    expect(resoudreNuance('LDLF')?.libelle).toBe('Liste Debout la France');
-    // Mais le code reste connu : ce n'est pas un trou de la grille.
-    expect(nuanceInconnue('LDLF')).toBe(false);
+  it('nomme l’hésitation plutôt que de trancher ou de laisser un blanc', () => {
+    // Debout la France, Droite souverainiste et l'Union des droites : leur
+    // placement entre droite et extrême droite est exactement ce que le débat
+    // public sur le nuançage conteste. Une famille qui le dit vaut mieux qu'un
+    // vide que le lecteur ne peut pas interpréter.
+    for (const code of ['LDLF', 'DLF', 'DSV', 'UDR', 'LUDR']) {
+      expect(resoudreNuance(code)?.famille).toBe('droite_ou_extreme_droite');
+      expect(nuanceInconnue(code)).toBe(false);
+    }
+  });
+
+  it('classe en revanche les nuances que le ministère place lui-même', () => {
+    // « Liste d'union à l'extrême-droite » : le libellé de la source tranche,
+    // il n'y a rien à arbitrer.
+    expect(resoudreNuance('LUXD')?.famille).toBe('extreme_droite');
+    expect(resoudreNuance('LREC')?.famille).toBe('extreme_droite');
   });
 });

@@ -42,13 +42,16 @@ export type SortantsQuery = z.infer<typeof sortantsQuerySchema>;
  * Découpage large, repris de celui que le ministère de l'Intérieur utilise
  * pour agréger ses propres résultats. À ne pas confondre avec la `position`
  * des groupes parlementaires : elles n'ont ni la même granularité, ni le même
- * objet. `sans-famille` est une valeur sentinelle, pour les nuances dont le
- * rattachement à un bloc relèverait d'un arbitrage éditorial.
+ * objet. `sans-famille` est une valeur sentinelle, qui ne cible plus que les
+ * codes de nuance absents de la grille — apparus à une édition ultérieure.
  */
 export const FAMILLES_CANDIDATS = [
   'gauche',
   'centre',
   'droite',
+  // Nomme l'hésitation plutôt que de trancher : pour ces nuances-là, le
+  // ministère ne désigne aucun bloc et les observateurs ne s'accordent pas.
+  'droite_ou_extreme_droite',
   'extreme_droite',
   'regionaliste',
   'divers',
