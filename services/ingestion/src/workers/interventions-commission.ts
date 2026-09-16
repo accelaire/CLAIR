@@ -103,72 +103,155 @@ export function cleDeNom(nom: string): string {
     .toLowerCase();
 }
 
-export interface IndexDOrateurs {
-  /** « thibault bazin » → id, sur le nom complet. */
-  parNomComplet: Map<string, string>;
+export interface FicheDOrateur {
+  id: string;
+  prenom: string | null;
+  nom: string | null;
   /**
-   * « bazin » → id, sur le seul patronyme, et seulement s'il est unique.
-   * Les homonymes en sont retirés : mieux vaut personne que le mauvais.
+   * Les fenêtres de mandat parlementaire de la personne.
+   *
+   * Sert à départager des homonymes par la date de la réunion, jamais à
+   * écarter quelqu'un — voir `resoudreOrateur`.
    */
-  parPatronyme: Map<string, string>;
+  mandats?: Array<{ debut: Date; fin: Date | null }>;
 }
 
-/** Construit l'index à partir des fiches de l'Assemblée. */
-export function indexerOrateurs(
-  fiches: Array<{ id: string; prenom: string | null; nom: string | null }>
-): IndexDOrateurs {
-  const parNomComplet = new Map<string, string>();
-  const patronymes = new Map<string, Set<string>>();
+/**
+ * Ce que la réunion apprend sur qui peut y parler.
+ *
+ * Trois cercles de plus en plus étroits, tous facultatifs : on n'en a pas
+ * toujours besoin, et une réunion sans commission connue doit rester lisible.
+ */
+export interface ContexteDeReunion {
+  /** La date de la réunion : qui siégeait ce jour-là. */
+  date?: Date;
+  /** Les fiches des membres de la commission qui se réunit. */
+  membres?: ReadonlySet<string>;
+  /** Les noms complets que le compte rendu déclare présents dans la salle. */
+  presents?: readonly string[];
+}
+
+export interface IndexDOrateurs {
+  /**
+   * « thibault bazin » → toutes les fiches qui portent ce nom complet.
+   *
+   * On garde la liste entière au lieu de jeter les homonymes : c'est le
+   * contexte de la réunion qui tranchera, et lui seul sait le faire.
+   */
+  parNomComplet: Map<string, FicheDOrateur[]>;
+  /** « bazin » → toutes les fiches qui portent ce patronyme. */
+  parPatronyme: Map<string, FicheDOrateur[]>;
+}
+
+/** Construit l'index à partir des fiches des deux chambres. */
+export function indexerOrateurs(fiches: FicheDOrateur[]): IndexDOrateurs {
+  const parNomComplet = new Map<string, FicheDOrateur[]>();
+  const parPatronyme = new Map<string, FicheDOrateur[]>();
+
+  const ajouter = (index: Map<string, FicheDOrateur[]>, cle: string, fiche: FicheDOrateur) => {
+    const vues = index.get(cle);
+    if (!vues) index.set(cle, [fiche]);
+    else if (!vues.some((f) => f.id === fiche.id)) vues.push(fiche);
+  };
 
   for (const f of fiches) {
     if (!f.nom) continue;
     const patronyme = cleDeNom(f.nom);
     if (patronyme.length === 0) continue;
 
-    if (f.prenom) {
-      const complet = cleDeNom(`${f.prenom} ${f.nom}`);
-      // Un nom complet en double (homonymie parfaite) ne résout rien non plus.
-      if (parNomComplet.has(complet) && parNomComplet.get(complet) !== f.id) {
-        parNomComplet.set(complet, '');
-      } else {
-        parNomComplet.set(complet, f.id);
-      }
-    }
-
-    const vus = patronymes.get(patronyme) ?? new Set<string>();
-    vus.add(f.id);
-    patronymes.set(patronyme, vus);
-  }
-
-  const parPatronyme = new Map<string, string>();
-  for (const [patronyme, ids] of patronymes) {
-    if (ids.size === 1) parPatronyme.set(patronyme, [...ids][0]!);
-  }
-  for (const [complet, id] of [...parNomComplet]) {
-    if (id === '') parNomComplet.delete(complet);
+    if (f.prenom) ajouter(parNomComplet, cleDeNom(`${f.prenom} ${f.nom}`), f);
+    ajouter(parPatronyme, patronyme, f);
   }
 
   return { parNomComplet, parPatronyme };
 }
 
+/** La personne siégeait-elle à cette date ? Sans mandat connu, on ne sait pas. */
+function enMandat(fiche: FicheDOrateur, date: Date): boolean {
+  return (fiche.mandats ?? []).some(
+    (m) => m.debut <= date && (m.fin === null || m.fin >= date)
+  );
+}
+
 /**
  * La fiche d'un orateur, ou `null`.
  *
- * On n'essaie jamais d'inclusion : soit la clé entière correspond, soit non.
+ * DEUX RÈGLES QUI NE BOUGENT PAS. On n'essaie jamais d'inclusion : soit la clé
+ * entière correspond, soit non — c'est la recherche en sous-chaîne qui avait
+ * attribué 46 018 amendements au mauvais député. Et une ambiguïté qu'on ne sait
+ * pas trancher rend `null` : mieux vaut personne que le mauvais.
+ *
+ * CE QUE LE CONTEXTE AJOUTE. Un compte rendu de 2026 ne peut pas départager
+ * deux fiches à lui seul, mais la réunion, si : elle a une date, une commission
+ * dont on connaît les membres, et une liste de présents imprimée en tête du
+ * document. On resserre donc les candidats par cercles — qui siégeait ce
+ * jour-là, qui est membre de la commission, qui était dans la salle — et on
+ * s'arrête dès qu'il n'en reste qu'un. Sur nos données, la seule date fait
+ * tomber les noms complets en collision de 5 à 0 et les patronymes partagés de
+ * 124 à 38.
+ *
+ * CES CERCLES DÉPARTAGENT, ILS N'ÉCARTENT PAS. Un cercle qui viderait la liste
+ * est ignoré : quand une seule fiche porte le nom, elle est la bonne, qu'elle
+ * siège encore ou non — un ancien député auditionné comme expert reste la même
+ * personne, et sa prise de parole lui revient.
  */
-export function resoudreOrateur(nom: string | null, index: IndexDOrateurs): string | null {
+export function resoudreOrateur(
+  nom: string | null,
+  index: IndexDOrateurs,
+  contexte: ContexteDeReunion = {}
+): string | null {
   if (!nom) return null;
   const cle = cleDeNom(nom);
   if (cle.length === 0) return null;
 
-  const complet = index.parNomComplet.get(cle);
-  if (complet) return complet;
+  let candidats = index.parNomComplet.get(cle);
 
-  // Un nom seul : « M. Bazin ». On ne le suit que s'il désigne une seule personne.
-  if (!cle.includes(' ')) return index.parPatronyme.get(cle) ?? null;
+  if (!candidats && !cle.includes(' ')) {
+    // Un patronyme nu : « M. Leseul ». La liste des présents porte les prénoms,
+    // et c'est le témoignage le plus proche — elle dit qui était dans la salle
+    // ce jour-là, pas seulement qui aurait pu y être.
+    const complet = nomCompletParmiLesPresents(cle, contexte.presents);
+    candidats = (complet && index.parNomComplet.get(complet)) || index.parPatronyme.get(cle);
+  }
 
-  return null;
+  if (!candidats || candidats.length === 0) return null;
+
+  if (contexte.date) candidats = resserrer(candidats, (f) => enMandat(f, contexte.date!));
+  if (contexte.membres) candidats = resserrer(candidats, (f) => contexte.membres!.has(f.id));
+
+  return candidats.length === 1 ? candidats[0]!.id : null;
 }
+
+/** Applique un cercle, sauf s'il ne laisse personne. */
+function resserrer(
+  candidats: FicheDOrateur[],
+  garder: (fiche: FicheDOrateur) => boolean
+): FicheDOrateur[] {
+  if (candidats.length <= 1) return candidats;
+  const restants = candidats.filter(garder);
+  return restants.length > 0 ? restants : candidats;
+}
+
+/**
+ * Le nom complet d'un présent dont le patronyme est celui qu'on cherche.
+ *
+ * Rend `null` si deux présents le partagent : la salle ne tranche pas non plus.
+ */
+function nomCompletParmiLesPresents(
+  patronyme: string,
+  presents: readonly string[] | undefined
+): string | null {
+  if (!presents) return null;
+  const trouves = new Set<string>();
+  for (const present of presents) {
+    const cle = cleDeNom(present.replace(DEBUT_CIVILITE_PRESENTS, ''));
+    if (cle.endsWith(` ${patronyme}`)) trouves.add(cle);
+  }
+  return trouves.size === 1 ? [...trouves][0]! : null;
+}
+
+/** « M. », « Mme » en tête d'un nom de la liste des présents. */
+const DEBUT_CIVILITE_PRESENTS = /^(?:MM?\.|Mmes?)\s+/u;
 
 /** Sépare « Thibault Bazin » en prénom et nom, pour l'affichage. */
 export function prenomEtNom(nom: string | null): { prenom: string | null; nom: string | null } {
@@ -176,6 +259,37 @@ export function prenomEtNom(nom: string | null): { prenom: string | null; nom: s
   const mots = nom.trim().split(/\s+/u);
   if (mots.length === 1) return { prenom: null, nom: mots[0]! };
   return { prenom: mots[0]!, nom: mots.slice(1).join(' ') };
+}
+
+/**
+ * Les membres de chaque commission, pour départager les homonymes.
+ *
+ * Une seule requête pour tout le run : les listes sont petites — 28 fiches par
+ * organe en moyenne — et les relire réunion par réunion coûterait une requête
+ * par compte rendu sans rien apporter.
+ *
+ * On prend les mandats en cours plutôt que ceux du jour de la réunion : la
+ * composition d'une commission bouge peu, et ce cercle ne sert qu'à trancher
+ * entre des candidats que la date a déjà retenus.
+ */
+async function membresDesCommissions(
+  commissionIds: string[]
+): Promise<Map<string, Set<string>>> {
+  const membresParCommission = new Map<string, Set<string>>();
+  if (commissionIds.length === 0) return membresParCommission;
+
+  const mandats = await prisma.mandat.findMany({
+    where: { commissionId: { in: [...new Set(commissionIds)] }, dateFin: null },
+    select: { commissionId: true, parlementaireId: true },
+  });
+
+  for (const m of mandats) {
+    if (!m.commissionId) continue;
+    const membres = membresParCommission.get(m.commissionId) ?? new Set<string>();
+    membres.add(m.parlementaireId);
+    membresParCommission.set(m.commissionId, membres);
+  }
+  return membresParCommission;
 }
 
 // =============================================================================
@@ -196,9 +310,10 @@ function ligne(
   prise: PriseDeParoleCommission,
   reunion: { id: string; dateDebut: Date; compteRenduRef: string },
   url: string,
-  index: IndexDOrateurs
+  index: IndexDOrateurs,
+  contexte: ContexteDeReunion
 ) {
-  const parlementaireId = resoudreOrateur(prise.nom, index);
+  const parlementaireId = resoudreOrateur(prise.nom, index, contexte);
   const { prenom, nom } = prenomEtNom(prise.nom);
   return {
     reunionId: reunion.id,
@@ -243,9 +358,27 @@ export async function syncInterventionsCommission(
   // l'index ne peut qu'ajouter des résolutions justes : un patronyme partagé
   // entre les deux chambres devient ambigu, donc cesse de résoudre.
   const fiches = await prisma.parlementaire.findMany({
-    select: { id: true, prenom: true, nom: true },
+    select: {
+      id: true,
+      prenom: true,
+      nom: true,
+      // La date de la réunion départage les homonymes : sur nos fiches, elle
+      // fait tomber les noms complets en collision de 5 à 0 et les patronymes
+      // partagés de 124 à 38.
+      mandats: {
+        where: { typeOrgane: { in: ['ASSEMBLEE', 'SENAT'] } },
+        select: { dateDebut: true, dateFin: true },
+      },
+    },
   });
-  const index = indexerOrateurs(fiches);
+  const index = indexerOrateurs(
+    fiches.map((f) => ({
+      id: f.id,
+      prenom: f.prenom,
+      nom: f.nom,
+      mandats: f.mandats.map((m) => ({ debut: m.dateDebut, fin: m.dateFin })),
+    }))
+  );
   logger.info(
     { fiches: fiches.length, nomsComplets: index.parNomComplet.size, patronymes: index.parPatronyme.size },
     'Index des orateurs de commission construit'
@@ -253,14 +386,20 @@ export async function syncInterventionsCommission(
 
   const reunions = await prisma.reunion.findMany({
     where: {
-      compteRenduRef: { not: null },
-      commission: { chambre: CHAMBRE },
-      // Les réunions de séance publique portent elles aussi une référence de
-      // compte rendu — 601 à l'Assemblée —, mais elle désigne le compte rendu
-      // de séance (`CRSA…`), déjà ingéré en XML par `sync-debats-an`. La page
-      // de notice n'existe pas pour elles : sans ce filtre, on ferait 601
-      // requêtes vouées au 404, et on les referait chaque nuit.
-      type: 'commission',
+      // LE FILTRE PORTE SUR LA RÉFÉRENCE, ET RIEN D'AUTRE. `CRCANR…` désigne
+      // exactement les comptes rendus de commission de l'Assemblée — vérifié
+      // sur les 4 032 réunions qui portent une référence, sans une exception.
+      // Les réunions de séance publique en portent une aussi (`CRSANR…`, 601 à
+      // l'Assemblée), mais elle désigne le compte rendu de séance, déjà ingéré
+      // en XML par `sync-debats-an`, et sa page de notice n'existe pas : sans
+      // ce filtre on ferait 601 requêtes vouées au 404, chaque nuit. Le Sénat,
+      // lui, range une URL dans ce champ.
+      //
+      // On a d'abord filtré sur `commission: { chambre }`. C'était un piège :
+      // 28 réunions de l'Assemblée n'ont pas de `commission_id` — dont la
+      // MECSS, dont le compte rendu porte 54 prises de parole — et une
+      // jointure sur une clé étrangère nullable les écartait en silence.
+      compteRenduRef: { startsWith: 'CRCANR' },
       ...(options.seulement && options.seulement.length > 0
         ? { compteRenduRef: { in: options.seulement } }
         : {}),
@@ -269,7 +408,7 @@ export async function syncInterventionsCommission(
       // réunion coûte deux requêtes au site de l'Assemblée et un PDF.
       ...(options.reingerer ? {} : { interventions: { none: {} } }),
     },
-    select: { id: true, dateDebut: true, compteRenduRef: true },
+    select: { id: true, dateDebut: true, compteRenduRef: true, commissionId: true },
     // Les réunions récentes d'abord : ce sont elles qu'on consulte, et un run
     // interrompu aura au moins traité ce qui compte.
     orderBy: { dateDebut: 'desc' },
@@ -284,6 +423,10 @@ export async function syncInterventionsCommission(
       reingerer: options.reingerer ?? false,
     },
     'Ingestion des débats de commission AN...'
+  );
+
+  const membresParCommission = await membresDesCommissions(
+    reunions.map((r) => r.commissionId).filter((id): id is string => id !== null)
   );
 
   const client = new ComptesRendusCommissionClient();
@@ -306,8 +449,17 @@ export async function syncInterventionsCommission(
       }
       if (cr.prises.length === 0) continue;
 
+      // Ce que cette réunion-là apprend sur qui pouvait y parler.
+      const contexte: ContexteDeReunion = {
+        date: reunion.dateDebut,
+        membres: reunion.commissionId
+          ? membresParCommission.get(reunion.commissionId)
+          : undefined,
+        presents: cr.presents,
+      };
+
       const lignes = cr.prises.map((p) =>
-        ligne(p, { ...reunion, compteRenduRef }, telecharge.url, index)
+        ligne(p, { ...reunion, compteRenduRef }, telecharge.url, index, contexte)
       );
       resultat.sansParlementaire += lignes.filter(
         (l) => l.parlementaireId === null && !l.orateurQualite && !l.estPresidence

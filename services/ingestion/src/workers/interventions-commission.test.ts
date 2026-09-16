@@ -7,6 +7,12 @@ import {
   sourceUidCommission,
 } from './interventions-commission';
 
+const JOUR = new Date('2026-09-08');
+/** Un mandat en cours au jour de la réunion. */
+const EN_COURS = [{ debut: new Date('2024-07-07'), fin: null }];
+/** Un mandat clos sept ans avant elle. */
+const ANCIEN = [{ debut: new Date('2012-06-20'), fin: new Date('2017-06-20') }];
+
 describe('cleDeNom', () => {
   it('efface les accents, la casse et la ponctuation', () => {
     expect(cleDeNom('Pieyre-Alexandre ANGLADE')).toBe('pieyre alexandre anglade');
@@ -88,5 +94,105 @@ describe('sourceUidCommission', () => {
     expect(sourceUidCommission('CRCANR5L17S2026PO59051N090', 3)).toBe(
       'CRCANR5L17S2026PO59051N090#3'
     );
+  });
+});
+
+// =============================================================================
+// Départager les homonymes par ce que la réunion sait
+// =============================================================================
+//
+// L'index porte 2 134 fiches, toutes législatures et deux chambres confondues :
+// 124 patronymes y sont partagés, et 5 noms complets entrent en collision. La
+// date de la réunion ramène ces derniers à 0 et les premiers à 38 ; la
+// commission qui siège et la liste des présents tranchent le reste.
+
+describe('resoudreOrateur — les cercles de la réunion', () => {
+  const homonymes = indexerOrateurs([
+    { id: 'ancien', prenom: 'Jean', nom: 'Dupont', mandats: ANCIEN },
+    { id: 'siegeant', prenom: 'Jean', nom: 'Dupont', mandats: EN_COURS },
+  ]);
+
+  it('sans contexte, une homonymie parfaite ne résout rien', () => {
+    expect(resoudreOrateur('Jean Dupont', homonymes)).toBeNull();
+  });
+
+  it('la date de la réunion désigne celui qui siégeait', () => {
+    expect(resoudreOrateur('Jean Dupont', homonymes, { date: JOUR })).toBe('siegeant');
+  });
+
+  it('la commission qui siège tranche ce que la date laisse ouvert', () => {
+    const index = indexerOrateurs([
+      { id: 'lois', prenom: 'Claire', nom: 'Martin', mandats: EN_COURS },
+      { id: 'finances', prenom: 'Claire', nom: 'Martin', mandats: EN_COURS },
+    ]);
+    expect(resoudreOrateur('Claire Martin', index, { date: JOUR })).toBeNull();
+    expect(
+      resoudreOrateur('Claire Martin', index, { date: JOUR, membres: new Set(['finances']) })
+    ).toBe('finances');
+  });
+
+  // Le point important : ces cercles départagent, ils n'écartent jamais. Un
+  // ancien député auditionné comme expert reste la même personne.
+  it('une fiche unique est retenue même hors mandat', () => {
+    const index = indexerOrateurs([{ id: 'parti', prenom: 'Jean', nom: 'Dupont', mandats: ANCIEN }]);
+    expect(resoudreOrateur('Jean Dupont', index, { date: JOUR })).toBe('parti');
+  });
+
+  it("un cercle qui ne laisserait personne est ignoré plutôt qu'appliqué", () => {
+    const index = indexerOrateurs([
+      { id: 'a', prenom: 'Jean', nom: 'Dupont', mandats: ANCIEN },
+      { id: 'b', prenom: 'Paul', nom: 'Dupont', mandats: EN_COURS },
+    ]);
+    // Aucun des deux n'est membre : on ne choisit pas au hasard pour autant.
+    expect(
+      resoudreOrateur('Jean Dupont', index, { date: JOUR, membres: new Set(['z']) })
+    ).toBe('a');
+  });
+
+  it('une fiche sans mandat connu ne devient pas inéligible', () => {
+    const index = indexerOrateurs([{ id: 'muet', prenom: 'Jean', nom: 'Dupont' }]);
+    expect(resoudreOrateur('Jean Dupont', index, { date: JOUR })).toBe('muet');
+  });
+});
+
+describe('resoudreOrateur — la liste des présents', () => {
+  const index = indexerOrateurs([
+    { id: 'gerard', prenom: 'Gérard', nom: 'Leseul', mandats: EN_COURS },
+    { id: 'marie', prenom: 'Marie', nom: 'Leseul', mandats: EN_COURS },
+  ]);
+
+  it('rend son prénom à un patronyme nu', () => {
+    expect(resoudreOrateur('Leseul', index, { date: JOUR })).toBeNull();
+    expect(
+      resoudreOrateur('Leseul', index, {
+        date: JOUR,
+        presents: ['Mme Karen Erodi', 'M. Gérard Leseul'],
+      })
+    ).toBe('gerard');
+  });
+
+  it('ne tranche pas si deux présents portent le patronyme', () => {
+    expect(
+      resoudreOrateur('Leseul', index, {
+        date: JOUR,
+        presents: ['M. Gérard Leseul', 'Mme Marie Leseul'],
+      })
+    ).toBeNull();
+  });
+
+  it('ignore la civilité et les accents de la liste', () => {
+    const seul = indexerOrateurs([{ id: 'x', prenom: 'Élina', nom: 'Fiévet', mandats: EN_COURS }]);
+    expect(resoudreOrateur('Fievet', seul, { presents: ['Mme Elina Fievet'] })).toBe('x');
+  });
+
+  // La règle qui ne bouge pas : jamais de sous-chaîne, même avec un contexte.
+  it("la présence d'un contexte n'ouvre pas la porte aux correspondances partielles", () => {
+    expect(
+      resoudreOrateur('Leseul Gérard Untel', index, {
+        date: JOUR,
+        presents: ['M. Gérard Leseul'],
+        membres: new Set(['gerard']),
+      })
+    ).toBeNull();
   });
 });
