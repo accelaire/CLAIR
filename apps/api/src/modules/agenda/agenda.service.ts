@@ -348,6 +348,70 @@ export class AgendaService {
     return result;
   }
 
+  /**
+   * Une séance que seules ses prises de parole attestent.
+   *
+   * POURQUOI ELLE EXISTE. L'agenda ne remonte qu'au 7 mai 2024 : les séances
+   * des 15e et 16e législatures n'ont donc aucune réunion en base — 926
+   * séances et 328 187 prises de parole. Et au Sénat, l'identifiant de séance
+   * est un JOUR (`d20240116`) alors qu'un jour compte deux à cinq séances :
+   * aucun rattachement un pour un n'est possible, ni maintenant ni plus tard.
+   *
+   * Exiger une réunion privait donc 1 203 séances et 419 204 prises de parole
+   * de toute page. On sert ce que la séance atteste d'elle-même : sa date, sa
+   * chambre, son débat et ses votes. Il lui manquera le lieu et l'ordre du
+   * jour, qu'elle n'a de toute façon jamais eus.
+   */
+  private async getSeanceSansReunion(uid: string) {
+    const [agregat, scrutins] = await Promise.all([
+      this.prisma.intervention.aggregate({
+        where: { seanceId: uid },
+        _min: { date: true },
+        _count: { _all: true },
+      }),
+      this.prisma.scrutin.findMany({
+        where: { seanceRef: uid },
+        select: {
+          id: true, numero: true, titre: true, date: true, sort: true,
+          chambre: true, session: true,
+          nombrePour: true, nombreContre: true, nombreAbstention: true,
+        },
+        orderBy: { numero: 'asc' },
+      }),
+    ]);
+
+    if (agregat._count._all === 0 || !agregat._min.date) return null;
+
+    const premiere = await this.prisma.intervention.findFirst({
+      where: { seanceId: uid },
+      select: { chambre: true },
+    });
+
+    return {
+      id: uid,
+      uid,
+      type: 'seance' as const,
+      dateDebut: agregat._min.date,
+      dateFin: null,
+      lieu: null,
+      etat: null,
+      odjResume: null,
+      odjComplet: null,
+      captationVideo: false,
+      urlVideo: null,
+      compteRenduRef: null,
+      // La chambre est tout ce qu'on sait de son rattachement : pas de
+      // commission, donc pas de fil d'Ariane vers l'une d'elles.
+      commission: premiere
+        ? { id: '', slug: '', nom: '', nomCourt: null, chambre: premiere.chambre, type: 'hemicycle' }
+        : null,
+      participants: [],
+      avisCommission: [],
+      nbInterventions: agregat._count._all,
+      scrutins,
+    };
+  }
+
   async getReunionByUid(uid: string) {
     const cacheKey = `agenda:reunion:${uid}`;
     const cached = await this.redis.get(cacheKey);
@@ -404,7 +468,11 @@ export class AgendaService {
       },
     });
 
-    if (!reunion) return reunion;
+    if (!reunion) {
+      const seance = await this.getSeanceSansReunion(uid);
+      if (seance) await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(seance));
+      return seance;
+    }
 
     const [nbInterventions, scrutins] = await Promise.all([
       this.prisma.intervention.count({ where: ouSontLesPrises(reunion) }),
@@ -440,9 +508,10 @@ export class AgendaService {
       where: { uid },
       select: { id: true, uid: true, type: true },
     });
-    if (!reunion) return null;
 
-    const where = ouSontLesPrises(reunion);
+    // Sans réunion, l'uid demandé peut encore être celui d'une séance que ses
+    // seules prises de parole attestent — voir `getSeanceSansReunion`.
+    const where = reunion ? ouSontLesPrises(reunion) : { seanceId: uid };
     const [total, lignes] = await Promise.all([
       this.prisma.intervention.count({ where }),
       this.prisma.intervention.findMany({
@@ -467,6 +536,8 @@ export class AgendaService {
         l.scrutinId,
       ]);
     }
+
+    if (total === 0 && !reunion) return null;
 
     return {
       data: lignes.map(({ contenu, ...reste }) => ({

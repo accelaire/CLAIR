@@ -112,6 +112,8 @@ export interface ScrutinDetail {
   votesByGroupe: Record<string, { pour: number; contre: number; abstention: number; absent: number }>;
   totalVotes: number;
   totalInterventions: number;
+  /** La séance nommée par le scrutin a-t-elle un débat chez nous ? */
+  seanceADesDebats?: boolean;
 }
 
 interface InterventionsResponse {
@@ -559,6 +561,8 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
             <ScrutinSidebar
               chambre={scrutin.chambre}
               date={scrutin.date}
+              seanceRef={scrutin.seanceRef}
+              seanceADesDebats={scrutin.seanceADesDebats}
               session={scrutin.session}
               legislature={scrutin.legislature}
               typeVote={scrutin.typeVote}

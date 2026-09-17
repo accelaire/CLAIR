@@ -596,7 +596,12 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
             ...INTERVENTIONS_DE_FOND,
           };
 
-      const [seanceInterventions, totalSeanceInterventions] = await Promise.all([
+      // La séance désignée par `seanceRef` a-t-elle un débat chez nous ? Tous
+      // les scrutins de l'Assemblée portent une référence, mais 79 % seulement
+      // mènent à une séance dont nous avons les prises de parole, et le Sénat
+      // n'en nomme aucune. Sans ce drapeau, la date renverrait vers une page
+      // vide dans 3 524 cas.
+      const [seanceInterventions, totalSeanceInterventions, prisesDeLaSeance] = await Promise.all([
         fastify.prisma.intervention.findMany({
           where: seanceWhere,
           take: 5,
@@ -604,6 +609,9 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           select: INTERVENTION_DEBAT_SELECT,
         }),
         fastify.prisma.intervention.count({ where: seanceWhere }),
+        scrutin.seanceRef
+          ? fastify.prisma.intervention.count({ where: { seanceId: scrutin.seanceRef } })
+          : Promise.resolve(0),
       ]);
 
       // Sélection des champs votes communs
@@ -710,6 +718,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           votesByGroupe,
           totalVotes: scrutin.nombrePour + scrutin.nombreContre + scrutin.nombreAbstention,
           totalInterventions: totalSeanceInterventions,
+          seanceADesDebats: prisesDeLaSeance > 0,
         },
       };
     },
