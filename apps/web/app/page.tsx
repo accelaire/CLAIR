@@ -303,7 +303,7 @@ function DayCard({ isoDate, label, events, evenements }: {
  * Accroche vers la page du renouvellement sénatorial, au-dessus du planning.
  *
  * Plus visible que la puce d'échéance qui la suit, sans la remplacer : la puce
- * mène à l'agenda, celle-ci mène directement au bilan des sortants. Le bloc
+ * mène à l'agenda, celle-ci mène directement à la page du scrutin. Le bloc
  * disparaît de lui-même à la prise de fonction des élus.
  */
 function SenatorialesCallout() {
@@ -317,8 +317,8 @@ function SenatorialesCallout() {
       <Vote className="h-5 w-5 shrink-0" aria-hidden />
       <span className="min-w-0 flex-1 text-sm">
         <strong className="font-semibold">Sénatoriales du 27 septembre 2026.</strong>{' '}
-        178 des 348 sièges sont renouvelés. Le bilan de mandature des sortants,
-        département par département.
+        178 des 348 sièges sont renouvelés. Les candidats et le bilan de mandature
+        des sortants, circonscription par circonscription.
       </span>
       <span className="hidden shrink-0 items-center gap-1 text-sm font-medium sm:inline-flex">
         Consulter

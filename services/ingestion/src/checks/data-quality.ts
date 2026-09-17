@@ -274,6 +274,88 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
         AND date_debut < date_trunc('month', CURRENT_DATE)`,
   },
 
+  // ---- Candidatures aux élections ----
+  //
+  // Ces cinq invariants valent zéro tant qu'aucune candidature n'est ingérée :
+  // ils comptent des violations, pas des lignes. Ils ne bloquent donc rien
+  // avant la publication du fichier du ministère.
+  //
+  // Trois d'entre eux traduisent le code électoral lui-même, et c'est ce qui
+  // en fait de bons contrôles : ils ne dépendent d'aucun seuil arbitraire, et
+  // les vérifier sur l'édition 2023 les a tous donnés à zéro.
+  candidatures_sans_nom: {
+    type: 'invariant',
+    label: 'Candidatures sans nom',
+    min: 0,
+    max: 0,
+    // Garde-fou contre les lignes fantômes : la feuille du scrutin majoritaire
+    // 2023 se terminait par sept lignes réduites à une cellule vide.
+    query: `SELECT COUNT(*)::int AS value FROM candidatures WHERE btrim(nom) = ''`,
+  },
+  candidatures_taille_liste: {
+    type: 'invariant',
+    label: 'Circonscriptions aux listes de tailles inégales (art. L. 300)',
+    min: 0,
+    max: 0,
+    // Toutes les listes d'une même circonscription comptent le même nombre de
+    // candidats — le nombre de sièges plus deux. Une taille qui diverge veut
+    // dire qu'une liste a été tronquée à la lecture, ou dédoublée par une clef
+    // de regroupement trop faible.
+    query: `SELECT COUNT(*)::int AS value FROM (
+      SELECT scrutin, circonscription_id
+      FROM (
+        SELECT l.scrutin, l.circonscription_id, l.id, COUNT(c.id) AS taille
+        FROM candidatures_listes l
+        JOIN candidatures c ON c.liste_id = l.id
+        WHERE l.mode_scrutin = 'proportionnel'
+        GROUP BY l.scrutin, l.circonscription_id, l.id
+      ) tailles
+      GROUP BY scrutin, circonscription_id
+      HAVING COUNT(DISTINCT taille) > 1
+    ) sub`,
+  },
+  candidatures_alternance: {
+    type: 'invariant',
+    label: 'Ruptures d\'alternance femme-homme sur les listes (art. L. 300)',
+    min: 0,
+    max: 0,
+    // Les listes sont composées alternativement d'un candidat de chaque sexe.
+    // Deux candidats consécutifs de même sexe signalent un ordre de liste mal
+    // lu — donc un classement faux, et des « suivants de liste » erronés au
+    // moment de l'attribution des sièges.
+    query: `SELECT COUNT(*)::int AS value FROM (
+      SELECT c.sexe, LAG(c.sexe) OVER (PARTITION BY c.liste_id ORDER BY c.ordre) AS precedent
+      FROM candidatures c
+      JOIN candidatures_listes l ON l.id = c.liste_id
+      WHERE l.mode_scrutin = 'proportionnel' AND c.role = 'titulaire'
+    ) sub WHERE precedent IS NOT NULL AND sexe = precedent`,
+  },
+  candidatures_suppleant_meme_sexe: {
+    type: 'invariant',
+    label: 'Binômes titulaire-suppléant de même sexe (art. L. 299)',
+    min: 0,
+    max: 0,
+    // Au scrutin majoritaire, le suppléant est de sexe opposé au titulaire.
+    // L'égalité signale des colonnes de suppléant décalées.
+    query: `SELECT COUNT(*)::int AS value FROM candidatures t
+      JOIN candidatures s ON s.liste_id = t.liste_id AND s.role = 'suppleant'
+      WHERE t.role = 'titulaire'
+        AND t.sexe IS NOT NULL AND s.sexe IS NOT NULL
+        AND t.sexe = s.sexe`,
+  },
+  candidatures_sortants_non_rattaches: {
+    type: 'invariant',
+    label: 'Sortants déclarés par le fichier mais non rattachés à une personne',
+    min: 0,
+    max: 0,
+    // Le fichier désigne lui-même les sortants, et un sortant est par
+    // définition dans notre corpus. Un écart mesure donc la casse du
+    // rapprochement, jamais une réalité politique. Mesuré à 119 sur 119 sur
+    // l'édition 2023.
+    query: `SELECT COUNT(*)::int AS value FROM candidatures
+      WHERE sortant_declare = true AND personne_id IS NULL`,
+  },
+
   // ---- Seuils quantitatifs (minimums) ----
   parlementaires_count: {
     type: 'threshold',

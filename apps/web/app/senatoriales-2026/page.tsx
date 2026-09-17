@@ -30,9 +30,11 @@ export const dynamic = 'force-dynamic';
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
 
-const title = 'Sénatoriales 2026 — le bilan des sortants';
+// Les candidats d'abord, le bilan ensuite : le titre suit ce que la page montre
+// désormais, et ce que le lecteur cherche à dix jours du scrutin.
+const title = 'Sénatoriales 2026 — les candidats et le bilan des sortants';
 const description =
-  "Le 27 septembre 2026, 178 des 348 sièges du Sénat sont renouvelés dans 64 départements. Présence, loyauté, interventions et amendements : le bilan de mandature de chaque sénateur sortant sur CLAIR.vote.";
+  "Le 27 septembre 2026, 178 des 348 sièges du Sénat sont renouvelés dans 64 circonscriptions. Les candidats circonscription par circonscription, et le bilan de mandature de chaque sénateur sortant : présence, loyauté, interventions, amendements.";
 
 export const metadata: Metadata = {
   title,
@@ -41,7 +43,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'Sénatoriales du 27 septembre 2026 — CLAIR.vote',
     description:
-      "178 sièges renouvelés, 64 départements. Le bilan de mandature des sénateurs sortants, chiffres à l'appui.",
+      "178 sièges renouvelés, 64 circonscriptions. Les candidats, et le bilan de mandature des sénateurs sortants, chiffres à l'appui.",
     url: `${BASE_URL}/senatoriales-2026`,
     type: 'article',
   },
@@ -51,7 +53,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Sénatoriales du 27 septembre 2026',
     description:
-      "178 sièges renouvelés, 64 départements. Le bilan de mandature des sénateurs sortants.",
+      '178 sièges renouvelés, 64 circonscriptions. Les candidats et le bilan de mandature des sortants.',
   },
 };
 

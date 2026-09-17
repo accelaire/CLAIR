@@ -11,9 +11,33 @@ function fmt(v: number | null | undefined, suffixe = '') {
   return `${v.toLocaleString('fr-FR')}${suffixe}`;
 }
 
+/**
+ * Détail de la candidature, en infobulle.
+ *
+ * Au scrutin proportionnel, le rang sur la liste vaut d'être dit : un sortant
+ * placé en fin de liste ne joue pas la même partie que sa tête de liste. Au
+ * scrutin majoritaire, le rang ne veut rien dire et n'est donc pas affiché.
+ */
+function titreCandidature(candidature: NonNullable<Sortant['candidature']>): string {
+  const morceaux: string[] = [];
+
+  if (candidature.libelle) morceaux.push(`Liste « ${candidature.libelle} »`);
+  if (candidature.modeScrutin === 'proportionnel') {
+    // « 1re » et non « 1e » : la tête de liste est précisément celle dont on
+    // parlera le plus.
+    morceaux.push(`${candidature.ordre}${candidature.ordre === 1 ? 're' : 'e'} position`);
+  }
+  if (candidature.role === 'suppleant') morceaux.push('en remplaçant');
+
+  return morceaux.length > 0
+    ? morceaux.join(' — ')
+    : 'Candidat au renouvellement du 27 septembre';
+}
+
 export function SortantCard({
   sortant,
   surbrillance = false,
+  candidaturesPubliees = false,
 }: {
   sortant: Sortant;
   /**
@@ -23,6 +47,15 @@ export function SortantCard({
    * repère survit au thème sombre comme au thème clair.
    */
   surbrillance?: boolean;
+  /**
+   * Les candidatures sont-elles publiées ?
+   *
+   * Indispensable, et pas seulement commode : sans ce drapeau, une candidature
+   * absente est indiscernable d'un fichier pas encore paru, et la carte
+   * écrirait « ne se représente pas » sur les 178 sortants pendant les mois qui
+   * précèdent le dépôt. La donnée manquante doit rester muette.
+   */
+  candidaturesPubliees?: boolean;
 }) {
   const initials = `${sortant.personne.prenom.charAt(0)}${sortant.personne.nom.charAt(0)}`.toUpperCase();
 
@@ -76,6 +109,19 @@ export function SortantCard({
       )}
 
       <div className="mt-2 flex flex-wrap gap-1.5">
+        {candidaturesPubliees &&
+          (sortant.candidature ? (
+            <span
+              className="inline-block rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary"
+              title={titreCandidature(sortant.candidature)}
+            >
+              Se représente
+            </span>
+          ) : (
+            <span className="inline-block rounded border border-dashed px-1.5 py-0.5 text-xs text-muted-foreground">
+              Ne se représente pas
+            </span>
+          ))}
         {!sortant.mandat.mandatComplet && (
           <span className="inline-block rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
             En fonction depuis{' '}

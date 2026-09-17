@@ -390,6 +390,7 @@ program
   .option('--senat-dossier-commissions', 'Inclure les commissions saisies des dossiers Sénat (scraping senat.fr)')
   .option('--senat-videos', 'Inclure les vidéos Sénat (scraping videos.senat.fr)')
   .option('--an-videos', 'Inclure les vidéos AN (videos.assemblee-nationale.fr)')
+  .option('--candidatures', 'Inclure les candidatures aux sénatoriales 2026 (data.gouv)')
   .option('--seances-odj', 'Inclure l\'enrichissement ODJ des séances publiques (CSV AN)')
   .option('-l, --limit <number>', 'Limite globale pour tous les types (défaut: TOUT)', parseInt)
   .option('--sources <sources>', 'Sources spécifiques à sync (séparées par des virgules)')
@@ -415,6 +416,7 @@ program
         includeSenatDossierCommissions: options.senatDossierCommissions,
         includeSenatVideos: options.senatVideos,
         includeAnVideos: options.anVideos,
+        includeCandidatures: options.candidatures,
         includeSeancesODJ: options.seancesOdj,
         scrutinsLimit: options.limit,
         amendementsLimit: options.limit,
@@ -1546,6 +1548,118 @@ program
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'sync-textes-articles failed');
       process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: sync-candidatures
+// =============================================================================
+program
+  .command('sync-candidatures')
+  .description(
+    'Candidatures à une élection, depuis le classeur XLSX du ministère de l\'Intérieur (data.gouv)'
+  )
+  .requiredOption(
+    '--fichier <chemin|url...>',
+    'Fichiers du ministère : chemins locaux ou URLs, CSV ou XLSX. Répétable — ' +
+      'l\'édition 2026 publie un CSV par mode de scrutin.'
+  )
+  .option('--scrutin <slug>', 'Identifiant du scrutin', 'senatoriales-2026')
+  .option('--simulation', 'Analyser et rapporter sans rien écrire en base')
+  .option(
+    '--forcer-chute',
+    'Écrire même si le fichier contient beaucoup moins de candidats que la base. ' +
+      'À n\'utiliser qu\'après avoir vérifié que la baisse est réelle : l\'ingestion ' +
+      'remplace l\'intégralité du scrutin.'
+  )
+  .action(
+    async (options: {
+      fichier: string[];
+      scrutin: string;
+      simulation?: boolean;
+      forcerChute?: boolean;
+    }) => {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+    const fichiersTemporaires: string[] = [];
+
+    try {
+      const os = await import('os');
+      const path = await import('path');
+
+      // Les fichiers vivent sur data.gouv : accepter l'URL évite un
+      // aller-retour par curl le jour de la publication, où chaque étape
+      // manuelle est un risque.
+      const fichiers: string[] = [];
+      for (const entree of options.fichier) {
+        if (!/^https?:\/\//.test(entree)) {
+          fichiers.push(entree);
+          continue;
+        }
+
+        const { downloadWithRetry } = await import('./utils/download.js');
+        // L'extension décide du lecteur : la conserver depuis l'URL est ce qui
+        // fait qu'un CSV n'est pas lu comme une archive.
+        const extension = path.extname(new URL(entree).pathname) || '.xlsx';
+        const destination = path.join(
+          os.tmpdir(),
+          `candidatures-${Date.now()}-${fichiers.length}${extension}`
+        );
+        console.log(`\n⬇️  Téléchargement de ${entree}`);
+        await downloadWithRetry(entree, destination);
+        fichiersTemporaires.push(destination);
+        fichiers.push(destination);
+      }
+
+      const { ingererCandidatures } = await import('./sources/senatoriales/candidatures-client.js');
+      const rapport = await ingererCandidatures(prisma, {
+        fichiers,
+        scrutin: options.scrutin,
+        simulation: options.simulation ?? false,
+        forcerChute: options.forcerChute ?? false,
+      });
+
+      const { rattachement: r } = rapport;
+      console.log(`\n🗳️  Candidatures — ${rapport.scrutin}${rapport.simulation ? ' (SIMULATION, rien écrit)' : ''}`);
+      console.log(`   Unités de vote     : ${rapport.listes}`);
+      console.log(`   Candidats          : ${rapport.candidats}`);
+      console.log(`   Circonscriptions   : ${rapport.circonscriptions}`);
+      console.log('\n   Rattachement aux parlementaires connus :');
+      console.log(`     niveau A (nom + prénom + date) : ${r.niveauA}`);
+      console.log(`     niveau B (prénom divergent)    : ${r.niveauB}`);
+      console.log(`     ambigus (non rattachés)        : ${r.ambigus}`);
+      console.log(`     sans date de naissance         : ${r.sansDate}`);
+      console.log(`     inconnus du corpus             : ${r.inconnus}`);
+
+      // Le contrôle qui compte : le fichier désigne lui-même les sortants, et
+      // ceux-là doivent tous se retrouver dans notre corpus. Un écart ici
+      // signale un rapprochement cassé, pas une réalité politique.
+      const ecart = rapport.sortantsDeclares - rapport.sortantsDeclaresRattaches;
+      console.log(
+        `\n   Sortants déclarés par le fichier : ${rapport.sortantsDeclares}, ` +
+          `rattachés : ${rapport.sortantsDeclaresRattaches}` +
+          (ecart > 0 ? `  ⚠️  ${ecart} non rattaché(s)` : '  ✅')
+      );
+
+      if (rapport.nuancesInconnues.length > 0) {
+        console.log(
+          `\n   ⚠️  Nuances absentes de la grille, écrites sans famille : ${rapport.nuancesInconnues.join(', ')}`
+        );
+        console.log('      → compléter services/ingestion/src/sources/senatoriales/nuances.ts');
+      }
+
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-candidatures failed');
+      process.exit(1);
+    } finally {
+      await prisma.$disconnect();
+      if (fichiersTemporaires.length > 0) {
+        const fs = await import('fs');
+        await Promise.all(
+          fichiersTemporaires.map(fichier => fs.promises.rm(fichier, { force: true }))
+        );
+      }
     }
   });
 

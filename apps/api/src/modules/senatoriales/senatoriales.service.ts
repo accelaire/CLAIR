@@ -1,6 +1,6 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import { Redis } from 'ioredis';
-import { SortantsQuery } from './senatoriales.schema';
+import { CandidatsQuery, SortantsQuery } from './senatoriales.schema';
 
 const SCRUTIN_DATE = '2026-09-27';      // dimanche
 const PRISE_DE_FONCTION = '2026-10-01';
@@ -8,6 +8,12 @@ const SERIE = '2';
 const MANDATURE_SORTANTE = 2020;
 const MANDATURE_ENTRANTE = 2026;
 const EVENEMENT_SLUG = 'senatoriales-2026'; // table evenements_institutionnels
+
+// Valeur de la colonne `scrutin` des candidatures. Volontairement distincte de
+// `EVENEMENT_SLUG` malgré la chaîne identique : l'une désigne une ligne
+// d'agenda, l'autre le périmètre d'une ingestion, et rien ne garantit qu'elles
+// resteront confondues pour les élections suivantes.
+const SCRUTIN_SLUG = 'senatoriales-2026';
 
 // Les mandats ouverts la veille du scrutin. Figé volontairement : après le
 // renouvellement, la page devient une archive et doit continuer à décrire la
@@ -56,7 +62,103 @@ export interface ApercuSenatoriales {
     departement: string;
     nom: string;
     nbSieges: number;
+    /**
+     * Unités de vote et candidats de la circonscription.
+     *
+     * `null` tant que les candidatures ne sont pas publiées. Ces deux nombres
+     * portent l'index des 64 circonscriptions côté web : sans eux, l'index ne
+     * serait qu'une liste de noms, et n'indiquerait pas où la compétition est
+     * la plus ouverte.
+     */
+    nbListes: number | null;
+    nbCandidats: number | null;
   }[];
+  /**
+   * `null` tant qu'aucune candidature n'est ingérée.
+   *
+   * Le ministère de l'Intérieur ne publie son fichier qu'une semaine avant le
+   * scrutin : jusque-là, la page doit se rendre normalement sans ce bloc. Le
+   * champ est donc facultatif côté web, pour deux raisons cumulées — cet
+   * état d'attente, et le cache d'une heure qui fait cohabiter des réponses
+   * anciennes avec une API neuve le temps d'un déploiement.
+   */
+  candidatures: {
+    listes: number;
+    candidats: number;
+    circonscriptions: number;
+    /** Sortants qui se représentent, sur les 178 dont le siège est en jeu. */
+    sortantsCandidats: number;
+    sortantsNonCandidats: number;
+    /**
+     * Candidats déjà passés par le Parlement sans être sortants de la série 2.
+     * Anciens députés, anciens sénateurs, sénateurs de la série 1.
+     */
+    anciensParlementaires: number;
+  } | null;
+}
+
+/**
+ * Un candidat, tel qu'exposé.
+ *
+ * La date de naissance n'y figure pas et n'y figurera pas : elle est stockée
+ * pour rattacher le candidat à une personne connue, pas pour être publiée.
+ * Environ 1 850 des candidats ne seront jamais élus, et l'année suffit
+ * largement à situer une génération.
+ */
+export interface Candidat {
+  id: string;
+  nom: string;
+  prenom: string;
+  sexe: string | null;
+  anneeNaissance: number | null;
+  profession: string | null;
+  /** Rang sur la liste ; 1 pour le titulaire au scrutin majoritaire. */
+  ordre: number;
+  role: 'titulaire' | 'suppleant';
+  /**
+   * Sénateur sortant dont le siège est remis en jeu.
+   *
+   * Calculé chez nous, par rattachement à l'un des 178 mandats de la série 2,
+   * et non lu dans la colonne `Sortant` du fichier : cette colonne n'existait
+   * pas dans l'édition 2020 et peut disparaître à nouveau.
+   */
+  sortant: boolean;
+  /**
+   * Fiche de la personne quand le candidat est déjà passé par le Parlement.
+   *
+   * C'est tout l'intérêt du lot : une candidature qui renvoie à un historique
+   * de votes. `null` pour l'immense majorité des candidats.
+   */
+  personne: {
+    slug: string;
+    chambre: string;
+    photoUrl: string | null;
+  } | null;
+}
+
+/**
+ * Unité de vote : une liste au scrutin proportionnel, un binôme
+ * titulaire-suppléant au scrutin majoritaire.
+ */
+export interface ListeCandidature {
+  id: string;
+  circonscription: {
+    departement: string;
+    nom: string;
+  };
+  modeScrutin: string;
+  libelle: string | null;
+  /** Code de nuance brut de la préfecture. N'est pas un groupe politique. */
+  nuance: string | null;
+  /**
+   * Libellé de la nuance tel que le ministère l'écrit (« Liste d'union à
+   * gauche »). C'est celui-ci qu'il faut afficher : le code seul est illisible,
+   * et le paraphraser nous ferait dire ce que la source ne dit pas.
+   */
+  nuanceLibelle: string | null;
+  /** Famille dérivée de la nuance ; `null` quand la grille ne tranche pas. */
+  famille: string | null;
+  candidats: Candidat[];
 }
 
 export interface Sortant {
@@ -97,6 +199,25 @@ export interface Sortant {
     interrompu: boolean;
   };
   /**
+   * Candidature du sortant au renouvellement.
+   *
+   * `null` a deux sens qu'il faut distinguer à l'affichage : le sortant ne se
+   * représente pas, ou le fichier du ministère n'est pas encore publié. Le
+   * bloc `candidatures` de l'aperçu tranche entre les deux — s'il est `null`,
+   * on ne sait encore rien de personne.
+   */
+  candidature: {
+    circonscription: { departement: string; nom: string };
+    modeScrutin: string;
+    libelle: string | null;
+    nuance: string | null;
+    nuanceLibelle: string | null;
+    famille: string | null;
+    /** Rang sur la liste : au proportionnel, être 1er ou dernier n'est pas pareil. */
+    ordre: number;
+    role: 'titulaire' | 'suppleant';
+  } | null;
+  /**
    * Statistiques de carrière de la personne — les mêmes que sa fiche. Il n'existe
    * pas d'équivalent carrière pour la présence en scrutin solennel, les amendements
    * adoptés ni les questions : ces mesures ne sont donc pas exposées ici.
@@ -128,6 +249,93 @@ const MANDATS_SORTANTS: Prisma.MandatParlementaireWhereInput = {
 };
 
 
+
+/**
+ * Candidature de chaque personne rattachée, indexée par son slug.
+ *
+ * Une personne ne peut se présenter qu'une fois : le premier rattachement
+ * rencontré fait foi. Le titulaire l'emporte sur le suppléant, l'ordre des
+ * candidats de chaque unité de vote étant déjà celui de `parRang`.
+ */
+export function indexerCandidaturesParSlug(
+  listes: ListeCandidature[],
+): Map<string, NonNullable<Sortant['candidature']>> {
+  const index = new Map<string, NonNullable<Sortant['candidature']>>();
+
+  for (const liste of listes) {
+    for (const candidat of liste.candidats) {
+      if (!candidat.personne || index.has(candidat.personne.slug)) continue;
+
+      index.set(candidat.personne.slug, {
+        circonscription: liste.circonscription,
+        modeScrutin: liste.modeScrutin,
+        libelle: liste.libelle,
+        nuance: liste.nuance,
+        nuanceLibelle: liste.nuanceLibelle,
+        famille: liste.famille,
+        ordre: candidat.ordre,
+        role: candidat.role,
+      });
+    }
+  }
+
+  return index;
+}
+
+/**
+ * Ordre d'affichage des candidats d'une unité de vote.
+ *
+ * Le titulaire d'abord, puis son suppléant ; sur une liste, le rang déposé.
+ * Trier sur la chaîne `role` donnerait l'inverse, « suppleant » précédant
+ * « titulaire » dans l'ordre alphabétique — un piège d'autant plus vicieux
+ * qu'il produit un affichage plausible.
+ */
+export function parRang(a: Candidat, b: Candidat): number {
+  if (a.role !== b.role) return a.role === 'titulaire' ? -1 : 1;
+  return a.ordre - b.ordre || a.id.localeCompare(b.id);
+}
+
+/**
+ * Chiffres de tête sur les candidatures, ou `null` avant leur publication.
+ *
+ * Le comptage des sortants candidats passe par les identifiants de personne et
+ * non par les noms : c'est le rattachement fait à l'ingestion qui fait foi, et
+ * lui seul survit à une graphie différente entre le fichier du ministère et
+ * l'open data parlementaire.
+ */
+export function synthetiserCandidatures(
+  listes: ListeCandidature[],
+  sortants: Sortant[],
+): ApercuSenatoriales['candidatures'] {
+  if (listes.length === 0) return null;
+
+  const candidats = listes.flatMap((liste) => liste.candidats);
+  const idsSortants = new Set(sortants.map((sortant) => sortant.personne.id));
+
+  // Un sortant peut se présenter une seule fois : on compte des personnes, pas
+  // des candidatures, pour ne pas le compter deux fois s'il figurait aussi
+  // comme suppléant ailleurs.
+  const slugsSortantsCandidats = new Set(
+    candidats
+      .filter((candidat) => candidat.sortant && candidat.personne)
+      .map((candidat) => candidat.personne!.slug),
+  );
+
+  const slugsAnciens = new Set(
+    candidats
+      .filter((candidat) => !candidat.sortant && candidat.personne)
+      .map((candidat) => candidat.personne!.slug),
+  );
+
+  return {
+    listes: listes.length,
+    candidats: candidats.length,
+    circonscriptions: new Set(listes.map((liste) => liste.circonscription.departement)).size,
+    sortantsCandidats: slugsSortantsCandidats.size,
+    sortantsNonCandidats: idsSortants.size - slugsSortantsCandidats.size,
+    anciensParlementaires: slugsAnciens.size,
+  };
+}
 
 /** Durée couverte par un segment de mandat, bornée au jour du scrutin. */
 export function joursCouverts(debut: Date, fin: Date | null): number {
@@ -332,13 +540,37 @@ export class SenatorialesService {
     const sansGroupe = groupes.get(SANS_GROUPE.slug);
     if (sansGroupe) parGroupe.push(sansGroupe);
 
+    const candidatures = await this.chargerCandidats();
+
+    // Comptages par circonscription, faits une fois : l'index du web en a
+    // besoin pour les 64, et 64 requêtes séparées coûteraient bien plus que
+    // cette agrégation sur une liste déjà mémorisée.
+    const listesParCirco = new Map<string, number>();
+    const candidatsParCirco = new Map<string, number>();
+    for (const liste of candidatures) {
+      const code = liste.circonscription.departement;
+      listesParCirco.set(code, (listesParCirco.get(code) ?? 0) + 1);
+      candidatsParCirco.set(code, (candidatsParCirco.get(code) ?? 0) + liste.candidats.length);
+    }
+    const publiees = candidatures.length > 0;
+
     const circos = new Map<string, ApercuSenatoriales['circonscriptions'][number]>();
     for (const sortant of sortants) {
       const circo = sortant.circonscription;
       if (!circo) continue;
       const existant = circos.get(circo.departement);
       if (existant) existant.nbSieges += 1;
-      else circos.set(circo.departement, { ...circo, nbSieges: 1 });
+      else {
+        circos.set(circo.departement, {
+          ...circo,
+          nbSieges: 1,
+          // Zéro et « pas encore publié » ne disent pas la même chose : une
+          // circonscription sans aucun candidat serait une anomalie, pas un
+          // état d'attente.
+          nbListes: publiees ? (listesParCirco.get(circo.departement) ?? 0) : null,
+          nbCandidats: publiees ? (candidatsParCirco.get(circo.departement) ?? 0) : null,
+        });
+      }
     }
 
     const circonscriptions = Array.from(circos.values()).sort((a, b) =>
@@ -363,10 +595,122 @@ export class SenatorialesService {
         parGroupe,
       },
       circonscriptions,
+      candidatures: synthetiserCandidatures(candidatures, sortants),
     };
 
     await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
     return result;
+  }
+
+  /**
+   * Toutes les unités de vote du scrutin, avec leurs candidats.
+   *
+   * Même parti pris que `chargerSortants` : une seule lecture mémorisée, puis
+   * filtrage en mémoire. Le volume s'y prête — environ 2 000 candidats répartis
+   * sur quelque 400 unités de vote, soit un objet de quelques centaines de
+   * kilo-octets, à comparer aux 178 sortants déjà mémorisés de la même façon.
+   */
+  private async chargerCandidats(): Promise<ListeCandidature[]> {
+    const cacheKey = 'senatoriales:2026:candidats:bruts';
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
+    const [listes, sortants] = await Promise.all([
+      this.prisma.candidatureListe.findMany({
+        where: { scrutin: SCRUTIN_SLUG },
+        include: {
+          circonscription: { select: { departement: true, nom: true } },
+          candidatures: {
+            include: {
+              personne: { select: { slug: true, chambre: true, photoUrl: true } },
+            },
+            // Le tri utile est fait en mémoire, par `parRang` : trier ici sur
+            // `role` rendrait le suppléant avant le titulaire, « s » précédant
+            // « t ». L'ordre SQL ne sert qu'à rendre la lecture déterministe.
+            orderBy: [{ ordre: 'asc' }, { id: 'asc' }],
+          },
+        },
+      }),
+      this.chargerSortants(),
+    ]);
+
+    // La qualité de sortant se calcule chez nous, par appartenance aux 178
+    // mandats de la série 2, et non en relisant la colonne du fichier : cette
+    // colonne n'existait pas en 2020 et peut disparaître à nouveau.
+    const idsSortants = new Set(sortants.map((sortant) => sortant.personne.id));
+
+    const data: ListeCandidature[] = listes.map((liste) => ({
+      id: liste.id,
+      circonscription: liste.circonscription,
+      modeScrutin: liste.modeScrutin,
+      libelle: liste.libelle,
+      nuance: liste.nuance,
+      nuanceLibelle: liste.nuanceLibelle,
+      famille: liste.famille,
+      candidats: liste.candidatures
+        // Annotation nécessaire : sans elle `role` s'élargit en `string` et le
+        // type littéral de `Candidat` ne se propage plus à travers le `.sort()`.
+        .map((candidature): Candidat => ({
+        id: candidature.id,
+        nom: candidature.nom,
+        prenom: candidature.prenom,
+        sexe: candidature.sexe,
+        anneeNaissance: candidature.anneeNaissance,
+        profession: candidature.professionLabel,
+        ordre: candidature.ordre,
+        role: candidature.role === 'suppleant' ? 'suppleant' : 'titulaire',
+        sortant: candidature.personneId !== null && idsSortants.has(candidature.personneId),
+          personne: candidature.personne,
+        }))
+        .sort(parRang),
+    }));
+
+    // Ordre stable : par circonscription, puis par libellé de liste. Sans ce
+    // départage, deux appels successifs peuvent rendre les listes d'un même
+    // département dans un ordre différent.
+    data.sort(
+      (a, b) =>
+        a.circonscription.departement.localeCompare(b.circonscription.departement) ||
+        (a.libelle ?? '').localeCompare(b.libelle ?? '', 'fr') ||
+        a.id.localeCompare(b.id),
+    );
+
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(data));
+    return data;
+  }
+
+  /**
+   * Candidatures filtrées.
+   *
+   * Pas de cache par combinaison de filtres, pour la raison exposée sur
+   * `getSortants` : une clef construite depuis un paramètre libre finit par
+   * écrire une liste vide sous la clef de l'appel sans filtre.
+   */
+  async getCandidats(
+    query: CandidatsQuery,
+  ): Promise<{ data: ListeCandidature[]; meta: { total: number; candidats: number } }> {
+    const { departement, famille, sortants } = query;
+
+    const toutes = await this.chargerCandidats();
+
+    const data = toutes.filter((liste) => {
+      if (departement && liste.circonscription.departement !== departement) return false;
+      if (famille === 'sans-famille' && liste.famille !== null) return false;
+      if (famille && famille !== 'sans-famille' && liste.famille !== famille) return false;
+      // `sortants` retient les unités de vote qui comptent au moins un sortant :
+      // au proportionnel, la question intéressante est bien « cette liste
+      // porte-t-elle un sortant ? », pas « ce candidat est-il sortant ? ».
+      if (sortants && !liste.candidats.some((candidat) => candidat.sortant)) return false;
+      return true;
+    });
+
+    return {
+      data,
+      meta: {
+        total: data.length,
+        candidats: data.reduce((somme, liste) => somme + liste.candidats.length, 0),
+      },
+    };
   }
 
   /**
@@ -529,6 +873,10 @@ export class SenatorialesService {
           segments: dates.length,
           interrompu: dates.length > 1,
         },
+        // Renseignée par `getSortants` : la remplir ici créerait un cycle,
+        // `chargerCandidats` ayant besoin des sortants pour marquer ses propres
+        // candidats.
+        candidature: null,
         bilan: {
           presence: personne.statsCarrierePresence,
           loyaute: personne.statsCarriereLoyaute,
@@ -562,14 +910,28 @@ export class SenatorialesService {
    * microsecondes — moins que l'aller-retour Redis qu'on vient de supprimer.
    */
   async getSortants(query: SortantsQuery): Promise<{ data: Sortant[]; meta: { total: number } }> {
-    const { departement, groupe, tri } = query;
+    const { departement, groupe, tri, candidat } = query;
 
-    const tous = await this.chargerSortants();
+    const [tous, candidatures] = await Promise.all([
+      this.chargerSortants(),
+      this.chargerCandidats(),
+    ]);
 
-    const retenus = tous.filter((s) => {
+    // La candidature est greffée ici, et pas dans `chargerSortants` : celui-ci
+    // est lu par `chargerCandidats`, et les faire dépendre l'un de l'autre
+    // dans les deux sens créerait un cycle.
+    const parSlug = indexerCandidaturesParSlug(candidatures);
+    const enrichis = tous.map((sortant) => ({
+      ...sortant,
+      candidature: parSlug.get(sortant.personne.slug) ?? null,
+    }));
+
+    const retenus = enrichis.filter((s) => {
       if (departement && s.circonscription?.departement !== departement) return false;
       if (groupe === 'sans-groupe') return s.groupe === null;
       if (groupe && s.groupe?.slug !== groupe) return false;
+      if (candidat === 'oui' && s.candidature === null) return false;
+      if (candidat === 'non' && s.candidature !== null) return false;
       return true;
     });
 

@@ -70,6 +70,32 @@ describe('THRESHOLDS Configuration', () => {
     expect(keys).toContain('parlementaires_without_groupe');
   });
 
+  it('devrait couvrir les invariants des candidatures', () => {
+    const keys = Object.keys(THRESHOLDS);
+    expect(keys).toContain('candidatures_sans_nom');
+    expect(keys).toContain('candidatures_taille_liste');
+    expect(keys).toContain('candidatures_alternance');
+    expect(keys).toContain('candidatures_suppleant_meme_sexe');
+    expect(keys).toContain('candidatures_sortants_non_rattaches');
+  });
+
+  it('les invariants des candidatures comptent des violations, pas des lignes', () => {
+    // Ils doivent valoir zéro sur une base sans aucune candidature : le
+    // fichier du ministère n'est publié qu'une semaine avant le scrutin, et
+    // d'ici là ces contrôles ne doivent bloquer ni le batch ni un déploiement.
+    // Une requête qui compterait les candidatures elles-mêmes échouerait.
+    const candidatures = Object.entries(THRESHOLDS).filter(([clef]) =>
+      clef.startsWith('candidatures_')
+    );
+    expect(candidatures.length).toBeGreaterThan(0);
+
+    for (const [, config] of candidatures) {
+      expect(config.type).toBe('invariant');
+      // Un COUNT(*) nu sur la table entière compterait les lignes normales.
+      expect(config.query).toMatch(/WHERE|HAVING/i);
+    }
+  });
+
   it('devrait couvrir les seuils quantitatifs principaux', () => {
     const keys = Object.keys(THRESHOLDS);
     expect(keys).toContain('parlementaires_count');
