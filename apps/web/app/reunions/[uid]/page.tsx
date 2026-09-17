@@ -39,7 +39,10 @@ async function getReunion(uid: string) {
  * à rallonge que le moteur coupe de toute façon.
  */
 function titreDeLaReunion(reunion: ReunionDetail): string {
-  const commission = reunion.commission?.nom || 'Réunion';
+  const commission =
+    reunion.type === 'seance'
+      ? `Séance publique — ${reunion.commission?.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale'}`
+      : (reunion.commission?.nom || 'Réunion de commission');
   const premierPoint = pointsDeLOrdreDuJour(reunion.odjResume, reunion.odjComplet)[0];
   return premierPoint ? `${commission} — ${premierPoint}` : commission;
 }
@@ -71,8 +74,8 @@ export async function generateMetadata({
     data.commission?.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale',
     jour,
   ];
-  if (data.interventions.length > 0) {
-    morceaux.push(`${data.interventions.length} prises de parole`);
+  if (data.nbInterventions > 0) {
+    morceaux.push(`${data.nbInterventions} prises de parole`);
   }
   if (data.avisCommission.length > 0) {
     morceaux.push(`${data.avisCommission.length} avis sur amendements`);
@@ -100,15 +103,19 @@ export default async function Page({ params }: { params: { uid: string } }) {
       <BreadcrumbJsonLd
         items={[
           { name: 'Accueil', url: BASE_URL },
-          { name: 'Commissions', url: `${BASE_URL}/commissions` },
-          ...(reunion.commission
-            ? [
-                {
-                  name: reunion.commission.nom,
-                  url: `${BASE_URL}/commissions/${reunion.commission.slug}`,
-                },
-              ]
-            : []),
+          ...(reunion.type === 'seance'
+            ? [{ name: 'Agenda', url: `${BASE_URL}/agenda` }]
+            : [
+                { name: 'Commissions', url: `${BASE_URL}/commissions` },
+                ...(reunion.commission
+                  ? [
+                      {
+                        name: reunion.commission.nom,
+                        url: `${BASE_URL}/commissions/${reunion.commission.slug}`,
+                      },
+                    ]
+                  : []),
+              ]),
           {
             name: `${chambreLabel} — ${jourDeLaReunion(reunion.dateDebut)}`,
             url: `${BASE_URL}/reunions/${encodeURIComponent(reunion.uid)}`,

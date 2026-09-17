@@ -13,9 +13,10 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { ExpandableText } from '@/components/ui/expandable-text';
-import { grouperParSujet, libelleDeSeance } from '@/lib/debats';
+import { libelleDeSeance } from '@/lib/debats';
 import { urlDuCompteRendu } from '@/lib/compte-rendu-url';
 import { pointsDeLOrdreDuJour } from '@/lib/ordre-du-jour';
+import { DebatDeReunion, type ScrutinDeSeance } from './DebatDeReunion';
 
 export interface ReunionDetail {
   id: string;
@@ -50,32 +51,10 @@ export interface ReunionDetail {
       groupe: { nom: string; couleur: string | null; slug: string } | null;
     };
   }>;
-  interventions: Array<{
-    id: string;
-    type: string;
-    contenu: string;
-    date: string;
-    hasMore: boolean;
-    ordre: number | null;
-    sourceUrl: string | null;
-    orateurNom: string | null;
-    orateurPrenom: string | null;
-    orateurQualite: string | null;
-    orateurGroupe: string | null;
-    estPresidence: boolean;
-    articleVise: string | null;
-    amendementsVises: string[] | null;
-    texteNumero: string | null;
-    dossier: { uid: string; titre: string } | null;
-    parlementaire: {
-      id: string;
-      slug: string;
-      nom: string;
-      prenom: string;
-      photoUrl: string | null;
-      groupe: { nom: string; couleur: string | null } | null;
-    } | null;
-  }>;
+  /** Nombre de prises de parole ; le débat lui-même se charge page par page. */
+  nbInterventions: number;
+  /** Les votes de la séance, vides pour une commission. */
+  scrutins?: ScrutinDeSeance[];
   avisCommission: Array<{
     id: string;
     numero: string;
@@ -102,7 +81,6 @@ export default function PageClient({ reunion }: { reunion: ReunionDetail }) {
   const router = useRouter();
   const chambreLabel = reunion.commission?.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale';
   const crUrl = urlDuCompteRendu(reunion.compteRenduRef);
-  const groupes = grouperParSujet(reunion.interventions, { avecTexte: true });
 
   const points = pointsDeLOrdreDuJour(reunion.odjResume, reunion.odjComplet);
 
@@ -120,18 +98,32 @@ export default function PageClient({ reunion }: { reunion: ReunionDetail }) {
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
-        <Link href="/commissions" className="flex-shrink-0 transition-colors hover:text-foreground">
-          Commissions
-        </Link>
-        {reunion.commission && (
+        {/* Une séance ne relève pas des commissions : son fil mène à l'agenda,
+            et on ne cite pas la pseudo-commission qui la porte en base
+            (« Assemblée nationale de la 17ème législature »). */}
+        {reunion.type === 'seance' ? (
+          <Link href="/agenda" className="flex-shrink-0 transition-colors hover:text-foreground">
+            Agenda
+          </Link>
+        ) : (
           <>
-            <span className="hidden flex-shrink-0 sm:inline">/</span>
             <Link
-              href={`/commissions/${reunion.commission.slug}`}
-              className="hidden max-w-[16rem] truncate transition-colors hover:text-foreground sm:inline md:max-w-sm"
+              href="/commissions"
+              className="flex-shrink-0 transition-colors hover:text-foreground"
             >
-              {reunion.commission.nom}
+              Commissions
             </Link>
+            {reunion.commission && (
+              <>
+                <span className="hidden flex-shrink-0 sm:inline">/</span>
+                <Link
+                  href={`/commissions/${reunion.commission.slug}`}
+                  className="hidden max-w-[16rem] truncate transition-colors hover:text-foreground sm:inline md:max-w-sm"
+                >
+                  {reunion.commission.nom}
+                </Link>
+              </>
+            )}
           </>
         )}
         <span className="flex-shrink-0">/</span>
@@ -144,8 +136,14 @@ export default function PageClient({ reunion }: { reunion: ReunionDetail }) {
         <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           {chambreLabel}
         </p>
+        {/* Une séance est rattachée à une pseudo-commission qui est la chambre
+            elle-même — « Assemblée nationale de la 17ème législature ». La
+            donner pour titre ne dit rien au lecteur : la chambre est déjà
+            au-dessus, et ce qu'il regarde est une séance publique. */}
         <h1 className="text-balance text-2xl font-bold sm:text-3xl">
-          {reunion.commission?.nom || 'Réunion'}
+          {reunion.type === 'seance'
+            ? 'Séance publique'
+            : (reunion.commission?.nom ?? 'Réunion de commission')}
         </h1>
 
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
@@ -213,43 +211,11 @@ export default function PageClient({ reunion }: { reunion: ReunionDetail }) {
         </section>
       )}
 
-      {groupes.length > 0 && (
-        <section className="mb-8">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Débat — {reunion.interventions.length} prise
-            {reunion.interventions.length > 1 ? 's' : ''} de parole
-          </h2>
-          <div className="divide-y rounded-lg border bg-card">
-            {groupes.map((groupe) => (
-              <div key={groupe.cle}>
-                {groupe.titre && (
-                  <p className="bg-muted/40 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    {groupe.dossier ? (
-                      <>
-                        <Link
-                          href={`/dossiers/${groupe.dossier.uid}`}
-                          title={groupe.dossier.titre}
-                          className="align-bottom text-primary hover:underline"
-                        >
-                          {groupe.dossier.titre}
-                        </Link>
-                        {groupe.sousTitre && <span> · {groupe.sousTitre}</span>}
-                      </>
-                    ) : (
-                      groupe.titre
-                    )}
-                  </p>
-                )}
-                <div className="divide-y">
-                  {groupe.interventions.map((i) => (
-                    <PriseDeParole key={i.id} intervention={i} />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+      <DebatDeReunion
+        uid={reunion.uid}
+        total={reunion.nbInterventions}
+        scrutins={reunion.scrutins}
+      />
 
       {reunion.avisCommission.length > 0 && (
         <section className="mb-8">
@@ -335,50 +301,5 @@ export default function PageClient({ reunion }: { reunion: ReunionDetail }) {
         </section>
       )}
     </main>
-  );
-}
-
-function PriseDeParole({
-  intervention: i,
-}: {
-  intervention: ReunionDetail['interventions'][number];
-}) {
-  // Le compte rendu de commission nomme souvent le groupe de l'orateur là où
-  // celui de la séance ne le fait pas. On préfère le groupe de la fiche quand
-  // on a résolu la personne, et on retombe sur celui qu'annonce le compte rendu.
-  const groupe = i.parlementaire?.groupe?.nom ?? i.orateurGroupe;
-  const nomAffiche = i.parlementaire
-    ? `${i.parlementaire.prenom} ${i.parlementaire.nom}`
-    : [i.orateurPrenom, i.orateurNom].filter(Boolean).join(' ') || 'Orateur non identifié';
-
-  return (
-    <article className="px-4 py-3">
-      <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-        {i.parlementaire ? (
-          <Link
-            href={`/deputes/${i.parlementaire.slug}`}
-            className="text-sm font-semibold text-primary hover:underline"
-          >
-            {nomAffiche}
-          </Link>
-        ) : (
-          <span className="text-sm font-semibold">{nomAffiche}</span>
-        )}
-        {groupe && <span className="text-xs text-muted-foreground">{groupe}</span>}
-        {/* La qualité dit ce que la personne était ce jour-là : rapporteure,
-            présidente, ou la fonction au titre de laquelle elle est auditionnée.
-            C'est souvent le seul repère pour une personne extérieure. */}
-        {i.orateurQualite && (
-          <span className="text-xs italic text-muted-foreground">{i.orateurQualite}</span>
-        )}
-      </div>
-      <ExpandableText
-        text={i.contenu}
-        hasMore={i.hasMore}
-        interventionId={i.id}
-        sourceUrl={i.sourceUrl}
-        maxLines={6}
-      />
-    </article>
   );
 }

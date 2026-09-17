@@ -163,7 +163,12 @@ export function ReunionCard({
 
           {/* Content */}
           <div className='flex-1 min-w-0'>
-            {/* Commission name — clickable link if commission exists */}
+            {/* Le libellé suit le TYPE de la réunion, pas la présence d'une
+                commission rattachée. L'écrire « Séance publique » dès que la
+                commission manquait étiquetait 918 réunions de commission comme
+                des séances de l'hémicycle — la MECSS, les missions
+                d'information, les commissions d'enquête : 62 organes que le
+                rattachement ne résout pas encore. */}
             {reunion.commission ? (
               <Link
                 href={`/commissions/${reunion.commission.slug}`}
@@ -172,7 +177,9 @@ export function ReunionCard({
                 {commissionName}
               </Link>
             ) : (
-              <span className='text-sm font-semibold'>Séance publique</span>
+              <span className='text-sm font-semibold'>
+                {reunion.type === 'seance' ? 'Séance publique' : 'Réunion de commission'}
+              </span>
             )}
 
             {/* ODJ resume — collapsed: 2 lines, expanded: full */}

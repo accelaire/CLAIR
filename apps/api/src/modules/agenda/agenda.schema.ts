@@ -15,6 +15,23 @@ export const reunionDetailSchema = z.object({
   uid: z.string(),
 });
 
+/**
+ * Le débat d'une réunion, page par page.
+ *
+ * Une séance publique porte 355 prises de parole en moyenne et jusqu'à 1 614,
+ * soit plus d'un mégaoctet de texte : elle ne peut pas être servie d'un bloc.
+ * La pagination vaut aussi pour les commissions, dont les comptes rendus sont
+ * plus courts — un seul chemin plutôt que deux qui divergeront.
+ */
+export const debatDeReunionSchema = z.object({
+  uid: z.string(),
+});
+
+export const debatDeReunionQuerySchema = z.object({
+  page: z.coerce.number().min(1).default(1),
+  limit: z.coerce.number().min(1).max(200).default(50),
+});
+
 /** Prochaines échéances institutionnelles (bloc d'accueil, page sénatoriales…). */
 export const prochainesEcheancesQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(50).default(5),
@@ -27,4 +44,5 @@ export const prochainesEcheancesQuerySchema = z.object({
 
 export type AgendaQuery = z.infer<typeof agendaQuerySchema>;
 export type ReunionDetail = z.infer<typeof reunionDetailSchema>;
+export type DebatDeReunionQuery = z.infer<typeof debatDeReunionQuerySchema>;
 export type ProchainesEcheancesQuery = z.infer<typeof prochainesEcheancesQuerySchema>;

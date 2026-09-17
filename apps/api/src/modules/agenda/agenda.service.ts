@@ -1,6 +1,58 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import { Redis } from 'ioredis';
-import { AgendaQuery, ProchainesEcheancesQuery } from './agenda.schema';
+import { AgendaQuery, ProchainesEcheancesQuery, DebatDeReunionQuery } from './agenda.schema';
+
+
+/**
+ * Où sont rangées les prises de parole d'une réunion.
+ *
+ * DEUX RATTACHEMENTS, POUR UNE RAISON HISTORIQUE. Les prises de commission
+ * portent une clé étrangère vers leur réunion (`reunionId`), posée par
+ * l'ingestion des comptes rendus. Celles de séance publique, elles, ne portent
+ * que le `seanceId` du compte rendu — le même texte que l'`uid` de la réunion,
+ * mais sans contrainte, parce que les deux sources n'ont jamais été reliées.
+ *
+ * Conséquence visible avant ce correctif : la page d'une séance affichait zéro
+ * prise de parole alors que la séance du 21 juillet en porte 414.
+ */
+function ouSontLesPrises(reunion: { id: string; uid: string; type: string }) {
+  return reunion.type === 'seance'
+    ? { seanceId: reunion.uid }
+    : { reunionId: reunion.id };
+}
+
+/** Ce qu'il faut d'une prise de parole pour dérouler un débat. */
+const PRISE_DE_PAROLE_SELECT = {
+  id: true,
+  type: true,
+  contenu: true,
+  date: true,
+  ordre: true,
+  sourceUrl: true,
+  orateurNom: true,
+  orateurPrenom: true,
+  orateurQualite: true,
+  // Le compte rendu de commission annonce souvent le groupe de l'orateur
+  // (« M. Untel (LFI-NFP) ») là où celui de la séance ne le fait pas : c'est
+  // parfois le seul moyen de situer une personne auditionnée.
+  orateurGroupe: true,
+  estPresidence: true,
+  articleVise: true,
+  amendementsVises: true,
+  texteNumero: true,
+  dossier: { select: { uid: true, titre: true } },
+  parlementaire: {
+    select: {
+      id: true,
+      slug: true,
+      nom: true,
+      prenom: true,
+      photoUrl: true,
+      chambre: true,
+      groupe: { select: { nom: true, couleur: true } },
+    },
+  },
+} as const;
 
 /** Longueur d'aperçu d'une prise de parole, comme sur les scrutins et les fiches. */
 const CONTENU_PREVIEW_LENGTH = 500;
@@ -332,42 +384,6 @@ export class AgendaService {
           },
           orderBy: { parlementaire: { nom: 'asc' } },
         },
-        // Le débat lui-même, dans l'ordre où la réunion l'a mené.
-        //
-        // `orateurGroupe` s'ajoute à ce que sert la page d'un scrutin : le
-        // compte rendu de commission annonce souvent le groupe de l'orateur
-        // (« M. Untel (LFI-NFP) ») là où celui de la séance ne le fait pas, et
-        // c'est parfois le seul moyen de situer une personne auditionnée.
-        interventions: {
-          select: {
-            id: true,
-            type: true,
-            contenu: true,
-            date: true,
-            ordre: true,
-            sourceUrl: true,
-            orateurNom: true,
-            orateurPrenom: true,
-            orateurQualite: true,
-            orateurGroupe: true,
-            estPresidence: true,
-            articleVise: true,
-            amendementsVises: true,
-            texteNumero: true,
-            dossier: { select: { uid: true, titre: true } },
-            parlementaire: {
-              select: {
-                id: true,
-                slug: true,
-                nom: true,
-                prenom: true,
-                photoUrl: true,
-                groupe: { select: { nom: true, couleur: true } },
-              },
-            },
-          },
-          orderBy: { ordre: 'asc' },
-        },
         // Le tableau des avis, quand la réunion en a rendu un.
         avisCommission: {
           select: {
@@ -390,24 +406,88 @@ export class AgendaService {
 
     if (!reunion) return reunion;
 
-    // Le contenu est tronqué comme sur la page d'un scrutin et sur la fiche
-    // d'un député : une réunion de 80 prises de parole pèse 250 Ko de texte, et
-    // la page n'a pas besoin de tout pour être lisible ni indexable. Le lecteur
-    // déplie ce qu'il veut, `ExpandableText` va rechercher la suite.
-    const allege = {
-      ...reunion,
-      interventions: reunion.interventions.map(({ contenu, ...reste }) => ({
+    const [nbInterventions, scrutins] = await Promise.all([
+      this.prisma.intervention.count({ where: ouSontLesPrises(reunion) }),
+      // Les votes de la séance, dans l'ordre où ils ont été appelés. Une séance
+      // en compte huit en moyenne et jusqu'à 83 ; les commissions n'en ont pas.
+      reunion.type === 'seance'
+        ? this.prisma.scrutin.findMany({
+            where: { seanceRef: reunion.uid },
+            select: {
+              id: true, numero: true, titre: true, date: true, sort: true,
+              chambre: true, session: true,
+              nombrePour: true, nombreContre: true, nombreAbstention: true,
+            },
+            orderBy: { numero: 'asc' },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const detail = { ...reunion, nbInterventions, scrutins };
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(detail));
+    return detail;
+  }
+
+  /**
+   * Le débat d'une réunion, page par page, dans l'ordre où il s'est tenu.
+   *
+   * Chaque prise porte les votes qu'elle a précédés : c'est ce qui permet de
+   * dérouler une séance en replaçant les scrutins à l'endroit où ils sont
+   * tombés, plutôt que de les empiler en pied de page.
+   */
+  async getDebatDeReunion(uid: string, query: DebatDeReunionQuery) {
+    const reunion = await this.prisma.reunion.findUnique({
+      where: { uid },
+      select: { id: true, uid: true, type: true },
+    });
+    if (!reunion) return null;
+
+    const where = ouSontLesPrises(reunion);
+    const [total, lignes] = await Promise.all([
+      this.prisma.intervention.count({ where }),
+      this.prisma.intervention.findMany({
+        where,
+        select: PRISE_DE_PAROLE_SELECT,
+        orderBy: { ordre: 'asc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+    ]);
+
+    const liens = lignes.length
+      ? await this.prisma.interventionScrutin.findMany({
+          where: { interventionId: { in: lignes.map((l) => l.id) } },
+          select: { interventionId: true, scrutinId: true },
+        })
+      : [];
+    const scrutinsParPrise = new Map<string, string[]>();
+    for (const l of liens) {
+      scrutinsParPrise.set(l.interventionId, [
+        ...(scrutinsParPrise.get(l.interventionId) ?? []),
+        l.scrutinId,
+      ]);
+    }
+
+    return {
+      data: lignes.map(({ contenu, ...reste }) => ({
         ...reste,
+        // Tronqué comme sur la page d'un scrutin et sur la fiche d'un député :
+        // une séance pèse jusqu'à 1,1 Mo de texte. Le lecteur déplie ce qu'il
+        // veut, `ExpandableText` va rechercher la suite.
         contenu:
           contenu.length > CONTENU_PREVIEW_LENGTH
             ? contenu.substring(0, CONTENU_PREVIEW_LENGTH)
             : contenu,
         hasMore: contenu.length > CONTENU_PREVIEW_LENGTH,
+        scrutinIds: scrutinsParPrise.get(reste.id) ?? [],
       })),
+      meta: {
+        total,
+        page: query.page,
+        limit: query.limit,
+        totalPages: Math.ceil(total / query.limit),
+        hasNext: query.page * query.limit < total,
+      },
     };
-
-    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(allege));
-
-    return allege;
   }
 }
