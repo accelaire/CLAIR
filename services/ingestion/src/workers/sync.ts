@@ -109,6 +109,16 @@ function slugifyCommission(nom: string, chambre: string): string {
   return `${chambre}-${base}`;
 }
 
+/**
+ * Scrutin dont le smart-sync entretient les candidatures.
+ *
+ * Une constante et non une option : tant qu'une seule élection est en cours,
+ * la rendre configurable inviterait à se tromper de valeur une nuit sans que
+ * rien ne le signale — l'ingestion remplace l'intégralité du périmètre qu'on
+ * lui nomme.
+ */
+const SCRUTIN_CANDIDATURES = 'senatoriales-2026';
+
 export async function syncCommissions(): Promise<{ created: number; updated: number; mandatsLinked: number }> {
   logger.info('Starting commissions sync (from AMO30 organes historiques)...');
 
@@ -3216,6 +3226,7 @@ export interface SmartSyncOptions {
   includeSenatDossierCommissions?: boolean; // Commissions saisies des dossiers Sénat
   includeSenatVideos?: boolean;
   includeAnVideos?: boolean;
+  includeCandidatures?: boolean;
   includeSeancesODJ?: boolean;
   scrutinsLimit?: number;
   reunionsLimit?: number;
@@ -3343,6 +3354,11 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       'senat:videos',
       // 12. Vidéos AN (videos.assemblee-nationale.fr — séances + commissions)
       'assemblee_nationale:videos',
+      // 13. Candidatures aux élections. En dernier, et après les parlementaires :
+      //     le rattachement d'un candidat à sa fiche lit le corpus, et un
+      //     sénateur arrivé le matin même doit y être avant qu'on cherche à le
+      //     reconnaître.
+      'interieur:candidatures',
     ];
   } else {
     sourcesToCheck = options.sources || [
@@ -3363,6 +3379,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       ...(options.includeSenatDossierCommissions ? ['senat:dossier_commissions'] : []),
       ...(options.includeSenatVideos ? ['senat:videos'] : []),
       ...(options.includeAnVideos ? ['assemblee_nationale:videos'] : []),
+      ...(options.includeCandidatures ? ['interieur:candidatures'] : []),
     ];
   }
 
@@ -3594,6 +3611,63 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
               created: 0,
               updated: senatVideosResult.linked + senatVideosCommission.liees,
             };
+            break;
+          }
+
+          case 'interieur:candidatures': {
+            const { resoudreRessourcesCandidatures } = await import(
+              '../sources/senatoriales/datagouv.js'
+            );
+            const { ingererCandidatures } = await import(
+              '../sources/senatoriales/candidatures-client.js'
+            );
+            const { downloadWithRetry } = await import('../utils/download.js');
+            const os = await import('os');
+            const nodePath = await import('path');
+            const fs = await import('fs');
+
+            const ressources = await resoudreRessourcesCandidatures();
+            const fichiers: string[] = [];
+
+            try {
+              for (const [index, ressource] of ressources.entries()) {
+                const destination = nodePath.join(
+                  os.tmpdir(),
+                  `candidatures-${Date.now()}-${index}.${ressource.extension}`,
+                );
+                await downloadWithRetry(ressource.url, destination);
+                fichiers.push(destination);
+              }
+
+              const rapport = await ingererCandidatures(prisma, {
+                fichiers,
+                scrutin: SCRUTIN_CANDIDATURES,
+              });
+
+              // Le rapprochement est le seul endroit où une régression serait
+              // invisible : le compte de candidats, lui, ne bougerait pas.
+              if (rapport.sortantsDeclaresRattaches < rapport.sortantsDeclares) {
+                logger.warn(
+                  {
+                    declares: rapport.sortantsDeclares,
+                    rattaches: rapport.sortantsDeclaresRattaches,
+                  },
+                  'des sortants déclarés par le fichier ne sont pas rattachés à une personne',
+                );
+              }
+              if (rapport.nuancesInconnues.length > 0) {
+                logger.warn(
+                  { nuances: rapport.nuancesInconnues },
+                  'nuances absentes de la grille, écrites sans famille',
+                );
+              }
+
+              syncResult = { created: rapport.candidats, updated: 0 };
+            } finally {
+              await Promise.all(
+                fichiers.map((fichier) => fs.promises.rm(fichier, { force: true })),
+              );
+            }
             break;
           }
 

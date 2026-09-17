@@ -390,6 +390,7 @@ program
   .option('--senat-dossier-commissions', 'Inclure les commissions saisies des dossiers Sénat (scraping senat.fr)')
   .option('--senat-videos', 'Inclure les vidéos Sénat (scraping videos.senat.fr)')
   .option('--an-videos', 'Inclure les vidéos AN (videos.assemblee-nationale.fr)')
+  .option('--candidatures', 'Inclure les candidatures aux sénatoriales 2026 (data.gouv)')
   .option('--seances-odj', 'Inclure l\'enrichissement ODJ des séances publiques (CSV AN)')
   .option('-l, --limit <number>', 'Limite globale pour tous les types (défaut: TOUT)', parseInt)
   .option('--sources <sources>', 'Sources spécifiques à sync (séparées par des virgules)')
@@ -415,6 +416,7 @@ program
         includeSenatDossierCommissions: options.senatDossierCommissions,
         includeSenatVideos: options.senatVideos,
         includeAnVideos: options.anVideos,
+        includeCandidatures: options.candidatures,
         includeSeancesODJ: options.seancesOdj,
         scrutinsLimit: options.limit,
         amendementsLimit: options.limit,
@@ -1564,7 +1566,19 @@ program
   )
   .option('--scrutin <slug>', 'Identifiant du scrutin', 'senatoriales-2026')
   .option('--simulation', 'Analyser et rapporter sans rien écrire en base')
-  .action(async (options: { fichier: string[]; scrutin: string; simulation?: boolean }) => {
+  .option(
+    '--forcer-chute',
+    'Écrire même si le fichier contient beaucoup moins de candidats que la base. ' +
+      'À n\'utiliser qu\'après avoir vérifié que la baisse est réelle : l\'ingestion ' +
+      'remplace l\'intégralité du scrutin.'
+  )
+  .action(
+    async (options: {
+      fichier: string[];
+      scrutin: string;
+      simulation?: boolean;
+      forcerChute?: boolean;
+    }) => {
     const { PrismaClient } = await import('@prisma/client');
     const prisma = new PrismaClient();
     const fichiersTemporaires: string[] = [];
@@ -1602,6 +1616,7 @@ program
         fichiers,
         scrutin: options.scrutin,
         simulation: options.simulation ?? false,
+        forcerChute: options.forcerChute ?? false,
       });
 
       const { rattachement: r } = rapport;

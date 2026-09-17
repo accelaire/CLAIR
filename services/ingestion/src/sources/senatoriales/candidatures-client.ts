@@ -35,6 +35,14 @@ import { nuanceInconnue, resoudreNuance } from './nuances.js';
 import { rattacherLot } from './rattachement.js';
 import type { StatistiquesRattachement } from './rattachement.js';
 
+/**
+ * Baisse maximale tolérée du nombre de candidats d'un passage à l'autre.
+ *
+ * Généreux à dessein : une candidature peut être retirée, jamais un cinquième
+ * d'entre elles. Au-delà, c'est la source qui est en cause, pas la réalité.
+ */
+const CHUTE_MAX = 0.2;
+
 export interface OptionsIngestionCandidatures {
   /**
    * Fichiers locaux publiés par le ministère.
@@ -47,6 +55,18 @@ export interface OptionsIngestionCandidatures {
   scrutin: string;
   /** Écrit le rapport sans rien modifier en base. */
   simulation?: boolean;
+  /**
+   * Autorise un effondrement du nombre de candidats.
+   *
+   * Par défaut, une ingestion qui ferait perdre plus de `CHUTE_MAX` du corpus
+   * déjà en place échoue au lieu d'écrire. Ce garde-fou n'existait pas tant que
+   * l'ingestion était un acte manuel et vérifié ; il devient indispensable dès
+   * lors qu'elle tourne toutes les nuits, parce que l'écriture est un
+   * **remplacement intégral** : un fichier tronqué par la source effacerait
+   * des candidats d'une page publique, à dix jours du scrutin, sans que
+   * personne ne l'ait demandé.
+   */
+  forcerChute?: boolean;
 }
 
 export interface RapportIngestionCandidatures {
@@ -61,6 +81,8 @@ export interface RapportIngestionCandidatures {
   rattachement: StatistiquesRattachement;
   sortantsDeclares: number;
   sortantsDeclaresRattaches: number;
+  /** Candidats déjà en base pour ce scrutin, avant écriture. */
+  candidatsAvant: number;
   simulation: boolean;
 }
 
@@ -137,6 +159,20 @@ export async function ingererCandidatures(
     await chargerPersonnes(prisma)
   );
 
+  const existants = await prisma.candidature.count({
+    where: { liste: { scrutin } },
+  });
+  const chute = existants > 0 ? 1 - candidats.length / existants : 0;
+
+  if (chute > CHUTE_MAX && !options.forcerChute) {
+    throw new Error(
+      `Le fichier ne contient que ${candidats.length} candidats contre ${existants} en base ` +
+        `(${Math.round(chute * 100)} % de moins). L'ingestion remplace l'intégralité du ` +
+        'scrutin : elle est interrompue plutôt que d\'effacer des candidatures publiées. ' +
+        'Vérifier la source, puis relancer avec --forcer-chute si la baisse est réelle.',
+    );
+  }
+
   if (!simulation) {
     await ecrire(prisma, scrutin, listes, candidats);
   }
@@ -151,6 +187,7 @@ export async function ingererCandidatures(
     rattachement,
     sortantsDeclares: sortants.declares,
     sortantsDeclaresRattaches: sortants.rattaches,
+    candidatsAvant: existants,
     simulation,
   };
 }

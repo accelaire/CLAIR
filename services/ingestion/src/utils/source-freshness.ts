@@ -175,6 +175,20 @@ export const SOURCES: Record<string, SourceConfig> = {
     url: 'https://videos.senat.fr/chaine.seance-publique',
     alwaysSync: true,
   },
+  'interieur:candidatures': {
+    source: 'interieur',
+    dataType: 'candidatures',
+    // Le jeu de données du ministère sur data.gouv, et non l'URL d'un fichier :
+    // les ressources sont versionnées par horodatage, donc une republication
+    // corrigée crée une NOUVELLE url. Sonder l'ancienne répondrait 200 avec le
+    // même ETag et ne signalerait jamais rien.
+    //
+    // L'API du jeu de données, elle, n'expose ni ETag ni Last-Modified : pas de
+    // check possible, d'où `alwaysSync`. Le coût est négligeable — 330 Ko et
+    // quelques secondes — et l'écriture est idempotente.
+    url: 'https://www.data.gouv.fr/api/1/datasets/elections-senatoriales-2026-candidatures-aux-scrutins-majoritaire-tour-1-et-proportionnel/',
+    alwaysSync: true,
+  },
   'assemblee_nationale:videos': {
     source: 'assemblee_nationale',
     dataType: 'videos',
