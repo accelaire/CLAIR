@@ -2,6 +2,9 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import { Redis } from 'ioredis';
 import { AgendaQuery, ProchainesEcheancesQuery } from './agenda.schema';
 
+/** Longueur d'aperçu d'une prise de parole, comme sur les scrutins et les fiches. */
+const CONTENU_PREVIEW_LENGTH = 500;
+
 export class AgendaService {
   // Agenda data changes daily (reunions added/modified)
   private readonly CACHE_TTL = 3600; // 1 hour
@@ -329,13 +332,82 @@ export class AgendaService {
           },
           orderBy: { parlementaire: { nom: 'asc' } },
         },
+        // Le débat lui-même, dans l'ordre où la réunion l'a mené.
+        //
+        // `orateurGroupe` s'ajoute à ce que sert la page d'un scrutin : le
+        // compte rendu de commission annonce souvent le groupe de l'orateur
+        // (« M. Untel (LFI-NFP) ») là où celui de la séance ne le fait pas, et
+        // c'est parfois le seul moyen de situer une personne auditionnée.
+        interventions: {
+          select: {
+            id: true,
+            type: true,
+            contenu: true,
+            date: true,
+            ordre: true,
+            sourceUrl: true,
+            orateurNom: true,
+            orateurPrenom: true,
+            orateurQualite: true,
+            orateurGroupe: true,
+            estPresidence: true,
+            articleVise: true,
+            amendementsVises: true,
+            texteNumero: true,
+            dossier: { select: { uid: true, titre: true } },
+            parlementaire: {
+              select: {
+                id: true,
+                slug: true,
+                nom: true,
+                prenom: true,
+                photoUrl: true,
+                groupe: { select: { nom: true, couleur: true } },
+              },
+            },
+          },
+          orderBy: { ordre: 'asc' },
+        },
+        // Le tableau des avis, quand la réunion en a rendu un.
+        avisCommission: {
+          select: {
+            id: true,
+            numero: true,
+            position: true,
+            sens: true,
+            place: true,
+            auteur: true,
+            groupe: true,
+            ordre: true,
+            amendement: {
+              select: { id: true, numero: true, sort: true, dossierId: true },
+            },
+          },
+          orderBy: { ordre: 'asc' },
+        },
       },
     });
 
-    if (reunion) {
-      await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(reunion));
-    }
+    if (!reunion) return reunion;
 
-    return reunion;
+    // Le contenu est tronqué comme sur la page d'un scrutin et sur la fiche
+    // d'un député : une réunion de 80 prises de parole pèse 250 Ko de texte, et
+    // la page n'a pas besoin de tout pour être lisible ni indexable. Le lecteur
+    // déplie ce qu'il veut, `ExpandableText` va rechercher la suite.
+    const allege = {
+      ...reunion,
+      interventions: reunion.interventions.map(({ contenu, ...reste }) => ({
+        ...reste,
+        contenu:
+          contenu.length > CONTENU_PREVIEW_LENGTH
+            ? contenu.substring(0, CONTENU_PREVIEW_LENGTH)
+            : contenu,
+        hasMore: contenu.length > CONTENU_PREVIEW_LENGTH,
+      })),
+    };
+
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(allege));
+
+    return allege;
   }
 }

@@ -25,6 +25,7 @@ import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
 import { FilterBar } from '@/components/FilterBar';
 import { ScrutinsByDossier } from '@/components/scrutins/ScrutinsByDossier';
 import { urlDuCompteRendu } from '@/lib/compte-rendu-url';
+import { pointsDeLOrdreDuJour } from '@/lib/ordre-du-jour';
 
 export interface CommissionDetail {
   id: string;
@@ -196,11 +197,7 @@ function OrdreDuJour({ resume, complet }: { resume: string | null; complet: stri
   // de l'ingestion, si bien que son dernier point est coupé en plein mot — 168
   // réunions sur 311 sont dans ce cas. Le complet sépare les points par des
   // retours à la ligne et va jusqu'à 5 000 caractères.
-  const source = complet || resume || '';
-  const points = source
-    .split(complet ? '\n' : '|')
-    .map((p) => p.trim())
-    .filter(Boolean);
+  const points = pointsDeLOrdreDuJour(resume, complet);
 
   if (points.length === 0) return null;
 
@@ -223,7 +220,7 @@ function OrdreDuJour({ resume, complet }: { resume: string | null; complet: stri
         <button
           type='button'
           onClick={() => setDeplie(true)}
-          className='text-xs underline underline-offset-2 hover:text-foreground transition-colors'
+          className='relative z-[2] text-xs underline underline-offset-2 hover:text-foreground transition-colors'
         >
           + {restants} autre{restants > 1 ? 's' : ''} point{restants > 1 ? 's' : ''} à l&apos;ordre du jour
         </button>
@@ -232,7 +229,7 @@ function OrdreDuJour({ resume, complet }: { resume: string | null; complet: stri
         <button
           type='button'
           onClick={() => setDeplie(false)}
-          className='text-xs underline underline-offset-2 hover:text-foreground transition-colors'
+          className='relative z-[2] text-xs underline underline-offset-2 hover:text-foreground transition-colors'
         >
           Réduire
         </button>
@@ -247,7 +244,17 @@ function ReunionItem({ reunion }: { reunion: Reunion }) {
   const hasScrutins = reunion.scrutins && reunion.scrutins.length > 0;
 
   return (
-    <div className='rounded-lg border bg-card p-4'>
+    <div className='relative rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md'>
+      {/* Le lien étalé : la carte entière mène à la réunion, comme celles d'un
+          scrutin ou d'un dossier. Pas d'enveloppe <Link> possible — la carte
+          contient déjà des liens (vidéo, compte rendu, scrutins). Le lien couvre
+          donc la carte en z-[1], et ce qui est cliquable passe en z-[2]. */}
+      <Link
+        href={`/reunions/${encodeURIComponent(reunion.uid)}`}
+        className='absolute inset-0 z-[1] rounded-lg'
+      >
+        <span className='sr-only'>Voir le détail de la réunion</span>
+      </Link>
       <div className='flex items-start justify-between gap-3'>
         <div className='flex-1 min-w-0'>
           <div className='flex items-center gap-x-2 gap-y-0.5 flex-wrap text-sm font-medium mb-1'>
@@ -270,7 +277,7 @@ function ReunionItem({ reunion }: { reunion: Reunion }) {
             </p>
           )}
         </div>
-        <div className='flex flex-col items-end gap-1 shrink-0'>
+        <div className='relative z-[2] flex flex-col items-end gap-1 shrink-0'>
           {reunion.urlVideo && (
             <a
               href={reunion.urlVideo}
@@ -301,7 +308,7 @@ function ReunionItem({ reunion }: { reunion: Reunion }) {
       </div>
 
       {hasScrutins && (
-        <div className='mt-3 pt-3 border-t'>
+        <div className='relative z-[2] mt-3 pt-3 border-t'>
           <ScrutinsByDossier
             scrutins={reunion.scrutins!}
             label='Scrutins de la séance'
