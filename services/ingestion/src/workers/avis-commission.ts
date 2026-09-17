@@ -38,6 +38,15 @@ const prisma = new PrismaClient();
 
 const CHAMBRE = 'assemblee';
 
+/**
+ * La phrase qui fait d'un tableau un tableau d'AVIS.
+ *
+ * « la commission examine, en application de l'article 88 du Règlement, des
+ * amendements ». Les articles 86 et 91 ouvrent le même type de réunion.
+ */
+const EXAMEN_ARTICLE_88 =
+  /en\s+application\s+de\s+l[’']article\s+(?:86|88|91)\s+du\s+R[èe]glement/u;
+
 export interface OptionsAvisCommission {
   /** Ne regarder que les réunions tenues depuis cette date. */
   depuis?: Date;
@@ -60,6 +69,8 @@ export interface ResultatAvisCommission {
   sansCompteRendu: number;
   /** Réunions dont le compte rendu ne porte aucun tableau : ce sont des débats. */
   sansTableau: number;
+  /** Tableaux lus hors d'un examen « article 86/88/91 » : à regarder. */
+  horsArticle88: number;
   /** Réunions dont le tableau a été reconnu sans pouvoir être lu. À regarder. */
   tableauxNonLus: number;
   /** Comptes rendus dont le préambule ne nomme aucun texte. */
@@ -136,6 +147,7 @@ export async function syncAvisCommission(
     avisRattaches: 0,
     sansCompteRendu: 0,
     sansTableau: 0,
+    horsArticle88: 0,
     tableauxNonLus: 0,
     sansTexteNomme: 0,
   };
@@ -194,6 +206,26 @@ export async function syncAvisCommission(
       if (avis.length === 0) {
         resultat.sansTableau += 1;
         continue;
+      }
+
+      // Un tableau d'avis est censé venir d'un examen « en application de
+      // l'article 86/88/91 du Règlement » : la commission y dit ce qu'elle
+      // recommandera EN SÉANCE, sans pouvoir rejeter elle-même l'amendement.
+      // C'est ce qui donne leur sens aux deux vocabulaires qu'on rencontre —
+      // « Accepté / Repoussé » et « Avis favorable / défavorable » — qui
+      // veulent dire la même chose.
+      //
+      // Rien ne garantissait cet invariant : le worker lit les tableaux de TOUS
+      // les comptes rendus, et un tableau d'examen de texte, où « Accepté »
+      // voudrait dire adopté par la commission, y entrerait sans qu'on le voie.
+      // Vérifié à ce jour sur les 120 réunions qui portent des avis : toutes
+      // ont le marqueur. On le compte désormais plutôt que de le supposer.
+      if (!EXAMEN_ARTICLE_88.test(telecharge.texte)) {
+        resultat.horsArticle88 += 1;
+        logger.warn(
+          { compteRenduRef, url: telecharge.url, avis: avis.length },
+          'Tableau d’avis sans mention de l’article 86/88/91'
+        );
       }
 
       const numerosDeTexte = numerosDeTexteDuCompteRendu(telecharge.texte);

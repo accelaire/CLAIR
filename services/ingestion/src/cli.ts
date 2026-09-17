@@ -1389,6 +1389,7 @@ program
       console.log(`Sans tableau (débats)    : ${r.sansTableau}`);
       console.log(`Tableaux illisibles      : ${r.tableauxNonLus}`);
       console.log(`Sans texte nommé         : ${r.sansTexteNomme}`);
+      console.log(`Hors article 86/88/91    : ${r.horsArticle88}`);
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'sync-avis-commission failed');

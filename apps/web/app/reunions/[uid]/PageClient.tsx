@@ -257,8 +257,10 @@ export default function PageClient({ reunion }: { reunion: ReunionDetail }) {
             Avis sur les amendements — {reunion.avisCommission.length}
           </h2>
           <p className="mb-3 text-xs text-muted-foreground">
-            Position de la commission sur les amendements qu&apos;elle a examinés, telle que le
-            compte rendu l&apos;imprime.
+            Examinés en application de l&apos;article 88 du Règlement : la commission annonce ce
+            qu&apos;elle recommandera en séance, sans pouvoir rejeter elle-même l&apos;amendement.
+            Les libellés sont ceux du compte rendu — « Accepté » et « Avis favorable » veulent
+            dire la même chose.
           </p>
           <div className="overflow-x-auto rounded-lg border">
             <table className="w-full text-sm">
