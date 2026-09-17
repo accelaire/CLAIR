@@ -65,7 +65,17 @@ const ROLE_DES_TITRES: Array<[RegExp, Role]> = [
   [/^(?:Place|Article)$/iu, 'place'],
   [/^Auteurs?$/iu, 'auteur'],
   [/^Groupes?$/iu, 'groupe'],
-  [/^(?:Avis|Sort|Position(?:\s+de\s+la\s+commission)?)$/iu, 'position'],
+  // La colonne d'avis porte cinq titres. « Position du rapporteur » en est un :
+  // le préambule de ces mêmes comptes rendus annonce pourtant « le sens des
+  // avis émis PAR LA COMMISSION », qui suit le rapporteur — c'est bien l'avis
+  // de la commission qu'on lit.
+  //
+  // Le titre est aussi parfois coupé par la mise en page : « Position de la »
+  // reste sur la ligne d'en-tête et « commission » passe à la suivante. On
+  // accepte donc un titre qui COMMENCE par « Position », sans quoi trois
+  // tableaux entiers restaient muets.
+  [/^(?:Avis|Sort)$/iu, 'position'],
+  [/^Position\b/iu, 'position'],
 ];
 
 function roleDuTitre(titre: string): Role | null {
@@ -210,12 +220,14 @@ const IDENTIQUE = /^(?:X|[IVX]*-?\d+)$/u;
  * numéro d'amendement et les deux sont des nombres. « 2 70 » se lit place 2,
  * amendement 70 — sans quoi la ligne entière est perdue.
  */
-const PREFIXE_DE_PLACE = /^(?:ap\.?|apr[èe]s|av\.?|avant)$/iu;
+// « Article » ouvre parfois la cellule — « Article unique », « Article 3 » —
+// là où la plupart des tableaux n'impriment que le rang.
+const PREFIXE_DE_PLACE = /^(?:ap\.?|apr[èe]s|av\.?|avant|articles?)$/iu;
 // « unique » manquait : un texte d'un seul article écrit « Article unique », et
 // sa place vaut donc « unique ». Sans lui, la place n'était pas reconnue, le mot
 // revenait à l'auteur qui le refusait, et la ligne entière était perdue — un
 // tableau complet avec elle.
-const RANG_DE_PLACE = /^(?:premier|unique|1er|1re|1[èe]re|titre|intitul[ée]|annexe|[ée]tat|[IVX]*-?\d+)$/iu;
+const RANG_DE_PLACE = /^(?:premier|unique|liminaire|1er|1re|1[èe]re|titre|intitul[ée]|annexe|[ée]tat|[IVX]*-?\d+)$/iu;
 const SUFFIXE_DE_PLACE = /^(?:bis|ter|quater|quinquies|sexies|septies|[A-Z])$/u;
 /** Un alinéa : un rang, parfois précédé d'« ap. » quand l'amendement s'insère après. */
 const RANG_DALINEA = /^(?:ap\.?|apr[èe]s|RG|S|\d+)$/iu;

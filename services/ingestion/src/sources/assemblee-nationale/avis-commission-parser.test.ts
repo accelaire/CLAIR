@@ -310,3 +310,67 @@ describe('mises en page longtemps illisibles', () => {
     ).toBeNull();
   });
 });
+
+// =============================================================================
+// Les titres de la colonne d'avis, et deux places de plus
+// =============================================================================
+//
+// Relevés sur les 17 comptes rendus qui restaient muets après la première
+// passe. Lignes copiées telles quelles des PDF.
+
+describe('titres de la colonne d’avis', () => {
+  // Le titre dit « du rapporteur », mais le préambule de ces mêmes comptes
+  // rendus annonce « le sens des avis émis PAR LA COMMISSION » : c'est bien son
+  // avis, que la commission rend en suivant son rapporteur.
+  it('reconnaît « Position du rapporteur »', () => {
+    const colonnes = colonnesDeLEnTete(
+      'N° Amdt           Place                Auteur        Groupe      Position du rapporteur'
+    );
+    expect(colonnes?.map((c) => c.role)).toEqual([
+      'numero', 'place', 'auteur', 'groupe', 'position',
+    ]);
+    const lu = lireLigneDeTableau(
+      '  33            PREMIER         M. VOS Frédéric-Pierre     RN       Repoussé',
+      colonnes!
+    );
+    expect(lu?.get('numero')).toBe('33');
+    expect(lu?.get('place')).toBe('PREMIER');
+    expect(lu?.get('position')).toBe('Repoussé');
+  });
+
+  // La mise en page coupe « Position de la commission » : « commission » passe
+  // à la ligne suivante et l'en-tête n'en garde que le début.
+  it('reconnaît un titre tronqué par la mise en page', () => {
+    const colonnes = colonnesDeLEnTete(
+      'N° Amdt           Place              Auteur                Groupe          Position de la'
+    );
+    expect(colonnes?.map((c) => c.role)).toContain('position');
+  });
+});
+
+describe('places rencontrées ensuite', () => {
+  const colonnes = colonnesDeLEnTete(
+    'N° Amdt        Place                     Auteur       Groupe    Position du rapporteur'
+  )!;
+
+  it('lit « Article unique »', () => {
+    const lu = lireLigneDeTableau(
+      '      47      Article unique    M. NAEGELEN Christophe    LIOT            Repoussé',
+      colonnes
+    );
+    expect(lu?.get('numero')).toBe('47');
+    expect(lu?.get('place')).toBe('Article unique');
+    expect(lu?.get('auteur')).toBe('M. NAEGELEN Christophe');
+    expect(lu?.get('position')).toBe('Repoussé');
+  });
+
+  it('lit « liminaire »', () => {
+    const lu = lireLigneDeTableau(
+      '      5             liminaire      M. DE COURSON Charles       LIOT     Accepté',
+      colonnes
+    );
+    expect(lu?.get('place')).toBe('liminaire');
+    expect(lu?.get('auteur')).toBe('M. DE COURSON Charles');
+    expect(lu?.get('position')).toBe('Accepté');
+  });
+});
