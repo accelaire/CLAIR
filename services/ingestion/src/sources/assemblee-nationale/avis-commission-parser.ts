@@ -51,14 +51,18 @@ export interface AvisSurAmendement {
 export type SensDeLAvis = 'favorable' | 'defavorable' | 'autre';
 
 /** Le rôle d'une colonne, déduit de son titre. */
-type Role = 'numero' | 'identique' | 'place' | 'auteur' | 'groupe' | 'position';
+type Role = 'numero' | 'identique' | 'place' | 'alinea' | 'auteur' | 'groupe' | 'position';
 
 const ROLE_DES_TITRES: Array<[RegExp, Role]> = [
   // L'ordre compte : « N° Id » doit être reconnu avant « N° ».
   [/^N°\s*Id\.?$/iu, 'identique'],
   [/^N°\s*(?:Amdt|Amdt\.|Amendement)?$/iu, 'numero'],
   [/^Amendements?$/iu, 'numero'],
-  [/^(?:Place|Article|Alin[ée]a)$/iu, 'place'],
+  // « Alinéa » a son rôle à lui : onze tableaux portent À LA FOIS « Place » et
+  // « Alinéa », et les ranger sous le même rôle collait leurs valeurs — la
+  // place d'un amendement de l'article 2, alinéa 13, se lisait « 2 13 ».
+  [/^Alin[ée]as?$/iu, 'alinea'],
+  [/^(?:Place|Article)$/iu, 'place'],
   [/^Auteurs?$/iu, 'auteur'],
   [/^Groupes?$/iu, 'groupe'],
   [/^(?:Avis|Sort|Position(?:\s+de\s+la\s+commission)?)$/iu, 'position'],
@@ -99,6 +103,11 @@ const ANNONCES: Array<[RegExp, string]> = [
   [/il\s+est\s+propos[ée]\s+de\s+donner\s+un\s+avis\s+d[ée]favorable/iu, 'Avis défavorable'],
   [/la\s+commission\s+a\s+accept[ée]/iu, 'Accepté'],
   [/la\s+commission\s+a\s+repouss[ée]/iu, 'Repoussé'],
+  // Le présent de narration, forme la plus répandue : relevé sur 19 des 39
+  // comptes rendus dont le tableau restait illisible. « repousse » n'y figure
+  // pas, mais c'est la même construction et l'Assemblée l'emploie ailleurs.
+  [/la\s+commission\s+accepte\s+les\s+amendements/iu, 'Accepté'],
+  [/la\s+commission\s+repousse\s+les\s+amendements/iu, 'Repoussé'],
   [/ont\s+[ée]t[ée]\s+accept[ée]s/iu, 'Accepté'],
   [/ont\s+[ée]t[ée]\s+repouss[ée]s/iu, 'Repoussé'],
   [/avis\s+favorable/iu, 'Avis favorable'],
@@ -133,6 +142,13 @@ export function colonnesDeLEnTete(ligne: string): Colonne[] | null {
   }
   const roles = new Set(colonnes.map((c) => c.role));
   if (!roles.has('auteur') || !roles.has('groupe') || !roles.has('numero')) return null;
+
+  // Un « Alinéa » sans « Place » EST la place : c'est la seule position que le
+  // tableau donne. Séparer les deux rôles ne doit pas faire perdre sa position à
+  // un tableau qui n'a que cette colonne-là.
+  if (roles.has('alinea') && !roles.has('place')) {
+    return colonnes.map((c) => (c.role === 'alinea' ? { role: 'place' as const } : c));
+  }
   return colonnes;
 }
 
@@ -195,8 +211,14 @@ const IDENTIQUE = /^(?:X|[IVX]*-?\d+)$/u;
  * amendement 70 — sans quoi la ligne entière est perdue.
  */
 const PREFIXE_DE_PLACE = /^(?:ap\.?|apr[èe]s|av\.?|avant)$/iu;
-const RANG_DE_PLACE = /^(?:premier|1er|1re|1[èe]re|titre|intitul[ée]|annexe|[ée]tat|[IVX]*-?\d+)$/iu;
+// « unique » manquait : un texte d'un seul article écrit « Article unique », et
+// sa place vaut donc « unique ». Sans lui, la place n'était pas reconnue, le mot
+// revenait à l'auteur qui le refusait, et la ligne entière était perdue — un
+// tableau complet avec elle.
+const RANG_DE_PLACE = /^(?:premier|unique|1er|1re|1[èe]re|titre|intitul[ée]|annexe|[ée]tat|[IVX]*-?\d+)$/iu;
 const SUFFIXE_DE_PLACE = /^(?:bis|ter|quater|quinquies|sexies|septies|[A-Z])$/u;
+/** Un alinéa : un rang, parfois précédé d'« ap. » quand l'amendement s'insère après. */
+const RANG_DALINEA = /^(?:ap\.?|apr[èe]s|RG|S|\d+)$/iu;
 
 /**
  * Consomme une référence d'article à partir de `i`. Rend l'indice d'arrêt.
@@ -235,6 +257,7 @@ export function lireLigneDeTableau(ligne: string, colonnes: Colonne[]): Map<Role
   // sigle : lui laisser avaler les mots suivants lui ferait manger l'article.
   const rangDuGroupe = colonnes.findIndex((c) => c.role === 'groupe');
   const placeApresGroupe = colonnes.some((c, rang) => c.role === 'place' && rang > rangDuGroupe);
+  const alineaSuit = colonnes.some((c, rang) => c.role === 'alinea' && rang > colonnes.findIndex((x) => x.role === 'place'));
 
   for (const { role } of colonnes) {
     if (i >= mots.length) break;
@@ -262,9 +285,13 @@ export function lireLigneDeTableau(ligne: string, colonnes: Colonne[]): Map<Role
       // sa grammaire : sinon elle avale aussi le numéro d'amendement.
       const dejaVuLAuteur = out.has('auteur');
       const debut = i;
-      if (dejaVuLAuteur) {
+      if (dejaVuLAuteur && !alineaSuit) {
         while (i < mots.length && !MOTS_DAVIS.test(mots[i]!)) i += 1;
       } else {
+        // Avec une colonne d'alinéa derrière, courir jusqu'au bout de la ligne
+        // lui prendrait sa valeur : « 2 13 » se lirait place 2 alinéa 13, mais
+        // la place emportait les deux. Sa grammaire suffit à s'arrêter au bon
+        // endroit.
         i = finDeLaPlace(mots, i, out.has('numero'));
       }
       if (i > debut) out.set('place', mots.slice(debut, i).join(' '));
@@ -303,6 +330,17 @@ export function lireLigneDeTableau(ligne: string, colonnes: Colonne[]): Map<Role
       const debut = i;
       while (i < mots.length && !MOTS_DAVIS.test(mots[i]!)) i += 1;
       if (i > debut) out.set('groupe', mots.slice(debut, i).join(' '));
+      continue;
+    }
+
+    if (role === 'alinea') {
+      // Consommée pour ne pas la laisser à la place, qui l'avalerait. On ne la
+      // conserve pas : l'alinéa visé est une précision que la base ne porte pas
+      // encore, et la lire suffit à rendre la place juste.
+      if (i < mots.length && RANG_DALINEA.test(mots[i]!)) {
+        out.set('alinea', mots[i]!);
+        i += 1;
+      }
       continue;
     }
 
