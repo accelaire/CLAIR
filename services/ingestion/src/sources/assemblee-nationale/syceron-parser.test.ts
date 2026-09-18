@@ -465,3 +465,73 @@ describe('cibleDeLAnnonce', () => {
     expect(cible('La parole est à M. Yannick Monnet.')).toBeNull();
   });
 });
+
+// Reproduit la structure de l'archive de la 15e législature : la proclamation
+// du scrutin est portée par un élément <vote>, non par un <paragraphe>, son
+// texte vit dans <texteBrut> avec des <br/> en guise de retours à la ligne, et
+// le compte rendu ne déclare pas de <seanceRef>.
+const SEANCE_15E = `<?xml version='1.0' encoding='UTF-8'?>
+<compteRendu xmlns="http://schemas.assemblee-nationale.fr/referentiel">
+  <uid>CRSANR5L15S2017E1N009</uid>
+  <metadonnees>
+    <dateSeance>20170712150000000</dateSeance>
+    <legislature>15</legislature>
+  </metadonnees>
+  <contenu>
+    <point nivpoint="2" code_grammaire="DISC_ARTICLES_1_1" bibard=" (n[[o]]&#160;19)" art=" 3">
+      <paragraphe ordre_absolu_seance="912" id_acteur="PA793174" code_grammaire="PAROLE_GENERIQUE" id_syceron="989390" valeur="">
+        <orateurs><orateur><nom>M. Jean-Louis Bourlanges</nom><id>793174</id><qualite/></orateur></orateurs>
+        <texte>Cet amendement n[[o]]&#160;466 me paraît essentiel.</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="914" id_acteur="PA720746" code_grammaire="SCRUT_ADTS_1_6" id_syceron="989396" valeur="466">
+        <orateurs><orateur><nom>M. le président</nom><id>720746</id><qualite/></orateur></orateurs>
+        <texte>Je mets aux voix l'amendement n[[o]]&#160;466.</texte>
+      </paragraphe>
+      <vote id_acteur="PA720746" code_grammaire="SCRUT_ADTS_1_8" sens="Résultat du scrutin" art=" 3" adt="466" id_syceron="989398" valeur="">
+        <orateurs><orateur><nom>M. le président</nom><id>720746</id><qualite/></orateur></orateurs>
+        <texteBrut>Voici le résultat du scrutin :<br/>Nombre de votants 116<br/>Nombre de suffrages exprimés 114<br/>Majorité absolue 58<br/>Pour l[[o]]adoption 12<br/>Contre 102</texteBrut>
+        <resultatVote>
+          <annonceResultatVote>Voici le résultat du scrutin :</annonceResultatVote>
+          <nombreVotants><libelle>Nombre de votants</libelle><valeur>116</valeur></nombreVotants>
+        </resultatVote>
+      </vote>
+    </point>
+  </contenu>
+</compteRendu>`;
+
+describe('proclamations portées par <vote> (archive de la 15e législature)', () => {
+  it('relève la mise aux voix alors que le résultat vit hors des paragraphes', () => {
+    const seance = parseCompteRendu(SEANCE_15E);
+    expect(seance).not.toBeNull();
+    expect(seance!.votes).toHaveLength(1);
+    expect(seance!.votes[0]!.resultat).toEqual({
+      votants: 116,
+      exprimes: 114,
+      pour: 12,
+      contre: 102,
+    });
+  });
+
+  it('situe le vote au rang de son annonce, la proclamation n’en portant pas', () => {
+    const seance = parseCompteRendu(SEANCE_15E);
+    expect(seance!.votes[0]!.ordreAbsolu).toBe(914);
+    expect(seance!.votes[0]!.numeros).toEqual(['466']);
+  });
+
+  it('sépare les lignes du décompte, que les <br/> colleraient sinon', () => {
+    const seance = parseCompteRendu(SEANCE_15E);
+    // « 116Nombre » au lieu de « 116 Nombre » si les <br/> disparaissaient.
+    expect(seance!.votes[0]!.resultat!.votants).toBe(116);
+  });
+
+  it('ne fait pas des proclamations des prises de parole supplémentaires', () => {
+    const seance = parseCompteRendu(SEANCE_15E);
+    // Le <vote> ne porte pas `ordre_absolu_seance` : il ne peut pas être situé
+    // dans la séance, donc il n'entre pas dans le fil du débat.
+    expect(seance!.prises.map((p) => p.ordreAbsolu)).toEqual([912, 914]);
+  });
+
+  it('ne déclare aucune séance quand l’archive n’en nomme pas', () => {
+    expect(parseCompteRendu(SEANCE_15E)!.seanceRef).toBeNull();
+  });
+});

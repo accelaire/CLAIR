@@ -1260,6 +1260,7 @@ program
       console.log(`  rattachées          : ${result.votesApparies}`);
       console.log(`  indiscernables      : ${result.votesAmbigus}`);
       console.log(`  sans scrutin        : ${result.votesSansScrutin}`);
+      console.log(`Bornés à la journée   : ${result.seancesParLaJournee}`);
       console.log(`Liens débat-scrutin   : ${result.liens}${options.dryRun ? ' (dry-run)' : ''}`);
       process.exit(0);
     } catch (error) {

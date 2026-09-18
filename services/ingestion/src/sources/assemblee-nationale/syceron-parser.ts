@@ -384,7 +384,17 @@ export function parseCompteRendu(xml: string): SeanceSyceron | null {
         continue;
       }
 
-      if (enfant.name === 'paragraphe') {
+      // <vote> autant que <paragraphe> : dans l'archive de la 15e législature,
+      // la proclamation du scrutin — « Voici le résultat du scrutin : Nombre de
+      // votants 116… » — est portée par un élément <vote> et non par un
+      // paragraphe. Ne lire que les paragraphes y laissait 1 091 résultats
+      // invisibles, donc autant de mises aux voix jamais relevées : le
+      // rattachement des débats aux scrutins n'y trouvait rien à rattacher.
+      //
+      // Ces éléments ne deviennent pas des prises de parole pour autant : ils
+      // ne portent pas `ordre_absolu_seance`, et `enPriseDeParole` écarte déjà
+      // ce qui n'a pas de rang. Ils n'entrent ici que comme proclamations.
+      if (enfant.name === 'paragraphe' || enfant.name === 'vote') {
         paragraphes.push(lireParagraphe($, enfant, herite));
         continue;
       }
@@ -452,7 +462,7 @@ function lireParagraphe(
     orateurRef: idActeur && /^PA\d+$/.test(idActeur) ? idActeur : null,
     nomBrut: orateur.children('nom').text().trim(),
     qualite: orateur.children('qualite').text().trim(),
-    contenu: nettoyer(noeud.children('texte').text()),
+    contenu: nettoyer(texteDuNoeud(noeud)),
     contexte,
   };
 }
@@ -630,6 +640,24 @@ function cibleEtNumeros(annonce: ParagrapheBrut): { cible: CibleDuVote; numeros:
     return { cible, numeros };
   }
   return cibleDeLAnnonce(annonce.contenu) ?? { cible: cibleDuCode(annonce.codeGrammaire), numeros: [] };
+}
+
+/**
+ * Le texte d'un élément, quel que soit le nom que la source donne à sa balise.
+ *
+ * Un <paragraphe> porte son texte dans <texte>, un <vote> dans <texteBrut> où
+ * les lignes du décompte sont séparées par des <br/>. Sans les remplacer par
+ * une espace, « Nombre de votants 116 » et « Nombre de suffrages exprimés 114 »
+ * se recolleraient en « 116Nombre ».
+ */
+function texteDuNoeud(noeud: cheerio.Cheerio<Element>): string {
+  const texte = noeud.children('texte');
+  if (texte.length > 0) return texte.text();
+
+  const brut = noeud.children('texteBrut');
+  if (brut.length === 0) return '';
+  brut.find('br').replaceWith(' ');
+  return brut.text();
 }
 
 /** Texte lisible : le compte rendu encode les exposants et les insécables. */
