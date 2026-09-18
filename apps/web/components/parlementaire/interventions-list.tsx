@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import Link from 'next/link';
-import { Vote, Calendar, Loader2, ChevronDown, ExternalLink } from 'lucide-react';
+import { Vote, Calendar, Loader2, ChevronDown, ArrowRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
@@ -134,16 +134,20 @@ export function InterventionsList({
   });
 
   const seances: SeanceGroup[] = data?.pages.flatMap((page) => page.data) ?? [];
-  const [expandedSeances, setExpandedSeances] = useState<Set<string>>(new Set());
 
-  const toggleSeance = (seanceId: string) => {
-    setExpandedSeances((prev) => {
-      const next = new Set(prev);
-      if (next.has(seanceId)) next.delete(seanceId);
-      else next.add(seanceId);
-      return next;
-    });
-  };
+  /**
+   * Quelles séances sont dépliées.
+   *
+   * LA PREMIÈRE L'EST D'OFFICE. Toutes étaient fermées au chargement : la fiche
+   * s'ouvrait sur une pile de bandeaux gris, sans un mot à lire, et il fallait
+   * cliquer pour savoir si la page avait quelque chose à dire. On n'ouvre que
+   * la première — un député en compte des centaines — et l'état ne retient que
+   * les séances dont le lecteur a changé l'état.
+   */
+  const [ouverture, setOuverture] = useState<Record<string, boolean>>({});
+  const estOuverte = (seanceId: string, rang: number) => ouverture[seanceId] ?? rang === 0;
+  const basculer = (seanceId: string, rang: number) =>
+    setOuverture((etat) => ({ ...etat, [seanceId]: !(etat[seanceId] ?? rang === 0) }));
 
   return (
     <div className="space-y-4">
@@ -191,50 +195,45 @@ export function InterventionsList({
         </p>
       ) : (
         <div className="space-y-6">
-          {seances.map((seance) => {
+          {seances.map((seance, rang) => {
             // Les prises de parole ne portent que l'identifiant de leurs votes ;
             // le détail arrive une fois par séance.
             const scrutinsParId = new Map(seance.scrutins.map((s) => [s.id, s]));
+            const ouverte = estOuverte(seance.seanceId, rang);
+            const pageDeLaSeance = `/reunions/${encodeURIComponent(seance.seanceId)}`;
             return (
             <div key={seance.seanceId} className="rounded-lg border bg-card overflow-hidden">
-              {/* Séance header — clickable to fold/unfold */}
-              <div className="flex items-center gap-2 px-4 py-3 bg-muted/50 border-b">
+              {/* En-tête de séance. Le bandeau gris plein a disparu : il
+                  empilait des blocs opaques là où une simple ligne de date
+                  suffit à séparer. Le titre mène à la séance entière — cette
+                  page n'existait pas quand ce composant a été écrit. */}
+              <div className="flex items-center gap-2 border-b px-4 py-3">
                 <button
-                  onClick={() => toggleSeance(seance.seanceId)}
-                  className="flex items-center gap-2 flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
+                  onClick={() => basculer(seance.seanceId, rang)}
+                  aria-expanded={ouverte}
+                  aria-label={ouverte ? 'Replier la séance' : 'Déplier la séance'}
+                  className="-ml-1 flex-shrink-0 rounded p-1 transition-colors hover:bg-muted"
                 >
-                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform flex-shrink-0 ${!expandedSeances.has(seance.seanceId) ? '-rotate-90' : ''}`} />
-                  <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                  <h3 className="text-sm font-semibold truncate">
-                    Séance du {libelleDeSeance(seance.date)}
-                  </h3>
+                  <ChevronDown
+                    className={`h-4 w-4 text-muted-foreground transition-transform ${ouverte ? '' : '-rotate-90'}`}
+                  />
                 </button>
-                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                <Calendar className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">
+                  <Link href={pageDeLaSeance} className="transition-colors hover:text-primary hover:underline">
+                    Séance du {libelleDeSeance(seance.date)}
+                  </Link>
+                </h3>
+                <span className="whitespace-nowrap text-xs text-muted-foreground">
                   {seance.interventions.length} intervention{seance.interventions.length > 1 ? 's' : ''}
+                  {seance.scrutins.length > 0 && (
+                    <> · {seance.scrutins.length} vote{seance.scrutins.length > 1 ? 's' : ''}</>
+                  )}
                 </span>
               </div>
 
-              {!!expandedSeances.has(seance.seanceId) && (
+              {ouverte && (
                 <>
-                  {/* Lien compte-rendu intégral */}
-                  {(() => {
-                    const srcUrl = seance.interventions.find((i) => i.sourceUrl)?.sourceUrl;
-                    if (!srcUrl) return null;
-                    const baseUrl = srcUrl.replace(/#.*$/, '');
-                    return (
-                      <div className="px-4 py-2 border-b">
-                        <a
-                          href={baseUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
-                        >
-                          Voir le compte-rendu intégral
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
-                      </div>
-                    );
-                  })()}
 
                   {/* Interventions, groupées comme la séance les a menées :
                       une séance passe d'un texte à l'autre et d'un article au
@@ -348,6 +347,19 @@ export function InterventionsList({
                       </div>
                     );
                   })()}
+
+                  {/* La fiche ne montre que ce qu'a dit CE parlementaire. La
+                      séance entière — les autres orateurs, l'ordre du jour, les
+                      votes à leur place — est à un clic. Le compte rendu
+                      d'origine y est aussi, d'où la disparition du lien externe
+                      qui occupait cette place. */}
+                  <Link
+                    href={pageDeLaSeance}
+                    className="flex items-center justify-between gap-2 border-t px-4 py-2.5 text-xs text-primary transition-colors hover:bg-muted/50"
+                  >
+                    <span>Voir la séance complète</span>
+                    <ArrowRight className="h-3.5 w-3.5 flex-shrink-0" />
+                  </Link>
                 </>
               )}
             </div>

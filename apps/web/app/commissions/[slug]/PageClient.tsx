@@ -16,7 +16,6 @@ import {
   Loader2,
   Video,
   ChevronDown,
-  ArrowRight,
   FileText,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -26,6 +25,7 @@ import { FilterBar } from '@/components/FilterBar';
 import { ScrutinsByDossier } from '@/components/scrutins/ScrutinsByDossier';
 import { urlDuCompteRendu } from '@/lib/compte-rendu-url';
 import { pointsDeLOrdreDuJour } from '@/lib/ordre-du-jour';
+import { DossierCard } from '@/components/dossiers/DossierCard';
 
 export interface CommissionDetail {
   id: string;
@@ -570,6 +570,9 @@ interface DossierItem {
   urlAN: string | null;
   urlSenat: string | null;
   procedureLibelle: string | null;
+  loiNumero: string | null;
+  nbScrutins: number;
+  nbAmendements: number;
   role: 'fond' | 'avis';
 }
 
@@ -592,14 +595,6 @@ const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
     label: 'Saisie pour avis',
     className: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400',
   },
-};
-
-const formatDossierTitre = (titre: string, procedureLibelle?: string | null): string => {
-  const firstChar = titre.charAt(0);
-  if (firstChar !== firstChar.toUpperCase() && procedureLibelle) {
-    return `${procedureLibelle} ${titre}`;
-  }
-  return titre;
 };
 
 function TabDossiers({ slug }: { slug: string }) {
@@ -699,65 +694,22 @@ function TabDossiers({ slug }: { slug: string }) {
       ) : (
         <>
           <div className='space-y-4'>
-            {dossiers.map((dossier) => {
-              const etatCfg = dossier.etat ? DOSSIER_ETAT_CONFIG[dossier.etat] : null;
-              const roleCfg = ROLE_CONFIG[dossier.role];
-              return (
-                <Link
-                  key={`${dossier.uid}-${dossier.role}`}
-                  href={`/dossiers/${dossier.uid}`}
-                  className='block rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md'
-                >
-                  <div className='flex items-start justify-between gap-3'>
-                    <div className='flex-1 min-w-0'>
-                      {/* Badges */}
-                      <div className='flex items-center gap-2 mb-1 flex-wrap'>
-                        <span
-                          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${roleCfg.className}`}
-                          title={dossier.role === 'fond'
-                            ? 'Commission principale qui examine le texte'
-                            : 'Commission qui donne un avis consultatif'}
-                        >
-                          {roleCfg.label}
-                        </span>
-                        {etatCfg && (
-                          <span className={`px-2 py-0.5 text-xs font-medium rounded ${etatCfg.color}`}>
-                            {etatCfg.label}
-                          </span>
-                        )}
-                        {dossier.procedureLibelle && (
-                          <span className='px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground rounded'>
-                            {dossier.procedureLibelle}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Title */}
-                      <h3 className='font-semibold leading-tight mb-1 line-clamp-2'>
-                        {formatDossierTitre(dossier.titre, dossier.procedureLibelle)}
-                      </h3>
-                      {dossier.titreCourt && dossier.titreCourt !== dossier.titre && (
-                        <p className='text-sm text-muted-foreground mb-2 line-clamp-1'>{dossier.titreCourt}</p>
-                      )}
-
-                      {/* Meta */}
-                      {dossier.dateDepot && (
-                        <p className='text-sm text-muted-foreground'>
-                          Déposé le{' '}
-                          {new Date(dossier.dateDepot).toLocaleDateString('fr-FR', {
-                            day: 'numeric',
-                            month: 'long',
-                            year: 'numeric',
-                          })}
-                        </p>
-                      )}
-                    </div>
-
-                    <ArrowRight className='h-5 w-5 text-muted-foreground shrink-0 mt-1 hidden sm:block' />
-                  </div>
-                </Link>
-              );
-            })}
+            {dossiers.map((dossier) => (
+              <DossierCard
+                key={`${dossier.uid}-${dossier.role}`}
+                dossier={dossier}
+                badge={
+                  <span
+                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_CONFIG[dossier.role].className}`}
+                    title={dossier.role === 'fond'
+                      ? 'Commission principale qui examine le texte'
+                      : 'Commission qui donne un avis consultatif'}
+                  >
+                    {ROLE_CONFIG[dossier.role].label}
+                  </span>
+                }
+              />
+            ))}
           </div>
           <div ref={loadMoreRef} className='mt-8 flex justify-center py-4'>
             {isFetchingNextPage && (

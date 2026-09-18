@@ -3,13 +3,14 @@
 import { Suspense, useMemo } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Search, ChevronDown, Calendar, FileText, Vote, Loader2, ArrowRight } from 'lucide-react';
+import { Search, ChevronDown, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
 import { useUrlFilters, useUrlDateRange } from '@/hooks/useUrlFilters';
 import { aucunFiltre, STALE_TIME_LISTE_MS } from '@/lib/liste-ssr';
 import { FilterBar } from '@/components/FilterBar';
+import { DossierCard } from '@/components/dossiers/DossierCard';
 
 interface Dossier {
   id: string;
@@ -39,27 +40,6 @@ export interface DossiersResponse {
     hasNext: boolean;
   };
 }
-
-import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
-
-const etatLabels = DOSSIER_ETAT_CONFIG;
-
-/** Construit un titre lisible : préfixe procedure si le titre commence en minuscule */
-const formatDossierTitre = (titre: string, procedureLibelle?: string | null): string => {
-  const firstChar = titre.charAt(0);
-  if (firstChar !== firstChar.toUpperCase() && procedureLibelle) {
-    return `${procedureLibelle} ${titre}`;
-  }
-  return titre;
-};
-
-const formatDate = (dateStr: string) => {
-  return new Date(dateStr).toLocaleDateString('fr-FR', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-};
 
 interface PageClientProps {
   /** Première page sans filtre, récupérée côté serveur (cf. `lib/liste-ssr`). */
@@ -262,66 +242,14 @@ function DossiersPageContent({ initialDossiers, initialPage = 1 }: PageClientPro
         <>
           <div className="space-y-4">
             {dossiers.map((dossier) => (
-              <Link
+              <DossierCard
                 key={dossier.id}
-                href={`/dossiers/${dossier.uid}`}
-                className="block rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex-1 min-w-0">
-                    {/* Badges */}
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span className={`px-2 py-0.5 text-xs font-medium rounded ${dossier.chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'}`}>
-                        {dossier.chambre === 'senat' ? 'Sénat' : 'AN'}
-                      </span>
-                      {dossier.etat && (
-                        <span className={`px-2 py-0.5 text-xs font-medium rounded ${etatLabels[dossier.etat]?.color || 'bg-muted text-muted-foreground'}`}>
-                          {etatLabels[dossier.etat]?.label || dossier.etat}
-                        </span>
-                      )}
-                      {dossier.procedureLibelle && (
-                        <span className="px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground rounded">
-                          {dossier.procedureLibelle}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Titre */}
-                    <h3 className="font-semibold text-lg leading-tight mb-2 line-clamp-2">
-                      {formatDossierTitre(dossier.titre, dossier.procedureLibelle)}
-                    </h3>
-
-                    {/* Meta */}
-                    <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                      {dossier.lastScrutinDate && (
-                        <span className="flex items-center gap-1">
-                          <Calendar className="h-4 w-4" />
-                          Dernier vote : {formatDate(dossier.lastScrutinDate)}
-                        </span>
-                      )}
-                      <span className="flex items-center gap-1">
-                        <Vote className="h-4 w-4" />
-                        {dossier._count.scrutins} scrutin{dossier._count.scrutins > 1 ? 's' : ''}
-                      </span>
-                      {dossier._count.amendements > 0 && (
-                        <span className="flex items-center gap-1">
-                          <FileText className="h-4 w-4" />
-                          {dossier._count.amendements} amendement{dossier._count.amendements > 1 ? 's' : ''}
-                        </span>
-                      )}
-                      {dossier.loiNumero && (
-                        <span className="text-green-700 font-medium">
-                          Loi n&deg;{dossier.loiNumero}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center">
-                    <ArrowRight className="h-5 w-5 text-muted-foreground" />
-                  </div>
-                </div>
-              </Link>
+                dossier={{
+                  ...dossier,
+                  nbScrutins: dossier._count.scrutins,
+                  nbAmendements: dossier._count.amendements,
+                }}
+              />
             ))}
           </div>
 
