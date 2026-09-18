@@ -129,7 +129,11 @@ const CHAMBRE_LABEL: Record<string, string> = {
 const PAGES_DEDIEES: Record<string, { href: string; label: string }> = {
   'senatoriales-2026': {
     href: '/senatoriales-2026',
-    label: 'Le bilan des sortants',
+    // Le libellé suit ce que la page montre : depuis la publication du fichier
+    // du ministère, elle porte les candidats de chaque circonscription en plus
+    // du bilan des sortants, et n'annoncer que le bilan revenait à cacher la
+    // moitié de ce qui attend le lecteur à neuf jours du scrutin.
+    label: 'Les candidats et le bilan des sortants',
   },
 };
 
