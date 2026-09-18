@@ -12,11 +12,11 @@ import {
   FileText,
   ExternalLink,
 } from 'lucide-react';
-import { ExpandableText } from '@/components/ui/expandable-text';
 import { libelleDeSeance } from '@/lib/debats';
 import { urlDuCompteRendu } from '@/lib/compte-rendu-url';
 import { pointsDeLOrdreDuJour } from '@/lib/ordre-du-jour';
 import { DebatDeReunion, type ScrutinDeSeance } from './DebatDeReunion';
+import { SommaireDeSeance, type EntreeDuSommaire } from './SommaireDeSeance';
 
 export interface ReunionDetail {
   id: string;
@@ -55,6 +55,12 @@ export interface ReunionDetail {
   nbInterventions: number;
   /** Les votes de la séance, vides pour une commission. */
   scrutins?: ScrutinDeSeance[];
+  /** L'index de la séance : ses points, leurs textes, leurs votes. */
+  sommaire?: EntreeDuSommaire[];
+  /** Vrai quand les votes affichés sont ceux de la journée, faute de mieux. */
+  votesDuJour?: boolean;
+  /** La page de la journée, quand cette séance n'en est qu'une des tenues. */
+  seanceCanonique?: string | null;
   avisCommission: Array<{
     id: string;
     numero: string;
@@ -83,6 +89,9 @@ export default function PageClient({ reunion }: { reunion: ReunionDetail }) {
   const crUrl = urlDuCompteRendu(reunion.compteRenduRef);
 
   const points = pointsDeLOrdreDuJour(reunion.odjResume, reunion.odjComplet);
+  // Défensif : une réponse servie d'un cache antérieur peut ne pas porter le
+  // champ. Un sommaire absent vaut mieux qu'une page blanche.
+  const sommaire = reunion.sommaire ?? [];
 
   return (
     <main className="container mx-auto max-w-4xl px-4 py-8">
@@ -195,6 +204,11 @@ export default function PageClient({ reunion }: { reunion: ReunionDetail }) {
         )}
       </header>
 
+      {/* L'ordre du jour déclaré, quand la source en publie un : les réunions
+          de commission et l'agenda du Sénat. C'est lui qui distingue les deux à
+          cinq séances d'une même journée au Sénat, dont le compte rendu et les
+          scrutins sont communs — on le garde donc même sous un sommaire. Les
+          séances de l'Assemblée, elles, n'en ont aucun en base. */}
       {points.length > 0 && (
         <section className="mb-8">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -210,6 +224,8 @@ export default function PageClient({ reunion }: { reunion: ReunionDetail }) {
           </ul>
         </section>
       )}
+
+      <SommaireDeSeance entrees={sommaire} votesDuJour={reunion.votesDuJour ?? false} />
 
       <DebatDeReunion
         uid={reunion.uid}

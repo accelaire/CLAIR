@@ -83,10 +83,18 @@ export async function generateMetadata({
 
   const url = `${BASE_URL}/reunions/${encodeURIComponent(data.uid)}`;
 
+  // Le Sénat publie un compte rendu et une liste de scrutins par JOUR, quand
+  // son agenda déclare deux à cinq séances dans la journée. Ces séances servent
+  // donc le même débat : elles désignent la page de la journée comme canonique
+  // plutôt que de faire indexer cinq fois le même compte rendu.
+  const canonical = data.seanceCanonique
+    ? `${BASE_URL}/reunions/${encodeURIComponent(data.seanceCanonique)}`
+    : url;
+
   return {
     title: titre,
     description: morceaux.join(' · '),
-    alternates: { canonical: url },
+    alternates: { canonical },
     openGraph: { title: titre, description: morceaux.join(' · '), url, type: 'article' },
   };
 }

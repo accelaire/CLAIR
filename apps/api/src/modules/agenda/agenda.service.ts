@@ -1,25 +1,89 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import { Redis } from 'ioredis';
 import { AgendaQuery, ProchainesEcheancesQuery, DebatDeReunionQuery } from './agenda.schema';
+import { ANNONCE_ORDRE_DU_JOUR, journeeDeSeance, titreDOrdreDuJour } from '../../utils/interventions';
+import { sommaireDeSeance, type DossierBref } from './sommaire-de-seance';
 
 
 /**
- * Où sont rangées les prises de parole d'une réunion.
+ * Ce qu'il faut d'une réunion pour aller chercher ce qui s'y est dit et voté.
  *
- * DEUX RATTACHEMENTS, POUR UNE RAISON HISTORIQUE. Les prises de commission
- * portent une clé étrangère vers leur réunion (`reunionId`), posée par
- * l'ingestion des comptes rendus. Celles de séance publique, elles, ne portent
- * que le `seanceId` du compte rendu — le même texte que l'`uid` de la réunion,
- * mais sans contrainte, parce que les deux sources n'ont jamais été reliées.
- *
- * Conséquence visible avant ce correctif : la page d'une séance affichait zéro
- * prise de parole alors que la séance du 21 juillet en porte 414.
+ * La chambre est indispensable : l'Assemblée et le Sénat ne rangent ni leurs
+ * comptes rendus ni leurs scrutins de la même façon.
  */
-function ouSontLesPrises(reunion: { id: string; uid: string; type: string }) {
-  return reunion.type === 'seance'
-    ? { seanceId: reunion.uid }
-    : { reunionId: reunion.id };
+interface CadreDeSeance {
+  id: string;
+  uid: string;
+  type: string;
+  dateDebut: Date;
+  chambre: string | null;
 }
+
+/**
+ * L'identifiant sous lequel le Sénat range un jour de séance : `d20260721`.
+ *
+ * La colonne est un horodatage sans fuseau qui contient l'heure de Paris : sa
+ * date UTC est donc bien la date de la séance, sans conversion.
+ */
+function jourDeSeanceSenat(date: Date): string {
+  return `d${date.toISOString().slice(0, 10).replace(/-/gu, '')}`;
+}
+
+/**
+ * Le compte rendu dont relèvent les prises de parole d'une séance.
+ *
+ * TROIS RATTACHEMENTS, POUR TROIS SOURCES. Les prises de commission portent une
+ * clé étrangère vers leur réunion (`reunionId`), posée par l'ingestion des
+ * comptes rendus. Les séances de l'Assemblée ne portent que le `seanceId` du
+ * compte rendu — le même texte que l'`uid` de la réunion, mais sans contrainte,
+ * parce que les deux sources n'ont jamais été reliées.
+ *
+ * LE SÉNAT PUBLIE PAR JOUR. Son compte rendu est un document quotidien
+ * (`d20260721`) quand son agenda déclare deux à cinq séances dans la journée —
+ * 70 jours sur 174. Aucun rattachement séance par séance n'est possible : la
+ * source ne le dit nulle part. On sert donc la journée, et la page le dit.
+ */
+function ouSontLesPrises(reunion: CadreDeSeance) {
+  if (reunion.type !== 'seance') return { reunionId: reunion.id };
+  return { seanceId: compteRenduDeLaSeance(reunion) };
+}
+
+function compteRenduDeLaSeance(reunion: CadreDeSeance): string {
+  return reunion.chambre === 'senat' ? jourDeSeanceSenat(reunion.dateDebut) : reunion.uid;
+}
+
+/**
+ * Où sont les votes d'une séance.
+ *
+ * L'Assemblée nomme la séance sur chaque scrutin (`seanceRef`) ; le Sénat ne le
+ * fait sur aucun de ses 4 775 scrutins, qui sont de surcroît datés à minuit.
+ * La journée est donc le seul rattachement disponible — c'est déjà celui que
+ * l'agenda utilise pour poser les votes sur la carte d'une séance.
+ *
+ * Une réunion de commission ne vote pas de scrutin public : elle rend des avis,
+ * qui ont leur propre table.
+ */
+function ouSontLesVotes(reunion: CadreDeSeance): Prisma.ScrutinWhereInput | null {
+  if (reunion.type !== 'seance') return null;
+  return reunion.chambre === 'senat'
+    ? { chambre: 'senat', date: journeeDeSeance(reunion.dateDebut) }
+    : { seanceRef: reunion.uid };
+}
+
+/** Ce qu'il faut d'un vote pour l'afficher dans le fil d'une séance. */
+const VOTE_DE_SEANCE_SELECT = {
+  id: true,
+  numero: true,
+  titre: true,
+  date: true,
+  sort: true,
+  chambre: true,
+  session: true,
+  nombrePour: true,
+  nombreContre: true,
+  nombreAbstention: true,
+  dossierId: true,
+} as const;
 
 /** Ce qu'il faut d'une prise de parole pour dérouler un débat. */
 const PRISE_DE_PAROLE_SELECT = {
@@ -362,30 +426,126 @@ export class AgendaService {
    * chambre, son débat et ses votes. Il lui manquera le lieu et l'ordre du
    * jour, qu'elle n'a de toute façon jamais eus.
    */
+  /**
+   * Les votes d'une séance, dans l'ordre où ils ont été appelés.
+   *
+   * Vide pour une commission, qui rend des avis et ne vote pas de scrutin
+   * public.
+   */
+  private async votesDeLaSeance(cadre: CadreDeSeance) {
+    const where = ouSontLesVotes(cadre);
+    if (!where) return [];
+    return this.prisma.scrutin.findMany({
+      where,
+      select: VOTE_DE_SEANCE_SELECT,
+      orderBy: { numero: 'asc' },
+    });
+  }
+
+  /**
+   * Le sommaire d'une séance : ses points, leurs textes, leurs votes.
+   *
+   * Voir `sommaire-de-seance.ts` pour ce qui est reconstitué et ce qui est
+   * attesté. Ici, on ne fait que rassembler la matière : les annonces de la
+   * présidence, les prises de parole réduites à leur rang et à leur texte, et
+   * le rang auquel chaque vote est tombé.
+   */
+  private async getSommaire(
+    cadre: CadreDeSeance,
+    scrutins: Array<{ id: string; dossierId: string | null }>,
+  ) {
+    if (cadre.type !== 'seance') return [];
+
+    const portee = ouSontLesPrises(cadre);
+    const [annonces, prises, liens] = await Promise.all([
+      this.prisma.intervention.findMany({
+        where: { ...portee, estPresidence: true, contenu: { startsWith: ANNONCE_ORDRE_DU_JOUR } },
+        select: { ordre: true, contenu: true },
+        orderBy: { ordre: 'asc' },
+      }),
+      // Deux colonnes seulement : une séance porte jusqu'à 1 614 prises de
+      // parole, dont on n'a besoin ici que du rang et du texte visé.
+      this.prisma.intervention.findMany({
+        where: portee,
+        select: { ordre: true, dossierId: true },
+        orderBy: { ordre: 'asc' },
+      }),
+      scrutins.length > 0
+        ? this.prisma.interventionScrutin.findMany({
+            where: { scrutinId: { in: scrutins.map((s) => s.id) } },
+            select: { scrutinId: true, intervention: { select: { ordre: true } } },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    // Le rang de la DERNIÈRE prise qui précède le vote : c'est là qu'il est
+    // tombé, et c'est donc lui qui décide du point dont il relève.
+    const ordreDesVotes = new Map<string, number>();
+    for (const lien of liens) {
+      const rang = lien.intervention?.ordre;
+      if (rang === null || rang === undefined) continue;
+      const vu = ordreDesVotes.get(lien.scrutinId);
+      if (vu === undefined || rang > vu) ordreDesVotes.set(lien.scrutinId, rang);
+    }
+
+    const dossierIds = [
+      ...new Set(
+        [...prises.map((p) => p.dossierId), ...scrutins.map((s) => s.dossierId)].filter(
+          (id): id is string => id !== null,
+        ),
+      ),
+    ];
+    const dossiers = dossierIds.length > 0
+      ? await this.prisma.dossierLegislatif.findMany({
+          where: { id: { in: dossierIds } },
+          select: {
+            id: true,
+            uid: true,
+            titre: true,
+            procedureLibelle: true,
+          },
+        })
+      : [];
+
+    return sommaireDeSeance({
+      annonces: annonces
+        .map((a) => ({ ordre: a.ordre, titre: titreDOrdreDuJour(a.contenu) }))
+        .filter((a): a is { ordre: number; titre: string } =>
+          a.ordre !== null && a.titre.length > 0),
+      prises,
+      scrutins,
+      ordreDesVotes,
+      dossiers: new Map<string, DossierBref>(dossiers.map((d) => [d.id, d])),
+    });
+  }
+
   private async getSeanceSansReunion(uid: string) {
-    const [agregat, scrutins] = await Promise.all([
+    const [agregat, premiere] = await Promise.all([
       this.prisma.intervention.aggregate({
         where: { seanceId: uid },
         _min: { date: true },
         _count: { _all: true },
       }),
-      this.prisma.scrutin.findMany({
-        where: { seanceRef: uid },
-        select: {
-          id: true, numero: true, titre: true, date: true, sort: true,
-          chambre: true, session: true,
-          nombrePour: true, nombreContre: true, nombreAbstention: true,
-        },
-        orderBy: { numero: 'asc' },
+      this.prisma.intervention.findFirst({
+        where: { seanceId: uid },
+        select: { chambre: true },
       }),
     ]);
 
     if (agregat._count._all === 0 || !agregat._min.date) return null;
 
-    const premiere = await this.prisma.intervention.findFirst({
-      where: { seanceId: uid },
-      select: { chambre: true },
-    });
+    // L'uid demandé EST déjà celui du compte rendu : `ouSontLesPrises` le
+    // retrouve tel quel, à l'Assemblée comme au Sénat où il vaut la journée.
+    const cadre: CadreDeSeance = {
+      id: uid,
+      uid,
+      type: 'seance',
+      dateDebut: agregat._min.date,
+      chambre: premiere?.chambre ?? null,
+    };
+
+    const scrutins = await this.votesDeLaSeance(cadre);
+    const sommaire = await this.getSommaire(cadre, scrutins);
 
     return {
       id: uid,
@@ -409,6 +569,10 @@ export class AgendaService {
       avisCommission: [],
       nbInterventions: agregat._count._all,
       scrutins,
+      sommaire,
+      // C'est déjà la page de la journée : elle est sa propre canonique.
+      seanceCanonique: null,
+      votesDuJour: cadre.chambre === 'senat',
     };
   }
 
@@ -474,24 +638,48 @@ export class AgendaService {
       return seance;
     }
 
+    const cadre: CadreDeSeance = {
+      id: reunion.id,
+      uid: reunion.uid,
+      type: reunion.type,
+      dateDebut: reunion.dateDebut,
+      chambre: reunion.commission?.chambre ?? null,
+    };
+
+    // Les votes de la séance, dans l'ordre où ils ont été appelés. Une séance
+    // en compte huit en moyenne et jusqu'à 83 ; les commissions n'en ont pas.
     const [nbInterventions, scrutins] = await Promise.all([
-      this.prisma.intervention.count({ where: ouSontLesPrises(reunion) }),
-      // Les votes de la séance, dans l'ordre où ils ont été appelés. Une séance
-      // en compte huit en moyenne et jusqu'à 83 ; les commissions n'en ont pas.
-      reunion.type === 'seance'
-        ? this.prisma.scrutin.findMany({
-            where: { seanceRef: reunion.uid },
-            select: {
-              id: true, numero: true, titre: true, date: true, sort: true,
-              chambre: true, session: true,
-              nombrePour: true, nombreContre: true, nombreAbstention: true,
-            },
-            orderBy: { numero: 'asc' },
-          })
-        : Promise.resolve([]),
+      this.prisma.intervention.count({ where: ouSontLesPrises(cadre) }),
+      this.votesDeLaSeance(cadre),
     ]);
 
-    const detail = { ...reunion, nbInterventions, scrutins };
+    const sommaire = await this.getSommaire(cadre, scrutins);
+
+    // Le compte rendu du Sénat est quotidien : les deux à cinq séances d'une
+    // même journée servent donc le même débat et les mêmes votes. Elles gardent
+    // chacune leur page — leur ordre du jour les distingue — mais déclarent
+    // toutes comme canonique la page de la journée, qui est ce que la source
+    // publie réellement. Sans elle, cinq URL indexées pour un seul compte rendu.
+    const journee = compteRenduDeLaSeance(cadre);
+    const seanceCanonique =
+      cadre.type === 'seance'
+      && cadre.chambre === 'senat'
+      && nbInterventions > 0
+      && journee !== reunion.uid
+        ? journee
+        : null;
+
+    const detail = {
+      ...reunion,
+      nbInterventions,
+      scrutins,
+      sommaire,
+      seanceCanonique,
+      // Le Sénat ne rattache ses scrutins qu'à une journée : quand la journée
+      // compte plusieurs séances, la page le dit plutôt que de laisser croire
+      // à un rattachement séance par séance.
+      votesDuJour: cadre.type === 'seance' && cadre.chambre === 'senat',
+    };
     await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(detail));
     return detail;
   }
@@ -506,18 +694,30 @@ export class AgendaService {
   async getDebatDeReunion(uid: string, query: DebatDeReunionQuery) {
     const reunion = await this.prisma.reunion.findUnique({
       where: { uid },
-      select: { id: true, uid: true, type: true },
+      select: {
+        id: true,
+        uid: true,
+        type: true,
+        dateDebut: true,
+        commission: { select: { chambre: true } },
+      },
     });
 
     // Sans réunion, l'uid demandé peut encore être celui d'une séance que ses
     // seules prises de parole attestent — voir `getSeanceSansReunion`.
-    const where = reunion ? ouSontLesPrises(reunion) : { seanceId: uid };
+    const where = reunion
+      ? ouSontLesPrises({ ...reunion, chambre: reunion.commission?.chambre ?? null })
+      : { seanceId: uid };
     const [total, lignes] = await Promise.all([
       this.prisma.intervention.count({ where }),
       this.prisma.intervention.findMany({
         where,
         select: PRISE_DE_PAROLE_SELECT,
-        orderBy: { ordre: 'asc' },
+        // Départage obligatoire : au Sénat, 9 338 rangs sont partagés par deux
+        // prises de parole ou plus au sein d'une même journée. Un tri non total
+        // fait sauter des lignes d'une page à l'autre et en répète d'autres,
+        // puisque rien ne garantit que la base rende deux fois le même ordre.
+        orderBy: [{ ordre: 'asc' }, { id: 'asc' }],
         skip: (query.page - 1) * query.limit,
         take: query.limit,
       }),
