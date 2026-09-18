@@ -1935,10 +1935,29 @@ export async function syncInterventions(
 // SYNC INTERVENTIONS SÉNAT (via data.senat.fr)
 // =============================================================================
 
+/**
+ * Les journées de séance du Sénat déjà lues, par leur identifiant de compte
+ * rendu (`d20260721`).
+ *
+ * Le Sénat publie un compte rendu par JOUR : la journée est donc l'unité
+ * naturelle pour savoir ce qui reste à lire.
+ */
+async function journeesSenatDejaLues(): Promise<Set<string>> {
+  const lignes = await prisma.intervention.findMany({
+    where: { chambre: 'senat', seanceId: { not: null } },
+    select: { seanceId: true },
+    distinct: ['seanceId'],
+  });
+  return new Set(lignes.map((l) => l.seanceId).filter((id): id is string => id !== null));
+}
+
 export async function syncInterventionsSenat(
-  options: { maxSeances?: number; minYear?: number } = {}
+  options: { maxSeances?: number; minYear?: number; rattrapage?: boolean } = {}
 ): Promise<{ interventions: number }> {
-  logger.info({ maxSeances: options.maxSeances }, 'Starting interventions Sénat sync (from data.senat.fr)...');
+  logger.info(
+    { maxSeances: options.maxSeances, minYear: options.minYear, rattrapage: options.rattrapage },
+    'Starting interventions Sénat sync (from data.senat.fr)...',
+  );
 
   const senatInterClient = new SenatInterventionsClient();
   const interventionsData = await senatInterClient.getInterventions(options);
@@ -1979,8 +1998,34 @@ export async function syncInterventionsSenat(
   let created = 0;
   let createdNonParlementaire = 0;
   let skippedPresident = 0;
+  let skippedJourDejaLu = 0;
 
   const chambre = 'senat';
+
+  // RATTRAPAGE. La synchro quotidienne relit les journées récentes et doit donc
+  // vérifier chaque prise avant de l'écrire : un `findFirst` puis un `create`,
+  // soit deux allers-retours par ligne. C'est tenable sur cent journées, pas
+  // sur mille — 360 000 prises feraient 720 000 requêtes depuis un poste
+  // distant, plusieurs heures pour un travail de quelques minutes.
+  //
+  // Le rattrapage vise des journées ABSENTES de la base. On saute donc celles
+  // qu'on connaît déjà, et on écrit les autres d'un bloc. C'est aussi ce qui
+  // rend la commande rejouable : une journée écrite ne sera pas réécrite.
+  const joursDejaLus = options.rattrapage ? await journeesSenatDejaLues() : null;
+  if (joursDejaLus) {
+    logger.info({ joursDejaLus: joursDejaLus.size }, 'Rattrapage : journées déjà lues');
+  }
+  // On écrit une JOURNÉE à la fois, en un seul `createMany`, plutôt que par
+  // lots de taille fixe : c'est la journée qui sert de témoin au prochain
+  // passage. Une journée coupée en deux par un incident serait considérée comme
+  // lue et resterait incomplète pour toujours.
+  let jourEnCours: string | null = null;
+  let lot: Prisma.InterventionCreateManyInput[] = [];
+  const ecrireLaJournee = async (): Promise<void> => {
+    if (lot.length === 0) return;
+    await prisma.intervention.createMany({ data: lot, skipDuplicates: true });
+    lot = [];
+  };
 
   for (const intervention of interventionsData) {
     try {
@@ -1991,6 +2036,11 @@ export async function syncInterventionsSenat(
       if (orateurLower.includes('président') || orateurLower.includes('présidente') ||
           orateurLower === 'le président' || orateurLower === 'la présidente') {
         skippedPresident++;
+        continue;
+      }
+
+      if (joursDejaLus?.has(intervention.seanceId)) {
+        skippedJourDejaLu++;
         continue;
       }
 
@@ -2023,35 +2073,43 @@ export async function syncInterventionsSenat(
         }
       }
 
-      // Vérifier si l'intervention existe déjà (basé sur seanceId + contenu seul)
-      const contentHash = intervention.contenu.substring(0, 200);
-      const existing = await prisma.intervention.findFirst({
-        where: {
-          seanceId: intervention.seanceId,
-          contenu: { startsWith: contentHash },
-        },
-      });
-      if (existing) continue;
+      // Hors rattrapage : vérifier que la prise n'est pas déjà là. La journée
+      // vient d'être relue, et le Sénat republie ses comptes rendus révisés.
+      if (!joursDejaLus) {
+        const contentHash = intervention.contenu.substring(0, 200);
+        const existing = await prisma.intervention.findFirst({
+          where: {
+            seanceId: intervention.seanceId,
+            contenu: { startsWith: contentHash },
+          },
+        });
+        if (existing) continue;
+      }
 
-      // Extraire les mots-clés
-      const motsCles = extractKeywords(intervention.contenu);
+      const donnees = {
+        parlementaireId,
+        orateurNom: intervention.orateurNom,
+        orateurPrenom: intervention.orateurPrenom || null,
+        orateurQualite: intervention.orateurQualite || null,
+        chambre,
+        seanceId: intervention.seanceId,
+        date: intervention.date,
+        ordre: intervention.ordre,
+        type: intervention.type,
+        contenu: intervention.contenu,
+        motsCles: extractKeywords(intervention.contenu),
+        sourceUrl: intervention.sourceUrl,
+      };
 
-      await prisma.intervention.create({
-        data: {
-          parlementaireId,
-          orateurNom: intervention.orateurNom,
-          orateurPrenom: intervention.orateurPrenom || null,
-          orateurQualite: intervention.orateurQualite || null,
-          chambre,
-          seanceId: intervention.seanceId,
-          date: intervention.date,
-          ordre: intervention.ordre,
-          type: intervention.type,
-          contenu: intervention.contenu,
-          motsCles,
-          sourceUrl: intervention.sourceUrl,
-        },
-      });
+      if (joursDejaLus) {
+        if (jourEnCours !== null && jourEnCours !== intervention.seanceId) {
+          await ecrireLaJournee();
+        }
+        jourEnCours = intervention.seanceId;
+        lot.push(donnees);
+      } else {
+        await prisma.intervention.create({ data: donnees });
+      }
 
       if (parlementaireId) {
         created++;
@@ -2064,11 +2122,14 @@ export async function syncInterventionsSenat(
     }
   }
 
+  await ecrireLaJournee();
+
   logger.info({
     created,
     createdNonParlementaire,
     total: interventionsData.length,
     skippedPresident,
+    skippedJourDejaLu,
     matchRate: `${(((created + createdNonParlementaire) / (interventionsData.length || 1)) * 100).toFixed(1)}%`,
   }, 'Interventions Sénat sync completed');
 

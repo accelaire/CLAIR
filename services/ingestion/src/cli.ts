@@ -100,6 +100,8 @@ program
   .option('-l, --limit <number>', 'Limiter le nombre d\'éléments à synchroniser', parseInt)
   .option('--legislature <number>', 'Législature AN à ingérer (15,16,17 — défaut: courante). Avec -p --an, -s --an ou -d --an', parseInt)
   .option('--sessions <annees>', `Sessions Sénat à ingérer, séparées par des virgules (ex: 2006,2007). Défaut: ${SENAT_SESSION_MIN} → courante. Avec -s --se, permet un backfill par tranches (mémoire).`)
+  .option('--depuis-annee <n>', 'Année la plus ancienne à lire (avec -i --se). Défaut: les deux dernières années — la base des comptes rendus du Sénat remonte à 2003.', (v: string) => parseInt(v, 10))
+  .option('--rattrapage', 'Avec -i --se --depuis-annee : sauter les journées déjà lues et écrire les autres en lots, au lieu de vérifier chaque prise de parole une à une.')
   .option('--dry-run', 'Mode simulation (affiche ce qui serait fait sans modifier)')
   // Opérations de liaison (combiner avec --in ou --am)
   .option('--link', 'Lier les scrutins aux interventions (--in) ou amendements (--am)')
@@ -207,13 +209,20 @@ program
           await syncScrutinsSenat({ limit: options.limit, sessions: sessionsSenat });
         }
       } else if (options.interventions) {
+        // `depuisAnnee` sert au rattrapage : la synchro quotidienne ne lit que
+        // les deux dernières années, alors que `cri.zip` — 545 Mo retéléchargés
+        // chaque nuit — couvre la séance publique depuis janvier 2003.
         if (chambre === 'se') {
-          await syncInterventionsSenat({ maxSeances: options.limit });
+          await syncInterventionsSenat({
+            maxSeances: options.limit,
+            minYear: options.depuisAnnee,
+            rattrapage: options.rattrapage,
+          });
         } else if (chambre === 'an') {
           await syncInterventions({ maxSeances: options.limit });
         } else {
           await syncInterventions({ maxSeances: options.limit });
-          await syncInterventionsSenat({ maxSeances: options.limit });
+          await syncInterventionsSenat({ maxSeances: options.limit, minYear: options.depuisAnnee });
         }
       } else if (options.amendements) {
         if (chambre === 'se') {
