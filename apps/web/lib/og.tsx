@@ -101,6 +101,18 @@ export function OgLayout({
   );
 }
 
+/**
+ * Nombre en français, séparateur de milliers compris.
+ *
+ * L'espace insécable étroite que produit `Intl` (U+202F) n'est pas garantie dans
+ * l'unique graisse d'Inter embarquée dans l'image ; une espace ordinaire, elle,
+ * se dessine toujours. Dans un visuel figé, la nuance typographique ne vaut pas
+ * le risque d'un carré vide au milieu d'un chiffre.
+ */
+export function ogNombre(n: number): string {
+  return n.toLocaleString('fr-FR').replace(/[\u202f\u00a0]/g, ' ');
+}
+
 /** Stat pill used in parlementaire OG images. */
 /**
  * Visuel Open Graph d'une page de rubrique.
