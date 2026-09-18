@@ -72,8 +72,8 @@ export function SommaireDeSeance({
         {votesDuJour && (
           <>
             {' '}
-            Le Sénat publie ses scrutins par jour de séance, sans les rattacher à une séance
-            précise : ceux-ci sont ceux de la journée.
+            Le compte rendu ne nomme pas la séance à laquelle chaque scrutin se rattache : ceux-ci
+            sont les votes de la journée.
           </>
         )}
       </p>

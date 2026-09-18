@@ -17,6 +17,16 @@ interface CadreDeSeance {
   type: string;
   dateDebut: Date;
   chambre: string | null;
+  /**
+   * Vrai quand la séance n'a d'autre nom que son compte rendu.
+   *
+   * 1 233 comptes rendus de la 15e législature ne déclarent aucune référence de
+   * séance — l'élément n'existe pas dans leur schéma — et portent donc leur
+   * propre identifiant. Les scrutins, eux, nomment bien leur séance : aucun ne
+   * référencera jamais cet identifiant-là, et la journée est le seul
+   * rapprochement possible. La page le dit, comme elle le dit pour le Sénat.
+   */
+  nommeeParSonCompteRendu?: boolean;
 }
 
 /**
@@ -65,9 +75,13 @@ function compteRenduDeLaSeance(reunion: CadreDeSeance): string {
  */
 function ouSontLesVotes(reunion: CadreDeSeance): Prisma.ScrutinWhereInput | null {
   if (reunion.type !== 'seance') return null;
-  return reunion.chambre === 'senat'
-    ? { chambre: 'senat', date: journeeDeSeance(reunion.dateDebut) }
-    : { seanceRef: reunion.uid };
+  if (reunion.chambre === 'senat' || reunion.nommeeParSonCompteRendu) {
+    return {
+      chambre: reunion.chambre === 'senat' ? 'senat' : 'assemblee',
+      date: journeeDeSeance(reunion.dateDebut),
+    };
+  }
+  return { seanceRef: reunion.uid };
 }
 
 /** Ce qu'il faut d'un vote pour l'afficher dans le fil d'une séance. */
@@ -528,7 +542,7 @@ export class AgendaService {
       }),
       this.prisma.intervention.findFirst({
         where: { seanceId: uid },
-        select: { chambre: true },
+        select: { chambre: true, seanceUid: true },
       }),
     ]);
 
@@ -542,6 +556,7 @@ export class AgendaService {
       type: 'seance',
       dateDebut: agregat._min.date,
       chambre: premiere?.chambre ?? null,
+      nommeeParSonCompteRendu: premiere?.seanceUid === uid,
     };
 
     const scrutins = await this.votesDeLaSeance(cadre);
@@ -572,7 +587,7 @@ export class AgendaService {
       sommaire,
       // C'est déjà la page de la journée : elle est sa propre canonique.
       seanceCanonique: null,
-      votesDuJour: cadre.chambre === 'senat',
+      votesDuJour: cadre.chambre === 'senat' || (cadre.nommeeParSonCompteRendu ?? false),
     };
   }
 
