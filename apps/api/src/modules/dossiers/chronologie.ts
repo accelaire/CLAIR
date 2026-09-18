@@ -188,5 +188,88 @@ export async function chronologieDuDossier(
     }
   }
 
-  return [...etapes.values()].sort((a, b) => a.date.getTime() - b.date.getTime());
+  return fusionnerLesJourneesSansReference(
+    [...etapes.values()].sort((a, b) => a.date.getTime() - b.date.getTime()),
+    await seancesNommeesParLeurCompteRendu(prisma, [...etapes.values()]),
+  );
+}
+
+/**
+ * Les séances qui n'ont d'autre nom que leur compte rendu.
+ *
+ * 1 233 comptes rendus de l'Assemblée ne déclarent aucune référence de séance :
+ * leurs prises de parole sont rangées sous l'identifiant du compte rendu, quand
+ * les scrutins du même jour nomment une séance que rien ne relie à celui-là. Le
+ * test est direct — c'est exactement le cas où les deux colonnes coïncident.
+ */
+async function seancesNommeesParLeurCompteRendu(
+  prisma: PrismaClient,
+  etapes: EtapeDeChronologie[],
+): Promise<Set<string>> {
+  const uids = etapes.filter((e) => e.type === 'seance').map((e) => e.uid);
+  if (uids.length === 0) return new Set();
+  const lignes = await prisma.intervention.findMany({
+    where: { seanceId: { in: uids } },
+    select: { seanceId: true, seanceUid: true },
+    distinct: ['seanceId'],
+  });
+  return new Set(
+    lignes
+      .filter((l) => l.seanceId !== null && l.seanceId === l.seanceUid)
+      .map((l) => l.seanceId as string),
+  );
+}
+
+/**
+ * Rassemble, jour par jour, ce qu'on ne sait pas attribuer séance par séance.
+ *
+ * Sans cela, une journée de la 15e législature apparaissait DEUX FOIS dans le
+ * parcours : une entrée pour le débat, sous l'identifiant du compte rendu, et
+ * une autre pour les votes, sous la référence de séance des scrutins. Le
+ * lecteur y voyait deux séances là où il n'y en avait qu'une.
+ *
+ * On ne fusionne que les journées concernées : ailleurs, prises de parole et
+ * scrutins partagent le même identifiant et se rejoignent d'eux-mêmes. Les
+ * séances d'une même journée gardent donc leur entrée propre partout où la
+ * source les distingue.
+ */
+function fusionnerLesJourneesSansReference(
+  etapes: EtapeDeChronologie[],
+  sansReference: Set<string>,
+): EtapeDeChronologie[] {
+  if (sansReference.size === 0) return etapes;
+
+  const jour = (date: Date) => date.toISOString().slice(0, 10);
+  const joursAFusionner = new Set(
+    etapes.filter((e) => sansReference.has(e.uid)).map((e) => jour(e.date)),
+  );
+  if (joursAFusionner.size === 0) return etapes;
+
+  const fusionnees: EtapeDeChronologie[] = [];
+  const parJour = new Map<string, EtapeDeChronologie>();
+
+  for (const etape of etapes) {
+    const cle = jour(etape.date);
+    if (etape.type !== 'seance' || !joursAFusionner.has(cle)) {
+      fusionnees.push(etape);
+      continue;
+    }
+    const deja = parJour.get(cle);
+    if (!deja) {
+      parJour.set(cle, etape);
+      fusionnees.push(etape);
+      continue;
+    }
+    // L'entrée qui porte le débat l'emporte comme destination : c'est elle qui
+    // a une page à montrer. Les votes de la journée la rejoignent.
+    if ((etape.nbPrises ?? 0) > (deja.nbPrises ?? 0)) {
+      deja.uid = etape.uid;
+      deja.date = etape.date;
+    }
+    deja.nbPrises = (deja.nbPrises ?? 0) + (etape.nbPrises ?? 0) || deja.nbPrises;
+    deja.chambre = deja.chambre ?? etape.chambre;
+    deja.scrutins.push(...etape.scrutins);
+  }
+
+  return fusionnees;
 }
