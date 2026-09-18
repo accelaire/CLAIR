@@ -7,6 +7,7 @@ import Link from 'next/link';
 import {
   FileText, Calendar, Vote, CheckCircle, XCircle, ExternalLink,
   ArrowLeft, ArrowRight, Loader2, Scale, ChevronDown, Users, Layers, BookOpen, Gavel, Filter, Info,
+  CalendarClock,
 } from 'lucide-react';
 import { FilterBar } from '@/components/FilterBar';
 import { api } from '@/lib/api';
@@ -14,6 +15,7 @@ import { scrutinHref } from '@/lib/scrutin-url';
 import { NATURES_FILTRABLES, natureLabels } from '@/lib/nature-scrutin';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { LoiPromulgueeCard } from '@/components/LoiPromulgueeCard';
+import { ChronologieDuDossier, type EtapeDuParcours } from './ChronologieDuDossier';
 import { ExpandableAmendementCard } from '@/components/ExpandableAmendementCard';
 
 // ---------------------------------------------------------------------------
@@ -179,7 +181,7 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
   // trier en JS ne portait que sur les pages déjà chargées, ce qui masquait des
   // scrutins sur les gros dossiers.
   const [natureFilter, setNatureFilter] = useState('');
-  const [activeTab, setActiveTab] = useState<'amendements' | 'scrutins'>(
+  const [activeTab, setActiveTab] = useState<'amendements' | 'scrutins' | 'parcours'>(
     searchParams.get('tab') === 'scrutins' ? 'scrutins' : 'amendements',
   );
 
@@ -303,6 +305,16 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
   });
 
   // Count of voted amendements for the selected group (for counter)
+  // Le parcours n'est chargé qu'à l'ouverture de son onglet : il interroge
+  // quatre tables, et la plupart des lecteurs ne le demanderont jamais.
+  const { data: parcoursData, isLoading: chargementParcours } = useQuery<{ data: EtapeDuParcours[] }>({
+    queryKey: ['dossier-parcours', uid],
+    queryFn: () => api.get(`/dossiers/${encodeURIComponent(uid)}/chronologie`).then((r) => r.data),
+    enabled: activeTab === 'parcours',
+    staleTime: 5 * 60 * 1000,
+  });
+  const parcours = parcoursData?.data ?? [];
+
   const { data: groupeVotedCount } = useQuery<number>({
     queryKey: ['dossier-amendements-voted-count', uid, groupeFilter],
     queryFn: () =>
@@ -366,7 +378,10 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
 
   // Auto-switch to scrutins tab if no amendements
   const hasAmendements = dossier.amendementsCount > 0;
-  const effectiveTab = hasAmendements ? activeTab : 'scrutins';
+  // Seul l'onglet des amendements dépend de leur existence : les deux autres
+  // se tiennent toujours.
+  const effectiveTab = activeTab === 'amendements' && !hasAmendements ? 'scrutins' : activeTab;
+
 
   // Compute unique sorts from all loaded amendements
   const allAmendements = [
@@ -649,7 +664,39 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
           <Vote className="h-4 w-4 inline mr-1.5 -mt-0.5" />
           Scrutins ({dossier.scrutinsCount})
         </button>
+        {/* Le parcours : les réunions et les séances où le texte est passé.
+            Les deux autres onglets disent ce qui a été décidé, celui-ci dit
+            où et quand. */}
+        <button
+          onClick={() => setActiveTab('parcours')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            effectiveTab === 'parcours'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <CalendarClock className="h-4 w-4 inline mr-1.5 -mt-0.5" />
+          Parcours{parcours.length > 0 ? ` (${parcours.length})` : ''}
+        </button>
       </div>
+
+      {effectiveTab === 'parcours' && (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Les réunions de commission et les séances publiques où ce texte a été examiné, dans
+            l&apos;ordre. Chaque étape mène à son débat complet.
+          </p>
+          {chargementParcours ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-24 animate-pulse rounded-lg border bg-card" />
+              ))}
+            </div>
+          ) : (
+            <ChronologieDuDossier etapes={parcours} />
+          )}
+        </div>
+      )}
 
       {/* ================================================================== */}
       {/* TAB: Amendements                                                   */}
