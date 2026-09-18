@@ -10,6 +10,13 @@ import {
   codeDepuisSlug,
   locutionDepuisCode,
 } from '@/lib/senatoriales/departements';
+import {
+  accorde,
+  circonscriptionDepuisSlug,
+  libelleCirconscription,
+  modeDeScrutin,
+  pluriel,
+} from '@/lib/senatoriales/circonscription';
 import type { ApercuSenatoriales, ListeCandidature, Sortant } from '../PageClient';
 import { SortantCard } from '../components/SortantCard';
 import { ListeCandidatureCard } from '../components/ListeCandidatureCard';
@@ -44,41 +51,6 @@ type ListeCandidats = {
   meta: { total: number; candidats: number };
 };
 
-/**
- * Mode de scrutin applicable à une circonscription.
- *
- * La règle tient au nombre de sièges à pourvoir, et à lui seul : c'est l'article
- * L. 295 du code électoral. Elle est rappelée sur la page mère pour l'ensemble
- * du scrutin ; ici on l'applique, ce qui donne à chacune des 64 pages une phrase
- * qui n'est vraie que pour elle.
- */
-function modeDeScrutin(nbSieges: number) {
-  return nbSieges >= 3
-    ? {
-        court: 'proportionnel de liste à un tour',
-        phrase:
-          'Les sièges sont pourvus au scrutin proportionnel de liste à un tour, à la plus forte moyenne. Les électeurs votent pour une liste bloquée, sans panachage ni vote préférentiel.',
-      }
-    : {
-        court: 'majoritaire à deux tours',
-        phrase:
-          'Les sièges sont pourvus au scrutin majoritaire à deux tours. Est élu au premier tour le candidat qui réunit la majorité absolue des suffrages exprimés et le quart des électeurs inscrits ; au second tour, la majorité relative suffit.',
-      };
-}
-
-/**
- * Accord d'un nom sur une circonscription à un seul siège — vingt-deux des
- * soixante-quatre n'en renouvellent qu'un.
- */
-function pluriel(n: number, mot: string) {
-  return n > 1 ? `${mot}s` : mot;
-}
-
-/** Accord d'un verbe. Séparé de `pluriel`, qui donnerait « ests » et « sonts ». */
-function accorde(n: number, singulier: string, plurielVerbe: string) {
-  return n > 1 ? plurielVerbe : singulier;
-}
-
 async function chargerDonnees(code: string) {
   const [apercu, sortants, candidats] = await Promise.all([
     fetchFromApi<ApercuSenatoriales>('/senatoriales/2026', 3600),
@@ -97,27 +69,12 @@ async function chargerDonnees(code: string) {
   return { apercu, sortants, candidats };
 }
 
-/** Libellé d'affichage : « Français établis hors de France (Série 2) » se passe
- *  de son rappel de série dans un titre qui annonce déjà les sénatoriales 2026. */
-function libelle(nom: string) {
-  return nom.replace(/\s*\(Série \d+\)\s*$/, '').trim();
-}
-
-async function circonscription(slug: string) {
-  const code = codeDepuisSlug(slug);
-  if (!code) return null;
-
-  const apercu = await fetchFromApi<ApercuSenatoriales>('/senatoriales/2026', 3600);
-  const trouvee = apercu?.circonscriptions?.find((c) => c.departement === code);
-  return trouvee ? { ...trouvee, code, nom: libelle(trouvee.nom) } : null;
-}
-
 export async function generateMetadata({
   params,
 }: {
   params: { departement: string };
 }): Promise<Metadata> {
-  const circo = await circonscription(params.departement);
+  const circo = await circonscriptionDepuisSlug(params.departement);
   if (!circo) return {};
 
   const url = `${BASE_URL}/senatoriales-2026/${params.departement}`;
@@ -160,7 +117,7 @@ export default async function CirconscriptionPage({
   // page vide et indexable, la même réponse que pour un slug inventé.
   if (!trouvee) notFound();
 
-  const nom = libelle(trouvee.nom);
+  const nom = libelleCirconscription(trouvee.nom);
   const nbSieges = trouvee.nbSieges;
   const scrutinLocal = modeDeScrutin(nbSieges);
   const ou = locutionDepuisCode(code, nom);
@@ -270,7 +227,7 @@ export default async function CirconscriptionPage({
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 {listesCandidats.length}{' '}
-                {scrutinLocal.court.startsWith('proportionnel')
+                {scrutinLocal.unite === 'liste'
                   ? `${pluriel(listesCandidats.length, 'liste')} en lice pour ${nbSieges} ${pluriel(nbSieges, 'siège')}`
                   : `${pluriel(listesCandidats.length, 'candidature')} pour ${nbSieges} ${pluriel(nbSieges, 'siège')}`}
                 . Les noms en couleur renvoient vers le bilan parlementaire de la personne.
