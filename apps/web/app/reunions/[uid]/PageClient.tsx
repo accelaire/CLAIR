@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -85,6 +86,9 @@ const COULEUR_DU_SENS: Record<string, string> = {
 
 export default function PageClient({ reunion }: { reunion: ReunionDetail }) {
   const router = useRouter();
+  // Le rang jusqu'où le débat doit dérouler, posé par un clic sur le sommaire.
+  // Un compteur l'accompagne : recliquer le même point doit refaire défiler.
+  const [cible, setCible] = useState<{ rang: number; clic: number } | null>(null);
   const chambreLabel = reunion.commission?.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale';
   const crUrl = urlDuCompteRendu(reunion.compteRenduRef);
 
@@ -225,12 +229,17 @@ export default function PageClient({ reunion }: { reunion: ReunionDetail }) {
         </section>
       )}
 
-      <SommaireDeSeance entrees={sommaire} votesDuJour={reunion.votesDuJour ?? false} />
+      <SommaireDeSeance
+        entrees={sommaire}
+        votesDuJour={reunion.votesDuJour ?? false}
+        onAllerAuDebat={(rang) => setCible((c) => ({ rang, clic: (c?.clic ?? 0) + 1 }))}
+      />
 
       <DebatDeReunion
         uid={reunion.uid}
         total={reunion.nbInterventions}
         scrutins={reunion.scrutins}
+        cible={cible}
       />
 
       {reunion.avisCommission.length > 0 && (

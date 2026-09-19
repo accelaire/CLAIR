@@ -48,10 +48,13 @@ export interface EntreeDuSommaire {
 export function SommaireDeSeance({
   entrees,
   votesDuJour,
+  onAllerAuDebat,
 }: {
   entrees: EntreeDuSommaire[];
   /** Le Sénat ne rattache ses scrutins qu'à une journée, pas à une séance. */
   votesDuJour: boolean;
+  /** Dérouler le débat jusqu'au rang d'ouverture d'un point. */
+  onAllerAuDebat?: (rang: number) => void;
 }) {
   if (entrees.length === 0) return null;
 
@@ -80,14 +83,20 @@ export function SommaireDeSeance({
 
       <div className="divide-y rounded-lg border bg-card">
         {entrees.map((entree) => (
-          <PointDuSommaire key={entree.cle} entree={entree} />
+          <PointDuSommaire key={entree.cle} entree={entree} onAllerAuDebat={onAllerAuDebat} />
         ))}
       </div>
     </section>
   );
 }
 
-function PointDuSommaire({ entree }: { entree: EntreeDuSommaire }) {
+function PointDuSommaire({
+  entree,
+  onAllerAuDebat,
+}: {
+  entree: EntreeDuSommaire;
+  onAllerAuDebat?: (rang: number) => void;
+}) {
   const [ouvert, setOuvert] = useState(false);
   const depliable = entree.scrutins.length > 0 || entree.dossiers.length > 0;
 
@@ -105,10 +114,33 @@ function PointDuSommaire({ entree }: { entree: EntreeDuSommaire }) {
             {entree.scrutins.length} vote{entree.scrutins.length > 1 ? 's' : ''}
           </span>
         )}
+        {/* Le compte des prises mène au passage lui-même : c'est la question
+            qu'on se pose en lisant un point de l'ordre du jour — « montre-moi
+            ce qui s'y est dit ». Cliquable seulement quand on sait où aller. */}
         {entree.nbPrises !== null && entree.nbPrises > 0 && (
-          <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
-            {entree.nbPrises} prise{entree.nbPrises > 1 ? 's' : ''} de parole
-          </span>
+          entree.ordre !== null && onAllerAuDebat ? (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                onAllerAuDebat(entree.ordre!);
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                e.preventDefault();
+                e.stopPropagation();
+                onAllerAuDebat(entree.ordre!);
+              }}
+              className="whitespace-nowrap rounded text-xs tabular-nums text-primary underline-offset-2 transition-colors hover:underline"
+            >
+              {entree.nbPrises} prise{entree.nbPrises > 1 ? 's' : ''} de parole
+            </span>
+          ) : (
+            <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+              {entree.nbPrises} prise{entree.nbPrises > 1 ? 's' : ''} de parole
+            </span>
+          )
         )}
       </span>
     </>

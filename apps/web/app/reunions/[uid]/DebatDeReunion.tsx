@@ -16,7 +16,7 @@
 // on passe à l'amendement suivant. Une journée compte huit votes en moyenne et
 // jusqu'à 83 — les empiler à la fin ne dirait plus de quoi chacun sort.
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { Loader2, Vote } from 'lucide-react';
@@ -80,10 +80,21 @@ export function DebatDeReunion({
   uid,
   total,
   scrutins,
+  cible,
 }: {
   uid: string;
   total: number;
   scrutins?: ScrutinDeSeance[];
+  /**
+   * Le rang jusqu'où dérouler le débat, quand le lecteur clique un point du
+   * sommaire. Le débat se charge par tranches de cinquante : atteindre la
+   * 900e prise demande d'en charger dix-huit, d'où l'attente ci-dessous plutôt
+   * qu'un simple ancrage.
+   *
+   * `clic` distingue deux demandes sur le même point : sans lui, recliquer
+   * après avoir fait défiler la page ne ferait rien.
+   */
+  cible?: { rang: number; clic: number } | null;
 }) {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError } =
     useInfiniteQuery<PageDeDebat>({
@@ -100,6 +111,16 @@ export function DebatDeReunion({
     });
 
   const { loadMoreRef } = useInfiniteScroll({ hasNextPage, isFetchingNextPage, fetchNextPage });
+
+  // Le rang demandé, tant qu'on ne l'a pas atteint. On charge page après page
+  // jusqu'à ce que la prise existe, puis on y va — et on oublie la consigne,
+  // pour ne pas ramener le lecteur en arrière à chaque page suivante.
+  const [rangAAtteindre, setRangAAtteindre] = useState<number | null>(null);
+  const conteneur = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (cible) setRangAAtteindre(cible.rang);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cible?.clic]);
 
   const prises = useMemo(() => (data?.pages ?? []).flatMap((p) => p.data), [data]);
   const groupes = useMemo(() => grouperParSujet(prises, { avecTexte: true }), [prises]);
@@ -130,12 +151,46 @@ export function DebatDeReunion({
     return parPrise;
   }, [prises, parId]);
 
+  useEffect(() => {
+    if (rangAAtteindre === null) return;
+    const cible = prises.find((p) => p.ordre !== null && p.ordre >= rangAAtteindre);
+    if (!cible) {
+      // Pas encore chargée : on avance d'une page. Attention au renoncement —
+      // `isFetchingNextPage` passe à vrai dès l'appel, et cet effet se rejoue
+      // aussitôt : n'abandonner que faute de page suivante, jamais parce que
+      // l'une est en vol, sinon la poursuite s'arrête après la première.
+      if (!hasNextPage) setRangAAtteindre(null);
+      else if (!isFetchingNextPage) fetchNextPage();
+      return;
+    }
+    const noeud = conteneur.current?.querySelector(`[data-prise="${cible.id}"]`);
+    // Le défilement animé vaut pour un saut court, qu'il rend lisible. Pour le
+    // dernier point d'une longue séance — trente mille pixels plus bas — il
+    // devient une animation interminable qu'un rien interrompt : on y va
+    // directement, le lecteur a déjà vu l'indicateur d'attente.
+    const distance = noeud ? Math.abs(noeud.getBoundingClientRect().top) : 0;
+    noeud?.scrollIntoView({
+      behavior: distance > 3 * window.innerHeight ? 'auto' : 'smooth',
+      block: 'start',
+    });
+    setRangAAtteindre(null);
+  }, [rangAAtteindre, prises, hasNextPage, isFetchingNextPage, fetchNextPage]);
+
   if (total === 0) return null;
 
   return (
-    <section className="mb-8">
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+    <section ref={conteneur} className="mb-8 scroll-mt-4">
+      <h2 className="mb-3 flex flex-wrap items-baseline gap-x-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         Débat — {total} prise{total > 1 ? 's' : ''} de parole
+        {/* Rejoindre un point situé loin dans la séance demande de charger les
+            tranches qui le précèdent : on le dit, plutôt que de laisser la page
+            paraître inerte. */}
+        {rangAAtteindre !== null && (
+          <span className="inline-flex items-center gap-1.5 text-xs font-normal normal-case tracking-normal text-primary">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            On déroule jusqu&apos;au passage demandé…
+          </span>
+        )}
       </h2>
 
       {isError && (
@@ -175,7 +230,7 @@ export function DebatDeReunion({
 
               <div className="divide-y">
                 {groupe.interventions.map((prise) => (
-                  <div key={prise.id}>
+                  <div key={prise.id} data-prise={prise.id} className="scroll-mt-20">
                     <PriseDeParoleItem prise={prise} />
                     {/* Le vote tombe juste après la DERNIÈRE prise qui le
                         porte : c'est l'instant où il a eu lieu. Le mettre en
