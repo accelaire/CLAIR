@@ -136,6 +136,8 @@ interface InterventionsResponse {
      * — faute de sujet plus fin, comme pour un vote sur l'ensemble d'un texte.
      */
     precision?: 'amendement' | 'article' | 'ensemble' | 'motion' | 'fenetre' | 'finances' | null;
+    /** Nombre de prises de parole par nature, filtre de nature exclu. */
+    parType?: Record<string, number>;
   };
 }
 
@@ -202,6 +204,18 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
 
   const [interventionsSortAsc, setInterventionsSortAsc] = useState(true);
   const [interventionsSearch, setInterventionsSearch] = useState('');
+  /**
+   * La nature de prise de parole affichée, vide pour toutes.
+   *
+   * LES EXPLICATIONS DE VOTE PASSENT DEVANT QUAND IL Y EN A. C'est ce qu'on
+   * vient lire sur un vote solennel : chaque groupe y dit pourquoi il vote
+   * comme il vote, là où le reste du débat porte sur le texte. Seuls 965
+   * scrutins sur 18 389 en portent — le défaut ne peut donc pas être posé
+   * d'avance, il se décide à la première réponse, qui donne le décompte par
+   * nature. Le lecteur garde la main : changer le filtre gèle le choix.
+   */
+  const [interventionsType, setInterventionsType] = useState('');
+  const [natureChoisie, setNatureChoisie] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
   // Debounce search — 300ms delay to avoid hammering the API on every keystroke
@@ -232,7 +246,7 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery<InterventionsResponse>({
-    queryKey: ['scrutin-interventions', numero, chambre, session, interventionsSortAsc ? 'asc' : 'desc', debouncedSearch],
+    queryKey: ['scrutin-interventions', numero, chambre, session, interventionsSortAsc ? 'asc' : 'desc', debouncedSearch, interventionsType],
     queryFn: ({ pageParam = 1 }) =>
       api.get(`/scrutins/${numero}/interventions`, {
         params: {
@@ -242,6 +256,7 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
           limit: 10,
           sort: interventionsSortAsc ? 'asc' : 'desc',
           ...(debouncedSearch ? { search: debouncedSearch } : {}),
+          ...(interventionsType ? { type: interventionsType } : {}),
         },
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
@@ -261,6 +276,18 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
     [interventionsData]
   );
   const totalInterventions = data?.data.totalInterventions ?? 0;
+  // Le décompte vient du serveur, filtre de nature exclu : une option ne peut
+  // pas disparaître au moment où on la choisit.
+  const interventionsParType = interventionsData?.pages[0]?.meta.parType ?? {};
+
+  // Le décompte n'arrive qu'avec la première page : le défaut se pose donc
+  // après coup, une seule fois, et jamais contre un choix du lecteur.
+  useEffect(() => {
+    if (natureChoisie || interventionsType) return;
+    if ((interventionsParType.explication_vote ?? 0) > 0) {
+      setInterventionsType('explication_vote');
+    }
+  }, [interventionsParType.explication_vote, natureChoisie, interventionsType]);
 
   // Groupes map for link resolution
   const groupesMap = useMemo(() => {
@@ -625,6 +652,12 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
               loadMoreRef={interventionsLoadMoreRef}
               searchQuery={interventionsSearch}
               onSearchChange={setInterventionsSearch}
+              typeFiltre={interventionsType}
+              onTypeChange={(type) => {
+                setNatureChoisie(true);
+                setInterventionsType(type);
+              }}
+              parType={interventionsParType}
             />
           )}
 

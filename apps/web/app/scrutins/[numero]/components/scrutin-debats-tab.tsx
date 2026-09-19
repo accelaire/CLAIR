@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
@@ -49,7 +50,25 @@ interface ScrutinDebatsTabProps {
   loadMoreRef: (node: HTMLDivElement | null) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  /** Nature affichée, vide pour toutes. */
+  typeFiltre: string;
+  onTypeChange: (type: string) => void;
+  /** Nombre de prises par nature, filtre de nature exclu. */
+  parType: Record<string, number>;
 }
+
+/**
+ * Les natures de prise de parole, dans l'ordre où elles se lisent.
+ *
+ * Les libellés viennent d'ici et non de la base, qui les écrit sans accent ni
+ * espace : « reponse_gouvernement » s'afficherait « Reponse gouvernement ».
+ */
+const NATURES: Array<{ valeur: string; libelle: string }> = [
+  { valeur: 'explication_vote', libelle: 'Explications de vote' },
+  { valeur: 'intervention', libelle: 'Interventions' },
+  { valeur: 'question', libelle: 'Questions' },
+  { valeur: 'reponse_gouvernement', libelle: 'Réponses du Gouvernement' },
+];
 
 export function ScrutinDebatsTab({
   interventions,
@@ -63,7 +82,19 @@ export function ScrutinDebatsTab({
   loadMoreRef,
   searchQuery,
   onSearchChange,
+  typeFiltre,
+  onTypeChange,
+  parType,
 }: ScrutinDebatsTabProps) {
+  // Seules les natures réellement présentes sont proposées : une option qui ne
+  // mène nulle part est pire que pas d'option. Une explication de vote n'existe
+  // que sur 965 scrutins sur 18 389.
+  const naturesPresentes = NATURES.filter((n) => (parType[n.valeur] ?? 0) > 0);
+  // La recherche reste ouverte tant qu'elle porte un terme : la replier
+  // effacerait de l'écran la raison pour laquelle la liste est filtrée.
+  const [rechercheOuverte, setRechercheOuverte] = useState(false);
+  const totalToutesNatures = Object.values(parType).reduce((n, c) => n + c, 0);
+
   return (
     <div>
       {/* Une journée de séance porte souvent plusieurs dizaines de scrutins.
@@ -97,26 +128,64 @@ export function ScrutinDebatsTab({
         </p>
       )}
 
-      {/* Search + sort controls */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Chercher dans les débats"
-            className="w-full rounded-lg border bg-background pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-        </div>
+      {/* LA BARRE TIENT SUR UNE LIGNE, MÊME ÉTROITE. Les trois contrôles côte à
+          côte débordaient sous 400 px : le champ de recherche se réduisait à
+          rien et le bouton de tri sortait de l'écran. La recherche est donc
+          repliée derrière une loupe, et le tri ne garde que sa flèche tant que
+          la place manque. */}
+      <div className="mb-4 flex items-center gap-2">
+        <button
+          onClick={() => setRechercheOuverte((ouverte) => !ouverte)}
+          aria-expanded={rechercheOuverte}
+          aria-label="Chercher dans les débats"
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-muted ${
+            searchQuery ? 'border-primary text-primary' : ''
+          }`}
+        >
+          <Search className="h-4 w-4" />
+        </button>
+
+        {naturesPresentes.length > 1 && (
+          <select
+            value={typeFiltre}
+            onChange={(e) => onTypeChange(e.target.value)}
+            aria-label="Filtrer par nature de prise de parole"
+            className="h-9 min-w-0 flex-1 rounded-lg border bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary sm:px-3"
+          >
+            <option value="">Toutes les prises de parole ({totalToutesNatures})</option>
+            {naturesPresentes.map((nature) => (
+              <option key={nature.valeur} value={nature.valeur}>
+                {nature.libelle} ({parType[nature.valeur]})
+              </option>
+            ))}
+          </select>
+        )}
+
         <button
           onClick={onToggleSort}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground border rounded-lg hover:bg-muted transition-colors whitespace-nowrap"
+          title={interventionsSortAsc ? 'Plus anciens d\u2019abord' : 'Plus récents d\u2019abord'}
+          className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted sm:px-3"
         >
-          {interventionsSortAsc ? 'Plus anciens d\u2019abord' : 'Plus récents d\u2019abord'}
+          <span className="hidden whitespace-nowrap sm:inline">
+            {interventionsSortAsc ? 'Plus anciens d\u2019abord' : 'Plus récents d\u2019abord'}
+          </span>
           <ArrowDown className={`h-4 w-4 transition-transform ${interventionsSortAsc ? '' : 'rotate-180'}`} />
         </button>
       </div>
+
+      {rechercheOuverte && (
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            autoFocus
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Chercher dans les débats"
+            className="w-full rounded-lg border bg-background py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
+      )}
 
       {/* Interventions list */}
       <div className="space-y-5 max-h-[600px] overflow-y-auto pr-2">
