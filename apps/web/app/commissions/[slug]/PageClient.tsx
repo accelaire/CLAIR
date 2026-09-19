@@ -26,6 +26,7 @@ import { ScrutinsByDossier } from '@/components/scrutins/ScrutinsByDossier';
 import { urlDuCompteRendu } from '@/lib/compte-rendu-url';
 import { pointsDeLOrdreDuJour } from '@/lib/ordre-du-jour';
 import { DossierCard } from '@/components/dossiers/DossierCard';
+import { DateRangePicker, dateRangeToParams, type DateRange } from '@/components/DateRangePicker';
 
 export interface CommissionDetail {
   id: string;
@@ -600,6 +601,9 @@ const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
 function TabDossiers({ slug }: { slug: string }) {
   const [roleFilter, setRoleFilter] = useState<string>('');
   const [etatFilter, setEtatFilter] = useState<string>('');
+  // Sur la date de DÉPÔT du texte : c'est la seule que la relation
+  // commission-dossier permette de situer, et celle que la carte affiche.
+  const [periode, setPeriode] = useState<DateRange>({ from: null, to: null });
 
   const {
     data,
@@ -609,9 +613,13 @@ function TabDossiers({ slug }: { slug: string }) {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery<DossiersResponse>({
-    queryKey: ['commission-dossiers', slug, roleFilter, etatFilter],
+    queryKey: ['commission-dossiers', slug, roleFilter, etatFilter, periode.from, periode.to],
     queryFn: ({ pageParam = 1 }) => {
-      const params: Record<string, unknown> = { page: pageParam, limit: 20 };
+      const params: Record<string, unknown> = {
+        page: pageParam,
+        limit: 20,
+        ...dateRangeToParams(periode),
+      };
       if (roleFilter) params.role = roleFilter;
       if (etatFilter) params.etat = etatFilter;
       return api
@@ -634,7 +642,8 @@ function TabDossiers({ slug }: { slug: string }) {
   const dossiers = data?.pages.flatMap((p) => p.data) ?? [];
   const total = data?.pages[0]?.pagination.total ?? 0;
 
-  const activeFilterCount = (roleFilter ? 1 : 0) + (etatFilter ? 1 : 0);
+  const activeFilterCount =
+    (roleFilter ? 1 : 0) + (etatFilter ? 1 : 0) + (periode.from || periode.to ? 1 : 0);
 
   return (
     <div>
@@ -645,8 +654,18 @@ function TabDossiers({ slug }: { slug: string }) {
           </span>
         }
         activeFilterCount={activeFilterCount}
-        onClear={() => { setRoleFilter(''); setEtatFilter(''); }}
+        onClear={() => {
+          setRoleFilter('');
+          setEtatFilter('');
+          setPeriode({ from: null, to: null });
+        }}
       >
+        <DateRangePicker
+          value={periode}
+          onChange={setPeriode}
+          placeholder="Déposé entre…"
+          resultCount={total}
+        />
         <div className='relative md:w-auto'>
           <select
             value={roleFilter}

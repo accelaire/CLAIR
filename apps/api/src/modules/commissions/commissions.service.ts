@@ -302,7 +302,18 @@ export class CommissionsService {
 
     const where: Record<string, unknown> = { commissionId: commission.id };
     if (query.role) where.role = query.role;
-    if (query.etat) where.dossier = { etat: query.etat };
+
+    // Les filtres qui portent sur le dossier se rassemblent sous la même clé :
+    // deux `where.dossier` successifs, et le second effaçait le premier.
+    const surLeDossier: Record<string, unknown> = {};
+    if (query.etat) surLeDossier.etat = query.etat;
+    if (query.dateFrom || query.dateTo) {
+      surLeDossier.dateDepot = {
+        ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
+        ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
+      };
+    }
+    if (Object.keys(surLeDossier).length > 0) where.dossier = surLeDossier;
 
     const [items, total] = await Promise.all([
       this.prisma.dossierCommission.findMany({
