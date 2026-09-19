@@ -11,6 +11,7 @@ import {
 import { api } from '@/lib/api';
 import { scrutinHref } from '@/lib/scrutin-url';
 import { NATURES_FILTRABLES, natureLabelsCourts } from '@/lib/nature-scrutin';
+import { ParcoursParlementaire, type EtapeDuParcours } from '@/components/parcours/ParcoursParlementaire';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
 import { LegislativeStep } from '@/lib/legislative-steps';
@@ -1109,6 +1110,68 @@ function StatsPanel({ slug, dossiers }: { slug: string; dossiers: SujetDossier[]
 // Main Page
 // ---------------------------------------------------------------------------
 
+/**
+ * Le parcours parlementaire du sujet : toutes les étapes de tous ses textes.
+ *
+ * Chargé à part du détail : il interroge quatre tables pour chaque dossier du
+ * sujet, et la page se lit très bien sans lui le temps qu'il arrive.
+ */
+function ParcoursDuSujet({ slug }: { slug: string }) {
+  // REPLIÉE PAR DÉFAUT, ET BORNÉE EN HAUTEUR UNE FOIS OUVERTE. Un sujet compte
+  // jusqu'à soixante étapes : dépliée d'office, la section poussait tout le
+  // reste de la page — loi promulguée, dossiers, scrutins — hors de vue.
+  const [ouverte, setOuverte] = useState(false);
+
+  const { data, isLoading } = useQuery<{ data: EtapeDuParcours[] }>({
+    queryKey: ['sujet-parcours', slug],
+    queryFn: () => api.get(`/sujets/${encodeURIComponent(slug)}/chronologie`).then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const etapes = data?.data ?? [];
+  if (isLoading || etapes.length === 0) return null;
+
+  const seances = etapes.filter((e) => e.type === 'seance').length;
+  const commissions = etapes.length - seances;
+
+  return (
+    <section className="mb-8">
+      {/* PAS « Parcours parlementaire » : la frise au-dessus porte déjà ce
+          titre. Elle dit où en est la procédure ; cette section dit ce qui
+          s'est réellement tenu, séance par séance. */}
+      <button
+        onClick={() => setOuverte((o) => !o)}
+        aria-expanded={ouverte}
+        className="flex w-full items-center gap-2 rounded-lg border bg-card px-4 py-3 text-left transition-colors hover:bg-muted/50"
+      >
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${ouverte ? '' : '-rotate-90'}`}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block font-semibold">Séances et réunions</span>
+          <span className="block text-xs text-muted-foreground">
+            {seances > 0 && `${seances} séance${seances > 1 ? 's' : ''} publique${seances > 1 ? 's' : ''}`}
+            {seances > 0 && commissions > 0 && ' · '}
+            {commissions > 0 && `${commissions} réunion${commissions > 1 ? 's' : ''} de commission`}
+          </span>
+        </span>
+      </button>
+
+      {ouverte && (
+        <>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Où les textes de ce sujet ont été examinés, dans l&apos;ordre : ce qui s&apos;y est
+            dit, ce qui s&apos;y est voté. Chaque étape mène à son débat complet.
+          </p>
+          <div className="mt-2 max-h-[28rem] overflow-y-auto rounded-lg">
+            <ParcoursParlementaire etapes={etapes} />
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 export default function PageClient({ initialData }: { initialData?: { data: SujetDetail } }) {
   const params = useParams();
   const router = useRouter();
@@ -1216,6 +1279,11 @@ export default function PageClient({ initialData }: { initialData?: { data: Suje
           <ParliamentaryTimeline dossiers={dossiers} sujet={sujet} />
         </div>
       )}
+
+      {/* Le parcours réel, sous la frise des étapes.
+          La frise dit où en est la procédure ; le parcours dit ce qui s'est
+          passé — quelle commission, quelle séance, quels votes — et y mène. */}
+      <ParcoursDuSujet slug={slug} />
 
       {/* Context section — law info or procedure info */}
       <ContextSection sujet={sujet} dossiers={dossiers} />

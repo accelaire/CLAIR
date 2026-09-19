@@ -15,7 +15,7 @@ import { scrutinHref } from '@/lib/scrutin-url';
 import { NATURES_FILTRABLES, natureLabels } from '@/lib/nature-scrutin';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { LoiPromulgueeCard } from '@/components/LoiPromulgueeCard';
-import { ChronologieDuDossier, type EtapeDuParcours } from './ChronologieDuDossier';
+import { ParcoursParlementaire, type EtapeDuParcours } from '@/components/parcours/ParcoursParlementaire';
 import { ExpandableAmendementCard } from '@/components/ExpandableAmendementCard';
 
 // ---------------------------------------------------------------------------
@@ -181,8 +181,14 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
   // trier en JS ne portait que sur les pages déjà chargées, ce qui masquait des
   // scrutins sur les gros dossiers.
   const [natureFilter, setNatureFilter] = useState('');
-  const [activeTab, setActiveTab] = useState<'amendements' | 'scrutins' | 'parcours'>(
-    searchParams.get('tab') === 'scrutins' ? 'scrutins' : 'amendements',
+  // `null` tant que le lecteur n'a rien choisi : l'onglet par défaut dépend de
+  // ce que le dossier a réellement à montrer, et cela n'est connu qu'après le
+  // chargement du parcours.
+  const ongletDeLUrl = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState<'amendements' | 'scrutins' | 'parcours' | null>(
+    ongletDeLUrl === 'scrutins' || ongletDeLUrl === 'amendements' || ongletDeLUrl === 'parcours'
+      ? ongletDeLUrl
+      : null,
   );
 
   // Groupe filter from URL (set when coming from sujet stats page)
@@ -305,12 +311,12 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
   });
 
   // Count of voted amendements for the selected group (for counter)
-  // Le parcours n'est chargé qu'à l'ouverture de son onglet : il interroge
-  // quatre tables, et la plupart des lecteurs ne le demanderont jamais.
+  // Chargé avec la page, et non à l'ouverture de son onglet : c'est lui qui
+  // décide si l'onglet existe, et lequel s'ouvre en premier. Un texte qui n'est
+  // passé nulle part n'a pas de parcours à montrer.
   const { data: parcoursData, isLoading: chargementParcours } = useQuery<{ data: EtapeDuParcours[] }>({
     queryKey: ['dossier-parcours', uid],
     queryFn: () => api.get(`/dossiers/${encodeURIComponent(uid)}/chronologie`).then((r) => r.data),
-    enabled: activeTab === 'parcours',
     staleTime: 5 * 60 * 1000,
   });
   const parcours = parcoursData?.data ?? [];
@@ -378,9 +384,17 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
 
   // Auto-switch to scrutins tab if no amendements
   const hasAmendements = dossier.amendementsCount > 0;
-  // Seul l'onglet des amendements dépend de leur existence : les deux autres
-  // se tiennent toujours.
-  const effectiveTab = activeTab === 'amendements' && !hasAmendements ? 'scrutins' : activeTab;
+  // LE PARCOURS PASSE DEVANT QUAND IL EXISTE. Les amendements et les scrutins
+  // disent ce qui a été décidé ; le parcours dit où et quand, et c'est par là
+  // qu'on entre dans un texte qu'on découvre. Il disparaît quand il est vide,
+  // plutôt que d'offrir un onglet qui ne mène à rien.
+  const hasParcours = parcours.length > 0;
+  const ongletParDefaut = hasParcours ? 'parcours' : hasAmendements ? 'amendements' : 'scrutins';
+  const ongletDemande = activeTab ?? ongletParDefaut;
+  const effectiveTab =
+    (ongletDemande === 'amendements' && !hasAmendements) || (ongletDemande === 'parcours' && !hasParcours)
+      ? ongletParDefaut
+      : ongletDemande;
 
 
   // Compute unique sorts from all loaded amendements
@@ -638,8 +652,21 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
         </div>
       )}
 
-      {/* Tabs: Amendements / Scrutins */}
-      <div id="tabs-section" className="flex items-center gap-1 border-b mb-6 scroll-mt-20">
+      {/* Tabs: Parcours / Amendements / Scrutins */}
+      <div id="tabs-section" className="mb-6 flex items-center gap-1 overflow-x-auto border-b scroll-mt-20">
+        {hasParcours && (
+          <button
+            onClick={() => setActiveTab('parcours')}
+            className={`whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+              effectiveTab === 'parcours'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <CalendarClock className="mr-1.5 -mt-0.5 inline h-4 w-4" />
+            Parcours ({parcours.length})
+          </button>
+        )}
         {hasAmendements && (
           <button
             onClick={() => setActiveTab('amendements')}
@@ -664,20 +691,6 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
           <Vote className="h-4 w-4 inline mr-1.5 -mt-0.5" />
           Scrutins ({dossier.scrutinsCount})
         </button>
-        {/* Le parcours : les réunions et les séances où le texte est passé.
-            Les deux autres onglets disent ce qui a été décidé, celui-ci dit
-            où et quand. */}
-        <button
-          onClick={() => setActiveTab('parcours')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            effectiveTab === 'parcours'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <CalendarClock className="h-4 w-4 inline mr-1.5 -mt-0.5" />
-          Parcours{parcours.length > 0 ? ` (${parcours.length})` : ''}
-        </button>
       </div>
 
       {effectiveTab === 'parcours' && (
@@ -693,7 +706,7 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
               ))}
             </div>
           ) : (
-            <ChronologieDuDossier etapes={parcours} />
+            <ParcoursParlementaire etapes={parcours} />
           )}
         </div>
       )}

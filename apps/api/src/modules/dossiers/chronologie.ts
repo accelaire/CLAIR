@@ -38,9 +38,23 @@ export interface VoteDeChronologie {
   nombreAbstention: number;
 }
 
+/** Le texte discuté à une étape, quand la chronologie en couvre plusieurs. */
+export interface TexteDEtape {
+  uid: string;
+  titre: string;
+}
+
 export interface EtapeDeChronologie {
   /** Identifiant de séance ou de réunion : sert de clé de rendu et d'URL. */
   uid: string;
+  /**
+   * Les textes de ce parcours examinés à cette étape.
+   *
+   * Vide sur la page d'un dossier, où tout porte sur le même texte ; renseigné
+   * sur celle d'un sujet, qui en rassemble plusieurs — jusqu'aux deux versions
+   * d'un même texte, à l'Assemblée et au Sénat.
+   */
+  textes: TexteDEtape[];
   type: 'seance' | 'commission';
   date: Date;
   chambre: string | null;
@@ -66,30 +80,51 @@ const VOTE_SELECT = {
   seanceRef: true,
 } as const;
 
+/** Le parcours d'un seul texte. */
 export async function chronologieDuDossier(
   prisma: PrismaClient,
   dossierId: string,
 ): Promise<EtapeDeChronologie[]> {
+  return chronologieDesDossiers(prisma, [{ id: dossierId, uid: '', titre: '' }], false);
+}
+
+/**
+ * Le parcours de plusieurs textes à la fois : celui d'un sujet.
+ *
+ * Un sujet rassemble le texte de l'Assemblée et celui du Sénat, parfois
+ * plusieurs lectures. Leurs étapes s'entrelacent dans le temps, et c'est
+ * précisément ce qu'on veut montrer — d'où une seule chronologie et non une par
+ * dossier, chaque étape nommant le texte qu'elle examine.
+ */
+export async function chronologieDesDossiers(
+  prisma: PrismaClient,
+  dossiers: Array<{ id: string; uid: string; titre: string }>,
+  nommerLesTextes = true,
+): Promise<EtapeDeChronologie[]> {
+  if (dossiers.length === 0) return [];
+  const ids = dossiers.map((d) => d.id);
+  const texteParId = new Map(dossiers.map((d) => [d.id, { uid: d.uid, titre: d.titre }]));
+
   const [prisesDeSeance, prisesDeCommission, avis, scrutins] = await Promise.all([
     prisma.intervention.groupBy({
-      by: ['seanceId'],
-      where: { dossierId, seanceId: { not: null } },
+      by: ['seanceId', 'dossierId'],
+      where: { dossierId: { in: ids }, seanceId: { not: null } },
       _count: { _all: true },
       _min: { date: true },
     }),
     prisma.intervention.groupBy({
-      by: ['reunionId'],
-      where: { dossierId, reunionId: { not: null } },
+      by: ['reunionId', 'dossierId'],
+      where: { dossierId: { in: ids }, reunionId: { not: null } },
       _count: { _all: true },
     }),
     prisma.avisCommission.groupBy({
       by: ['reunionId'],
-      where: { amendement: { dossierId } },
+      where: { amendement: { dossierId: { in: ids } } },
       _count: { _all: true },
     }),
     prisma.scrutin.findMany({
-      where: { dossierId },
-      select: VOTE_SELECT,
+      where: { dossierId: { in: ids } },
+      select: { ...VOTE_SELECT, dossierId: true },
       orderBy: { numero: 'asc' },
     }),
   ]);
@@ -105,6 +140,7 @@ export async function chronologieDuDossier(
     }
     const etape: EtapeDeChronologie = {
       uid,
+      textes: [],
       type,
       date,
       chambre: null,
@@ -117,17 +153,28 @@ export async function chronologieDuDossier(
     return etape;
   };
 
+  /** Nomme le texte examiné à cette étape, sans doublon. */
+  const noterLeTexte = (etape: EtapeDeChronologie, dossierId: string | null) => {
+    if (!nommerLesTextes || !dossierId) return;
+    const texte = texteParId.get(dossierId);
+    if (!texte || etape.textes.some((t) => t.uid === texte.uid)) return;
+    etape.textes.push(texte);
+  };
+
   for (const ligne of prisesDeSeance) {
     if (!ligne.seanceId || !ligne._min.date) continue;
-    poser(ligne.seanceId, 'seance', ligne._min.date).nbPrises = ligne._count._all;
+    const etape = poser(ligne.seanceId, 'seance', ligne._min.date);
+    etape.nbPrises = (etape.nbPrises ?? 0) + ligne._count._all;
+    noterLeTexte(etape, ligne.dossierId);
   }
 
   for (const scrutin of scrutins) {
     if (!scrutin.seanceRef) continue;
     const etape = poser(scrutin.seanceRef, 'seance', scrutin.date);
     etape.chambre = scrutin.chambre;
-    const { seanceRef: _ignore, ...vote } = scrutin;
+    const { seanceRef: _ignore, dossierId, ...vote } = scrutin;
     etape.scrutins.push(vote);
+    noterLeTexte(etape, dossierId);
   }
 
   // Les réunions de commission sont identifiées par leur clé primaire dans les
@@ -153,7 +200,12 @@ export async function chronologieDuDossier(
     : [];
   const reunionParId = new Map(reunions.map((r) => [r.id, r]));
 
-  const marquerReunion = (reunionId: string | null, champ: 'nbPrises' | 'nbAvis', n: number) => {
+  const marquerReunion = (
+    reunionId: string | null,
+    champ: 'nbPrises' | 'nbAvis',
+    n: number,
+    dossierId: string | null = null,
+  ) => {
     if (!reunionId) return;
     const reunion = reunionParId.get(reunionId);
     if (!reunion) return;
@@ -162,11 +214,12 @@ export async function chronologieDuDossier(
     etape.commission = reunion.commission
       ? { slug: reunion.commission.slug, nom: reunion.commission.nom }
       : null;
-    etape[champ] = n;
+    etape[champ] = (etape[champ] ?? 0) + n;
+    noterLeTexte(etape, dossierId);
   };
 
   for (const ligne of prisesDeCommission) {
-    marquerReunion(ligne.reunionId, 'nbPrises', ligne._count._all);
+    marquerReunion(ligne.reunionId, 'nbPrises', ligne._count._all, ligne.dossierId);
   }
   for (const ligne of avis) {
     marquerReunion(ligne.reunionId, 'nbAvis', ligne._count._all);
@@ -269,6 +322,9 @@ function fusionnerLesJourneesSansReference(
     deja.nbPrises = (deja.nbPrises ?? 0) + (etape.nbPrises ?? 0) || deja.nbPrises;
     deja.chambre = deja.chambre ?? etape.chambre;
     deja.scrutins.push(...etape.scrutins);
+    for (const texte of etape.textes) {
+      if (!deja.textes.some((t) => t.uid === texte.uid)) deja.textes.push(texte);
+    }
   }
 
   return fusionnees;

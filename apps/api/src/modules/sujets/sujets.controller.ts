@@ -249,6 +249,38 @@ export const sujetsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ===========================================================================
+  // GET /api/v1/sujets/:slug/chronologie - Parcours parlementaire d'un sujet
+  // ===========================================================================
+  fastify.get('/:slug/chronologie', {
+    schema: {
+      tags: ['Sujets'],
+      summary: "Parcours parlementaire d'un sujet",
+      description:
+        'Les réunions de commission et les séances publiques où les textes de ce '
+        + 'sujet ont été examinés, dans l’ordre, chaque étape nommant le texte '
+        + 'concerné.',
+      params: {
+        type: 'object',
+        required: ['slug'],
+        properties: { slug: { type: 'string' } },
+      },
+    },
+    handler: async (request) => {
+      const { slug } = sujetParamsSchema.parse(request.params);
+
+      const cacheKey = `sujets:chronologie:${slug}`;
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+
+      const result = await service.getChronologie(slug);
+      if (!result) throw new ApiError(404, 'Sujet non trouvé');
+
+      await fastify.redis.setex(cacheKey, CACHE_TTL_1H, JSON.stringify(result));
+      return result;
+    },
+  });
+
+  // ===========================================================================
   // GET /api/v1/sujets/:slug/scrutins - Scrutins d'un sujet
   // ===========================================================================
   fastify.get('/:slug/scrutins', {
