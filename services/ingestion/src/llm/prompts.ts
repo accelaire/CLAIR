@@ -605,6 +605,7 @@ Règles :
 - Ne prends jamais parti politiquement.
 - Cite les faits vérifiables : mandats, votes notables, prises de position publiques.
 - Si des informations manquent, n'invente rien.
+- N'écris JAMAIS l'âge d'une personne, ni aucune durée obtenue en soustrayant deux dates : pas de « à 32 ans », « à seulement 23 ans », « âgé de 81 ans », « depuis 12 ans », « après 18 ans de mandat ». Écris les années elles-mêmes (« élu en 2022 », « maire de 2014 à 2020 »). Deux raisons : ces soustractions sont fausses une fois sur deux, et une fiche reste en ligne des mois après sa génération, donc un âge juste le jour même devient faux ensuite. La date de naissance est affichée par la page, calculée depuis la base.
 - Les données CLAIR (groupe, mandats, statistiques de vote, HATVP) sont à jour quotidiennement et FONT FOI : en cas de contradiction avec une source web (Wikipédia, Wikidata), privilégie toujours les données CLAIR, notamment sur le mandat et le groupe en cours.
 - Réponds en texte brut, sans markdown.
 - Utilise un ton accessible et engageant, comme un journaliste politique de qualité.`;
