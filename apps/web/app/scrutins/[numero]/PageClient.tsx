@@ -8,6 +8,7 @@ import { FileText, MessageSquare, Vote, ArrowLeft, BookOpen, Info } from 'lucide
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { dossierTitreCourtLisible } from '@/lib/dossiers';
+import { SoutenirCallout } from '@/components/donations/SoutenirCallout';
 import {
   ScrutinSidebar,
   ScrutinDossierBanner,
@@ -605,6 +606,11 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
 
         {/* Main content */}
         <div className="min-w-0">
+          {/* Avant la barre d'onglets : les listes de votes, de débats et
+              d'amendements qui suivent défilent à l'infini, il n'y a pas de pied
+              de page à atteindre. */}
+          <SoutenirCallout spaced={false} className="mb-6" />
+
           {/* Tab bar */}
           <div className="border-b mb-6 overflow-x-auto">
             <div className="flex gap-0">

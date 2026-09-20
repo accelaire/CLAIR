@@ -5,6 +5,7 @@ import { ArrowLeft } from 'lucide-react';
 import { fetchFromApi } from '@/lib/api-server';
 import { BreadcrumbJsonLd, ElectionJsonLd, JsonLd } from '@/components/seo/JsonLd';
 import { SENATORIALES_2026 } from '@/lib/senatoriales';
+import { SoutenirCallout } from '@/components/donations/SoutenirCallout';
 import {
   SLUGS_DEPARTEMENTS,
   codeDepuisSlug,
@@ -283,6 +284,8 @@ export default async function CirconscriptionPage({
             Voir les {nbCirconscriptions} départements concernés par le renouvellement
           </Link>
         </div>
+
+        <SoutenirCallout />
       </div>
     </>
   );
