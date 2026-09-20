@@ -144,7 +144,8 @@ function extractMandatsSenat(sourceData: unknown): ExtractedMandat[] {
 export async function enrichParlementairesIA(
   options: EnrichmentOptions = {}
 ): Promise<EnrichmentResult> {
-  const { limit, dryRun = false, concurrency = 2, force = false, randomSample, skipRecentDays = 3 } = options;
+  const { limit, dryRun = false, concurrency = 2, force = false, randomSample, skipRecentDays = 3, only } = options;
+  const cibles = only?.length ? only : null;
 
   const result: EnrichmentResult = {
     enriched: 0, skipped: 0, errors: 0, totalTokensIn: 0, totalTokensOut: 0,
@@ -164,13 +165,17 @@ export async function enrichParlementairesIA(
   // appauvrit la fiche mais ne bloque jamais la génération (fini les 76 fiches sautées
   // et la boucle infinie du quota Tavily épuisé).
   logger.info(
-    { dryRun, concurrency, limit, force },
+    { dryRun, concurrency, limit, force, cibles: cibles?.length ?? 0 },
     'Starting parlementaires IA enrichment...'
   );
 
   // bypassHash: with --force or --random we regenerate regardless of content hash,
   // which also refreshes iaGeneratedAt (the "mise à jour" date shown on the public fiche).
-  const bypassHash = force || randomSample != null;
+  // Désigner une fiche par son slug vaut demande de régénération : le hash ne
+  // couvre que les données structurées, donc une fiche dont seul le TEXTE est
+  // fautif a un hash inchangé et serait sautée. C'est le cas d'usage que la
+  // ligne d'aide de `--only` décrit : corriger une fiche sans relancer le corpus.
+  const bypassHash = force || randomSample != null || cibles != null;
 
   // Optional random sample: pick N active parlementaires at random (ORDER BY random()),
   // excluding those already refreshed in the last `skipRecentDays` days so a daily rotation
@@ -192,10 +197,16 @@ export async function enrichParlementairesIA(
     );
   }
 
-  // Default working set: new fiches only (or all active with --force).
-  const baseWhere: Prisma.ParlementaireWhereInput = force
-    ? { actif: true }
-    : { actif: true, resumeIA: null };
+  // Working set : les fiches désignées par `--only` si elles le sont, sinon les
+  // fiches neuves — ou toutes les fiches actives avec `--force`.
+  //
+  // `--only` ne filtre pas sur `actif` : on corrige aussi bien la fiche d'un
+  // ancien parlementaire, qui reste publiée et indexée.
+  const baseWhere: Prisma.ParlementaireWhereInput = cibles
+    ? { slug: { in: cibles } }
+    : force
+      ? { actif: true }
+      : { actif: true, resumeIA: null };
 
   // Single source of truth for the projection — ParlRecord is inferred from this select.
   async function fetchBatch(where: Prisma.ParlementaireWhereInput, take: number) {
