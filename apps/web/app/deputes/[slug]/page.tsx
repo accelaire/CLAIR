@@ -1,9 +1,11 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { fetchRessource } from '@/lib/api-server';
+import { fetchRessource, fetchFromApi } from '@/lib/api-server';
+import { REVALIDATE_LISTE_S } from '@/lib/liste-ssr';
 import { PersonJsonLd, BreadcrumbJsonLd } from '@/components/seo/JsonLd';
+import { descriptionParlementaire } from '@/lib/meta-parlementaire';
 import PageClient from './PageClient';
-import type { DeputeDetail } from './PageClient';
+import type { DeputeDetail, PageVotes } from './PageClient';
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
 
@@ -24,6 +26,20 @@ async function getDepute(slug: string) {
   return res?.data ?? null;
 }
 
+/**
+ * Première page de votes, rendue côté serveur.
+ *
+ * `fetchFromApi` et non `fetchRessource` : une panne de l'API ne doit pas faire
+ * échouer la fiche entière. La liste repart alors sur un chargement client,
+ * comme avant.
+ */
+async function getDeputeVotes(slug: string) {
+  return fetchFromApi<PageVotes>(
+    `/deputes/${slug}/votes?page=1&limit=20`,
+    REVALIDATE_LISTE_S,
+  );
+}
+
 export async function generateMetadata({
   params,
 }: {
@@ -36,15 +52,12 @@ export async function generateMetadata({
   const isFemale = data.sexe === 'F';
   const title = `${fullName}, ${isFemale ? 'députée' : 'député'} — votes et activité`;
 
-  const parts = [
-    `Fiche de ${fullName}, ${isFemale ? 'députée' : 'député'}`,
-    data.groupe ? `${data.groupe.nom}` : null,
-    data.circonscription
-      ? `${data.circonscription.nom} (${data.circonscription.departement})`
-      : null,
-    'Votes, présence, interventions et amendements sur CLAIR.vote.',
-  ];
-  const description = parts.filter(Boolean).join(' — ');
+  const description = descriptionParlementaire({
+    fullName,
+    fonction: isFemale ? 'députée' : 'député',
+    groupe: data.groupe?.nom,
+    stats: data.stats,
+  });
   const url = `${BASE_URL}/deputes/${data.slug}`;
 
   return {
@@ -70,7 +83,10 @@ export default async function DeputeDetailPage({
 }: {
   params: { slug: string };
 }) {
-  const data = await getDepute(params.slug);
+  const [data, votes] = await Promise.all([
+    getDepute(params.slug),
+    getDeputeVotes(params.slug),
+  ]);
 
   // Sans ça, un slug inconnu rendait la coquille du client en HTTP 200 : un
   // soft 404 que Google indexe puis garde. `fetchRessource` ne renvoie `null`
@@ -119,7 +135,7 @@ export default async function DeputeDetailPage({
           />
         </>
       )}
-      <PageClient initialData={data ?? undefined} />
+      <PageClient initialData={data ?? undefined} initialVotes={votes ?? undefined} />
     </>
   );
 }

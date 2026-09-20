@@ -5,6 +5,8 @@ import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { ExpandableAmendementCard } from '@/components/ExpandableAmendementCard';
 import { FicheCompareCallout } from '@/components/FicheCompareCallout';
+import { SoutenirCallout } from '@/components/donations/SoutenirCallout';
+import { aucunFiltre, STALE_TIME_LISTE_MS } from '@/lib/liste-ssr';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -308,10 +310,27 @@ function AmendementsList({ slug }: { slug: string }) {
   );
 }
 
-function VotesList({ slug }: { slug: string }) {
+/**
+ * Première page de votes, telle que le serveur la rend.
+ *
+ * `data` reste typé par `VoteItem`, que la liste lit déjà : décrire la réponse
+ * une seconde fois ferait diverger les deux copies.
+ */
+export interface PageVotes {
+  data: VoteItem[];
+  meta: { total: number; page: number; limit: number; hasNext: boolean };
+}
+
+function VotesList({ slug, initialVotes }: { slug: string; initialVotes?: PageVotes }) {
   const [dateRange, setDateRange] = useUrlDateRange();
   const [dissidentOnly, setDissidentOnly] = useState(false);
   const dateParams = dateRangeToParams(dateRange);
+
+  // La donnée rendue côté serveur ne vaut que pour la vue canonique : dès
+  // qu'une période ou le filtre « dissidents » est actif, elle ne correspond
+  // plus à ce qui est demandé.
+  const peutHydrater =
+    aucunFiltre([dateParams.dateFrom, dateParams.dateTo]) && !dissidentOnly;
 
   const {
     data,
@@ -335,6 +354,17 @@ function VotesList({ slug }: { slug: string }) {
       lastPage.meta?.hasNext ? lastPage.meta.page + 1 : undefined,
     initialPageParam: 1,
     enabled: !!slug,
+    // Pièce 2 de la recette de `lib/liste-ssr`, jamais appliquée aux onglets
+    // des fiches : sans elle le HTML servi ne contenait pas un seul titre de
+    // scrutin. Le relevé de vote, qui est la raison d'être de la page et la
+    // seule chose qui la distingue de Wikipédia ou du site de la chambre,
+    // n'était visible que d'un lecteur exécutant le JavaScript.
+    ...(peutHydrater && initialVotes
+      ? {
+          initialData: { pages: [initialVotes], pageParams: [1] },
+          staleTime: STALE_TIME_LISTE_MS,
+        }
+      : {}),
   });
 
   const { loadMoreRef } = useInfiniteScroll({
@@ -452,7 +482,13 @@ function VotesList({ slug }: { slug: string }) {
   );
 }
 
-export default function PageClient({ initialData }: { initialData?: DeputeDetail }) {
+export default function PageClient({
+  initialData,
+  initialVotes,
+}: {
+  initialData?: DeputeDetail;
+  initialVotes?: PageVotes;
+}) {
   const params = useParams();
   const router = useRouter();
   const slug = params.slug as string;
@@ -894,6 +930,11 @@ export default function PageClient({ initialData }: { initialData?: DeputeDetail
         </div>
       )}
 
+      {/* Placé avant les onglets, et non en pied de page : les listes de
+          votes, d'interventions et d'amendements défilent à l'infini, donc
+          il n'y a pas de pied de page à atteindre. */}
+      <SoutenirCallout spaced={false} className="mb-8" />
+
       {/* Onglets */}
       <div className="border-b">
         <nav className="flex gap-8">
@@ -920,7 +961,7 @@ export default function PageClient({ initialData }: { initialData?: DeputeDetail
 
       {/* Contenu */}
       <div className="mt-8">
-        {activeTab === 'votes' && <VotesList slug={depute.slug} />}
+        {activeTab === 'votes' && <VotesList slug={depute.slug} initialVotes={initialVotes} />}
         {activeTab === 'interventions' && <InterventionsList slug={depute.slug} chambre="assemblee" />}
         {activeTab === 'amendements' && <AmendementsList slug={depute.slug} />}
       </div>
