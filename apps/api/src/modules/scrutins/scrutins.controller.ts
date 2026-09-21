@@ -832,11 +832,18 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       // qu'on la choisit. Seules 965 pages de scrutin sur 18 389 portent une
       // explication de vote — sans ce décompte, le lecteur cliquerait à
       // l'aveugle et tomberait sur une liste vide dix-neuf fois sur vingt.
-      const parNature = await fastify.prisma.intervention.groupBy({
-        by: ['type'],
-        where: interventionWhere,
-        _count: { _all: true },
-      });
+      //
+      // Calculé sur la PREMIÈRE page seulement : le front ne lit ce décompte
+      // que sur `pages[0]`, et le rejouer à chaque page du défilement infini
+      // relançait, sur le chemin de repli `journee`, un balayage jour+chambre
+      // non indexé d'`interventions` — pour un résultat jeté aussitôt.
+      const parNature = page === 1
+        ? await fastify.prisma.intervention.groupBy({
+            by: ['type'],
+            where: interventionWhere,
+            _count: { _all: true },
+          })
+        : null;
 
       const whereFiltree: Prisma.InterventionWhereInput = type
         ? { ...interventionWhere, type }
@@ -845,9 +852,9 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       const [interventions, total] = await Promise.all([
         fastify.prisma.intervention.findMany({
           where: whereFiltree,
-          // Départage par l'identifiant : au Sénat, 9 338 rangs sont partagés
-          // par deux prises de parole ou plus dans une même journée, et un tri
-          // non total fait sauter des lignes d'une page à l'autre.
+          // Départage par l'identifiant : le rang a longtemps été partagé par
+          // plusieurs prises d'une même journée du Sénat, et un tri non total
+          // fait sauter des lignes d'une page à l'autre.
           orderBy: [{ date: sort }, { ordre: sort }, { id: sort }],
           skip,
           take: limit,
@@ -866,8 +873,14 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           limit,
           totalPages,
           hasNext: page < totalPages,
-          /** Nombre de prises de parole par nature, filtre de nature exclu. */
-          parType: Object.fromEntries(parNature.map((l) => [l.type, l._count._all])),
+          /**
+           * Nombre de prises de parole par nature, filtre de nature exclu.
+           * Servi avec la première page ; absent des suivantes, qui n'en ont
+           * pas l'usage.
+           */
+          parType: parNature
+            ? Object.fromEntries(parNature.map((l) => [l.type, l._count._all]))
+            : undefined,
           hasPrev: page > 1,
           // Dit au lecteur ce qu'il regarde : le débat de ce vote, ou faute de
           // mieux celui de la journée, qui peut porter sur de tout autres textes.

@@ -37,13 +37,22 @@ export async function generateImageMetadata({
 }: {
   params: { departement: string };
 }) {
+  // Le slug seul décide qu'il y a une image, et il se valide hors réseau. Le
+  // faire dépendre de l'API annulait le repli écrit plus bas : quand l'API se
+  // tait — le cas même qu'il vise — rendre `[]` fait que Next n'émet aucun
+  // `og:image`, et la carte de repli n'a plus aucune chance d'être rendue.
+  if (!codeDepuisSlug(params.departement)) return [];
+
+  // Les chiffres, eux, ne servent qu'à décrire l'image : leur absence dégrade
+  // le texte alternatif, elle ne supprime pas l'aperçu.
   const circo = await circonscriptionDepuisSlug(params.departement);
-  if (!circo) return [];
   return [
     {
       id: params.departement,
       size: OG_SIZE,
-      alt: `Sénatoriales 2026 — ${circo.nom} : ${circo.nbSieges} ${pluriel(circo.nbSieges, 'siège')} à pourvoir`,
+      alt: circo
+        ? `Sénatoriales 2026 — ${circo.nom} : ${circo.nbSieges} ${pluriel(circo.nbSieges, 'siège')} à pourvoir`
+        : 'Sénatoriales 2026',
       contentType: 'image/png',
     },
   ];

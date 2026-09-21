@@ -39,6 +39,17 @@ export interface EtapeDuParcours {
   commission: { slug: string; nom: string } | null;
   nbPrises: number | null;
   nbAvis: number | null;
+  /**
+   * Faux quand nous ne détenons pas la séance que le scrutin nomme.
+   *
+   * L'API ne pose cette étape que parce qu'un vote la désigne ; 3 524 scrutins
+   * de l'Assemblée, dont 3 497 sur la 15e législature, nomment une séance dont
+   * nous n'avons ni la réunion ni le compte rendu. L'étape reste affichée — le
+   * vote a bien eu lieu ce jour-là — mais sans lien, puisqu'il n'y a rien à
+   * ouvrir. Absent d'une réponse servie d'un cache antérieur : on s'abstient
+   * alors de lier, ce qui est le sens prudent.
+   */
+  consultable?: boolean;
   scrutins: VoteDEtape[];
 }
 
@@ -80,14 +91,18 @@ export function ParcoursParlementaire({ etapes }: { etapes: EtapeDuParcours[] })
 function EtapeDuParcoursRendue({ etape }: { etape: EtapeDuParcours }) {
   const [ouvert, setOuvert] = useState(false);
   const textes = etape.textes ?? [];
+  const consultable = etape.consultable === true;
+  // Même gabarit dans les deux cas : seule l'enveloppe change, pour que la
+  // ligne garde exactement la même allure qu'elle mène quelque part ou non.
+  const Enveloppe = consultable ? Link : 'div';
+  const proprietes = consultable
+    ? { href: `/reunions/${encodeURIComponent(etape.uid)}`, className: 'group min-w-0 flex-1' }
+    : { className: 'min-w-0 flex-1' };
 
   return (
     <div>
       <div className="flex items-start gap-3 px-3 py-2">
-        <Link
-          href={`/reunions/${encodeURIComponent(etape.uid)}`}
-          className="group min-w-0 flex-1"
-        >
+        <Enveloppe {...(proprietes as { href: string; className: string })}>
           <span className="flex min-h-5 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1 whitespace-nowrap">
               {etape.type === 'commission' ? (
@@ -118,7 +133,11 @@ function EtapeDuParcoursRendue({ etape }: { etape: EtapeDuParcours }) {
             )}
           </span>
 
-          <span className="mt-0.5 block truncate text-sm font-medium group-hover:text-primary group-hover:underline">
+          <span
+            className={`mt-0.5 block truncate text-sm font-medium ${
+              consultable ? 'group-hover:text-primary group-hover:underline' : ''
+            }`}
+          >
             {etape.commission?.nom
               ?? (etape.type === 'commission' ? 'Réunion de commission' : 'Séance publique')}
           </span>
@@ -128,7 +147,7 @@ function EtapeDuParcoursRendue({ etape }: { etape: EtapeDuParcours }) {
               {textes.map((t) => t.titre).join(' · ')}
             </span>
           )}
-        </Link>
+        </Enveloppe>
 
         {etape.scrutins.length > 0 && (
           <button

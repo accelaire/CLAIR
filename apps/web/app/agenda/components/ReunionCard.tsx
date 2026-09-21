@@ -172,7 +172,7 @@ export function ReunionCard({
             {reunion.commission ? (
               <Link
                 href={`/commissions/${reunion.commission.slug}`}
-                className='text-sm font-semibold hover:text-primary transition-colors line-clamp-1'
+                className='relative z-[2] text-sm font-semibold hover:text-primary transition-colors line-clamp-1'
               >
                 {commissionName}
               </Link>

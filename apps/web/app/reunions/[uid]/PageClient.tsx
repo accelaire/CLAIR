@@ -53,7 +53,12 @@ export interface ReunionDetail {
     };
   }>;
   /** Nombre de prises de parole ; le débat lui-même se charge page par page. */
-  nbInterventions: number;
+  /**
+   * Comme `sommaire` et `scrutins` : une réponse servie d'un cache antérieur
+   * peut ne pas porter le champ, et l'heure de TTL qui suit un déploiement
+   * affichait alors « undefined prise de parole », débat jamais chargé.
+   */
+  nbInterventions?: number;
   /** Les votes de la séance, vides pour une commission. */
   scrutins?: ScrutinDeSeance[];
   /** L'index de la séance : ses points, leurs textes, leurs votes. */
@@ -237,7 +242,7 @@ export default function PageClient({ reunion }: { reunion: ReunionDetail }) {
 
       <DebatDeReunion
         uid={reunion.uid}
-        total={reunion.nbInterventions}
+        total={reunion.nbInterventions ?? 0}
         scrutins={reunion.scrutins}
         cible={cible}
       />

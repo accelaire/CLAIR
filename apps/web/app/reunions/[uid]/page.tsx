@@ -74,7 +74,7 @@ export async function generateMetadata({
     data.commission?.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale',
     jour,
   ];
-  if (data.nbInterventions > 0) {
+  if ((data.nbInterventions ?? 0) > 0) {
     morceaux.push(`${data.nbInterventions} prises de parole`);
   }
   if (data.avisCommission.length > 0) {

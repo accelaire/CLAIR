@@ -63,6 +63,17 @@ export interface EtapeDeChronologie {
   nbPrises: number | null;
   /** Avis rendus sur ses amendements. */
   nbAvis: number | null;
+  /**
+   * Vrai quand `/reunions/<uid>` a quelque chose à montrer.
+   *
+   * Un scrutin nomme toujours sa séance, mais nous ne détenons pas toutes les
+   * séances qu'il nomme : 3 524 scrutins de l'Assemblée — 3 497 sur la seule
+   * 15e législature — désignent une séance dont nous n'avons ni la réunion ni
+   * le compte rendu. Lier ces étapes sans le dire envoyait le lecteur sur un
+   * 404. La page de la séance existe si une réunion porte cet uid, ou si des
+   * prises de parole s'y rattachent : c'est exactement ce que l'API résout.
+   */
+  consultable: boolean;
   scrutins: VoteDeChronologie[];
 }
 
@@ -107,7 +118,10 @@ export async function chronologieDesDossiers(
 
   const [prisesDeSeance, prisesDeCommission, avis, scrutins] = await Promise.all([
     prisma.intervention.groupBy({
-      by: ['seanceId', 'dossierId'],
+      // La chambre est groupée avec la séance parce qu'elle sert ensuite à
+      // départager les journées : sans elle, une séance de l'Assemblée et une
+      // du Sénat tenues le même jour se confondaient.
+      by: ['seanceId', 'dossierId', 'chambre'],
       where: { dossierId: { in: ids }, seanceId: { not: null } },
       _count: { _all: true },
       _min: { date: true },
@@ -147,6 +161,7 @@ export async function chronologieDesDossiers(
       commission: null,
       nbPrises: null,
       nbAvis: null,
+      consultable: false,
       scrutins: [],
     };
     etapes.set(uid, etape);
@@ -164,6 +179,7 @@ export async function chronologieDesDossiers(
   for (const ligne of prisesDeSeance) {
     if (!ligne.seanceId || !ligne._min.date) continue;
     const etape = poser(ligne.seanceId, 'seance', ligne._min.date);
+    etape.chambre = etape.chambre ?? ligne.chambre;
     etape.nbPrises = (etape.nbPrises ?? 0) + ligne._count._all;
     noterLeTexte(etape, ligne.dossierId);
   }
@@ -225,19 +241,41 @@ export async function chronologieDesDossiers(
     marquerReunion(ligne.reunionId, 'nbAvis', ligne._count._all);
   }
 
-  // La chambre d'une séance qu'aucun scrutin n'a nommée se lit sur la réunion
-  // quand elle existe ; sinon la page de la séance la dira elle-même.
-  const seancesSansChambre = [...etapes.values()].filter(
-    (e) => e.type === 'seance' && e.chambre === null,
-  );
-  if (seancesSansChambre.length > 0) {
+  // Une étape de commission vient d'une ligne `reunions` : sa page existe. Une
+  // étape de séance portant des prises de parole aussi, par le repli que
+  // `/agenda/:uid` applique quand aucune réunion ne porte la référence.
+  for (const etape of etapes.values()) {
+    if (etape.type === 'commission' || (etape.nbPrises ?? 0) > 0) etape.consultable = true;
+  }
+
+  const seances = [...etapes.values()].filter((e) => e.type === 'seance');
+  if (seances.length > 0) {
     const connues = await prisma.reunion.findMany({
-      where: { uid: { in: seancesSansChambre.map((e) => e.uid) } },
+      where: { uid: { in: seances.map((e) => e.uid) } },
       select: { uid: true, commission: { select: { chambre: true } } },
     });
     const chambreParUid = new Map(connues.map((r) => [r.uid, r.commission?.chambre ?? null]));
-    for (const etape of seancesSansChambre) {
-      etape.chambre = chambreParUid.get(etape.uid) ?? null;
+    for (const etape of seances) {
+      if (chambreParUid.has(etape.uid)) etape.consultable = true;
+      // La chambre d'une séance qu'aucun scrutin n'a nommée se lit sur la
+      // réunion quand elle existe ; sinon la page de la séance la dira.
+      if (etape.chambre === null) etape.chambre = chambreParUid.get(etape.uid) ?? null;
+    }
+
+    // Reste les séances qu'un scrutin nomme seul. Leur compte rendu peut
+    // exister sans qu'aucune de ses prises ne cite nos textes : on refait donc
+    // le test de l'API, sur la référence de séance et rien d'autre.
+    const aVerifier = seances.filter((e) => !e.consultable);
+    if (aVerifier.length > 0) {
+      const avecDebat = await prisma.intervention.findMany({
+        where: { seanceId: { in: aVerifier.map((e) => e.uid) } },
+        select: { seanceId: true },
+        distinct: ['seanceId'],
+      });
+      const attestees = new Set(avecDebat.map((l) => l.seanceId));
+      for (const etape of aVerifier) {
+        if (attestees.has(etape.uid)) etape.consultable = true;
+      }
     }
   }
 
@@ -292,9 +330,15 @@ function fusionnerLesJourneesSansReference(
 ): EtapeDeChronologie[] {
   if (sansReference.size === 0) return etapes;
 
-  const jour = (date: Date) => date.toISOString().slice(0, 10);
+  // La clé porte la chambre, et pas seulement la date. Une chronologie de sujet
+  // couvre le texte de l'Assemblée ET celui du Sénat : sur une navette, les
+  // deux chambres siègent le même jour, et une clé qui ne retient que la date
+  // repliait la séance de l'une sur celle de l'autre — un seul uid, une seule
+  // chambre, et les scrutins des deux mélangés sous la même étape.
+  const cleDe = (e: EtapeDeChronologie) =>
+    `${e.date.toISOString().slice(0, 10)}|${e.chambre ?? '?'}`;
   const joursAFusionner = new Set(
-    etapes.filter((e) => sansReference.has(e.uid)).map((e) => jour(e.date)),
+    etapes.filter((e) => sansReference.has(e.uid)).map(cleDe),
   );
   if (joursAFusionner.size === 0) return etapes;
 
@@ -302,7 +346,7 @@ function fusionnerLesJourneesSansReference(
   const parJour = new Map<string, EtapeDeChronologie>();
 
   for (const etape of etapes) {
-    const cle = jour(etape.date);
+    const cle = cleDe(etape);
     if (etape.type !== 'seance' || !joursAFusionner.has(cle)) {
       fusionnees.push(etape);
       continue;
@@ -318,6 +362,8 @@ function fusionnerLesJourneesSansReference(
     if ((etape.nbPrises ?? 0) > (deja.nbPrises ?? 0)) {
       deja.uid = etape.uid;
       deja.date = etape.date;
+      // L'étape prend l'uid de l'autre : elle prend aussi sa destination.
+      deja.consultable = etape.consultable;
     }
     deja.nbPrises = (deja.nbPrises ?? 0) + (etape.nbPrises ?? 0) || deja.nbPrises;
     deja.chambre = deja.chambre ?? etape.chambre;

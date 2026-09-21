@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, keepPreviousData } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { FileText, MessageSquare, Vote, ArrowLeft, BookOpen, Info } from 'lucide-react';
@@ -264,6 +264,12 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
       lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
     initialPageParam: 1,
     enabled: !!data,
+    // Changer de nature change la clé de requête, donc vide `data` le temps de
+    // l'aller-retour. Le sélecteur de nature se lit sur ce `data` : il se
+    // démontait puis se remontait à chaque choix, emportant le focus au moment
+    // même où le lecteur venait de s'en servir. On garde donc la réponse
+    // précédente à l'écran pendant le chargement de la suivante.
+    placeholderData: keepPreviousData,
   });
 
   const { loadMoreRef: interventionsLoadMoreRef } = useInfiniteScroll({

@@ -105,45 +105,38 @@ function PointDuSommaire({
       ? formatDossierTitre(entree.dossiers[0].titre, entree.dossiers[0].procedureLibelle)
       : entree.titre;
 
-  const entete = (
-    <>
-      <span className="min-w-0 flex-1 text-sm">{titre}</span>
-      <span className="flex shrink-0 items-center gap-2">
-        {entree.scrutins.length > 0 && (
-          <span className="rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300">
-            {entree.scrutins.length} vote{entree.scrutins.length > 1 ? 's' : ''}
+  const libelle = <span className="min-w-0 flex-1 text-sm">{titre}</span>;
+
+  // Les annexes se rendent EN DEHORS du bouton de dépliage. Le compte des
+  // prises est lui-même actionnable, et un élément interactif imbriqué dans un
+  // <button> est du HTML invalide : les lecteurs d'écran annoncent un bouton
+  // dans un bouton, et le parcours clavier ne sait plus lequel il active.
+  const annexes = (
+    <span className="flex shrink-0 items-center gap-2">
+      {entree.scrutins.length > 0 && (
+        <span className="rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300">
+          {entree.scrutins.length} vote{entree.scrutins.length > 1 ? 's' : ''}
+        </span>
+      )}
+      {/* Le compte des prises mène au passage lui-même : c'est la question
+          qu'on se pose en lisant un point de l'ordre du jour — « montre-moi
+          ce qui s'y est dit ». Cliquable seulement quand on sait où aller. */}
+      {entree.nbPrises !== null && entree.nbPrises > 0 && (
+        entree.ordre !== null && onAllerAuDebat ? (
+          <button
+            type="button"
+            onClick={() => onAllerAuDebat(entree.ordre!)}
+            className="whitespace-nowrap rounded text-xs tabular-nums text-primary underline-offset-2 transition-colors hover:underline"
+          >
+            {entree.nbPrises} prise{entree.nbPrises > 1 ? 's' : ''} de parole
+          </button>
+        ) : (
+          <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+            {entree.nbPrises} prise{entree.nbPrises > 1 ? 's' : ''} de parole
           </span>
-        )}
-        {/* Le compte des prises mène au passage lui-même : c'est la question
-            qu'on se pose en lisant un point de l'ordre du jour — « montre-moi
-            ce qui s'y est dit ». Cliquable seulement quand on sait où aller. */}
-        {entree.nbPrises !== null && entree.nbPrises > 0 && (
-          entree.ordre !== null && onAllerAuDebat ? (
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={(e) => {
-                e.stopPropagation();
-                onAllerAuDebat(entree.ordre!);
-              }}
-              onKeyDown={(e) => {
-                if (e.key !== 'Enter' && e.key !== ' ') return;
-                e.preventDefault();
-                e.stopPropagation();
-                onAllerAuDebat(entree.ordre!);
-              }}
-              className="whitespace-nowrap rounded text-xs tabular-nums text-primary underline-offset-2 transition-colors hover:underline"
-            >
-              {entree.nbPrises} prise{entree.nbPrises > 1 ? 's' : ''} de parole
-            </span>
-          ) : (
-            <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
-              {entree.nbPrises} prise{entree.nbPrises > 1 ? 's' : ''} de parole
-            </span>
-          )
-        )}
-      </span>
-    </>
+        )
+      )}
+    </span>
   );
 
   if (!depliable) {
@@ -152,26 +145,32 @@ function PointDuSommaire({
         {/* La place du chevron, laissée vide : sans elle, un point sans vote
             démarrerait 28 px à gauche de ses voisins. */}
         <span className="h-4 w-4 shrink-0" aria-hidden />
-        {entete}
+        {libelle}
+        {annexes}
       </div>
     );
   }
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => setOuvert((etat) => !etat)}
-        aria-expanded={ouvert}
-        className="flex w-full items-start gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/50"
-      >
-        {ouvert ? (
-          <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-        )}
-        {entete}
-      </button>
+      {/* Le survol vit sur la rangée, le clic sur le seul bouton de dépliage :
+          la ligne réagit comme avant, sans rien imbriquer. */}
+      <div className="flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-muted/50">
+        <button
+          type="button"
+          onClick={() => setOuvert((etat) => !etat)}
+          aria-expanded={ouvert}
+          className="flex min-w-0 flex-1 items-start gap-3 text-left"
+        >
+          {ouvert ? (
+            <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          )}
+          {libelle}
+        </button>
+        {annexes}
+      </div>
 
       {ouvert && (
         <div className="space-y-2 border-t bg-muted/20 px-4 py-3 pl-11">
