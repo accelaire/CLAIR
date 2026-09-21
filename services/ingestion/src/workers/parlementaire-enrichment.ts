@@ -209,7 +209,7 @@ export async function enrichParlementairesIA(
       : { actif: true, resumeIA: null };
 
   // Single source of truth for the projection — ParlRecord is inferred from this select.
-  async function fetchBatch(where: Prisma.ParlementaireWhereInput, take: number) {
+  async function fetchBatch(where: Prisma.ParlementaireWhereInput, take: number, skip = 0) {
     return prisma.parlementaire.findMany({
       where,
       select: {
@@ -234,8 +234,13 @@ export async function enrichParlementairesIA(
         groupe: { select: { nom: true } },
         circonscription: { select: { departement: true, numero: true, nom: true } },
       },
-      orderBy: [{ chambre: 'asc' }, { nom: 'asc' }],
+      // Départage obligatoire dès qu'on pagine avec un décalage : deux
+      // parlementaires de même chambre et de même nom ne sont pas rendus dans
+      // un ordre garanti, et un tri non total fait sauter des lignes d'un lot
+      // à l'autre tout en en répétant d'autres.
+      orderBy: [{ chambre: 'asc' }, { nom: 'asc' }, { id: 'asc' }],
       take,
+      skip,
     });
   }
   type ParlRecord = Awaited<ReturnType<typeof fetchBatch>>[number];
@@ -461,14 +466,24 @@ export async function enrichParlementairesIA(
     // traitées quittent le set `resumeIA: null`. Si un batch entier échoue sans enrichir
     // une seule fiche (ex. quota Tavily épuisé en cours de run), les mêmes lignes sont
     // repiochées indéfiniment. On s'arrête donc dès qu'un batch ne fait aucun progrès.
+    //
+    // Ce « re-take depuis le haut » ne vaut QUE pour le set qui se draine. Les
+    // fiches désignées par `--only`, comme celles de `--force`, restent dans
+    // leur set une fois enrichies : repiocher depuis le début y rendait
+    // indéfiniment les mêmes cinquante lignes, et au-delà de cinquante cibles
+    // sans `--limit` la commande tournait sans fin en brûlant des appels
+    // Mistral et Tavily. Ces sets-là se parcourent donc au décalage.
+    const setSeDraine = !cibles && !force;
+    let deja = 0;
     let remaining = limit ?? Infinity;
     while (remaining > 0) {
       const take = Math.min(BATCH_SIZE, remaining);
-      const records = await fetchBatch(baseWhere, take);
+      const records = await fetchBatch(baseWhere, take, setSeDraine ? 0 : deja);
       if (records.length === 0) break;
       const enrichedBefore = result.enriched;
       await Promise.all(records.map(processParl));
       remaining -= records.length;
+      deja += records.length;
       if (result.enriched === enrichedBefore) {
         logger.error(
           { errors: result.errors, restants: records.length },

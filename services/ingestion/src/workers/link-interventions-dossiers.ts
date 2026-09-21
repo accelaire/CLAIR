@@ -76,77 +76,14 @@ export function cleDuTexte(legislature: string | number, numero: string): string
 }
 
 /**
- * La correspondance (législature, numéro de dépôt) → dossier.
- *
- * Elle est bâtie sur deux sources complémentaires : les références de texte
- * portées par les amendements, et celles que l'arbre des actes législatifs de
- * chaque dossier contient. Voir l'en-tête du fichier pour le pourquoi.
- *
- * Une clé qui mène à plusieurs dossiers n'est pas retenue : mieux vaut un
- * numéro nu qu'un titre faux. C'est la même règle que pour les orateurs
- * homonymes.
- */
-export async function correspondanceTexteDossier(): Promise<Map<string, string>> {
-  const [parAmendement, parDossier] = await Promise.all([
-    prisma.$queryRaw<Array<{ legislature: string; numero: string; dossier_id: string }>>`
-      SELECT DISTINCT
-             substring(a.texte_ref from 'ANR5L([0-9]+)B') AS legislature,
-             substring(a.texte_ref from 'B(?:TC)?([0-9]+)$') AS numero,
-             a.dossier_id
-      FROM amendements a
-      WHERE a.texte_ref ~ 'ANR5L[0-9]+B(?:TC)?[0-9]+$'
-        AND a.dossier_id IS NOT NULL
-    `,
-    // Les références de documents que porte l'arbre des actes législatifs du
-    // dossier : c'est ce qui rend les 15e et 16e législatures résolvables.
-    prisma.$queryRaw<Array<{ legislature: string; numero: string; dossier_id: string }>>`
-      SELECT DISTINCT
-             substring(ref from 'ANR5L([0-9]+)B') AS legislature,
-             substring(ref from 'B(?:TC)?([0-9]+)$') AS numero,
-             d.id AS dossier_id
-      FROM dossiers_legislatifs d,
-           LATERAL regexp_matches(d.source_data::text, '([A-Z]+ANR5L[0-9]+B(?:TC)?[0-9]+)', 'g') AS m(parts),
-           LATERAL (SELECT m.parts[1]) AS r(ref)
-      WHERE d.source_data IS NOT NULL
-    `,
-  ]);
-
-  const candidats = new Map<string, Set<string>>();
-  const ajouter = (l: { legislature: string; numero: string; dossier_id: string }) => {
-    if (!l.legislature || !l.numero) return;
-    const cle = cleDuTexte(l.legislature, l.numero);
-    const vus = candidats.get(cle) ?? new Set<string>();
-    vus.add(l.dossier_id);
-    candidats.set(cle, vus);
-  };
-  for (const l of parAmendement) ajouter(l);
-  for (const l of parDossier) ajouter(l);
-
-  const resolus = new Map<string, string>();
-  let ambigus = 0;
-  for (const [cle, dossiers] of candidats) {
-    if (dossiers.size === 1) resolus.set(cle, [...dossiers][0]!);
-    else ambigus += 1;
-  }
-  logger.info(
-    {
-      parAmendement: parAmendement.length,
-      parDossier: parDossier.length,
-      cles: candidats.size,
-      resolus: resolus.size,
-      ambigus,
-    },
-    'Correspondance (législature, numéro de texte) → dossier construite'
-  );
-  return resolus;
-}
-
-/**
  * La correspondance, en SQL, prête à être jointe.
  *
- * Les deux sources et la règle d'ambiguïté sont celles de
- * `correspondanceTexteDossier`, exprimées là où elles seront utilisées : le
- * rattachement est une jointure, pas une boucle.
+ * Deux sources complémentaires : les références de texte portées par les
+ * amendements, et celles que l'arbre des actes législatifs de chaque dossier
+ * contient — ce sont elles qui rendent les 15e et 16e législatures résolvables.
+ * Une clé menant à plusieurs dossiers n'est pas retenue : mieux vaut un numéro
+ * nu qu'un titre faux, comme pour les orateurs homonymes. Le tout est exprimé
+ * là où il sert : le rattachement est une jointure, pas une boucle.
  */
 const CORRESPONDANCE_SQL = Prisma.sql`
   WITH par_amendement AS (
@@ -187,15 +124,22 @@ export async function lierInterventionsAuxDossiers(
   // texte_numero » — cet index n'existe pas. Chacune des 480 mises à jour
   // balayait donc les 1,4 million de lignes de la table, depuis un poste
   // distant. La correspondance est une jointure : on la joint.
+  //
+  // La jointure est à GAUCHE, et c'est tout l'intérêt de ce dénombrement. Une
+  // jointure interne ne rend que des numéros résolus : compter « vus » et
+  // « résolus » dessus donnait deux fois le même nombre, et le rapport
+  // annonçait 100 % de couverture quoi qu'il arrive — précisément le chiffre
+  // censé signaler une régression du rattachement.
   const aFaire = await prisma.$queryRaw<
-    Array<{ legislature: string | null; numeros: bigint; interventions: bigint }>
+    Array<{ legislature: string | null; vus: bigint; resolus: bigint; interventions: bigint }>
   >`
     WITH correspondance AS (${CORRESPONDANCE_SQL})
-    SELECT c.legislature,
-           count(DISTINCT c.numero) AS numeros,
-           count(*) AS interventions
+    SELECT substring(i.seance_uid from 'CRSANR5L([0-9]+)') AS legislature,
+           count(DISTINCT i.texte_numero) AS vus,
+           count(DISTINCT c.numero) AS resolus,
+           count(*) FILTER (WHERE c.numero IS NOT NULL) AS interventions
     FROM interventions i
-    JOIN correspondance c
+    LEFT JOIN correspondance c
       ON c.numero = i.texte_numero
      AND c.legislature = substring(i.seance_uid from 'CRSANR5L([0-9]+)')
     WHERE i.texte_numero IS NOT NULL
@@ -204,8 +148,8 @@ export async function lierInterventionsAuxDossiers(
   `;
 
   const resultat: ResultatLienInterventionsDossiers = {
-    numerosVus: aFaire.reduce((n, l) => n + Number(l.numeros), 0),
-    numerosResolus: aFaire.reduce((n, l) => n + Number(l.numeros), 0),
+    numerosVus: aFaire.reduce((n, l) => n + Number(l.vus), 0),
+    numerosResolus: aFaire.reduce((n, l) => n + Number(l.resolus), 0),
     interventions: aFaire.reduce((n, l) => n + Number(l.interventions), 0),
   };
 
