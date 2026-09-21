@@ -143,6 +143,18 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     max: 0,
     query: `SELECT COUNT(*)::int AS value FROM (SELECT uid FROM amendements GROUP BY uid HAVING COUNT(*) > 1) sub`,
   },
+  interventions_senat_rang_en_double: {
+    type: 'invariant',
+    label: 'Prises du Sénat empilées sur un même rang de séance',
+    min: 0,
+    max: 0,
+    // Le Sénat ne numérote pas ses interventions : leur identité est le rang de
+    // la prise dans la journée, figé dans `source_uid`. Deux lignes sur un même
+    // rang signalent que la clé n'a pas joué — c'est ainsi que la republication
+    // des comptes rendus révisés avait empilé 10 454 lignes sur 64 journées,
+    // une copie de plus à chaque nuit de relecture.
+    query: `SELECT COUNT(*)::int AS value FROM (SELECT seance_id, ordre FROM interventions WHERE chambre = 'senat' AND seance_id IS NOT NULL GROUP BY seance_id, ordre HAVING COUNT(*) > 1) sub`,
+  },
   parlementaires_without_groupe: {
     type: 'invariant',
     label: 'Parlementaires actifs sans groupe',

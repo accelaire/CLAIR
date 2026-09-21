@@ -728,10 +728,12 @@ export class AgendaService {
       this.prisma.intervention.findMany({
         where,
         select: PRISE_DE_PAROLE_SELECT,
-        // Départage obligatoire : au Sénat, 9 338 rangs sont partagés par deux
-        // prises de parole ou plus au sein d'une même journée. Un tri non total
-        // fait sauter des lignes d'une page à l'autre et en répète d'autres,
-        // puisque rien ne garantit que la base rende deux fois le même ordre.
+        // Départage obligatoire. Le rang seul ne suffit pas à ordonner : il a
+        // longtemps été partagé par plusieurs prises d'une même journée du
+        // Sénat — 9 338 collisions, depuis résorbées par l'identité stable des
+        // interventions — et rien ne garantit que la base rende deux fois le
+        // même ordre à rang égal. Un tri non total fait sauter des lignes d'une
+        // page à l'autre et en répète d'autres.
         orderBy: [{ ordre: 'asc' }, { id: 'asc' }],
         skip: (query.page - 1) * query.limit,
         take: query.limit,

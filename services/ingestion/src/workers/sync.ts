@@ -13,7 +13,11 @@ import { DossiersLegislatifsClient } from '../sources/assemblee-nationale/dossie
 import { SenatSenateursClient, TransformedSenateur } from '../sources/senat/senateurs-client';
 import { SenatScrutinsClient } from '../sources/senat/scrutins-client';
 import { DILAInterventionsClient } from '../sources/dila/interventions-client';
-import { SenatInterventionsClient } from '../sources/senat/interventions-client';
+import {
+  SenatInterventionsClient,
+  uidInterventionSenat,
+  type TransformedInterventionSenat,
+} from '../sources/senat/interventions-client';
 import { SenatDossiersClient } from '../sources/senat/dossiers-client';
 import { syncSenateursHistoriques } from './senat-histo';
 import { syncSenatBureaux } from './senat-bureaux';
@@ -1953,14 +1957,13 @@ async function journeesSenatDejaLues(): Promise<Set<string>> {
 
 export async function syncInterventionsSenat(
   options: { maxSeances?: number; minYear?: number; rattrapage?: boolean } = {}
-): Promise<{ interventions: number }> {
+): Promise<{ interventions: number; created: number; updated: number; supprimees: number }> {
   logger.info(
     { maxSeances: options.maxSeances, minYear: options.minYear, rattrapage: options.rattrapage },
     'Starting interventions Sénat sync (from data.senat.fr)...',
   );
 
   const senatInterClient = new SenatInterventionsClient();
-  const interventionsData = await senatInterClient.getInterventions(options);
 
   // Charger les sénateurs pour le mapping nom -> parlementaireId
   const parlementaires = await prisma.parlementaire.findMany({
@@ -1996,98 +1999,160 @@ export async function syncInterventionsSenat(
   }
 
   let created = 0;
-  let createdNonParlementaire = 0;
+  let updated = 0;
+  let inchangees = 0;
+  let supprimees = 0;
+  let lues = 0;
   let skippedPresident = 0;
-  let skippedJourDejaLu = 0;
 
   const chambre = 'senat';
 
-  // RATTRAPAGE. La synchro quotidienne relit les journées récentes et doit donc
-  // vérifier chaque prise avant de l'écrire : un `findFirst` puis un `create`,
-  // soit deux allers-retours par ligne. C'est tenable sur cent journées, pas
-  // sur mille — 360 000 prises feraient 720 000 requêtes depuis un poste
-  // distant, plusieurs heures pour un travail de quelques minutes.
-  //
-  // Le rattrapage vise des journées ABSENTES de la base. On saute donc celles
-  // qu'on connaît déjà, et on écrit les autres d'un bloc. C'est aussi ce qui
-  // rend la commande rejouable : une journée écrite ne sera pas réécrite.
-  const joursDejaLus = options.rattrapage ? await journeesSenatDejaLues() : null;
+  /** Rapproche une prise d'un sénateur — matching sécurisé, jamais approximatif. */
+  const resoudreParlementaire = (intervention: TransformedInterventionSenat): string | null => {
+    // 1. Par orateurRef (matricule sénateur)
+    if (intervention.orateurRef) {
+      const parRef = parlementaireByRef.get(intervention.orateurRef);
+      if (parRef) return parRef;
+    }
+
+    // 2. Par nom complet (prénom + nom)
+    if (intervention.orateurPrenom && intervention.orateurNom) {
+      const fullName = normalize(`${intervention.orateurPrenom} ${intervention.orateurNom}`);
+      const parNom = parlementaireByFullName.get(fullName);
+      if (parNom) return parNom;
+    }
+
+    // 3. Par nom seul — même garde-fou que pour l'AN : vérifier le prénom si disponible
+    if (intervention.orateurNom && !intervention.orateurQualite) {
+      const candidate = parlementaireByNom.get(normalize(intervention.orateurNom));
+      if (candidate) {
+        if (!intervention.orateurPrenom) return candidate.id;
+        if (normalize(intervention.orateurPrenom) === normalize(candidate.prenom)) return candidate.id;
+      }
+    }
+
+    return null;
+  };
+
+  // RATTRAPAGE. Le rattrapage vise des journées ABSENTES de la base. On passe la
+  // liste des journées connues au client, qui les écarte AVANT son plafond : les
+  // écarter après revenait à ne retenir que les journées les plus récentes,
+  // c'est-à-dire précisément celles qu'on saute ensuite.
+  const joursDejaLus = options.rattrapage ? await journeesSenatDejaLues() : undefined;
   if (joursDejaLus) {
     logger.info({ joursDejaLus: joursDejaLus.size }, 'Rattrapage : journées déjà lues');
   }
-  // On écrit une JOURNÉE à la fois, en un seul `createMany`, plutôt que par
-  // lots de taille fixe : c'est la journée qui sert de témoin au prochain
-  // passage. Une journée coupée en deux par un incident serait considérée comme
-  // lue et resterait incomplète pour toujours.
-  let jourEnCours: string | null = null;
-  let lot: Prisma.InterventionCreateManyInput[] = [];
-  const ecrireLaJournee = async (): Promise<void> => {
+
+  /**
+   * Écrit une journée, et une seule, avant que la suivante soit parsée.
+   *
+   * Hors rattrapage, la journée est déjà en base et le Sénat vient peut-être
+   * d'en republier une version révisée. On CONVERGE vers cette version plutôt
+   * que d'y ajouter : chaque prise est retrouvée par son `sourceUid`, mise à
+   * jour si son texte a bougé, créée si elle est nouvelle, et celles que la
+   * révision a retirées sont supprimées. La ligne garde son identifiant, donc
+   * ses rattachements aux scrutins survivent.
+   */
+  const ecrireLaJournee = async (
+    seanceId: string,
+    lot: Prisma.InterventionCreateManyInput[],
+  ): Promise<void> => {
     if (lot.length === 0) return;
-    await prisma.intervention.createMany({ data: lot, skipDuplicates: true });
-    lot = [];
+
+    if (joursDejaLus) {
+      const res = await prisma.intervention.createMany({ data: lot, skipDuplicates: true });
+      created += res.count;
+      return;
+    }
+
+    const existantes = await prisma.intervention.findMany({
+      where: { chambre, seanceId },
+      select: { id: true, sourceUid: true, contenu: true },
+    });
+    const parUid = new Map(
+      existantes.filter((e): e is typeof e & { sourceUid: string } => e.sourceUid !== null)
+        .map((e) => [e.sourceUid, e]),
+    );
+
+    const aCreer: Prisma.InterventionCreateManyInput[] = [];
+    for (const donnees of lot) {
+      const deja = donnees.sourceUid ? parUid.get(donnees.sourceUid) : undefined;
+      if (!deja) {
+        aCreer.push(donnees);
+        continue;
+      }
+      if (deja.contenu === donnees.contenu) {
+        inchangees++;
+        continue;
+      }
+      const { sourceUid: _uid, ...revisable } = donnees;
+      await prisma.intervention.update({ where: { id: deja.id }, data: revisable });
+      updated++;
+    }
+
+    if (aCreer.length > 0) {
+      const res = await prisma.intervention.createMany({ data: aCreer, skipDuplicates: true });
+      created += res.count;
+    }
+
+    // Ce que la version publiée ne contient plus : les prises retirées par la
+    // révision, et les lignes héritées d'avant l'identité stable, que le lot
+    // qu'on vient d'écrire remplace.
+    //
+    // Un compte rendu tronqué en cours de téléchargement ressemblerait à une
+    // journée vidée, alors on ne purge pas sur un parse manifestement trop
+    // court. La comparaison ne peut pas se faire sur le nombre de lignes en
+    // base : une journée héritée en porte jusqu'à trois fois trop, et s'en
+    // servir de référence bloquerait pour toujours l'assainissement des
+    // journées qui en ont justement besoin. On compare donc aux lignes déjà
+    // identifiées, ou, quand il n'y en a pas encore, au nombre de prises
+    // DISTINCTES qu'elles représentent.
+    const publiees = new Set(lot.map((d) => d.sourceUid));
+    const heritees = existantes.filter((e) => !e.sourceUid);
+    const identifiees = existantes.filter((e) => e.sourceUid);
+    const obsoletes = [
+      ...heritees,
+      ...identifiees.filter((e) => !publiees.has(e.sourceUid)),
+    ];
+    if (obsoletes.length > 0) {
+      const reference = identifiees.length > 0
+        ? identifiees.length
+        : new Set(heritees.map((e) => e.contenu.slice(0, 200))).size;
+      if (lot.length * 2 < reference) {
+        logger.warn(
+          { seanceId, parsees: lot.length, reference },
+          'Parse trop court pour une purge : lignes obsolètes conservées',
+        );
+      } else {
+        const res = await prisma.intervention.deleteMany({
+          where: { id: { in: obsoletes.map((e) => e.id) } },
+        });
+        supprimees += res.count;
+      }
+    }
   };
 
-  for (const intervention of interventionsData) {
-    try {
-      const orateurNom = intervention.orateurNom || '';
-      const orateurLower = orateurNom.toLowerCase();
+  for await (const journee of senatInterClient.fluxParJournee({
+    maxSeances: options.maxSeances,
+    minYear: options.minYear,
+    journeesDejaLues: joursDejaLus,
+  })) {
+    const lot: Prisma.InterventionCreateManyInput[] = [];
 
-      // Ignorer les interventions du président/présidente de séance
-      if (orateurLower.includes('président') || orateurLower.includes('présidente') ||
-          orateurLower === 'le président' || orateurLower === 'la présidente') {
+    for (const intervention of journee.interventions) {
+      lues++;
+      const orateurLower = (intervention.orateurNom || '').toLowerCase();
+
+      // Ignorer les interventions du président de séance. « présidente »
+      // commence par « président », un seul test couvre les deux.
+      if (orateurLower.includes('président')) {
         skippedPresident++;
         continue;
       }
 
-      if (joursDejaLus?.has(intervention.seanceId)) {
-        skippedJourDejaLu++;
-        continue;
-      }
-
-      // Chercher le parlementaire — matching sécurisé
-      let parlementaireId: string | null = null;
-
-      // 1. Par orateurRef (matricule sénateur)
-      if (intervention.orateurRef) {
-        parlementaireId = parlementaireByRef.get(intervention.orateurRef) || null;
-      }
-
-      // 2. Par nom complet (prénom + nom)
-      if (!parlementaireId && intervention.orateurPrenom && intervention.orateurNom) {
-        const fullName = normalize(`${intervention.orateurPrenom} ${intervention.orateurNom}`);
-        parlementaireId = parlementaireByFullName.get(fullName) || null;
-      }
-
-      // 3. Par nom seul — même garde-fou que pour l'AN : vérifier le prénom si disponible
-      if (!parlementaireId && intervention.orateurNom && !intervention.orateurQualite) {
-        const nomNorm = normalize(intervention.orateurNom);
-        const candidate = parlementaireByNom.get(nomNorm);
-        if (candidate) {
-          if (intervention.orateurPrenom) {
-            if (normalize(intervention.orateurPrenom) === normalize(candidate.prenom)) {
-              parlementaireId = candidate.id;
-            }
-          } else {
-            parlementaireId = candidate.id;
-          }
-        }
-      }
-
-      // Hors rattrapage : vérifier que la prise n'est pas déjà là. La journée
-      // vient d'être relue, et le Sénat republie ses comptes rendus révisés.
-      if (!joursDejaLus) {
-        const contentHash = intervention.contenu.substring(0, 200);
-        const existing = await prisma.intervention.findFirst({
-          where: {
-            seanceId: intervention.seanceId,
-            contenu: { startsWith: contentHash },
-          },
-        });
-        if (existing) continue;
-      }
-
-      const donnees = {
-        parlementaireId,
+      lot.push({
+        sourceUid: uidInterventionSenat(intervention.seanceId, intervention.ordre),
+        parlementaireId: resoudreParlementaire(intervention),
         orateurNom: intervention.orateurNom,
         orateurPrenom: intervention.orateurPrenom || null,
         orateurQualite: intervention.orateurQualite || null,
@@ -2099,41 +2164,29 @@ export async function syncInterventionsSenat(
         contenu: intervention.contenu,
         motsCles: extractKeywords(intervention.contenu),
         sourceUrl: intervention.sourceUrl,
-      };
+      });
+    }
 
-      if (joursDejaLus) {
-        if (jourEnCours !== null && jourEnCours !== intervention.seanceId) {
-          await ecrireLaJournee();
-        }
-        jourEnCours = intervention.seanceId;
-        lot.push(donnees);
-      } else {
-        await prisma.intervention.create({ data: donnees });
-      }
-
-      if (parlementaireId) {
-        created++;
-      } else {
-        createdNonParlementaire++;
-      }
-
+    try {
+      await ecrireLaJournee(journee.seanceId, lot);
     } catch (error) {
-      logger.warn({ seance: intervention.seanceId, error: errorMessage(error) }, 'Error syncing intervention Sénat');
+      logger.warn(
+        { seance: journee.seanceId, error: errorMessage(error) },
+        'Error syncing interventions Sénat',
+      );
     }
   }
 
-  await ecrireLaJournee();
-
   logger.info({
     created,
-    createdNonParlementaire,
-    total: interventionsData.length,
+    updated,
+    inchangees,
+    supprimees,
+    lues,
     skippedPresident,
-    skippedJourDejaLu,
-    matchRate: `${(((created + createdNonParlementaire) / (interventionsData.length || 1)) * 100).toFixed(1)}%`,
   }, 'Interventions Sénat sync completed');
 
-  return { interventions: created + createdNonParlementaire };
+  return { interventions: created + updated, created, updated, supprimees };
 }
 
 // =============================================================================
@@ -3598,7 +3651,14 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
 
           case 'senat:interventions': {
             const senatInterventionsResult = await syncInterventionsSenat({ maxSeances: options.interventionsLimit });
-            syncResult = { created: senatInterventionsResult.interventions, updated: 0 };
+            // Le Sénat republie ses comptes rendus révisés : la relecture met à
+            // jour bien plus souvent qu'elle ne crée. Confondre les deux ferait
+            // lire au rapport nocturne des centaines de « créations » qui n'en
+            // sont pas.
+            syncResult = {
+              created: senatInterventionsResult.created,
+              updated: senatInterventionsResult.updated,
+            };
             break;
           }
 

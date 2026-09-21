@@ -106,6 +106,25 @@ export function matriculeDepuisLien(html: string): string | undefined {
   return matricule?.[1] ? matricule[1].toUpperCase() : undefined;
 }
 
+/**
+ * Identité stable d'une prise de parole du Sénat.
+ *
+ * Le compte rendu analytique ne numérote pas les interventions : il n'offre que
+ * l'ancre `par_N` du paragraphe, qui se décale à chaque republication. Le Sénat
+ * republie ses journées révisées pendant plusieurs jours, si bien qu'un simple
+ * changement de formulation faisait glisser toutes les ancres et réinsérait la
+ * journée entière.
+ *
+ * Le rang de la prise dans la séance est ce que la source a de plus stable : une
+ * révision de style ne le touche pas. On le fige donc dans `sourceUid`, où
+ * l'index unique le fait respecter, et une relecture met la prise à jour au lieu
+ * de la dupliquer. Le préfixe évite toute collision avec les schémas de l'AN
+ * (numérique pour la DILA, `CRCANR…` pour le portail).
+ */
+export function uidInterventionSenat(seanceId: string, ordre: number): string {
+  return `senat-cri-${seanceId}-${ordre}`;
+}
+
 // =============================================================================
 // CLIENT
 // =============================================================================
@@ -185,9 +204,26 @@ export class SenatInterventionsClient {
   // FETCH INTERVENTIONS
   // ===========================================================================
 
-  async getInterventions(options: { maxSeances?: number; minYear?: number } = {}): Promise<TransformedInterventionSenat[]> {
+  /**
+   * Rend les prises de parole JOURNÉE PAR JOURNÉE.
+   *
+   * Le corpus complet ne tient pas en mémoire : vingt ans de comptes rendus
+   * font plusieurs centaines de milliers de prises portant chacune son texte
+   * intégral. Les accumuler dans un tableau avant la première écriture est la
+   * forme d'OOM que ce dépôt combat déjà sur Railway. On rend donc une journée
+   * à la fois, et l'appelant l'écrit avant qu'on parse la suivante.
+   *
+   * `journeesDejaLues` est filtré AVANT le plafond `maxSeances`. Sans cela, un
+   * rattrapage demandé sur vingt ans retenait les cent journées les plus
+   * récentes — précisément celles déjà en base — puis les sautait toutes, et
+   * annonçait un succès à zéro ligne.
+   */
+  async *fluxParJournee(
+    options: { maxSeances?: number; minYear?: number; journeesDejaLues?: ReadonlySet<string> } = {},
+  ): AsyncGenerator<{ seanceId: string; date: Date; interventions: TransformedInterventionSenat[] }> {
     const maxSeances = options.maxSeances || 100;
     const minYear = options.minYear || new Date().getFullYear() - 2; // 2 dernières années par défaut
+    const dejaLues = options.journeesDejaLues;
 
     const tempDir = path.join(os.tmpdir(), 'clair-interventions-senat');
     const zipPath = path.join(tempDir, 'cri.zip');
@@ -205,38 +241,55 @@ export class SenatInterventionsClient {
 
       // Filtrer et trier les fichiers par date (plus récents d'abord)
       // Les fichiers sont nommés comme dYYYYMMDD.xml (ex: d20250212.xml)
-      const sortedFiles = xmlFiles
+      const maintenant = new Date();
+      const candidats = xmlFiles
         .map(f => {
           const nom = path.basename(f);
           const date = dateDeSeanceSenat(nom);
-          return date ? { path: f, date, year: date.getUTCFullYear() } : null;
+          return date ? { path: f, date, year: date.getUTCFullYear(), seanceId: path.basename(f, '.xml') } : null;
         })
-        .filter((f): f is { path: string; date: Date; year: number } => f !== null && f.year >= minYear && f.date <= new Date())
-        .sort((a, b) => b.date.getTime() - a.date.getTime())
-        .slice(0, maxSeances);
+        .filter((f): f is { path: string; date: Date; year: number; seanceId: string } =>
+          f !== null && f.year >= minYear && f.date <= maintenant)
+        .filter(f => !dejaLues?.has(f.seanceId))
+        .sort((a, b) => b.date.getTime() - a.date.getTime());
 
-      logger.info({ total: xmlFiles.length, filtered: sortedFiles.length, minYear }, 'Files filtered');
+      const retenus = candidats.slice(0, maxSeances);
 
-      const allInterventions: TransformedInterventionSenat[] = [];
+      logger.info(
+        { total: xmlFiles.length, candidats: candidats.length, retenus: retenus.length, minYear, maxSeances },
+        'Files filtered',
+      );
+      // Seulement en rattrapage : là, le plafond laisse du travail non fait et
+      // il faut le dire. Sur la synchro quotidienne, ne retenir que les cent
+      // journées les plus récentes est l'intention même de la commande.
+      if (dejaLues && candidats.length > retenus.length) {
+        logger.warn(
+          { restantes: candidats.length - retenus.length, maxSeances },
+          'Journées absentes non lues : rappeler la commande, ou monter `--limit`',
+        );
+      }
+
       let processed = 0;
+      let total = 0;
 
-      for (const { path: xmlFile, date } of sortedFiles) {
+      for (const { path: xmlFile, date, seanceId } of retenus) {
         try {
           const interventions = await this.parseCompteRendu(xmlFile, date);
-          allInterventions.push(...interventions);
           processed++;
+          total += interventions.length;
 
           if (processed % 10 === 0) {
-            logger.debug({ processed, interventions: allInterventions.length }, 'Progress...');
+            logger.debug({ processed, interventions: total }, 'Progress...');
           }
+
+          if (interventions.length > 0) yield { seanceId, date, interventions };
 
         } catch (error) {
           logger.warn({ file: xmlFile, error: errorMessage(error) }, 'Error parsing compte rendu');
         }
       }
 
-      logger.info({ seances: processed, interventions: allInterventions.length }, 'Interventions Sénat extraction completed');
-      return allInterventions;
+      logger.info({ seances: processed, interventions: total }, 'Interventions Sénat extraction completed');
 
     } finally {
       await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
