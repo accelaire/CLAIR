@@ -4217,6 +4217,14 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.error({ error: errorMessage(error) }, 'Scrutins-amendements linking failed (non-blocking)');
     }
 
+    // Les passes suivantes ne comblent que les vides : on retire d'abord ce qui
+    // pointe vers une autre législature, pour qu'elles puissent le reposer juste.
+    try {
+      await effacerDossiersDAutreLegislature();
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Amendements inter-législatures : nettoyage échoué (non bloquant)');
+    }
+
     // Propagate dossier_id from scrutins to amendements (only fills NULL, never resets)
     logger.info('Propagating dossier_id from scrutins to amendements...');
     try {
@@ -5802,10 +5810,47 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
 // =============================================================================
 
 /**
+ * Un dossier de l'Assemblée porte sa législature dans son uid (`DLR5L17N…`), et
+ * un amendement de l'Assemblée la sienne dans sa colonne `legislature`. Les
+ * propagations ci-dessous n'ont le droit d'écrire que là où les deux concordent.
+ */
+const DOSSIER_DE_MEME_LEGISLATURE = Prisma.sql`
+  (d.uid NOT LIKE 'DLR5L%'
+   OR substring(d.uid from 'DLR5L([0-9]+)N')::int = a.legislature)
+`;
+
+/**
+ * Efface les rattachements d'amendements au dossier d'une autre législature.
+ *
+ * Les passes qui suivent ne comblent que les `dossier_id` vides : un lien faux
+ * n'était donc jamais revu. Avant le garde-fou de législature sur scrutin →
+ * dossier, le scrutin n° 4830 de la 17e avait hérité de « Bioéthique » (15e)
+ * par son seul numéro ; ce dossier est descendu sur ses amendements, puis sur
+ * tout leur texte par la propagation entre voisins. Le scrutin a été corrigé,
+ * les 518 amendements jamais. Effacer d'abord laisse les passes suivantes
+ * reposer le bon dossier quand il existe.
+ */
+export async function effacerDossiersDAutreLegislature(): Promise<{ effaces: number }> {
+  const effaces = await prisma.$executeRaw`
+    UPDATE amendements a
+    SET dossier_id = NULL
+    FROM dossiers_legislatifs d
+    WHERE d.id = a.dossier_id
+      AND a.chambre = 'assemblee'
+      AND NOT ${DOSSIER_DE_MEME_LEGISLATURE}
+  `;
+  if (effaces > 0) {
+    logger.warn({ effaces }, "Amendements rattachés au dossier d'une autre législature : liens effacés");
+  }
+  return { effaces };
+}
+
+/**
  * Propage dossier_id des scrutins vers les amendements.
  * Si un amendement est lié (M:N) à un scrutin qui a un dossier_id,
  * on set l'amendement.dossier_id à la même valeur.
- * Sûr seulement si le M:N amendement-scrutin est correct.
+ * Sûr seulement si le M:N amendement-scrutin est correct — et jamais vers un
+ * dossier d'une autre législature que l'amendement.
  */
 export async function linkAmendementsToDossiers(): Promise<{ linked: number }> {
   logger.info('Propagating dossier_id from scrutins to amendements...');
@@ -5815,9 +5860,10 @@ export async function linkAmendementsToDossiers(): Promise<{ linked: number }> {
     SET dossier_id = s.dossier_id
     FROM "_AmendementToScrutin" ats
     JOIN scrutins s ON ats."B" = s.id
+    JOIN dossiers_legislatifs d ON d.id = s.dossier_id
     WHERE ats."A" = a.id
       AND a.dossier_id IS NULL
-      AND s.dossier_id IS NOT NULL
+      AND ${DOSSIER_DE_MEME_LEGISLATURE}
   `;
 
   logger.info({ linked }, 'Amendements-dossiers linking completed');
@@ -5878,8 +5924,10 @@ export async function propagateDossierIdBySiblingTexteRef(): Promise<{ linked: n
       GROUP BY texte_ref
       HAVING COUNT(DISTINCT dossier_id) = 1
     ) sibling
+    JOIN dossiers_legislatifs d ON d.id = sibling.dossier_id
     WHERE a.texte_ref = sibling.texte_ref
       AND a.dossier_id IS NULL
+      AND ${DOSSIER_DE_MEME_LEGISLATURE}
   `;
 
   logger.info({ linked }, 'Sibling texte_ref dossier propagation completed (safe mode)');

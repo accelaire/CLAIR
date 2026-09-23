@@ -32,6 +32,7 @@ import {
   linkOrphanScrutinsByTFIDF,
   linkOrphanScrutinsByTexteNumero,
   linkOrphansByLoiTitre,
+  effacerDossiersDAutreLegislature,
   linkAmendementsToDossiers,
   linkAmendementsToDossiersByTexteRef,
   propagateDossierIdBySiblingTexteRef,
@@ -867,8 +868,10 @@ program
   .description('Propager dossier_id des scrutins vers les amendements')
   .action(async () => {
     try {
+      const { effaces } = await effacerDossiersDAutreLegislature();
+      console.log(`\nLiens inter-législatures effacés: ${effaces}`);
       const result = await linkAmendementsToDossiers();
-      console.log(`\nAmendements liés via scrutins: ${result.linked}`);
+      console.log(`Amendements liés via scrutins: ${result.linked}`);
       const result2 = await linkAmendementsToDossiersByTexteRef();
       console.log(`Amendements liés via texteRef: ${result2.linked}`);
       const result3 = await propagateDossierIdBySiblingTexteRef();

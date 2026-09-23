@@ -249,6 +249,23 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
                   <> substring(d.uid from 'DLR5L([0-9]+)N')`,
   },
 
+  cross_legislature_amendements_dossiers: {
+    type: 'invariant',
+    label: "Amendements rattachés au dossier d'une autre législature (AN)",
+    min: 0,
+    max: 0,
+    // Le dossier d'un scrutin, rattaché jadis par son seul numéro, est descendu
+    // sur ses amendements puis sur tout leur texte : 518 amendements de la 17e
+    // pointaient vers « Bioéthique » (15e) ou un dossier de la 16e. Les passes
+    // de propagation ne revoyant que les vides, rien ne les corrigeait.
+    query: `SELECT COUNT(*)::int AS value
+            FROM amendements a
+            JOIN dossiers_legislatifs d ON d.id = a.dossier_id
+            WHERE a.chambre = 'assemblee'
+              AND d.uid LIKE 'DLR5L%'
+              AND substring(d.uid from 'DLR5L([0-9]+)N')::int <> a.legislature`,
+  },
+
   cross_legislature_amendements: {
     type: 'invariant',
     label: 'Liens scrutin-amendement inter-législatures (AN)',
