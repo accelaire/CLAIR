@@ -449,8 +449,11 @@ type PerimetreDeSeance =
  */
 function perimetreDuCompteRendu(seance: SeanceSyceron): PerimetreDeSeance {
   if (seance.seanceRef) return { seanceRef: seance.seanceRef };
+  // Getters UTC : la date du compte rendu porte l'heure de Paris dans sa partie
+  // UTC (cf. dateDeSeance). Lue en heure locale, une séance ouverte à 22 h
+  // basculait au lendemain sur un poste réglé sur Paris.
   const debut = new Date(
-    Date.UTC(seance.date.getFullYear(), seance.date.getMonth(), seance.date.getDate()),
+    Date.UTC(seance.date.getUTCFullYear(), seance.date.getUTCMonth(), seance.date.getUTCDate()),
   );
   const fin = new Date(debut);
   fin.setUTCDate(fin.getUTCDate() + 1);
