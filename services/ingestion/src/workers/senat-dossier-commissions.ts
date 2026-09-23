@@ -72,7 +72,10 @@ export async function syncSenatDossierCommissions(
       uid: { startsWith: 'SENAT-' },
       urlSenat: { not: null },
       ...(options.force ? {} : { dossierCommissions: { none: {} } }),
-      ...(options.seulementEnCours ? { etat: 'en_cours' } : {}),
+      // Un état NULL — `etaloicod` vide dans la source — n'est pas un dossier
+      // clos : l'écarter ici le privait de saisine pour toujours, le batch de
+      // 5 h étant le seul à passer.
+      ...(options.seulementEnCours ? { OR: [{ etat: 'en_cours' }, { etat: null }] } : {}),
     },
     select: { id: true, uid: true, urlSenat: true },
     // Les dossiers récents d'abord : ce sont eux qui sont consultés, et un run
