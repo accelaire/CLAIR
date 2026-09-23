@@ -29,7 +29,7 @@ import { asArray, isRecord, readString } from '../utils/json';
 import { extractCommissionSaisines } from '../utils/dossier-commissions';
 import { classifyNatureScrutin } from '../utils/nature-scrutin';
 import { choisirAmendement, type CandidatAmendement } from '../utils/amendement-scrutin';
-import { uidCanoniqueAmendement } from '../utils/uid-amendement';
+import { uidCanoniqueAmendement, uneEmissionParAmendement } from '../utils/uid-amendement';
 import {
   LEGISLATURE_AN_COURANTE,
   LEGISLATURE_FIN,
@@ -4531,7 +4531,11 @@ export async function syncAmendements(
   logger.info({ legislature, limit: options.limit }, 'Starting amendements AN sync...');
 
   const amendementClient = new AssembleeNationaleClient(legislature);
-  const rawAmendements = await amendementClient.getAmendements(options.limit);
+  // Deux émissions d'un même amendement se disputeraient sa ligne chaque nuit
+  // (cf. uneEmissionParAmendement).
+  const rawAmendements = uneEmissionParAmendement(
+    await amendementClient.getAmendements(options.limit),
+  );
 
   let created = 0;
   let updated = 0;
@@ -4671,6 +4675,7 @@ export async function syncAmendements(
           where: { uidCanonique },
           data: { ...data, sourceHash, ...cosignataires },
         });
+        connus.set(uidCanonique, sourceHash);
         updated++;
       } else {
         await prisma.amendement.create({

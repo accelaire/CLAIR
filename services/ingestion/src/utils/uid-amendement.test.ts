@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { uidCanoniqueAmendement } from './uid-amendement';
+import { uidCanoniqueAmendement, uneEmissionParAmendement } from './uid-amendement';
 
 describe('uidCanoniqueAmendement', () => {
   it('fait retomber les deux émissions AN sur la même clé', () => {
@@ -45,5 +45,20 @@ describe('uidCanoniqueAmendement', () => {
     const uid = 'AMANR5L17PO838901BTC1364P0D2N000001';
     const une = uidCanoniqueAmendement(uid);
     expect(uidCanoniqueAmendement(une)).toBe(une);
+  });
+});
+
+describe('uneEmissionParAmendement', () => {
+  const initial = { uid: 'AMANR5L17PO838901B1364P0D2N000001' };
+  const commission = { uid: 'AMANR5L17PO838901BTC1364P0D2N000001' };
+  const seul = { uid: 'AMANR5L17PO838901BTC2755P0D1N000137' };
+
+  it("garde l'émission sur texte initial, quel que soit l'ordre de l'archive", () => {
+    expect(uneEmissionParAmendement([initial, commission, seul])).toEqual([initial, seul]);
+    expect(uneEmissionParAmendement([commission, initial, seul])).toEqual([initial, seul]);
+  });
+
+  it('garde un amendement publié une seule fois, même sous la forme TC', () => {
+    expect(uneEmissionParAmendement([seul])).toEqual([seul]);
   });
 });
