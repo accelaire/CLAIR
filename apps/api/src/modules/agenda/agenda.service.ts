@@ -1,7 +1,12 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import { Redis } from 'ioredis';
 import { AgendaQuery, ProchainesEcheancesQuery, DebatDeReunionQuery } from './agenda.schema';
-import { ANNONCE_ORDRE_DU_JOUR, journeeDeSeance, titreDOrdreDuJour } from '../../utils/interventions';
+import {
+  ANNONCE_ORDRE_DU_JOUR,
+  jourDeSeanceSenat,
+  journeeDeSeance,
+  titreDOrdreDuJour,
+} from '../../utils/interventions';
 import { sommaireDeSeance, type DossierBref } from './sommaire-de-seance';
 
 
@@ -27,16 +32,6 @@ interface CadreDeSeance {
    * rapprochement possible. La page le dit, comme elle le dit pour le Sénat.
    */
   nommeeParSonCompteRendu?: boolean;
-}
-
-/**
- * L'identifiant sous lequel le Sénat range un jour de séance : `d20260721`.
- *
- * La colonne est un horodatage sans fuseau qui contient l'heure de Paris : sa
- * date UTC est donc bien la date de la séance, sans conversion.
- */
-function jourDeSeanceSenat(date: Date): string {
-  return `d${date.toISOString().slice(0, 10).replace(/-/gu, '')}`;
 }
 
 /**

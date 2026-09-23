@@ -23,6 +23,7 @@
 // =============================================================================
 
 import { PrismaClient } from '@prisma/client';
+import { jourDeSeanceSenat } from '../../utils/interventions';
 
 /** Un vote, tel que la chronologie l'annonce sous son étape. */
 export interface VoteDeChronologie {
@@ -185,8 +186,14 @@ export async function chronologieDesDossiers(
   }
 
   for (const scrutin of scrutins) {
-    if (!scrutin.seanceRef) continue;
-    const etape = poser(scrutin.seanceRef, 'seance', scrutin.date);
+    // Le Sénat ne nomme la séance sur aucun de ses scrutins : sa journée est le
+    // seul rattachement, et c'est aussi l'identifiant sous lequel ses prises de
+    // parole sont rangées. Sans ce repli, aucun vote du Sénat n'apparaissait
+    // dans le parcours — celui d'un sujet ne montrait que l'Assemblée.
+    const seance = scrutin.seanceRef
+      ?? (scrutin.chambre === 'senat' ? jourDeSeanceSenat(scrutin.date) : null);
+    if (!seance) continue;
+    const etape = poser(seance, 'seance', scrutin.date);
     etape.chambre = scrutin.chambre;
     const { seanceRef: _ignore, dossierId, ...vote } = scrutin;
     etape.scrutins.push(vote);
@@ -301,10 +308,11 @@ async function seancesNommeesParLeurCompteRendu(
 ): Promise<Set<string>> {
   const uids = etapes.filter((e) => e.type === 'seance').map((e) => e.uid);
   if (uids.length === 0) return new Set();
-  const lignes = await prisma.intervention.findMany({
+  // `groupBy` pour la même raison que plus haut : `distinct` rapatriait toutes
+  // les prises de chaque séance — jusqu'à 1 614 — pour n'en lire qu'une.
+  const lignes = await prisma.intervention.groupBy({
+    by: ['seanceId', 'seanceUid'],
     where: { seanceId: { in: uids } },
-    select: { seanceId: true, seanceUid: true },
-    distinct: ['seanceId'],
   });
   return new Set(
     lignes
@@ -321,12 +329,14 @@ async function seancesNommeesParLeurCompteRendu(
  * une autre pour les votes, sous la référence de séance des scrutins. Le
  * lecteur y voyait deux séances là où il n'y en avait qu'une.
  *
- * On ne fusionne que les journées concernées : ailleurs, prises de parole et
- * scrutins partagent le même identifiant et se rejoignent d'eux-mêmes. Les
- * séances d'une même journée gardent donc leur entrée propre partout où la
- * source les distingue.
+ * Seules les entrées de VOTE SANS DÉBAT rejoignent le compte rendu du jour :
+ * ce sont elles que rien ne relie à leur débat. Deux comptes rendus d'une même
+ * journée — le matin et l'après-midi — gardent chacun leur entrée et leur
+ * page ; les fondre en une seule rendait l'une des deux inaccessible depuis le
+ * parcours. Quand la journée en compte plusieurs, les votes vont au plus long
+ * débat : la source ne dit pas à laquelle des séances ils appartiennent.
  */
-function fusionnerLesJourneesSansReference(
+export function fusionnerLesJourneesSansReference(
   etapes: EtapeDeChronologie[],
   sansReference: Set<string>,
 ): EtapeDeChronologie[] {
@@ -339,41 +349,31 @@ function fusionnerLesJourneesSansReference(
   // chambre, et les scrutins des deux mélangés sous la même étape.
   const cleDe = (e: EtapeDeChronologie) =>
     `${e.date.toISOString().slice(0, 10)}|${e.chambre ?? '?'}`;
-  const joursAFusionner = new Set(
-    etapes.filter((e) => sansReference.has(e.uid)).map(cleDe),
-  );
-  if (joursAFusionner.size === 0) return etapes;
 
-  const fusionnees: EtapeDeChronologie[] = [];
-  const parJour = new Map<string, EtapeDeChronologie>();
-
+  const hotes = new Map<string, EtapeDeChronologie>();
   for (const etape of etapes) {
+    if (etape.type !== 'seance' || !sansReference.has(etape.uid)) continue;
     const cle = cleDe(etape);
-    if (etape.type !== 'seance' || !joursAFusionner.has(cle)) {
-      fusionnees.push(etape);
+    const deja = hotes.get(cle);
+    if (!deja || (etape.nbPrises ?? 0) > (deja.nbPrises ?? 0)) hotes.set(cle, etape);
+  }
+  if (hotes.size === 0) return etapes;
+
+  const gardees: EtapeDeChronologie[] = [];
+  for (const etape of etapes) {
+    const hote = hotes.get(cleDe(etape));
+    const voteSansDebat = etape.type === 'seance'
+      && !sansReference.has(etape.uid)
+      && (etape.nbPrises ?? 0) === 0;
+    if (!hote || !voteSansDebat) {
+      gardees.push(etape);
       continue;
     }
-    const deja = parJour.get(cle);
-    if (!deja) {
-      parJour.set(cle, etape);
-      fusionnees.push(etape);
-      continue;
-    }
-    // L'entrée qui porte le débat l'emporte comme destination : c'est elle qui
-    // a une page à montrer. Les votes de la journée la rejoignent.
-    if ((etape.nbPrises ?? 0) > (deja.nbPrises ?? 0)) {
-      deja.uid = etape.uid;
-      deja.date = etape.date;
-      // L'étape prend l'uid de l'autre : elle prend aussi sa destination.
-      deja.consultable = etape.consultable;
-    }
-    deja.nbPrises = (deja.nbPrises ?? 0) + (etape.nbPrises ?? 0) || deja.nbPrises;
-    deja.chambre = deja.chambre ?? etape.chambre;
-    deja.scrutins.push(...etape.scrutins);
+    hote.scrutins.push(...etape.scrutins);
     for (const texte of etape.textes) {
-      if (!deja.textes.some((t) => t.uid === texte.uid)) deja.textes.push(texte);
+      if (!hote.textes.some((t) => t.uid === texte.uid)) hote.textes.push(texte);
     }
   }
 
-  return fusionnees;
+  return gardees;
 }
