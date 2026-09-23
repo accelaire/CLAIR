@@ -1957,7 +1957,14 @@ async function journeesSenatDejaLues(): Promise<Set<string>> {
 
 export async function syncInterventionsSenat(
   options: { maxSeances?: number; minYear?: number; rattrapage?: boolean } = {}
-): Promise<{ interventions: number; created: number; updated: number; supprimees: number }> {
+): Promise<{
+  interventions: number;
+  created: number;
+  updated: number;
+  supprimees: number;
+  /** Jours (`AAAA-MM-JJ`) dont au moins une prise a été créée, révisée ou retirée. */
+  journeesRevisees: string[];
+}> {
   logger.info(
     { maxSeances: options.maxSeances, minYear: options.minYear, rattrapage: options.rattrapage },
     'Starting interventions Sénat sync (from data.senat.fr)...',
@@ -2004,6 +2011,11 @@ export async function syncInterventionsSenat(
   let supprimees = 0;
   let lues = 0;
   let skippedPresident = 0;
+  // Les journées réécrites cette nuit. Le rattachement aux scrutins retrouve
+  // une prise par son ancre `par_N`, que la révision décale, et la purge a
+  // emporté par cascade les liens des lignes retirées : ces journées doivent
+  // être rattachées de nouveau, même si leurs scrutins ont déjà leur débat.
+  const journeesRevisees = new Set<string>();
 
   const chambre = 'senat';
 
@@ -2056,14 +2068,15 @@ export async function syncInterventionsSenat(
   const ecrireLaJournee = async (
     seanceId: string,
     lot: Prisma.InterventionCreateManyInput[],
-  ): Promise<void> => {
-    if (lot.length === 0) return;
+  ): Promise<boolean> => {
+    if (lot.length === 0) return false;
 
     if (joursDejaLus) {
       const res = await prisma.intervention.createMany({ data: lot, skipDuplicates: true });
       created += res.count;
-      return;
+      return res.count > 0;
     }
+    const avant = created + updated + supprimees;
 
     const existantes = await prisma.intervention.findMany({
       where: { chambre, seanceId },
@@ -2130,6 +2143,7 @@ export async function syncInterventionsSenat(
         supprimees += res.count;
       }
     }
+    return created + updated + supprimees > avant;
   };
 
   for await (const journee of senatInterClient.fluxParJournee({
@@ -2168,8 +2182,14 @@ export async function syncInterventionsSenat(
     }
 
     try {
-      await ecrireLaJournee(journee.seanceId, lot);
+      // La date est construite à minuit UTC : sa forme ISO est le jour même.
+      if (await ecrireLaJournee(journee.seanceId, lot)) {
+        journeesRevisees.add(journee.date.toISOString().slice(0, 10));
+      }
     } catch (error) {
+      // Une journée interrompue a pu être à moitié réécrite : on la rattache
+      // de nouveau par prudence, le remplacement des liens est idempotent.
+      journeesRevisees.add(journee.date.toISOString().slice(0, 10));
       logger.warn(
         { seance: journee.seanceId, error: errorMessage(error) },
         'Error syncing interventions Sénat',
@@ -2184,9 +2204,16 @@ export async function syncInterventionsSenat(
     supprimees,
     lues,
     skippedPresident,
+    journeesRevisees: journeesRevisees.size,
   }, 'Interventions Sénat sync completed');
 
-  return { interventions: created + updated, created, updated, supprimees };
+  return {
+    interventions: created + updated,
+    created,
+    updated,
+    supprimees,
+    journeesRevisees: [...journeesRevisees].sort(),
+  };
 }
 
 // =============================================================================
@@ -3415,6 +3442,10 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     }
   }
 
+  // Les journées du Sénat réécrites par l'étape des interventions, que le
+  // rattachement aux scrutins, joué en fin de batch, doit reprendre.
+  let journeesSenatRevisees: string[] = [];
+
   // Cache AMELI texte mapping across sync steps to avoid double download
   let cachedTexteMapping: Map<number, { num: string; session: string }> | undefined;
 
@@ -3651,6 +3682,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
 
           case 'senat:interventions': {
             const senatInterventionsResult = await syncInterventionsSenat({ maxSeances: options.interventionsLimit });
+            journeesSenatRevisees = senatInterventionsResult.journeesRevisees;
             // Le Sénat republie ses comptes rendus révisés : la relecture met à
             // jour bien plus souvent qu'elle ne crée. Confondre les deux ferait
             // lire au rapport nocturne des centaines de « créations » qui n'en
@@ -3882,11 +3914,14 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     // voix ni décompte des votants. On rapproche donc ce que le libellé du
     // scrutin dit trancher de ce que la section de discussion dit examiner, les
     // deux bornés au même texte. Incrémental lui aussi : il ne reprend que les
-    // scrutins qui n'ont pas encore leur débat.
+    // scrutins qui n'ont pas encore leur débat — et ceux des journées que le
+    // Sénat vient de réviser, dont les liens sont remplacés.
     try {
       logger.info('Rattachement des débats du Sénat aux scrutins...');
       const { linkDebatsScrutinsSenat } = await import('./link-debats-scrutins-senat.js');
-      const senatResult = await linkDebatsScrutinsSenat({});
+      const senatResult = await linkDebatsScrutinsSenat({
+        journeesARemplacer: new Set(journeesSenatRevisees),
+      });
       logger.info(senatResult, 'Rattachement des débats du Sénat terminé');
     } catch (error) {
       logger.error(

@@ -1286,8 +1286,12 @@ program
   .option('--dosleg <chemin>', 'Dump dosleg.sql déjà décompressé')
   .option('--dry-run', 'Tout mesurer sans rien écrire')
   .option('--refaire-tout', 'Refaire les scrutins déjà rattachés')
+  .option(
+    '--remplacer-journees <jours>',
+    'Jours AAAA-MM-JJ, séparés par des virgules, dont les liens sont remplacés (compte rendu révisé)',
+  )
   .option('--sortie <fichier>', 'Écrire les liens dans un fichier TSV au lieu de la base')
-  .action(async (options: { depuisAnnee: number; debats?: string; dosleg?: string; dryRun?: boolean; refaireTout?: boolean; sortie?: string }) => {
+  .action(async (options: { depuisAnnee: number; debats?: string; dosleg?: string; dryRun?: boolean; refaireTout?: boolean; remplacerJournees?: string; sortie?: string }) => {
     try {
       // Chargé à l'exécution, comme le rattachement de l'Assemblée : le module
       // instancie son client Prisma et le conteneur tourne au bord de l'OOM.
@@ -1298,6 +1302,9 @@ program
         cheminDosleg: options.dosleg,
         dryRun: options.dryRun,
         refaireTout: options.refaireTout,
+        journeesARemplacer: options.remplacerJournees
+          ? new Set(options.remplacerJournees.split(',').map((j) => j.trim()).filter(Boolean))
+          : undefined,
         sortie: options.sortie,
       });
       console.log(`\nSections lues         : ${result.sections}`);
@@ -1306,6 +1313,7 @@ program
       console.log(`  rattachés           : ${result.rattaches}`);
       console.log(`  sans débat          : ${result.sansDebat}`);
       console.log(`  sans intervention   : ${result.rattachesSansIntervention}`);
+      console.log(`Liens périmés retirés : ${result.liensRetires}`);
       for (const [via, n] of Object.entries(result.parVia).sort((a, b) => b[1] - a[1])) {
         console.log(`    par ${via.padEnd(15)} ${n}`);
       }

@@ -267,10 +267,12 @@ export async function chronologieDesDossiers(
     // le test de l'API, sur la référence de séance et rien d'autre.
     const aVerifier = seances.filter((e) => !e.consultable);
     if (aVerifier.length > 0) {
-      const avecDebat = await prisma.intervention.findMany({
+      // `groupBy` et non `findMany({ distinct })` : sans l'option
+      // `nativeDistinct`, Prisma 5 dédoublonne en mémoire après avoir rapatrié
+      // toutes les lignes — jusqu'à 20 000 pour un seul dossier.
+      const avecDebat = await prisma.intervention.groupBy({
+        by: ['seanceId'],
         where: { seanceId: { in: aVerifier.map((e) => e.uid) } },
-        select: { seanceId: true },
-        distinct: ['seanceId'],
       });
       const attestees = new Set(avecDebat.map((l) => l.seanceId));
       for (const etape of aVerifier) {
