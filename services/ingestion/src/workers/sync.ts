@@ -3,6 +3,7 @@
 // Sources: API Assemblée Nationale + Sénat
 // =============================================================================
 
+import { empreinte } from '../utils/empreinte';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import pLimit from 'p-limit';
@@ -1386,6 +1387,14 @@ async function syncSingleSenateur(
  */
 export const SCRUTINS_DAILY_WINDOW_MONTHS = 6;
 
+/**
+ * Fenêtre du scraping des pages de scrutin AN dans le batch de 5 h : trente
+ * nuits d'essai par scrutin. Au-delà, le stock sans lien (6 734 scrutins, 0
+ * enrichi deux nuits de suite) ne fait que charger le site de l'AN ; il reste
+ * rattrapable par la commande manuelle.
+ */
+export const FENETRE_ENRICHISSEMENT_SCRUTINS_AN_JOURS = 30;
+
 /** Date plancher d'une fenêtre exprimée en mois, `null` si non bornée. */
 export function windowFloor(sinceMonths?: number): Date | null {
   if (!sinceMonths || sinceMonths <= 0) return null;
@@ -1400,7 +1409,14 @@ export async function syncScrutins(
     /** Ne traiter que les scrutins des N derniers mois (cf. SCRUTINS_DAILY_WINDOW_MONTHS). */
     sinceMonths?: number;
   } = {}
-): Promise<{ scrutins: number; votes: number; votesOrphelins: number }> {
+): Promise<{
+  scrutins: number;
+  created: number;
+  updated: number;
+  inchanges: number;
+  votes: number;
+  votesOrphelins: number;
+}> {
   const legislature = options.legislature ?? LEGISLATURE_AN_COURANTE;
   logger.info({ limit: options.limit, legislature }, 'Starting scrutins AN sync (from Assemblée Nationale API)...');
 
@@ -1419,6 +1435,7 @@ export async function syncScrutins(
 
   let scrutinsCreated = 0;
   let scrutinsUpdated = 0;
+  let scrutinsInchanges = 0;
   let votesCreated = 0;
   let votesOrphelins = 0;
 
@@ -1430,7 +1447,18 @@ export async function syncScrutins(
   // (numero, chambre, session), ce qui isole les scrutins de chaque législature.
   const session = String(legislature);
 
-  for (const data of scrutinsData) {
+  // Les scrutins déjà en base, avec l'empreinte de leur dernière écriture.
+  // L'AN republie chaque nuit toute la législature : sans cette comparaison, la
+  // fenêtre quotidienne supprimait et réinsérait 1,5 million de votes pour une
+  // poignée de scrutins nouveaux ou rectifiés.
+  const connus = new Map(
+    (await prisma.scrutin.findMany({
+      where: { chambre, session },
+      select: { numero: true, id: true, sourceHash: true },
+    })).map((s) => [s.numero, s]),
+  );
+
+  for (const [rang, data] of scrutinsData.entries()) {
     try {
       const { scrutin, votes } = data;
 
@@ -1474,12 +1502,32 @@ export async function syncScrutins(
         sourceData: scrutin.sourceData as object,
       };
 
-      const existing = await prisma.scrutin.findUnique({
-        where: { numero_chambre_session: { numero: scrutin.numero, chambre, session } },
-      });
+      // Les votes individuels, rapportés aux parlementaires connus.
+      const votesRattaches = [];
+      for (const vote of votes) {
+        const parlementaireId = parlementaireMap.get(vote.acteurRef);
+        if (!parlementaireId) continue; // Parlementaire non trouvé
+        votesRattaches.push({
+          parlementaireId,
+          position: vote.position,
+          parDelegation: vote.parDelegation,
+        });
+      }
+
+      // L'empreinte couvre ce qu'on ÉCRIT : un député nouvellement connu
+      // rattache un vote de plus, et le scrutin doit alors être réécrit.
+      const sourceHash = empreinte({ scrutinData, votes: votesRattaches });
+      const existing = connus.get(scrutin.numero);
+      if (existing && existing.sourceHash === sourceHash) {
+        scrutinsInchanges++;
+        continue;
+      }
 
       let scrutinId: string;
 
+      // L'empreinte n'est PAS posée ici : elle ne l'est qu'avec les votes,
+      // dans leur transaction. Un remplacement de votes qui échoue laisse donc
+      // l'ancienne empreinte, et le scrutin sera repris la nuit suivante.
       if (existing) {
         await prisma.scrutin.update({
           where: { numero_chambre_session: { numero: scrutin.numero, chambre, session } },
@@ -1490,24 +1538,14 @@ export async function syncScrutins(
       } else {
         const created = await prisma.scrutin.create({ data: scrutinData });
         scrutinId = created.id;
+        connus.set(scrutin.numero, { numero: scrutin.numero, id: created.id, sourceHash: null });
         scrutinsCreated++;
       }
 
       // Synchroniser les votes individuels.
       // Remplacement complet plutôt qu'upsert : c'est la seule façon simple de
       // faire disparaître un vote retiré à la source (mise au point).
-      const voteRecords = [];
-      for (const vote of votes) {
-        const parlementaireId = parlementaireMap.get(vote.acteurRef);
-        if (!parlementaireId) continue; // Parlementaire non trouvé
-
-        voteRecords.push({
-          parlementaireId,
-          scrutinId,
-          position: vote.position,
-          parDelegation: vote.parDelegation,
-        });
-      }
+      const voteRecords = votesRattaches.map((v) => ({ ...v, scrutinId }));
 
       // La source annonce des votes mais aucun ne se rattache à un
       // parlementaire connu : le remplacement viderait le scrutin, proprement
@@ -1534,6 +1572,7 @@ export async function syncScrutins(
         ...(voteRecords.length > 0
           ? [prisma.vote.createMany({ data: voteRecords })]
           : []),
+        prisma.scrutin.update({ where: { id: scrutinId }, data: { sourceHash } }),
       ]);
       votesCreated += voteRecords.length;
 
@@ -1541,14 +1580,16 @@ export async function syncScrutins(
       logger.warn({ numero: data.scrutin.numero, error: errorMessage(error) }, 'Error syncing scrutin');
     }
 
-    // Pause tous les 100 scrutins pour laisser le GC respirer
-    if ((scrutinsCreated + scrutinsUpdated) % 100 === 0) {
+    // Pause tous les 100 scrutins pour laisser le GC respirer. Comptée sur le
+    // rang, et non sur les écritures : un scrutin inchangé n'écrit rien, et un
+    // compteur d'écritures resté à zéro déclenchait la pause à chaque tour.
+    if (rang % 100 === 99) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
   }
 
   logger.info({
-    scrutins: { created: scrutinsCreated, updated: scrutinsUpdated },
+    scrutins: { created: scrutinsCreated, updated: scrutinsUpdated, inchanges: scrutinsInchanges },
     votes: votesCreated,
     total: scrutinsData.length,
     skippedHorsFenetre: scrutinsSkippedOld,
@@ -1556,7 +1597,14 @@ export async function syncScrutins(
     votesOrphelins,
   }, 'Scrutins AN sync completed');
 
-  return { scrutins: scrutinsCreated + scrutinsUpdated, votes: votesCreated, votesOrphelins };
+  return {
+    scrutins: scrutinsCreated + scrutinsUpdated,
+    created: scrutinsCreated,
+    updated: scrutinsUpdated,
+    inchanges: scrutinsInchanges,
+    votes: votesCreated,
+    votesOrphelins,
+  };
 }
 
 // =============================================================================
@@ -3623,7 +3671,9 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
               limit: options.scrutinsLimit,
               sinceMonths: SCRUTINS_DAILY_WINDOW_MONTHS,
             });
-            syncResult = { created: scrutinsResult.scrutins, updated: 0 };
+            // Créés et mis à jour comptés à part : les confondre faisait lire
+            // « 2 606 créés » chaque nuit au rapport, pour des scrutins connus.
+            syncResult = { created: scrutinsResult.created, updated: scrutinsResult.updated };
             break;
           }
 
@@ -3750,7 +3800,11 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
           }
 
           case 'senat:dossier_commissions': {
-            const dcResult = await syncSenatDossierCommissions();
+            // Seuls les dossiers en cours peuvent encore recevoir une saisine :
+            // relire chaque nuit les 4 700 caducs, promulgués ou retirés sans
+            // saisine coûtait 46 minutes, pour un seul lien trouvé en septembre
+            // 2026 — sur un dossier en cours.
+            const dcResult = await syncSenatDossierCommissions({ seulementEnCours: true });
             syncResult = { created: dcResult.linksCreated, updated: 0 };
             break;
           }
@@ -4001,12 +4055,13 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
   if (hasAmendementsChanged || hasScrutinsChanged) {
     logger.info('Enriching scrutins with amendements (HTML scraping for new scrutins only)...');
     try {
-      // Enrichissement AN: scrape les pages HTML pour les NOUVEAUX scrutins uniquement
+      // Enrichissement AN: scrape les pages HTML des scrutins RÉCENTS sans lien
       // Pas de reset - on enrichit seulement ceux sans lien (amendements: none)
       // Pour corriger des liens existants, utiliser CLI: sync --enrich-amendements-an --reset
       logger.info('Enriching AN scrutins with HTML scraping...');
       const enrichANResult = await enrichScrutinsANAmendements({
         concurrency: 5,
+        depuisJours: FENETRE_ENRICHISSEMENT_SCRUTINS_AN_JOURS,
       });
       logger.info({
         enriched: enrichANResult.enriched,
@@ -4518,106 +4573,129 @@ export async function syncAmendements(
   }
 
   const chambre = 'assemblee';
-  const batchSize = 100;
-  const batches = Math.ceil(rawAmendements.length / batchSize);
 
-  for (let i = 0; i < batches; i++) {
-    const batch = rawAmendements.slice(i * batchSize, (i + 1) * batchSize);
+  // Ce qui est déjà en base, avec l'empreinte de sa dernière écriture. L'AN
+  // republie chaque nuit l'intégralité de la législature ; seules quelques
+  // centaines d'amendements ont réellement bougé. Réécrire les autres — une
+  // lecture, une écriture et le remplacement des cosignataires, pour 125 000
+  // lignes — prenait deux heures du batch de 5 h.
+  //
+  // La recherche se fait sur la clé canonique, et non sur l'uid brut : l'AN
+  // republie le même amendement sous un second uid quand le texte passe en
+  // commission (cf. uidCanoniqueAmendement). Chercher l'uid créait une
+  // deuxième ligne pour un amendement déjà en base.
+  const connus = new Map(
+    (await prisma.amendement.findMany({
+      where: { chambre },
+      select: { uidCanonique: true, sourceHash: true },
+    })).map((a) => [a.uidCanonique, a.sourceHash]),
+  );
 
-    for (const raw of batch) {
-      try {
-        const transformed = amendementClient.transformAmendement(raw);
+  let inchanges = 0;
 
-        // 1. `auteurRef` est l'identifiant d'acteur AN (PA…), renseigné sur ~99 %
-        //    des amendements. C'est la seule attribution sûre.
-        let parlementaireId: string | null = transformed.auteurRef
-          ? parlementaireByRef.get(transformed.auteurRef) ?? null
-          : null;
+  for (const raw of rawAmendements) {
+    try {
+      const transformed = amendementClient.transformAmendement(raw);
 
-        // 2. Repli sur le nom, en ÉGALITÉ STRICTE. L'ancienne version comparait
-        //    en sous-chaîne (`libelle.includes(name)`) et retenait le premier
-        //    hit de la map : le patronyme « O » matchait « Brulebois »,
-        //    « Falcon », « Rolland »… et a capté 30 221 amendements.
-        if (!parlementaireId && transformed.auteurLibelle
-            && !estAuteurNonParlementaire(transformed.auteurLibelle)) {
-          const libelleRaw = transformed.auteurLibelle
-            .replace(/^(M\.|Mme|Mme\.)\s*/i, '')
-            .split(',')[0];
-          const libelle = normalize(libelleRaw || '');
+      // 1. `auteurRef` est l'identifiant d'acteur AN (PA…), renseigné sur ~99 %
+      //    des amendements. C'est la seule attribution sûre.
+      let parlementaireId: string | null = transformed.auteurRef
+        ? parlementaireByRef.get(transformed.auteurRef) ?? null
+        : null;
 
-          if (libelle) {
-            const mots = libelle.split(/\s+/);
-            const dernier = mots[mots.length - 1];
-            parlementaireId = parlementaireNameMap.get(libelle)
-              ?? (dernier ? parlementaireNameMap.get(dernier) ?? null : null);
-          }
+      // 2. Repli sur le nom, en ÉGALITÉ STRICTE. L'ancienne version comparait
+      //    en sous-chaîne (`libelle.includes(name)`) et retenait le premier
+      //    hit de la map : le patronyme « O » matchait « Brulebois »,
+      //    « Falcon », « Rolland »… et a capté 30 221 amendements.
+      if (!parlementaireId && transformed.auteurLibelle
+          && !estAuteurNonParlementaire(transformed.auteurLibelle)) {
+        const libelleRaw = transformed.auteurLibelle
+          .replace(/^(M\.|Mme|Mme\.)\s*/i, '')
+          .split(',')[0];
+        const libelle = normalize(libelleRaw || '');
+
+        if (libelle) {
+          const mots = libelle.split(/\s+/);
+          const dernier = mots[mots.length - 1];
+          parlementaireId = parlementaireNameMap.get(libelle)
+            ?? (dernier ? parlementaireNameMap.get(dernier) ?? null : null);
         }
-
-        // Recherche sur la clé canonique, et non sur l'uid brut : l'AN republie
-        // le même amendement sous un second uid quand le texte passe en
-        // commission (cf. uidCanoniqueAmendement). Chercher l'uid créait une
-        // deuxième ligne pour un amendement déjà en base.
-        const uidCanonique = uidCanoniqueAmendement(transformed.uid);
-        const existing = await prisma.amendement.findUnique({
-          where: { uidCanonique },
-        });
-
-        const numeroOrdre = parseInt(transformed.numero.replace(/[^0-9]/g, ''), 10) || null;
-
-        const data = {
-          uid: transformed.uid,
-          uidCanonique,
-          numero: transformed.numero,
-          legislature: transformed.legislature,
-          chambre,
-          parlementaireId,
-          auteurRef: transformed.auteurRef,
-          groupeRef: transformed.groupeRef,
-          auteurLibelle: transformed.auteurLibelle,
-          texteRef: transformed.texteLegislatifRef,
-          articleVise: transformed.article,
-          dispositif: transformed.dispositif,
-          exposeSommaire: transformed.exposeSommaire,
-          sort: transformed.sort,
-          dateDepot: transformed.dateDepot,
-          dateSort: transformed.dateSort,
-          numeroOrdre,
-        };
-
-        if (existing) {
-          await prisma.amendement.update({
-            where: { uidCanonique },
-            data,
-          });
-          updated++;
-        } else {
-          await prisma.amendement.create({ data });
-          created++;
-        }
-
-        // Lier les cosignataires
-        if (transformed.cosignatairesRefs.length > 0) {
-          const cosignataireIds = transformed.cosignatairesRefs
-            .map(ref => parlementaireByRef.get(ref))
-            .filter((id): id is string => !!id);
-          if (cosignataireIds.length > 0) {
-            await prisma.amendement.update({
-              where: { uidCanonique },
-              data: { cosignataires: { set: cosignataireIds.map(id => ({ id })) } },
-            });
-          }
-        }
-
-        if (parlementaireId) linked++;
-      } catch (error) {
-        logger.warn({ uid: raw.uid, error: errorMessage(error) }, 'Error syncing amendement');
       }
-    }
 
-    logger.debug({ batch: i + 1, total: batches, created, updated, linked }, 'Batch processed');
+      const uidCanonique = uidCanoniqueAmendement(transformed.uid);
+      const numeroOrdre = parseInt(transformed.numero.replace(/[^0-9]/g, ''), 10) || null;
+
+      const data = {
+        uid: transformed.uid,
+        uidCanonique,
+        numero: transformed.numero,
+        legislature: transformed.legislature,
+        chambre,
+        parlementaireId,
+        auteurRef: transformed.auteurRef,
+        groupeRef: transformed.groupeRef,
+        auteurLibelle: transformed.auteurLibelle,
+        texteRef: transformed.texteLegislatifRef,
+        articleVise: transformed.article,
+        dispositif: transformed.dispositif,
+        exposeSommaire: transformed.exposeSommaire,
+        sort: transformed.sort,
+        dateDepot: transformed.dateDepot,
+        dateSort: transformed.dateSort,
+        numeroOrdre,
+      };
+      const cosignataireIds = transformed.cosignatairesRefs
+        .map(ref => parlementaireByRef.get(ref))
+        .filter((id): id is string => !!id);
+
+      // L'empreinte couvre ce qu'on ÉCRIT, et non la source brute : un député
+      // nouvellement connu change l'auteur résolu, une règle de résolution
+      // corrigée aussi, et la ligne doit alors être réécrite.
+      const sourceHash = empreinte({ data, cosignataireIds });
+      const dejaEnBase = connus.has(uidCanonique);
+      if (dejaEnBase && connus.get(uidCanonique) === sourceHash) {
+        inchanges++;
+        if (parlementaireId) linked++;
+        continue;
+      }
+
+      // Une seule écriture, cosignataires compris : Prisma la joue en
+      // transaction, si bien que l'empreinte n'est jamais posée sur une ligne
+      // dont les cosignataires n'auraient pas suivi. Une liste vide ne remplace
+      // rien — une résolution ratée ne doit pas effacer les cosignataires.
+      const cosignataires = cosignataireIds.length > 0
+        ? { cosignataires: { set: cosignataireIds.map(id => ({ id })) } }
+        : {};
+      if (dejaEnBase) {
+        await prisma.amendement.update({
+          where: { uidCanonique },
+          data: { ...data, sourceHash, ...cosignataires },
+        });
+        updated++;
+      } else {
+        await prisma.amendement.create({
+          data: {
+            ...data,
+            sourceHash,
+            ...(cosignataireIds.length > 0
+              ? { cosignataires: { connect: cosignataireIds.map(id => ({ id })) } }
+              : {}),
+          },
+        });
+        connus.set(uidCanonique, sourceHash);
+        created++;
+      }
+
+      if (parlementaireId) linked++;
+    } catch (error) {
+      logger.warn({ uid: raw.uid, error: errorMessage(error) }, 'Error syncing amendement');
+    }
   }
 
-  logger.info({ created, updated, linked, total: rawAmendements.length }, 'Amendements AN sync completed');
+  logger.info(
+    { created, updated, inchanges, linked, total: rawAmendements.length },
+    'Amendements AN sync completed',
+  );
   return { created, updated, linked };
 }
 
@@ -6186,6 +6264,18 @@ export async function enrichScrutinsANAmendements(
      * site pour rien.
      */
     only?: string[];
+    /**
+     * Ne reprendre que les scrutins des N derniers jours.
+     *
+     * Le batch de 5 h le fixe : sans borne, il rescrapait chaque nuit les
+     * 6 734 scrutins sans lien — 0 enrichi les nuits du 22 et du 23/09/2026,
+     * 20 minutes et jusqu'à 2 486 réponses 503 d'un site qu'on martelait pour
+     * rien. Un scrutin est scrapé chaque nuit pendant la fenêtre, ce qui laisse
+     * à l'AN et à nos amendements le temps de se rejoindre. Sans cette option
+     * (commande `sync --enrich-amendements-an`), tout le stock est repris,
+     * pour un rattrapage.
+     */
+    depuisJours?: number;
   } = {}
 ): Promise<{ enriched: number; notFound: number; errors: number; resetCount?: number }> {
   const dryRun = options.dryRun ?? false;
@@ -6193,8 +6283,14 @@ export async function enrichScrutinsANAmendements(
   const limitCount = options.limit;
   const reset = options.reset ?? false;
   const only = options.only && options.only.length > 0 ? options.only : undefined;
+  const depuis = options.depuisJours !== undefined && !only
+    ? new Date(Date.now() - options.depuisJours * 24 * 60 * 60 * 1000)
+    : undefined;
 
-  logger.info({ dryRun, concurrency, limit: limitCount, reset, only: only?.length }, 'Starting AN scrutins enrichment (scraping HTML)...');
+  logger.info(
+    { dryRun, concurrency, limit: limitCount, reset, only: only?.length, depuis },
+    'Starting AN scrutins enrichment (scraping HTML)...',
+  );
 
   // Si reset demandé, réinitialiser les liens existants via la table de jonction.
   // Borné à `only` quand il est fourni : sans ça, `--reset --only <id>` effacerait
@@ -6240,6 +6336,7 @@ export async function enrichScrutinsANAmendements(
       chambre: 'assemblee',
       titre: { contains: 'amendement', mode: 'insensitive' },
       ...(only ? { id: { in: only } } : { amendements: { none: {} } }),
+      ...(depuis ? { date: { gte: depuis } } : {}),
     },
     select: {
       id: true,
