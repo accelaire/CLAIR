@@ -388,7 +388,12 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
   // disent ce qui a été décidé ; le parcours dit où et quand, et c'est par là
   // qu'on entre dans un texte qu'on découvre. Il disparaît quand il est vide,
   // plutôt que d'offrir un onglet qui ne mène à rien.
-  const hasParcours = parcours.length > 0;
+  //
+  // Tant qu'il charge, on le tient pour présent : l'onglet s'ouvre d'emblée sur
+  // son squelette. Ouvrir les amendements puis basculer à l'arrivée du
+  // parcours remplaçait sous les yeux du lecteur ce qu'il avait commencé à
+  // lire, et un lien `?tab=parcours` s'ouvrait sur le mauvais onglet.
+  const hasParcours = parcours.length > 0 || chargementParcours;
   const ongletParDefaut = hasParcours ? 'parcours' : hasAmendements ? 'amendements' : 'scrutins';
   const ongletDemande = activeTab ?? ongletParDefaut;
   const effectiveTab =
@@ -664,7 +669,7 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
             }`}
           >
             <CalendarClock className="mr-1.5 -mt-0.5 inline h-4 w-4" />
-            Parcours ({parcours.length})
+            {chargementParcours ? 'Parcours' : `Parcours (${parcours.length})`}
           </button>
         )}
         {hasAmendements && (
