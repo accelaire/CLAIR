@@ -479,9 +479,13 @@ export class AgendaService {
         select: { ordre: true, dossierId: true },
         orderBy: { ordre: 'asc' },
       }),
+      // Le rang n'a de sens que dans la numérotation de CETTE séance. Un vote
+      // de la journée rattaché aux prises d'une autre séance — l'après-midi
+      // vu depuis le matin, ou un vieux lien DILA posé au hasard — tomberait
+      // sous le point ouvert à un rang sans rapport : il reste sans rang.
       scrutins.length > 0
         ? this.prisma.interventionScrutin.findMany({
-            where: { scrutinId: { in: scrutins.map((s) => s.id) } },
+            where: { scrutinId: { in: scrutins.map((s) => s.id) }, intervention: portee },
             select: { scrutinId: true, intervention: { select: { ordre: true } } },
           })
         : Promise.resolve([]),
