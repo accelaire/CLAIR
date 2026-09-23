@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { FastifyPluginAsync } from 'fastify';
-import type { Prisma } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { ApiError } from '../../utils/errors';
 import { buildTextSearchCondition } from '../../utils/search';
@@ -112,6 +112,15 @@ const fixSourceUrl = (sourceUrl: string | null, chambre: string, numero: number)
 };
 
 // Schemas
+/** Vrai quand `/reunions/<uid>` a quelque chose à montrer pour cette séance. */
+async function seanceAUnePage(prisma: PrismaClient, uid: string): Promise<boolean> {
+  const [reunion, prise] = await Promise.all([
+    prisma.reunion.findUnique({ where: { uid }, select: { id: true } }),
+    prisma.intervention.findFirst({ where: { seanceId: uid }, select: { id: true } }),
+  ]);
+  return reunion !== null || prise !== null;
+}
+
 const scrutinsListQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -596,12 +605,18 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
             ...INTERVENTIONS_DE_FOND,
           };
 
-      // La séance désignée par `seanceRef` a-t-elle un débat chez nous ? Tous
+      // La séance désignée par `seanceRef` a-t-elle une page chez nous ? Tous
       // les scrutins de l'Assemblée portent une référence, mais 79 % seulement
       // mènent à une séance dont nous avons les prises de parole, et le Sénat
       // n'en nomme aucune. Sans ce drapeau, la date renverrait vers une page
       // vide dans 3 524 cas.
-      const [seanceInterventions, totalSeanceInterventions, prisesDeLaSeance] = await Promise.all([
+      //
+      // Même règle que le parcours d'un dossier (`chronologie.ts`) : la page
+      // existe si une réunion de l'agenda porte cet uid, ou si des prises de
+      // parole s'y rattachent. Ne compter que les prises laissait la date en
+      // texte pour une séance déjà à l'agenda dont le compte rendu n'est pas
+      // encore paru, quand le parcours menait à la même page.
+      const [seanceInterventions, totalSeanceInterventions, seanceConsultable] = await Promise.all([
         fastify.prisma.intervention.findMany({
           where: seanceWhere,
           take: 5,
@@ -610,8 +625,8 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         }),
         fastify.prisma.intervention.count({ where: seanceWhere }),
         scrutin.seanceRef
-          ? fastify.prisma.intervention.count({ where: { seanceId: scrutin.seanceRef } })
-          : Promise.resolve(0),
+          ? seanceAUnePage(fastify.prisma, scrutin.seanceRef)
+          : Promise.resolve(false),
       ]);
 
       // Sélection des champs votes communs
@@ -718,7 +733,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           votesByGroupe,
           totalVotes: scrutin.nombrePour + scrutin.nombreContre + scrutin.nombreAbstention,
           totalInterventions: totalSeanceInterventions,
-          seanceADesDebats: prisesDeLaSeance > 0,
+          seanceADesDebats: seanceConsultable,
         },
       };
     },
