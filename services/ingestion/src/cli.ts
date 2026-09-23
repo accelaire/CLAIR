@@ -1357,18 +1357,16 @@ program
 program
   .command('link-interventions-dossiers')
   .description("Rattacher les prises de parole à leur texte (numéro de dépôt → dossier)")
-  .option('--refaire-tout', 'Reposer le dossier même là où il est déjà renseigné')
   .option('--dry-run', "Ne rien écrire, dire ce qui serait posé")
-  .action(async (options: { refaireTout?: boolean; dryRun?: boolean }) => {
+  .action(async (options: { dryRun?: boolean }) => {
     try {
       const { lierInterventionsAuxDossiers } = await import('./workers/link-interventions-dossiers.js');
-      const r = await lierInterventionsAuxDossiers({
-        refaireTout: options.refaireTout,
-        dryRun: options.dryRun,
-      });
+      const r = await lierInterventionsAuxDossiers({ dryRun: options.dryRun });
       console.log(`\nNuméros de texte vus     : ${r.numerosVus}`);
       console.log(`Numéros résolus          : ${r.numerosResolus}`);
       console.log(`Prises de parole situées : ${r.interventions}`);
+      console.log(`  dont liens corrigés    : ${r.corrigees}`);
+      console.log(`Liens inter-législatures effacés : ${r.effaces}`);
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'link-interventions-dossiers failed');

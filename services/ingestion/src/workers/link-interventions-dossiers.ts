@@ -42,8 +42,6 @@ import { logger } from '../utils/logger';
 const prisma = new PrismaClient();
 
 export interface OptionsLienInterventionsDossiers {
-  /** Reposer le dossier même là où il est déjà renseigné. */
-  refaireTout?: boolean;
   /** Ne rien écrire ; dire ce qui serait posé. */
   dryRun?: boolean;
 }
@@ -53,8 +51,12 @@ export interface ResultatLienInterventionsDossiers {
   numerosVus: number;
   /** Numéros pour lesquels un dossier a pu être nommé. */
   numerosResolus: number;
-  /** Prises de parole qui ont reçu leur dossier. */
+  /** Prises de parole qui ont reçu leur dossier, ou un autre que le leur. */
   interventions: number;
+  /** Parmi elles, celles qui portaient déjà un dossier — et le mauvais. */
+  corrigees: number;
+  /** Liens vers le dossier d'une autre législature, effacés faute de mieux. */
+  effaces: number;
 }
 
 /**
@@ -109,9 +111,21 @@ const CORRESPONDANCE_SQL = Prisma.sql`
     SELECT * FROM par_amendement
     UNION
     SELECT * FROM par_dossier
+  ),
+  -- Un dossier de l'Assemblée porte sa législature dans son uid (\`DLR5L17N…\`)
+  -- et n'en change jamais. Une référence d'une autre législature qui y mène
+  -- est une erreur d'amont : 518 amendements de la 17e étaient rattachés à
+  -- « Bioéthique » (15e) ou à un dossier de la 16e, et faisaient pointer vers
+  -- eux les débats de la 17e sur les mêmes numéros.
+  coherents AS (
+    SELECT c.*
+    FROM candidats c
+    JOIN dossiers_legislatifs d ON d.id = c.dossier_id
+    WHERE d.uid NOT LIKE 'DLR5L%'
+       OR substring(d.uid from 'DLR5L([0-9]+)N') = c.legislature
   )
   SELECT legislature, numero, min(dossier_id) AS dossier_id
-  FROM candidats
+  FROM coherents
   GROUP BY legislature, numero
   HAVING count(DISTINCT dossier_id) = 1
 `;
@@ -131,19 +145,35 @@ export async function lierInterventionsAuxDossiers(
   // annonçait 100 % de couverture quoi qu'il arrive — précisément le chiffre
   // censé signaler une régression du rattachement.
   const aFaire = await prisma.$queryRaw<
-    Array<{ legislature: string | null; vus: bigint; resolus: bigint; interventions: bigint }>
+    Array<{
+      legislature: string | null;
+      vus: bigint;
+      resolus: bigint;
+      interventions: bigint;
+      corrigees: bigint;
+      effaces: bigint;
+    }>
   >`
     WITH correspondance AS (${CORRESPONDANCE_SQL})
     SELECT substring(i.seance_uid from 'CRSANR5L([0-9]+)') AS legislature,
            count(DISTINCT i.texte_numero) AS vus,
            count(DISTINCT c.numero) AS resolus,
-           count(*) FILTER (WHERE c.numero IS NOT NULL) AS interventions
+           count(*) FILTER (WHERE i.dossier_id IS DISTINCT FROM c.dossier_id
+                              AND c.numero IS NOT NULL) AS interventions,
+           count(*) FILTER (WHERE i.dossier_id <> c.dossier_id) AS corrigees,
+           -- Ce que l'effacement final retirera : un lien vers une autre
+           -- législature que la correspondance ne remplace pas.
+           count(*) FILTER (WHERE c.numero IS NULL
+                              AND i.chambre = 'assemblee'
+                              AND d.uid LIKE 'DLR5L%'
+                              AND substring(i.seance_uid from 'CRSANR5L([0-9]+)')
+                                  <> substring(d.uid from 'DLR5L([0-9]+)N')) AS effaces
     FROM interventions i
     LEFT JOIN correspondance c
       ON c.numero = i.texte_numero
      AND c.legislature = substring(i.seance_uid from 'CRSANR5L([0-9]+)')
+    LEFT JOIN dossiers_legislatifs d ON d.id = i.dossier_id
     WHERE i.texte_numero IS NOT NULL
-      ${options.refaireTout ? Prisma.empty : Prisma.sql`AND i.dossier_id IS NULL`}
     GROUP BY 1
   `;
 
@@ -151,6 +181,8 @@ export async function lierInterventionsAuxDossiers(
     numerosVus: aFaire.reduce((n, l) => n + Number(l.vus), 0),
     numerosResolus: aFaire.reduce((n, l) => n + Number(l.resolus), 0),
     interventions: aFaire.reduce((n, l) => n + Number(l.interventions), 0),
+    corrigees: aFaire.reduce((n, l) => n + Number(l.corrigees), 0),
+    effaces: aFaire.reduce((n, l) => n + Number(l.effaces), 0),
   };
 
   if (options.dryRun) {
@@ -162,6 +194,19 @@ export async function lierInterventionsAuxDossiers(
   // de 1 à chaque législature, et le texte n° 1364 existe en 15e, en 16e ET en
   // 17e. C'est le piège qui avait rattaché 531 scrutins des 15e et 16e à des
   // amendements de la 17e.
+  //
+  // LA PASSE CONVERGE, ELLE NE SE CONTENTE PAS DE COMBLER. Elle n'écrivait que
+  // là où le dossier était vide : les liens posés par une version antérieure,
+  // sans garde de législature, n'étaient donc jamais revus. 53 093 prises de
+  // parole des 15e et 16e restaient rattachées à des dossiers d'une AUTRE
+  // législature — « Fin de vie » (17e) portait les débats de 2019 sur
+  // l'engagement dans la vie locale. On réécrit donc tout lien qui diffère de
+  // la correspondance, et seulement ceux-là.
+  //
+  // Un lien que la correspondance ne sait plus nommer (numéro devenu ambigu)
+  // est laissé tel quel : l'effacer chaque nuit ferait dépendre les fiches d'un
+  // `source_data` momentanément incomplet. Sauf s'il mène à une autre
+  // législature : celui-là est faux quoi qu'en dise la source (voir plus bas).
   const modifiees = await prisma.$executeRaw`
     WITH correspondance AS (${CORRESPONDANCE_SQL})
     UPDATE interventions i
@@ -170,9 +215,25 @@ export async function lierInterventionsAuxDossiers(
     WHERE c.numero = i.texte_numero
       AND c.legislature = substring(i.seance_uid from 'CRSANR5L([0-9]+)')
       AND i.texte_numero IS NOT NULL
-      ${options.refaireTout ? Prisma.empty : Prisma.sql`AND i.dossier_id IS NULL`}
+      AND i.dossier_id IS DISTINCT FROM c.dossier_id
   `;
   resultat.interventions = modifiees;
+
+  // Ce qui reste rattaché au dossier d'une autre législature n'a pas de bon
+  // dossier connu : un numéro nu vaut mieux qu'un titre faux. La législature
+  // du compte rendu se lit sur son uid, celle du dossier sur le sien, sans
+  // rien demander à la correspondance.
+  resultat.effaces = await prisma.$executeRaw`
+    UPDATE interventions i
+    SET dossier_id = NULL
+    FROM dossiers_legislatifs d
+    WHERE d.id = i.dossier_id
+      AND i.chambre = 'assemblee'
+      AND i.seance_uid LIKE 'CRSANR5L%'
+      AND d.uid LIKE 'DLR5L%'
+      AND substring(i.seance_uid from 'CRSANR5L([0-9]+)')
+          <> substring(d.uid from 'DLR5L([0-9]+)N')
+  `;
 
   logger.info(resultat, 'Rattachement des prises de parole à leur dossier terminé');
   return resultat;

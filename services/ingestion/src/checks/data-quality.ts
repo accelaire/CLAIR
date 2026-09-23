@@ -228,6 +228,27 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     query: `SELECT COUNT(*)::int AS value FROM scrutins WHERE chambre = 'senat' AND EXTRACT(HOUR FROM date) IN (22, 23)`,
   },
 
+  cross_legislature_interventions_dossiers: {
+    type: 'invariant',
+    label: "Prises de parole rattachées au dossier d'une autre législature (AN)",
+    min: 0,
+    max: 0,
+    // Même piège, sur le rattachement d'une prise de parole à son texte : le
+    // numéro de dépôt repart de 1 à chaque législature. Une version antérieure
+    // du linker n'en tenait pas compte, et la passe nocturne ne revoyait que
+    // les liens vides : 53 093 prises des 15e et 16e sont restées rattachées à
+    // des dossiers de la 17e. La législature du compte rendu se lit sur son
+    // uid (`CRSANR5L15…`), celle du dossier sur le sien (`DLR5L17N…`).
+    query: `SELECT COUNT(*)::int AS value
+            FROM interventions i
+            JOIN dossiers_legislatifs d ON d.id = i.dossier_id
+            WHERE i.chambre = 'assemblee'
+              AND i.seance_uid LIKE 'CRSANR5L%'
+              AND d.uid LIKE 'DLR5L%'
+              AND substring(i.seance_uid from 'CRSANR5L([0-9]+)')
+                  <> substring(d.uid from 'DLR5L([0-9]+)N')`,
+  },
+
   cross_legislature_amendements: {
     type: 'invariant',
     label: 'Liens scrutin-amendement inter-législatures (AN)',
