@@ -2003,6 +2003,37 @@ async function journeesSenatDejaLues(): Promise<Set<string>> {
   return new Set(lignes.map((l) => l.seanceId).filter((id): id is string => id !== null));
 }
 
+/**
+ * Ce qu'une prise du Sénat tire d'autre chose que son texte : l'annuaire et
+ * les règles du parseur. Une relecture doit pouvoir le rafraîchir seul.
+ */
+const ATTRIBUTION_SELECT = {
+  parlementaireId: true,
+  orateurNom: true,
+  orateurPrenom: true,
+  orateurQualite: true,
+  type: true,
+  sourceUrl: true,
+} as const;
+
+type AttributionSenat = Prisma.InterventionGetPayload<{ select: typeof ATTRIBUTION_SELECT }>;
+
+function attributionDe(d: Prisma.InterventionCreateManyInput): AttributionSenat {
+  return {
+    parlementaireId: d.parlementaireId ?? null,
+    orateurNom: d.orateurNom ?? null,
+    orateurPrenom: d.orateurPrenom ?? null,
+    orateurQualite: d.orateurQualite ?? null,
+    type: d.type,
+    sourceUrl: d.sourceUrl ?? null,
+  };
+}
+
+function attributionInchangee(existante: AttributionSenat, lue: AttributionSenat): boolean {
+  return (Object.keys(ATTRIBUTION_SELECT) as Array<keyof AttributionSenat>)
+    .every((champ) => existante[champ] === lue[champ]);
+}
+
 export async function syncInterventionsSenat(
   options: { maxSeances?: number; minYear?: number; rattrapage?: boolean } = {}
 ): Promise<{
@@ -2056,6 +2087,7 @@ export async function syncInterventionsSenat(
   let created = 0;
   let updated = 0;
   let inchangees = 0;
+  let reattribuees = 0;
   let supprimees = 0;
   let lues = 0;
   let skippedPresident = 0;
@@ -2128,7 +2160,7 @@ export async function syncInterventionsSenat(
 
     const existantes = await prisma.intervention.findMany({
       where: { chambre, seanceId },
-      select: { id: true, sourceUid: true, contenu: true },
+      select: { id: true, sourceUid: true, contenu: true, ...ATTRIBUTION_SELECT },
     });
     const parUid = new Map(
       existantes.filter((e): e is typeof e & { sourceUid: string } => e.sourceUid !== null)
@@ -2143,7 +2175,19 @@ export async function syncInterventionsSenat(
         continue;
       }
       if (deja.contenu === donnees.contenu) {
-        inchangees++;
+        // Le texte n'a pas bougé, mais ce qu'on en déduit a pu changer : un
+        // sénateur absent de l'annuaire lors de la première lecture — au
+        // renouvellement, typiquement — ou une règle de résolution corrigée.
+        // Sans cette passe, la prise restait sans auteur pour toujours. Les
+        // ancres `par_N` ne bougent pas : la journée n'a pas à être rattachée
+        // de nouveau aux scrutins.
+        const attribution = attributionDe(donnees);
+        if (attributionInchangee(deja, attribution)) {
+          inchangees++;
+        } else {
+          await prisma.intervention.update({ where: { id: deja.id }, data: attribution });
+          reattribuees++;
+        }
         continue;
       }
       const { sourceUid: _uid, ...revisable } = donnees;
@@ -2249,6 +2293,7 @@ export async function syncInterventionsSenat(
     created,
     updated,
     inchangees,
+    reattribuees,
     supprimees,
     lues,
     skippedPresident,
