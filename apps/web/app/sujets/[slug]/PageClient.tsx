@@ -301,7 +301,15 @@ function buildFallbackSteps(
   return result;
 }
 
-function ParliamentaryTimeline({ dossiers, sujet }: { dossiers: SujetDossier[]; sujet: SujetDetail }) {
+function ParliamentaryTimeline({
+  dossiers,
+  sujet,
+  children,
+}: {
+  dossiers: SujetDossier[];
+  sujet: SujetDetail;
+  children?: React.ReactNode;
+}) {
   // Prefer AN dossier (DLR prefix) for cross_ref sujets that have both AN and Sénat dossiers
   const dossierWithSteps =
     dossiers.find(d => d.uid.startsWith('DLR') && d.legislativeSteps.length > 0) ??
@@ -312,7 +320,7 @@ function ParliamentaryTimeline({ dossiers, sujet }: { dossiers: SujetDossier[]; 
     [dossierWithSteps, dossiers, sujet],
   );
 
-  return <LegislativeTimeline steps={steps} />;
+  return <LegislativeTimeline steps={steps}>{children}</LegislativeTimeline>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1111,12 +1119,16 @@ function StatsPanel({ slug, dossiers }: { slug: string; dossiers: SujetDossier[]
 // ---------------------------------------------------------------------------
 
 /**
- * Le parcours parlementaire du sujet : toutes les étapes de tous ses textes.
+ * Les séances et réunions du sujet : toutes les étapes de tous ses textes.
+ *
+ * Rendues au pied de la frise « Parcours parlementaire », dans la même carte :
+ * la frise dit où en est la procédure, cette liste dit ce qui s'est réellement
+ * tenu, séance par séance. Deux blocs séparés laissaient croire à deux parcours.
  *
  * Chargé à part du détail : il interroge quatre tables pour chaque dossier du
  * sujet, et la page se lit très bien sans lui le temps qu'il arrive.
  */
-function ParcoursDuSujet({ slug }: { slug: string }) {
+function SeancesDuSujet({ slug }: { slug: string }) {
   // REPLIÉE PAR DÉFAUT, ET BORNÉE EN HAUTEUR UNE FOIS OUVERTE. Un sujet compte
   // jusqu'à soixante étapes : dépliée d'office, la section poussait tout le
   // reste de la page — loi promulguée, dossiers, scrutins — hors de vue.
@@ -1135,21 +1147,18 @@ function ParcoursDuSujet({ slug }: { slug: string }) {
   const commissions = etapes.length - seances;
 
   return (
-    <section className="mb-8">
-      {/* PAS « Parcours parlementaire » : la frise au-dessus porte déjà ce
-          titre. Elle dit où en est la procédure ; cette section dit ce qui
-          s'est réellement tenu, séance par séance. */}
+    <div className="mt-4 border-t pt-3">
       <button
         onClick={() => setOuverte((o) => !o)}
         aria-expanded={ouverte}
-        className="flex w-full items-center gap-2 rounded-lg border bg-card px-4 py-3 text-left transition-colors hover:bg-muted/50"
+        className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/50"
       >
         <ChevronDown
           className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${ouverte ? '' : '-rotate-90'}`}
         />
         <span className="min-w-0 flex-1">
-          <span className="block font-semibold">Séances et réunions</span>
-          <span className="block text-xs text-muted-foreground">
+          <span className="text-sm font-medium">Séances et réunions</span>
+          <span className="ml-2 text-xs text-muted-foreground">
             {seances > 0 && `${seances} séance${seances > 1 ? 's' : ''} publique${seances > 1 ? 's' : ''}`}
             {seances > 0 && commissions > 0 && ' · '}
             {commissions > 0 && `${commissions} réunion${commissions > 1 ? 's' : ''} de commission`}
@@ -1159,7 +1168,7 @@ function ParcoursDuSujet({ slug }: { slug: string }) {
 
       {ouverte && (
         <>
-          <p className="mt-3 text-sm text-muted-foreground">
+          <p className="mt-2 text-xs text-muted-foreground">
             Où les textes de ce sujet ont été examinés, dans l&apos;ordre : ce qui s&apos;y est
             dit, ce qui s&apos;y est voté. Chaque étape mène à son débat complet.
           </p>
@@ -1168,7 +1177,7 @@ function ParcoursDuSujet({ slug }: { slug: string }) {
           </div>
         </>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -1273,17 +1282,15 @@ export default function PageClient({ initialData }: { initialData?: { data: Suje
         </div>
       </div>
 
-      {/* Parliamentary journey timeline */}
+      {/* Parcours parlementaire : la frise des étapes, et dessous, dans la même
+          carte, les séances et réunions qui s'y sont réellement tenues. */}
       {dossiers.length > 0 && (
         <div className="mb-8">
-          <ParliamentaryTimeline dossiers={dossiers} sujet={sujet} />
+          <ParliamentaryTimeline dossiers={dossiers} sujet={sujet}>
+            <SeancesDuSujet slug={slug} />
+          </ParliamentaryTimeline>
         </div>
       )}
-
-      {/* Le parcours réel, sous la frise des étapes.
-          La frise dit où en est la procédure ; le parcours dit ce qui s'est
-          passé — quelle commission, quelle séance, quels votes — et y mène. */}
-      <ParcoursDuSujet slug={slug} />
 
       {/* Context section — law info or procedure info */}
       <ContextSection sujet={sujet} dossiers={dossiers} />

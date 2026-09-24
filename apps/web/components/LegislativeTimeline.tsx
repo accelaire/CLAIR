@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   LegislativeStep,
   stepDotColor,
@@ -12,6 +12,12 @@ import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
 
 interface LegislativeTimelineProps {
   steps: LegislativeStep[];
+  /**
+   * Rendu dans la même carte, sous la frise. La frise dit où en est la
+   * procédure ; ce qui vient dessous peut détailler ce qui s'est réellement
+   * tenu à chaque étape, sans ouvrir un second bloc « parcours » à côté.
+   */
+  children?: ReactNode;
 }
 
 const chambreLabel = (chambre: LegislativeStep['chambre']): string => {
@@ -36,7 +42,7 @@ const formatStepDate = (dateStr: string): string => {
   });
 };
 
-export function LegislativeTimeline({ steps }: LegislativeTimelineProps) {
+export function LegislativeTimeline({ steps, children }: LegislativeTimelineProps) {
   const [activeCode, setActiveCode] = useState<string | null>(null);
 
   if (steps.length === 0) return null;
@@ -148,6 +154,8 @@ export function LegislativeTimeline({ steps }: LegislativeTimelineProps) {
           {activeStep.detail}
         </p>
       )}
+
+      {children}
     </div>
   );
 }
