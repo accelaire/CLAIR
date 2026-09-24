@@ -565,18 +565,33 @@ export default function HomePage() {
             <form onSubmit={handleSearch} className="mt-10">
               <div className="relative mx-auto max-w-xl">
                 <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                {/* SUR MOBILE, UN LIBELLÉ COURT À LA PLACE DU PLACEHOLDER. Le texte
+                    complet ne tient pas dans un champ de téléphone et un input ne
+                    passe pas à la ligne ; réduire la police ferait zoomer iOS
+                    (sous 16 px). Le placeholder complet reste sur l'input pour les
+                    lecteurs d'écran, simplement rendu transparent sous `sm`, et ce
+                    libellé-ci s'efface dès que l'on tape (`peer-placeholder-shown`).
+                    Tout en CSS : pas d'écart entre rendu serveur et hydratation. */}
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Rechercher un député, un département, un scrutin..."
-                  className="w-full rounded-xl border bg-background pl-12 pr-32 py-3.5 text-base focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="peer w-full rounded-xl border bg-background pl-12 pr-12 sm:pr-32 py-3.5 text-base placeholder:text-transparent sm:placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-12 right-12 top-1/2 hidden -translate-y-1/2 truncate text-left text-base text-muted-foreground peer-placeholder-shown:block sm:peer-placeholder-shown:hidden"
+                >
+                  Député, département, scrutin
+                </span>
                 <button
                   type="submit"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                  aria-label="Rechercher"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-primary p-2 sm:px-5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                 >
-                  Rechercher
+                  <ArrowRight className="h-5 w-5 sm:hidden" aria-hidden="true" />
+                  <span className="hidden sm:inline">Rechercher</span>
                 </button>
               </div>
             </form>
