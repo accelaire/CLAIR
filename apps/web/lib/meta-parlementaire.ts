@@ -46,6 +46,8 @@ interface Params {
    * chaque jour », elle présente un bilan. Vrai par défaut.
    */
   enCours?: boolean;
+  /** Pour un mandat terminé : les chiffres couvrent-ils plusieurs mandats ? */
+  plusieursMandats?: boolean;
 }
 
 const nombre = (n: number) => n.toLocaleString('fr-FR');
@@ -56,6 +58,7 @@ export function descriptionParlementaire({
   groupe,
   stats,
   enCours = true,
+  plusieursMandats = false,
 }: Params): string {
   const tete = groupe
     ? `${fullName} (${groupe}), ${fonction}.`
@@ -74,12 +77,14 @@ export function descriptionParlementaire({
     stats?.loyaute ? `${stats.loyaute} % de loyauté au groupe` : null,
   ].filter((m): m is string => m !== null);
 
-  const cloture = enCours ? 'Mis à jour chaque jour.' : 'Son bilan de mandat.';
+  const cloture = enCours ? 'Mis à jour chaque jour.' : `${bilanMandats(plusieursMandats)}.`;
 
   if (metriques.length === 0) {
     return enCours
       ? `${tete} Ses votes, ses interventions et ses amendements, mis à jour chaque jour.`
-      : `${tete} Ses votes, ses interventions et ses amendements pendant son mandat.`;
+      : `${tete} Ses votes, ses interventions et ses amendements pendant ${
+          plusieursMandats ? 'ses mandats' : 'son mandat'
+        }.`;
   }
 
   const retenues: string[] = [];
@@ -119,16 +124,64 @@ export function fonctionParlementaire({
   chambre,
   sexe,
   actif,
+  mandats,
 }: {
   chambre: Chambre;
   sexe: string | null;
   /** `null` ou absent : traité comme en exercice, faute de savoir le contraire. */
   actif?: boolean | null;
-}): { libelle: string; enCours: boolean } {
+  mandats?: MandatCompte[] | null;
+}): { libelle: string; enCours: boolean; plusieursMandats: boolean } {
   const femme = sexe === 'F';
   const base =
     chambre === 'senat' ? (femme ? 'sénatrice' : 'sénateur') : femme ? 'députée' : 'député';
+  const plusieursMandats = nombreMandats(chambre, mandats) > 1;
 
-  if (actif !== false) return { libelle: base, enCours: true };
-  return { libelle: `${femme ? 'ancienne' : 'ancien'} ${base}`, enCours: false };
+  if (actif !== false) return { libelle: base, enCours: true, plusieursMandats };
+  return {
+    libelle: `${femme ? 'ancienne' : 'ancien'} ${base}`,
+    enCours: false,
+    plusieursMandats,
+  };
+}
+
+/**
+ * « Bilan de son mandat » ou « Bilan de ses mandats ».
+ *
+ * La fiche présente la carrière, tous les mandats cumulés (cf.
+ * `getParlementaireStats` côté API) : David Guiraud y affiche 1 881 votes, ses
+ * 863 de la 16e législature et ses 1 018 de la 17e. Parler de « son mandat »
+ * serait faux pour lui.
+ */
+export function bilanMandats(plusieursMandats: boolean): string {
+  return plusieursMandats ? 'Bilan de ses mandats' : 'Bilan de son mandat';
+}
+
+/** Ce que le décompte lit d'un mandat parlementaire de la fiche. */
+export interface MandatCompte {
+  /** Assemblée : numéro de législature. Nul pour un mandat au Sénat. */
+  legislature?: number | null;
+  /** Sénat : année du renouvellement. Nulle pour un mandat à l'Assemblée. */
+  mandature?: number | null;
+}
+
+/**
+ * Nombre de mandats DISTINCTS dans la chambre de la fiche.
+ *
+ * On compte les législatures (Assemblée) ou les années de renouvellement
+ * (Sénat), pas les lignes : une entrée au gouvernement coupe un mandat en deux
+ * lignes (dix sénateurs en base), qui ne font pourtant qu'un seul mandat. Le
+ * filtre par chambre écarte les mandats d'une personne passée par les deux.
+ *
+ * Le décompte ne connaît que l'historique ingéré (15e législature et suivantes,
+ * Sénat depuis le milieu des années 2000). Les chiffres affichés couvrent le
+ * même périmètre : « son mandat » reste donc cohérent avec ce qu'on montre.
+ */
+function nombreMandats(chambre: Chambre, mandats?: MandatCompte[] | null): number {
+  const cles = new Set(
+    (mandats ?? [])
+      .map((m) => (chambre === 'senat' ? m.mandature : m.legislature))
+      .filter((k): k is number => k != null),
+  );
+  return cles.size;
 }

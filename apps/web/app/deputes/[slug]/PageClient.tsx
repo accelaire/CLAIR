@@ -5,6 +5,7 @@ import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { ExpandableAmendementCard } from '@/components/ExpandableAmendementCard';
 import { FicheCompareCallout } from '@/components/FicheCompareCallout';
+import { bilanMandats, fonctionParlementaire } from '@/lib/meta-parlementaire';
 import { SoutenirCallout } from '@/components/donations/SoutenirCallout';
 import { aucunFiltre, STALE_TIME_LISTE_MS } from '@/lib/liste-ssr';
 import { useParams, useRouter } from 'next/navigation';
@@ -549,6 +550,12 @@ export default function PageClient({
   }
 
   const depute = data;
+  const fonction = fonctionParlementaire({
+    chambre: 'assemblee',
+    sexe: depute.sexe,
+    actif: depute.actif,
+    mandats: depute.mandatsParlementaires,
+  });
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -592,17 +599,39 @@ export default function PageClient({
             {depute.prenom} {depute.nom}
           </h1>
 
-          {/* Groupe */}
+          {/* Groupe. Pour un mandat terminé, le groupe affiché est celui du dernier
+              mandat : présenté seul, il laissait croire à un élu en exercice (David
+              Guiraud, maire de Roubaix depuis avril 2026, apparaissait « La France
+              insoumise » sans autre précision). La mention est posée juste au-dessus
+              de la ligne qui induisait en erreur, plutôt que dans un bandeau : la fin d'un
+              mandat n'est pas une alerte. Sans date : la date de fin en base est
+              souvent celle où l'ingestion a constaté le départ (27 mandats de
+              députés « terminés » le 22 juillet 2026), pas la date réelle. */}
+          {!fonction.enCours && (
+            <div className="mt-2 flex items-center justify-center gap-2 md:justify-start">
+              <span className="rounded-full border px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                Mandat terminé
+              </span>
+              {depute.groupe && (
+                <span className="text-sm text-muted-foreground">Dernier groupe :</span>
+              )}
+            </div>
+          )}
+          {/* La ligne du groupe reste la même que pour un élu en exercice : le
+              libellé « Dernier groupe » est sur la ligne de la mention, au-dessus. */}
           {depute.groupe && (
             <Link
               href={`/groupes/assemblee/${depute.groupe.slug}`}
-              className="mt-2 flex items-center justify-center gap-2 md:justify-start hover:underline transition-colors"
+              className="mt-2 block text-center text-lg hover:underline transition-colors md:text-left"
             >
+              {/* Pastille dans le flux du texte : en flex, un nom de groupe long
+                  passait sur deux lignes sur mobile et la pastille restait seule
+                  au bord de l'écran. */}
               <span
-                className="h-3 w-3 rounded-full"
+                className="mr-2 inline-block h-3 w-3 rounded-full align-middle"
                 style={{ backgroundColor: depute.groupe.couleur || '#888' }}
               />
-              <span className="text-lg">{depute.groupe.nomComplet || depute.groupe.nom}</span>
+              {depute.groupe.nomComplet || depute.groupe.nom}
             </Link>
           )}
 
@@ -681,7 +710,9 @@ export default function PageClient({
       {/* Statistiques */}
       {depute.stats && (
         <div className="mb-8">
-          <h2 className="mb-4 text-xl font-semibold">Statistiques</h2>
+          <h2 className="mb-4 text-xl font-semibold">
+            {fonction.enCours ? 'Statistiques' : bilanMandats(fonction.plusieursMandats)}
+          </h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <StatCard
               label="Présence solennelle"

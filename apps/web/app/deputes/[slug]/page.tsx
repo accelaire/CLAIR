@@ -53,6 +53,7 @@ export async function generateMetadata({
     chambre: 'assemblee',
     sexe: data.sexe,
     actif: data.actif,
+    mandats: data.mandatsParlementaires,
   });
   const title = `${fullName}, ${fonction.libelle} — votes et activité`;
 
@@ -62,6 +63,7 @@ export async function generateMetadata({
     groupe: data.groupe?.nom,
     stats: data.stats,
     enCours: fonction.enCours,
+    plusieursMandats: fonction.plusieursMandats,
   });
   const url = `${BASE_URL}/deputes/${data.slug}`;
 
