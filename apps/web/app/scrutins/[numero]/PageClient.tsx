@@ -612,11 +612,6 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
 
         {/* Main content */}
         <div className="min-w-0">
-          {/* Avant la barre d'onglets : les listes de votes, de débats et
-              d'amendements qui suivent défilent à l'infini, il n'y a pas de pied
-              de page à atteindre. */}
-          <SoutenirCallout spaced={false} className="mb-6" />
-
           {/* Tab bar */}
           <div className="border-b mb-6 overflow-x-auto">
             <div className="flex gap-0">
@@ -687,6 +682,11 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
           )}
         </div>
       </div>
+
+      {/* En fin de page, hors de la grille : placé au-dessus des onglets il
+          coupait la page en deux, entre le contexte du scrutin et son résultat,
+          ce qui est trop insistant sur la page qu'on consulte pour un vote. */}
+      <SoutenirCallout />
     </div>
   );
 }
