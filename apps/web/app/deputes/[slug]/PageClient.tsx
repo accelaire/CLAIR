@@ -49,6 +49,7 @@ export interface DeputeDetail {
   nom: string;
   prenom: string;
   sexe: string | null;
+  actif?: boolean | null;
   dateNaissance: string | null;
   profession: string | null;
   photoUrl: string | null;

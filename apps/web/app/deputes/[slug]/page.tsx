@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { fetchRessource, fetchFromApi } from '@/lib/api-server';
 import { REVALIDATE_LISTE_S } from '@/lib/liste-ssr';
 import { PersonJsonLd, BreadcrumbJsonLd } from '@/components/seo/JsonLd';
-import { descriptionParlementaire } from '@/lib/meta-parlementaire';
+import { descriptionParlementaire, fonctionParlementaire } from '@/lib/meta-parlementaire';
 import PageClient from './PageClient';
 import type { DeputeDetail, PageVotes } from './PageClient';
 
@@ -49,14 +49,19 @@ export async function generateMetadata({
   if (!data) return {};
 
   const fullName = `${data.prenom} ${data.nom}`;
-  const isFemale = data.sexe === 'F';
-  const title = `${fullName}, ${isFemale ? 'députée' : 'député'} — votes et activité`;
+  const fonction = fonctionParlementaire({
+    chambre: 'assemblee',
+    sexe: data.sexe,
+    actif: data.actif,
+  });
+  const title = `${fullName}, ${fonction.libelle} — votes et activité`;
 
   const description = descriptionParlementaire({
     fullName,
-    fonction: isFemale ? 'députée' : 'député',
+    fonction: fonction.libelle,
     groupe: data.groupe?.nom,
     stats: data.stats,
+    enCours: fonction.enCours,
   });
   const url = `${BASE_URL}/deputes/${data.slug}`;
 
@@ -93,6 +98,21 @@ export default async function DeputeDetailPage({
   // que sur un vrai 404 de l'API, jamais sur une panne.
   if (!data) notFound();
 
+  // Pour un ancien parlementaire, pas de `jobTitle` ni de `worksFor` : dans
+  // schema.org ils décrivent l'emploi actuel, et le groupe d'un mandat terminé
+  // n'emploie plus personne. Le mandat passé reste dit dans `description`.
+  const fonction = data
+    ? fonctionParlementaire({
+        chambre: 'assemblee',
+        sexe: data.sexe,
+        actif: data.actif,
+      })
+    : null;
+  const enExercice = fonction?.enCours ?? true;
+  const libelleLd = fonction
+    ? fonction.libelle.charAt(0).toUpperCase() + fonction.libelle.slice(1)
+    : '';
+
   const sameAs: string[] = [];
   if (data?.twitter)
     sameAs.push(`https://x.com/${data.twitter.replace('@', '')}`);
@@ -106,17 +126,17 @@ export default async function DeputeDetailPage({
             name={`${data.prenom} ${data.nom}`}
             givenName={data.prenom}
             familyName={data.nom}
-            jobTitle={data.sexe === 'F' ? 'Députée' : 'Député'}
+            jobTitle={enExercice ? (data.sexe === 'F' ? 'Députée' : 'Député') : undefined}
             image={data.photoUrl || undefined}
             url={`${BASE_URL}/deputes/${data.slug}`}
             worksFor={
-              data.groupe
+              enExercice && data.groupe
                 ? { name: data.groupe.nomComplet || data.groupe.nom }
                 : undefined
             }
             description={
               data.circonscription
-                ? `${data.sexe === 'F' ? 'Députée' : 'Député'} de ${data.circonscription.nom} (${data.circonscription.departement})`
+                ? `${libelleLd} de ${data.circonscription.nom} (${data.circonscription.departement})`
                 : undefined
             }
             birthDate={data.dateNaissance || undefined}

@@ -80,7 +80,8 @@ interface PersonJsonLdProps {
   name: string;
   givenName: string;
   familyName: string;
-  jobTitle: string;
+  /** Emploi actuel. Omis pour une personne qui n'exerce plus la fonction. */
+  jobTitle?: string;
   image?: string;
   url: string;
   worksFor?: {
@@ -112,10 +113,10 @@ export function PersonJsonLd({
     name,
     givenName,
     familyName,
-    jobTitle,
     url,
   };
 
+  if (jobTitle) data.jobTitle = jobTitle;
   if (image) data.image = image;
   if (description) data.description = description;
   if (birthDate) data.birthDate = birthDate;
