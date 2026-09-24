@@ -16,11 +16,15 @@
 // =============================================================================
 
 import { FastifyPluginAsync } from 'fastify';
+import { lastmodParlementaire } from './lastmod-parlementaire';
 
 /** Le sitemap est régénéré une fois par jour, après l'ingestion de 04:00 UTC. */
 const CACHE_TTL_24H = 86400;
 
-const CACHE_KEY = 'sitemap:all';
+// Versionnée : la charge utile a gagné un champ `lastModified` par parlementaire.
+// Sous l'ancienne clé, la version en cache (24 h) l'aurait masqué jusqu'au
+// lendemain du déploiement.
+const CACHE_KEY = 'sitemap:all:v2';
 
 export const sitemapRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/', {
@@ -43,15 +47,15 @@ export const sitemapRoutes: FastifyPluginAsync = async (fastify) => {
     // retourne que la législature/session courante, logique qui vit dans
     // GroupesService. La dupliquer ici la ferait dériver, et ça ne coûte qu'une
     // requête de plus au sitemap pour une poignée d'entrées.
-    const [deputes, senateurs, scrutins, lobbyistes, dossiers, sujets] =
+    const [deputesBruts, senateursBruts, scrutins, lobbyistes, dossiers, sujets, derniersScrutins] =
       await Promise.all([
         fastify.prisma.parlementaire.findMany({
           where: { chambre: 'assemblee', actif: true },
-          select: { slug: true, updatedAt: true },
+          select: { slug: true, chambre: true, updatedAt: true, iaGeneratedAt: true },
         }),
         fastify.prisma.parlementaire.findMany({
           where: { chambre: 'senat', actif: true },
-          select: { slug: true, updatedAt: true },
+          select: { slug: true, chambre: true, updatedAt: true, iaGeneratedAt: true },
         }),
         fastify.prisma.scrutin.findMany({
           select: { numero: true, chambre: true, session: true, date: true },
@@ -71,7 +75,30 @@ export const sitemapRoutes: FastifyPluginAsync = async (fastify) => {
           where: { actif: true },
           select: { slug: true, updatedAt: true },
         }),
+        // Date d'arrivée du dernier scrutin de chaque chambre : voir
+        // `lastmod-parlementaire.ts`. ~20 000 lignes, quelques dizaines de ms.
+        fastify.prisma.scrutin.groupBy({
+          by: ['chambre'],
+          _max: { createdAt: true },
+        }),
       ]);
+
+    const dernierScrutinParChambre = new Map<string, Date>(
+      derniersScrutins
+        .filter((r) => r._max.createdAt)
+        .map((r) => [r.chambre, r._max.createdAt as Date]),
+    );
+
+    // `updatedAt` reste exposé : le front s'en sert pour dater les pages de
+    // liste (« dernière ingestion »), où il est juste. `lastModified` est la
+    // date à publier pour la fiche elle-même.
+    const avecLastmod = (p: (typeof deputesBruts)[number]) => ({
+      slug: p.slug,
+      updatedAt: p.updatedAt,
+      lastModified: lastmodParlementaire(p, dernierScrutinParChambre),
+    });
+    const deputes = deputesBruts.map(avecLastmod);
+    const senateurs = senateursBruts.map(avecLastmod);
 
     const result = {
       deputes,

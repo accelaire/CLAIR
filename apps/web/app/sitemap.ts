@@ -22,11 +22,23 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 interface DeputeItem {
   slug: string;
   updatedAt?: string;
+  /**
+   * Date du dernier changement réel de la fiche (dernier scrutin de la chambre
+   * ou génération IA), calculée par l'API. Absente d'une réponse antérieure au
+   * champ : la fiche reste alors sans `lastmod`.
+   */
+  lastModified?: string | null;
 }
 
 interface SenateurItem {
   slug: string;
   updatedAt?: string;
+  /**
+   * Date du dernier changement réel de la fiche (dernier scrutin de la chambre
+   * ou génération IA), calculée par l'API. Absente d'une réponse antérieure au
+   * champ : la fiche reste alors sans `lastmod`.
+   */
+  lastModified?: string | null;
 }
 
 interface ScrutinItem {
@@ -349,23 +361,26 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // `lastmod` est omis quand la source ne fournit pas de date, plutôt que
   // remplacé par l'heure courante : un repli sur `now` faisait déclarer 785
   // URLs « modifiées aujourd'hui » à chaque régénération, tous les jours.
-  // `lastModified` est volontairement absent des pages de personnes et de
-  // lobbyistes. Le champ disponible est `updatedAt`, que la synchronisation
-  // nocturne repose sur chaque ligne qu'elle visite, qu'un contenu ait changé ou
-  // non : les 925 parlementaires actifs et 4 075 des 4 077 lobbyistes se
-  // déclaraient donc modifiés tous les jours. Une date fausse sur l'essentiel du
-  // sitemap ne hiérarchise rien et décrédibilise celles qui sont justes. Omettre
-  // le champ est licite et laisse le moteur s'en remettre à ses propres signaux.
-  // Les scrutins et dossiers gardent le leur : il vient d'une date de contenu.
+  // Jamais `updatedAt` pour dater une page de personne ou de lobbyiste : la
+  // synchronisation nocturne le repose sur chaque ligne qu'elle visite, qu'un
+  // contenu ait changé ou non, et les 925 parlementaires actifs comme 4 075 des
+  // 4 077 lobbyistes se déclaraient modifiés tous les jours. Une date fausse sur
+  // l'essentiel du sitemap ne hiérarchise rien et décrédibilise les justes.
+  //
+  // Les parlementaires ont désormais une vraie date de contenu, `lastModified`,
+  // calculée par l'API (`modules/sitemap/lastmod-parlementaire.ts`) : son absence
+  // laissait Google afficher des résumés vieux d'un mois. Les lobbyistes restent
+  // sans date, faute d'équivalent. Les scrutins et dossiers gardent la leur.
   const deputePages: MetadataRoute.Sitemap = deputes.map((depute) => ({
     url: `${BASE_URL}/deputes/${depute.slug}`,
+    ...(depute.lastModified && { lastModified: depute.lastModified }),
     changeFrequency: 'weekly' as const,
     priority: 0.8,
   }));
 
-  // Senateurs pages
   const senateurPages: MetadataRoute.Sitemap = senateurs.map((senateur) => ({
     url: `${BASE_URL}/senateurs/${senateur.slug}`,
+    ...(senateur.lastModified && { lastModified: senateur.lastModified }),
     changeFrequency: 'weekly' as const,
     priority: 0.8,
   }));
