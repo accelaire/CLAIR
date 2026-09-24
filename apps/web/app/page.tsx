@@ -569,7 +569,7 @@ export default function HomePage() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Rechercher un député, un scrutin..."
+                  placeholder="Rechercher un député, un département, un scrutin..."
                   className="w-full rounded-xl border bg-background pl-12 pr-32 py-3.5 text-base focus:outline-none focus:ring-2 focus:ring-primary"
                 />
                 <button
