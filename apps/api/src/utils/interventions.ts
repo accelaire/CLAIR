@@ -73,6 +73,19 @@ export function journeeDeSeance(date: Date): { gte: Date; lt: Date } {
   return { gte: debut, lt: lendemain };
 }
 
+/**
+ * L'identifiant sous lequel le Sénat range un jour de séance : `d20260721`.
+ *
+ * Le Sénat publie ses comptes rendus par jour et ne nomme la séance sur aucun
+ * de ses scrutins : cette journée est le seul nom commun aux prises de parole,
+ * aux réunions de l'agenda et aux votes. Les deux colonnes dont on la tire
+ * portent la date de Paris dans leur partie UTC — l'ouverture de séance en
+ * heure de Paris, le scrutin à minuit pile — d'où la lecture sans conversion.
+ */
+export function jourDeSeanceSenat(date: Date): string {
+  return `d${date.toISOString().slice(0, 10).replace(/-/gu, '')}`;
+}
+
 // =============================================================================
 // Les annonces d'ordre du jour
 // =============================================================================

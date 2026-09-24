@@ -302,7 +302,18 @@ export class CommissionsService {
 
     const where: Record<string, unknown> = { commissionId: commission.id };
     if (query.role) where.role = query.role;
-    if (query.etat) where.dossier = { etat: query.etat };
+
+    // Les filtres qui portent sur le dossier se rassemblent sous la même clé :
+    // deux `where.dossier` successifs, et le second effaçait le premier.
+    const surLeDossier: Record<string, unknown> = {};
+    if (query.etat) surLeDossier.etat = query.etat;
+    if (query.dateFrom || query.dateTo) {
+      surLeDossier.dateDepot = {
+        ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
+        ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
+      };
+    }
+    if (Object.keys(surLeDossier).length > 0) where.dossier = surLeDossier;
 
     const [items, total] = await Promise.all([
       this.prisma.dossierCommission.findMany({
@@ -310,6 +321,7 @@ export class CommissionsService {
         include: {
           dossier: {
             select: {
+              id: true,
               uid: true,
               titre: true,
               titreCourt: true,
@@ -318,6 +330,7 @@ export class CommissionsService {
               urlAN: true,
               urlSenat: true,
               procedureLibelle: true,
+              loiNumero: true,
             },
           },
         },
@@ -327,6 +340,31 @@ export class CommissionsService {
       }),
       this.prisma.dossierCommission.count({ where }),
     ]);
+
+    // Les compteurs de la carte, comptés SUR LES DOSSIERS DE LA PAGE.
+    //
+    // Surtout pas par le `_count` de Prisma sur la relation : il agrège la
+    // table liée entière à chaque appel, sans tenir compte du filtre — c'est
+    // ce qui produisait 94 % du débordement de fichiers temporaires en
+    // production. Vingt identifiants bornent ici les deux agrégats.
+    const dossierIds = items.map((dc) => dc.dossier.id);
+    const [scrutinsParDossier, amendementsParDossier] = dossierIds.length > 0
+      ? await Promise.all([
+          this.prisma.scrutin.groupBy({
+            by: ['dossierId'],
+            where: { dossierId: { in: dossierIds } },
+            _count: { _all: true },
+          }),
+          this.prisma.amendement.groupBy({
+            by: ['dossierId'],
+            where: { dossierId: { in: dossierIds } },
+            _count: { _all: true },
+          }),
+        ])
+      : [[], []];
+
+    const nbScrutins = new Map(scrutinsParDossier.map((l) => [l.dossierId, l._count._all]));
+    const nbAmendements = new Map(amendementsParDossier.map((l) => [l.dossierId, l._count._all]));
 
     const result = {
       data: items.map((dc) => ({
@@ -338,6 +376,9 @@ export class CommissionsService {
         urlAN: dc.dossier.urlAN,
         urlSenat: dc.dossier.urlSenat,
         procedureLibelle: dc.dossier.procedureLibelle,
+        loiNumero: dc.dossier.loiNumero,
+        nbScrutins: nbScrutins.get(dc.dossier.id) ?? 0,
+        nbAmendements: nbAmendements.get(dc.dossier.id) ?? 0,
         role: dc.role,
       })),
       pagination: {

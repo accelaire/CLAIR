@@ -10,6 +10,10 @@ import { scrutinPeriodeLabel } from '@/lib/periodes';
 interface ScrutinSidebarProps {
   chambre: string;
   date: string;
+  /** La séance où ce vote a eu lieu, quand la source la nomme. */
+  seanceRef?: string | null;
+  /** Vrai seulement si cette séance a un débat chez nous : sinon, pas de lien. */
+  seanceADesDebats?: boolean;
   /** Session (Sénat) ou numéro de législature (Assemblée). */
   session?: string | null;
   legislature?: number | null;
@@ -36,6 +40,8 @@ const typeVoteLabels: Record<string, string> = {
 export function ScrutinSidebar({
   chambre,
   date,
+  seanceRef,
+  seanceADesDebats,
   session,
   legislature,
   typeVote,
@@ -65,10 +71,23 @@ export function ScrutinSidebar({
       {/* Date */}
       <div>
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Date du scrutin</h3>
-        <p className="text-sm flex items-center gap-1.5">
-          <Calendar className="h-4 w-4 text-muted-foreground" />
-          {formatDate(date)}
-        </p>
+        {/* La date mène à la séance : c'est là qu'on lit ce qui a été dit
+            avant le vote, et les autres votes de la journée. Le Sénat ne nomme
+            pas la séance de ses scrutins — la date reste alors du texte. */}
+        {seanceRef && seanceADesDebats ? (
+          <Link
+            href={`/reunions/${encodeURIComponent(seanceRef)}`}
+            className="text-sm flex items-center gap-1.5 text-primary hover:underline"
+          >
+            <Calendar className="h-4 w-4" />
+            {formatDate(date)}
+          </Link>
+        ) : (
+          <p className="text-sm flex items-center gap-1.5">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            {formatDate(date)}
+          </p>
+        )}
         {periode && (
           <p className="text-xs text-muted-foreground mt-1 pl-[22px]">{periode}</p>
         )}

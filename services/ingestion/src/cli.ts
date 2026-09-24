@@ -32,6 +32,7 @@ import {
   linkOrphanScrutinsByTFIDF,
   linkOrphanScrutinsByTexteNumero,
   linkOrphansByLoiTitre,
+  effacerDossiersDAutreLegislature,
   linkAmendementsToDossiers,
   linkAmendementsToDossiersByTexteRef,
   propagateDossierIdBySiblingTexteRef,
@@ -100,6 +101,8 @@ program
   .option('-l, --limit <number>', 'Limiter le nombre d\'éléments à synchroniser', parseInt)
   .option('--legislature <number>', 'Législature AN à ingérer (15,16,17 — défaut: courante). Avec -p --an, -s --an ou -d --an', parseInt)
   .option('--sessions <annees>', `Sessions Sénat à ingérer, séparées par des virgules (ex: 2006,2007). Défaut: ${SENAT_SESSION_MIN} → courante. Avec -s --se, permet un backfill par tranches (mémoire).`)
+  .option('--depuis-annee <n>', 'Année la plus ancienne à lire (avec -i --se). Défaut: les deux dernières années — la base des comptes rendus du Sénat remonte à 2003.', (v: string) => parseInt(v, 10))
+  .option('--rattrapage', 'Avec -i --se --depuis-annee : sauter les journées déjà lues et écrire les autres en lots, au lieu de vérifier chaque prise de parole une à une.')
   .option('--dry-run', 'Mode simulation (affiche ce qui serait fait sans modifier)')
   // Opérations de liaison (combiner avec --in ou --am)
   .option('--link', 'Lier les scrutins aux interventions (--in) ou amendements (--am)')
@@ -207,13 +210,20 @@ program
           await syncScrutinsSenat({ limit: options.limit, sessions: sessionsSenat });
         }
       } else if (options.interventions) {
+        // `depuisAnnee` sert au rattrapage : la synchro quotidienne ne lit que
+        // les deux dernières années, alors que `cri.zip` — 545 Mo retéléchargés
+        // chaque nuit — couvre la séance publique depuis janvier 2003.
         if (chambre === 'se') {
-          await syncInterventionsSenat({ maxSeances: options.limit });
+          await syncInterventionsSenat({
+            maxSeances: options.limit,
+            minYear: options.depuisAnnee,
+            rattrapage: options.rattrapage,
+          });
         } else if (chambre === 'an') {
           await syncInterventions({ maxSeances: options.limit });
         } else {
           await syncInterventions({ maxSeances: options.limit });
-          await syncInterventionsSenat({ maxSeances: options.limit });
+          await syncInterventionsSenat({ maxSeances: options.limit, minYear: options.depuisAnnee });
         }
       } else if (options.amendements) {
         if (chambre === 'se') {
@@ -858,8 +868,10 @@ program
   .description('Propager dossier_id des scrutins vers les amendements')
   .action(async () => {
     try {
+      const { effaces } = await effacerDossiersDAutreLegislature();
+      console.log(`\nLiens inter-législatures effacés: ${effaces}`);
       const result = await linkAmendementsToDossiers();
-      console.log(`\nAmendements liés via scrutins: ${result.linked}`);
+      console.log(`Amendements liés via scrutins: ${result.linked}`);
       const result2 = await linkAmendementsToDossiersByTexteRef();
       console.log(`Amendements liés via texteRef: ${result2.linked}`);
       const result3 = await propagateDossierIdBySiblingTexteRef();
@@ -1043,7 +1055,7 @@ program
   .option('-l, --limit <number>', 'Nombre max d\'entités à traiter', parseInt)
   .option('--dry-run', 'Mode simulation (calcule mais n\'écrit pas)')
   .option('--force', 'Ignorer le hash, regénérer tout')
-  .option('--only <ids...>', 'Restreindre à des entités précises (id de scrutin, uid de dossier, slug de sujet). Corrige une fiche fautive sans relancer tout le corpus')
+  .option('--only <ids...>', 'Restreindre à des entités précises (id de scrutin, uid de dossier, slug de sujet ou de parlementaire). Corrige une fiche fautive sans relancer tout le corpus')
   .option('--rehash', 'Recalculer et stocker le hash de contenu SANS appeler le LLM ni modifier les textes. À utiliser après un changement de formule de hash sur un corpus déjà correct')
   .option('-c, --concurrency <number>', 'Nombre d\'appels LLM en parallèle (défaut: 3)', parseInt)
   .action(async (options) => {
@@ -1260,6 +1272,7 @@ program
       console.log(`  rattachées          : ${result.votesApparies}`);
       console.log(`  indiscernables      : ${result.votesAmbigus}`);
       console.log(`  sans scrutin        : ${result.votesSansScrutin}`);
+      console.log(`Bornés à la journée   : ${result.seancesParLaJournee}`);
       console.log(`Liens débat-scrutin   : ${result.liens}${options.dryRun ? ' (dry-run)' : ''}`);
       process.exit(0);
     } catch (error) {
@@ -1276,8 +1289,12 @@ program
   .option('--dosleg <chemin>', 'Dump dosleg.sql déjà décompressé')
   .option('--dry-run', 'Tout mesurer sans rien écrire')
   .option('--refaire-tout', 'Refaire les scrutins déjà rattachés')
+  .option(
+    '--remplacer-journees <jours>',
+    'Jours AAAA-MM-JJ, séparés par des virgules, dont les liens sont remplacés (compte rendu révisé)',
+  )
   .option('--sortie <fichier>', 'Écrire les liens dans un fichier TSV au lieu de la base')
-  .action(async (options: { depuisAnnee: number; debats?: string; dosleg?: string; dryRun?: boolean; refaireTout?: boolean; sortie?: string }) => {
+  .action(async (options: { depuisAnnee: number; debats?: string; dosleg?: string; dryRun?: boolean; refaireTout?: boolean; remplacerJournees?: string; sortie?: string }) => {
     try {
       // Chargé à l'exécution, comme le rattachement de l'Assemblée : le module
       // instancie son client Prisma et le conteneur tourne au bord de l'OOM.
@@ -1288,6 +1305,9 @@ program
         cheminDosleg: options.dosleg,
         dryRun: options.dryRun,
         refaireTout: options.refaireTout,
+        journeesARemplacer: options.remplacerJournees
+          ? new Set(options.remplacerJournees.split(',').map((j) => j.trim()).filter(Boolean))
+          : undefined,
         sortie: options.sortie,
       });
       console.log(`\nSections lues         : ${result.sections}`);
@@ -1296,6 +1316,7 @@ program
       console.log(`  rattachés           : ${result.rattaches}`);
       console.log(`  sans débat          : ${result.sansDebat}`);
       console.log(`  sans intervention   : ${result.rattachesSansIntervention}`);
+      console.log(`Liens périmés retirés : ${result.liensRetires}`);
       for (const [via, n] of Object.entries(result.parVia).sort((a, b) => b[1] - a[1])) {
         console.log(`    par ${via.padEnd(15)} ${n}`);
       }
@@ -1339,18 +1360,16 @@ program
 program
   .command('link-interventions-dossiers')
   .description("Rattacher les prises de parole à leur texte (numéro de dépôt → dossier)")
-  .option('--refaire-tout', 'Reposer le dossier même là où il est déjà renseigné')
   .option('--dry-run', "Ne rien écrire, dire ce qui serait posé")
-  .action(async (options: { refaireTout?: boolean; dryRun?: boolean }) => {
+  .action(async (options: { dryRun?: boolean }) => {
     try {
       const { lierInterventionsAuxDossiers } = await import('./workers/link-interventions-dossiers.js');
-      const r = await lierInterventionsAuxDossiers({
-        refaireTout: options.refaireTout,
-        dryRun: options.dryRun,
-      });
+      const r = await lierInterventionsAuxDossiers({ dryRun: options.dryRun });
       console.log(`\nNuméros de texte vus     : ${r.numerosVus}`);
       console.log(`Numéros résolus          : ${r.numerosResolus}`);
       console.log(`Prises de parole situées : ${r.interventions}`);
+      console.log(`  dont liens corrigés    : ${r.corrigees}`);
+      console.log(`Liens inter-législatures effacés : ${r.effaces}`);
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'link-interventions-dossiers failed');
@@ -1389,6 +1408,7 @@ program
       console.log(`Sans tableau (débats)    : ${r.sansTableau}`);
       console.log(`Tableaux illisibles      : ${r.tableauxNonLus}`);
       console.log(`Sans texte nommé         : ${r.sansTexteNomme}`);
+      console.log(`Hors article 86/88/91    : ${r.horsArticle88}`);
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'sync-avis-commission failed');

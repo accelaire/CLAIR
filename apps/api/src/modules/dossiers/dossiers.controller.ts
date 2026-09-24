@@ -6,6 +6,7 @@ import { FastifyPluginAsync } from 'fastify';
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { dossiersListQuerySchema, scrutinsQuerySchema, amendementsQuerySchema, trendingQuerySchema } from './dossiers.schema';
+import { chronologieDuDossier } from './chronologie';
 import { ApiError } from '../../utils/errors';
 import { buildMultiFieldSearchCondition } from '../../utils/search';
 import { buildJournalOfficielUrl } from '../../utils/journal-officiel';
@@ -556,6 +557,40 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
   // ===========================================================================
   // GET /api/v1/dossiers/:uid/scrutins - Scrutins paginés du dossier
   // ===========================================================================
+  fastify.get('/:uid/chronologie', {
+    schema: {
+      tags: ['Dossiers'],
+      summary: "Parcours d'un dossier législatif",
+      description:
+        'Les réunions de commission et les séances publiques où le texte a été '
+        + 'examiné, dans l’ordre, avec ce que chacune a produit : prises de '
+        + 'parole, avis sur amendements, votes.',
+      params: {
+        type: 'object',
+        required: ['uid'],
+        properties: { uid: { type: 'string' } },
+      },
+    },
+    handler: async (request) => {
+      const { uid } = z.object({ uid: z.string() }).parse(request.params);
+
+      const cacheKey = `dossiers:${uid}:chronologie`;
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+
+      const dossier = await fastify.prisma.dossierLegislatif.findUnique({
+        where: { uid },
+        select: { id: true },
+      });
+      if (!dossier) throw new ApiError(404, 'Dossier législatif non trouvé');
+
+      const data = await chronologieDuDossier(fastify.prisma, dossier.id);
+      const result = { data };
+      await fastify.redis.setex(cacheKey, 3600, JSON.stringify(result));
+      return result;
+    },
+  });
+
   fastify.get('/:uid/scrutins', {
     schema: {
       tags: ['Dossiers'],

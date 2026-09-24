@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { PrismaClient } from '@prisma/client';
+import { chronologieDesDossiers } from '../dossiers/chronologie';
 import { parseActesLegislatifs } from '../../utils/parse-actes-legislatifs';
 import { buildJournalOfficielUrl } from '../../utils/journal-officiel';
 import { fetchGoogleNews } from '../../utils/google-news';
@@ -169,6 +170,29 @@ export class SujetsService {
   /**
    * Dossiers d'un sujet avec pagination
    */
+  /**
+   * Le parcours d'un sujet : les étapes de TOUS ses textes, entrelacées.
+   *
+   * Un sujet rassemble la version de l'Assemblée et celle du Sénat, parfois
+   * plusieurs lectures. Les montrer dossier par dossier casserait la navette,
+   * qui est justement ce qu'on veut lire : chaque étape nomme donc son texte et
+   * la chronologie est unique.
+   */
+  async getChronologie(slug: string) {
+    const sujet = await this.prisma.sujet.findUnique({
+      where: { slug },
+      select: { id: true },
+    });
+    if (!sujet) return null;
+
+    const dossiers = await this.prisma.dossierLegislatif.findMany({
+      where: { sujetId: sujet.id },
+      select: { id: true, uid: true, titre: true },
+    });
+
+    return { data: await chronologieDesDossiers(this.prisma, dossiers) };
+  }
+
   async getDossiers(slug: string, query: SujetDossiersQuery) {
     const { page, limit } = query;
     const skip = (page - 1) * limit;

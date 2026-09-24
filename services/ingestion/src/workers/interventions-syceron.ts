@@ -315,7 +315,21 @@ async function ecrireSeance(
       orateurPrenom: g.orateurPrenom,
       orateurQualite: g.orateurQualite,
       chambre: CHAMBRE,
-      seanceId: seance.seanceRef,
+      // La référence de séance quand l'archive la déclare, l'identifiant du
+      // compte rendu sinon.
+      //
+      // POURQUOI CE REPLI. Les comptes rendus de la 15e législature ne portent
+      // pas de <seanceRef> : leur schéma ne connaît pas l'élément. Laisser la
+      // colonne vide a coûté cher — c'est par elle que la page d'une séance
+      // rassemble son débat et que la fiche d'un parlementaire groupe ses
+      // prises de parole. 455 243 prises, 1 233 comptes rendus, n'apparaissaient
+      // donc nulle part.
+      //
+      // L'uid du compte rendu est le seul identifiant que la source donne à ces
+      // séances. Le prendre ne conflate rien : aucun code ne suppose la forme de
+      // cette colonne, qui vaut déjà une journée au Sénat (`d20260721`) et une
+      // référence de réunion à l'Assemblée récente.
+      seanceId: seance.seanceRef ?? seance.uid,
       seanceUid: seance.uid,
       date: seance.date,
       ordre: g.ordreAbsolu,

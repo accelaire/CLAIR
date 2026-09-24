@@ -7,6 +7,7 @@ import Link from 'next/link';
 import {
   FileText, Calendar, Vote, CheckCircle, XCircle, ExternalLink,
   ArrowLeft, ArrowRight, Loader2, Scale, ChevronDown, Users, Layers, BookOpen, Gavel, Filter, Info,
+  CalendarClock,
 } from 'lucide-react';
 import { FilterBar } from '@/components/FilterBar';
 import { api } from '@/lib/api';
@@ -14,6 +15,7 @@ import { scrutinHref } from '@/lib/scrutin-url';
 import { NATURES_FILTRABLES, natureLabels } from '@/lib/nature-scrutin';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { LoiPromulgueeCard } from '@/components/LoiPromulgueeCard';
+import { ParcoursParlementaire, type EtapeDuParcours } from '@/components/parcours/ParcoursParlementaire';
 import { ExpandableAmendementCard } from '@/components/ExpandableAmendementCard';
 
 // ---------------------------------------------------------------------------
@@ -179,8 +181,14 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
   // trier en JS ne portait que sur les pages déjà chargées, ce qui masquait des
   // scrutins sur les gros dossiers.
   const [natureFilter, setNatureFilter] = useState('');
-  const [activeTab, setActiveTab] = useState<'amendements' | 'scrutins'>(
-    searchParams.get('tab') === 'scrutins' ? 'scrutins' : 'amendements',
+  // `null` tant que le lecteur n'a rien choisi : l'onglet par défaut dépend de
+  // ce que le dossier a réellement à montrer, et cela n'est connu qu'après le
+  // chargement du parcours.
+  const ongletDeLUrl = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState<'amendements' | 'scrutins' | 'parcours' | null>(
+    ongletDeLUrl === 'scrutins' || ongletDeLUrl === 'amendements' || ongletDeLUrl === 'parcours'
+      ? ongletDeLUrl
+      : null,
   );
 
   // Groupe filter from URL (set when coming from sujet stats page)
@@ -303,6 +311,16 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
   });
 
   // Count of voted amendements for the selected group (for counter)
+  // Chargé avec la page, et non à l'ouverture de son onglet : c'est lui qui
+  // décide si l'onglet existe, et lequel s'ouvre en premier. Un texte qui n'est
+  // passé nulle part n'a pas de parcours à montrer.
+  const { data: parcoursData, isLoading: chargementParcours } = useQuery<{ data: EtapeDuParcours[] }>({
+    queryKey: ['dossier-parcours', uid],
+    queryFn: () => api.get(`/dossiers/${encodeURIComponent(uid)}/chronologie`).then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+  const parcours = parcoursData?.data ?? [];
+
   const { data: groupeVotedCount } = useQuery<number>({
     queryKey: ['dossier-amendements-voted-count', uid, groupeFilter],
     queryFn: () =>
@@ -366,7 +384,23 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
 
   // Auto-switch to scrutins tab if no amendements
   const hasAmendements = dossier.amendementsCount > 0;
-  const effectiveTab = hasAmendements ? activeTab : 'scrutins';
+  // LE PARCOURS PASSE DEVANT QUAND IL EXISTE. Les amendements et les scrutins
+  // disent ce qui a été décidé ; le parcours dit où et quand, et c'est par là
+  // qu'on entre dans un texte qu'on découvre. Il disparaît quand il est vide,
+  // plutôt que d'offrir un onglet qui ne mène à rien.
+  //
+  // Tant qu'il charge, on le tient pour présent : l'onglet s'ouvre d'emblée sur
+  // son squelette. Ouvrir les amendements puis basculer à l'arrivée du
+  // parcours remplaçait sous les yeux du lecteur ce qu'il avait commencé à
+  // lire, et un lien `?tab=parcours` s'ouvrait sur le mauvais onglet.
+  const hasParcours = parcours.length > 0 || chargementParcours;
+  const ongletParDefaut = hasParcours ? 'parcours' : hasAmendements ? 'amendements' : 'scrutins';
+  const ongletDemande = activeTab ?? ongletParDefaut;
+  const effectiveTab =
+    (ongletDemande === 'amendements' && !hasAmendements) || (ongletDemande === 'parcours' && !hasParcours)
+      ? ongletParDefaut
+      : ongletDemande;
+
 
   // Compute unique sorts from all loaded amendements
   const allAmendements = [
@@ -623,8 +657,21 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
         </div>
       )}
 
-      {/* Tabs: Amendements / Scrutins */}
-      <div id="tabs-section" className="flex items-center gap-1 border-b mb-6 scroll-mt-20">
+      {/* Tabs: Parcours / Amendements / Scrutins */}
+      <div id="tabs-section" className="mb-6 flex items-center gap-1 overflow-x-auto border-b scroll-mt-20">
+        {hasParcours && (
+          <button
+            onClick={() => setActiveTab('parcours')}
+            className={`whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+              effectiveTab === 'parcours'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <CalendarClock className="mr-1.5 -mt-0.5 inline h-4 w-4" />
+            {chargementParcours ? 'Parcours' : `Parcours (${parcours.length})`}
+          </button>
+        )}
         {hasAmendements && (
           <button
             onClick={() => setActiveTab('amendements')}
@@ -650,6 +697,24 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
           Scrutins ({dossier.scrutinsCount})
         </button>
       </div>
+
+      {effectiveTab === 'parcours' && (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Les réunions de commission et les séances publiques où ce texte a été examiné, dans
+            l&apos;ordre. Chaque étape mène à son débat complet.
+          </p>
+          {chargementParcours ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-24 animate-pulse rounded-lg border bg-card" />
+              ))}
+            </div>
+          ) : (
+            <ParcoursParlementaire etapes={parcours} />
+          )}
+        </div>
+      )}
 
       {/* ================================================================== */}
       {/* TAB: Amendements                                                   */}

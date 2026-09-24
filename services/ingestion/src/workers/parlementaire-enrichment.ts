@@ -144,7 +144,8 @@ function extractMandatsSenat(sourceData: unknown): ExtractedMandat[] {
 export async function enrichParlementairesIA(
   options: EnrichmentOptions = {}
 ): Promise<EnrichmentResult> {
-  const { limit, dryRun = false, concurrency = 2, force = false, randomSample, skipRecentDays = 3 } = options;
+  const { limit, dryRun = false, concurrency = 2, force = false, randomSample, skipRecentDays = 3, only } = options;
+  const cibles = only?.length ? only : null;
 
   const result: EnrichmentResult = {
     enriched: 0, skipped: 0, errors: 0, totalTokensIn: 0, totalTokensOut: 0,
@@ -164,13 +165,17 @@ export async function enrichParlementairesIA(
   // appauvrit la fiche mais ne bloque jamais la génération (fini les 76 fiches sautées
   // et la boucle infinie du quota Tavily épuisé).
   logger.info(
-    { dryRun, concurrency, limit, force },
+    { dryRun, concurrency, limit, force, cibles: cibles?.length ?? 0 },
     'Starting parlementaires IA enrichment...'
   );
 
   // bypassHash: with --force or --random we regenerate regardless of content hash,
   // which also refreshes iaGeneratedAt (the "mise à jour" date shown on the public fiche).
-  const bypassHash = force || randomSample != null;
+  // Désigner une fiche par son slug vaut demande de régénération : le hash ne
+  // couvre que les données structurées, donc une fiche dont seul le TEXTE est
+  // fautif a un hash inchangé et serait sautée. C'est le cas d'usage que la
+  // ligne d'aide de `--only` décrit : corriger une fiche sans relancer le corpus.
+  const bypassHash = force || randomSample != null || cibles != null;
 
   // Optional random sample: pick N active parlementaires at random (ORDER BY random()),
   // excluding those already refreshed in the last `skipRecentDays` days so a daily rotation
@@ -192,13 +197,19 @@ export async function enrichParlementairesIA(
     );
   }
 
-  // Default working set: new fiches only (or all active with --force).
-  const baseWhere: Prisma.ParlementaireWhereInput = force
-    ? { actif: true }
-    : { actif: true, resumeIA: null };
+  // Working set : les fiches désignées par `--only` si elles le sont, sinon les
+  // fiches neuves — ou toutes les fiches actives avec `--force`.
+  //
+  // `--only` ne filtre pas sur `actif` : on corrige aussi bien la fiche d'un
+  // ancien parlementaire, qui reste publiée et indexée.
+  const baseWhere: Prisma.ParlementaireWhereInput = cibles
+    ? { slug: { in: cibles } }
+    : force
+      ? { actif: true }
+      : { actif: true, resumeIA: null };
 
   // Single source of truth for the projection — ParlRecord is inferred from this select.
-  async function fetchBatch(where: Prisma.ParlementaireWhereInput, take: number) {
+  async function fetchBatch(where: Prisma.ParlementaireWhereInput, take: number, skip = 0) {
     return prisma.parlementaire.findMany({
       where,
       select: {
@@ -223,8 +234,13 @@ export async function enrichParlementairesIA(
         groupe: { select: { nom: true } },
         circonscription: { select: { departement: true, numero: true, nom: true } },
       },
-      orderBy: [{ chambre: 'asc' }, { nom: 'asc' }],
+      // Départage obligatoire dès qu'on pagine avec un décalage : deux
+      // parlementaires de même chambre et de même nom ne sont pas rendus dans
+      // un ordre garanti, et un tri non total fait sauter des lignes d'un lot
+      // à l'autre tout en en répétant d'autres.
+      orderBy: [{ chambre: 'asc' }, { nom: 'asc' }, { id: 'asc' }],
       take,
+      skip,
     });
   }
   type ParlRecord = Awaited<ReturnType<typeof fetchBatch>>[number];
@@ -450,14 +466,24 @@ export async function enrichParlementairesIA(
     // traitées quittent le set `resumeIA: null`. Si un batch entier échoue sans enrichir
     // une seule fiche (ex. quota Tavily épuisé en cours de run), les mêmes lignes sont
     // repiochées indéfiniment. On s'arrête donc dès qu'un batch ne fait aucun progrès.
+    //
+    // Ce « re-take depuis le haut » ne vaut QUE pour le set qui se draine. Les
+    // fiches désignées par `--only`, comme celles de `--force`, restent dans
+    // leur set une fois enrichies : repiocher depuis le début y rendait
+    // indéfiniment les mêmes cinquante lignes, et au-delà de cinquante cibles
+    // sans `--limit` la commande tournait sans fin en brûlant des appels
+    // Mistral et Tavily. Ces sets-là se parcourent donc au décalage.
+    const setSeDraine = !cibles && !force;
+    let deja = 0;
     let remaining = limit ?? Infinity;
     while (remaining > 0) {
       const take = Math.min(BATCH_SIZE, remaining);
-      const records = await fetchBatch(baseWhere, take);
+      const records = await fetchBatch(baseWhere, take, setSeDraine ? 0 : deja);
       if (records.length === 0) break;
       const enrichedBefore = result.enriched;
       await Promise.all(records.map(processParl));
       remaining -= records.length;
+      deja += records.length;
       if (result.enriched === enrichedBefore) {
         logger.error(
           { errors: result.errors, restants: records.length },

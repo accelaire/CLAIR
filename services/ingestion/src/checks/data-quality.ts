@@ -143,6 +143,18 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     max: 0,
     query: `SELECT COUNT(*)::int AS value FROM (SELECT uid FROM amendements GROUP BY uid HAVING COUNT(*) > 1) sub`,
   },
+  interventions_senat_rang_en_double: {
+    type: 'invariant',
+    label: 'Prises du Sénat empilées sur un même rang de séance',
+    min: 0,
+    max: 0,
+    // Le Sénat ne numérote pas ses interventions : leur identité est le rang de
+    // la prise dans la journée, figé dans `source_uid`. Deux lignes sur un même
+    // rang signalent que la clé n'a pas joué — c'est ainsi que la republication
+    // des comptes rendus révisés avait empilé 10 454 lignes sur 64 journées,
+    // une copie de plus à chaque nuit de relecture.
+    query: `SELECT COUNT(*)::int AS value FROM (SELECT seance_id, ordre FROM interventions WHERE chambre = 'senat' AND seance_id IS NOT NULL GROUP BY seance_id, ordre HAVING COUNT(*) > 1) sub`,
+  },
   parlementaires_without_groupe: {
     type: 'invariant',
     label: 'Parlementaires actifs sans groupe',
@@ -214,6 +226,44 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // la signature du bug sert elle-même de garde-fou : un scrutin du Sénat à
     // minuit est correct, un scrutin à 22h ou 23h a de nouveau le bug.
     query: `SELECT COUNT(*)::int AS value FROM scrutins WHERE chambre = 'senat' AND EXTRACT(HOUR FROM date) IN (22, 23)`,
+  },
+
+  cross_legislature_interventions_dossiers: {
+    type: 'invariant',
+    label: "Prises de parole rattachées au dossier d'une autre législature (AN)",
+    min: 0,
+    max: 0,
+    // Même piège, sur le rattachement d'une prise de parole à son texte : le
+    // numéro de dépôt repart de 1 à chaque législature. Une version antérieure
+    // du linker n'en tenait pas compte, et la passe nocturne ne revoyait que
+    // les liens vides : 53 093 prises des 15e et 16e sont restées rattachées à
+    // des dossiers de la 17e. La législature du compte rendu se lit sur son
+    // uid (`CRSANR5L15…`), celle du dossier sur le sien (`DLR5L17N…`).
+    query: `SELECT COUNT(*)::int AS value
+            FROM interventions i
+            JOIN dossiers_legislatifs d ON d.id = i.dossier_id
+            WHERE i.chambre = 'assemblee'
+              AND i.seance_uid LIKE 'CRSANR5L%'
+              AND d.uid LIKE 'DLR5L%'
+              AND substring(i.seance_uid from 'CRSANR5L([0-9]+)')
+                  <> substring(d.uid from 'DLR5L([0-9]+)N')`,
+  },
+
+  cross_legislature_amendements_dossiers: {
+    type: 'invariant',
+    label: "Amendements rattachés au dossier d'une autre législature (AN)",
+    min: 0,
+    max: 0,
+    // Le dossier d'un scrutin, rattaché jadis par son seul numéro, est descendu
+    // sur ses amendements puis sur tout leur texte : 518 amendements de la 17e
+    // pointaient vers « Bioéthique » (15e) ou un dossier de la 16e. Les passes
+    // de propagation ne revoyant que les vides, rien ne les corrigeait.
+    query: `SELECT COUNT(*)::int AS value
+            FROM amendements a
+            JOIN dossiers_legislatifs d ON d.id = a.dossier_id
+            WHERE a.chambre = 'assemblee'
+              AND d.uid LIKE 'DLR5L%'
+              AND substring(d.uid from 'DLR5L([0-9]+)N')::int <> a.legislature`,
   },
 
   cross_legislature_amendements: {

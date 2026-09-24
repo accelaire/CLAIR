@@ -39,3 +39,29 @@ const SEGMENT_TEXTE = /BTC(\d+)P0D/;
 export function uidCanoniqueAmendement(uid: string): string {
   return uid.replace(SEGMENT_TEXTE, 'B$1P0D');
 }
+
+/**
+ * Une seule émission par clé canonique, choisie sans dépendre de l'ordre de
+ * l'archive.
+ *
+ * Les deux émissions d'un même amendement tombent sur la même ligne mais ne
+ * portent pas la même empreinte : leur `uid` diffère. Les écrire toutes les
+ * deux faisait alterner la ligne d'une nuit à l'autre, et le saut des lignes
+ * inchangées ne se stabilisait jamais pour elles. On garde l'émission dont
+ * l'uid est déjà la forme canonique ; à défaut, le premier uid dans l'ordre
+ * lexicographique.
+ */
+export function uneEmissionParAmendement<T extends { uid: string }>(emissions: T[]): T[] {
+  const retenues = new Map<string, T>();
+  for (const e of emissions) {
+    const cle = uidCanoniqueAmendement(e.uid);
+    const deja = retenues.get(cle);
+    if (!deja || preferer(e.uid, deja.uid, cle)) retenues.set(cle, e);
+  }
+  return [...retenues.values()];
+}
+
+function preferer(candidat: string, actuel: string, cle: string): boolean {
+  if ((candidat === cle) !== (actuel === cle)) return candidat === cle;
+  return candidat < actuel;
+}

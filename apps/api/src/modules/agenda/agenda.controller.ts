@@ -4,6 +4,8 @@ import {
   agendaQuerySchema,
   reunionDetailSchema,
   prochainesEcheancesQuerySchema,
+  debatDeReunionSchema,
+  debatDeReunionQuerySchema,
 } from './agenda.schema';
 import { ApiError } from '../../utils/errors';
 
@@ -78,6 +80,36 @@ export const agendaRoutes: FastifyPluginAsync = async (fastify) => {
       const reunion = await service.getReunionByUid(uid);
       if (!reunion) throw new ApiError(404, 'Réunion non trouvée');
       return { data: reunion };
+    },
+  });
+
+  fastify.get('/:uid/debat', {
+    schema: {
+      tags: ['Agenda'],
+      summary: 'Débat d’une réunion, page par page',
+      description:
+        'Prises de parole dans l’ordre du compte rendu, avec les votes que '
+        + 'chacune a précédés. Vaut pour une réunion de commission comme pour '
+        + 'une séance publique.',
+      params: {
+        type: 'object',
+        required: ['uid'],
+        properties: { uid: { type: 'string' } },
+      },
+      querystring: {
+        type: 'object',
+        properties: {
+          page: { type: 'integer', minimum: 1, default: 1 },
+          limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+        },
+      },
+    },
+    handler: async (request) => {
+      const { uid } = debatDeReunionSchema.parse(request.params);
+      const query = debatDeReunionQuerySchema.parse(request.query);
+      const debat = await service.getDebatDeReunion(uid, query);
+      if (!debat) throw new ApiError(404, 'Réunion non trouvée');
+      return debat;
     },
   });
 };

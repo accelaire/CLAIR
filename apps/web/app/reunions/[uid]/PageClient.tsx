@@ -1,0 +1,335 @@
+'use client';
+
+import { useState } from 'react';
+import Link from 'next/link';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
+import {
+  ArrowLeft,
+  Calendar,
+  MapPin,
+  Users,
+  Video,
+  FileText,
+  ExternalLink,
+} from 'lucide-react';
+import { libelleDeSeance } from '@/lib/debats';
+import { urlDuCompteRendu } from '@/lib/compte-rendu-url';
+import { pointsDeLOrdreDuJour } from '@/lib/ordre-du-jour';
+import { DebatDeReunion, type ScrutinDeSeance } from './DebatDeReunion';
+import { SommaireDeSeance, type EntreeDuSommaire } from './SommaireDeSeance';
+
+export interface ReunionDetail {
+  id: string;
+  uid: string;
+  type: string;
+  dateDebut: string;
+  dateFin: string | null;
+  lieu: string | null;
+  etat: string | null;
+  odjResume: string | null;
+  odjComplet: string | null;
+  captationVideo: boolean;
+  urlVideo: string | null;
+  compteRenduRef: string | null;
+  commission: {
+    id: string;
+    slug: string;
+    nom: string;
+    nomCourt: string | null;
+    chambre: string;
+    type: string;
+  } | null;
+  participants: Array<{
+    presence: string | null;
+    parlementaire: {
+      id: string;
+      slug: string;
+      nom: string;
+      prenom: string;
+      photoUrl: string | null;
+      chambre: string;
+      groupe: { nom: string; couleur: string | null; slug: string } | null;
+    };
+  }>;
+  /** Nombre de prises de parole ; le débat lui-même se charge page par page. */
+  /**
+   * Comme `sommaire` et `scrutins` : une réponse servie d'un cache antérieur
+   * peut ne pas porter le champ, et l'heure de TTL qui suit un déploiement
+   * affichait alors « undefined prise de parole », débat jamais chargé.
+   */
+  nbInterventions?: number;
+  /** Les votes de la séance, vides pour une commission. */
+  scrutins?: ScrutinDeSeance[];
+  /** L'index de la séance : ses points, leurs textes, leurs votes. */
+  sommaire?: EntreeDuSommaire[];
+  /** Vrai quand les votes affichés sont ceux de la journée, faute de mieux. */
+  votesDuJour?: boolean;
+  /** La page de la journée, quand cette séance n'en est qu'une des tenues. */
+  seanceCanonique?: string | null;
+  avisCommission: Array<{
+    id: string;
+    numero: string;
+    position: string;
+    sens: string;
+    place: string | null;
+    auteur: string | null;
+    groupe: string | null;
+    ordre: number;
+    amendement: { id: string; numero: string; sort: string | null; dossierId: string | null } | null;
+  }>;
+}
+
+/** Couleurs du sens d'un avis. `autre` couvre les retraits et les irrecevabilités. */
+const COULEUR_DU_SENS: Record<string, string> = {
+  favorable:
+    'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800',
+  defavorable:
+    'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800',
+  autre: 'bg-muted text-muted-foreground border-border',
+};
+
+export default function PageClient({ reunion }: { reunion: ReunionDetail }) {
+  const router = useRouter();
+  // Le rang jusqu'où le débat doit dérouler, posé par un clic sur le sommaire.
+  // Un compteur l'accompagne : recliquer le même point doit refaire défiler.
+  const [cible, setCible] = useState<{ rang: number; clic: number } | null>(null);
+  const chambreLabel = reunion.commission?.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale';
+  const crUrl = urlDuCompteRendu(reunion.compteRenduRef);
+
+  const points = pointsDeLOrdreDuJour(reunion.odjResume, reunion.odjComplet);
+  // Défensif : une réponse servie d'un cache antérieur peut ne pas porter le
+  // champ. Un sommaire absent vaut mieux qu'une page blanche.
+  const sommaire = reunion.sommaire ?? [];
+
+  return (
+    <main className="container mx-auto max-w-4xl px-4 py-8">
+      {/* Retour et fil d'Ariane, comme sur la page d'un scrutin : une réunion
+          est un objet imbriqué dans sa commission, et le lecteur y arrive aussi
+          bien depuis l'agenda que depuis la commission. La flèche revient d'où
+          l'on vient, le fil dit où l'on est. */}
+      <nav className="mb-6 flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+        <button
+          onClick={() => router.back()}
+          className="inline-flex flex-shrink-0 items-center justify-center rounded-lg p-1.5 transition-colors hover:bg-muted"
+          aria-label="Retour"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        {/* Une séance ne relève pas des commissions : son fil mène à l'agenda,
+            et on ne cite pas la pseudo-commission qui la porte en base
+            (« Assemblée nationale de la 17ème législature »). */}
+        {reunion.type === 'seance' ? (
+          <Link href="/agenda" className="flex-shrink-0 transition-colors hover:text-foreground">
+            Agenda
+          </Link>
+        ) : (
+          <>
+            <Link
+              href="/commissions"
+              className="flex-shrink-0 transition-colors hover:text-foreground"
+            >
+              Commissions
+            </Link>
+            {reunion.commission && (
+              <>
+                <span className="hidden flex-shrink-0 sm:inline">/</span>
+                <Link
+                  href={`/commissions/${reunion.commission.slug}`}
+                  className="hidden max-w-[16rem] truncate transition-colors hover:text-foreground sm:inline md:max-w-sm"
+                >
+                  {reunion.commission.nom}
+                </Link>
+              </>
+            )}
+          </>
+        )}
+        <span className="flex-shrink-0">/</span>
+        <span className="truncate font-medium text-foreground">
+          {libelleDeSeance(reunion.dateDebut)}
+        </span>
+      </nav>
+
+      <header className="mb-8">
+        <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {chambreLabel}
+        </p>
+        {/* Une séance est rattachée à une pseudo-commission qui est la chambre
+            elle-même — « Assemblée nationale de la 17ème législature ». La
+            donner pour titre ne dit rien au lecteur : la chambre est déjà
+            au-dessus, et ce qu'il regarde est une séance publique. */}
+        <h1 className="text-balance text-2xl font-bold sm:text-3xl">
+          {reunion.type === 'seance'
+            ? 'Séance publique'
+            : (reunion.commission?.nom ?? 'Réunion de commission')}
+        </h1>
+
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <Calendar className="h-4 w-4 shrink-0" />
+            {libelleDeSeance(reunion.dateDebut)}
+          </span>
+          {reunion.lieu && (
+            <span className="flex items-center gap-1.5">
+              <MapPin className="h-4 w-4 shrink-0" />
+              {reunion.lieu}
+            </span>
+          )}
+          {reunion.participants.length > 0 && (
+            <span className="flex items-center gap-1.5">
+              <Users className="h-4 w-4 shrink-0" />
+              {reunion.participants.length} participant
+              {reunion.participants.length > 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+
+        {(reunion.urlVideo || crUrl) && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {reunion.urlVideo && (
+              <a
+                href={reunion.urlVideo}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded border border-violet-200 bg-violet-50 px-2.5 py-1 text-xs text-violet-700 transition-colors hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-400 dark:hover:bg-violet-950/50"
+              >
+                <Video className="h-3.5 w-3.5" />
+                Voir la vidéo
+              </a>
+            )}
+            {crUrl && (
+              <a
+                href={crUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded border bg-muted px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Compte rendu intégral
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+          </div>
+        )}
+      </header>
+
+      {/* L'ordre du jour déclaré, quand la source en publie un : les réunions
+          de commission et l'agenda du Sénat. C'est lui qui distingue les deux à
+          cinq séances d'une même journée au Sénat, dont le compte rendu et les
+          scrutins sont communs — on le garde donc même sous un sommaire. Les
+          séances de l'Assemblée, elles, n'en ont aucun en base. */}
+      {points.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Ordre du jour
+          </h2>
+          <ul className="space-y-1.5 text-sm">
+            {points.map((point, i) => (
+              <li key={i} className="flex gap-2">
+                <span className="shrink-0 opacity-50">•</span>
+                <span className="min-w-0">{point}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <SommaireDeSeance
+        entrees={sommaire}
+        votesDuJour={reunion.votesDuJour ?? false}
+        onAllerAuDebat={(rang) => setCible((c) => ({ rang, clic: (c?.clic ?? 0) + 1 }))}
+      />
+
+      <DebatDeReunion
+        uid={reunion.uid}
+        total={reunion.nbInterventions ?? 0}
+        scrutins={reunion.scrutins}
+        cible={cible}
+      />
+
+      {reunion.avisCommission.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Avis sur les amendements — {reunion.avisCommission.length}
+          </h2>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Examinés en application de l&apos;article 88 du Règlement : la commission annonce ce
+            qu&apos;elle recommandera en séance, sans pouvoir rejeter elle-même l&apos;amendement.
+            Les libellés sont ceux du compte rendu — « Accepté » et « Avis favorable » veulent
+            dire la même chose.
+          </p>
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 font-medium">N°</th>
+                  <th className="px-3 py-2 font-medium">Place</th>
+                  <th className="px-3 py-2 font-medium">Auteur</th>
+                  <th className="px-3 py-2 font-medium">Groupe</th>
+                  <th className="px-3 py-2 font-medium">Avis</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {reunion.avisCommission.map((avis) => (
+                  <tr key={avis.id}>
+                    <td className="whitespace-nowrap px-3 py-2 font-medium tabular-nums">
+                      {avis.numero}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                      {avis.place || '—'}
+                    </td>
+                    <td className="px-3 py-2">{avis.auteur || '—'}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                      {avis.groupe || '—'}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2">
+                      <span
+                        className={`rounded border px-1.5 py-0.5 text-xs ${
+                          COULEUR_DU_SENS[avis.sens] ?? COULEUR_DU_SENS.autre
+                        }`}
+                      >
+                        {avis.position}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {reunion.participants.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Participants
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {reunion.participants.map(({ parlementaire: p }) => (
+              <Link
+                key={p.id}
+                href={p.chambre === 'senat' ? `/senateurs/${p.slug}` : `/deputes/${p.slug}`}
+                className="inline-flex items-center gap-2 rounded-full border bg-card py-1 pl-1 pr-3 text-sm transition-colors hover:bg-accent"
+              >
+                {p.photoUrl ? (
+                  <Image
+                    src={p.photoUrl}
+                    alt=""
+                    width={24}
+                    height={24}
+                    className="h-6 w-6 rounded-full object-cover"
+                  />
+                ) : (
+                  <span className="h-6 w-6 rounded-full bg-muted" />
+                )}
+                <span className="whitespace-nowrap">
+                  {p.prenom} {p.nom}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+    </main>
+  );
+}

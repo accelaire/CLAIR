@@ -16,7 +16,6 @@ import {
   Loader2,
   Video,
   ChevronDown,
-  ArrowRight,
   FileText,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -25,6 +24,9 @@ import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
 import { FilterBar } from '@/components/FilterBar';
 import { ScrutinsByDossier } from '@/components/scrutins/ScrutinsByDossier';
 import { urlDuCompteRendu } from '@/lib/compte-rendu-url';
+import { pointsDeLOrdreDuJour } from '@/lib/ordre-du-jour';
+import { DossierCard } from '@/components/dossiers/DossierCard';
+import { DateRangePicker, dateRangeToParams, type DateRange } from '@/components/DateRangePicker';
 
 export interface CommissionDetail {
   id: string;
@@ -196,11 +198,7 @@ function OrdreDuJour({ resume, complet }: { resume: string | null; complet: stri
   // de l'ingestion, si bien que son dernier point est coupé en plein mot — 168
   // réunions sur 311 sont dans ce cas. Le complet sépare les points par des
   // retours à la ligne et va jusqu'à 5 000 caractères.
-  const source = complet || resume || '';
-  const points = source
-    .split(complet ? '\n' : '|')
-    .map((p) => p.trim())
-    .filter(Boolean);
+  const points = pointsDeLOrdreDuJour(resume, complet);
 
   if (points.length === 0) return null;
 
@@ -223,7 +221,7 @@ function OrdreDuJour({ resume, complet }: { resume: string | null; complet: stri
         <button
           type='button'
           onClick={() => setDeplie(true)}
-          className='text-xs underline underline-offset-2 hover:text-foreground transition-colors'
+          className='relative z-[2] text-xs underline underline-offset-2 hover:text-foreground transition-colors'
         >
           + {restants} autre{restants > 1 ? 's' : ''} point{restants > 1 ? 's' : ''} à l&apos;ordre du jour
         </button>
@@ -232,7 +230,7 @@ function OrdreDuJour({ resume, complet }: { resume: string | null; complet: stri
         <button
           type='button'
           onClick={() => setDeplie(false)}
-          className='text-xs underline underline-offset-2 hover:text-foreground transition-colors'
+          className='relative z-[2] text-xs underline underline-offset-2 hover:text-foreground transition-colors'
         >
           Réduire
         </button>
@@ -247,7 +245,17 @@ function ReunionItem({ reunion }: { reunion: Reunion }) {
   const hasScrutins = reunion.scrutins && reunion.scrutins.length > 0;
 
   return (
-    <div className='rounded-lg border bg-card p-4'>
+    <div className='relative rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md'>
+      {/* Le lien étalé : la carte entière mène à la réunion, comme celles d'un
+          scrutin ou d'un dossier. Pas d'enveloppe <Link> possible — la carte
+          contient déjà des liens (vidéo, compte rendu, scrutins). Le lien couvre
+          donc la carte en z-[1], et ce qui est cliquable passe en z-[2]. */}
+      <Link
+        href={`/reunions/${encodeURIComponent(reunion.uid)}`}
+        className='absolute inset-0 z-[1] rounded-lg'
+      >
+        <span className='sr-only'>Voir le détail de la réunion</span>
+      </Link>
       <div className='flex items-start justify-between gap-3'>
         <div className='flex-1 min-w-0'>
           <div className='flex items-center gap-x-2 gap-y-0.5 flex-wrap text-sm font-medium mb-1'>
@@ -270,7 +278,7 @@ function ReunionItem({ reunion }: { reunion: Reunion }) {
             </p>
           )}
         </div>
-        <div className='flex flex-col items-end gap-1 shrink-0'>
+        <div className='relative z-[2] flex flex-col items-end gap-1 shrink-0'>
           {reunion.urlVideo && (
             <a
               href={reunion.urlVideo}
@@ -301,7 +309,7 @@ function ReunionItem({ reunion }: { reunion: Reunion }) {
       </div>
 
       {hasScrutins && (
-        <div className='mt-3 pt-3 border-t'>
+        <div className='relative z-[2] mt-3 pt-3 border-t'>
           <ScrutinsByDossier
             scrutins={reunion.scrutins!}
             label='Scrutins de la séance'
@@ -563,6 +571,9 @@ interface DossierItem {
   urlAN: string | null;
   urlSenat: string | null;
   procedureLibelle: string | null;
+  loiNumero: string | null;
+  nbScrutins: number;
+  nbAmendements: number;
   role: 'fond' | 'avis';
 }
 
@@ -587,17 +598,12 @@ const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
   },
 };
 
-const formatDossierTitre = (titre: string, procedureLibelle?: string | null): string => {
-  const firstChar = titre.charAt(0);
-  if (firstChar !== firstChar.toUpperCase() && procedureLibelle) {
-    return `${procedureLibelle} ${titre}`;
-  }
-  return titre;
-};
-
 function TabDossiers({ slug }: { slug: string }) {
   const [roleFilter, setRoleFilter] = useState<string>('');
   const [etatFilter, setEtatFilter] = useState<string>('');
+  // Sur la date de DÉPÔT du texte : c'est la seule que la relation
+  // commission-dossier permette de situer, et celle que la carte affiche.
+  const [periode, setPeriode] = useState<DateRange>({ from: null, to: null });
 
   const {
     data,
@@ -607,9 +613,13 @@ function TabDossiers({ slug }: { slug: string }) {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery<DossiersResponse>({
-    queryKey: ['commission-dossiers', slug, roleFilter, etatFilter],
+    queryKey: ['commission-dossiers', slug, roleFilter, etatFilter, periode.from, periode.to],
     queryFn: ({ pageParam = 1 }) => {
-      const params: Record<string, unknown> = { page: pageParam, limit: 20 };
+      const params: Record<string, unknown> = {
+        page: pageParam,
+        limit: 20,
+        ...dateRangeToParams(periode),
+      };
       if (roleFilter) params.role = roleFilter;
       if (etatFilter) params.etat = etatFilter;
       return api
@@ -632,7 +642,8 @@ function TabDossiers({ slug }: { slug: string }) {
   const dossiers = data?.pages.flatMap((p) => p.data) ?? [];
   const total = data?.pages[0]?.pagination.total ?? 0;
 
-  const activeFilterCount = (roleFilter ? 1 : 0) + (etatFilter ? 1 : 0);
+  const activeFilterCount =
+    (roleFilter ? 1 : 0) + (etatFilter ? 1 : 0) + (periode.from || periode.to ? 1 : 0);
 
   return (
     <div>
@@ -643,8 +654,18 @@ function TabDossiers({ slug }: { slug: string }) {
           </span>
         }
         activeFilterCount={activeFilterCount}
-        onClear={() => { setRoleFilter(''); setEtatFilter(''); }}
+        onClear={() => {
+          setRoleFilter('');
+          setEtatFilter('');
+          setPeriode({ from: null, to: null });
+        }}
       >
+        <DateRangePicker
+          value={periode}
+          onChange={setPeriode}
+          placeholder="Déposé entre…"
+          resultCount={total}
+        />
         <div className='relative md:w-auto'>
           <select
             value={roleFilter}
@@ -692,65 +713,22 @@ function TabDossiers({ slug }: { slug: string }) {
       ) : (
         <>
           <div className='space-y-4'>
-            {dossiers.map((dossier) => {
-              const etatCfg = dossier.etat ? DOSSIER_ETAT_CONFIG[dossier.etat] : null;
-              const roleCfg = ROLE_CONFIG[dossier.role];
-              return (
-                <Link
-                  key={`${dossier.uid}-${dossier.role}`}
-                  href={`/dossiers/${dossier.uid}`}
-                  className='block rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md'
-                >
-                  <div className='flex items-start justify-between gap-3'>
-                    <div className='flex-1 min-w-0'>
-                      {/* Badges */}
-                      <div className='flex items-center gap-2 mb-1 flex-wrap'>
-                        <span
-                          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${roleCfg.className}`}
-                          title={dossier.role === 'fond'
-                            ? 'Commission principale qui examine le texte'
-                            : 'Commission qui donne un avis consultatif'}
-                        >
-                          {roleCfg.label}
-                        </span>
-                        {etatCfg && (
-                          <span className={`px-2 py-0.5 text-xs font-medium rounded ${etatCfg.color}`}>
-                            {etatCfg.label}
-                          </span>
-                        )}
-                        {dossier.procedureLibelle && (
-                          <span className='px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground rounded'>
-                            {dossier.procedureLibelle}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Title */}
-                      <h3 className='font-semibold leading-tight mb-1 line-clamp-2'>
-                        {formatDossierTitre(dossier.titre, dossier.procedureLibelle)}
-                      </h3>
-                      {dossier.titreCourt && dossier.titreCourt !== dossier.titre && (
-                        <p className='text-sm text-muted-foreground mb-2 line-clamp-1'>{dossier.titreCourt}</p>
-                      )}
-
-                      {/* Meta */}
-                      {dossier.dateDepot && (
-                        <p className='text-sm text-muted-foreground'>
-                          Déposé le{' '}
-                          {new Date(dossier.dateDepot).toLocaleDateString('fr-FR', {
-                            day: 'numeric',
-                            month: 'long',
-                            year: 'numeric',
-                          })}
-                        </p>
-                      )}
-                    </div>
-
-                    <ArrowRight className='h-5 w-5 text-muted-foreground shrink-0 mt-1 hidden sm:block' />
-                  </div>
-                </Link>
-              );
-            })}
+            {dossiers.map((dossier) => (
+              <DossierCard
+                key={`${dossier.uid}-${dossier.role}`}
+                dossier={dossier}
+                badge={
+                  <span
+                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_CONFIG[dossier.role].className}`}
+                    title={dossier.role === 'fond'
+                      ? 'Commission principale qui examine le texte'
+                      : 'Commission qui donne un avis consultatif'}
+                  >
+                    {ROLE_CONFIG[dossier.role].label}
+                  </span>
+                }
+              />
+            ))}
           </div>
           <div ref={loadMoreRef} className='mt-8 flex justify-center py-4'>
             {isFetchingNextPage && (

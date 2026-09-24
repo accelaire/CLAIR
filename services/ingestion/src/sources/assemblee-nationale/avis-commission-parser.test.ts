@@ -224,3 +224,153 @@ describe('numerosDeTexteDuCompteRendu', () => {
     expect(numerosDeTexteDuCompteRendu('Compte rendu n° 90')).toEqual([]);
   });
 });
+
+// =============================================================================
+// Les quatre mises en page qui restaient illisibles
+// =============================================================================
+//
+// Relevées sur les 39 comptes rendus dont le tableau était reconnu mais dont
+// aucune ligne ne se lisait. Toutes les lignes ci-dessous sont copiées de PDF
+// réels : c'est ce qui a montré que ma première explication — « des cellules
+// qui débordent sur plusieurs lignes » — était fausse. Les tableaux sont bien
+// formés ; c'est la grammaire de la place et la phrase d'annonce qui manquaient.
+
+describe('mises en page longtemps illisibles', () => {
+  it('lit « N° Amdt | Place | Auteur | Groupe », dont la place vaut « unique »', () => {
+    const colonnes = colonnesDeLEnTete(
+      '             N° Amdt         Place                   Auteur              Groupe'
+    );
+    expect(colonnes?.map((c) => c.role)).toEqual(['numero', 'place', 'auteur', 'groupe']);
+    const lu = lireLigneDeTableau(
+      '                4            unique           M. POTIER Dominique          SOC',
+      colonnes!
+    );
+    expect(lu?.get('numero')).toBe('4');
+    expect(lu?.get('place')).toBe('unique');
+    expect(lu?.get('auteur')).toBe('M. POTIER Dominique');
+    expect(lu?.get('groupe')).toBe('SOC');
+  });
+
+  // Onze tableaux portent les deux colonnes. Rangées sous le même rôle, leurs
+  // valeurs se collaient : la place se lisait « 2 13 ».
+  it('sépare « Place » et « Alinéa »', () => {
+    const colonnes = colonnesDeLEnTete(
+      '        N°                       Auteur            Groupe       Place      Alinéa'
+    );
+    expect(colonnes?.map((c) => c.role)).toEqual(['numero', 'auteur', 'groupe', 'place', 'alinea']);
+    const lu = lireLigneDeTableau(
+      '        48        Mme LE GRIP Constance              EPR           2         13',
+      colonnes!
+    );
+    expect(lu?.get('place')).toBe('2');
+    expect(lu?.get('alinea')).toBe('13');
+  });
+
+  it('sépare aussi la place de l’alinéa avec une colonne d’identiques', () => {
+    const colonnes = colonnesDeLEnTete(
+      '   N°       N° Id                Auteur                Groupe           Place      Alinéa'
+    );
+    expect(colonnes?.map((c) => c.role)).toEqual([
+      'numero', 'identique', 'auteur', 'groupe', 'place', 'alinea',
+    ]);
+    const lu = lireLigneDeTableau(
+      '   114        X     Mme DUBY-MULLER Virginie          DR        2                    3',
+      colonnes!
+    );
+    expect(lu?.get('identique')).toBe('X');
+    expect(lu?.get('place')).toBe('2');
+    expect(lu?.get('alinea')).toBe('3');
+  });
+
+  // 19 des 39 comptes rendus annoncent au présent de narration. La règle
+  // n'attendait que le passé composé, si bien que le tableau entier — qui n'a
+  // pas de colonne d'avis — restait sans sens et n'était pas écrit.
+  it('reconnaît l’annonce au présent', () => {
+    expect(avisAnnonce('La commission accepte les amendements figurant dans le tableau ci-après (*) :'))
+      .toBe('Accepté');
+    // Majuscule à Commission, et la coquille « me tableau » relevée telle quelle.
+    expect(avisAnnonce('La Commission accepte les amendements figurant dans me tableau ci-après :'))
+      .toBe('Accepté');
+  });
+
+  // Séparer les rôles ne doit pas faire perdre sa position à un tableau qui
+  // n'a que la colonne « Alinéa » : elle est alors la seule position donnée.
+  it('traite « Alinéa » seul comme la place', () => {
+    const colonnes = colonnesDeLEnTete(
+      '        N°            Auteur            Groupe       Alinéa'
+    );
+    expect(colonnes?.map((c) => c.role)).toEqual(['numero', 'auteur', 'groupe', 'place']);
+  });
+
+  it('n’invente pas de sens quand la phrase n’en donne pas', () => {
+    // Celle-ci annonce un tableau QUI PORTE sa propre colonne d'avis : lui
+    // prêter un sens global les écraserait tous.
+    expect(
+      avisAnnonce('Le tableau ci-dessous récapitule le sens des avis émis par la commission sur les amendements :')
+    ).toBeNull();
+  });
+});
+
+// =============================================================================
+// Les titres de la colonne d'avis, et deux places de plus
+// =============================================================================
+//
+// Relevés sur les 17 comptes rendus qui restaient muets après la première
+// passe. Lignes copiées telles quelles des PDF.
+
+describe('titres de la colonne d’avis', () => {
+  // Le titre dit « du rapporteur », mais le préambule de ces mêmes comptes
+  // rendus annonce « le sens des avis émis PAR LA COMMISSION » : c'est bien son
+  // avis, que la commission rend en suivant son rapporteur.
+  it('reconnaît « Position du rapporteur »', () => {
+    const colonnes = colonnesDeLEnTete(
+      'N° Amdt           Place                Auteur        Groupe      Position du rapporteur'
+    );
+    expect(colonnes?.map((c) => c.role)).toEqual([
+      'numero', 'place', 'auteur', 'groupe', 'position',
+    ]);
+    const lu = lireLigneDeTableau(
+      '  33            PREMIER         M. VOS Frédéric-Pierre     RN       Repoussé',
+      colonnes!
+    );
+    expect(lu?.get('numero')).toBe('33');
+    expect(lu?.get('place')).toBe('PREMIER');
+    expect(lu?.get('position')).toBe('Repoussé');
+  });
+
+  // La mise en page coupe « Position de la commission » : « commission » passe
+  // à la ligne suivante et l'en-tête n'en garde que le début.
+  it('reconnaît un titre tronqué par la mise en page', () => {
+    const colonnes = colonnesDeLEnTete(
+      'N° Amdt           Place              Auteur                Groupe          Position de la'
+    );
+    expect(colonnes?.map((c) => c.role)).toContain('position');
+  });
+});
+
+describe('places rencontrées ensuite', () => {
+  const colonnes = colonnesDeLEnTete(
+    'N° Amdt        Place                     Auteur       Groupe    Position du rapporteur'
+  )!;
+
+  it('lit « Article unique »', () => {
+    const lu = lireLigneDeTableau(
+      '      47      Article unique    M. NAEGELEN Christophe    LIOT            Repoussé',
+      colonnes
+    );
+    expect(lu?.get('numero')).toBe('47');
+    expect(lu?.get('place')).toBe('Article unique');
+    expect(lu?.get('auteur')).toBe('M. NAEGELEN Christophe');
+    expect(lu?.get('position')).toBe('Repoussé');
+  });
+
+  it('lit « liminaire »', () => {
+    const lu = lireLigneDeTableau(
+      '      5             liminaire      M. DE COURSON Charles       LIOT     Accepté',
+      colonnes
+    );
+    expect(lu?.get('place')).toBe('liminaire');
+    expect(lu?.get('auteur')).toBe('M. DE COURSON Charles');
+    expect(lu?.get('position')).toBe('Accepté');
+  });
+});

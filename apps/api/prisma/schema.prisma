@@ -866,6 +866,11 @@ model Scrutin {
   sourceUrl  String? @map("source_url")
   sourceData Json?   @map("source_data")
 
+  /// Empreinte de ce que la synchro écrit, votes nominatifs compris. Inchangée,
+  /// ni le scrutin ni ses votes ne sont réécrits : sans elle, la fenêtre
+  /// quotidienne remplaçait 1,5 million de votes chaque nuit.
+  sourceHash String? @map("source_hash")
+
   createdAt DateTime @default(now()) @map("created_at")
 
   @@unique([numero, chambre, session])
@@ -1055,6 +1060,11 @@ model Amendement {
 
   // Avis rendus en commission avant le passage en séance
   avisCommission AvisCommission[]
+
+  /// Empreinte de ce que la synchro écrit (champs, auteur résolu,
+  /// cosignataires). Inchangée, la ligne n'est pas réécrite : l'AN republie
+  /// chaque nuit ses 125 000 amendements, dont quelques centaines ont bougé.
+  sourceHash String? @map("source_hash")
 
   createdAt DateTime @default(now()) @map("created_at")
 

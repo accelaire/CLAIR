@@ -1,16 +1,41 @@
 import { ImageResponse } from 'next/og';
-import { OgPage, OG_SIZE, loadFont } from '@/lib/og';
+import { OgPage, OG_SIZE, loadFont, ogNombre } from '@/lib/og';
+import { fetchFromApi } from '@/lib/api-server';
+import type { ApercuSenatoriales } from './PageClient';
 
 export const runtime = 'nodejs';
 export const contentType = 'image/png';
 export const size = OG_SIZE;
-export const alt = 'Sénatoriales du 27 septembre 2026 — CLAIR.vote';
+export const alt =
+  'Sénatoriales du 27 septembre 2026 : les candidats et le bilan des sortants — CLAIR.vote';
 
-// Les chiffres sont fixés par le décret de convocation. Ils sont figés ici plutôt
-// que lus par l'API : une image OG doit se générer même quand l'API est en panne,
-// sinon l'aperçu du lien casse au moment où il est le plus partagé.
+/**
+ * Pré-généré et revalidé à l'heure : l'aperçu se fabrique avant le premier
+ * partage plutôt qu'au moment où le robot du réseau social le réclame.
+ */
+export const revalidate = 3600;
+
+/**
+ * Aperçu social du scrutin.
+ *
+ * Les chiffres des candidatures sont lus par l'API — ils n'existaient pas quand
+ * la page ne portait que le bilan des sortants, et l'image l'annonçait encore
+ * alors que 1 938 candidats y figurent désormais. Mais une image OG doit se
+ * générer même API éteinte, sinon l'aperçu du lien casse au moment où il est le
+ * plus partagé : sans réponse, on retombe sur les seuls chiffres fixés par le
+ * décret de convocation, qui ne bougeront plus.
+ */
 export default async function Image() {
-  const font = await loadFont();
+  const [font, apercu] = await Promise.all([
+    loadFont(),
+    fetchFromApi<ApercuSenatoriales>('/senatoriales/2026', 3600),
+  ]);
+
+  const nbSieges = apercu?.scrutin.nbSieges ?? 178;
+  const nbCirconscriptions = apercu?.scrutin.nbCirconscriptions ?? 64;
+  // `null` ou absent tant que le fichier du ministère n'est pas publié : on ne
+  // promet pas une liste de candidats qui n'existe pas encore.
+  const candidatures = apercu?.candidatures ?? null;
 
   return new ImageResponse(
     (
@@ -19,17 +44,27 @@ export default async function Image() {
         badgeColor="#f43f5e"
         surtitre="Dimanche 27 septembre 2026"
         titre="Sénatoriales 2026"
-        sousTitre="Le bilan de mandature des 178 sénateurs sortants"
-        stats={[
-          { label: 'Sièges renouvelés', value: '178' },
-          { label: 'Départements', value: '64' },
-          { label: 'Sénat', value: '348 sièges' },
-        ]}
+        sousTitre={
+          candidatures
+            ? `Les candidats en lice, et le bilan des ${nbSieges} sortants`
+            : `Le bilan de mandature des ${nbSieges} sénateurs sortants`
+        }
+        stats={
+          candidatures
+            ? [
+                { label: 'Candidats', value: ogNombre(candidatures.candidats) },
+                { label: 'Listes', value: ogNombre(candidatures.listes) },
+                { label: 'Sièges renouvelés', value: String(nbSieges) },
+                { label: 'Circonscriptions', value: String(nbCirconscriptions) },
+              ]
+            : [
+                { label: 'Sièges renouvelés', value: String(nbSieges) },
+                { label: 'Circonscriptions', value: String(nbCirconscriptions) },
+                { label: 'Sénat', value: '348 sièges' },
+              ]
+        }
       />
     ),
-    {
-      ...size,
-      fonts: [{ name: 'Inter', data: font, weight: 600 }],
-    },
+    { ...OG_SIZE, fonts: [{ name: 'Inter', data: font, weight: 600 }] },
   );
 }

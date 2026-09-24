@@ -39,6 +39,10 @@ export const commissionDossiersQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   role: z.enum(['fond', 'avis']).optional(),
   etat: z.enum(['adopte', 'en_cours', 'promulgue', 'rejete', 'retire', 'caduc', 'fusionne']).optional(),
+  // Bornes sur la date de DÉPÔT du texte : c'est la seule date que la relation
+  // commission-dossier permette de situer, et celle que la carte affiche.
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
 });
 
 export type CommissionQuery = z.infer<typeof commissionQuerySchema>;

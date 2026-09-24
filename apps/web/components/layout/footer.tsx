@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Github } from 'lucide-react';
+import { Github, Heart } from 'lucide-react';
 
 function XIcon({ className }: { className?: string }) {
   return (
@@ -96,6 +96,17 @@ export function Footer() {
           <div>
             <h3 className="text-sm font-semibold">Ressources</h3>
             <ul className="mt-3 space-y-2">
+              {/*
+                En tête de colonne et en couleur d'accent : c'est le seul lien de
+                don présent sur toutes les pages, y compris celles où atterrit le
+                trafic de recherche, qui ne voient jamais l'accueil.
+              */}
+              <li>
+                <Link href="/soutenir" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+                  <Heart className="h-3.5 w-3.5" aria-hidden />
+                  Nous soutenir
+                </Link>
+              </li>
               <li>
                 <Link href="/a-propos" className="text-sm text-muted-foreground hover:text-foreground">
                   À propos

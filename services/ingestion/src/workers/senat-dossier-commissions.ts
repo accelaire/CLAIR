@@ -47,6 +47,13 @@ export interface SenatDossierCommissionsOptions {
    * et une saisine ne change plus une fois la lecture engagée.
    */
   force?: boolean;
+  /**
+   * Ne lire que les dossiers dont l'état est « en cours ». Un dossier caduc,
+   * promulgué, retiré ou rejeté ne recevra plus de saisine : sur les 6 002
+   * pages relues chaque nuit, 4 739 l'étaient pour rien. Le batch de 5 h le
+   * fixe ; la commande manuelle reprend tout, pour un rattrapage.
+   */
+  seulementEnCours?: boolean;
 }
 
 export async function syncSenatDossierCommissions(
@@ -65,6 +72,10 @@ export async function syncSenatDossierCommissions(
       uid: { startsWith: 'SENAT-' },
       urlSenat: { not: null },
       ...(options.force ? {} : { dossierCommissions: { none: {} } }),
+      // Un état NULL — `etaloicod` vide dans la source — n'est pas un dossier
+      // clos : l'écarter ici le privait de saisine pour toujours, le batch de
+      // 5 h étant le seul à passer.
+      ...(options.seulementEnCours ? { OR: [{ etat: 'en_cours' }, { etat: null }] } : {}),
     },
     select: { id: true, uid: true, urlSenat: true },
     // Les dossiers récents d'abord : ce sont eux qui sont consultés, et un run
@@ -74,7 +85,7 @@ export async function syncSenatDossierCommissions(
   });
 
   logger.info(
-    { dossiers: dossiers.length, force: options.force ?? false },
+    { dossiers: dossiers.length, force: options.force ?? false, seulementEnCours: options.seulementEnCours ?? false },
     'Starting Sénat dossier commissions scraping...'
   );
 

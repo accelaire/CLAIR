@@ -107,6 +107,8 @@ export const commissionsRoutes: FastifyPluginAsync = async (fastify) => {
           limit: { type: 'number', default: 20 },
           role: { type: 'string', enum: ['fond', 'avis'] },
           etat: { type: 'string', enum: ['adopte', 'en_cours', 'promulgue', 'rejete', 'retire', 'caduc', 'fusionne'] },
+          dateFrom: { type: 'string', format: 'date', description: 'Dépôt à partir de cette date' },
+          dateTo: { type: 'string', format: 'date', description: 'Dépôt jusqu’à cette date' },
         },
       },
       params: {

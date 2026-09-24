@@ -125,27 +125,30 @@ export function ReunionCard({
   const hasScrutins = !!reunion.scrutins && reunion.scrutins.length > 0;
   const hasExpandableContent = isOdjClamped || hasScrutins;
 
-  const videoUrl = happeningNow && liveUrl
-    ? liveUrl
-    : reunion.urlVideo ?? null;
-
-  const handleCardClick = videoUrl
-    ? (e: React.MouseEvent) => {
-        if ((e.target as HTMLElement).closest('a, button')) return;
-        window.open(videoUrl, '_blank', 'noopener,noreferrer');
-      }
-    : undefined;
-
   return (
     <div
       id={`event-${reunion.id}`}
-      onClick={handleCardClick}
-      className={`rounded-lg border transition-shadow hover:shadow-sm scroll-mt-4 ${
+      className={`relative rounded-lg border transition-all hover:border-primary hover:shadow-md scroll-mt-4 ${
         happeningNow
           ? 'border-primary/50 bg-primary/[0.03] dark:bg-primary/[0.06]'
           : 'bg-card'
-      } ${videoUrl ? 'cursor-pointer' : ''}`}
+      }`}
     >
+      {/* Le lien étalé : la carte entière mène à la réunion, comme celles d'un
+          scrutin ou d'un dossier. On ne peut pas l'envelopper dans un <Link> —
+          elle contient déjà des liens (vidéo, compte rendu, scrutins) et des
+          boutons, qu'on ne peut pas imbriquer. Le lien couvre donc la carte en
+          z-[1], et tout ce qui est cliquable passe en z-[2] juste dessous.
+
+          La carte ouvrait auparavant la vidéo. Elle mène désormais à la page de
+          la réunion : c'est la convention du site, et la vidéo garde sa
+          pastille. */}
+      <Link
+        href={`/reunions/${encodeURIComponent(reunion.uid)}`}
+        className='absolute inset-0 z-[1] rounded-lg'
+      >
+        <span className='sr-only'>Voir le détail de la réunion</span>
+      </Link>
       <div className='p-4'>
         <div className='flex items-start gap-3'>
           {/* Time column */}
@@ -160,16 +163,23 @@ export function ReunionCard({
 
           {/* Content */}
           <div className='flex-1 min-w-0'>
-            {/* Commission name — clickable link if commission exists */}
+            {/* Le libellé suit le TYPE de la réunion, pas la présence d'une
+                commission rattachée. L'écrire « Séance publique » dès que la
+                commission manquait étiquetait 918 réunions de commission comme
+                des séances de l'hémicycle — la MECSS, les missions
+                d'information, les commissions d'enquête : 62 organes que le
+                rattachement ne résout pas encore. */}
             {reunion.commission ? (
               <Link
                 href={`/commissions/${reunion.commission.slug}`}
-                className='text-sm font-semibold hover:text-primary transition-colors line-clamp-1'
+                className='relative z-[2] text-sm font-semibold hover:text-primary transition-colors line-clamp-1'
               >
                 {commissionName}
               </Link>
             ) : (
-              <span className='text-sm font-semibold'>Séance publique</span>
+              <span className='text-sm font-semibold'>
+                {reunion.type === 'seance' ? 'Séance publique' : 'Réunion de commission'}
+              </span>
             )}
 
             {/* ODJ resume — collapsed: 2 lines, expanded: full */}
@@ -184,7 +194,7 @@ export function ReunionCard({
 
             {/* Scrutins — only shown when expanded, grouped by dossier */}
             {expanded && hasScrutins && (
-              <div className='mt-3'>
+              <div className='relative z-[2] mt-3'>
                 <ScrutinsByDossier
                   scrutins={reunion.scrutins!}
                   label='Scrutins de la séance'
@@ -193,7 +203,7 @@ export function ReunionCard({
             )}
 
             {/* Meta row */}
-            <div className='mt-2 flex flex-wrap items-center gap-2'>
+            <div className='relative z-[2] mt-2 flex flex-wrap items-center gap-2'>
               {chambre && (
                 <span
                   className={`px-2 py-0.5 rounded text-xs font-medium ${CHAMBRE_CLASSES[chambre] || 'bg-muted text-muted-foreground'}`}
@@ -268,7 +278,7 @@ export function ReunionCard({
           {hasExpandableContent && (
             <button
               onClick={() => setExpanded(!expanded)}
-              className='shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors'
+              className='relative z-[2] shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors'
               aria-label={expanded ? 'Réduire' : 'Développer'}
             >
               {expanded ? (

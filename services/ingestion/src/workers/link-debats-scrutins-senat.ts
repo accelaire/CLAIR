@@ -78,6 +78,18 @@ export interface OptionsLinkDebatsSenat {
   sortie?: string;
   /** Rejoue les scrutins déjà rattachés — à n'utiliser que si la règle a changé. */
   refaireTout?: boolean;
+  /**
+   * Jours (`AAAA-MM-JJ`) dont le compte rendu vient d'être réécrit, et dont les
+   * scrutins doivent être rattachés de nouveau, liens REMPLACÉS.
+   *
+   * Le rapprochement passe par l'ancre `par_N` de la prise, que chaque
+   * révision du Sénat décale, et la purge des prises retirées emporte leurs
+   * liens par cascade. Un scrutin « déjà rattaché » d'une telle journée garde
+   * donc des liens vers de mauvaises prises, ou un débat amputé : c'est ainsi
+   * que 4 335 liens de 117 scrutins ont disparu le 22/09/2026, sans que le
+   * rattachement suivant, qui sautait ces scrutins, les rétablisse.
+   */
+  journeesARemplacer?: ReadonlySet<string>;
   cheminDebats?: string;
   cheminDosleg?: string;
 }
@@ -96,6 +108,8 @@ export interface ResultatLinkDebatsSenat {
    */
   rattachesSansIntervention: number;
   liens: number;
+  /** Liens périmés retirés des scrutins des journées réécrites. */
+  liensRetires: number;
   parVia: Record<string, number>;
 }
 
@@ -104,6 +118,8 @@ interface ScrutinARattacher {
   date: string;
   titre: string;
   dossierId: string | null;
+  /** Déjà rattaché, sur une journée réécrite : ses liens seront remplacés. */
+  aRemplacer: boolean;
 }
 
 interface LienSenat {
@@ -218,7 +234,11 @@ export async function linkDebatsScrutinsSenat(
     else parJour.set(section.date, [section]);
   }
 
-  const scrutins = await scrutinsARattacher(sections, options.refaireTout ?? false);
+  const scrutins = await scrutinsARattacher(
+    sections,
+    options.refaireTout ?? false,
+    options.journeesARemplacer ?? new Set(),
+  );
   const resultat: ResultatLinkDebatsSenat = {
     sections: sections.length,
     scrutins: scrutins.retenus.length,
@@ -227,6 +247,7 @@ export async function linkDebatsScrutinsSenat(
     sansDebat: 0,
     rattachesSansIntervention: 0,
     liens: 0,
+    liensRetires: 0,
     parVia: {},
   };
 
@@ -262,10 +283,12 @@ export async function linkDebatsScrutinsSenat(
     return resultat;
   }
 
-  const { ecrits, scrutinsServis } = options.sortie
-    ? await ecrireFichier(liens, options.sortie)
-    : await ecrireEnBase(liens);
+  const aRemplacer = new Set(scrutins.retenus.filter((s) => s.aRemplacer).map((s) => s.id));
+  const { ecrits, scrutinsServis, retires } = options.sortie
+    ? { ...(await ecrireFichier(liens, options.sortie)), retires: 0 }
+    : await ecrireEnBase(liens, aRemplacer);
   resultat.liens = ecrits;
+  resultat.liensRetires = retires;
   resultat.rattachesSansIntervention = resultat.rattaches - scrutinsServis.size;
 
   logger.info(resultat, 'Rattachement des débats du Sénat terminé');
@@ -291,6 +314,7 @@ async function dossiersParUid(): Promise<Map<string, string>> {
 async function scrutinsARattacher(
   sections: SectionDebatSenat[],
   refaireTout: boolean,
+  journeesARemplacer: ReadonlySet<string>,
 ): Promise<{ retenus: ScrutinARattacher[]; ignores: number }> {
   if (sections.length === 0) return { retenus: [], ignores: 0 };
   const dates = sections.map((s) => s.date).sort();
@@ -311,62 +335,106 @@ async function scrutinsARattacher(
   const retenus: ScrutinARattacher[] = [];
   let ignores = 0;
   for (const l of lignes) {
-    if (l.deja && !refaireTout) {
+    // La date de séance sert de clé de rapprochement : on la prend telle que
+    // le compte rendu l'écrit, sans passer par un fuseau.
+    const date = l.date.toISOString().slice(0, 10);
+    const aRemplacer = l.deja && journeesARemplacer.has(date);
+    if (l.deja && !refaireTout && !aRemplacer) {
       ignores++;
       continue;
     }
     retenus.push({
       id: l.id,
-      // La date de séance sert de clé de rapprochement : on la prend telle que
-      // le compte rendu l'écrit, sans passer par un fuseau.
-      date: l.date.toISOString().slice(0, 10),
+      date,
       titre: l.titre ?? '',
       dossierId: l.dossier_id,
+      aRemplacer,
     });
   }
   return { retenus, ignores };
 }
 
-/** Résout les ancres en interventions et écrit les liens. Rend le nombre de lignes écrites. */
+/**
+ * Résout les ancres en interventions et écrit les liens.
+ *
+ * Pour les scrutins `aRemplacer`, les liens que la règle ne produit plus sont
+ * retirés, dans la même transaction que l'écriture des nouveaux : un lecteur
+ * ne voit jamais le débat vide entre les deux. Un scrutin dont aucune ancre ne
+ * se résout garde ses liens — mieux vaut un débat daté qu'un débat effacé sur
+ * un index du Sénat momentanément incomplet.
+ */
 async function ecrireEnBase(
   liens: LienSenat[],
-): Promise<{ ecrits: number; scrutinsServis: Set<string> }> {
+  aRemplacer: ReadonlySet<string>,
+): Promise<{ ecrits: number; scrutinsServis: Set<string>; retires: number }> {
   const LOT = 2000;
-  let ecrits = 0;
-  const scrutinsServis = new Set<string>();
-  for (let i = 0; i < liens.length; i += LOT) {
-    const lot = liens.slice(i, i + LOT);
-    // `servis` se lit sur les candidats et non sur les insertions : un lien
-    // déjà présent ne s'insère pas, mais le scrutin a bien son débat.
-    const lignes = await prisma.$queryRaw<{ scrutin_id: string; ecrits: bigint }[]>`
-      WITH candidats AS (
-        SELECT i.id AS intervention_id, v.scrutin_id, v.via
-        FROM unnest(
-          ${lot.map((l) => l.date)}::text[],
-          ${lot.map((l) => l.ancre)}::text[],
-          ${lot.map((l) => l.scrutinId)}::text[],
-          ${lot.map((l) => l.via)}::text[]
-        ) AS v(date, ancre, scrutin_id, via)
-        JOIN interventions i ON ${RAPPROCHEMENT}
-      ),
-      inseres AS (
-        INSERT INTO intervention_scrutin (intervention_id, scrutin_id, via)
-        SELECT DISTINCT ON (intervention_id, scrutin_id) intervention_id, scrutin_id, via
-        FROM candidats
-        ORDER BY intervention_id, scrutin_id, via
-        ON CONFLICT (intervention_id, scrutin_id) DO NOTHING
-        RETURNING scrutin_id
-      )
-      SELECT c.scrutin_id,
-             (SELECT COUNT(*) FROM inseres i WHERE i.scrutin_id = c.scrutin_id)::bigint AS ecrits
-      FROM (SELECT DISTINCT scrutin_id FROM candidats) c
-    `;
-    for (const l of lignes) {
-      scrutinsServis.add(l.scrutin_id);
-      ecrits += Number(l.ecrits);
-    }
-  }
-  return { ecrits, scrutinsServis };
+  return prisma.$transaction(
+    async (tx) => {
+      let ecrits = 0;
+      const scrutinsServis = new Set<string>();
+      for (let i = 0; i < liens.length; i += LOT) {
+        const lot = liens.slice(i, i + LOT);
+        // `servis` se lit sur les candidats et non sur les insertions : un lien
+        // déjà présent ne s'insère pas, mais le scrutin a bien son débat.
+        const lignes = await tx.$queryRaw<{ scrutin_id: string; ecrits: bigint }[]>`
+          WITH candidats AS (
+            SELECT i.id AS intervention_id, v.scrutin_id, v.via
+            FROM unnest(
+              ${lot.map((l) => l.date)}::text[],
+              ${lot.map((l) => l.ancre)}::text[],
+              ${lot.map((l) => l.scrutinId)}::text[],
+              ${lot.map((l) => l.via)}::text[]
+            ) AS v(date, ancre, scrutin_id, via)
+            JOIN interventions i ON ${RAPPROCHEMENT}
+          ),
+          inseres AS (
+            INSERT INTO intervention_scrutin (intervention_id, scrutin_id, via)
+            SELECT DISTINCT ON (intervention_id, scrutin_id) intervention_id, scrutin_id, via
+            FROM candidats
+            ORDER BY intervention_id, scrutin_id, via
+            ON CONFLICT (intervention_id, scrutin_id) DO NOTHING
+            RETURNING scrutin_id
+          )
+          SELECT c.scrutin_id,
+                 (SELECT COUNT(*) FROM inseres i WHERE i.scrutin_id = c.scrutin_id)::bigint AS ecrits
+          FROM (SELECT DISTINCT scrutin_id FROM candidats) c
+        `;
+        for (const l of lignes) {
+          scrutinsServis.add(l.scrutin_id);
+          ecrits += Number(l.ecrits);
+        }
+      }
+
+      const remplaces = [...aRemplacer].filter((id) => scrutinsServis.has(id));
+      if (remplaces.length < aRemplacer.size) {
+        logger.warn(
+          { scrutins: aRemplacer.size - remplaces.length },
+          'Journées réécrites : scrutins sans ancre résolue, liens existants conservés',
+        );
+      }
+      if (remplaces.length === 0) return { ecrits, scrutinsServis, retires: 0 };
+
+      const aPurger = new Set(remplaces);
+      const gardes = liens.filter((l) => aPurger.has(l.scrutinId));
+      const retires = await tx.$executeRaw`
+        DELETE FROM intervention_scrutin isc
+        WHERE isc.scrutin_id = ANY(${remplaces}::text[])
+          AND NOT EXISTS (
+            SELECT 1
+            FROM unnest(
+              ${gardes.map((l) => l.date)}::text[],
+              ${gardes.map((l) => l.ancre)}::text[],
+              ${gardes.map((l) => l.scrutinId)}::text[]
+            ) AS v(date, ancre, scrutin_id)
+            JOIN interventions i ON ${RAPPROCHEMENT}
+            WHERE v.scrutin_id = isc.scrutin_id AND i.id = isc.intervention_id
+          )
+      `;
+      return { ecrits, scrutinsServis, retires };
+    },
+    // Un `--refaire-tout` écrit quelque 30 000 liens en une fois.
+    { timeout: 10 * 60 * 1000, maxWait: 30 * 1000 },
+  );
 }
 
 /**

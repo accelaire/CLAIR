@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { FastifyPluginAsync } from 'fastify';
-import type { Prisma } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { ApiError } from '../../utils/errors';
 import { buildTextSearchCondition } from '../../utils/search';
@@ -112,6 +112,15 @@ const fixSourceUrl = (sourceUrl: string | null, chambre: string, numero: number)
 };
 
 // Schemas
+/** Vrai quand `/reunions/<uid>` a quelque chose à montrer pour cette séance. */
+async function seanceAUnePage(prisma: PrismaClient, uid: string): Promise<boolean> {
+  const [reunion, prise] = await Promise.all([
+    prisma.reunion.findUnique({ where: { uid }, select: { id: true } }),
+    prisma.intervention.findFirst({ where: { seanceId: uid }, select: { id: true } }),
+  ]);
+  return reunion !== null || prise !== null;
+}
+
 const scrutinsListQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -596,7 +605,18 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
             ...INTERVENTIONS_DE_FOND,
           };
 
-      const [seanceInterventions, totalSeanceInterventions] = await Promise.all([
+      // La séance désignée par `seanceRef` a-t-elle une page chez nous ? Tous
+      // les scrutins de l'Assemblée portent une référence, mais 79 % seulement
+      // mènent à une séance dont nous avons les prises de parole, et le Sénat
+      // n'en nomme aucune. Sans ce drapeau, la date renverrait vers une page
+      // vide dans 3 524 cas.
+      //
+      // Même règle que le parcours d'un dossier (`chronologie.ts`) : la page
+      // existe si une réunion de l'agenda porte cet uid, ou si des prises de
+      // parole s'y rattachent. Ne compter que les prises laissait la date en
+      // texte pour une séance déjà à l'agenda dont le compte rendu n'est pas
+      // encore paru, quand le parcours menait à la même page.
+      const [seanceInterventions, totalSeanceInterventions, seanceConsultable] = await Promise.all([
         fastify.prisma.intervention.findMany({
           where: seanceWhere,
           take: 5,
@@ -604,6 +624,9 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           select: INTERVENTION_DEBAT_SELECT,
         }),
         fastify.prisma.intervention.count({ where: seanceWhere }),
+        scrutin.seanceRef
+          ? seanceAUnePage(fastify.prisma, scrutin.seanceRef)
+          : Promise.resolve(false),
       ]);
 
       // Sélection des champs votes communs
@@ -710,6 +733,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           votesByGroupe,
           totalVotes: scrutin.nombrePour + scrutin.nombreContre + scrutin.nombreAbstention,
           totalInterventions: totalSeanceInterventions,
+          seanceADesDebats: seanceConsultable,
         },
       };
     },
@@ -739,15 +763,20 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           session: { type: 'string', description: 'Session parlementaire (ex: 2024 pour Sénat)' },
           sort: { type: 'string', enum: ['asc', 'desc'], default: 'asc' },
           search: { type: 'string', description: 'Recherche dans le contenu ou le nom du parlementaire', maxLength: 200 },
+          type: {
+            type: 'string',
+            enum: ['intervention', 'question', 'reponse_gouvernement', 'explication_vote'],
+            description: 'Nature de la prise de parole. Le décompte par nature est toujours rendu dans `meta.parType`.',
+          },
         },
       },
     },
     handler: async (request, _reply) => {
       const { numero } = z.object({ numero: z.coerce.number().int().positive() }).parse(request.params);
-      const { page = 1, limit = 10, chambre = 'assemblee', session, sort = 'asc', search } =
+      const { page = 1, limit = 10, chambre = 'assemblee', session, sort = 'asc', search, type } =
         request.query as {
           page?: number; limit?: number; chambre?: string;
-          session?: string; sort?: 'asc' | 'desc'; search?: string;
+          session?: string; sort?: 'asc' | 'desc'; search?: string; type?: string;
         };
       const skip = (page - 1) * limit;
 
@@ -813,15 +842,40 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         ];
       }
 
+      // Le décompte par nature se calcule AVANT le filtre de nature : c'est lui
+      // qui peuple le sélecteur, et une option ne peut pas disparaître dès
+      // qu'on la choisit. Seules 965 pages de scrutin sur 18 389 portent une
+      // explication de vote — sans ce décompte, le lecteur cliquerait à
+      // l'aveugle et tomberait sur une liste vide dix-neuf fois sur vingt.
+      //
+      // Calculé sur la PREMIÈRE page seulement : le front ne lit ce décompte
+      // que sur `pages[0]`, et le rejouer à chaque page du défilement infini
+      // relançait, sur le chemin de repli `journee`, un balayage jour+chambre
+      // non indexé d'`interventions` — pour un résultat jeté aussitôt.
+      const parNature = page === 1
+        ? await fastify.prisma.intervention.groupBy({
+            by: ['type'],
+            where: interventionWhere,
+            _count: { _all: true },
+          })
+        : null;
+
+      const whereFiltree: Prisma.InterventionWhereInput = type
+        ? { ...interventionWhere, type }
+        : interventionWhere;
+
       const [interventions, total] = await Promise.all([
         fastify.prisma.intervention.findMany({
-          where: interventionWhere,
-          orderBy: [{ date: sort }, { ordre: sort }],
+          where: whereFiltree,
+          // Départage par l'identifiant : le rang a longtemps été partagé par
+          // plusieurs prises d'une même journée du Sénat, et un tri non total
+          // fait sauter des lignes d'une page à l'autre.
+          orderBy: [{ date: sort }, { ordre: sort }, { id: sort }],
           skip,
           take: limit,
           select: INTERVENTION_DEBAT_SELECT,
         }),
-        fastify.prisma.intervention.count({ where: interventionWhere }),
+        fastify.prisma.intervention.count({ where: whereFiltree }),
       ]);
 
       const totalPages = Math.ceil(total / limit);
@@ -834,6 +888,14 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           limit,
           totalPages,
           hasNext: page < totalPages,
+          /**
+           * Nombre de prises de parole par nature, filtre de nature exclu.
+           * Servi avec la première page ; absent des suivantes, qui n'en ont
+           * pas l'usage.
+           */
+          parType: parNature
+            ? Object.fromEntries(parNature.map((l) => [l.type, l._count._all]))
+            : undefined,
           hasPrev: page > 1,
           // Dit au lecteur ce qu'il regarde : le débat de ce vote, ou faute de
           // mieux celui de la journée, qui peut porter sur de tout autres textes.

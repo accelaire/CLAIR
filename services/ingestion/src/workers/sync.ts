@@ -3,6 +3,7 @@
 // Sources: API Assemblée Nationale + Sénat
 // =============================================================================
 
+import { empreinte } from '../utils/empreinte';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import pLimit from 'p-limit';
@@ -13,7 +14,11 @@ import { DossiersLegislatifsClient } from '../sources/assemblee-nationale/dossie
 import { SenatSenateursClient, TransformedSenateur } from '../sources/senat/senateurs-client';
 import { SenatScrutinsClient } from '../sources/senat/scrutins-client';
 import { DILAInterventionsClient } from '../sources/dila/interventions-client';
-import { SenatInterventionsClient } from '../sources/senat/interventions-client';
+import {
+  SenatInterventionsClient,
+  uidInterventionSenat,
+  type TransformedInterventionSenat,
+} from '../sources/senat/interventions-client';
 import { SenatDossiersClient } from '../sources/senat/dossiers-client';
 import { syncSenateursHistoriques } from './senat-histo';
 import { syncSenatBureaux } from './senat-bureaux';
@@ -24,7 +29,7 @@ import { asArray, isRecord, readString } from '../utils/json';
 import { extractCommissionSaisines } from '../utils/dossier-commissions';
 import { classifyNatureScrutin } from '../utils/nature-scrutin';
 import { choisirAmendement, type CandidatAmendement } from '../utils/amendement-scrutin';
-import { uidCanoniqueAmendement } from '../utils/uid-amendement';
+import { uidCanoniqueAmendement, uneEmissionParAmendement } from '../utils/uid-amendement';
 import {
   LEGISLATURE_AN_COURANTE,
   LEGISLATURE_FIN,
@@ -1382,6 +1387,14 @@ async function syncSingleSenateur(
  */
 export const SCRUTINS_DAILY_WINDOW_MONTHS = 6;
 
+/**
+ * Fenêtre du scraping des pages de scrutin AN dans le batch de 5 h : trente
+ * nuits d'essai par scrutin. Au-delà, le stock sans lien (6 734 scrutins, 0
+ * enrichi deux nuits de suite) ne fait que charger le site de l'AN ; il reste
+ * rattrapable par la commande manuelle.
+ */
+export const FENETRE_ENRICHISSEMENT_SCRUTINS_AN_JOURS = 30;
+
 /** Date plancher d'une fenêtre exprimée en mois, `null` si non bornée. */
 export function windowFloor(sinceMonths?: number): Date | null {
   if (!sinceMonths || sinceMonths <= 0) return null;
@@ -1396,7 +1409,14 @@ export async function syncScrutins(
     /** Ne traiter que les scrutins des N derniers mois (cf. SCRUTINS_DAILY_WINDOW_MONTHS). */
     sinceMonths?: number;
   } = {}
-): Promise<{ scrutins: number; votes: number; votesOrphelins: number }> {
+): Promise<{
+  scrutins: number;
+  created: number;
+  updated: number;
+  inchanges: number;
+  votes: number;
+  votesOrphelins: number;
+}> {
   const legislature = options.legislature ?? LEGISLATURE_AN_COURANTE;
   logger.info({ limit: options.limit, legislature }, 'Starting scrutins AN sync (from Assemblée Nationale API)...');
 
@@ -1415,6 +1435,7 @@ export async function syncScrutins(
 
   let scrutinsCreated = 0;
   let scrutinsUpdated = 0;
+  let scrutinsInchanges = 0;
   let votesCreated = 0;
   let votesOrphelins = 0;
 
@@ -1426,7 +1447,18 @@ export async function syncScrutins(
   // (numero, chambre, session), ce qui isole les scrutins de chaque législature.
   const session = String(legislature);
 
-  for (const data of scrutinsData) {
+  // Les scrutins déjà en base, avec l'empreinte de leur dernière écriture.
+  // L'AN republie chaque nuit toute la législature : sans cette comparaison, la
+  // fenêtre quotidienne supprimait et réinsérait 1,5 million de votes pour une
+  // poignée de scrutins nouveaux ou rectifiés.
+  const connus = new Map(
+    (await prisma.scrutin.findMany({
+      where: { chambre, session },
+      select: { numero: true, id: true, sourceHash: true },
+    })).map((s) => [s.numero, s]),
+  );
+
+  for (const [rang, data] of scrutinsData.entries()) {
     try {
       const { scrutin, votes } = data;
 
@@ -1470,12 +1502,32 @@ export async function syncScrutins(
         sourceData: scrutin.sourceData as object,
       };
 
-      const existing = await prisma.scrutin.findUnique({
-        where: { numero_chambre_session: { numero: scrutin.numero, chambre, session } },
-      });
+      // Les votes individuels, rapportés aux parlementaires connus.
+      const votesRattaches = [];
+      for (const vote of votes) {
+        const parlementaireId = parlementaireMap.get(vote.acteurRef);
+        if (!parlementaireId) continue; // Parlementaire non trouvé
+        votesRattaches.push({
+          parlementaireId,
+          position: vote.position,
+          parDelegation: vote.parDelegation,
+        });
+      }
+
+      // L'empreinte couvre ce qu'on ÉCRIT : un député nouvellement connu
+      // rattache un vote de plus, et le scrutin doit alors être réécrit.
+      const sourceHash = empreinte({ scrutinData, votes: votesRattaches });
+      const existing = connus.get(scrutin.numero);
+      if (existing && existing.sourceHash === sourceHash) {
+        scrutinsInchanges++;
+        continue;
+      }
 
       let scrutinId: string;
 
+      // L'empreinte n'est PAS posée ici : elle ne l'est qu'avec les votes,
+      // dans leur transaction. Un remplacement de votes qui échoue laisse donc
+      // l'ancienne empreinte, et le scrutin sera repris la nuit suivante.
       if (existing) {
         await prisma.scrutin.update({
           where: { numero_chambre_session: { numero: scrutin.numero, chambre, session } },
@@ -1486,24 +1538,14 @@ export async function syncScrutins(
       } else {
         const created = await prisma.scrutin.create({ data: scrutinData });
         scrutinId = created.id;
+        connus.set(scrutin.numero, { numero: scrutin.numero, id: created.id, sourceHash: null });
         scrutinsCreated++;
       }
 
       // Synchroniser les votes individuels.
       // Remplacement complet plutôt qu'upsert : c'est la seule façon simple de
       // faire disparaître un vote retiré à la source (mise au point).
-      const voteRecords = [];
-      for (const vote of votes) {
-        const parlementaireId = parlementaireMap.get(vote.acteurRef);
-        if (!parlementaireId) continue; // Parlementaire non trouvé
-
-        voteRecords.push({
-          parlementaireId,
-          scrutinId,
-          position: vote.position,
-          parDelegation: vote.parDelegation,
-        });
-      }
+      const voteRecords = votesRattaches.map((v) => ({ ...v, scrutinId }));
 
       // La source annonce des votes mais aucun ne se rattache à un
       // parlementaire connu : le remplacement viderait le scrutin, proprement
@@ -1530,6 +1572,7 @@ export async function syncScrutins(
         ...(voteRecords.length > 0
           ? [prisma.vote.createMany({ data: voteRecords })]
           : []),
+        prisma.scrutin.update({ where: { id: scrutinId }, data: { sourceHash } }),
       ]);
       votesCreated += voteRecords.length;
 
@@ -1537,14 +1580,16 @@ export async function syncScrutins(
       logger.warn({ numero: data.scrutin.numero, error: errorMessage(error) }, 'Error syncing scrutin');
     }
 
-    // Pause tous les 100 scrutins pour laisser le GC respirer
-    if ((scrutinsCreated + scrutinsUpdated) % 100 === 0) {
+    // Pause tous les 100 scrutins pour laisser le GC respirer. Comptée sur le
+    // rang, et non sur les écritures : un scrutin inchangé n'écrit rien, et un
+    // compteur d'écritures resté à zéro déclenchait la pause à chaque tour.
+    if (rang % 100 === 99) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
   }
 
   logger.info({
-    scrutins: { created: scrutinsCreated, updated: scrutinsUpdated },
+    scrutins: { created: scrutinsCreated, updated: scrutinsUpdated, inchanges: scrutinsInchanges },
     votes: votesCreated,
     total: scrutinsData.length,
     skippedHorsFenetre: scrutinsSkippedOld,
@@ -1552,7 +1597,14 @@ export async function syncScrutins(
     votesOrphelins,
   }, 'Scrutins AN sync completed');
 
-  return { scrutins: scrutinsCreated + scrutinsUpdated, votes: votesCreated, votesOrphelins };
+  return {
+    scrutins: scrutinsCreated + scrutinsUpdated,
+    created: scrutinsCreated,
+    updated: scrutinsUpdated,
+    inchanges: scrutinsInchanges,
+    votes: votesCreated,
+    votesOrphelins,
+  };
 }
 
 // =============================================================================
@@ -1935,13 +1987,69 @@ export async function syncInterventions(
 // SYNC INTERVENTIONS SÉNAT (via data.senat.fr)
 // =============================================================================
 
+/**
+ * Les journées de séance du Sénat déjà lues, par leur identifiant de compte
+ * rendu (`d20260721`).
+ *
+ * Le Sénat publie un compte rendu par JOUR : la journée est donc l'unité
+ * naturelle pour savoir ce qui reste à lire.
+ */
+async function journeesSenatDejaLues(): Promise<Set<string>> {
+  const lignes = await prisma.intervention.findMany({
+    where: { chambre: 'senat', seanceId: { not: null } },
+    select: { seanceId: true },
+    distinct: ['seanceId'],
+  });
+  return new Set(lignes.map((l) => l.seanceId).filter((id): id is string => id !== null));
+}
+
+/**
+ * Ce qu'une prise du Sénat tire d'autre chose que son texte : l'annuaire et
+ * les règles du parseur. Une relecture doit pouvoir le rafraîchir seul.
+ */
+const ATTRIBUTION_SELECT = {
+  parlementaireId: true,
+  orateurNom: true,
+  orateurPrenom: true,
+  orateurQualite: true,
+  type: true,
+  sourceUrl: true,
+} as const;
+
+type AttributionSenat = Prisma.InterventionGetPayload<{ select: typeof ATTRIBUTION_SELECT }>;
+
+function attributionDe(d: Prisma.InterventionCreateManyInput): AttributionSenat {
+  return {
+    parlementaireId: d.parlementaireId ?? null,
+    orateurNom: d.orateurNom ?? null,
+    orateurPrenom: d.orateurPrenom ?? null,
+    orateurQualite: d.orateurQualite ?? null,
+    type: d.type,
+    sourceUrl: d.sourceUrl ?? null,
+  };
+}
+
+function attributionInchangee(existante: AttributionSenat, lue: AttributionSenat): boolean {
+  return (Object.keys(ATTRIBUTION_SELECT) as Array<keyof AttributionSenat>)
+    .every((champ) => existante[champ] === lue[champ]);
+}
+
 export async function syncInterventionsSenat(
-  options: { maxSeances?: number; minYear?: number } = {}
-): Promise<{ interventions: number }> {
-  logger.info({ maxSeances: options.maxSeances }, 'Starting interventions Sénat sync (from data.senat.fr)...');
+  options: { maxSeances?: number; minYear?: number; rattrapage?: boolean } = {}
+): Promise<{
+  interventions: number;
+  created: number;
+  updated: number;
+  supprimees: number;
+  /** Jours (`AAAA-MM-JJ`) dont au moins une prise a été créée, révisée ou retirée. */
+  journeesRevisees: string[];
+}> {
+  logger.info(
+    { maxSeances: options.maxSeances, minYear: options.minYear, rattrapage: options.rattrapage },
+    'Starting interventions Sénat sync (from data.senat.fr)...',
+  );
 
   const senatInterClient = new SenatInterventionsClient();
-  const interventionsData = await senatInterClient.getInterventions(options);
 
   // Charger les sénateurs pour le mapping nom -> parlementaireId
   const parlementaires = await prisma.parlementaire.findMany({
@@ -1977,102 +2085,228 @@ export async function syncInterventionsSenat(
   }
 
   let created = 0;
-  let createdNonParlementaire = 0;
+  let updated = 0;
+  let inchangees = 0;
+  let reattribuees = 0;
+  let supprimees = 0;
+  let lues = 0;
   let skippedPresident = 0;
+  // Les journées réécrites cette nuit. Le rattachement aux scrutins retrouve
+  // une prise par son ancre `par_N`, que la révision décale, et la purge a
+  // emporté par cascade les liens des lignes retirées : ces journées doivent
+  // être rattachées de nouveau, même si leurs scrutins ont déjà leur débat.
+  const journeesRevisees = new Set<string>();
 
   const chambre = 'senat';
 
-  for (const intervention of interventionsData) {
-    try {
-      const orateurNom = intervention.orateurNom || '';
-      const orateurLower = orateurNom.toLowerCase();
+  /** Rapproche une prise d'un sénateur — matching sécurisé, jamais approximatif. */
+  const resoudreParlementaire = (intervention: TransformedInterventionSenat): string | null => {
+    // 1. Par orateurRef (matricule sénateur)
+    if (intervention.orateurRef) {
+      const parRef = parlementaireByRef.get(intervention.orateurRef);
+      if (parRef) return parRef;
+    }
 
-      // Ignorer les interventions du président/présidente de séance
-      if (orateurLower.includes('président') || orateurLower.includes('présidente') ||
-          orateurLower === 'le président' || orateurLower === 'la présidente') {
+    // 2. Par nom complet (prénom + nom)
+    if (intervention.orateurPrenom && intervention.orateurNom) {
+      const fullName = normalize(`${intervention.orateurPrenom} ${intervention.orateurNom}`);
+      const parNom = parlementaireByFullName.get(fullName);
+      if (parNom) return parNom;
+    }
+
+    // 3. Par nom seul — même garde-fou que pour l'AN : vérifier le prénom si disponible
+    if (intervention.orateurNom && !intervention.orateurQualite) {
+      const candidate = parlementaireByNom.get(normalize(intervention.orateurNom));
+      if (candidate) {
+        if (!intervention.orateurPrenom) return candidate.id;
+        if (normalize(intervention.orateurPrenom) === normalize(candidate.prenom)) return candidate.id;
+      }
+    }
+
+    return null;
+  };
+
+  // RATTRAPAGE. Le rattrapage vise des journées ABSENTES de la base. On passe la
+  // liste des journées connues au client, qui les écarte AVANT son plafond : les
+  // écarter après revenait à ne retenir que les journées les plus récentes,
+  // c'est-à-dire précisément celles qu'on saute ensuite.
+  const joursDejaLus = options.rattrapage ? await journeesSenatDejaLues() : undefined;
+  if (joursDejaLus) {
+    logger.info({ joursDejaLus: joursDejaLus.size }, 'Rattrapage : journées déjà lues');
+  }
+
+  /**
+   * Écrit une journée, et une seule, avant que la suivante soit parsée.
+   *
+   * Hors rattrapage, la journée est déjà en base et le Sénat vient peut-être
+   * d'en republier une version révisée. On CONVERGE vers cette version plutôt
+   * que d'y ajouter : chaque prise est retrouvée par son `sourceUid`, mise à
+   * jour si son texte a bougé, créée si elle est nouvelle, et celles que la
+   * révision a retirées sont supprimées. La ligne garde son identifiant, donc
+   * ses rattachements aux scrutins survivent.
+   */
+  const ecrireLaJournee = async (
+    seanceId: string,
+    lot: Prisma.InterventionCreateManyInput[],
+  ): Promise<boolean> => {
+    if (lot.length === 0) return false;
+
+    if (joursDejaLus) {
+      const res = await prisma.intervention.createMany({ data: lot, skipDuplicates: true });
+      created += res.count;
+      return res.count > 0;
+    }
+    const avant = created + updated + supprimees;
+
+    const existantes = await prisma.intervention.findMany({
+      where: { chambre, seanceId },
+      select: { id: true, sourceUid: true, contenu: true, ...ATTRIBUTION_SELECT },
+    });
+    const parUid = new Map(
+      existantes.filter((e): e is typeof e & { sourceUid: string } => e.sourceUid !== null)
+        .map((e) => [e.sourceUid, e]),
+    );
+
+    const aCreer: Prisma.InterventionCreateManyInput[] = [];
+    for (const donnees of lot) {
+      const deja = donnees.sourceUid ? parUid.get(donnees.sourceUid) : undefined;
+      if (!deja) {
+        aCreer.push(donnees);
+        continue;
+      }
+      if (deja.contenu === donnees.contenu) {
+        // Le texte n'a pas bougé, mais ce qu'on en déduit a pu changer : un
+        // sénateur absent de l'annuaire lors de la première lecture — au
+        // renouvellement, typiquement — ou une règle de résolution corrigée.
+        // Sans cette passe, la prise restait sans auteur pour toujours. Les
+        // ancres `par_N` ne bougent pas : la journée n'a pas à être rattachée
+        // de nouveau aux scrutins.
+        const attribution = attributionDe(donnees);
+        if (attributionInchangee(deja, attribution)) {
+          inchangees++;
+        } else {
+          await prisma.intervention.update({ where: { id: deja.id }, data: attribution });
+          reattribuees++;
+        }
+        continue;
+      }
+      const { sourceUid: _uid, ...revisable } = donnees;
+      await prisma.intervention.update({ where: { id: deja.id }, data: revisable });
+      updated++;
+    }
+
+    if (aCreer.length > 0) {
+      const res = await prisma.intervention.createMany({ data: aCreer, skipDuplicates: true });
+      created += res.count;
+    }
+
+    // Ce que la version publiée ne contient plus : les prises retirées par la
+    // révision, et les lignes héritées d'avant l'identité stable, que le lot
+    // qu'on vient d'écrire remplace.
+    //
+    // Un compte rendu tronqué en cours de téléchargement ressemblerait à une
+    // journée vidée, alors on ne purge pas sur un parse manifestement trop
+    // court. La comparaison ne peut pas se faire sur le nombre de lignes en
+    // base : une journée héritée en porte jusqu'à trois fois trop, et s'en
+    // servir de référence bloquerait pour toujours l'assainissement des
+    // journées qui en ont justement besoin. On compare donc aux lignes déjà
+    // identifiées, ou, quand il n'y en a pas encore, au nombre de prises
+    // DISTINCTES qu'elles représentent.
+    const publiees = new Set(lot.map((d) => d.sourceUid));
+    const heritees = existantes.filter((e) => !e.sourceUid);
+    const identifiees = existantes.filter((e) => e.sourceUid);
+    const obsoletes = [
+      ...heritees,
+      ...identifiees.filter((e) => !publiees.has(e.sourceUid)),
+    ];
+    if (obsoletes.length > 0) {
+      const reference = identifiees.length > 0
+        ? identifiees.length
+        : new Set(heritees.map((e) => e.contenu.slice(0, 200))).size;
+      if (lot.length * 2 < reference) {
+        logger.warn(
+          { seanceId, parsees: lot.length, reference },
+          'Parse trop court pour une purge : lignes obsolètes conservées',
+        );
+      } else {
+        const res = await prisma.intervention.deleteMany({
+          where: { id: { in: obsoletes.map((e) => e.id) } },
+        });
+        supprimees += res.count;
+      }
+    }
+    return created + updated + supprimees > avant;
+  };
+
+  for await (const journee of senatInterClient.fluxParJournee({
+    maxSeances: options.maxSeances,
+    minYear: options.minYear,
+    journeesDejaLues: joursDejaLus,
+  })) {
+    const lot: Prisma.InterventionCreateManyInput[] = [];
+
+    for (const intervention of journee.interventions) {
+      lues++;
+      const orateurLower = (intervention.orateurNom || '').toLowerCase();
+
+      // Ignorer les interventions du président de séance. « présidente »
+      // commence par « président », un seul test couvre les deux.
+      if (orateurLower.includes('président')) {
         skippedPresident++;
         continue;
       }
 
-      // Chercher le parlementaire — matching sécurisé
-      let parlementaireId: string | null = null;
-
-      // 1. Par orateurRef (matricule sénateur)
-      if (intervention.orateurRef) {
-        parlementaireId = parlementaireByRef.get(intervention.orateurRef) || null;
-      }
-
-      // 2. Par nom complet (prénom + nom)
-      if (!parlementaireId && intervention.orateurPrenom && intervention.orateurNom) {
-        const fullName = normalize(`${intervention.orateurPrenom} ${intervention.orateurNom}`);
-        parlementaireId = parlementaireByFullName.get(fullName) || null;
-      }
-
-      // 3. Par nom seul — même garde-fou que pour l'AN : vérifier le prénom si disponible
-      if (!parlementaireId && intervention.orateurNom && !intervention.orateurQualite) {
-        const nomNorm = normalize(intervention.orateurNom);
-        const candidate = parlementaireByNom.get(nomNorm);
-        if (candidate) {
-          if (intervention.orateurPrenom) {
-            if (normalize(intervention.orateurPrenom) === normalize(candidate.prenom)) {
-              parlementaireId = candidate.id;
-            }
-          } else {
-            parlementaireId = candidate.id;
-          }
-        }
-      }
-
-      // Vérifier si l'intervention existe déjà (basé sur seanceId + contenu seul)
-      const contentHash = intervention.contenu.substring(0, 200);
-      const existing = await prisma.intervention.findFirst({
-        where: {
-          seanceId: intervention.seanceId,
-          contenu: { startsWith: contentHash },
-        },
+      lot.push({
+        sourceUid: uidInterventionSenat(intervention.seanceId, intervention.ordre),
+        parlementaireId: resoudreParlementaire(intervention),
+        orateurNom: intervention.orateurNom,
+        orateurPrenom: intervention.orateurPrenom || null,
+        orateurQualite: intervention.orateurQualite || null,
+        chambre,
+        seanceId: intervention.seanceId,
+        date: intervention.date,
+        ordre: intervention.ordre,
+        type: intervention.type,
+        contenu: intervention.contenu,
+        motsCles: extractKeywords(intervention.contenu),
+        sourceUrl: intervention.sourceUrl,
       });
-      if (existing) continue;
+    }
 
-      // Extraire les mots-clés
-      const motsCles = extractKeywords(intervention.contenu);
-
-      await prisma.intervention.create({
-        data: {
-          parlementaireId,
-          orateurNom: intervention.orateurNom,
-          orateurPrenom: intervention.orateurPrenom || null,
-          orateurQualite: intervention.orateurQualite || null,
-          chambre,
-          seanceId: intervention.seanceId,
-          date: intervention.date,
-          ordre: intervention.ordre,
-          type: intervention.type,
-          contenu: intervention.contenu,
-          motsCles,
-          sourceUrl: intervention.sourceUrl,
-        },
-      });
-
-      if (parlementaireId) {
-        created++;
-      } else {
-        createdNonParlementaire++;
+    try {
+      // La date est construite à minuit UTC : sa forme ISO est le jour même.
+      if (await ecrireLaJournee(journee.seanceId, lot)) {
+        journeesRevisees.add(journee.date.toISOString().slice(0, 10));
       }
-
     } catch (error) {
-      logger.warn({ seance: intervention.seanceId, error: errorMessage(error) }, 'Error syncing intervention Sénat');
+      // Une journée interrompue a pu être à moitié réécrite : on la rattache
+      // de nouveau par prudence, le remplacement des liens est idempotent.
+      journeesRevisees.add(journee.date.toISOString().slice(0, 10));
+      logger.warn(
+        { seance: journee.seanceId, error: errorMessage(error) },
+        'Error syncing interventions Sénat',
+      );
     }
   }
 
   logger.info({
     created,
-    createdNonParlementaire,
-    total: interventionsData.length,
+    updated,
+    inchangees,
+    reattribuees,
+    supprimees,
+    lues,
     skippedPresident,
-    matchRate: `${(((created + createdNonParlementaire) / (interventionsData.length || 1)) * 100).toFixed(1)}%`,
+    journeesRevisees: journeesRevisees.size,
   }, 'Interventions Sénat sync completed');
 
-  return { interventions: created + createdNonParlementaire };
+  return {
+    interventions: created + updated,
+    created,
+    updated,
+    supprimees,
+    journeesRevisees: [...journeesRevisees].sort(),
+  };
 }
 
 // =============================================================================
@@ -3301,6 +3535,10 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     }
   }
 
+  // Les journées du Sénat réécrites par l'étape des interventions, que le
+  // rattachement aux scrutins, joué en fin de batch, doit reprendre.
+  let journeesSenatRevisees: string[] = [];
+
   // Cache AMELI texte mapping across sync steps to avoid double download
   let cachedTexteMapping: Map<number, { num: string; session: string }> | undefined;
 
@@ -3478,7 +3716,9 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
               limit: options.scrutinsLimit,
               sinceMonths: SCRUTINS_DAILY_WINDOW_MONTHS,
             });
-            syncResult = { created: scrutinsResult.scrutins, updated: 0 };
+            // Créés et mis à jour comptés à part : les confondre faisait lire
+            // « 2 606 créés » chaque nuit au rapport, pour des scrutins connus.
+            syncResult = { created: scrutinsResult.created, updated: scrutinsResult.updated };
             break;
           }
 
@@ -3537,7 +3777,15 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
 
           case 'senat:interventions': {
             const senatInterventionsResult = await syncInterventionsSenat({ maxSeances: options.interventionsLimit });
-            syncResult = { created: senatInterventionsResult.interventions, updated: 0 };
+            journeesSenatRevisees = senatInterventionsResult.journeesRevisees;
+            // Le Sénat republie ses comptes rendus révisés : la relecture met à
+            // jour bien plus souvent qu'elle ne crée. Confondre les deux ferait
+            // lire au rapport nocturne des centaines de « créations » qui n'en
+            // sont pas.
+            syncResult = {
+              created: senatInterventionsResult.created,
+              updated: senatInterventionsResult.updated,
+            };
             break;
           }
 
@@ -3597,7 +3845,11 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
           }
 
           case 'senat:dossier_commissions': {
-            const dcResult = await syncSenatDossierCommissions();
+            // Seuls les dossiers en cours peuvent encore recevoir une saisine :
+            // relire chaque nuit les 4 700 caducs, promulgués ou retirés sans
+            // saisine coûtait 46 minutes, pour un seul lien trouvé en septembre
+            // 2026 — sur un dossier en cours.
+            const dcResult = await syncSenatDossierCommissions({ seulementEnCours: true });
             syncResult = { created: dcResult.linksCreated, updated: 0 };
             break;
           }
@@ -3761,11 +4013,14 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     // voix ni décompte des votants. On rapproche donc ce que le libellé du
     // scrutin dit trancher de ce que la section de discussion dit examiner, les
     // deux bornés au même texte. Incrémental lui aussi : il ne reprend que les
-    // scrutins qui n'ont pas encore leur débat.
+    // scrutins qui n'ont pas encore leur débat — et ceux des journées que le
+    // Sénat vient de réviser, dont les liens sont remplacés.
     try {
       logger.info('Rattachement des débats du Sénat aux scrutins...');
       const { linkDebatsScrutinsSenat } = await import('./link-debats-scrutins-senat.js');
-      const senatResult = await linkDebatsScrutinsSenat({});
+      const senatResult = await linkDebatsScrutinsSenat({
+        journeesARemplacer: new Set(journeesSenatRevisees),
+      });
       logger.info(senatResult, 'Rattachement des débats du Sénat terminé');
     } catch (error) {
       logger.error(
@@ -3845,12 +4100,13 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
   if (hasAmendementsChanged || hasScrutinsChanged) {
     logger.info('Enriching scrutins with amendements (HTML scraping for new scrutins only)...');
     try {
-      // Enrichissement AN: scrape les pages HTML pour les NOUVEAUX scrutins uniquement
+      // Enrichissement AN: scrape les pages HTML des scrutins RÉCENTS sans lien
       // Pas de reset - on enrichit seulement ceux sans lien (amendements: none)
       // Pour corriger des liens existants, utiliser CLI: sync --enrich-amendements-an --reset
       logger.info('Enriching AN scrutins with HTML scraping...');
       const enrichANResult = await enrichScrutinsANAmendements({
         concurrency: 5,
+        depuisJours: FENETRE_ENRICHISSEMENT_SCRUTINS_AN_JOURS,
       });
       logger.info({
         enriched: enrichANResult.enriched,
@@ -3959,6 +4215,14 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       }, 'Scrutins-amendements linking completed');
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'Scrutins-amendements linking failed (non-blocking)');
+    }
+
+    // Les passes suivantes ne comblent que les vides : on retire d'abord ce qui
+    // pointe vers une autre législature, pour qu'elles puissent le reposer juste.
+    try {
+      await effacerDossiersDAutreLegislature();
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Amendements inter-législatures : nettoyage échoué (non bloquant)');
     }
 
     // Propagate dossier_id from scrutins to amendements (only fills NULL, never resets)
@@ -4320,7 +4584,11 @@ export async function syncAmendements(
   logger.info({ legislature, limit: options.limit }, 'Starting amendements AN sync...');
 
   const amendementClient = new AssembleeNationaleClient(legislature);
-  const rawAmendements = await amendementClient.getAmendements(options.limit);
+  // Deux émissions d'un même amendement se disputeraient sa ligne chaque nuit
+  // (cf. uneEmissionParAmendement).
+  const rawAmendements = uneEmissionParAmendement(
+    await amendementClient.getAmendements(options.limit),
+  );
 
   let created = 0;
   let updated = 0;
@@ -4362,106 +4630,130 @@ export async function syncAmendements(
   }
 
   const chambre = 'assemblee';
-  const batchSize = 100;
-  const batches = Math.ceil(rawAmendements.length / batchSize);
 
-  for (let i = 0; i < batches; i++) {
-    const batch = rawAmendements.slice(i * batchSize, (i + 1) * batchSize);
+  // Ce qui est déjà en base, avec l'empreinte de sa dernière écriture. L'AN
+  // republie chaque nuit l'intégralité de la législature ; seules quelques
+  // centaines d'amendements ont réellement bougé. Réécrire les autres — une
+  // lecture, une écriture et le remplacement des cosignataires, pour 125 000
+  // lignes — prenait deux heures du batch de 5 h.
+  //
+  // La recherche se fait sur la clé canonique, et non sur l'uid brut : l'AN
+  // republie le même amendement sous un second uid quand le texte passe en
+  // commission (cf. uidCanoniqueAmendement). Chercher l'uid créait une
+  // deuxième ligne pour un amendement déjà en base.
+  const connus = new Map(
+    (await prisma.amendement.findMany({
+      where: { chambre },
+      select: { uidCanonique: true, sourceHash: true },
+    })).map((a) => [a.uidCanonique, a.sourceHash]),
+  );
 
-    for (const raw of batch) {
-      try {
-        const transformed = amendementClient.transformAmendement(raw);
+  let inchanges = 0;
 
-        // 1. `auteurRef` est l'identifiant d'acteur AN (PA…), renseigné sur ~99 %
-        //    des amendements. C'est la seule attribution sûre.
-        let parlementaireId: string | null = transformed.auteurRef
-          ? parlementaireByRef.get(transformed.auteurRef) ?? null
-          : null;
+  for (const raw of rawAmendements) {
+    try {
+      const transformed = amendementClient.transformAmendement(raw);
 
-        // 2. Repli sur le nom, en ÉGALITÉ STRICTE. L'ancienne version comparait
-        //    en sous-chaîne (`libelle.includes(name)`) et retenait le premier
-        //    hit de la map : le patronyme « O » matchait « Brulebois »,
-        //    « Falcon », « Rolland »… et a capté 30 221 amendements.
-        if (!parlementaireId && transformed.auteurLibelle
-            && !estAuteurNonParlementaire(transformed.auteurLibelle)) {
-          const libelleRaw = transformed.auteurLibelle
-            .replace(/^(M\.|Mme|Mme\.)\s*/i, '')
-            .split(',')[0];
-          const libelle = normalize(libelleRaw || '');
+      // 1. `auteurRef` est l'identifiant d'acteur AN (PA…), renseigné sur ~99 %
+      //    des amendements. C'est la seule attribution sûre.
+      let parlementaireId: string | null = transformed.auteurRef
+        ? parlementaireByRef.get(transformed.auteurRef) ?? null
+        : null;
 
-          if (libelle) {
-            const mots = libelle.split(/\s+/);
-            const dernier = mots[mots.length - 1];
-            parlementaireId = parlementaireNameMap.get(libelle)
-              ?? (dernier ? parlementaireNameMap.get(dernier) ?? null : null);
-          }
+      // 2. Repli sur le nom, en ÉGALITÉ STRICTE. L'ancienne version comparait
+      //    en sous-chaîne (`libelle.includes(name)`) et retenait le premier
+      //    hit de la map : le patronyme « O » matchait « Brulebois »,
+      //    « Falcon », « Rolland »… et a capté 30 221 amendements.
+      if (!parlementaireId && transformed.auteurLibelle
+          && !estAuteurNonParlementaire(transformed.auteurLibelle)) {
+        const libelleRaw = transformed.auteurLibelle
+          .replace(/^(M\.|Mme|Mme\.)\s*/i, '')
+          .split(',')[0];
+        const libelle = normalize(libelleRaw || '');
+
+        if (libelle) {
+          const mots = libelle.split(/\s+/);
+          const dernier = mots[mots.length - 1];
+          parlementaireId = parlementaireNameMap.get(libelle)
+            ?? (dernier ? parlementaireNameMap.get(dernier) ?? null : null);
         }
-
-        // Recherche sur la clé canonique, et non sur l'uid brut : l'AN republie
-        // le même amendement sous un second uid quand le texte passe en
-        // commission (cf. uidCanoniqueAmendement). Chercher l'uid créait une
-        // deuxième ligne pour un amendement déjà en base.
-        const uidCanonique = uidCanoniqueAmendement(transformed.uid);
-        const existing = await prisma.amendement.findUnique({
-          where: { uidCanonique },
-        });
-
-        const numeroOrdre = parseInt(transformed.numero.replace(/[^0-9]/g, ''), 10) || null;
-
-        const data = {
-          uid: transformed.uid,
-          uidCanonique,
-          numero: transformed.numero,
-          legislature: transformed.legislature,
-          chambre,
-          parlementaireId,
-          auteurRef: transformed.auteurRef,
-          groupeRef: transformed.groupeRef,
-          auteurLibelle: transformed.auteurLibelle,
-          texteRef: transformed.texteLegislatifRef,
-          articleVise: transformed.article,
-          dispositif: transformed.dispositif,
-          exposeSommaire: transformed.exposeSommaire,
-          sort: transformed.sort,
-          dateDepot: transformed.dateDepot,
-          dateSort: transformed.dateSort,
-          numeroOrdre,
-        };
-
-        if (existing) {
-          await prisma.amendement.update({
-            where: { uidCanonique },
-            data,
-          });
-          updated++;
-        } else {
-          await prisma.amendement.create({ data });
-          created++;
-        }
-
-        // Lier les cosignataires
-        if (transformed.cosignatairesRefs.length > 0) {
-          const cosignataireIds = transformed.cosignatairesRefs
-            .map(ref => parlementaireByRef.get(ref))
-            .filter((id): id is string => !!id);
-          if (cosignataireIds.length > 0) {
-            await prisma.amendement.update({
-              where: { uidCanonique },
-              data: { cosignataires: { set: cosignataireIds.map(id => ({ id })) } },
-            });
-          }
-        }
-
-        if (parlementaireId) linked++;
-      } catch (error) {
-        logger.warn({ uid: raw.uid, error: errorMessage(error) }, 'Error syncing amendement');
       }
-    }
 
-    logger.debug({ batch: i + 1, total: batches, created, updated, linked }, 'Batch processed');
+      const uidCanonique = uidCanoniqueAmendement(transformed.uid);
+      const numeroOrdre = parseInt(transformed.numero.replace(/[^0-9]/g, ''), 10) || null;
+
+      const data = {
+        uid: transformed.uid,
+        uidCanonique,
+        numero: transformed.numero,
+        legislature: transformed.legislature,
+        chambre,
+        parlementaireId,
+        auteurRef: transformed.auteurRef,
+        groupeRef: transformed.groupeRef,
+        auteurLibelle: transformed.auteurLibelle,
+        texteRef: transformed.texteLegislatifRef,
+        articleVise: transformed.article,
+        dispositif: transformed.dispositif,
+        exposeSommaire: transformed.exposeSommaire,
+        sort: transformed.sort,
+        dateDepot: transformed.dateDepot,
+        dateSort: transformed.dateSort,
+        numeroOrdre,
+      };
+      const cosignataireIds = transformed.cosignatairesRefs
+        .map(ref => parlementaireByRef.get(ref))
+        .filter((id): id is string => !!id);
+
+      // L'empreinte couvre ce qu'on ÉCRIT, et non la source brute : un député
+      // nouvellement connu change l'auteur résolu, une règle de résolution
+      // corrigée aussi, et la ligne doit alors être réécrite.
+      const sourceHash = empreinte({ data, cosignataireIds });
+      const dejaEnBase = connus.has(uidCanonique);
+      if (dejaEnBase && connus.get(uidCanonique) === sourceHash) {
+        inchanges++;
+        if (parlementaireId) linked++;
+        continue;
+      }
+
+      // Une seule écriture, cosignataires compris : Prisma la joue en
+      // transaction, si bien que l'empreinte n'est jamais posée sur une ligne
+      // dont les cosignataires n'auraient pas suivi. Une liste vide ne remplace
+      // rien — une résolution ratée ne doit pas effacer les cosignataires.
+      const cosignataires = cosignataireIds.length > 0
+        ? { cosignataires: { set: cosignataireIds.map(id => ({ id })) } }
+        : {};
+      if (dejaEnBase) {
+        await prisma.amendement.update({
+          where: { uidCanonique },
+          data: { ...data, sourceHash, ...cosignataires },
+        });
+        connus.set(uidCanonique, sourceHash);
+        updated++;
+      } else {
+        await prisma.amendement.create({
+          data: {
+            ...data,
+            sourceHash,
+            ...(cosignataireIds.length > 0
+              ? { cosignataires: { connect: cosignataireIds.map(id => ({ id })) } }
+              : {}),
+          },
+        });
+        connus.set(uidCanonique, sourceHash);
+        created++;
+      }
+
+      if (parlementaireId) linked++;
+    } catch (error) {
+      logger.warn({ uid: raw.uid, error: errorMessage(error) }, 'Error syncing amendement');
+    }
   }
 
-  logger.info({ created, updated, linked, total: rawAmendements.length }, 'Amendements AN sync completed');
+  logger.info(
+    { created, updated, inchanges, linked, total: rawAmendements.length },
+    'Amendements AN sync completed',
+  );
   return { created, updated, linked };
 }
 
@@ -5518,10 +5810,47 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
 // =============================================================================
 
 /**
+ * Un dossier de l'Assemblée porte sa législature dans son uid (`DLR5L17N…`), et
+ * un amendement de l'Assemblée la sienne dans sa colonne `legislature`. Les
+ * propagations ci-dessous n'ont le droit d'écrire que là où les deux concordent.
+ */
+const DOSSIER_DE_MEME_LEGISLATURE = Prisma.sql`
+  (d.uid NOT LIKE 'DLR5L%'
+   OR substring(d.uid from 'DLR5L([0-9]+)N')::int = a.legislature)
+`;
+
+/**
+ * Efface les rattachements d'amendements au dossier d'une autre législature.
+ *
+ * Les passes qui suivent ne comblent que les `dossier_id` vides : un lien faux
+ * n'était donc jamais revu. Avant le garde-fou de législature sur scrutin →
+ * dossier, le scrutin n° 4830 de la 17e avait hérité de « Bioéthique » (15e)
+ * par son seul numéro ; ce dossier est descendu sur ses amendements, puis sur
+ * tout leur texte par la propagation entre voisins. Le scrutin a été corrigé,
+ * les 518 amendements jamais. Effacer d'abord laisse les passes suivantes
+ * reposer le bon dossier quand il existe.
+ */
+export async function effacerDossiersDAutreLegislature(): Promise<{ effaces: number }> {
+  const effaces = await prisma.$executeRaw`
+    UPDATE amendements a
+    SET dossier_id = NULL
+    FROM dossiers_legislatifs d
+    WHERE d.id = a.dossier_id
+      AND a.chambre = 'assemblee'
+      AND NOT ${DOSSIER_DE_MEME_LEGISLATURE}
+  `;
+  if (effaces > 0) {
+    logger.warn({ effaces }, "Amendements rattachés au dossier d'une autre législature : liens effacés");
+  }
+  return { effaces };
+}
+
+/**
  * Propage dossier_id des scrutins vers les amendements.
  * Si un amendement est lié (M:N) à un scrutin qui a un dossier_id,
  * on set l'amendement.dossier_id à la même valeur.
- * Sûr seulement si le M:N amendement-scrutin est correct.
+ * Sûr seulement si le M:N amendement-scrutin est correct — et jamais vers un
+ * dossier d'une autre législature que l'amendement.
  */
 export async function linkAmendementsToDossiers(): Promise<{ linked: number }> {
   logger.info('Propagating dossier_id from scrutins to amendements...');
@@ -5531,9 +5860,10 @@ export async function linkAmendementsToDossiers(): Promise<{ linked: number }> {
     SET dossier_id = s.dossier_id
     FROM "_AmendementToScrutin" ats
     JOIN scrutins s ON ats."B" = s.id
+    JOIN dossiers_legislatifs d ON d.id = s.dossier_id
     WHERE ats."A" = a.id
       AND a.dossier_id IS NULL
-      AND s.dossier_id IS NOT NULL
+      AND ${DOSSIER_DE_MEME_LEGISLATURE}
   `;
 
   logger.info({ linked }, 'Amendements-dossiers linking completed');
@@ -5594,8 +5924,10 @@ export async function propagateDossierIdBySiblingTexteRef(): Promise<{ linked: n
       GROUP BY texte_ref
       HAVING COUNT(DISTINCT dossier_id) = 1
     ) sibling
+    JOIN dossiers_legislatifs d ON d.id = sibling.dossier_id
     WHERE a.texte_ref = sibling.texte_ref
       AND a.dossier_id IS NULL
+      AND ${DOSSIER_DE_MEME_LEGISLATURE}
   `;
 
   logger.info({ linked }, 'Sibling texte_ref dossier propagation completed (safe mode)');
@@ -6030,6 +6362,18 @@ export async function enrichScrutinsANAmendements(
      * site pour rien.
      */
     only?: string[];
+    /**
+     * Ne reprendre que les scrutins des N derniers jours.
+     *
+     * Le batch de 5 h le fixe : sans borne, il rescrapait chaque nuit les
+     * 6 734 scrutins sans lien — 0 enrichi les nuits du 22 et du 23/09/2026,
+     * 20 minutes et jusqu'à 2 486 réponses 503 d'un site qu'on martelait pour
+     * rien. Un scrutin est scrapé chaque nuit pendant la fenêtre, ce qui laisse
+     * à l'AN et à nos amendements le temps de se rejoindre. Sans cette option
+     * (commande `sync --enrich-amendements-an`), tout le stock est repris,
+     * pour un rattrapage.
+     */
+    depuisJours?: number;
   } = {}
 ): Promise<{ enriched: number; notFound: number; errors: number; resetCount?: number }> {
   const dryRun = options.dryRun ?? false;
@@ -6037,8 +6381,14 @@ export async function enrichScrutinsANAmendements(
   const limitCount = options.limit;
   const reset = options.reset ?? false;
   const only = options.only && options.only.length > 0 ? options.only : undefined;
+  const depuis = options.depuisJours !== undefined && !only
+    ? new Date(Date.now() - options.depuisJours * 24 * 60 * 60 * 1000)
+    : undefined;
 
-  logger.info({ dryRun, concurrency, limit: limitCount, reset, only: only?.length }, 'Starting AN scrutins enrichment (scraping HTML)...');
+  logger.info(
+    { dryRun, concurrency, limit: limitCount, reset, only: only?.length, depuis },
+    'Starting AN scrutins enrichment (scraping HTML)...',
+  );
 
   // Si reset demandé, réinitialiser les liens existants via la table de jonction.
   // Borné à `only` quand il est fourni : sans ça, `--reset --only <id>` effacerait
@@ -6084,6 +6434,7 @@ export async function enrichScrutinsANAmendements(
       chambre: 'assemblee',
       titre: { contains: 'amendement', mode: 'insensitive' },
       ...(only ? { id: { in: only } } : { amendements: { none: {} } }),
+      ...(depuis ? { date: { gte: depuis } } : {}),
     },
     select: {
       id: true,
