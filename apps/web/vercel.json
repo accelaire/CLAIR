@@ -4,6 +4,15 @@
   "regions": ["cdg1"],
   "headers": [
     {
+      "source": "/senatoriales-2026/apercu-resultats/:path*",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        }
+      ]
+    },
+    {
       "source": "/(.*)",
       "headers": [
         {
