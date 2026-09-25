@@ -1324,37 +1324,6 @@ model ActionDescription {
 }
 
 // =============================================================================
-// PROMESSES ET FACT-CHECKING
-// =============================================================================
-
-model Promesse {
-  id String @id @default(uuid())
-
-  parlementaireId String? @map("parlementaire_id")
-  partiId         String? @map("parti_id")
-
-  texte        String
-  sourceUrl    String?   @map("source_url")
-  datePromesse DateTime? @map("date_promesse")
-  categorie    String?
-
-  statut String @default("non_evaluee") // 'non_evaluee', 'tenue', 'partiellement_tenue', 'non_tenue', 'en_cours'
-
-  // Scrutins liés pour évaluation
-  scrutinsLies String[] @map("scrutins_lies")
-
-  evaluation     String?
-  evaluationDate DateTime? @map("evaluation_date")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@index([parlementaireId])
-  @@index([statut])
-  @@map("promesses")
-}
-
-// =============================================================================
 // SYNC ET LOGS
 // =============================================================================
 
