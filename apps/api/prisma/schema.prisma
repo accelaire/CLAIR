@@ -520,6 +520,8 @@ model Circonscription {
   parlementaires        Parlementaire[]
   mandatsParlementaires MandatParlementaire[]
   candidaturesListes    CandidatureListe[]
+  resultatsTours        ResultatTour[]
+  resultatsListes       ResultatListe[]
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -598,7 +600,7 @@ model Candidature {
   /// Rang sur la liste ; 1 pour le titulaire au majoritaire.
   ordre Int
   /// 'titulaire' | 'suppleant' — le suppléant n'existe qu'au majoritaire.
-  role String
+  role  String
 
   nom    String
   prenom String
@@ -629,9 +631,9 @@ model Candidature {
   /// sur les seuls noms.
   matchConfiance String? @map("match_confiance")
 
-  elu Boolean @default(false)
+  elu          Boolean @default(false)
   /// 1 ou 2 — le scrutin majoritaire a deux tours.
-  tourElection Int? @map("tour_election")
+  tourElection Int?    @map("tour_election")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -640,6 +642,84 @@ model Candidature {
   @@index([personneId])
   @@index([nom, prenom])
   @@map("candidatures")
+}
+
+/// Participation d'une circonscription à un tour, telle que la publie le site de
+/// résultats du ministère de l'Intérieur le soir du scrutin.
+///
+/// Une ligne par (scrutin, circonscription, tour) : le proportionnel n'a qu'un
+/// tour, le majoritaire en a un ou deux. L'absence de ligne signifie « pas encore
+/// publié », jamais « zéro ».
+model ResultatTour {
+  id      String @id @default(uuid())
+  scrutin String // 'senatoriales-2026'
+
+  circonscriptionId String          @map("circonscription_id")
+  circonscription   Circonscription @relation(fields: [circonscriptionId], references: [id])
+
+  tour Int
+
+  inscrits    Int
+  votants     Int
+  abstentions Int
+  blancs      Int
+  nuls        Int
+  exprimes    Int
+
+  /// Page lue, pour citer la source de chaque chiffre.
+  sourceUrl String   @map("source_url")
+  /// Première lecture où ce tour est apparu : l'heure « publié à » affichée.
+  publieA   DateTime @map("publie_a")
+  /// Dernière lecture, qu'elle ait changé quelque chose ou non.
+  verifieA  DateTime @map("verifie_a")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([scrutin, circonscriptionId, tour])
+  @@map("resultats_tours")
+}
+
+/// Voix d'une unité de vote (liste au proportionnel, candidat au majoritaire) à
+/// un tour.
+///
+/// Rattachée par `listeSourceUid` et NON par une clé étrangère vers
+/// `candidatures_listes` : l'ingestion des candidatures remplace le scrutin en
+/// entier à chaque passage et fait tourner les identifiants. Une clé étrangère
+/// ferait effacer les résultats par le batch de la nuit suivante ; l'identifiant
+/// source, lui, est stable d'une publication à l'autre.
+model ResultatListe {
+  id      String @id @default(uuid())
+  scrutin String
+
+  circonscriptionId String          @map("circonscription_id")
+  circonscription   Circonscription @relation(fields: [circonscriptionId], references: [id])
+
+  tour Int
+
+  /// `candidatures_listes.source_uid` de l'unité de vote.
+  listeSourceUid String @map("liste_source_uid")
+
+  voix        Int
+  pctInscrits Float? @map("pct_inscrits")
+  pctExprimes Float? @map("pct_exprimes")
+
+  /// Sièges obtenus, au proportionnel seulement.
+  sieges Int?
+  /// Élu à ce tour, au majoritaire seulement.
+  elu    Boolean?
+
+  /// Tels que la page les écrit : servent à recouper le rattachement, et à
+  /// afficher la ligne même si la liste manque de notre fichier de candidatures.
+  libelleSource String  @map("libelle_source")
+  nuanceSource  String? @map("nuance_source")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([scrutin, listeSourceUid, tour])
+  @@index([scrutin, circonscriptionId])
+  @@map("resultats_listes")
 }
 
 // =============================================================================
@@ -973,8 +1053,8 @@ model Intervention {
   // mesurer que l'hémicycle jusqu'à décision contraire.
 
   /// Réunion de commission d'où vient la prise de parole ; `null` en séance publique.
-  reunionId     String?  @map("reunion_id")
-  reunion       Reunion? @relation(fields: [reunionId], references: [id], onDelete: Cascade)
+  reunionId String?  @map("reunion_id")
+  reunion   Reunion? @relation(fields: [reunionId], references: [id], onDelete: Cascade)
 
   /// Le texte en discussion, résolu depuis `texteNumero`.
   ///
@@ -987,7 +1067,7 @@ model Intervention {
   dossier       DossierLegislatif? @relation(fields: [dossierId], references: [id], onDelete: SetNull)
   /// Sigle du groupe tel que le compte rendu de commission l'imprime (« (LFI-NFP) »).
   /// La séance publique ne le donne pas : là, c'est le mandat d'époque qui l'apporte.
-  orateurGroupe String?  @map("orateur_groupe")
+  orateurGroupe String?            @map("orateur_groupe")
 
   scrutinsLies InterventionScrutin[]
 
