@@ -1,0 +1,72 @@
+{
+  "description": "Sièges du Sénat classés par la famille de la nuance attribuée par le ministère de l'Intérieur à l'élection de leur titulaire. Généré par `generer-reference-hemicycle`, ne pas éditer à la main.",
+  "sources": {
+    "resultats2020": "https://static.data.gouv.fr/resources/senatoriales-2020-resultats/20200929-104851/2020-09-28-resultats-avec-elus.xlsx",
+    "resultats2023": "https://static.data.gouv.fr/resources/elections-senatoriales-2023-resultats/20230928-104908/senatoriales-2023-resultats-publication.xlsx"
+  },
+  "serie1": {
+    "election": 2023,
+    "sieges": 170,
+    "parFamille": {
+      "gauche": 64,
+      "droite": 63,
+      "centre": 39,
+      "extreme_droite": 3,
+      "regionaliste": 1
+    },
+    "parNuance": {
+      "SOC": 33,
+      "LR": 47,
+      "HOR": 7,
+      "REN": 4,
+      "VEC": 7,
+      "DVC": 12,
+      "DVD": 16,
+      "COM": 11,
+      "UDI": 13,
+      "DVG": 10,
+      "RDG": 3,
+      "RN": 3,
+      "MDM": 3,
+      "REG": 1
+    }
+  },
+  "serie2Avant": {
+    "election": 2020,
+    "sieges": 178,
+    "parFamille": {
+      "droite": 99,
+      "gauche": 46,
+      "divers": 1,
+      "extreme_droite": 1,
+      "centre": 24,
+      "regionaliste": 1,
+      "non_publiee": 6
+    },
+    "parNuance": {
+      "LDVD": 27,
+      "LDVG": 8,
+      "LUD": 20,
+      "LDIV": 1,
+      "LRN": 1,
+      "LUG": 15,
+      "LDVC": 9,
+      "LSOC": 6,
+      "LLR": 19,
+      "LUC": 4,
+      "LVEC": 1,
+      "LCOM": 1,
+      "LUDI": 1,
+      "DVD": 15,
+      "DVG": 4,
+      "LR": 18,
+      "SOC": 10,
+      "DVC": 7,
+      "UDI": 2,
+      "REG": 1,
+      "COM": 1,
+      "REM": 1
+    },
+    "note": "Les 6 sièges des Français établis hors de France ont été pourvus en 2021, sans nuance publiée par le ministère."
+  }
+}
