@@ -60,7 +60,7 @@ export function IndexCirconscriptions({
                 href={`/senatoriales-2026/${slugDepuisCode(circo.departement)}`}
                 className="flex items-baseline justify-between gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
               >
-                <span className="min-w-0 truncate">{nom}</span>
+                <span className="min-w-0 leading-snug">{nom}</span>
                 <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                   {typeof circo.nbCandidats === 'number' && <>{circo.nbCandidats} cand. · </>}
                   {circo.nbSieges} {circo.nbSieges > 1 ? 'sièges' : 'siège'}

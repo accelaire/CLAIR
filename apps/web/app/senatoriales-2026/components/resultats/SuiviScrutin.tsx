@@ -1,4 +1,5 @@
 import type { ResultatsNationaux, StatutCirconscription } from '@/lib/senatoriales/resultats';
+import { BarreEtats } from './BarreEtats';
 
 /**
  * Compteurs de la soirée et déroulé de la journée.
@@ -85,30 +86,14 @@ export function SuiviScrutin({ donnees }: { donnees: ResultatsNationaux }) {
         <p className="text-xs text-muted-foreground">Les pages sont mises à jour toutes les quelques minutes.</p>
       </div>
 
-      <div className="grid gap-6 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
         <div className="space-y-3">
           <Compteur valeur={c.pourvue} total={c.circonscriptions} libelle="circonscriptions pourvues" />
-          <div
-            className="flex h-2.5 w-full gap-px overflow-hidden rounded-full bg-muted"
-            role="img"
-            aria-label={presents.map((o) => `${o.libelle} : ${c[o.statut]}`).join(', ')}
-          >
-            {presents.map((o) => (
-              <span
-                key={o.statut}
-                className={`h-full ${o.classe}`}
-                style={{ width: `${(c[o.statut] / c.circonscriptions) * 100}%` }}
-              />
-            ))}
-          </div>
-          <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            {presents.map((o) => (
-              <li key={o.statut} className="inline-flex items-center gap-1.5">
-                <span className={`h-2.5 w-2.5 rounded-sm ${o.classe}`} aria-hidden />
-                {o.libelle} <span className="font-semibold text-foreground">{c[o.statut]}</span>
-              </li>
-            ))}
-          </ul>
+          <BarreEtats
+            etats={presents.map((o) => ({ ...o, nombre: c[o.statut] }))}
+            total={c.circonscriptions}
+            circonscriptions={donnees.circonscriptions.map(({ departement, nom, statut }) => ({ departement, nom, statut }))}
+          />
         </div>
 
         <div className="space-y-3">

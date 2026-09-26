@@ -4,15 +4,6 @@
   "regions": ["cdg1"],
   "headers": [
     {
-      "source": "/senatoriales-2026/apercu-resultats/:path*",
-      "headers": [
-        {
-          "key": "X-Robots-Tag",
-          "value": "noindex, nofollow"
-        }
-      ]
-    },
-    {
       "source": "/(.*)",
       "headers": [
         {
@@ -43,11 +34,24 @@
       ]
     },
     {
-      "source": "/:page(deputes|senateurs|scrutins|dossiers|lobbying|groupes|sujets|commissions|senatoriales-2026)",
+      "source": "/:page(deputes|senateurs|scrutins|dossiers|lobbying|groupes|sujets|commissions)",
       "headers": [
         {
           "key": "Vercel-CDN-Cache-Control",
           "value": "public, s-maxage=600, stale-while-revalidate=86400"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/senatoriales-2026",
+      "headers": [
+        {
+          "key": "Vercel-CDN-Cache-Control",
+          "value": "public, s-maxage=60, stale-while-revalidate=600"
         },
         {
           "key": "Cache-Control",

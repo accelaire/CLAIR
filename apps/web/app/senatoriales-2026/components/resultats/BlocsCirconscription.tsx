@@ -150,13 +150,29 @@ export function CarteElus({
         </h2>
         <p className="text-xs text-muted-foreground">Prise de fonction le 1er octobre</p>
       </div>
+      {/* Le nom est le lien, comme partout ailleurs sur la page. Les nouveaux
+          venus n'ont pas encore de fiche : elle naît avec leur mandat. */}
+      {elus.some((e) => !e.personne) && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Les noms en couleur renvoient vers le bilan parlementaire. Les nouveaux élus auront leur fiche CLAIR à
+          l&apos;ouverture de leur mandat, début octobre.
+        </p>
+      )}
       <ul className="mt-3 divide-y">
         {elus.map((e) => (
           <li key={`${e.nom}-${e.prenom}`} className="flex items-center gap-3 py-3">
             <Initiales prenom={e.prenom} nom={e.nom} />
             <div className="min-w-0 flex-1">
               <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold">
-                {e.prenom} {e.nom}
+                {e.personne ? (
+                  <Link href={lienPersonne(e.personne)} className="text-primary hover:underline">
+                    {e.prenom} {e.nom}
+                  </Link>
+                ) : (
+                  <span>
+                    {e.prenom} {e.nom}
+                  </span>
+                )}
                 <span
                   className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
                     e.parcours === 'nouveau' ? 'border text-muted-foreground' : 'bg-primary/10 text-primary'
@@ -165,7 +181,7 @@ export function CarteElus({
                   {libelleParcours(e)}
                 </span>
               </p>
-              <p className="truncate text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {[
                   e.liste,
                   e.nuanceLibelle ?? libelleFamille(e.famille),
@@ -175,15 +191,6 @@ export function CarteElus({
                   .join(' · ')}
               </p>
             </div>
-            {e.personne ? (
-              <Link href={lienPersonne(e.personne)} className="shrink-0 text-sm text-primary hover:underline">
-                Voir sa fiche →
-              </Link>
-            ) : (
-              <span className="hidden max-w-[10rem] shrink-0 text-right text-xs text-muted-foreground sm:block">
-                Fiche CLAIR à l&apos;ouverture de son mandat, début octobre
-              </span>
-            )}
           </li>
         ))}
         {resteAPourvoir > 0 && (
@@ -389,12 +396,12 @@ export function RepartitionSieges({
         )}
       </p>
       <div className="mt-4 overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[24rem] text-sm">
           <thead>
             <tr className="border-b text-left text-xs text-muted-foreground">
               <th scope="col" className="py-2 font-medium">Liste</th>
               {Array.from({ length: colonnes }).map((_, k) => (
-                <th key={k} scope="col" className="py-2 text-right font-medium">
+                <th key={k} scope="col" className="whitespace-nowrap py-2 pl-3 text-right font-medium">
                   ÷ {k + 1}
                 </th>
               ))}
@@ -406,7 +413,7 @@ export function RepartitionSieges({
                 <th scope="row" className="py-2 pr-3 text-left font-normal">
                   <span className="flex items-start gap-2">
                     <Pastille famille={l.famille} />
-                    <span className="line-clamp-2">{l.libelle}</span>
+                    <span>{l.libelle}</span>
                   </span>
                 </th>
                 {Array.from({ length: colonnes }).map((_, k) => {
@@ -414,10 +421,16 @@ export function RepartitionSieges({
                   const valeur = l.moyennes[k] ?? 0;
                   const candidateSuivante = l === premiereSansSiege && k === 0;
                   return (
-                    <td key={k} className="py-2 text-right tabular-nums">
+                    <td key={k} className="whitespace-nowrap py-2 pl-3 text-right tabular-nums">
                       {rang ? (
-                        <span className="inline-flex items-center gap-1 whitespace-nowrap rounded bg-foreground px-1.5 py-0.5 text-xs font-semibold text-background">
-                          {nombre(valeur)} <span className="font-normal">{rang}{rang === 1 ? 'er' : 'e'} siège</span>
+                        // La moyenne et le rang du siège l'une sous l'autre : côte à
+                        // côte, la pastille débordait sur la colonne suivante.
+                        <span className="inline-flex flex-col items-end rounded bg-foreground px-1.5 py-0.5 leading-tight text-background">
+                          <span className="text-xs font-semibold">{nombre(valeur)}</span>
+                          <span className="text-[10px]">
+                            {rang}
+                            {rang === 1 ? 'er' : 'e'} siège
+                          </span>
                         </span>
                       ) : candidateSuivante ? (
                         <span className="rounded border border-dashed border-foreground/60 px-1.5 py-0.5 text-xs">
@@ -447,7 +460,16 @@ export function RepartitionSieges({
 
 // --- Participation ------------------------------------------------------------
 
-export function BlocParticipation({ participation, titre }: { participation: Participation; titre: string }) {
+export function BlocParticipation({
+  participation,
+  titre,
+  large = false,
+}: {
+  participation: Participation;
+  titre: string;
+  /** Pleine largeur : les six chiffres sur une ligne, sans bloc à moitié vide. */
+  large?: boolean;
+}) {
   const p = participation;
   const taux = p.inscrits > 0 ? (p.votants / p.inscrits) * 100 : null;
   const cases: { valeur: string; libelle: string }[] = [
@@ -465,7 +487,7 @@ export function BlocParticipation({ participation, titre }: { participation: Par
         Le vote est obligatoire pour les grands électeurs : une abstention sans motif légitime est passible d&apos;une
         amende de 100 €. D&apos;où des taux proches de 100 %.
       </p>
-      <dl className="mt-4 grid grid-cols-3 gap-4">
+      <dl className={`mt-4 grid grid-cols-3 gap-4 ${large ? 'sm:grid-cols-6' : ''}`}>
         {cases.map((c) => (
           <div key={c.libelle}>
             <dt className="sr-only">{c.libelle}</dt>
@@ -531,7 +553,7 @@ export function ListesEtCandidats({ tour }: { tour: TourResultat }) {
           l&apos;ordre de la liste.
         </p>
       </div>
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {elues.map((l) => {
           const titulaires = l.candidats.filter((c) => c.role === 'titulaire');
           const n = l.sieges ?? 0;
@@ -647,7 +669,7 @@ export function AttenteResultats({
   })();
 
   return (
-    <div className="grid gap-4 lg:grid-cols-5">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
       <section className={`${CARTE} lg:col-span-3`}>
         <h2 className="text-lg font-semibold">{titre}</h2>
         <p className="mt-2 text-sm text-muted-foreground">

@@ -117,7 +117,7 @@ export function HemicycleAvantApres({
         </p>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <figure className="space-y-2">
           <figcaption className="text-sm font-medium">Avant le 27 septembre</figcaption>
           <Arc repartition={avant} etiquette="Hémicycle du Sénat avant le scrutin, par famille politique" />

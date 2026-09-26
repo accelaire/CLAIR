@@ -57,7 +57,7 @@ export function GrilleCirconscriptions({
     <section className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Les {circonscriptions.length} circonscriptions</h2>
+          <h2 className="text-lg font-semibold">Résultats par circonscription</h2>
           <p className="text-sm text-muted-foreground">
             Chaque point est un siège. Le détail des voix est sur la page de chaque circonscription.
           </p>
@@ -108,7 +108,7 @@ export function GrilleCirconscriptions({
         </li>
       </ul>
 
-      <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {visibles.map((c) => {
           const slug = slugDepuisCode(c.departement);
           const connue = c.statut === 'pourvue';
@@ -116,7 +116,7 @@ export function GrilleCirconscriptions({
           const contenu = (
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="truncate font-medium">{c.nom}</p>
+                <p className="font-medium leading-snug">{c.nom}</p>
                 <PastilleEtat
                   statut={c.statut}
                   secondTour={c.secondTour}

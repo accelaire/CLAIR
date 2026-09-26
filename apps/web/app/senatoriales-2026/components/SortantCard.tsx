@@ -89,20 +89,20 @@ export function SortantCard({
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <p className="truncate font-semibold group-hover:text-primary">
+          <p className="font-semibold leading-snug group-hover:text-primary">
             {sortant.personne.prenom} {sortant.personne.nom}
           </p>
-          <div className="mt-0.5 flex items-center gap-1.5">
+          <div className="mt-0.5 flex items-start gap-1.5">
             <span
-              className="h-2 w-2 shrink-0 rounded-full"
+              className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
               style={{ backgroundColor: sortant.groupe?.couleur || '#888' }}
             />
-            <span className="truncate text-sm text-muted-foreground">
+            <span className="text-sm leading-snug text-muted-foreground">
               {nomGroupe(sortant.groupe)}
             </span>
           </div>
           {sortant.circonscription && (
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {sortant.circonscription.nom}
             </p>
           )}
@@ -110,7 +110,7 @@ export function SortantCard({
       </div>
 
       {sortant.commissionPermanente && (
-        <p className="mt-2 truncate text-xs text-muted-foreground">
+        <p className="mt-2 text-xs text-muted-foreground">
           {sortant.commissionPermanente}
         </p>
       )}

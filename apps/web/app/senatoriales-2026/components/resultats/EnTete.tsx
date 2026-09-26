@@ -1,18 +1,6 @@
 import { CheckCircle2, CircleDashed, Clock, Contrast, Hourglass } from 'lucide-react';
 import type { ResultatsNationaux, StatutCirconscription } from '@/lib/senatoriales/resultats';
 
-/**
- * Bandeau des pages d'aperçu. Il disparaît le jour où ces pages deviennent
- * publiques : il suffit alors de ne plus le rendre.
- */
-export function BandeauApercu() {
-  return (
-    <div className="border-b border-amber-300/60 bg-amber-50 px-4 py-1.5 text-center text-xs font-medium text-amber-900 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-200">
-      Aperçu non public de la page de résultats : ni indexé, ni lié depuis le site
-    </div>
-  );
-}
-
 const BADGE = 'inline-flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1 font-medium text-foreground';
 
 /** État de la soirée à l'échelle nationale. */

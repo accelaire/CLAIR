@@ -6,11 +6,26 @@ const nextConfig = {
   async redirects() {
     // 301 sur les sujets renommés (slug technique → slug lisible). Traité à
     // l'edge, avant tout rendu : aucune requête API pour les anciennes URLs.
-    return SUJET_SLUG_REDIRECTS.map(({ from, to }) => ({
-      source: `/sujets/${from}`,
-      destination: `/sujets/${to}`,
-      permanent: true,
-    }));
+    return [
+      ...SUJET_SLUG_REDIRECTS.map(({ from, to }) => ({
+        source: `/sujets/${from}`,
+        destination: `/sujets/${to}`,
+        permanent: true,
+      })),
+      // Les aperçus des résultats des sénatoriales, relus la veille du scrutin
+      // puis fondus dans les pages publiques. Déclarés avant la route
+      // `[departement]`, qui sinon répondrait 404 à `apercu-resultats`.
+      {
+        source: '/senatoriales-2026/apercu-resultats',
+        destination: '/senatoriales-2026',
+        permanent: true,
+      },
+      {
+        source: '/senatoriales-2026/apercu-resultats/:departement',
+        destination: '/senatoriales-2026/:departement',
+        permanent: true,
+      },
+    ];
   },
   images: {
     unoptimized: true,
