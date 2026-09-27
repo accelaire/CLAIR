@@ -26,7 +26,7 @@ const JOUR = '2026-09-27';
 const CACHE_TTL = 60;
 
 export const URL_SOURCE_RESULTATS =
-  'https://www.resultats-elections.interieur.gouv.fr/senatoriales2026/';
+  'https://www.resultats-elections.interieur.gouv.fr/Senatoriales2026/';
 
 /**
  * Décalage UTC de l'heure légale le 27 septembre 2026. L'outre-mer ne change

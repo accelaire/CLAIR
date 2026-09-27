@@ -1693,7 +1693,7 @@ program
       '(à relancer toutes les 5 minutes le soir du scrutin)'
   )
   .option('--scrutin <slug>', 'Identifiant du scrutin', 'senatoriales-2026')
-  .option('--base-url <url>', 'Racine du site de résultats', 'https://www.resultats-elections.interieur.gouv.fr/senatoriales2026/')
+  .option('--base-url <url>', 'Racine du site de résultats', 'https://www.resultats-elections.interieur.gouv.fr/Senatoriales2026/')
   .option('--departement <codes...>', 'Restreindre à ces circonscriptions (codes : 01, 2A, 997…)')
   .option('--a-blanc', 'Lire et contrôler sans rien écrire')
   .option(
@@ -1767,7 +1767,9 @@ program
           console.log(`\n   ⚠️  ${rapport.anomalies.length} anomalie(s) — circonscriptions concernées NON écrites, sauf ligne non rattachée :`);
           for (const a of rapport.anomalies) console.log(`     ${a.code} : ${a.message}`);
         }
-        return rapport.anomalies.length === 0;
+        // Chaque circonscription a sa page depuis la publication des
+        // candidatures : un 404 veut dire une URL fausse, jamais « pas encore ».
+        return rapport.anomalies.length === 0 && rapport.inaccessibles.length === 0;
       };
 
       try {

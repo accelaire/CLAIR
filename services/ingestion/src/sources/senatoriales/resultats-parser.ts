@@ -3,7 +3,7 @@
 // =============================================================================
 //
 // Le soir du scrutin, la seule source des résultats est le site
-// `resultats-elections.interieur.gouv.fr/senatoriales2026/` : du HTML statique,
+// `resultats-elections.interieur.gouv.fr/Senatoriales2026/` : du HTML statique,
 // régénéré par le ministère au fil de la soirée, sans export CSV ni JSON. Le
 // fichier XLSX de data.gouv n'arrive que deux à quatre jours plus tard.
 //

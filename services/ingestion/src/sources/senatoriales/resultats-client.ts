@@ -33,7 +33,7 @@ import {
 import type { LigneResultat, PageCirconscription, TourPublie } from './resultats-parser';
 
 export const URL_RESULTATS_2026 =
-  'https://www.resultats-elections.interieur.gouv.fr/senatoriales2026/';
+  'https://www.resultats-elections.interieur.gouv.fr/Senatoriales2026/';
 
 const USER_AGENT = 'Mozilla/5.0 (compatible; CLAIR.vote/1.0; +https://clair.vote)';
 const DELAI_ENTRE_PAGES_MS = 250;

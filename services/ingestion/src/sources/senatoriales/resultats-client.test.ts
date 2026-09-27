@@ -113,7 +113,7 @@ describe('controlerCirconscription', () => {
 });
 
 describe('urlDeSecours', () => {
-  const base = 'https://www.resultats-elections.interieur.gouv.fr/senatoriales2026/';
+  const base = 'https://www.resultats-elections.interieur.gouv.fr/Senatoriales2026/';
   it('reconstruit le chemin région/département, l\'outre-mer et l\'étranger', () => {
     expect(urlDeSecours(base, '38')).toBe(`${base}ensemble_geographique/84/38/index.html`);
     expect(urlDeSecours(base, '973')).toBe(`${base}ensemble_geographique/03/973/index.html`);
