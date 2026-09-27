@@ -154,6 +154,36 @@ describe('analyserPageCirconscription — majoritaire, gabarit 2026 (Allier)', (
   });
 });
 
+// Page réelle du 27 septembre 2026, 19h15 : au proportionnel, les légendes
+// ne nomment pas le tour (« Résultats* », « Détail des résultats »).
+describe('analyserPageCirconscription — proportionnel, gabarit 2026 (Aisne)', () => {
+  const html = readFileSync(
+    path.join(__dirname, '__fixtures__', 'resultats-2026', 'aisne-proportionnel.html'),
+    'utf-8'
+  );
+  const page = analyserPageCirconscription(html);
+  const tour = page.tours[0]!;
+
+  it('lit le tour unique, sans tour dans les légendes', () => {
+    expect(page.tours.map((t) => t.tour)).toEqual([1]);
+    expect(tour.participation.inscrits).toBe(1746);
+    expect(tour.participation.votants).toBe(1733);
+  });
+
+  it('lit les listes, leurs voix, leurs sièges et leur numéro de dépôt', () => {
+    expect(tour.lignes).toHaveLength(6);
+    expect(tour.lignes[0]).toMatchObject({
+      libelle: "L'AISNE AU SÉNAT",
+      nuance: 'LDVD',
+      voix: 437,
+      sieges: 1,
+      numeroDepot: 4,
+    });
+    expect(tour.lignes.reduce((s, l) => s + l.voix, 0)).toBe(tour.participation.exprimes);
+    expect(tour.lignes.reduce((s, l) => s + (l.sieges ?? 0), 0)).toBe(3);
+  });
+});
+
 describe('analyserPageCirconscription — page sans résultats', () => {
   it('rend une liste de tours vide, sans lever', () => {
     const page = analyserPageCirconscription(

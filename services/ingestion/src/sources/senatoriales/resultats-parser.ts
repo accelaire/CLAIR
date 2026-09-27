@@ -241,10 +241,13 @@ export function analyserPageCirconscription(html: string): PageCirconscription {
 
   for (const table of $('table').toArray()) {
     const legende = texte($, $(table).find('caption').get(0) ?? table);
-    const tour = tourDeLegende(legende);
+    const normalisee = normaliserTexte(legende);
+    // Au proportionnel, tour unique, les légendes de 2026 ne nomment pas le
+    // tour : « Résultats* », « Détail des résultats ». C'est le 1er.
+    const tour =
+      tourDeLegende(legende) ?? (/^(resultats|detail des resultats)\b/.test(normalisee) ? 1 : null);
     if (tour === null) continue;
 
-    const normalisee = normaliserTexte(legende);
     // « Mentions » en 2023, « Détail des résultats » en 2026.
     if (normalisee.startsWith('mentions') || normalisee.startsWith('detail')) {
       mentions.set(tour, lireTableauMentions($, table));
