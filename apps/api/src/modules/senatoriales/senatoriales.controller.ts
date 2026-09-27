@@ -133,4 +133,35 @@ export const senatorialesRoutes: FastifyPluginAsync = async (fastify) => {
       return detail;
     },
   });
+
+  fastify.get('/2026/elus', {
+    schema: {
+      tags: ['Senatoriales'],
+      summary: 'Sénateurs élus le 27 septembre 2026 qui ont une fiche provisoire',
+      description: 'Slug, nom et circonscription de chaque élu sans fiche de sénateur, en attendant le 1er octobre.',
+    },
+    handler: async () => ({ data: await resultats.getElusProvisoires() }),
+  });
+
+  fastify.get('/2026/elus/:slug', {
+    schema: {
+      tags: ['Senatoriales'],
+      summary: "Fiche provisoire d'un sénateur élu le 27 septembre 2026",
+      description:
+        "Pour un élu qui n'a pas encore de fiche de sénateur (il entre dans l'annuaire du Sénat " +
+        "à sa prise de fonction, le 1er octobre) : son élection, sa nuance et ses mandats locaux " +
+        "du Répertoire national des élus. 404 pour un slug inconnu ou un élu qui a déjà une fiche.",
+      params: {
+        type: 'object',
+        properties: { slug: { type: 'string', pattern: '^[a-z0-9-]{3,120}$' } },
+        required: ['slug'],
+      },
+    },
+    handler: async (request, reply) => {
+      const { slug } = request.params as { slug: string };
+      const fiche = await resultats.getEluProvisoire(slug);
+      if (!fiche) return reply.status(404).send({ error: 'Élu inconnu' });
+      return fiche;
+    },
+  });
 };

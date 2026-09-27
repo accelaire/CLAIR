@@ -76,6 +76,62 @@ export interface Elu {
   famille: string | null;
   parcours: 'reelu' | 'parlementaire' | 'nouveau';
   personne: PersonneElu | null;
+  /**
+   * Adresse de la fiche provisoire (`/senateurs/<slug>`) d'un élu qui n'a pas
+   * encore de fiche : celle qu'il gardera à sa prise de fonction. `null` s'il a
+   * déjà une fiche.
+   */
+  slug: string | null;
+  /** Mandats locaux du Répertoire national des élus, `null` si aucun n'y est rattaché. */
+  mandatsLocaux: MandatsLocaux | null;
+}
+
+export interface MandatsLocaux {
+  /** Date de mise à jour du répertoire lu (AAAA-MM-JJ). */
+  source: string;
+  mandats: { type: string; libelle: string; depuis: string | null }[];
+}
+
+export interface FicheEluProvisoire {
+  maintenant: string;
+  source: string;
+  priseDeFonction: string;
+  elu: Elu;
+  circonscription: { departement: string; nom: string; nbSieges: number; modeScrutin: string };
+  election: {
+    tour: number;
+    publieA: string;
+    sourceUrl: string;
+    exprimes: number;
+    voix: number;
+    pctExprimes: number | null;
+    sieges: number | null;
+  } | null;
+  coElus: Pick<Elu, 'nom' | 'prenom' | 'sexe' | 'slug' | 'personne' | 'nuance'>[];
+}
+
+const PARTICULES_NOM = new Set(['de', 'du', 'des', 'di', 'da', 'van', 'von']);
+
+/**
+ * « Nicolas FRICOTEAUX » → « Nicolas Fricoteaux », « Pierre DE NICOLAY » →
+ * « Pierre de Nicolay ». Le fichier du ministère écrit les noms en capitales :
+ * c'est la bonne forme pour un tableau de résultats, pas pour le titre d'une
+ * fiche de personne.
+ */
+export function nomComplet(prenom: string, nom: string): string {
+  const casse = nom
+    .toLowerCase()
+    .replace(/(^|[\s'-])(\p{L})/gu, (_m, sep: string, lettre: string) => sep + lettre.toUpperCase())
+    .split(' ')
+    .map((mot) => (PARTICULES_NOM.has(mot.toLowerCase()) ? mot.toLowerCase() : mot.replace(/^D'(?=\p{L})/u, "d'")))
+    .join(' ');
+  return `${prenom} ${casse}`.trim();
+}
+
+/** Fiche d'un élu : la définitive s'il en a une, sinon la provisoire. */
+export function lienElu(e: Pick<Elu, 'personne' | 'slug'>): string | null {
+  if (e.personne) return `/${e.personne.chambre === 'senat' ? 'senateurs' : 'deputes'}/${e.personne.slug}`;
+  return e.slug ? `/senateurs/${e.slug}` : null;
 }
 
 export interface CandidatResultat {

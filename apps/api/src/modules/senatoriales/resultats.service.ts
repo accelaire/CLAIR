@@ -160,6 +160,59 @@ export interface Elu {
    */
   parcours: 'reelu' | 'parlementaire' | 'nouveau';
   personne: { slug: string; chambre: string; actif: boolean; photoUrl: string | null } | null;
+  /**
+   * Adresse de la fiche provisoire (`/senateurs/<slug>`) d'un élu qui n'a pas
+   * encore de fiche : celle que l'annuaire du Sénat lui donnera à sa prise de
+   * fonction. `null` quand l'élu a déjà une fiche (`personne`).
+   */
+  slug: string | null;
+  /** Mandats locaux du Répertoire national des élus, `null` si aucun n'y est rattaché. */
+  mandatsLocaux: MandatsLocaux | null;
+  /** Unité de vote qui l'a élu. */
+  listeSourceUid: string;
+}
+
+export interface MandatsLocaux {
+  /** Date de mise à jour du répertoire lu (AAAA-MM-JJ). */
+  source: string;
+  mandats: { type: string; libelle: string; depuis: string | null }[];
+}
+
+/** Fiche d'un sénateur élu le 27 septembre, en attendant sa fiche du 1er octobre. */
+export interface FicheEluProvisoire {
+  maintenant: string;
+  source: string;
+  priseDeFonction: string;
+  elu: Elu;
+  circonscription: { departement: string; nom: string; nbSieges: number; modeScrutin: string };
+  election: {
+    tour: number;
+    publieA: string;
+    sourceUrl: string;
+    exprimes: number;
+    voix: number;
+    pctExprimes: number | null;
+    sieges: number | null;
+  } | null;
+  /** Les autres élus de la circonscription. */
+  coElus: Pick<Elu, 'nom' | 'prenom' | 'sexe' | 'slug' | 'personne' | 'nuance'>[];
+}
+
+/**
+ * Le slug que l'annuaire du Sénat donne à un sénateur : prénom et nom, sans
+ * accents, en minuscules, séparés par des tirets. Copie exacte de `buildSlug`
+ * dans `services/ingestion/src/sources/senat/senateurs-client.ts` : c'est ce qui
+ * fait que la fiche provisoire vit déjà à l'adresse de la fiche définitive.
+ */
+export function slugSenateur(prenom: string, nom: string): string {
+  return [prenom, nom]
+    .filter(Boolean)
+    .join('-')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 export interface ResumeCirconscription {
@@ -267,6 +320,7 @@ interface ListeBrute {
     role: string;
     personneId: string | null;
     personne: { slug: string; chambre: string; actif: boolean; photoUrl: string | null } | null;
+    mandatsLocaux: MandatsLocaux | null;
   }[];
 }
 
@@ -295,7 +349,7 @@ export class ResultatsService {
   }
 
   private async lire() {
-    const [apercu, tours, lignes, listes] = await Promise.all([
+    const [apercu, tours, lignes, listes, mandatsLocaux] = await Promise.all([
       this.senatoriales.getApercu(),
       this.prisma.resultatTour.findMany({
         where: { scrutin: SCRUTIN },
@@ -328,13 +382,29 @@ export class ResultatsService {
               role: true,
               personneId: true,
               personne: { select: { slug: true, chambre: true, actif: true, photoUrl: true } },
+              dateNaissance: true,
             },
             orderBy: [{ ordre: 'asc' }, { role: 'desc' }],
           },
         },
       }),
+      this.prisma.candidatMandatsLocaux.findMany({
+        where: { scrutin: SCRUTIN },
+        select: { nom: true, prenom: true, dateNaissance: true, mandats: true, sourceDate: true },
+      }),
     ]);
     const sortants = await this.senatoriales.getSortants({ tri: 'nom' });
+
+    // La date de naissance ne sert qu'à la jointure : elle ne quitte pas cette
+    // fonction, ni vers le cache ni vers une réponse.
+    const clefIdentite = (nom: string, prenom: string, naissance: Date) =>
+      `${nom}|${prenom}|${naissance.toISOString().slice(0, 10)}`;
+    const mandatsParIdentite = new Map<string, MandatsLocaux>(
+      mandatsLocaux.map((m) => [
+        clefIdentite(m.nom, m.prenom, m.dateNaissance),
+        { source: m.sourceDate.toISOString().slice(0, 10), mandats: m.mandats as MandatsLocaux['mandats'] },
+      ]),
+    );
 
     return {
       apercu,
@@ -372,7 +442,12 @@ export class ResultatsService {
           nuanceLibelle: l.nuanceLibelle,
           famille: l.famille,
           departement: l.circonscription.departement,
-          candidatures: l.candidatures,
+          candidatures: l.candidatures.map(({ dateNaissance, ...c }) => ({
+            ...c,
+            mandatsLocaux: dateNaissance
+              ? mandatsParIdentite.get(clefIdentite(c.nom, c.prenom, dateNaissance)) ?? null
+              : null,
+          })),
         }),
       ),
       idsSortants: sortants.data.map((s) => s.personne.id),
@@ -414,6 +489,9 @@ export class ResultatsService {
                 ? 'parlementaire'
                 : 'nouveau',
           personne: c.personne,
+          slug: c.personne ? null : slugSenateur(c.prenom, c.nom),
+          mandatsLocaux: c.mandatsLocaux,
+          listeSourceUid: ligne.sourceUid,
         });
       }
       // Ligne non rattachée à nos candidatures : on connaît le siège, pas les
@@ -433,6 +511,9 @@ export class ResultatsService {
             famille: null,
             parcours: 'nouveau',
             personne: null,
+            slug: null,
+            mandatsLocaux: null,
+            listeSourceUid: ligne.sourceUid,
           });
         }
       }
@@ -650,6 +731,74 @@ export class ResultatsService {
       repartition,
       sortants,
     };
+  }
+
+  /** Élus qui ont une fiche provisoire, pour le sitemap. */
+  async getElusProvisoires(): Promise<{ slug: string; prenom: string; nom: string; departement: string }[]> {
+    const donnees = await this.charger();
+    return donnees.apercu.circonscriptions.flatMap((circo) =>
+      this.elus(circo.departement, donnees)
+        .filter((e): e is Elu & { slug: string } => e.slug !== null)
+        .map((e) => ({ slug: e.slug, prenom: e.prenom, nom: e.nom, departement: circo.departement })),
+    );
+  }
+
+  /**
+   * Fiche provisoire d'un élu sans fiche, par le slug qu'il aura à sa prise de
+   * fonction. `null` si aucun élu ne porte ce slug : un élu qui a déjà une
+   * fiche n'en a pas de provisoire.
+   */
+  async getEluProvisoire(slug: string): Promise<FicheEluProvisoire | null> {
+    const donnees = await this.charger();
+    for (const circo of donnees.apercu.circonscriptions) {
+      const elus = this.elus(circo.departement, donnees);
+      const elu = elus.find((e) => e.slug === slug);
+      if (!elu) continue;
+
+      const ligne = donnees.lignes.find(
+        (l) => l.departement === circo.departement && l.tour === elu.tour && l.sourceUid === elu.listeSourceUid,
+      );
+      const tour = donnees.tours.find((t) => t.departement === circo.departement && t.tour === elu.tour);
+      const modeScrutin =
+        donnees.listes.find((l) => l.departement === circo.departement)?.modeScrutin ??
+        (circo.nbSieges >= 3 ? 'proportionnel' : 'majoritaire');
+
+      return {
+        maintenant: horloge().toISOString(),
+        source: URL_SOURCE_RESULTATS,
+        priseDeFonction: '2026-10-01',
+        elu,
+        circonscription: {
+          departement: circo.departement,
+          nom: circo.nom.replace(/\s*\(Série \d+\)\s*$/, '').trim(),
+          nbSieges: circo.nbSieges,
+          modeScrutin,
+        },
+        election:
+          ligne && tour
+            ? {
+                tour: tour.tour,
+                publieA: tour.publieA,
+                sourceUrl: tour.sourceUrl,
+                exprimes: tour.exprimes,
+                voix: ligne.voix,
+                pctExprimes: ligne.pctExprimes,
+                sieges: ligne.sieges,
+              }
+            : null,
+        coElus: elus
+          .filter((e) => e !== elu)
+          .map(({ nom, prenom, sexe, slug: slugCoElu, personne, nuance }) => ({
+            nom,
+            prenom,
+            sexe,
+            slug: slugCoElu,
+            personne,
+            nuance,
+          })),
+      };
+    }
+    return null;
   }
 }
 

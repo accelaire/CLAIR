@@ -1684,6 +1684,46 @@ program
   });
 
 // =============================================================================
+// COMMANDE: sync-mandats-locaux
+// =============================================================================
+program
+  .command('sync-mandats-locaux')
+  .description(
+    'Mandats locaux des candidats titulaires, depuis le Répertoire national des élus (data.gouv). ' +
+      'À relancer à chaque publication trimestrielle du répertoire.'
+  )
+  .option('--scrutin <slug>', 'Identifiant du scrutin', 'senatoriales-2026')
+  .option('--simulation', 'Rapprocher et rapporter sans rien écrire en base')
+  .option('--dossier-local <dossier>', 'Lire les fichiers <mai|cm|epci|cd|cr|ma|rpe|afe|consfde>.csv de ce dossier')
+  .action(async (options: { scrutin: string; simulation?: boolean; dossierLocal?: string }) => {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+    try {
+      const { synchroniserMandatsLocaux } = await import('./sources/senatoriales/mandats-locaux-client.js');
+      const rapport = await synchroniserMandatsLocaux(prisma, {
+        scrutin: options.scrutin,
+        simulation: options.simulation ?? false,
+        dossierLocal: options.dossierLocal,
+      });
+      console.log(
+        `\n🏛️  Mandats locaux — ${rapport.scrutin}${rapport.simulation ? ' (SIMULATION, rien écrit)' : ''}`
+      );
+      console.log(`   Répertoire du              : ${rapport.sourceDate}`);
+      console.log(`   Candidats titulaires       : ${rapport.titulaires}`);
+      console.log(`   Avec mandats, niveau A     : ${rapport.niveauA}`);
+      console.log(`   Avec mandats, niveau B     : ${rapport.niveauB}  (prénom divergent, à relire)`);
+      console.log(`   Sans mandat local connu    : ${rapport.sansMandat}`);
+      console.log(`   Lignes retenues par fichier: ${JSON.stringify(rapport.lignesLues)}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-mandats-locaux failed');
+      process.exit(1);
+    } finally {
+      await prisma.$disconnect();
+    }
+  });
+
+// =============================================================================
 // COMMANDE: sync-resultats-senatoriales
 // =============================================================================
 program

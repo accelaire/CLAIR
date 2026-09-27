@@ -4,6 +4,7 @@ import {
   accorder,
   heureDeParis,
   libelleParcours,
+  lienElu,
   nombre,
   pluriel,
   pourcentage,
@@ -150,22 +151,26 @@ export function CarteElus({
         </h2>
         <p className="text-xs text-muted-foreground">Prise de fonction le 1er octobre</p>
       </div>
-      {/* Le nom est le lien, comme partout ailleurs sur la page. Les nouveaux
-          venus n'ont pas encore de fiche : elle naît avec leur mandat. */}
-      {elus.some((e) => !e.personne) && (
+      {/* Le nom est le lien, comme partout ailleurs sur la page : vers le bilan
+          parlementaire, ou vers la fiche provisoire d'un nouveau venu, à
+          l'adresse que sa fiche gardera le 1er octobre. */}
+      {elus.some((e) => !e.personne && e.slug) && (
         <p className="mt-1 text-xs text-muted-foreground">
-          Les noms en couleur renvoient vers le bilan parlementaire. Les nouveaux élus auront leur fiche CLAIR à
-          l&apos;ouverture de leur mandat, début octobre.
+          Chaque nom mène à sa fiche : le bilan parlementaire des sortants et des anciens parlementaires, les mandats
+          locaux des nouveaux élus.
         </p>
       )}
       <ul className="mt-3 divide-y">
-        {elus.map((e) => (
+        {elus.map((e) => {
+          const lien = lienElu(e);
+          const mandatPrincipal = !e.personne ? e.mandatsLocaux?.mandats[0]?.libelle : undefined;
+          return (
           <li key={`${e.nom}-${e.prenom}`} className="flex items-center gap-3 py-3">
             <Initiales prenom={e.prenom} nom={e.nom} />
             <div className="min-w-0 flex-1">
               <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold">
-                {e.personne ? (
-                  <Link href={lienPersonne(e.personne)} className="text-primary hover:underline">
+                {lien ? (
+                  <Link href={lien} className="text-primary hover:underline">
                     {e.prenom} {e.nom}
                   </Link>
                 ) : (
@@ -190,9 +195,11 @@ export function CarteElus({
                   .filter(Boolean)
                   .join(' · ')}
               </p>
+              {mandatPrincipal && <p className="text-xs text-muted-foreground">{mandatPrincipal}</p>}
             </div>
           </li>
-        ))}
+          );
+        })}
         {resteAPourvoir > 0 && (
           <li className="py-3 text-sm text-muted-foreground">
             {resteAPourvoir} {pluriel(resteAPourvoir, 'siège reste', 'sièges restent')} à pourvoir au 2nd

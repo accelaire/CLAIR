@@ -181,6 +181,27 @@ async function fetchGroupes(): Promise<GroupeItem[]> {
 }
 
 /**
+ * Sénateurs élus le 27 septembre qui ont une fiche provisoire. Comme les
+ * groupes, un échec ne fait qu'omettre ces pages : la fiche définitive entrera
+ * dans le sitemap avec l'annuaire du Sénat.
+ */
+async function fetchElusProvisoires(): Promise<string[]> {
+  const url = `${API_URL}/api/v1/senatoriales/2026/elus`;
+  try {
+    const response = await fetch(url, { headers: SITEMAP_HEADERS });
+    if (!response.ok) {
+      console.error(`[sitemap] ${response.status} ${response.statusText} — ${url}`);
+      return [];
+    }
+    const body = (await response.json()) as { data?: { slug: string }[] };
+    return Array.isArray(body.data) ? body.data.map((e) => e.slug) : [];
+  } catch (error) {
+    console.error(`[sitemap] fetch failed — ${url}`, error);
+    return [];
+  }
+}
+
+/**
  * Date de la dernière ingestion, déduite des données du sitemap.
  *
  * Sert de `lastModified` aux pages de liste, dont le contenu ne bouge qu'au
@@ -217,8 +238,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Les données sont chargées avant les pages statiques : c'est d'elles qu'on
   // déduit la date de la dernière ingestion, qui date les pages de liste.
-  const [data, groupes] = await Promise.all([fetchSitemapData(), fetchGroupes()]);
+  const [data, groupes, elusProvisoires] = await Promise.all([
+    fetchSitemapData(),
+    fetchGroupes(),
+    fetchElusProvisoires(),
+  ]);
   const { deputes, senateurs, scrutins, lobbyistes, dossiers, sujets } = data;
+  // Une fiche provisoire s'efface devant la définitive : jamais deux entrées
+  // pour la même adresse.
+  const slugsSenateurs = new Set(senateurs.map((s) => s.slug));
 
   const ingestion = derniereIngestion(data, now);
 
@@ -321,6 +349,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'daily' as const,
       priority: 0.7,
     })),
+    // Fiches provisoires des nouveaux sénateurs, à l'adresse de leur future
+    // fiche : d'ici le 1er octobre, c'est ce que cherchent ceux qui tapent leur nom.
+    ...elusProvisoires
+      .filter((slug) => !slugsSenateurs.has(slug))
+      .map((slug) => ({
+        url: `${BASE_URL}/senateurs/${slug}`,
+        lastModified: ingestion,
+        changeFrequency: 'daily' as const,
+        priority: 0.8,
+      })),
     {
       url: `${BASE_URL}/classements`,
       lastModified: ingestion,

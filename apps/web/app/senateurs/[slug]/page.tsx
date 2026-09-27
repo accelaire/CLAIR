@@ -6,6 +6,8 @@ import { PersonJsonLd, BreadcrumbJsonLd } from '@/components/seo/JsonLd';
 import { descriptionParlementaire, fonctionParlementaire } from '@/lib/meta-parlementaire';
 import PageClient from './PageClient';
 import type { SenateurDetail, PageVotes } from './PageClient';
+import { FicheEluProvisoire, titreElu } from './FicheEluProvisoire';
+import { nomComplet, type FicheEluProvisoire as FicheProvisoire } from '@/lib/senatoriales/resultats';
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
 
@@ -24,6 +26,35 @@ async function getSenateur(slug: string) {
     `/senateurs/${slug}?include=stats`,
   );
   return res?.data ?? null;
+}
+
+/**
+ * Sénateur élu le 27 septembre qui n'a pas encore de fiche : il n'entre dans
+ * l'annuaire du Sénat qu'à sa prise de fonction. D'ici là, son adresse sert une
+ * fiche provisoire ; ensuite, la vraie fiche la remplace à la même adresse.
+ */
+async function getEluProvisoire(slug: string) {
+  return fetchRessource<FicheProvisoire>(`/senatoriales/2026/elus/${slug}`, 60);
+}
+
+function metadataProvisoire(fiche: FicheProvisoire): Metadata {
+  const nom = nomComplet(fiche.elu.prenom, fiche.elu.nom);
+  const title = `${nom}, ${titreElu(fiche)}`;
+  const mandat = fiche.elu.mandatsLocaux?.mandats[0]?.libelle;
+  const description =
+    `${nom} a été ${titreElu(fiche)} le 27 septembre 2026` +
+    (fiche.elu.nuanceLibelle ? ` (${fiche.elu.nuanceLibelle})` : '') +
+    '. ' +
+    (mandat ? `${mandat}. ` : '') +
+    'Son élection, ses mandats locaux et son profil, en attendant sa prise de fonction le 1er octobre.';
+  const url = `${BASE_URL}/senateurs/${fiche.elu.slug}`;
+  return {
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: { title, description, url, type: 'profile' },
+    twitter: { card: 'summary_large_image', title, description },
+  };
 }
 
 /**
@@ -46,7 +77,10 @@ export async function generateMetadata({
   params: { slug: string };
 }): Promise<Metadata> {
   const data = await getSenateur(params.slug);
-  if (!data) return {};
+  if (!data) {
+    const provisoire = await getEluProvisoire(params.slug);
+    return provisoire ? metadataProvisoire(provisoire) : {};
+  }
 
   const fullName = `${data.prenom} ${data.nom}`;
   const fonction = fonctionParlementaire({
@@ -98,7 +132,31 @@ export default async function SenateurDetailPage({
   // Sans ça, un slug inconnu rendait la coquille du client en HTTP 200 : un
   // soft 404 que Google indexe puis garde. `fetchRessource` ne renvoie `null`
   // que sur un vrai 404 de l'API, jamais sur une panne.
-  if (!data) notFound();
+  if (!data) {
+    const provisoire = await getEluProvisoire(params.slug);
+    if (!provisoire) notFound();
+    const nom = nomComplet(provisoire.elu.prenom, provisoire.elu.nom);
+    const url = `${BASE_URL}/senateurs/${provisoire.elu.slug}`;
+    return (
+      <>
+        <PersonJsonLd
+          name={nom}
+          givenName={provisoire.elu.prenom}
+          familyName={nomComplet('', provisoire.elu.nom)}
+          url={url}
+          description={`${titreElu(provisoire).charAt(0).toUpperCase()}${titreElu(provisoire).slice(1)} le 27 septembre 2026`}
+        />
+        <BreadcrumbJsonLd
+          items={[
+            { name: 'Accueil', url: BASE_URL },
+            { name: 'Sénatoriales 2026', url: `${BASE_URL}/senatoriales-2026` },
+            { name: nom, url },
+          ]}
+        />
+        <FicheEluProvisoire fiche={provisoire} />
+      </>
+    );
+  }
 
   // Pour un ancien parlementaire, pas de `jobTitle` ni de `worksFor` : dans
   // schema.org ils décrivent l'emploi actuel, et le groupe d'un mandat terminé

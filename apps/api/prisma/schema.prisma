@@ -644,6 +644,34 @@ model Candidature {
   @@map("candidatures")
 }
 
+/// Mandats locaux d'un candidat, lus dans le Répertoire national des élus.
+///
+/// Hors de `candidatures`, que l'ingestion nocturne efface et réécrit : la clef
+/// est l'identité du candidat telle que l'écrit le fichier du ministère (nom,
+/// prénom, date de naissance), qui survit à ce remplacement.
+model CandidatMandatsLocaux {
+  id      String @id @default(uuid())
+  scrutin String // 'senatoriales-2026'
+
+  nom    String
+  prenom String
+  /// Clef de jointure avec `candidatures`, comme là-bas jamais exposée.
+  dateNaissance DateTime @map("date_naissance") @db.Date
+
+  /// [{ type, libelle, depuis }], dans l'ordre d'affichage.
+  mandats Json
+  /// 'A' (nom + prénom + date) ou 'B' (nom + date, prénom d'usage divergent).
+  confiance String
+  /// Date de mise à jour du répertoire lu, citée avec les mandats.
+  sourceDate DateTime @map("source_date") @db.Date
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([scrutin, nom, prenom, dateNaissance])
+  @@map("candidats_mandats_locaux")
+}
+
 /// Participation d'une circonscription à un tour, telle que la publie le site de
 /// résultats du ministère de l'Intérieur le soir du scrutin.
 ///
