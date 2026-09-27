@@ -225,10 +225,13 @@ export function controlerTour(
     }
   } else {
     // Scrutin plurinominal : un bulletin porte jusqu'à autant de noms que de
-    // sièges. La somme des voix peut donc dépasser les exprimés, jamais leur
-    // multiple par le nombre de sièges.
-    if (sommeVoix > p.exprimes * siegesAPourvoir) {
-      anomalies.push(`somme des voix ${sommeVoix} > exprimés × sièges (${p.exprimes * siegesAPourvoir})`);
+    // sièges. La somme des voix peut donc dépasser les votants, jamais leur
+    // multiple par le nombre de sièges. La borne est prise sur les votants et
+    // non sur les exprimés : le ministère range parmi les blancs des bulletins
+    // qui portent des noms (Aube 2026, 1er tour : 259 blancs sur 1 007 votants,
+    // 733 exprimés, 1 738 voix pour 2 sièges).
+    if (sommeVoix > p.votants * siegesAPourvoir) {
+      anomalies.push(`somme des voix ${sommeVoix} > votants × sièges (${p.votants * siegesAPourvoir})`);
     }
     if (tour.lignes.some((l) => l.elu === null)) {
       anomalies.push(`tour ${tour.tour} : colonne « élu » absente`);

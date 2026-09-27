@@ -105,6 +105,24 @@ describe('controlerCirconscription', () => {
     expect(controlerCirconscription(page, 'majoritaire', 2).join(' ')).toMatch(/votants/);
   });
 
+  it('accepte plus de voix que d\'exprimés × sièges quand les blancs portent des noms (Aube 2026)', () => {
+    // Page réelle du 27 septembre 2026 : 259 blancs sur 1 007 votants, 733
+    // exprimés, 1 738 voix pour 2 sièges. Le ministère range parmi les blancs
+    // des bulletins qui portent des noms ; ses résultats font foi.
+    const html = readFileSync(
+      path.join(__dirname, '__fixtures__', 'resultats-2026', 'aube-majoritaire.html'),
+      'utf-8'
+    );
+    expect(controlerCirconscription(analyserPageCirconscription(html), 'majoritaire', 2)).toEqual([]);
+  });
+
+  it('refuse plus de voix que de votants × sièges au majoritaire', () => {
+    const page = analyserPageCirconscription(lire('orne-majoritaire.html'));
+    const premier = page.tours[0]!;
+    premier.lignes[0]!.voix += premier.participation.votants * 2;
+    expect(controlerCirconscription(page, 'majoritaire', 2).join(' ')).toMatch(/votants × sièges/);
+  });
+
   it('refuse un 2nd tour qui ne pourvoit pas tous les sièges', () => {
     const page = analyserPageCirconscription(lire('orne-majoritaire.html'));
     page.tours[1]!.lignes.forEach((l) => (l.elu = false));
