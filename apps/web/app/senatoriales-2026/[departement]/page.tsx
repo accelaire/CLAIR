@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, Info } from 'lucide-react';
 import { fetchFromApi } from '@/lib/api-server';
 import { BreadcrumbJsonLd, ElectionJsonLd, JsonLd } from '@/components/seo/JsonLd';
-import { SENATORIALES_2026 } from '@/lib/senatoriales';
+import { SENATORIALES_2026, resultatsEnDirect } from '@/lib/senatoriales';
 import { SoutenirCallout } from '@/components/donations/SoutenirCallout';
 import {
   SLUGS_DEPARTEMENTS,
@@ -23,6 +23,7 @@ import type { ApercuSenatoriales, ListeCandidature, Sortant } from '../PageClien
 import { SortantCard } from '../components/SortantCard';
 import { ListeCandidatureCard } from '../components/ListeCandidatureCard';
 import { BadgeCirconscription } from '../components/resultats/EnTete';
+import { EnDirect } from '../components/resultats/EnDirect';
 import {
   AttenteResultats,
   BlocParticipation,
@@ -196,6 +197,13 @@ export default async function CirconscriptionPage({
   // Le jour même, ou dès l'ouverture des bureaux : à Wallis-et-Futuna, le vote
   // commence le samedi à 22h30, heure de Paris.
   const jourJ = maintenant >= JOUR_DU_SCRUTIN || (circoResultats !== null && circoResultats.statut !== 'pas_ouvert');
+  // En direct tant que les bureaux sont ouverts ou que des sièges restent à
+  // attribuer ; plus rien à attendre une fois la circonscription pourvue.
+  const direct =
+    circoResultats !== null &&
+    circoResultats.statut !== 'pas_ouvert' &&
+    circoResultats.statut !== 'pourvue' &&
+    resultatsEnDirect(maintenant);
   const sortantsCandidats = liste.filter((s) => s.candidature).length;
   // Le sort de chaque sortant (réélu, battu…) vient des résultats ; la liste
   // affichée reste celle de l'API des sortants, qui porte aussi le JSON-LD.
@@ -271,6 +279,7 @@ export default async function CirconscriptionPage({
           <p className="text-muted-foreground">{chapeau}</p>
           {circoResultats && (jourJ || publie) && (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-1 text-sm text-muted-foreground">
+              {direct && <EnDirect />}
               <BadgeCirconscription statut={circoResultats.statut} />
               {dernierTour ? (
                 <span>

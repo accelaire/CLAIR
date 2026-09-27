@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Search, ArrowRight, Calendar, ChevronLeft, ChevronRight, Landmark, Building2, Users, Lightbulb, Vote } from 'lucide-react';
-import { SENATORIALES_2026, renouvellementAVenir } from '@/lib/senatoriales';
+import { SENATORIALES_2026, renouvellementAVenir, resultatsEnDirect } from '@/lib/senatoriales';
 import { api } from '@/lib/api';
 import { useCountUp } from '@/hooks/useCountUp';
 import { useLiveNow } from '@/hooks/useLiveNow';
@@ -305,21 +305,48 @@ function DayCard({ isoDate, label, events, evenements }: {
  * Plus visible que la puce d'échéance qui la suit, sans la remplacer : la puce
  * mène à l'agenda, celle-ci mène directement à la page du scrutin. Le bloc
  * disparaît de lui-même à la prise de fonction des élus.
+ *
+ * Après le scrutin, elle annonce les résultats, avec la pastille « En direct »
+ * tant qu'ils arrivent. La pastille n'apparaît qu'une fois dans le navigateur :
+ * l'accueil est prérendu au déploiement, son HTML ignore l'heure de la visite.
+ * Le jour du scrutin, pris en UTC comme `renouvellementAVenir`, ne change plus
+ * d'ici là : serveur et navigateur tombent d'accord sur le texte.
  */
 function SenatorialesCallout() {
+  const [direct, setDirect] = useState(false);
+  useEffect(() => setDirect(resultatsEnDirect()), []);
+
   if (!renouvellementAVenir()) return null;
+  const scrutinPasse = new Date().toISOString().slice(0, 10) >= SENATORIALES_2026.scrutin;
 
   return (
     <Link
-      href={SENATORIALES_2026.href}
+      href={scrutinPasse ? `${SENATORIALES_2026.href}#resultats` : SENATORIALES_2026.href}
       className="mb-8 flex items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 p-4 text-rose-700 transition-colors hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300 dark:hover:bg-rose-950/50"
     >
       <Vote className="h-5 w-5 shrink-0" aria-hidden />
-      <span className="min-w-0 flex-1 text-sm">
-        <strong className="font-semibold">Sénatoriales du 27 septembre 2026.</strong>{' '}
-        178 des 348 sièges sont renouvelés. Les candidats et le bilan de mandature
-        des sortants, circonscription par circonscription.
-      </span>
+      {scrutinPasse ? (
+        <span className="min-w-0 flex-1 text-sm">
+          {direct && (
+            <span className="mr-2 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-red-600 dark:text-red-400">
+              <span className="relative flex h-2 w-2 shrink-0" aria-hidden>
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+              </span>
+              En direct
+            </span>
+          )}
+          <strong className="font-semibold">Sénatoriales du 27 septembre 2026 : les résultats.</strong>{' '}
+          Les élus de chaque circonscription, le nouvel hémicycle et le bilan des
+          sortants.
+        </span>
+      ) : (
+        <span className="min-w-0 flex-1 text-sm">
+          <strong className="font-semibold">Sénatoriales du 27 septembre 2026.</strong>{' '}
+          178 des 348 sièges sont renouvelés. Les candidats et le bilan de mandature
+          des sortants, circonscription par circonscription.
+        </span>
+      )}
       <span className="hidden shrink-0 items-center gap-1 text-sm font-medium sm:inline-flex">
         Consulter
         <ArrowRight className="h-4 w-4" aria-hidden />

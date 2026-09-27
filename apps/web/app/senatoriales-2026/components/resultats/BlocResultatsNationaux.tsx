@@ -4,6 +4,8 @@ import { SuiviScrutin } from './SuiviScrutin';
 import { HemicycleAvantApres } from './HemicycleAvantApres';
 import { GrilleCirconscriptions } from './GrilleCirconscriptions';
 import { BadgeEtat } from './EnTete';
+import { EnDirect } from './EnDirect';
+import { resultatsEnDirect } from '@/lib/senatoriales';
 
 /**
  * Le scrutin a-t-il commencé quelque part ?
@@ -49,12 +51,16 @@ function chapeau(d: ResultatsNationaux): string {
  */
 export function BlocResultatsNationaux({ donnees }: { donnees: ResultatsNationaux }) {
   const complet = donnees.compteurs.pourvue === donnees.compteurs.circonscriptions;
+  // Une circonscription restée en suspens (recours, page jamais publiée) ne
+  // doit pas faire rafraîchir la page indéfiniment : le direct a une fin.
+  const direct = !complet && resultatsEnDirect(new Date(donnees.maintenant));
 
   return (
     <div id="resultats" className="scroll-mt-24 space-y-8">
       <div className="space-y-3">
         <p className="text-muted-foreground">{chapeau(donnees)}</p>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+          {direct && <EnDirect />}
           <BadgeEtat compteurs={donnees.compteurs} maintenant={donnees.maintenant} />
           <span>
             Mis à jour à{' '}

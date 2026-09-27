@@ -3,6 +3,8 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
 import { Header } from '@/components/layout/header';
+import { BandeauDirect } from '@/components/layout/BandeauDirect';
+import { resultatsEnDirect } from '@/lib/senatoriales';
 import { Footer } from '@/components/layout/footer';
 import { PlausibleAnalytics } from '@/components/analytics/PlausibleAnalytics';
 import { FeedbackWidget } from '@/components/feedback/FeedbackWidget';
@@ -57,6 +59,7 @@ export default function RootLayout({
         <PlausibleAnalytics />
         <Providers>
           <div className="relative flex min-h-screen flex-col">
+            <BandeauDirect actifAuRendu={resultatsEnDirect()} />
             <Header />
             <main className="flex-1">{children}</main>
             <Footer />
