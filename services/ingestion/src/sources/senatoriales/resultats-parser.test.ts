@@ -100,6 +100,16 @@ describe('analyserPageCirconscription — majoritaire à deux tours (Orne 2023)'
     const partielle = analyserPageCirconscription(sansSecond);
     expect(partielle.tours.map((t) => t.tour)).toEqual([1]);
   });
+
+  it('lit le 2nd tour abrégé « 2d », comme le ministère l\'écrit en 2026', () => {
+    const html = lire('orne-majoritaire.html')
+      .replace(/2<sup>nd<\/sup>/g, '2<sup>d</sup>')
+      .replace(/2nd tour/g, '2d tour');
+    expect(html).not.toMatch(/2<sup>nd<\/sup>|2nd tour/);
+    const page2026 = analyserPageCirconscription(html);
+    expect(page2026.tours.map((t) => t.tour)).toEqual([1, 2]);
+    expect(page2026.tours[1]!.participation.votants).toBe(1034);
+  });
 });
 
 // Page réelle du 27 septembre 2026, 12h29 (script Cloudflare retiré). Le gabarit

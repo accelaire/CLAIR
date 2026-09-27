@@ -110,11 +110,14 @@ export function lireDecimal(valeur: string): number | null {
   return Number(propre);
 }
 
-/** Tour désigné par une légende : « au 1er tour », « 2nd tour ». `null` si aucun. */
+/**
+ * Tour désigné par une légende : « au 1er tour », « 2nd tour » en 2023,
+ * « au 2d tour » en 2026. `null` si aucun.
+ */
 function tourDeLegende(legende: string): 1 | 2 | null {
   const normalisee = normaliserTexte(legende);
   if (/\b1\s*(er)?\s*tour\b/.test(normalisee)) return 1;
-  if (/\b2\s*(nd|e|eme)?\s*tour\b/.test(normalisee)) return 2;
+  if (/\b2\s*(nd|d|e|eme)?\s*tour\b/.test(normalisee)) return 2;
   return null;
 }
 
