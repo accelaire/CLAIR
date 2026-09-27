@@ -151,7 +151,9 @@ function lireTableauResultats(
     .find('tbody tr')
     .toArray()
     .map((tr) => {
-      const cellules = $(tr).find('td').toArray();
+      // En 2026, le libellé est un `<th scope="row">` : les cellules se lisent
+      // dans l'ordre des en-têtes, `th` compris, sinon tout glisse d'un cran.
+      const cellules = $(tr).children('th, td').toArray();
       const valeur = (colonne: Colonne): string => {
         const index = entetes.indexOf(colonne);
         return index >= 0 && cellules[index] ? texte($, cellules[index]) : '';
@@ -240,7 +242,8 @@ export function analyserPageCirconscription(html: string): PageCirconscription {
     if (tour === null) continue;
 
     const normalisee = normaliserTexte(legende);
-    if (normalisee.startsWith('mentions')) {
+    // « Mentions » en 2023, « Détail des résultats » en 2026.
+    if (normalisee.startsWith('mentions') || normalisee.startsWith('detail')) {
       mentions.set(tour, lireTableauMentions($, table));
     } else if (normalisee.includes('resultats')) {
       resultats.set(tour, lireTableauResultats($, table));
