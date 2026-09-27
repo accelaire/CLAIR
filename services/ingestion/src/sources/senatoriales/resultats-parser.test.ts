@@ -102,6 +102,48 @@ describe('analyserPageCirconscription — majoritaire à deux tours (Orne 2023)'
   });
 });
 
+// Page réelle du 27 septembre 2026, 12h29 (script Cloudflare retiré). Le gabarit
+// a changé depuis 2023 : libellé en `<th scope="row">`, participation sous la
+// légende « Détail des résultats au 1er tour ». Les pages de 2023 ne l'auraient
+// pas vu : les deux ont bloqué l'ingestion le jour du scrutin.
+describe('analyserPageCirconscription — majoritaire, gabarit 2026 (Allier)', () => {
+  const html = readFileSync(
+    path.join(__dirname, '__fixtures__', 'resultats-2026', 'allier-majoritaire.html'),
+    'utf-8'
+  );
+  const page = analyserPageCirconscription(html);
+  const premier = page.tours[0]!;
+
+  it('lit le 1er tour et sa participation', () => {
+    expect(page.tours.map((t) => t.tour)).toEqual([1]);
+    expect(premier.participation).toEqual({
+      inscrits: 970,
+      abstentions: 7,
+      votants: 963,
+      blancs: 7,
+      nuls: 6,
+      exprimes: 950,
+    });
+  });
+
+  it('lit chaque colonne à sa place malgré le libellé en <th>', () => {
+    expect(premier.lignes).toHaveLength(7);
+    expect(premier.lignes[0]).toMatchObject({
+      civilite: 'M.',
+      libelle: 'Bruno ROJOUAN',
+      nuance: 'DVD',
+      voix: 643,
+      pctInscrits: 66.29,
+      pctExprimes: 67.68,
+      elu: true,
+    });
+    expect(premier.lignes.filter((l) => l.elu).map((l) => l.libelle)).toEqual([
+      'Bruno ROJOUAN',
+      'Claude MALHURET',
+    ]);
+  });
+});
+
 describe('analyserPageCirconscription — page sans résultats', () => {
   it('rend une liste de tours vide, sans lever', () => {
     const page = analyserPageCirconscription(
