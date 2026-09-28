@@ -349,6 +349,13 @@ export function deriveMandatContextSenatOdsen(
     }
   }
 
+  // Une fin encore à venir n'est pas une fin. À l'approche du renouvellement,
+  // ELUSEN publie par avance la fin des mandats de la série sortante (constaté le
+  // 28/09/2026 pour la série 2) : lus comme clos, ils quittaient le sync courant.
+  if (dateFin !== null && dateFin.getTime() > at.getTime()) {
+    dateFin = null;
+  }
+
   return {
     legislature: null,
     mandature,
@@ -541,6 +548,18 @@ async function upsertMandatSenatClos(
     });
     return { created: false };
   }
+
+  // La même période encore ouverte en base appartient au sync courant, qui la
+  // clôt lui-même (sortant absent du roster, renouvellement). ODSEN peut annoncer
+  // la fin avant que le roster ne bouge : créer ici une ligne close doublerait la
+  // période. Le 28/09/2026, 161 sortants de la série 2 ont ainsi reçu un second
+  // mandat, et les sièges à pourvoir ont été comptés deux fois. Une fois la ligne
+  // close par le sync, le run suivant la retrouve par sa date de début.
+  const ouverte = await prisma.mandatParlementaire.findFirst({
+    where: { personneId, chambre: 'senat', dateDebut: ctx.dateDebut, dateFin: null },
+    select: { id: true },
+  });
+  if (ouverte) return { created: false };
 
   await prisma.mandatParlementaire.create({
     data: mandatCreateData(input, ctx.dateDebut),

@@ -40,13 +40,14 @@ export function renouvellementAVenir(aujourdhui: Date = new Date()): boolean {
 
 /**
  * Fenêtre du direct des résultats : des premiers résultats du dimanche, vers
- * 11h30 heure de Paris, au lundi midi, quand le 2nd tour de la Polynésie
- * française est connu. Sert au bandeau du site et à l'accroche de l'accueil ;
- * la page du scrutin, elle, se fie aux compteurs de l'API.
+ * 11h30 heure de Paris, au lundi matin. Le dernier siège (2nd tour de la
+ * Polynésie française) a été publié à 1h20 : le direct s'arrête à 7h. Sert au
+ * bandeau du site et à l'accroche de l'accueil ; la page du scrutin, elle, se
+ * fie aux compteurs de l'API.
  */
 export const DIRECT_RESULTATS = {
   debut: '2026-09-27T09:30:00Z',
-  fin: '2026-09-28T10:00:00Z',
+  fin: '2026-09-28T05:00:00Z',
 } as const;
 
 export function resultatsEnDirect(maintenant: Date = new Date()): boolean {

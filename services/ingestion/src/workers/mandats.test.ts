@@ -324,6 +324,21 @@ describe('deriveMandatContextSenatOdsen (dates réelles ODSEN + correction fraî
     expect(ctx.dateFin).toBeNull();
   });
 
+  it('traite comme courant un mandat dont la fin publiée est encore à venir', () => {
+    // ELUSEN au 28/09/2026 : les mandats de la série 2 finissent « le 1er octobre ».
+    const avant = deriveMandatContextSenatOdsen(
+      { dateDebut: new Date('2020-10-01T00:00:00Z'), dateFin: new Date('2026-10-01T00:00:00Z'), serie: '2' },
+      new Date('2026-09-28T03:00:00Z'),
+    );
+    expect(avant.dateFin).toBeNull();
+
+    const apres = deriveMandatContextSenatOdsen(
+      { dateDebut: new Date('2020-10-01T00:00:00Z'), dateFin: new Date('2026-10-01T00:00:00Z'), serie: '2' },
+      new Date('2026-10-02T03:00:00Z'),
+    );
+    expect(apres.dateFin?.toISOString()).toBe('2026-09-30T00:00:00.000Z');
+  });
+
   it('série inconnue : mandature stable via le renouvellement série-indépendant (pas l’année brute)', () => {
     // Remplacement au 1er oct. 2021 (hors année de renouvellement) → cohorte 2020, PAS 2021.
     const ctx = deriveMandatContextSenatOdsen(
@@ -555,7 +570,7 @@ describe('upsertMandatParlementaire — Sénat chemin SYNC (mandat courant, date
 });
 
 describe('upsertMandatParlementaire — Sénat chemin ODSEN (mandat clos, dateFin non null)', () => {
-  it('ne matche JAMAIS une ligne ouverte : crée une nouvelle ligne close', async () => {
+  it('laisse au sync la même période encore ouverte : ni doublon, ni clôture (28/09/2026)', async () => {
     const { prisma, rows } = makeMockPrisma([
       { id: 'ouvert', mandature: 2020, dateDebut: new Date('2020-10-01T00:00:00Z'), dateFin: null },
     ]);
@@ -563,9 +578,22 @@ describe('upsertMandatParlementaire — Sénat chemin ODSEN (mandat clos, dateFi
       prisma,
       senatInput(ctxSenatClos(2020, '2020-10-01T00:00:00Z', '2026-09-30T00:00:00Z')),
     );
+    expect(created).toBe(false);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.dateFin).toBeNull(); // ligne ouverte intacte
+  });
+
+  it('crée la période close d’un retour de ministre, distincte de sa période ouverte', async () => {
+    const { prisma, rows } = makeMockPrisma([
+      { id: 'ouvert', mandature: 2020, dateDebut: new Date('2022-08-05T00:00:00Z'), dateFin: null },
+    ]);
+    const { created } = await upsertMandatParlementaire(
+      prisma,
+      senatInput(ctxSenatClos(2020, '2020-10-01T00:00:00Z', '2022-07-04T00:00:00Z')),
+    );
     expect(created).toBe(true);
     expect(rows).toHaveLength(2);
-    expect(rows.find((r) => r.id === 'ouvert')!.dateFin).toBeNull(); // ligne ouverte intacte
+    expect(rows.find((r) => r.id === 'ouvert')!.dateFin).toBeNull();
   });
 
   it('matche une ligne close par sa date de début et met à jour son contexte', async () => {
