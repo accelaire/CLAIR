@@ -4,6 +4,8 @@ import { ScrollText } from 'lucide-react';
 import { legislatureLabel, mandatureLabel, sessionForDate } from '@/lib/periodes';
 
 export interface MandatParlementaireItem {
+  /** Chambre du MANDAT, qui peut différer de celle de la fiche (député élu sénateur). */
+  chambre?: string;
   legislature: number | null;
   mandature: number | null;
   dateDebut: string;
@@ -12,7 +14,19 @@ export interface MandatParlementaireItem {
   circonscription: { nom: string; departement: string; numero: number } | null;
 }
 
-function periodeLabel(m: MandatParlementaireItem, chambre: 'assemblee' | 'senat'): string {
+type Chambre = 'assemblee' | 'senat';
+
+function chambreDuMandat(m: MandatParlementaireItem, chambreFiche: Chambre): Chambre {
+  return m.chambre === 'assemblee' || m.chambre === 'senat' ? m.chambre : chambreFiche;
+}
+
+function fonction(chambre: Chambre, sexe: string | null | undefined): string {
+  const f = sexe === 'F';
+  if (chambre === 'assemblee') return f ? 'Députée' : 'Député';
+  return f ? 'Sénatrice' : 'Sénateur';
+}
+
+function periodeLabel(m: MandatParlementaireItem, chambre: Chambre): string {
   if (chambre === 'assemblee' && m.legislature != null) {
     return legislatureLabel(m.legislature);
   }
@@ -36,15 +50,25 @@ function moisAnnee(date: string): string {
  * que l'historique n'est pas ingéré), on rend les fonctions telles quelles.
  */
 export function MandatsBlock({
-  mandats,
+  mandats: mandatsRecus,
   chambre,
+  sexe,
   fonctionsCourantes,
 }: {
   mandats: MandatParlementaireItem[];
-  chambre: 'assemblee' | 'senat';
+  /** Chambre de la fiche : celle des mandats qui ne disent pas la leur. */
+  chambre: Chambre;
+  sexe?: string | null;
   fonctionsCourantes?: ReactNode;
 }) {
-  const groupeBase = chambre === 'senat' ? '/groupes/senat' : '/groupes/assemblee';
+  // Du plus récent au plus ancien. L'API trie par législature puis par
+  // mandature : dans une frise qui mêle les deux chambres, cet ordre les
+  // regrouperait au lieu de suivre le temps.
+  const mandats = [...mandatsRecus].sort((a, b) => b.dateDebut.localeCompare(a.dateDebut));
+  // Une frise des deux chambres nomme la fonction de chaque période : sans
+  // cela, « XVe législature » et « Mandature 2020 » se suivent sans dire que
+  // l'une est un mandat de député et l'autre de sénateur.
+  const deuxChambres = new Set(mandats.map((m) => chambreDuMandat(m, chambre))).size > 1;
 
   const entete = (
     <div className="flex items-center gap-2 mb-4">
@@ -71,6 +95,8 @@ export function MandatsBlock({
         {mandats.map((m, i) => {
           const couleur = m.groupe?.couleur || '#888';
           const enCours = !m.dateFin;
+          const chambreMandat = chambreDuMandat(m, chambre);
+          const groupeBase = chambreMandat === 'senat' ? '/groupes/senat' : '/groupes/assemblee';
           // Le lien groupe porte la période de CE mandat, pour atterrir sur la
           // composition d'époque et non sur celle d'aujourd'hui.
           //  - AN : la législature du mandat (la cohorte EST la période).
@@ -78,7 +104,7 @@ export function MandatsBlock({
           //    du mandat (le groupe tel qu'à l'entrée). Le mandat en cours reste sans
           //    paramètre = page live (session courante).
           const groupeHref = m.groupe
-            ? chambre === 'assemblee'
+            ? chambreMandat === 'assemblee'
               ? `${groupeBase}/${m.groupe.slug}${m.legislature != null ? `?legislature=${m.legislature}` : ''}`
               : `${groupeBase}/${m.groupe.slug}${enCours ? '' : `?session=${sessionForDate(new Date(m.dateDebut))}`}`
             : null;
@@ -94,7 +120,10 @@ export function MandatsBlock({
 
               <div className={enCours ? '' : 'opacity-75'}>
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                  <span className="font-medium">{periodeLabel(m, chambre)}</span>
+                  <span className="font-medium">
+                    {deuxChambres && `${fonction(chambreMandat, sexe)} · `}
+                    {periodeLabel(m, chambreMandat)}
+                  </span>
                   <span className="text-xs text-muted-foreground">
                     {moisAnnee(m.dateDebut)} → {enCours ? 'en cours' : moisAnnee(m.dateFin!)}
                   </span>

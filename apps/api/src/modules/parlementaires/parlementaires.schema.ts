@@ -94,6 +94,7 @@ export const parlementaireVotesQuerySchema = z.object({
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
   dissidentOnly: z.coerce.boolean().default(false).describe('Afficher uniquement les votes dissidents (différents du groupe)'),
+  chambre: chambreEnum.optional().describe('Chambre des scrutins, pour un parlementaire passé par les deux'),
 });
 
 // =============================================================================

@@ -7,6 +7,12 @@ import Link from 'next/link';
 import { Vote, Calendar, Loader2, ChevronDown, ArrowRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
+import {
+  FiltreChambre,
+  paramChambre,
+  type ChambreFiltre,
+  type ParcoursFiche,
+} from '@/components/parlementaire/filtre-chambre';
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { ExpandableText } from '@/components/ui/expandable-text';
 import { scrutinHref } from '@/lib/scrutin-url';
@@ -91,9 +97,11 @@ function InterventionTypeBadge({ type }: { type: string }) {
 export function InterventionsList({
   slug,
   chambre,
+  parcours,
 }: {
   slug: string;
   chambre: 'assemblee' | 'senat';
+  parcours?: ParcoursFiche;
 }) {
   const apiPrefix = chambre === 'senat' ? 'senateurs' : 'deputes';
   const [dateRange, setDateRange] = useUrlDateRange();
@@ -102,6 +110,7 @@ export function InterventionsList({
   // `interruption` est proposé à part : ces lignes n'entrent dans aucun
   // compteur et ne s'affichent que si on les demande.
   const [typeFiltre, setTypeFiltre] = useState<string>('');
+  const [chambreFiltre, setChambreFiltre] = useState<ChambreFiltre>('');
 
   const {
     data,
@@ -111,7 +120,7 @@ export function InterventionsList({
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['parlementaire-interventions', slug, chambre, dateParams, typeFiltre],
+    queryKey: ['parlementaire-interventions', slug, chambre, dateParams, typeFiltre, chambreFiltre],
     queryFn: ({ pageParam = 1 }) =>
       api.get(`/${apiPrefix}/${slug}/interventions`, {
         params: {
@@ -119,6 +128,7 @@ export function InterventionsList({
           limit: 10,
           ...(typeFiltre && { type: typeFiltre }),
           ...dateParams,
+          ...paramChambre(chambreFiltre),
         },
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
@@ -152,7 +162,13 @@ export function InterventionsList({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Filtrer par période" />
+        <DateRangePicker
+          value={dateRange}
+          onChange={setDateRange}
+          placeholder="Filtrer par période"
+          minDate={parcours?.debut}
+        />
+        {parcours?.deuxChambres && <FiltreChambre value={chambreFiltre} onChange={setChambreFiltre} />}
         <select
           value={typeFiltre}
           onChange={(e) => setTypeFiltre(e.target.value)}
