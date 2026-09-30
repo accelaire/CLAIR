@@ -91,6 +91,7 @@ model Parlementaire {
   declarations          DeclarationHATVP[]
   reunionParticipants   ReunionParticipant[]
   candidatures          Candidature[]
+  identifiants          ParlementaireIdentifiant[]
 
   // Métadonnées source
   sourceId   String? @map("source_id") // PA123456 (AN) ou 14133K (Sénat)
@@ -106,6 +107,29 @@ model Parlementaire {
   @@index([nom, prenom])
   @@index([chambre, actif])
   @@map("parlementaires")
+}
+
+/// Identifiant qu'une personne garde dans la chambre qu'elle a quittée.
+///
+/// `parlementaires.source_id` ne porte que l'identifiant de la chambre de la
+/// fiche (`chambre`). Un député élu sénateur voit sa fiche passer au Sénat avec
+/// son matricule ; son identifiant de l'Assemblée (PA…) est conservé ici, pour
+/// que les données de l'Assemblée publiées après son départ (comptes rendus,
+/// amendements, réunions) retrouvent encore leur auteur.
+model ParlementaireIdentifiant {
+  id String @id @default(uuid())
+
+  personneId String        @map("personne_id")
+  personne   Parlementaire @relation(fields: [personneId], references: [id], onDelete: Cascade)
+
+  chambre  String // 'assemblee' | 'senat'
+  sourceId String @map("source_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([chambre, sourceId])
+  @@index([personneId])
+  @@map("parlementaires_identifiants")
 }
 
 model GroupePolitique {
