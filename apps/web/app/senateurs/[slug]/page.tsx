@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { fetchRessource, fetchFromApi } from '@/lib/api-server';
+import { chambreDeLaFiche } from '@/lib/chambre-de-la-fiche';
 import { REVALIDATE_LISTE_S } from '@/lib/liste-ssr';
 import { PersonJsonLd, BreadcrumbJsonLd } from '@/components/seo/JsonLd';
 import { descriptionParlementaire, fonctionParlementaire } from '@/lib/meta-parlementaire';
@@ -134,7 +135,13 @@ export default async function SenateurDetailPage({
   // que sur un vrai 404 de l'API, jamais sur une panne.
   if (!data) {
     const provisoire = await getEluProvisoire(params.slug);
-    if (!provisoire) notFound();
+    if (!provisoire) {
+      // Fiche rangée à l'Assemblée : un ancien sénateur redevenu député, ou un
+      // député élu sénateur dont la fiche n'est pas encore passée au Sénat.
+      // Redirection temporaire, puisque la seconde situation se résout d'elle-même.
+      if ((await chambreDeLaFiche(params.slug)) === 'assemblee') redirect(`/deputes/${params.slug}`);
+      notFound();
+    }
     const nom = nomComplet(provisoire.elu.prenom, provisoire.elu.nom);
     const url = `${BASE_URL}/senateurs/${provisoire.elu.slug}`;
     return (
