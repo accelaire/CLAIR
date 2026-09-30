@@ -39,6 +39,7 @@ import {
   MandatContext,
   deriveMandatContextAN,
   deriveMandatContextSenat,
+  dateDerivationAnnuaireSenat,
   isLegislatureCourante,
   mandatContextANDepuisSource,
   senatMandatFinTheorique,
@@ -1123,12 +1124,21 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
   let updated = 0;
   let mandatsCreated = 0;
 
+  const maintenant = new Date();
+  const derivation = dateDerivationAnnuaireSenat(maintenant, await annuaireSenatRenouvele(senateurs, maintenant));
+  if (derivation.getTime() !== maintenant.getTime()) {
+    logger.warn(
+      { derivation: derivation.toISOString() },
+      "Annuaire du Sénat pas encore renouvelé : mandature dérivée à la veille du renouvellement",
+    );
+  }
+
   // Process en parallèle avec limite
   const results = await Promise.all(
     senateurs.map((s) =>
       limit(async () => {
         try {
-          return await syncSingleSenateur(s, groupeMap, circoMap, commissionByOrganeRef);
+          return await syncSingleSenateur(s, groupeMap, circoMap, commissionByOrganeRef, derivation);
         } catch (error) {
           logger.error({ slug: s.slug, error: errorMessage(error) }, 'Error syncing sénateur');
           return null;
@@ -1151,6 +1161,26 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
     'Sénateurs sync completed',
   );
   return { created, updated };
+}
+
+/**
+ * L'annuaire reçu reflète-t-il le dernier renouvellement ? Voir
+ * `dateDerivationAnnuaireSenat`. Oui dès qu'il contient une personne qui n'est
+ * pas sénateur en exercice chez nous, ou qu'un mandat de la mandature de
+ * l'année est déjà ouvert (le renouvellement a été constaté par un run passé).
+ */
+async function annuaireSenatRenouvele(senateurs: TransformedSenateur[], maintenant: Date): Promise<boolean> {
+  const dejaOuvert = await prisma.mandatParlementaire.count({
+    where: { chambre: 'senat', dateFin: null, mandature: maintenant.getUTCFullYear() },
+  });
+  if (dejaOuvert > 0) return true;
+
+  const enExercice = await prisma.parlementaire.findMany({
+    where: { chambre: 'senat', actif: true },
+    select: { sourceId: true },
+  });
+  const connus = new Set(enExercice.map((p) => p.sourceId));
+  return senateurs.some((s) => !connus.has(s.uid));
 }
 
 /** Effectif plancher attendu du Sénat (348 sièges). En dessous, on considère le
@@ -1209,7 +1239,8 @@ async function syncSingleSenateur(
   s: TransformedSenateur,
   groupeMap: Map<string, string>,
   circoMap: Map<string, string>,
-  commissionByOrganeRef: Map<string, string>
+  commissionByOrganeRef: Map<string, string>,
+  derivation: Date,
 ): Promise<{ person: 'created' | 'updated'; mandatCreated: boolean } | null> {
   // Trouver le groupe par sigle
   let groupeId: string | undefined;
@@ -1315,7 +1346,7 @@ async function syncSingleSenateur(
   }
 
   // Mandat parlementaire (mandature dérivée de la série électorale).
-  const ctx = deriveMandatContextSenat(s.serie);
+  const ctx = deriveMandatContextSenat(s.serie, derivation);
 
   // Mandats de commission depuis sourceData.organismes.
   // `SenatOrganisme` n'expose que { code, type, libelle, ordre } : ni qualité ni

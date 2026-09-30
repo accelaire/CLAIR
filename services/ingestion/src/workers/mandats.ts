@@ -264,6 +264,28 @@ export function deriveMandatContextSenat(serie: string | null, at: Date = new Da
 }
 
 /**
+ * Date à laquelle dériver la mandature des sénateurs de l'annuaire.
+ *
+ * Le calendrier bascule le 1er octobre à minuit, l'annuaire du Sénat quelques
+ * jours plus tard. Dans l'intervalle, il liste encore toute la série sortante :
+ * dériver à la date du jour ouvrirait un mandat de la nouvelle mandature à
+ * chacun, battus et partants compris, et ce mandat fantôme resterait dans leur
+ * historique une fois l'annuaire à jour.
+ *
+ * Tant que l'annuaire n'est pas renouvelé, on dérive donc à la veille du
+ * renouvellement. Il l'est dès qu'il contient un entrant (une personne qui
+ * n'est pas sénateur en exercice chez nous), ou qu'un run précédent a déjà
+ * ouvert un mandat de la nouvelle mandature.
+ */
+export function dateDerivationAnnuaireSenat(maintenant: Date, annuaireRenouvele: boolean): Date {
+  const annee = maintenant.getUTCFullYear();
+  if (annuaireRenouvele || !estAnneeRenouvellementSenat(annee)) return maintenant;
+  const renouvellement = senatMandatureDebut(annee);
+  if (maintenant < renouvellement) return maintenant;
+  return new Date(renouvellement.getTime() - 24 * 60 * 60 * 1000);
+}
+
+/**
  * Série électorale inférée d'une date de début de mandat qui tombe pile sur un
  * renouvellement (1er octobre d'une année de renouvellement). `null` si la date
  * n'est pas un renouvellement « propre » (remplacement en cours de mandat, etc.).

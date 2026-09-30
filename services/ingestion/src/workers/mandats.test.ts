@@ -11,6 +11,7 @@ import {
   deriveMandatContextAN,
   deriveMandatContextSenat,
   deriveMandatContextSenatOdsen,
+  dateDerivationAnnuaireSenat,
   deriveMandatureSenat,
   inferSerieSenatDepuisDate,
   mandatContextANDepuisSource,
@@ -245,6 +246,30 @@ describe('deriveMandatureSenat', () => {
   it('renvoie null pour la série 3 (héritage pré-2011) et pour une série absente', () => {
     expect(deriveMandatureSenat('3', new Date('2026-07-14T00:00:00Z'))).toBeNull();
     expect(deriveMandatureSenat(null)).toBeNull();
+  });
+});
+
+describe('dateDerivationAnnuaireSenat (annuaire en retard sur le calendrier)', () => {
+  const premierOctobre = new Date('2026-10-01T03:00:00Z');
+
+  it('annuaire pas encore renouvelé : la série sortante reste sur sa mandature', () => {
+    const at = dateDerivationAnnuaireSenat(premierOctobre, false);
+    expect(at.toISOString()).toBe('2026-09-30T00:00:00.000Z');
+    expect(deriveMandatContextSenat('2', at).mandature).toBe(2020);
+    expect(deriveMandatContextSenat('1', at).mandature).toBe(2023);
+  });
+
+  it('annuaire renouvelé : la série élue passe à la nouvelle mandature', () => {
+    const at = dateDerivationAnnuaireSenat(premierOctobre, true);
+    expect(at).toBe(premierOctobre);
+    expect(deriveMandatContextSenat('2', at).mandature).toBe(2026);
+  });
+
+  it('sans effet avant le renouvellement et hors année de renouvellement', () => {
+    const veille = new Date('2026-09-30T03:00:00Z');
+    expect(dateDerivationAnnuaireSenat(veille, false)).toBe(veille);
+    const horsAnnee = new Date('2027-10-02T03:00:00Z');
+    expect(dateDerivationAnnuaireSenat(horsAnnee, false)).toBe(horsAnnee);
   });
 });
 
