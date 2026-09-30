@@ -77,6 +77,11 @@ export interface Elu {
   parcours: 'reelu' | 'parlementaire' | 'nouveau';
   personne: PersonneElu | null;
   /**
+   * Dernier mandat parlementaire commencé avant le scrutin. C'est lui qui dit
+   * d'où vient l'élu : sa fiche, elle, change de chambre à sa prise de fonction.
+   */
+  avant: { chambre: string; enCours: boolean } | null;
+  /**
    * Adresse de la fiche provisoire (`/senateurs/<slug>`) d'un élu qui n'a pas
    * encore de fiche : celle qu'il gardera à sa prise de fonction. `null` s'il a
    * déjà une fiche.
@@ -264,12 +269,12 @@ export function pluriel(n: number, singulier: string, plurielForme = `${singulie
 }
 
 /** Badge du parcours d'un élu : ce que CLAIR sait de lui avant son élection. */
-export function libelleParcours(elu: Pick<Elu, 'parcours' | 'personne' | 'sexe'>): string {
+export function libelleParcours(elu: Pick<Elu, 'parcours' | 'avant' | 'sexe'>): string {
   const f = elu.sexe === 'F';
   if (elu.parcours === 'reelu') return f ? 'réélue' : 'réélu';
-  if (elu.parcours === 'parlementaire' && elu.personne) {
-    if (elu.personne.chambre === 'assemblee') {
-      return elu.personne.actif ? (f ? 'députée' : 'député') : f ? 'ancienne députée' : 'ancien député';
+  if (elu.parcours === 'parlementaire' && elu.avant) {
+    if (elu.avant.chambre === 'assemblee') {
+      return elu.avant.enCours ? (f ? 'députée' : 'député') : f ? 'ancienne députée' : 'ancien député';
     }
     return f ? 'ancienne sénatrice' : 'ancien sénateur';
   }

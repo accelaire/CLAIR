@@ -622,7 +622,20 @@ export class SenatorialesService {
           circonscription: { select: { departement: true, nom: true } },
           candidatures: {
             include: {
-              personne: { select: { slug: true, chambre: true, photoUrl: true } },
+              personne: {
+                select: {
+                  slug: true,
+                  chambre: true,
+                  photoUrl: true,
+                  // Un mandat commencé avant le scrutin suffit : il ne s'agit
+                  // que de savoir si la fiche existait déjà.
+                  mandatsParlementaires: {
+                    where: { dateDebut: { lt: DATE_REFERENCE } },
+                    select: { id: true },
+                    take: 1,
+                  },
+                },
+              },
             },
             // Le tri utile est fait en mémoire, par `parRang` : trier ici sur
             // `role` rendrait le suppléant avant le titulaire, « s » précédant
@@ -660,7 +673,13 @@ export class SenatorialesService {
         ordre: candidature.ordre,
         role: candidature.role === 'suppleant' ? 'suppleant' : 'titulaire',
         sortant: candidature.personneId !== null && idsSortants.has(candidature.personneId),
-          personne: candidature.personne,
+          // Une fiche sans mandat antérieur au scrutin est celle qu'un nouvel élu
+          // reçoit à sa prise de fonction : sa candidature ne l'avait pas. Ce
+          // tableau décrit les candidats tels qu'ils se présentaient.
+          personne:
+            candidature.personne && candidature.personne.mandatsParlementaires.length > 0
+              ? { slug: candidature.personne.slug, chambre: candidature.personne.chambre, photoUrl: candidature.personne.photoUrl }
+              : null,
         }))
         .sort(parRang),
     }));

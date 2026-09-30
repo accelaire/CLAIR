@@ -23,6 +23,8 @@ import reference from './hemicycle-reference.json';
 
 const SCRUTIN = 'senatoriales-2026';
 const JOUR = '2026-09-27';
+/** Minuit UTC le jour du scrutin : un mandat commencé avant est un parcours antérieur. */
+const DEBUT_SCRUTIN = new Date(`${JOUR}T00:00:00.000Z`);
 const CACHE_TTL = 60;
 
 export const URL_SOURCE_RESULTATS =
@@ -161,6 +163,13 @@ export interface Elu {
   parcours: 'reelu' | 'parlementaire' | 'nouveau';
   personne: { slug: string; chambre: string; actif: boolean; photoUrl: string | null } | null;
   /**
+   * Dernier mandat parlementaire commencé avant le scrutin, `null` s'il n'y en
+   * a pas. C'est lui, et non la fiche, qui dit d'où vient l'élu : à sa prise
+   * de fonction, un député passe au Sénat et un nouveau venu reçoit sa fiche,
+   * mais leur parcours d'avant l'élection ne change pas.
+   */
+  avant: MandatAnterieur | null;
+  /**
    * Adresse de la fiche provisoire (`/senateurs/<slug>`) d'un élu qui n'a pas
    * encore de fiche : celle que l'annuaire du Sénat lui donnera à sa prise de
    * fonction. `null` quand l'élu a déjà une fiche (`personne`).
@@ -170,6 +179,12 @@ export interface Elu {
   mandatsLocaux: MandatsLocaux | null;
   /** Unité de vote qui l'a élu. */
   listeSourceUid: string;
+}
+
+export interface MandatAnterieur {
+  chambre: string;
+  /** En cours le jour du scrutin (un député en exercice, pas un ancien député). */
+  enCours: boolean;
 }
 
 export interface MandatsLocaux {
@@ -320,6 +335,7 @@ interface ListeBrute {
     role: string;
     personneId: string | null;
     personne: { slug: string; chambre: string; actif: boolean; photoUrl: string | null } | null;
+    avant: MandatAnterieur | null;
     mandatsLocaux: MandatsLocaux | null;
   }[];
 }
@@ -381,7 +397,20 @@ export class ResultatsService {
               ordre: true,
               role: true,
               personneId: true,
-              personne: { select: { slug: true, chambre: true, actif: true, photoUrl: true } },
+              personne: {
+                select: {
+                  slug: true,
+                  chambre: true,
+                  actif: true,
+                  photoUrl: true,
+                  mandatsParlementaires: {
+                    where: { dateDebut: { lt: DEBUT_SCRUTIN } },
+                    select: { chambre: true, dateFin: true },
+                    orderBy: { dateDebut: 'desc' },
+                    take: 1,
+                  },
+                },
+              },
               dateNaissance: true,
             },
             orderBy: [{ ordre: 'asc' }, { role: 'desc' }],
@@ -442,12 +471,21 @@ export class ResultatsService {
           nuanceLibelle: l.nuanceLibelle,
           famille: l.famille,
           departement: l.circonscription.departement,
-          candidatures: l.candidatures.map(({ dateNaissance, ...c }) => ({
-            ...c,
-            mandatsLocaux: dateNaissance
-              ? mandatsParIdentite.get(clefIdentite(c.nom, c.prenom, dateNaissance)) ?? null
-              : null,
-          })),
+          candidatures: l.candidatures.map(({ dateNaissance, personne, ...c }) => {
+            const anterieur = personne?.mandatsParlementaires[0];
+            return {
+              ...c,
+              personne: personne
+                ? { slug: personne.slug, chambre: personne.chambre, actif: personne.actif, photoUrl: personne.photoUrl }
+                : null,
+              avant: anterieur
+                ? { chambre: anterieur.chambre, enCours: anterieur.dateFin === null || anterieur.dateFin >= DEBUT_SCRUTIN }
+                : null,
+              mandatsLocaux: dateNaissance
+                ? mandatsParIdentite.get(clefIdentite(c.nom, c.prenom, dateNaissance)) ?? null
+                : null,
+            };
+          }),
         }),
       ),
       idsSortants: sortants.data.map((s) => s.personne.id),
@@ -485,10 +523,11 @@ export class ResultatsService {
           parcours:
             c.personneId && idsSortants.has(c.personneId)
               ? 'reelu'
-              : c.personne
+              : c.avant
                 ? 'parlementaire'
                 : 'nouveau',
           personne: c.personne,
+          avant: c.avant,
           slug: c.personne ? null : slugSenateur(c.prenom, c.nom),
           mandatsLocaux: c.mandatsLocaux,
           listeSourceUid: ligne.sourceUid,
@@ -511,6 +550,7 @@ export class ResultatsService {
             famille: null,
             parcours: 'nouveau',
             personne: null,
+            avant: null,
             slug: null,
             mandatsLocaux: null,
             listeSourceUid: ligne.sourceUid,
