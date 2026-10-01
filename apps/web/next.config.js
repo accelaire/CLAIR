@@ -25,6 +25,13 @@ const nextConfig = {
         destination: '/senatoriales-2026/:departement',
         permanent: true,
       },
+      // Fiche provisoire d'une élue du 27 septembre, dont le ministère écrit le
+      // prénom « Chistine » : le Sénat lui a donné sa fiche sous la bonne graphie.
+      {
+        source: '/senateurs/chistine-bost',
+        destination: '/senateurs/christine-bost',
+        permanent: true,
+      },
     ];
   },
   images: {
