@@ -11,6 +11,7 @@ import {
   deriveMandatContextAN,
   deriveMandatContextSenat,
   deriveMandatContextSenatOdsen,
+  dateDerivationAnnuaireSenat,
   deriveMandatureSenat,
   inferSerieSenatDepuisDate,
   mandatContextANDepuisSource,
@@ -248,6 +249,30 @@ describe('deriveMandatureSenat', () => {
   });
 });
 
+describe('dateDerivationAnnuaireSenat (annuaire en retard sur le calendrier)', () => {
+  const premierOctobre = new Date('2026-10-01T03:00:00Z');
+
+  it('annuaire pas encore renouvelé : la série sortante reste sur sa mandature', () => {
+    const at = dateDerivationAnnuaireSenat(premierOctobre, false);
+    expect(at.toISOString()).toBe('2026-09-30T00:00:00.000Z');
+    expect(deriveMandatContextSenat('2', at).mandature).toBe(2020);
+    expect(deriveMandatContextSenat('1', at).mandature).toBe(2023);
+  });
+
+  it('annuaire renouvelé : la série élue passe à la nouvelle mandature', () => {
+    const at = dateDerivationAnnuaireSenat(premierOctobre, true);
+    expect(at).toBe(premierOctobre);
+    expect(deriveMandatContextSenat('2', at).mandature).toBe(2026);
+  });
+
+  it('sans effet avant le renouvellement et hors année de renouvellement', () => {
+    const veille = new Date('2026-09-30T03:00:00Z');
+    expect(dateDerivationAnnuaireSenat(veille, false)).toBe(veille);
+    const horsAnnee = new Date('2027-10-02T03:00:00Z');
+    expect(dateDerivationAnnuaireSenat(horsAnnee, false)).toBe(horsAnnee);
+  });
+});
+
 describe('deriveMandatContextSenat', () => {
   it('ouvre le mandat courant (dateFin null) et le date au 1er octobre de la mandature', () => {
     const ctx = deriveMandatContextSenat('2', new Date('2026-07-14T00:00:00Z'));
@@ -322,6 +347,21 @@ describe('deriveMandatContextSenatOdsen (dates réelles ODSEN + correction fraî
     );
     expect(ctx.mandature).toBe(2020);
     expect(ctx.dateFin).toBeNull();
+  });
+
+  it('traite comme courant un mandat dont la fin publiée est encore à venir', () => {
+    // ELUSEN au 28/09/2026 : les mandats de la série 2 finissent « le 1er octobre ».
+    const avant = deriveMandatContextSenatOdsen(
+      { dateDebut: new Date('2020-10-01T00:00:00Z'), dateFin: new Date('2026-10-01T00:00:00Z'), serie: '2' },
+      new Date('2026-09-28T03:00:00Z'),
+    );
+    expect(avant.dateFin).toBeNull();
+
+    const apres = deriveMandatContextSenatOdsen(
+      { dateDebut: new Date('2020-10-01T00:00:00Z'), dateFin: new Date('2026-10-01T00:00:00Z'), serie: '2' },
+      new Date('2026-10-02T03:00:00Z'),
+    );
+    expect(apres.dateFin?.toISOString()).toBe('2026-09-30T00:00:00.000Z');
   });
 
   it('série inconnue : mandature stable via le renouvellement série-indépendant (pas l’année brute)', () => {
@@ -555,7 +595,7 @@ describe('upsertMandatParlementaire — Sénat chemin SYNC (mandat courant, date
 });
 
 describe('upsertMandatParlementaire — Sénat chemin ODSEN (mandat clos, dateFin non null)', () => {
-  it('ne matche JAMAIS une ligne ouverte : crée une nouvelle ligne close', async () => {
+  it('laisse au sync la même période encore ouverte : ni doublon, ni clôture (28/09/2026)', async () => {
     const { prisma, rows } = makeMockPrisma([
       { id: 'ouvert', mandature: 2020, dateDebut: new Date('2020-10-01T00:00:00Z'), dateFin: null },
     ]);
@@ -563,9 +603,22 @@ describe('upsertMandatParlementaire — Sénat chemin ODSEN (mandat clos, dateFi
       prisma,
       senatInput(ctxSenatClos(2020, '2020-10-01T00:00:00Z', '2026-09-30T00:00:00Z')),
     );
+    expect(created).toBe(false);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.dateFin).toBeNull(); // ligne ouverte intacte
+  });
+
+  it('crée la période close d’un retour de ministre, distincte de sa période ouverte', async () => {
+    const { prisma, rows } = makeMockPrisma([
+      { id: 'ouvert', mandature: 2020, dateDebut: new Date('2022-08-05T00:00:00Z'), dateFin: null },
+    ]);
+    const { created } = await upsertMandatParlementaire(
+      prisma,
+      senatInput(ctxSenatClos(2020, '2020-10-01T00:00:00Z', '2022-07-04T00:00:00Z')),
+    );
     expect(created).toBe(true);
     expect(rows).toHaveLength(2);
-    expect(rows.find((r) => r.id === 'ouvert')!.dateFin).toBeNull(); // ligne ouverte intacte
+    expect(rows.find((r) => r.id === 'ouvert')!.dateFin).toBeNull();
   });
 
   it('matche une ligne close par sa date de début et met à jour son contexte', async () => {

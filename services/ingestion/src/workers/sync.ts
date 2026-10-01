@@ -39,11 +39,13 @@ import {
   MandatContext,
   deriveMandatContextAN,
   deriveMandatContextSenat,
+  dateDerivationAnnuaireSenat,
   isLegislatureCourante,
   mandatContextANDepuisSource,
   senatMandatFinTheorique,
   upsertMandatParlementaire,
 } from './mandats';
+import { ajouterIdentifiantsConserves, rattacherDeputeElu } from './changement-chambre';
 import {
   checkSourceFreshness,
   updateSourceState,
@@ -326,6 +328,7 @@ export async function syncReunions(options: { limit?: number } = {}): Promise<{
   for (const p of parlementaires) {
     if (p.sourceId) parlementaireByRef.set(p.sourceId, p.id);
   }
+  await ajouterIdentifiantsConserves(prisma, 'assemblee', parlementaireByRef);
 
   let created = 0;
   let updated = 0;
@@ -834,15 +837,23 @@ async function syncSingleParlementaireAN(
             { nom: { contains: p.nom } },
           ],
         },
+        // Député parti au Sénat : sa fiche porte désormais son matricule, et
+        // son identifiant de l'Assemblée est conservé à part.
+        { identifiants: { some: { chambre: p.chambre, sourceId: p.uid } } },
       ],
     },
-    select: { id: true },
+    select: { id: true, chambre: true },
   });
 
   let personneId: string;
   let person: 'created' | 'updated';
 
-  if (existing) {
+  if (existing && existing.chambre !== p.chambre) {
+    // La fiche appartient à l'autre chambre : on n'y réécrit ni l'identité ni
+    // la chambre, seulement le mandat de député, plus bas.
+    personneId = existing.id;
+    person = 'updated';
+  } else if (existing) {
     // Une personne déjà en base : on rafraîchit toujours la bio. Les champs de mandat
     // courant (groupe/circo/actif) ne sont touchés que par la législature courante.
     //
@@ -1123,12 +1134,21 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
   let updated = 0;
   let mandatsCreated = 0;
 
+  const maintenant = new Date();
+  const derivation = dateDerivationAnnuaireSenat(maintenant, await annuaireSenatRenouvele(senateurs, maintenant));
+  if (derivation.getTime() !== maintenant.getTime()) {
+    logger.warn(
+      { derivation: derivation.toISOString() },
+      "Annuaire du Sénat pas encore renouvelé : mandature dérivée à la veille du renouvellement",
+    );
+  }
+
   // Process en parallèle avec limite
   const results = await Promise.all(
     senateurs.map((s) =>
       limit(async () => {
         try {
-          return await syncSingleSenateur(s, groupeMap, circoMap, commissionByOrganeRef);
+          return await syncSingleSenateur(s, groupeMap, circoMap, commissionByOrganeRef, derivation);
         } catch (error) {
           logger.error({ slug: s.slug, error: errorMessage(error) }, 'Error syncing sénateur');
           return null;
@@ -1151,6 +1171,26 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
     'Sénateurs sync completed',
   );
   return { created, updated };
+}
+
+/**
+ * L'annuaire reçu reflète-t-il le dernier renouvellement ? Voir
+ * `dateDerivationAnnuaireSenat`. Oui dès qu'il contient une personne qui n'est
+ * pas sénateur en exercice chez nous, ou qu'un mandat de la mandature de
+ * l'année est déjà ouvert (le renouvellement a été constaté par un run passé).
+ */
+async function annuaireSenatRenouvele(senateurs: TransformedSenateur[], maintenant: Date): Promise<boolean> {
+  const dejaOuvert = await prisma.mandatParlementaire.count({
+    where: { chambre: 'senat', dateFin: null, mandature: maintenant.getUTCFullYear() },
+  });
+  if (dejaOuvert > 0) return true;
+
+  const enExercice = await prisma.parlementaire.findMany({
+    where: { chambre: 'senat', actif: true },
+    select: { sourceId: true },
+  });
+  const connus = new Set(enExercice.map((p) => p.sourceId));
+  return senateurs.some((s) => !connus.has(s.uid));
 }
 
 /** Effectif plancher attendu du Sénat (348 sièges). En dessous, on considère le
@@ -1209,7 +1249,8 @@ async function syncSingleSenateur(
   s: TransformedSenateur,
   groupeMap: Map<string, string>,
   circoMap: Map<string, string>,
-  commissionByOrganeRef: Map<string, string>
+  commissionByOrganeRef: Map<string, string>,
+  derivation: Date,
 ): Promise<{ person: 'created' | 'updated'; mandatCreated: boolean } | null> {
   // Trouver le groupe par sigle
   let groupeId: string | undefined;
@@ -1280,16 +1321,24 @@ async function syncSingleSenateur(
     },
   });
 
+  // Inconnu au Sénat : c'est peut-être un député qui vient d'y être élu. Sa
+  // fiche passe alors au Sénat par le chemin de mise à jour ci-dessous, au lieu
+  // d'une création qui échouerait sur son slug, déjà pris par cette fiche.
+  const personneAutreChambre = existing
+    ? null
+    : await rattacherDeputeElu(prisma, s, deriveMandatContextSenat(s.serie, derivation).dateDebut);
+  const aMettreAJour = existing ?? (personneAutreChambre ? { id: personneAutreChambre } : null);
+
   let parlementaireId: string;
 
-  if (existing) {
+  if (aMettreAJour) {
     // Le slug reste celui de la création, cf. le gel côté Assemblée. Ici il n'y
     // avait même pas le garde-fou `isCurrent` : la réécriture touchait toutes
     // les lignes rencontrées, chaque nuit. `data` sert aussi à la création, où
     // le slug est requis : on ne l'écarte que sur ce chemin de mise à jour.
     const { slug: _slug, ...donneesSansSlug } = data;
     await prisma.parlementaire.update({
-      where: { id: existing.id },
+      where: { id: aMettreAJour.id },
       data: {
         ...donneesSansSlug,
         // L'annuaire du Sénat ne publie ni date ni lieu de naissance, ni
@@ -1308,14 +1357,14 @@ async function syncSingleSenateur(
         circonscription: circonscriptionId ? { connect: { id: circonscriptionId } } : undefined,
       },
     });
-    parlementaireId = existing.id;
+    parlementaireId = aMettreAJour.id;
   } else {
     const created = await prisma.parlementaire.create({ data });
     parlementaireId = created.id;
   }
 
   // Mandat parlementaire (mandature dérivée de la série électorale).
-  const ctx = deriveMandatContextSenat(s.serie);
+  const ctx = deriveMandatContextSenat(s.serie, derivation);
 
   // Mandats de commission depuis sourceData.organismes.
   // `SenatOrganisme` n'expose que { code, type, libelle, ordre } : ni qualité ni
@@ -1364,7 +1413,7 @@ async function syncSingleSenateur(
     commissionPermanente: s.commissionPermanente ?? null,
   });
 
-  return { person: existing ? 'updated' : 'created', mandatCreated };
+  return { person: aMettreAJour ? 'updated' : 'created', mandatCreated };
 }
 
 // =============================================================================
@@ -1432,6 +1481,7 @@ export async function syncScrutins(
   for (const p of parlementaires) {
     if (p.sourceId) parlementaireMap.set(p.sourceId, p.id);
   }
+  await ajouterIdentifiantsConserves(prisma, 'assemblee', parlementaireMap);
 
   let scrutinsCreated = 0;
   let scrutinsUpdated = 0;
@@ -1875,6 +1925,7 @@ export async function syncInterventions(
       parlementaireByNom.set(nomNorm, { id: p.id, prenom: p.prenom });
     }
   }
+  await ajouterIdentifiantsConserves(prisma, 'assemblee', parlementaireByRef);
 
   let created = 0;
   let createdNonParlementaire = 0;
@@ -4622,6 +4673,7 @@ export async function syncAmendements(
     const parts = p.nom.trim().split(/\s+/);
     if (parts.length > 1) addName(parts[parts.length - 1], p.id);
   }
+  await ajouterIdentifiantsConserves(prisma, 'assemblee', parlementaireByRef);
 
   const parlementaireNameMap = new Map<string, string>();
   for (const [name, ids] of nameHits) {

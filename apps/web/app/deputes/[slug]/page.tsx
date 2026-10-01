@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import { fetchRessource, fetchFromApi } from '@/lib/api-server';
+import { chambreDeLaFiche } from '@/lib/chambre-de-la-fiche';
 import { REVALIDATE_LISTE_S } from '@/lib/liste-ssr';
 import { PersonJsonLd, BreadcrumbJsonLd } from '@/components/seo/JsonLd';
 import { descriptionParlementaire, fonctionParlementaire } from '@/lib/meta-parlementaire';
@@ -98,7 +99,12 @@ export default async function DeputeDetailPage({
   // Sans ça, un slug inconnu rendait la coquille du client en HTTP 200 : un
   // soft 404 que Google indexe puis garde. `fetchRessource` ne renvoie `null`
   // que sur un vrai 404 de l'API, jamais sur une panne.
-  if (!data) notFound();
+  if (!data) {
+    // Député devenu sénateur : sa fiche est passée au Sénat, sous le même slug.
+    // Le départ est définitif, d'où la redirection permanente.
+    if ((await chambreDeLaFiche(params.slug)) === 'senat') permanentRedirect(`/senateurs/${params.slug}`);
+    notFound();
+  }
 
   // Pour un ancien parlementaire, pas de `jobTitle` ni de `worksFor` : dans
   // schema.org ils décrivent l'emploi actuel, et le groupe d'un mandat terminé

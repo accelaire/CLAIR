@@ -44,6 +44,13 @@ import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
 import { InterventionsList } from '@/components/parlementaire/interventions-list';
 import { MandatsBlock } from '@/components/parlementaire/mandats-timeline';
+import {
+  FiltreChambre,
+  paramChambre,
+  parcoursFiche,
+  type ChambreFiltre,
+  type ParcoursFiche,
+} from '@/components/parlementaire/filtre-chambre';
 import { SiegeRenouvelableCallout } from '@/components/SiegeRenouvelableCallout';
 
 export interface SenateurDetail {
@@ -100,6 +107,7 @@ export interface SenateurDetail {
   }>;
   // Mandats parlementaires (parcours par mandature : groupe + circonscription)
   mandatsParlementaires?: Array<{
+    chambre?: string;
     legislature: number | null;
     mandature: number | null;
     dateDebut: string;
@@ -334,9 +342,10 @@ function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }
   );
 }
 
-function AmendementsList({ slug }: { slug: string }) {
+function AmendementsList({ slug, parcours }: { slug: string; parcours: ParcoursFiche }) {
   const [dateRange, setDateRange] = useUrlDateRange();
   const [votedOnly, setVotedOnly] = useState(false);
+  const [chambre, setChambre] = useState<ChambreFiltre>('');
   const dateParams = dateRangeToParams(dateRange);
 
   const {
@@ -347,7 +356,7 @@ function AmendementsList({ slug }: { slug: string }) {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['senateur-amendements', slug, dateParams, votedOnly],
+    queryKey: ['senateur-amendements', slug, dateParams, votedOnly, chambre],
     queryFn: ({ pageParam = 1 }) =>
       api.get(`/senateurs/${slug}/amendements`, {
         params: {
@@ -355,6 +364,7 @@ function AmendementsList({ slug }: { slug: string }) {
           limit: 20,
           votedOnly,
           ...dateParams,
+          ...paramChambre(chambre),
         },
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
@@ -375,12 +385,16 @@ function AmendementsList({ slug }: { slug: string }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <DateRangePicker
-          value={dateRange}
-          onChange={setDateRange}
-          placeholder="Filtrer par période"
-          resultCount={total}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <DateRangePicker
+            value={dateRange}
+            onChange={setDateRange}
+            placeholder="Filtrer par période"
+            resultCount={total}
+            minDate={parcours.debut}
+          />
+          {parcours.deuxChambres && <FiltreChambre value={chambre} onChange={setChambre} />}
+        </div>
         <button
           onClick={() => setVotedOnly(!votedOnly)}
           className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
@@ -443,16 +457,25 @@ export interface PageVotes {
   meta: { total: number; page: number; limit: number; hasNext: boolean };
 }
 
-function VotesList({ slug, initialVotes }: { slug: string; initialVotes?: PageVotes }) {
+function VotesList({
+  slug,
+  initialVotes,
+  parcours,
+}: {
+  slug: string;
+  initialVotes?: PageVotes;
+  parcours: ParcoursFiche;
+}) {
   const [dateRange, setDateRange] = useUrlDateRange();
   const [dissidentOnly, setDissidentOnly] = useState(false);
+  const [chambre, setChambre] = useState<ChambreFiltre>('');
   const dateParams = dateRangeToParams(dateRange);
 
   // La donnée rendue côté serveur ne vaut que pour la vue canonique : dès
   // qu'une période ou le filtre « dissidents » est actif, elle ne correspond
   // plus à ce qui est demandé.
   const peutHydrater =
-    aucunFiltre([dateParams.dateFrom, dateParams.dateTo]) && !dissidentOnly;
+    aucunFiltre([dateParams.dateFrom, dateParams.dateTo]) && !dissidentOnly && !chambre;
 
   const {
     data,
@@ -462,7 +485,7 @@ function VotesList({ slug, initialVotes }: { slug: string; initialVotes?: PageVo
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['senateur-votes', slug, dateParams, dissidentOnly],
+    queryKey: ['senateur-votes', slug, dateParams, dissidentOnly, chambre],
     queryFn: ({ pageParam = 1 }) =>
       api.get(`/senateurs/${slug}/votes`, {
         params: {
@@ -470,6 +493,7 @@ function VotesList({ slug, initialVotes }: { slug: string; initialVotes?: PageVo
           limit: 20,
           dissidentOnly,
           ...dateParams,
+          ...paramChambre(chambre),
         },
       }).then((res) => res.data),
     getNextPageParam: (lastPage) =>
@@ -501,12 +525,16 @@ function VotesList({ slug, initialVotes }: { slug: string; initialVotes?: PageVo
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <DateRangePicker
-          value={dateRange}
-          onChange={setDateRange}
-          placeholder="Filtrer par période"
-          resultCount={total}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <DateRangePicker
+            value={dateRange}
+            onChange={setDateRange}
+            placeholder="Filtrer par période"
+            resultCount={total}
+            minDate={parcours.debut}
+          />
+          {parcours.deuxChambres && <FiltreChambre value={chambre} onChange={setChambre} />}
+        </div>
         <button
           onClick={() => setDissidentOnly(!dissidentOnly)}
           className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
@@ -667,6 +695,9 @@ export default function PageClient({
   }
 
   const senateur = data;
+  // Borne les filtres des listes : années depuis le premier mandat, et choix de
+  // la chambre pour une personne passée par les deux.
+  const parcours = parcoursFiche(senateur.mandatsParlementaires);
   const fonction = fonctionParlementaire({
     chambre: 'senat',
     sexe: senateur.sexe,
@@ -964,6 +995,7 @@ export default function PageClient({
             return (
               <MandatsBlock
                 mandats={senateur.mandatsParlementaires ?? []}
+                sexe={senateur.sexe}
                 chambre="senat"
                 fonctionsCourantes={fonctions}
               />
@@ -1126,9 +1158,11 @@ export default function PageClient({
 
       {/* Contenu */}
       <div className="mt-8">
-        {activeTab === 'votes' && <VotesList slug={senateur.slug} initialVotes={initialVotes} />}
-        {activeTab === 'interventions' && <InterventionsList slug={senateur.slug} chambre="senat" />}
-        {activeTab === 'amendements' && <AmendementsList slug={senateur.slug} />}
+        {activeTab === 'votes' && <VotesList slug={senateur.slug} initialVotes={initialVotes} parcours={parcours} />}
+        {activeTab === 'interventions' && (
+          <InterventionsList slug={senateur.slug} chambre="senat" parcours={parcours} />
+        )}
+        {activeTab === 'amendements' && <AmendementsList slug={senateur.slug} parcours={parcours} />}
       </div>
     </div>
   );

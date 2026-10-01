@@ -5,6 +5,12 @@ import { SENATORIALES_2026 } from '@/lib/senatoriales';
 import PageClient from './PageClient';
 import type { ApercuSenatoriales, Sortant } from './PageClient';
 import { TRIS_SORTANTS, type FiltresSortants } from '@/lib/senatoriales/graphiques';
+import type { ResultatsNationaux } from '@/lib/senatoriales/resultats';
+import {
+  BlocResultatsNationaux,
+  resultatsPublies,
+  scrutinCommence,
+} from './components/resultats/BlocResultatsNationaux';
 
 /**
  * Rendu à la demande, et non au build.
@@ -36,26 +42,46 @@ const title = 'Sénatoriales 2026 — les candidats et le bilan des sortants';
 const description =
   "Le 27 septembre 2026, 178 des 348 sièges du Sénat sont renouvelés dans 64 circonscriptions. Les candidats circonscription par circonscription, et le bilan de mandature de chaque sénateur sortant : présence, loyauté, interventions, amendements.";
 
-export const metadata: Metadata = {
-  title,
-  description,
-  alternates: { canonical: `${BASE_URL}/senatoriales-2026` },
-  openGraph: {
-    title: 'Sénatoriales du 27 septembre 2026 — CLAIR.vote',
-    description:
-      "178 sièges renouvelés, 64 circonscriptions. Les candidats, et le bilan de mandature des sénateurs sortants, chiffres à l'appui.",
-    url: `${BASE_URL}/senatoriales-2026`,
-    type: 'article',
-  },
-  // Sans bloc `twitter` explicite, Next conserve celui du layout : la carte
-  // partagée affichait le titre générique du site au lieu de celui de la page.
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Sénatoriales du 27 septembre 2026',
-    description:
-      '178 sièges renouvelés, 64 circonscriptions. Les candidats et le bilan de mandature des sortants.',
-  },
-};
+/**
+ * Les résultats du ministère, relus chaque minute : le soir du scrutin,
+ * l'ingestion passe toutes les cinq minutes et l'API met ses réponses en cache
+ * une minute. `null` si l'API ne répond pas : la page se rend alors sans eux,
+ * comme avant le scrutin, plutôt que de tomber.
+ */
+function chargerResultats() {
+  return fetchFromApi<ResultatsNationaux>('/senatoriales/2026/resultats', 60);
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  // Le titre suit ce que la page montre : « résultats » seulement une fois le
+  // premier publié, sans rien promettre avant.
+  const resultats = await chargerResultats();
+  const publies = scrutinCommence(resultats) && resultatsPublies(resultats);
+  return {
+    title: publies ? 'Sénatoriales 2026 — résultats, élus et bilan des sortants' : title,
+    description: publies
+      ? 'Les résultats des sénatoriales du 27 septembre 2026 : 178 des 348 sièges du Sénat renouvelés dans 64 circonscriptions. Les élus, les voix par liste, le Sénat avant et après, et le bilan de mandature de chaque sénateur sortant.'
+      : description,
+    alternates: { canonical: `${BASE_URL}/senatoriales-2026` },
+    openGraph: {
+      title: publies ? 'Sénatoriales 2026 : les résultats — CLAIR.vote' : 'Sénatoriales du 27 septembre 2026 — CLAIR.vote',
+      description: publies
+        ? '178 sièges renouvelés, 64 circonscriptions. Les élus, le Sénat avant et après, et le bilan des sortants.'
+        : "178 sièges renouvelés, 64 circonscriptions. Les candidats, et le bilan de mandature des sénateurs sortants, chiffres à l'appui.",
+      url: `${BASE_URL}/senatoriales-2026`,
+      type: 'article',
+    },
+    // Sans bloc `twitter` explicite, Next conserve celui du layout : la carte
+    // partagée affichait le titre générique du site au lieu de celui de la page.
+    twitter: {
+      card: 'summary_large_image',
+      title: publies ? 'Sénatoriales 2026 : les résultats' : 'Sénatoriales du 27 septembre 2026',
+      description: publies
+        ? '178 sièges renouvelés, 64 circonscriptions. Les élus et le bilan des sortants.'
+        : '178 sièges renouvelés, 64 circonscriptions. Les candidats et le bilan de mandature des sortants.',
+    },
+  };
+}
 
 /**
  * Les données sont chargées ici, côté serveur, et non seulement dans le composant
@@ -154,7 +180,10 @@ export default async function Senatoriales2026Page({
   // contenait alors qu'un squelette, et ni la liste ni le graphique du tri
   // n'existaient pour qui n'exécute pas le JavaScript.
   const filtres = lireFiltres(searchParams);
-  const { apercu, sortants, tousSortants } = await chargerDonnees(filtres);
+  const [{ apercu, sortants, tousSortants }, resultats] = await Promise.all([
+    chargerDonnees(filtres),
+    chargerResultats(),
+  ]);
 
   return (
     <>
@@ -203,6 +232,7 @@ export default async function Senatoriales2026Page({
         initialSortants={sortants ?? undefined}
         initialTousSortants={tousSortants?.data ?? undefined}
         initialFiltres={filtres}
+        resultats={scrutinCommence(resultats) ? <BlocResultatsNationaux donnees={resultats} /> : undefined}
       />
 
     </>

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { getGroupColor } from '@/lib/colors';
+import { positionsHemicycle } from '@/lib/hemicycle-geometrie';
 
 interface GroupeData {
   id: string;
@@ -75,57 +76,7 @@ function generateHemicycleSeats(
     }
   }
 
-  // Calculer le nombre de rangées dynamiquement selon le nombre de sièges
-  // Plus de sièges = plus de rangées pour garder une densité visuelle agréable
-  // AN (577) → 12 rangées, Sénat (348) → 8 rangées
-  const numRows = totalSeats > 500 ? 12 : totalSeats > 400 ? 10 : 8;
-  const rowSpacing = (outerRadius - innerRadius) / numRows;
-
-  // Calculer combien de sièges peuvent tenir dans chaque rangée
-  const rowCapacities: number[] = [];
-  let totalCapacity = 0;
-  for (let row = 0; row < numRows; row++) {
-    const rowRadius = innerRadius + row * rowSpacing + rowSpacing / 2;
-    const capacity = Math.floor(Math.PI * rowRadius / (rowSpacing * 0.65));
-    rowCapacities.push(capacity);
-    totalCapacity += capacity;
-  }
-
-  // Distribuer les sièges réels proportionnellement aux capacités de chaque rangée
-  const seatsPerRow: number[] = [];
-  let remainingSeats = totalSeats;
-  for (let row = 0; row < numRows; row++) {
-    if (row === numRows - 1) {
-      seatsPerRow.push(remainingSeats);
-    } else {
-      const proportion = rowCapacities[row] / totalCapacity;
-      const seatsInRow = Math.round(totalSeats * proportion);
-      seatsPerRow.push(Math.min(seatsInRow, remainingSeats));
-      remainingSeats -= seatsPerRow[row];
-    }
-  }
-
-  // Générer toutes les positions de sièges avec leur angle
-  const seatPositions: { x: number; y: number; angle: number; row: number }[] = [];
-
-  for (let row = 0; row < numRows; row++) {
-    const rowRadius = innerRadius + row * rowSpacing + rowSpacing / 2;
-    const numSeatsInRow = seatsPerRow[row];
-
-    if (numSeatsInRow === 0) continue;
-
-    for (let i = 0; i < numSeatsInRow; i++) {
-      // Angle de PI (gauche) à 0 (droite)
-      const angle = Math.PI - (i / (numSeatsInRow - 1 || 1)) * Math.PI;
-      const x = centerX + rowRadius * Math.cos(angle);
-      const y = centerY - rowRadius * Math.sin(angle);
-
-      seatPositions.push({ x, y, angle, row });
-    }
-  }
-
-  // Trier par angle (de gauche PI vers droite 0) pour remplissage par colonnes
-  seatPositions.sort((a, b) => b.angle - a.angle);
+  const seatPositions = positionsHemicycle(totalSeats, centerX, centerY, innerRadius, outerRadius);
 
   // Assigner les groupes aux positions triées par angle
   const seats: Seat[] = [];

@@ -849,7 +849,7 @@ export class ParlementairesService {
   // ===========================================================================
 
   async getParlementaireVotes(parlementaireId: string, groupeId: string | null, query: ParlementaireVotesQuery) {
-    const { page, limit, position, tag, dateFrom, dateTo, dissidentOnly } = query;
+    const { page, limit, position, tag, dateFrom, dateTo, dissidentOnly, chambre } = query;
     const offset = (page - 1) * limit;
 
     // Si dissidentOnly et pas de groupe, retourner vide
@@ -871,6 +871,7 @@ export class ParlementairesService {
       dateFrom,
       dateTo,
       dissidentOnly,
+      chambre,
     })}`;
 
     const cached = await this.redis.get(cacheKey);
@@ -909,6 +910,13 @@ export class ParlementairesService {
       conditions.push(`s.date <= $${paramIndex}`);
       countConditions.push(`s.date <= $${paramIndex}`);
       params.push(dateTo);
+      paramIndex++;
+    }
+
+    if (chambre) {
+      conditions.push(`s.chambre = $${paramIndex}`);
+      countConditions.push(`s.chambre = $${paramIndex}`);
+      params.push(chambre);
       paramIndex++;
     }
 
@@ -1104,9 +1112,10 @@ export class ParlementairesService {
       dateFrom?: string;
       dateTo?: string;
       votedOnly?: boolean;
+      chambre?: Chambre;
     }
   ) {
-    const { page, limit, sort, dateFrom, dateTo, votedOnly } = query;
+    const { page, limit, sort, dateFrom, dateTo, votedOnly, chambre } = query;
     const offset = (page - 1) * limit;
 
     const cacheKey = `parlementaire:amendements:${parlementaireId}:${JSON.stringify({
@@ -1116,6 +1125,7 @@ export class ParlementairesService {
       dateFrom,
       dateTo,
       votedOnly,
+      chambre,
     })}`;
 
     const cached = await this.redis.get(cacheKey);
@@ -1144,6 +1154,11 @@ export class ParlementairesService {
     }
     if (votedOnly) {
       conditions.push(`EXISTS (SELECT 1 FROM "_AmendementToScrutin" ats WHERE ats."A" = a.id)`);
+    }
+    if (chambre) {
+      conditions.push(`a.chambre = $${paramIndex}`);
+      params.push(chambre);
+      paramIndex++;
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

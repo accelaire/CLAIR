@@ -264,6 +264,28 @@ export function deriveMandatContextSenat(serie: string | null, at: Date = new Da
 }
 
 /**
+ * Date à laquelle dériver la mandature des sénateurs de l'annuaire.
+ *
+ * Le calendrier bascule le 1er octobre à minuit, l'annuaire du Sénat quelques
+ * jours plus tard. Dans l'intervalle, il liste encore toute la série sortante :
+ * dériver à la date du jour ouvrirait un mandat de la nouvelle mandature à
+ * chacun, battus et partants compris, et ce mandat fantôme resterait dans leur
+ * historique une fois l'annuaire à jour.
+ *
+ * Tant que l'annuaire n'est pas renouvelé, on dérive donc à la veille du
+ * renouvellement. Il l'est dès qu'il contient un entrant (une personne qui
+ * n'est pas sénateur en exercice chez nous), ou qu'un run précédent a déjà
+ * ouvert un mandat de la nouvelle mandature.
+ */
+export function dateDerivationAnnuaireSenat(maintenant: Date, annuaireRenouvele: boolean): Date {
+  const annee = maintenant.getUTCFullYear();
+  if (annuaireRenouvele || !estAnneeRenouvellementSenat(annee)) return maintenant;
+  const renouvellement = senatMandatureDebut(annee);
+  if (maintenant < renouvellement) return maintenant;
+  return new Date(renouvellement.getTime() - 24 * 60 * 60 * 1000);
+}
+
+/**
  * Série électorale inférée d'une date de début de mandat qui tombe pile sur un
  * renouvellement (1er octobre d'une année de renouvellement). `null` si la date
  * n'est pas un renouvellement « propre » (remplacement en cours de mandat, etc.).
@@ -347,6 +369,13 @@ export function deriveMandatContextSenatOdsen(
     if (mandatureCourante === null || mandature < mandatureCourante) {
       dateFin = senatMandatFinTheorique(mandature);
     }
+  }
+
+  // Une fin encore à venir n'est pas une fin. À l'approche du renouvellement,
+  // ELUSEN publie par avance la fin des mandats de la série sortante (constaté le
+  // 28/09/2026 pour la série 2) : lus comme clos, ils quittaient le sync courant.
+  if (dateFin !== null && dateFin.getTime() > at.getTime()) {
+    dateFin = null;
   }
 
   return {
@@ -541,6 +570,18 @@ async function upsertMandatSenatClos(
     });
     return { created: false };
   }
+
+  // La même période encore ouverte en base appartient au sync courant, qui la
+  // clôt lui-même (sortant absent du roster, renouvellement). ODSEN peut annoncer
+  // la fin avant que le roster ne bouge : créer ici une ligne close doublerait la
+  // période. Le 28/09/2026, 161 sortants de la série 2 ont ainsi reçu un second
+  // mandat, et les sièges à pourvoir ont été comptés deux fois. Une fois la ligne
+  // close par le sync, le run suivant la retrouve par sa date de début.
+  const ouverte = await prisma.mandatParlementaire.findFirst({
+    where: { personneId, chambre: 'senat', dateDebut: ctx.dateDebut, dateFin: null },
+    select: { id: true },
+  });
+  if (ouverte) return { created: false };
 
   await prisma.mandatParlementaire.create({
     data: mandatCreateData(input, ctx.dateDebut),

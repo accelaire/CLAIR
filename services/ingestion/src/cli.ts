@@ -1683,6 +1683,282 @@ program
     }
   });
 
+// =============================================================================
+// COMMANDE: sync-mandats-locaux
+// =============================================================================
+program
+  .command('sync-mandats-locaux')
+  .description(
+    'Mandats locaux des candidats titulaires, depuis le Répertoire national des élus (data.gouv). ' +
+      'À relancer à chaque publication trimestrielle du répertoire.'
+  )
+  .option('--scrutin <slug>', 'Identifiant du scrutin', 'senatoriales-2026')
+  .option('--simulation', 'Rapprocher et rapporter sans rien écrire en base')
+  .option('--dossier-local <dossier>', 'Lire les fichiers <mai|cm|epci|cd|cr|ma|rpe|afe|consfde>.csv de ce dossier')
+  .action(async (options: { scrutin: string; simulation?: boolean; dossierLocal?: string }) => {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+    try {
+      const { synchroniserMandatsLocaux } = await import('./sources/senatoriales/mandats-locaux-client.js');
+      const rapport = await synchroniserMandatsLocaux(prisma, {
+        scrutin: options.scrutin,
+        simulation: options.simulation ?? false,
+        dossierLocal: options.dossierLocal,
+      });
+      console.log(
+        `\n🏛️  Mandats locaux — ${rapport.scrutin}${rapport.simulation ? ' (SIMULATION, rien écrit)' : ''}`
+      );
+      console.log(`   Répertoire du              : ${rapport.sourceDate}`);
+      console.log(`   Candidats titulaires       : ${rapport.titulaires}`);
+      console.log(`   Avec mandats, niveau A     : ${rapport.niveauA}`);
+      console.log(`   Avec mandats, niveau B     : ${rapport.niveauB}  (prénom divergent, à relire)`);
+      console.log(`   Sans mandat local connu    : ${rapport.sansMandat}`);
+      console.log(`   Lignes retenues par fichier: ${JSON.stringify(rapport.lignesLues)}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-mandats-locaux failed');
+      process.exit(1);
+    } finally {
+      await prisma.$disconnect();
+    }
+  });
+
+// =============================================================================
+// COMMANDE: sync-resultats-senatoriales
+// =============================================================================
+program
+  .command('sync-resultats-senatoriales')
+  .description(
+    'Résultats des sénatoriales, lus sur le site de résultats du ministère de l\'Intérieur ' +
+      '(à relancer toutes les 5 minutes le soir du scrutin)'
+  )
+  .option('--scrutin <slug>', 'Identifiant du scrutin', 'senatoriales-2026')
+  .option('--base-url <url>', 'Racine du site de résultats', 'https://www.resultats-elections.interieur.gouv.fr/Senatoriales2026/')
+  .option('--departement <codes...>', 'Restreindre à ces circonscriptions (codes : 01, 2A, 997…)')
+  .option('--a-blanc', 'Lire et contrôler sans rien écrire')
+  .option(
+    '--dossier-local <dossier>',
+    'Lire un site simulé depuis ce dossier (cf. simuler-soiree-senatoriales). Base locale uniquement.'
+  )
+  .option('--boucle <secondes>', 'Relancer indéfiniment toutes les N secondes (poste allumé, plan B du cron)')
+  .action(
+    async (options: {
+      scrutin: string;
+      baseUrl: string;
+      departement?: string[];
+      aBlanc?: boolean;
+      dossierLocal?: string;
+      boucle?: string;
+    }) => {
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+
+      // Des résultats fictifs portent sur de vrais noms : ils ne doivent jamais
+      // atteindre une autre base que celle du poste.
+      if (options.dossierLocal) {
+        const hote = new URL(process.env.DATABASE_URL ?? 'postgresql://inconnu').hostname;
+        if (hote !== 'localhost' && hote !== '127.0.0.1') {
+          console.error(`❌ Site simulé refusé : la base « ${hote} » n'est pas locale.`);
+          process.exit(1);
+        }
+      }
+
+      const { synchroniserResultats } = await import('./sources/senatoriales/resultats-client.js');
+      const lirePage = options.dossierLocal
+        ? async (url: string) => {
+            const fs = await import('fs/promises');
+            const path = await import('path');
+            const relatif = new URL(url).pathname.replace(new URL(options.baseUrl).pathname, '');
+            try {
+              return await fs.readFile(path.join(options.dossierLocal as string, relatif), 'utf-8');
+            } catch {
+              return null;
+            }
+          }
+        : undefined;
+
+      const passage = async (): Promise<boolean> => {
+        const debut = Date.now();
+        const rapport = await synchroniserResultats(prisma, {
+          scrutin: options.scrutin,
+          baseUrl: options.baseUrl,
+          departements: options.departement,
+          simulation: options.aBlanc ?? false,
+          lirePage,
+          // L'heure simulée ne vaut qu'avec un site simulé, donc une base locale.
+          maintenant:
+            options.dossierLocal && process.env.SENATORIALES_HORLOGE
+              ? new Date(process.env.SENATORIALES_HORLOGE)
+              : undefined,
+        });
+
+        const ecrites = rapport.etats.filter((e) => e.ecrit).length;
+        console.log(
+          `\n🗳️  Résultats ${rapport.scrutin} — ${new Date().toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' })}` +
+            `${rapport.simulation ? ' (À BLANC, rien écrit)' : ''} — ${Math.round((Date.now() - debut) / 1000)} s`
+        );
+        console.log(`   Circonscriptions lues      : ${rapport.circonscriptions}`);
+        console.log(`   Avec résultats publiés     : ${rapport.avecResultats} (écrites : ${ecrites})`);
+        console.log(`   Pas encore publiées        : ${rapport.sansResultats}`);
+        if (rapport.inaccessibles.length > 0) {
+          console.log(`   Pages absentes (404)       : ${rapport.inaccessibles.join(', ')}`);
+        }
+        if (rapport.anomalies.length > 0) {
+          console.log(`\n   ⚠️  ${rapport.anomalies.length} anomalie(s) — circonscriptions concernées NON écrites, sauf ligne non rattachée :`);
+          for (const a of rapport.anomalies) console.log(`     ${a.code} : ${a.message}`);
+        }
+        // Chaque circonscription a sa page depuis la publication des
+        // candidatures : un 404 veut dire une URL fausse, jamais « pas encore ».
+        return rapport.anomalies.length === 0 && rapport.inaccessibles.length === 0;
+      };
+
+      try {
+        if (!options.boucle) {
+          const propre = await passage();
+          process.exit(propre ? 0 : 1);
+        }
+
+        const intervalle = Math.max(60, Number(options.boucle)) * 1000;
+        for (;;) {
+          try {
+            await passage();
+          } catch (erreur) {
+            logger.error({ error: errorMessage(erreur) }, 'sync-resultats-senatoriales : passage en échec');
+          }
+          await new Promise((r) => setTimeout(r, intervalle));
+        }
+      } catch (error) {
+        logger.error({ error: errorMessage(error) }, 'sync-resultats-senatoriales failed');
+        process.exit(1);
+      } finally {
+        await prisma.$disconnect();
+      }
+    }
+  );
+
+// =============================================================================
+// COMMANDE: simuler-soiree-senatoriales
+// =============================================================================
+program
+  .command('simuler-soiree-senatoriales')
+  .description(
+    'Fabrique un faux site de résultats (RÉSULTATS FICTIFS) à partir des candidatures en base, ' +
+      'pour tester la chaîne en local'
+  )
+  .requiredOption('--etape <etape>', 'matin | midi | soir | complet')
+  .requiredOption('--dossier <dossier>', 'Dossier où écrire le site simulé')
+  .option('--scrutin <slug>', 'Identifiant du scrutin', 'senatoriales-2026')
+  .action(async (options: { etape: string; dossier: string; scrutin: string }) => {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+    try {
+      const { genererSiteSimule, HORLOGE_ETAPE } = await import(
+        './sources/senatoriales/resultats-simulation.js'
+      );
+      if (!(options.etape in HORLOGE_ETAPE)) {
+        console.error(`❌ Étape inconnue : ${options.etape}`);
+        process.exit(1);
+      }
+      const etape = options.etape as keyof typeof HORLOGE_ETAPE;
+      const { pages, publiees } = await genererSiteSimule(prisma, {
+        scrutin: options.scrutin,
+        etape,
+        dossier: options.dossier,
+      });
+      console.log(`\n🧪 Site simulé « ${etape} » : ${pages} pages, ${publiees} avec résultats — ${options.dossier}`);
+      console.log(`   Heure à donner à l'API : SENATORIALES_HORLOGE=${HORLOGE_ETAPE[etape]}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'simuler-soiree-senatoriales failed');
+      process.exit(1);
+    } finally {
+      await prisma.$disconnect();
+    }
+  });
+
+// =============================================================================
+// COMMANDE: generer-reference-hemicycle
+// =============================================================================
+program
+  .command('generer-reference-hemicycle')
+  .description(
+    'Répartition du Sénat par nuance à l\'élection (série 1 : 2023, série 2 : 2020), ' +
+      'depuis les résultats du ministère sur data.gouv — pour l\'hémicycle avant/après'
+  )
+  .requiredOption('--sortie <fichier>', 'Fichier JSON à écrire')
+  .action(async (options: { sortie: string }) => {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+    const os = await import('os');
+    const path = await import('path');
+    const fs = await import('fs/promises');
+    const temporaires: string[] = [];
+    try {
+      const { downloadWithRetry } = await import('./utils/download.js');
+      const { lireClasseurXlsx } = await import('./utils/xlsx.js');
+      const ref = await import('./sources/senatoriales/hemicycle-reference.js');
+
+      const telecharger = async (url: string) => {
+        const destination = path.join(os.tmpdir(), `reference-${Date.now()}-${temporaires.length}.xlsx`);
+        await downloadWithRetry(url, destination);
+        temporaires.push(destination);
+        return lireClasseurXlsx(destination);
+      };
+
+      // Sièges de chaque circonscription de la série 2 : les mandats ouverts la
+      // veille du scrutin, la référence de toute la page.
+      const lignes = await prisma.$queryRaw<{ departement: string; n: bigint }[]>`
+        SELECT c.departement, COUNT(*)::bigint AS n
+        FROM mandats_parlementaires m
+        JOIN circonscriptions c ON c.id = m.circonscription_id
+        WHERE m.chambre = 'senat' AND m.serie = '2' AND m.mandature = 2020
+          AND m.date_debut <= '2026-09-26' AND (m.date_fin IS NULL OR m.date_fin >= '2026-09-26')
+        GROUP BY c.departement
+      `;
+      const sieges = new Map(lignes.map((l) => [l.departement, Number(l.n)]));
+
+      const serie1 = ref.serie1DepuisResultats2023(await telecharger(ref.SOURCES_REFERENCE.resultats2023));
+      const serie2Avant = ref.serie2DepuisResultats2020(
+        await telecharger(ref.SOURCES_REFERENCE.resultats2020),
+        sieges
+      );
+      if (serie1.length !== 170 || serie2Avant.length !== 178) {
+        throw new Error(`Effectifs inattendus : série 1 ${serie1.length}/170, série 2 ${serie2Avant.length}/178`);
+      }
+
+      const compterNuances = (s: typeof serie1) => {
+        const c: Record<string, number> = {};
+        for (const x of s) if (x.nuance) c[x.nuance] = (c[x.nuance] ?? 0) + 1;
+        return c;
+      };
+      const sortie = {
+        description:
+          'Sièges du Sénat classés par la famille de la nuance attribuée par le ministère de l\'Intérieur ' +
+          'à l\'élection de leur titulaire. Généré par `generer-reference-hemicycle`, ne pas éditer à la main.',
+        sources: ref.SOURCES_REFERENCE,
+        serie1: { election: 2023, sieges: serie1.length, parFamille: ref.compterParFamille(serie1), parNuance: compterNuances(serie1) },
+        serie2Avant: {
+          election: 2020,
+          sieges: serie2Avant.length,
+          parFamille: ref.compterParFamille(serie2Avant),
+          parNuance: compterNuances(serie2Avant),
+          note: 'Les 6 sièges des Français établis hors de France ont été pourvus en 2021, sans nuance publiée par le ministère.',
+        },
+      };
+      await fs.writeFile(options.sortie, JSON.stringify(sortie, null, 2) + '\n');
+      console.log(`\n🏛️  Référence écrite : ${options.sortie}`);
+      console.log('   Série 1 (2023) :', sortie.serie1.parFamille);
+      console.log('   Série 2 (2020) :', sortie.serie2Avant.parFamille);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'generer-reference-hemicycle failed');
+      process.exit(1);
+    } finally {
+      await prisma.$disconnect();
+      await Promise.all(temporaires.map((f) => fs.rm(f, { force: true })));
+    }
+  });
+
 // pnpm forwards '--' from 'pnpm run script -- args' into the child process argv.
 // Commander treats '--' as end-of-options, so flags after it are ignored.
 // Strip the first '--' that appears after the subcommand name.

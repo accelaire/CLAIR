@@ -38,6 +38,23 @@ export function renouvellementAVenir(aujourdhui: Date = new Date()): boolean {
   return aujourdhui.toISOString().slice(0, 10) < SENATORIALES_2026.priseDeFonction;
 }
 
+/**
+ * Fenêtre du direct des résultats : des premiers résultats du dimanche, vers
+ * 11h30 heure de Paris, au lundi matin. Le dernier siège (2nd tour de la
+ * Polynésie française) a été publié à 1h20 : le direct s'arrête à 7h. Sert au
+ * bandeau du site et à l'accroche de l'accueil ; la page du scrutin, elle, se
+ * fie aux compteurs de l'API.
+ */
+export const DIRECT_RESULTATS = {
+  debut: '2026-09-27T09:30:00Z',
+  fin: '2026-09-28T05:00:00Z',
+} as const;
+
+export function resultatsEnDirect(maintenant: Date = new Date()): boolean {
+  const t = maintenant.getTime();
+  return t >= Date.parse(DIRECT_RESULTATS.debut) && t < Date.parse(DIRECT_RESULTATS.fin);
+}
+
 /** Ce siège est-il remis en jeu ? */
 export function siegeRenouvelable(
   parlementaire: { chambre?: string | null; serie?: string | null; actif?: boolean | null },

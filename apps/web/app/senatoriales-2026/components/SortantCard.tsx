@@ -38,6 +38,7 @@ export function SortantCard({
   sortant,
   surbrillance = false,
   candidaturesPubliees = false,
+  sort,
 }: {
   sortant: Sortant;
   /**
@@ -56,6 +57,12 @@ export function SortantCard({
    * précèdent le dépôt. La donnée manquante doit rester muette.
    */
   candidaturesPubliees?: boolean;
+  /**
+   * Issue du scrutin pour ce sortant, une fois les résultats publiés. Remplace
+   * alors le badge de candidature : « se représente » n'a plus d'intérêt quand
+   * on sait s'il est réélu.
+   */
+  sort?: 'reelu' | 'battu' | 'ne_se_representait_pas' | 'en_attente';
 }) {
   const initials = `${sortant.personne.prenom.charAt(0)}${sortant.personne.nom.charAt(0)}`.toUpperCase();
 
@@ -82,20 +89,20 @@ export function SortantCard({
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <p className="truncate font-semibold group-hover:text-primary">
+          <p className="font-semibold leading-snug group-hover:text-primary">
             {sortant.personne.prenom} {sortant.personne.nom}
           </p>
-          <div className="mt-0.5 flex items-center gap-1.5">
+          <div className="mt-0.5 flex items-start gap-1.5">
             <span
-              className="h-2 w-2 shrink-0 rounded-full"
+              className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
               style={{ backgroundColor: sortant.groupe?.couleur || '#888' }}
             />
-            <span className="truncate text-sm text-muted-foreground">
+            <span className="text-sm leading-snug text-muted-foreground">
               {nomGroupe(sortant.groupe)}
             </span>
           </div>
           {sortant.circonscription && (
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {sortant.circonscription.nom}
             </p>
           )}
@@ -103,13 +110,33 @@ export function SortantCard({
       </div>
 
       {sortant.commissionPermanente && (
-        <p className="mt-2 truncate text-xs text-muted-foreground">
+        <p className="mt-2 text-xs text-muted-foreground">
           {sortant.commissionPermanente}
         </p>
       )}
 
       <div className="mt-2 flex flex-wrap gap-1.5">
-        {candidaturesPubliees &&
+        {sort && sort !== 'en_attente' && (
+          <span
+            className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${
+              sort === 'reelu'
+                ? 'bg-foreground text-background'
+                : sort === 'battu'
+                  ? 'border border-foreground/40 text-foreground'
+                  : 'border border-dashed text-muted-foreground'
+            }`}
+          >
+            {sort === 'reelu'
+              ? `${sortant.personne.sexe === 'F' ? 'Réélue' : 'Réélu'} le 27 septembre`
+              : sort === 'battu'
+                ? sortant.personne.sexe === 'F'
+                  ? 'Battue'
+                  : 'Battu'
+                : 'Ne se représentait pas'}
+          </span>
+        )}
+        {(!sort || sort === 'en_attente') &&
+          candidaturesPubliees &&
           (sortant.candidature ? (
             <span
               className="inline-block rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary"

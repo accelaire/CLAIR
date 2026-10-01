@@ -8,6 +8,7 @@ import { errorMessage } from '../utils/errors';
 import { TYPE_INTERRUPTION, TYPE_REPONSE } from '../utils/interventions';
 import { SyceronClient } from '../sources/assemblee-nationale/syceron-client';
 import type { PriseDeParoleSyceron, SeanceSyceron } from '../sources/assemblee-nationale/syceron-parser';
+import { ajouterIdentifiantsConserves } from './changement-chambre';
 
 const prisma = new PrismaClient();
 
@@ -280,6 +281,7 @@ async function chargerParlementaires(): Promise<Map<string, string>> {
   for (const p of parlementaires) {
     if (p.sourceId) parRef.set(p.sourceId, p.id);
   }
+  await ajouterIdentifiantsConserves(prisma, CHAMBRE, parRef);
   logger.info({ parlementaires: parRef.size }, 'Parlementaires AN chargés');
   return parRef;
 }

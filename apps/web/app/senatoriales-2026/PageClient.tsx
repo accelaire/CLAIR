@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Suspense, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
@@ -332,6 +332,12 @@ interface PageClientProps {
   initialTousSortants?: Sortant[];
   /** Filtres avec lesquels `initialSortants` a été demandé côté serveur. */
   initialFiltres?: FiltresSortants;
+  /**
+   * Les résultats du scrutin, rendus côté serveur et posés sous l'en-tête dès
+   * que le premier bureau a ouvert. Absents avant : la page reste celle des
+   * candidats et du bilan.
+   */
+  resultats?: ReactNode;
 }
 
 function SenatorialesPageContent({
@@ -339,6 +345,7 @@ function SenatorialesPageContent({
   initialSortants,
   initialTousSortants,
   initialFiltres,
+  resultats,
 }: PageClientProps) {
   const [filters, setFilter, , clearAll] = useUrlFilters<{
     search: string;
@@ -402,12 +409,17 @@ function SenatorialesPageContent({
   }, [filters.tri, filters.departement, filters.groupe, filters.search]);
 
   useEffect(() => {
-    const target = new Date('2026-09-27');
-    const priseDeFonction = new Date('2026-10-01');
+    // Minuit à Paris, et non en UTC : `new Date('2026-09-27')` tombait à 2h du
+    // matin et annonçait « Scrutin passé » le jour même du vote.
+    const target = new Date('2026-09-27T00:00:00+02:00');
+    const lendemain = new Date('2026-09-28T00:00:00+02:00');
+    const priseDeFonction = new Date('2026-10-01T00:00:00+02:00');
     const now = new Date();
     if (now < target) {
       const diff = Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
       setCountdownText(`J-${diff} avant le scrutin`);
+    } else if (now < lendemain) {
+      setCountdownText('Jour du scrutin');
     } else if (now < priseDeFonction) {
       setCountdownText('Scrutin passé');
     } else {
@@ -685,6 +697,8 @@ function SenatorialesPageContent({
           )}
         </div>
       </div>
+
+      {resultats}
 
       <div className="rounded-lg border bg-card p-4 space-y-3">
         <h2 className="font-semibold">Comment fonctionne une élection sénatoriale ?</h2>
@@ -1002,6 +1016,7 @@ export default function PageClient({
   initialSortants,
   initialTousSortants,
   initialFiltres,
+  resultats,
 }: PageClientProps) {
   return (
     <Suspense fallback={<SenatorialesPageSkeleton />}>
@@ -1010,6 +1025,7 @@ export default function PageClient({
         initialSortants={initialSortants}
         initialTousSortants={initialTousSortants}
         initialFiltres={initialFiltres}
+        resultats={resultats}
       />
     </Suspense>
   );

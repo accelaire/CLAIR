@@ -353,6 +353,11 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
             dateFrom: { type: 'string', format: 'date' },
             dateTo: { type: 'string', format: 'date' },
             dissidentOnly: { type: 'boolean', default: false, description: 'Afficher uniquement les votes dissidents' },
+            chambre: {
+              type: 'string',
+              enum: ['assemblee', 'senat'],
+              description: 'Chambre, pour un parlementaire passé par les deux',
+            },
           },
         },
       },
@@ -402,14 +407,19 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
             dateFrom: { type: 'string', format: 'date' },
             dateTo: { type: 'string', format: 'date' },
             votedOnly: { type: 'boolean', default: false },
+            chambre: {
+              type: 'string',
+              enum: ['assemblee', 'senat'],
+              description: 'Chambre, pour un parlementaire passé par les deux',
+            },
           },
         },
       },
       handler: async (request, _reply) => {
         const { slug } = parlementaireParamsSchema.parse(request.params);
-        const { page = 1, limit = 20, sort, dateFrom, dateTo, votedOnly } = request.query as {
+        const { page = 1, limit = 20, sort, dateFrom, dateTo, votedOnly, chambre } = request.query as {
         page?: number; limit?: number; sort?: string;
-        dateFrom?: string; dateTo?: string; votedOnly?: boolean;
+        dateFrom?: string; dateTo?: string; votedOnly?: boolean; chambre?: Chambre;
       };
 
         const parlementaire = await fastify.prisma.parlementaire.findUnique({
@@ -432,6 +442,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           dateFrom,
           dateTo,
           votedOnly,
+          chambre,
         });
       },
     });
@@ -462,13 +473,18 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
             },
             dateFrom: { type: 'string', format: 'date' },
             dateTo: { type: 'string', format: 'date' },
+            chambre: {
+              type: 'string',
+              enum: ['assemblee', 'senat'],
+              description: 'Chambre, pour un parlementaire passé par les deux',
+            },
           },
         },
       },
       handler: async (request, _reply) => {
         const { slug } = parlementaireParamsSchema.parse(request.params);
-        const { page = 1, limit = 10, type, dateFrom, dateTo } = request.query as {
-        page?: number; limit?: number; type?: string; dateFrom?: string; dateTo?: string;
+        const { page = 1, limit = 10, type, dateFrom, dateTo, chambre } = request.query as {
+        page?: number; limit?: number; type?: string; dateFrom?: string; dateTo?: string; chambre?: Chambre;
       };
 
         const parlementaire = await fastify.prisma.parlementaire.findUnique({
@@ -501,6 +517,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           seanceId: { not: null },
           ...INTERVENTIONS_DE_FOND,
           ...(type && { type }),
+          ...(chambre && { chambre }),
           ...dateFilter,
         };
 
