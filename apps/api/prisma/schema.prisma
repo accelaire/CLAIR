@@ -1016,6 +1016,9 @@ model Scrutin {
   @@index([importance])
   @@index([texteId])
   @@index([dossierId])
+  // Retrouver le scrutin d'une mise aux voix du compte rendu : même séance, mêmes
+  // chiffres proclamés. Créé à la main en prod le 10/09/2026, déclaré ici après coup.
+  @@index([seanceRef, nombreVotants, nombrePour, nombreContre], map: "scrutins_appariement")
   @@map("scrutins")
 }
 
