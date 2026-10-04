@@ -96,7 +96,10 @@ function makeMockPrisma(seed: Partial<MandatRow>[] = []) {
         rows.filter((r) => matchWhere(r, where)),
       update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
         const row = rows.find((r) => r.id === where.id)!;
-        Object.assign(row, data);
+        // Comme Prisma : un champ `undefined` n'est pas écrit.
+        for (const [k, v] of Object.entries(data)) {
+          if (v !== undefined) (row as unknown as Record<string, unknown>)[k] = v;
+        }
         return row;
       },
       create: async ({ data }: { data: Record<string, unknown> }) => {
@@ -619,6 +622,29 @@ describe('upsertMandatParlementaire — Sénat chemin ODSEN (mandat clos, dateFi
     expect(created).toBe(true);
     expect(rows).toHaveLength(2);
     expect(rows.find((r) => r.id === 'ouvert')!.dateFin).toBeNull();
+  });
+
+  it('ne vide pas la circonscription, le groupe ni la commission que la source ignore (04/10/2026)', async () => {
+    const { prisma, rows } = makeMockPrisma([
+      {
+        id: 'clos',
+        mandature: 2020,
+        dateDebut: new Date('2021-10-01T00:00:00Z'),
+        dateFin: new Date('2026-09-30T00:00:00Z'),
+        groupeId: 'uc',
+        circonscriptionId: 'circo-997',
+        commissionPermanente: 'affaires etrangeres',
+      },
+    ]);
+    await upsertMandatParlementaire(prisma, {
+      ...senatInput(ctxSenatClos(2020, '2021-10-01T00:00:00Z', '2026-09-30T00:00:00Z')),
+      circonscriptionId: null,
+    });
+    expect(rows[0]).toMatchObject({
+      groupeId: 'uc',
+      circonscriptionId: 'circo-997',
+      commissionPermanente: 'affaires etrangeres',
+    });
   });
 
   it('matche une ligne close par sa date de début et met à jour son contexte', async () => {
