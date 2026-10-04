@@ -8,12 +8,9 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: '*',
         allow: '/',
-        disallow: [
-          '/admin/',
-          '/api/',
-          '/_next/',
-          '/static/',
-        ],
+        // Ne jamais bloquer /_next/ : Googlebot rend les pages comme un
+        // navigateur et a besoin du CSS et du JS qui y sont servis.
+        disallow: ['/admin/', '/api/'],
       },
     ],
     sitemap: `${BASE_URL}/sitemap.xml`,
