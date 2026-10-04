@@ -126,15 +126,27 @@ const CHAMBRE_LABEL: Record<string, string> = {
  * qu'on a réellement instruite mérite d'envoyer le lecteur ailleurs. Une entrée
  * s'ajoute ici le jour où la page correspondante existe.
  */
+/**
+ * Les étapes de l'installation du nouveau Sénat mènent elles aussi aux
+ * résultats : c'est en les lisant qu'on se demande qui vient d'être élu.
+ */
+const RESULTATS_SENATORIALES = {
+  href: '/senatoriales-2026#resultats',
+  label: 'Les résultats des sénatoriales',
+};
+
 const PAGES_DEDIEES: Record<string, { href: string; label: string }> = {
   'senatoriales-2026': {
-    href: '/senatoriales-2026',
-    // Le libellé suit ce que la page montre : depuis la publication du fichier
-    // du ministère, elle porte les candidats de chaque circonscription en plus
-    // du bilan des sortants, et n'annoncer que le bilan revenait à cacher la
-    // moitié de ce qui attend le lecteur à neuf jours du scrutin.
-    label: 'Les candidats et le bilan des sortants',
+    href: '/senatoriales-2026#resultats',
+    // Le libellé suit ce que la page montre : les candidats et le bilan des
+    // sortants avant le scrutin, les élus de chaque circonscription depuis.
+    label: 'Les résultats et les élus de chaque circonscription',
   },
+  'prise-fonction-senateurs-2026': RESULTATS_SENATORIALES,
+  'election-president-senat-2026': RESULTATS_SENATORIALES,
+  'constitution-groupes-senat-2026': RESULTATS_SENATORIALES,
+  'bureau-senat-2026': RESULTATS_SENATORIALES,
+  'renouvellement-commissions-senat-2026': RESULTATS_SENATORIALES,
 };
 
 export function pageDedieePour(slug: string): { href: string; label: string } | null {

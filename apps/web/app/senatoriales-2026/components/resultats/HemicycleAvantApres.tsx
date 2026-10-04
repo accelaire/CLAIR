@@ -27,7 +27,7 @@ const VIEWBOX = { largeur: 500, hauteur: 270 };
 const CENTRE = { x: 250, y: 255 };
 const RAYONS = { interieur: 78, exterieur: 238 };
 
-function Arc({ repartition, etiquette }: { repartition: Repartition; etiquette: string }) {
+export function Arc({ repartition, etiquette }: { repartition: Repartition; etiquette: string }) {
   // À gauche, de la gauche vers la droite ; les sièges non attribués au milieu,
   // entre les deux blocs, comme la place qu'ils occuperont.
   const gaucheDeLArc = (['gauche', 'centre'] as const).flatMap((f) => Array(repartition[f] ?? 0).fill(f));
