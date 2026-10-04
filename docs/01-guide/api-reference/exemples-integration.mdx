@@ -1,0 +1,96 @@
+---
+title: "Exemples d'Intégration de l'API"
+sidebar_label: "Exemples de Code"
+sidebar_icon: "code"
+description: Snippets de code prêts à l'emploi en cURL, TypeScript (Fetch), Python (requests) et Go pour consommer l'API CLAIR.
+---
+
+## 💻 Snippets Multi-Langages
+
+### cURL
+
+```bash
+# Récupérer les 10 derniers scrutins de l'Assemblée nationale
+curl -X GET "https://api.clair.vote/api/v1/scrutins?chambre=assemblee&limit=10" \
+     -H "User-Agent: MonAppCitoyenne/1.0" \
+     -H "Accept: application/json"
+```
+
+---
+
+### TypeScript (Fetch)
+
+```typescript
+interface Scrutin {
+  id: string;
+  numero: number;
+  titre: string;
+  sort: string;
+}
+
+async function getDerniersScrutins(): Promise<Scrutin[]> {
+  const res = await fetch("https://api.clair.vote/api/v1/scrutins?limit=10", {
+    headers: {
+      "User-Agent": "MonAppCivique/1.0 (contact@monprojet.org)",
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Erreur HTTP: ${res.status}`);
+  }
+
+  const data = await res.json();
+  return data.data;
+}
+
+getDerniersScrutins().then(console.log);
+```
+
+---
+
+### Python (requests)
+
+```python
+import requests
+
+url = "https://api.clair.vote/api/v1/parlementaires"
+params = {"chambre": "assemblee", "limit": 5}
+headers = {"User-Agent": "EtudeParlementairePython/1.0"}
+
+response = requests.get(url, params=params, headers=headers)
+response.raise_for_status()
+
+deputes = response.json()
+for d in deputes.get("data", []):
+    print(f"{d['prenom']} {d['nom']} - Groupe: {d.get('groupe', {}).get('sigle')}")
+```
+
+---
+
+### Go
+
+```go
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+)
+
+func main() {
+	client := &http.Client{}
+	req, _ := http.NewRequest("GET", "https://api.clair.vote/api/v1/health", nil)
+	req.Header.Set("User-Agent", "GoCivicBot/1.0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	fmt.Println("API Health:", result)
+}
+```

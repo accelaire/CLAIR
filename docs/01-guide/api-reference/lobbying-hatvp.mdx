@@ -1,0 +1,34 @@
+---
+title: "API Lobbying & Représentants d'Intérêts (HATVP)"
+sidebar_label: "Lobbying HATVP"
+sidebar_icon: "building-2"
+description: Consultation des données ouvertes HATVP (répertoire Agora, représentants d'intérêts, actions d'influence déclarées et secteurs).
+---
+
+## 🏢 Endpoints Lobbying
+
+| Méthode | Route | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/lobbying` | Liste paginée des représentants d'intérêts enregistrés |
+| `GET` | `/api/v1/lobbying/secteurs` | Liste des secteurs économiques et d'intervention |
+| `GET` | `/api/v1/lobbying/stats` | Statistiques globales sur les dépenses déclarées et le volume d'actions |
+| `GET` | `/api/v1/lobbying/actions` | Liste chronologique des actions d'influence déclarées |
+| `GET` | `/api/v1/lobbying/actions/recent` | Dernières actions de lobbying signalées |
+| `GET` | `/api/v1/lobbying/:id` | Fiche détaillée d'un lobbyiste (identité, dirigeants, clients) |
+| `GET` | `/api/v1/lobbying/:id/actions` | Historique des actions d'influence menées par une organisation |
+
+---
+
+## 📋 Exemple de Réponse JSON (`GET /api/v1/lobbying/stats`)
+
+```json
+{
+  "totalLobbyistes": 4095,
+  "totalActions": 101978,
+  "topSecteurs": [
+    { "nom": "Énergie et environnement", "actions": 14500 },
+    { "nom": "Santé et affaires sociales", "actions": 12800 },
+    { "nom": "Numérique et télécommunications", "actions": 11200 }
+  ]
+}
+```

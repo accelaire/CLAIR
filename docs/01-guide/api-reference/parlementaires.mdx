@@ -1,0 +1,61 @@
+---
+title: "API Parlementaires, Députés & Sénateurs"
+sidebar_label: "Parlementaires"
+sidebar_icon: "users"
+description: Documentation des routes /api/v1/parlementaires, /api/v1/deputes et /api/v1/senateurs (fiches, statistiques d'activité, historique de votes et interventions).
+---
+
+## 👥 Endpoints Principaux
+
+| Méthode | Route | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/parlementaires` | Liste paginée de tous les parlementaires (Assemblée + Sénat) |
+| `GET` | `/api/v1/deputes` | Liste filtrée sur les députés de l'Assemblée nationale |
+| `GET` | `/api/v1/senateurs` | Liste filtrée sur les sénateurs |
+| `GET` | `/api/v1/parlementaires/:slug` | Fiche détaillée d'un élu (biographie, mandats, stats, résumé IA) |
+| `GET` | `/api/v1/parlementaires/:slug/votes` | Historique de vote d'un parlementaire avec filtres |
+| `GET` | `/api/v1/parlementaires/:slug/amendements` | Amendements déposés et cosignés par l'élu |
+| `GET` | `/api/v1/parlementaires/:slug/interventions` | Prises de parole en séance et en commission |
+| `GET` | `/api/v1/parlementaires/compare` | Comparateur d'activité entre deux parlementaires |
+
+---
+
+## 🏛️ Filtres Supportés
+
+- `chambre` : `assemblee` ou `senat`
+- `groupe` : Code ou sigle du groupe (ex: `EPR` ou `RN`)
+- `departement` : Nom ou code du département
+- `actif` : `true` (en exercice) ou `false` (anciens élus)
+- `search` : Recherche textuelle sur le nom / prénom
+- `sort` : Tri par `nom`, `presence`, `loyaute`, `participation`, `interventions`
+
+---
+
+## 📋 Exemple de Réponse JSON (`GET /api/v1/parlementaires/yael-braun-pivet`)
+
+```json
+{
+  "id": "PA795828",
+  "slug": "yael-braun-pivet",
+  "nom": "Braun-Pivet",
+  "prenom": "Yaël",
+  "sexe": "F",
+  "chambre": "assemblee",
+  "actif": true,
+  "groupe": {
+    "nom": "Ensemble pour la République",
+    "sigle": "EPR",
+    "couleur": "#FFB300"
+  },
+  "circonscription": {
+    "departement": "Yvelines",
+    "numero": 5
+  },
+  "stats": {
+    "presence": 92,
+    "loyaute": 98,
+    "participation": 88,
+    "interventions": 1420
+  }
+}
+```

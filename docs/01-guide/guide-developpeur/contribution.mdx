@@ -1,0 +1,30 @@
+---
+title: "Guide de Contribution & Bonnes Pratiques"
+sidebar_label: "Contribution & Normes"
+sidebar_icon: "git-pull-request"
+description: Workflow Git, conventions de commits, licences libres AGPL-3.0, validation avant PR et tests unitaires.
+---
+
+## 🤝 Comment Contribuer ?
+
+Le projet CLAIR est ouvert aux contributions citoyennes, techniques et juridiques.
+
+### 1. Cycle de Développement et Branches
+- Clonez le dépôt et créez une branche thématique explicite (`feat/nom-fonctionnalite`, `fix/nom-du-bug`, `docs/nom-sujet`).
+- Respectez les standards TypeScript et assurez-vous que les types sont stricts.
+
+### 2. Validation Avant Soumission
+Avant d'ouvrir une Pull Request, exécutez impérativement :
+
+```bash
+# Vérifier la qualité du code
+pnpm lint
+pnpm type-check
+pnpm test
+
+# Valider la documentation
+pnpm docs:validate
+```
+
+### 3. Licence Libre AGPL-3.0
+Toute contribution soumise au projet est automatiquement placée sous les termes de la licence **GNU Affero General Public License v3.0**.

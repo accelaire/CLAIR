@@ -24,6 +24,8 @@ node_modules/
 dist/
 .next/
 .turbo/
+docs/public/pagefind/
+.zudoku/
 
 # IDE
 .idea/

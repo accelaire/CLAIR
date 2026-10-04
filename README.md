@@ -63,7 +63,25 @@ pnpm ingestion:calculate-stats   # recalcul des stats (présence, loyauté…)
 
 L'API REST est documentée via Swagger à `http://localhost:3001/docs` une fois le serveur lancé (en production : [api.clair.vote/docs](https://api.clair.vote/docs)).
 
-> Pour contribuer ou auditer la solution, consulte notre [wiki](https://github.com/accelaire/CLAIR/wiki) ou contacte-nous par [mail](mailto:contact@clair.vote).
+## Documentation (`docs/`)
+
+Le portail de documentation technique et de référence de l'API est propulsé par [Zudoku](https://zudoku.dev) dans le dossier `docs/` et déployé sur [docs.clair.vote](https://docs.clair.vote).
+
+```bash
+# Lancer le portail de documentation en local (avec rechargement à chaud)
+pnpm dev:docs
+
+# Régénérer la navigation après modification des fichiers .mdx
+pnpm docs:nav
+
+# Valider la syntaxe MDX et l'intégrité des liens internes
+pnpm docs:validate
+
+# Télécharger et synchroniser la spécification OpenAPI depuis api.clair.vote
+pnpm --filter @clair/docs exec node scripts/export-openapi-spec.mjs
+```
+
+> Pour contribuer ou auditer la solution, consulte notre [documentation en ligne](https://docs.clair.vote), notre [wiki](https://github.com/accelaire/CLAIR/wiki) ou contacte-nous par [mail](mailto:contact@clair.vote).
 
 ## Contact
 

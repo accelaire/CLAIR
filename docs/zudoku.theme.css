@@ -1,0 +1,27 @@
+/*
+ * Thème de documentation Zudoku pour CLAIR (clair.vote)
+ */
+
+:root {
+  --primary: 215 91% 51%;
+  --primary-accent: #2563eb;
+  --primary-deep: #1e40af;
+  --background: #ffffff;
+  --foreground: #020817;
+  --card: #ffffff;
+  --card-foreground: #020817;
+  --border: #e2e8f0;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+}
+
+.dark {
+  --primary: 215 91% 51%;
+  --background: #0c0e12;
+  --foreground: #ffffff;
+  --card: #12151b;
+  --card-foreground: #ffffff;
+  --border: #22262f;
+  --muted: #22262f;
+  --muted-foreground: #94969c;
+}

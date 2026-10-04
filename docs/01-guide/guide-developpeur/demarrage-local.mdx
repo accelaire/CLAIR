@@ -1,0 +1,83 @@
+---
+title: "Installation & Démarrage Local"
+sidebar_label: "Démarrage Local"
+sidebar_icon: "laptop"
+description: Configuration pas à pas de l'environnement de développement local (Node 20, pnpm 8, Docker PostgreSQL & Redis, seed Prisma).
+---
+
+## 📋 Prérequis
+
+- **Node.js ≥ 20** (version LTS recommandée).
+- **pnpm 8 / 9** (`corepack enable pnpm`).
+- **Docker & Docker Compose** (pour démarrer PostgreSQL 16 et Redis 7).
+- *(Facultatif)* **poppler-utils** (commande `pdftotext`) pour extraire les comptes rendus PDF de l'Assemblée nationale.
+
+---
+
+## ⚡ Installation Pas à Pas
+
+### 1. Cloner & Installer
+
+```bash
+git clone https://github.com/accelaire/CLAIR.git
+cd CLAIR
+pnpm install
+```
+
+### 2. Variables d'Environnement
+
+```bash
+cp .env.example .env
+
+# Créer les liens symboliques vers les paquets concernés
+ln -s ../../.env apps/api/.env
+ln -s ../../.env services/ingestion/.env
+```
+
+### 3. Démarrer les Services & Base de Données
+
+```bash
+# Lancer PostgreSQL 16 et Redis 7
+pnpm docker:up
+
+# Générer le client Prisma
+pnpm db:generate
+
+# Pousser le schéma dans la base locale
+pnpm db:push
+```
+
+### 4. Lancer l'Application
+
+```bash
+# Lancer le Web (:3000) et l'API (:3001)
+pnpm dev
+
+# Ou lancer uniquement la documentation
+pnpm dev:docs
+```
+
+---
+
+## 🗃️ Peupler la Base de Données
+
+Une fois le schéma appliqué, votre base PostgreSQL locale est initialement vierge :
+
+```bash
+# Option A : Insérer un jeu d'échantillons minimal pour tester l'UI
+pnpm db:seed
+
+# Option B : Synchroniser un échantillon réel depuis les sources Open Data
+pnpm --filter @clair/ingestion build
+pnpm ingestion:sync -p                  # Télécharge les députés et sénateurs
+pnpm ingestion:sync -s -l 50            # Télécharge 50 scrutins récents
+```
+
+---
+
+## 🔍 Points de Contrôle
+
+- **Frontend Web** : [http://localhost:3000](http://localhost:3000)
+- **API REST & Swagger** : [http://localhost:3001/docs](http://localhost:3001/docs)
+- **Santé de l'API** : [http://localhost:3001/health](http://localhost:3001/health)
+- **Portail de Documentation** : [http://localhost:3000](http://localhost:3000)

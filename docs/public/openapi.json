@@ -1,0 +1,5284 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "CLAIR API",
+    "description": "API de la plateforme de transparence politique CLAIR",
+    "version": "0.1.0"
+  },
+  "components": {
+    "schemas": {}
+  },
+  "paths": {
+    "/robots.txt": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__robots_txt"
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "tags": [
+          "Health"
+        ],
+        "description": "Vérifie que l'API est opérationnelle",
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "timestamp": {
+                      "type": "string"
+                    },
+                    "uptime": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [],
+        "operationId": "get__health"
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "summary": "Readiness check",
+        "tags": [
+          "Health"
+        ],
+        "description": "Vérifie que tous les services sont prêts",
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "services": {
+                      "type": "object",
+                      "properties": {
+                        "database": {
+                          "type": "string"
+                        },
+                        "redis": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "services": {
+                      "type": "object"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [],
+        "operationId": "get__health_ready"
+      }
+    },
+    "/health/live": {
+      "get": {
+        "summary": "Liveness check",
+        "tags": [
+          "Health"
+        ],
+        "description": "Vérifie que le processus est vivant",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__health_live"
+      }
+    },
+    "/api/v1/parlementaires/": {
+      "get": {
+        "summary": "Liste des parlementaires",
+        "tags": [
+          "Parlementaires"
+        ],
+        "description": "Retourne la liste paginée des parlementaires avec filtres et tri",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false,
+            "description": "Filtrer par chambre"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "groupe",
+            "required": false,
+            "description": "Slug du groupe politique"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "departement",
+            "required": false,
+            "description": "Numéro du département"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "description": "Recherche par nom/prénom"
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "default": true
+            },
+            "in": "query",
+            "name": "actif",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "nom",
+                "prenom",
+                "presence",
+                "loyaute",
+                "activite",
+                "amendements",
+                "interventions"
+              ],
+              "default": "nom"
+            },
+            "in": "query",
+            "name": "sort",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "asc"
+            },
+            "in": "query",
+            "name": "order",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_parlementaires_"
+      }
+    },
+    "/api/v1/parlementaires/groupes": {
+      "get": {
+        "summary": "Liste des groupes politiques",
+        "tags": [
+          "Parlementaires"
+        ],
+        "description": "Retourne les groupes politiques d'une période, avec leur effectif. Un sigle de groupe n'existe qu'à un instant donné : par défaut, seule la législature courante de l'Assemblée est renvoyée. Le Sénat n'a pas de législature.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "legislature",
+            "required": false,
+            "description": "Législature AN (15, 16, 17). Défaut : la plus récente en base."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "session",
+            "required": false,
+            "description": "Session Sénat (année de début, ex. \"2020\"). Défaut : la session courante. L'effectif renvoyé est la composition du groupe à cette session."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_parlementaires_groupes"
+      }
+    },
+    "/api/v1/parlementaires/legislatures": {
+      "get": {
+        "summary": "Législatures disponibles",
+        "tags": [
+          "Parlementaires"
+        ],
+        "description": "Liste des législatures pour lesquelles des mandats existent, de la plus récente à la plus ancienne, avec le nombre de mandats.",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_parlementaires_legislatures"
+      }
+    },
+    "/api/v1/parlementaires/sessions": {
+      "get": {
+        "summary": "Sessions disponibles (Sénat)",
+        "tags": [
+          "Parlementaires"
+        ],
+        "description": "Sessions ordinaires (1er oct. → 30 sept.) pour lesquelles la composition du Sénat est connue de façon fiable, de la plus récente à la plus ancienne. Le Sénat n'ayant pas de législature (renouvellement par moitiés), la session est le seul axe décrivant la chambre à un instant donné. Vide pour l'Assemblée (utiliser /legislatures).",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_parlementaires_sessions"
+      }
+    },
+    "/api/v1/parlementaires/historique-carriere": {
+      "get": {
+        "summary": "Historique de carrière disponible",
+        "tags": [
+          "Parlementaires"
+        ],
+        "description": "Indique si le tri « carrière complète » diffère du tri « mandat en cours » dans cette chambre : vrai seulement s'il existe un élu en fonction réélu (≥ 2 mandats). Sert à afficher le sélecteur de période des classements uniquement quand il départage réellement les élus.",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_parlementaires_historique_carriere"
+      }
+    },
+    "/api/v1/parlementaires/compare": {
+      "get": {
+        "summary": "Comparer des parlementaires",
+        "tags": [
+          "Parlementaires"
+        ],
+        "description": "Compare 2 à 4 parlementaires par leurs statistiques",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "slugs",
+            "required": true,
+            "description": "Slugs des parlementaires séparés par des virgules (2-4)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_parlementaires_compare"
+      }
+    },
+    "/api/v1/parlementaires/{slug}": {
+      "get": {
+        "summary": "Détail d'un parlementaire",
+        "tags": [
+          "Parlementaires"
+        ],
+        "description": "Retourne les informations détaillées d'un parlementaire",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "description": "Relations à inclure (votes,interventions,amendements,stats)"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "description": "Slug unique du parlementaire"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_parlementaires__slug_"
+      }
+    },
+    "/api/v1/parlementaires/{slug}/stats": {
+      "get": {
+        "summary": "Statistiques d'un parlementaire",
+        "tags": [
+          "Parlementaires"
+        ],
+        "description": "Retourne les statistiques calculées d'un parlementaire",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_parlementaires__slug__stats"
+      }
+    },
+    "/api/v1/parlementaires/{slug}/rank": {
+      "get": {
+        "summary": "Rang d'un parlementaire dans le classement",
+        "tags": [
+          "Parlementaires"
+        ],
+        "description": "Retourne la position (1-based) du parlementaire dans le classement trié et le total, pour le deep-link vers /classements.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "nom",
+                "prenom",
+                "presence",
+                "loyaute",
+                "activite",
+                "amendements",
+                "interventions"
+              ],
+              "default": "presence"
+            },
+            "in": "query",
+            "name": "sort",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            },
+            "in": "query",
+            "name": "order",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "groupe",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_parlementaires__slug__rank"
+      }
+    },
+    "/api/v1/parlementaires/{slug}/votes": {
+      "get": {
+        "summary": "Votes d'un parlementaire",
+        "tags": [
+          "Parlementaires"
+        ],
+        "description": "Retourne l'historique des votes d'un parlementaire",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pour",
+                "contre",
+                "abstention",
+                "absent"
+              ]
+            },
+            "in": "query",
+            "name": "position",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "tag",
+            "required": false,
+            "description": "Filtrer par tag de scrutin"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateFrom",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateTo",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "in": "query",
+            "name": "dissidentOnly",
+            "required": false,
+            "description": "Afficher uniquement les votes dissidents"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false,
+            "description": "Chambre, pour un parlementaire passé par les deux"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_parlementaires__slug__votes"
+      }
+    },
+    "/api/v1/parlementaires/{slug}/amendements": {
+      "get": {
+        "summary": "Amendements d'un parlementaire",
+        "tags": [
+          "Parlementaires"
+        ],
+        "description": "Retourne les amendements déposés par un parlementaire",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "Adopté",
+                "Rejeté",
+                "Retiré",
+                "Non soutenu",
+                "Tombé"
+              ]
+            },
+            "in": "query",
+            "name": "sort",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateFrom",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateTo",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "in": "query",
+            "name": "votedOnly",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false,
+            "description": "Chambre, pour un parlementaire passé par les deux"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_parlementaires__slug__amendements"
+      }
+    },
+    "/api/v1/parlementaires/{slug}/interventions": {
+      "get": {
+        "summary": "Interventions d'un parlementaire groupées par séance",
+        "tags": [
+          "Parlementaires"
+        ],
+        "description": "Retourne les interventions groupées par séance avec scrutins liés",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 10
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "question",
+                "intervention",
+                "explication_vote",
+                "reponse_gouvernement",
+                "interruption"
+              ]
+            },
+            "in": "query",
+            "name": "type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateFrom",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateTo",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false,
+            "description": "Chambre, pour un parlementaire passé par les deux"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_parlementaires__slug__interventions"
+      }
+    },
+    "/api/v1/deputes/": {
+      "get": {
+        "summary": "Liste des députés",
+        "tags": [
+          "Députés"
+        ],
+        "description": "Retourne la liste paginée des députés avec filtres et tri",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false,
+            "description": "Filtrer par chambre"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "groupe",
+            "required": false,
+            "description": "Slug du groupe politique"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "departement",
+            "required": false,
+            "description": "Numéro du département"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "description": "Recherche par nom/prénom"
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "default": true
+            },
+            "in": "query",
+            "name": "actif",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "nom",
+                "prenom",
+                "presence",
+                "loyaute",
+                "activite",
+                "amendements",
+                "interventions"
+              ],
+              "default": "nom"
+            },
+            "in": "query",
+            "name": "sort",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "asc"
+            },
+            "in": "query",
+            "name": "order",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_deputes_"
+      }
+    },
+    "/api/v1/deputes/groupes": {
+      "get": {
+        "summary": "Liste des groupes politiques",
+        "tags": [
+          "Députés"
+        ],
+        "description": "Retourne les groupes politiques de députés d'une période, avec leur effectif. Un sigle de groupe n'existe qu'à un instant donné : par défaut, seule la législature courante de l'Assemblée est renvoyée. Le Sénat n'a pas de législature.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "legislature",
+            "required": false,
+            "description": "Législature AN (15, 16, 17). Défaut : la plus récente en base."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "session",
+            "required": false,
+            "description": "Session Sénat (année de début, ex. \"2020\"). Défaut : la session courante. L'effectif renvoyé est la composition du groupe à cette session."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_deputes_groupes"
+      }
+    },
+    "/api/v1/deputes/legislatures": {
+      "get": {
+        "summary": "Législatures disponibles",
+        "tags": [
+          "Députés"
+        ],
+        "description": "Liste des législatures pour lesquelles des mandats existent (députés), de la plus récente à la plus ancienne, avec le nombre de mandats.",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_deputes_legislatures"
+      }
+    },
+    "/api/v1/deputes/sessions": {
+      "get": {
+        "summary": "Sessions disponibles (Sénat)",
+        "tags": [
+          "Députés"
+        ],
+        "description": "Sessions ordinaires (1er oct. → 30 sept.) pour lesquelles la composition du Sénat est connue de façon fiable, de la plus récente à la plus ancienne. Le Sénat n'ayant pas de législature (renouvellement par moitiés), la session est le seul axe décrivant la chambre à un instant donné. Vide pour l'Assemblée (utiliser /legislatures).",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_deputes_sessions"
+      }
+    },
+    "/api/v1/deputes/historique-carriere": {
+      "get": {
+        "summary": "Historique de carrière disponible",
+        "tags": [
+          "Députés"
+        ],
+        "description": "Indique si le tri « carrière complète » diffère du tri « mandat en cours » dans cette chambre (députés) : vrai seulement s'il existe un élu en fonction réélu (≥ 2 mandats). Sert à afficher le sélecteur de période des classements uniquement quand il départage réellement les élus.",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_deputes_historique_carriere"
+      }
+    },
+    "/api/v1/deputes/compare": {
+      "get": {
+        "summary": "Comparer des députés",
+        "tags": [
+          "Députés"
+        ],
+        "description": "Compare 2 à 4 députés par leurs statistiques",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "slugs",
+            "required": true,
+            "description": "Slugs des députés séparés par des virgules (2-4)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_deputes_compare"
+      }
+    },
+    "/api/v1/deputes/{slug}": {
+      "get": {
+        "summary": "Détail d'un député",
+        "tags": [
+          "Députés"
+        ],
+        "description": "Retourne les informations détaillées d'un député",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "description": "Relations à inclure (votes,interventions,amendements,stats)"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "description": "Slug unique du parlementaire"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_deputes__slug_"
+      }
+    },
+    "/api/v1/deputes/{slug}/stats": {
+      "get": {
+        "summary": "Statistiques d'un député",
+        "tags": [
+          "Députés"
+        ],
+        "description": "Retourne les statistiques calculées d'un député",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_deputes__slug__stats"
+      }
+    },
+    "/api/v1/deputes/{slug}/rank": {
+      "get": {
+        "summary": "Rang d'un député dans le classement",
+        "tags": [
+          "Députés"
+        ],
+        "description": "Retourne la position (1-based) du parlementaire dans le classement trié et le total, pour le deep-link vers /classements.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "nom",
+                "prenom",
+                "presence",
+                "loyaute",
+                "activite",
+                "amendements",
+                "interventions"
+              ],
+              "default": "presence"
+            },
+            "in": "query",
+            "name": "sort",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            },
+            "in": "query",
+            "name": "order",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "groupe",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_deputes__slug__rank"
+      }
+    },
+    "/api/v1/deputes/{slug}/votes": {
+      "get": {
+        "summary": "Votes d'un député",
+        "tags": [
+          "Députés"
+        ],
+        "description": "Retourne l'historique des votes d'un député",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pour",
+                "contre",
+                "abstention",
+                "absent"
+              ]
+            },
+            "in": "query",
+            "name": "position",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "tag",
+            "required": false,
+            "description": "Filtrer par tag de scrutin"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateFrom",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateTo",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "in": "query",
+            "name": "dissidentOnly",
+            "required": false,
+            "description": "Afficher uniquement les votes dissidents"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false,
+            "description": "Chambre, pour un parlementaire passé par les deux"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_deputes__slug__votes"
+      }
+    },
+    "/api/v1/deputes/{slug}/amendements": {
+      "get": {
+        "summary": "Amendements d'un député",
+        "tags": [
+          "Députés"
+        ],
+        "description": "Retourne les amendements déposés par un député",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "Adopté",
+                "Rejeté",
+                "Retiré",
+                "Non soutenu",
+                "Tombé"
+              ]
+            },
+            "in": "query",
+            "name": "sort",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateFrom",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateTo",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "in": "query",
+            "name": "votedOnly",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false,
+            "description": "Chambre, pour un parlementaire passé par les deux"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_deputes__slug__amendements"
+      }
+    },
+    "/api/v1/deputes/{slug}/interventions": {
+      "get": {
+        "summary": "Interventions d'un député groupées par séance",
+        "tags": [
+          "Députés"
+        ],
+        "description": "Retourne les interventions groupées par séance avec scrutins liés",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 10
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "question",
+                "intervention",
+                "explication_vote",
+                "reponse_gouvernement",
+                "interruption"
+              ]
+            },
+            "in": "query",
+            "name": "type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateFrom",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateTo",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false,
+            "description": "Chambre, pour un parlementaire passé par les deux"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_deputes__slug__interventions"
+      }
+    },
+    "/api/v1/senateurs/": {
+      "get": {
+        "summary": "Liste des sénateurs",
+        "tags": [
+          "Sénateurs"
+        ],
+        "description": "Retourne la liste paginée des sénateurs avec filtres et tri",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false,
+            "description": "Filtrer par chambre"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "groupe",
+            "required": false,
+            "description": "Slug du groupe politique"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "departement",
+            "required": false,
+            "description": "Numéro du département"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "description": "Recherche par nom/prénom"
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "default": true
+            },
+            "in": "query",
+            "name": "actif",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "nom",
+                "prenom",
+                "presence",
+                "loyaute",
+                "activite",
+                "amendements",
+                "interventions"
+              ],
+              "default": "nom"
+            },
+            "in": "query",
+            "name": "sort",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "asc"
+            },
+            "in": "query",
+            "name": "order",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_senateurs_"
+      }
+    },
+    "/api/v1/senateurs/groupes": {
+      "get": {
+        "summary": "Liste des groupes politiques",
+        "tags": [
+          "Sénateurs"
+        ],
+        "description": "Retourne les groupes politiques de sénateurs d'une période, avec leur effectif. Un sigle de groupe n'existe qu'à un instant donné : par défaut, seule la législature courante de l'Assemblée est renvoyée. Le Sénat n'a pas de législature.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "legislature",
+            "required": false,
+            "description": "Législature AN (15, 16, 17). Défaut : la plus récente en base."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "session",
+            "required": false,
+            "description": "Session Sénat (année de début, ex. \"2020\"). Défaut : la session courante. L'effectif renvoyé est la composition du groupe à cette session."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_senateurs_groupes"
+      }
+    },
+    "/api/v1/senateurs/legislatures": {
+      "get": {
+        "summary": "Législatures disponibles",
+        "tags": [
+          "Sénateurs"
+        ],
+        "description": "Liste des législatures pour lesquelles des mandats existent (sénateurs), de la plus récente à la plus ancienne, avec le nombre de mandats.",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_senateurs_legislatures"
+      }
+    },
+    "/api/v1/senateurs/sessions": {
+      "get": {
+        "summary": "Sessions disponibles (Sénat)",
+        "tags": [
+          "Sénateurs"
+        ],
+        "description": "Sessions ordinaires (1er oct. → 30 sept.) pour lesquelles la composition du Sénat est connue de façon fiable, de la plus récente à la plus ancienne. Le Sénat n'ayant pas de législature (renouvellement par moitiés), la session est le seul axe décrivant la chambre à un instant donné. Vide pour l'Assemblée (utiliser /legislatures).",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_senateurs_sessions"
+      }
+    },
+    "/api/v1/senateurs/historique-carriere": {
+      "get": {
+        "summary": "Historique de carrière disponible",
+        "tags": [
+          "Sénateurs"
+        ],
+        "description": "Indique si le tri « carrière complète » diffère du tri « mandat en cours » dans cette chambre (sénateurs) : vrai seulement s'il existe un élu en fonction réélu (≥ 2 mandats). Sert à afficher le sélecteur de période des classements uniquement quand il départage réellement les élus.",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_senateurs_historique_carriere"
+      }
+    },
+    "/api/v1/senateurs/compare": {
+      "get": {
+        "summary": "Comparer des sénateurs",
+        "tags": [
+          "Sénateurs"
+        ],
+        "description": "Compare 2 à 4 sénateurs par leurs statistiques",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "slugs",
+            "required": true,
+            "description": "Slugs des sénateurs séparés par des virgules (2-4)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_senateurs_compare"
+      }
+    },
+    "/api/v1/senateurs/{slug}": {
+      "get": {
+        "summary": "Détail d'un sénateur",
+        "tags": [
+          "Sénateurs"
+        ],
+        "description": "Retourne les informations détaillées d'un sénateur",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "description": "Relations à inclure (votes,interventions,amendements,stats)"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "description": "Slug unique du parlementaire"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_senateurs__slug_"
+      }
+    },
+    "/api/v1/senateurs/{slug}/stats": {
+      "get": {
+        "summary": "Statistiques d'un sénateur",
+        "tags": [
+          "Sénateurs"
+        ],
+        "description": "Retourne les statistiques calculées d'un sénateur",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_senateurs__slug__stats"
+      }
+    },
+    "/api/v1/senateurs/{slug}/rank": {
+      "get": {
+        "summary": "Rang d'un sénateur dans le classement",
+        "tags": [
+          "Sénateurs"
+        ],
+        "description": "Retourne la position (1-based) du parlementaire dans le classement trié et le total, pour le deep-link vers /classements.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "nom",
+                "prenom",
+                "presence",
+                "loyaute",
+                "activite",
+                "amendements",
+                "interventions"
+              ],
+              "default": "presence"
+            },
+            "in": "query",
+            "name": "sort",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            },
+            "in": "query",
+            "name": "order",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "groupe",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_senateurs__slug__rank"
+      }
+    },
+    "/api/v1/senateurs/{slug}/votes": {
+      "get": {
+        "summary": "Votes d'un sénateur",
+        "tags": [
+          "Sénateurs"
+        ],
+        "description": "Retourne l'historique des votes d'un sénateur",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pour",
+                "contre",
+                "abstention",
+                "absent"
+              ]
+            },
+            "in": "query",
+            "name": "position",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "tag",
+            "required": false,
+            "description": "Filtrer par tag de scrutin"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateFrom",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateTo",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "in": "query",
+            "name": "dissidentOnly",
+            "required": false,
+            "description": "Afficher uniquement les votes dissidents"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false,
+            "description": "Chambre, pour un parlementaire passé par les deux"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_senateurs__slug__votes"
+      }
+    },
+    "/api/v1/senateurs/{slug}/amendements": {
+      "get": {
+        "summary": "Amendements d'un sénateur",
+        "tags": [
+          "Sénateurs"
+        ],
+        "description": "Retourne les amendements déposés par un sénateur",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "Adopté",
+                "Rejeté",
+                "Retiré",
+                "Non soutenu",
+                "Tombé"
+              ]
+            },
+            "in": "query",
+            "name": "sort",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateFrom",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateTo",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "in": "query",
+            "name": "votedOnly",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false,
+            "description": "Chambre, pour un parlementaire passé par les deux"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_senateurs__slug__amendements"
+      }
+    },
+    "/api/v1/senateurs/{slug}/interventions": {
+      "get": {
+        "summary": "Interventions d'un sénateur groupées par séance",
+        "tags": [
+          "Sénateurs"
+        ],
+        "description": "Retourne les interventions groupées par séance avec scrutins liés",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 10
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "question",
+                "intervention",
+                "explication_vote",
+                "reponse_gouvernement",
+                "interruption"
+              ]
+            },
+            "in": "query",
+            "name": "type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateFrom",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateTo",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false,
+            "description": "Chambre, pour un parlementaire passé par les deux"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_senateurs__slug__interventions"
+      }
+    },
+    "/api/v1/groupes/": {
+      "get": {
+        "summary": "Liste des groupes politiques",
+        "tags": [
+          "Groupes politiques"
+        ],
+        "description": "Retourne les groupes politiques actifs d'une période, avec statistiques. Un sigle de groupe n'existe qu'à un instant donné (RE, LAREM et GDR-NUPES coexistent en base sur trois législatures) : par défaut, seule la législature courante de l'Assemblée est renvoyée. Le Sénat n'a pas de législature.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false,
+            "description": "Filtrer par chambre"
+          },
+          {
+            "schema": {
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "legislature",
+            "required": false,
+            "description": "Législature AN (15, 16, 17). Défaut : la plus récente en base."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "session",
+            "required": false,
+            "description": "Session Sénat (année de début, ex. \"2020\"). Défaut : la session courante. L'effectif renvoyé est celui de la composition du groupe à cette session."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_groupes_"
+      }
+    },
+    "/api/v1/groupes/{chambre}/{slug}": {
+      "get": {
+        "summary": "Détail d'un groupe politique",
+        "tags": [
+          "Groupes politiques"
+        ],
+        "description": "Retourne les informations détaillées d'un groupe avec ses membres",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "legislature",
+            "required": false,
+            "description": "Législature AN du groupe (15, 16, 17). Défaut : la plus récente. Un même sigle désigne un groupe différent selon la législature ; les membres et les stats renvoyés sont ceux de la période demandée."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "session",
+            "required": false,
+            "description": "Session Sénat (année de début, ex. \"2020\"). Défaut : la session courante. Renvoie la composition et les stats du groupe telles qu’à cette session."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "path",
+            "name": "chambre",
+            "required": true,
+            "description": "Chambre du groupe"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "description": "Slug unique du groupe"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_groupes__chambre___slug_"
+      }
+    },
+    "/api/v1/groupes/{chambre}/{slug}/stats": {
+      "get": {
+        "summary": "Statistiques d'un groupe",
+        "tags": [
+          "Groupes politiques"
+        ],
+        "description": "Retourne les statistiques agrégées d'un groupe politique",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "legislature",
+            "required": false,
+            "description": "Législature AN du groupe (15, 16, 17). Défaut : la plus récente. Un même sigle désigne un groupe différent selon la législature ; sans ce paramètre, les stats renvoyées seraient toujours celles de la législature la plus récente, même en vue historique (Sénat : ignoré, pas de législature)."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "path",
+            "name": "chambre",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_groupes__chambre___slug__stats"
+      }
+    },
+    "/api/v1/groupes/{chambre}/{slug}/votes": {
+      "get": {
+        "summary": "Statistiques de votes du groupe",
+        "tags": [
+          "Groupes politiques"
+        ],
+        "description": "Retourne les statistiques de votes agrégées du groupe avec les 10 derniers scrutins",
+        "parameters": [
+          {
+            "schema": {
+              "type": "boolean"
+            },
+            "in": "query",
+            "name": "groupeInitie",
+            "required": false,
+            "description": "Filtrer uniquement les scrutins initiés par ce groupe"
+          },
+          {
+            "schema": {
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "legislature",
+            "required": false,
+            "description": "Législature AN du groupe (15, 16, 17). Défaut : la plus récente. Sans ce paramètre, une page groupe en vue historique (ex. RN 16e) afficherait les votes du groupe de la législature courante (17e) au lieu de ceux de la période demandée."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "session",
+            "required": false,
+            "description": "Sénat uniquement (année de début, ex. \"2020\"). Défaut : la session courante. Si une session passée est demandée, les scrutins et votes agrégés sont bornés à l'intervalle de cette session ; sinon (absente ou courante), l'agrégat porte sur tout l'historique du groupe, comme avant."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "path",
+            "name": "chambre",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_groupes__chambre___slug__votes"
+      }
+    },
+    "/api/v1/groupes/{chambre}/{slug}/alliances": {
+      "get": {
+        "summary": "Alliances du groupe",
+        "tags": [
+          "Groupes politiques"
+        ],
+        "description": "Retourne les groupes alliés, neutres et opposés basé sur les votes communs",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "legislature",
+            "required": false,
+            "description": "Législature AN du groupe (15, 16, 17). Défaut : la plus récente. Les alliances sont pré-calculées PAR législature en base ; sans ce paramètre, une vue historique AN afficherait les alliances de la législature courante. Sénat : ignoré — les alliances ne portent que sur la session courante (pas de recalcul à la volée)."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "path",
+            "name": "chambre",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_groupes__chambre___slug__alliances"
+      }
+    },
+    "/api/v1/groupes/{chambre}/{slug}/thematiques": {
+      "get": {
+        "summary": "Statistiques par thématique",
+        "tags": [
+          "Groupes politiques"
+        ],
+        "description": "Retourne les positions du groupe par thème pour le radar chart",
+        "parameters": [
+          {
+            "schema": {
+              "type": "boolean"
+            },
+            "in": "query",
+            "name": "groupeInitie",
+            "required": false,
+            "description": "Filtrer uniquement les scrutins initiés par ce groupe"
+          },
+          {
+            "schema": {
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "legislature",
+            "required": false,
+            "description": "Législature AN du groupe (15, 16, 17). Défaut : la plus récente. Les stats thématiques sont pré-calculées PAR ligne de groupe (donc par législature) ; sans ce paramètre, une vue historique AN afficherait les thématiques du groupe de la législature courante. Sénat : ignoré — même limitation que pour les alliances."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "path",
+            "name": "chambre",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_groupes__chambre___slug__thematiques"
+      }
+    },
+    "/api/v1/groupes/{chambre}/matrice-alliances": {
+      "get": {
+        "summary": "Matrice d'alliances entre tous les groupes",
+        "tags": [
+          "Groupes politiques"
+        ],
+        "description": "Retourne une matrice complète des taux d'accord entre tous les groupes d'une chambre",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "path",
+            "name": "chambre",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_groupes__chambre__matrice_alliances"
+      }
+    },
+    "/api/v1/commissions/": {
+      "get": {
+        "summary": "Liste des commissions parlementaires",
+        "tags": [
+          "Commissions"
+        ],
+        "description": "Retourne toutes les commissions avec pagination et filtres",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "permanente",
+                "enquete",
+                "speciale",
+                "mixte_paritaire",
+                "office",
+                "delegation",
+                "mission_info",
+                "groupe_etudes",
+                "groupe_amitie",
+                "assemblee_internationale",
+                "hemicycle",
+                "autre"
+              ]
+            },
+            "in": "query",
+            "name": "type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "actif",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "number",
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "number",
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_commissions_"
+      }
+    },
+    "/api/v1/commissions/{slug}": {
+      "get": {
+        "summary": "Détail d'une commission",
+        "tags": [
+          "Commissions"
+        ],
+        "description": "Informations, membres actuels et prochaines réunions",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_commissions__slug_"
+      }
+    },
+    "/api/v1/commissions/{slug}/reunions": {
+      "get": {
+        "summary": "Réunions d'une commission",
+        "tags": [
+          "Commissions"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number",
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "number",
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "passees",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_commissions__slug__reunions"
+      }
+    },
+    "/api/v1/commissions/{slug}/dossiers": {
+      "get": {
+        "summary": "Dossiers législatifs d'une commission",
+        "tags": [
+          "Commissions"
+        ],
+        "description": "Dossiers examinés par la commission (fond ou avis)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "number",
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "number",
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "fond",
+                "avis"
+              ]
+            },
+            "in": "query",
+            "name": "role",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "adopte",
+                "en_cours",
+                "promulgue",
+                "rejete",
+                "retire",
+                "caduc",
+                "fusionne"
+              ]
+            },
+            "in": "query",
+            "name": "etat",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateFrom",
+            "required": false,
+            "description": "Dépôt à partir de cette date"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateTo",
+            "required": false,
+            "description": "Dépôt jusqu’à cette date"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_commissions__slug__dossiers"
+      }
+    },
+    "/api/v1/agenda/": {
+      "get": {
+        "summary": "Calendrier parlementaire",
+        "tags": [
+          "Agenda"
+        ],
+        "description": "Réunions groupées par jour pour une période donnée, plus les événements institutionnels (élections, sessions, suspensions, échéances budgétaires) chevauchant cette période.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateFrom",
+            "required": true,
+            "description": "Date de début (YYYY-MM-DD)"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateTo",
+            "required": false,
+            "description": "Date de fin (YYYY-MM-DD, défaut: fin du mois)"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "commission",
+                "seance",
+                "evenement",
+                "tous"
+              ],
+              "default": "tous"
+            },
+            "in": "query",
+            "name": "type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "query",
+            "name": "commissionId",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "number",
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "number",
+              "default": 50
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_agenda_"
+      }
+    },
+    "/api/v1/agenda/evenements": {
+      "get": {
+        "summary": "Prochaines échéances institutionnelles",
+        "tags": [
+          "Agenda"
+        ],
+        "description": "Élections, bornes de session, suspensions de travaux et échéances budgétaires à venir. Une période en cours reste listée tant qu’elle n’est pas terminée. Quand `datePrecise` est faux, la date n’est pas encore fixée par décret : n’afficher que le mois.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "number",
+              "default": 5
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "in": "query",
+            "name": "importantOnly",
+            "required": false,
+            "description": "Uniquement les échéances majeures"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_agenda_evenements"
+      }
+    },
+    "/api/v1/agenda/{uid}": {
+      "get": {
+        "summary": "Détail d'une réunion",
+        "tags": [
+          "Agenda"
+        ],
+        "description": "ODJ, participants avec présence, commission associée",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "uid",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_agenda__uid_"
+      }
+    },
+    "/api/v1/agenda/{uid}/debat": {
+      "get": {
+        "summary": "Débat d’une réunion, page par page",
+        "tags": [
+          "Agenda"
+        ],
+        "description": "Prises de parole dans l’ordre du compte rendu, avec les votes que chacune a précédés. Vaut pour une réunion de commission comme pour une séance publique.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "uid",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_agenda__uid__debat"
+      }
+    },
+    "/api/v1/senatoriales/2026": {
+      "get": {
+        "summary": "Aperçu du renouvellement sénatorial du 27 septembre 2026",
+        "tags": [
+          "Senatoriales"
+        ],
+        "description": "Métadonnées du scrutin (date, série, prise de fonction, sources officielles), répartition par groupe des sénateurs sortants et liste des circonscriptions concernées.",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_senatoriales_2026"
+      }
+    },
+    "/api/v1/senatoriales/2026/sortants": {
+      "get": {
+        "summary": "Bilan de mandature des sénateurs sortants (série 2)",
+        "tags": [
+          "Senatoriales"
+        ],
+        "description": "Les 178 sénateurs dont le siège est remis en jeu, avec leur groupe d’époque, leur circonscription et les statistiques de leur mandat. Pas de pagination.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "departement",
+            "required": false,
+            "description": "Filtre exact sur le département de la circonscription"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "groupe",
+            "required": false,
+            "description": "Slug du groupe politique du mandat. Valeur spéciale `sans-groupe` pour les non-inscrits à un groupe."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "departement",
+                "groupe",
+                "commission",
+                "profession",
+                "nom",
+                "age",
+                "presence",
+                "loyaute",
+                "amendements",
+                "interventions"
+              ],
+              "default": "departement"
+            },
+            "in": "query",
+            "name": "tri",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "oui",
+                "non"
+              ]
+            },
+            "in": "query",
+            "name": "candidat",
+            "required": false,
+            "description": "Ne retenir que les sortants qui se représentent (`oui`) ou que ceux qui ne se représentent pas (`non`). Sans effet tant que les candidatures ne sont pas publiées."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_senatoriales_2026_sortants"
+      }
+    },
+    "/api/v1/senatoriales/2026/candidats": {
+      "get": {
+        "summary": "Candidats au renouvellement du 27 septembre 2026",
+        "tags": [
+          "Senatoriales"
+        ],
+        "description": "Les unités de vote du scrutin — une liste au scrutin proportionnel, un binôme titulaire-suppléant au scrutin majoritaire — avec leurs candidats. Un candidat déjà passé par le Parlement porte un lien vers sa fiche. La date de naissance n'est pas exposée : seule l'année l'est. Réponse vide tant que le ministère de l'Intérieur n'a pas publié son fichier, une semaine environ avant le scrutin.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "departement",
+            "required": false,
+            "description": "Code INSEE du département de la circonscription"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "gauche",
+                "centre",
+                "droite",
+                "droite_ou_extreme_droite",
+                "extreme_droite",
+                "regionaliste",
+                "divers",
+                "sans-famille"
+              ]
+            },
+            "in": "query",
+            "name": "famille",
+            "required": false,
+            "description": "Famille politique dérivée de la nuance préfectorale. `sans-famille` cible les nuances laissées volontairement sans rattachement."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "1",
+                "false",
+                "0"
+              ]
+            },
+            "in": "query",
+            "name": "sortants",
+            "required": false,
+            "description": "Ne retenir que les unités de vote portant au moins un sortant"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_senatoriales_2026_candidats"
+      }
+    },
+    "/api/v1/senatoriales/2026/resultats": {
+      "get": {
+        "summary": "Résultats du 27 septembre 2026, circonscription par circonscription",
+        "tags": [
+          "Senatoriales"
+        ],
+        "description": "État de chacune des 64 circonscriptions (vote en cours, 2nd tour, pourvue…), sièges attribués par famille politique et hémicycle avant / après. Résultats PROVISOIRES, lus sur le site de résultats du ministère de l'Intérieur ; mis en cache une minute.",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_senatoriales_2026_resultats"
+      }
+    },
+    "/api/v1/senatoriales/2026/resultats/{departement}": {
+      "get": {
+        "summary": "Résultats détaillés d'une circonscription",
+        "tags": [
+          "Senatoriales"
+        ],
+        "description": "Participation et voix de chaque tour, élus, répartition des sièges à la plus forte moyenne au proportionnel, et sort des sénateurs sortants. Résultats provisoires.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(?:[0-9]{2,3}|2[AB])$"
+            },
+            "in": "path",
+            "name": "departement",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_senatoriales_2026_resultats__departement_"
+      }
+    },
+    "/api/v1/senatoriales/2026/elus": {
+      "get": {
+        "summary": "Sénateurs élus le 27 septembre 2026 qui ont une fiche provisoire",
+        "tags": [
+          "Senatoriales"
+        ],
+        "description": "Slug, nom et circonscription de chaque élu sans fiche de sénateur, en attendant le 1er octobre.",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_senatoriales_2026_elus"
+      }
+    },
+    "/api/v1/senatoriales/2026/elus/{slug}": {
+      "get": {
+        "summary": "Fiche provisoire d'un sénateur élu le 27 septembre 2026",
+        "tags": [
+          "Senatoriales"
+        ],
+        "description": "Pour un élu qui n'a pas encore de fiche de sénateur (il entre dans l'annuaire du Sénat à sa prise de fonction, le 1er octobre) : son élection, sa nuance et ses mandats locaux du Répertoire national des élus. 404 pour un slug inconnu ou un élu qui a déjà une fiche.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]{3,120}$"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_senatoriales_2026_elus__slug_"
+      }
+    },
+    "/api/v1/scrutins/": {
+      "get": {
+        "summary": "Liste des scrutins",
+        "tags": [
+          "Scrutins"
+        ],
+        "description": "Retourne la liste paginée des scrutins (votes) à l'Assemblée nationale et au Sénat",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false,
+            "description": "Filtrer par chambre"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "solennel",
+                "ordinaire",
+                "motion"
+              ]
+            },
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "description": "Mode de scrutin (comment on vote)"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ensemble",
+                "article",
+                "amendement",
+                "credits",
+                "motion",
+                "declaration",
+                "autre"
+              ]
+            },
+            "in": "query",
+            "name": "nature",
+            "required": false,
+            "description": "Objet du vote (sur quoi on vote) : ensemble du texte, article, amendement, crédits budgétaires, motion ou procédure, déclaration du Gouvernement"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "adopte",
+                "rejete"
+              ]
+            },
+            "in": "query",
+            "name": "sort",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "tag",
+            "required": false,
+            "description": "Filtrer par thématique"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5
+            },
+            "in": "query",
+            "name": "importance",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateFrom",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateTo",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "description": "Recherche dans le titre"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_scrutins_"
+      }
+    },
+    "/api/v1/scrutins/tags": {
+      "get": {
+        "summary": "Liste des tags",
+        "tags": [
+          "Scrutins"
+        ],
+        "description": "Retourne tous les tags de scrutins avec leur count",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_scrutins_tags"
+      }
+    },
+    "/api/v1/scrutins/annees": {
+      "get": {
+        "summary": "Années disponibles",
+        "tags": [
+          "Scrutins"
+        ],
+        "description": "Retourne les années pour lesquelles des scrutins existent, avec leur nombre, triées décroissantes.",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_scrutins_annees"
+      }
+    },
+    "/api/v1/scrutins/periodes": {
+      "get": {
+        "summary": "Périodes institutionnelles disponibles",
+        "tags": [
+          "Scrutins"
+        ],
+        "description": "Retourne les périodes pour lesquelles des scrutins existent : législature à l'AN, session ordinaire au Sénat. Les bornes de dates sont calculées sur les scrutins réellement en base : filtrer sur [dateDebut, dateFin] renvoie donc exactement les scrutins de la période. Une période absente de la base n'est pas exposée.",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_scrutins_periodes"
+      }
+    },
+    "/api/v1/scrutins/importants": {
+      "get": {
+        "summary": "Scrutins importants",
+        "tags": [
+          "Scrutins"
+        ],
+        "description": "Retourne les scrutins les plus importants récents",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_scrutins_importants"
+      }
+    },
+    "/api/v1/scrutins/{numero}": {
+      "get": {
+        "summary": "Détail d'un scrutin",
+        "tags": [
+          "Scrutins"
+        ],
+        "description": "Retourne les informations détaillées d'un scrutin avec tous les votes",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ],
+              "default": "assemblee"
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "session",
+            "required": false,
+            "description": "Session parlementaire (ex: 2024 pour Sénat, 17 pour AN)"
+          },
+          {
+            "schema": {
+              "type": "integer"
+            },
+            "in": "path",
+            "name": "numero",
+            "required": true,
+            "description": "Numéro du scrutin"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_scrutins__numero_"
+      }
+    },
+    "/api/v1/scrutins/{numero}/interventions": {
+      "get": {
+        "summary": "Interventions d'un scrutin",
+        "tags": [
+          "Scrutins"
+        ],
+        "description": "Retourne la liste paginée des interventions (débats, explications de vote) pour un scrutin",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ],
+              "default": "assemblee"
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "session",
+            "required": false,
+            "description": "Session parlementaire (ex: 2024 pour Sénat)"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "asc"
+            },
+            "in": "query",
+            "name": "sort",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "description": "Recherche dans le contenu ou le nom du parlementaire"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "intervention",
+                "question",
+                "reponse_gouvernement",
+                "explication_vote"
+              ]
+            },
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "description": "Nature de la prise de parole. Le décompte par nature est toujours rendu dans `meta.parType`."
+          },
+          {
+            "schema": {
+              "type": "integer"
+            },
+            "in": "path",
+            "name": "numero",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_scrutins__numero__interventions"
+      }
+    },
+    "/api/v1/scrutins/interventions/{id}": {
+      "get": {
+        "summary": "Contenu complet d'une intervention",
+        "tags": [
+          "Scrutins"
+        ],
+        "description": "Retourne le texte intégral d'une intervention par son ID",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_scrutins_interventions__id_"
+      }
+    },
+    "/api/v1/scrutins/{numero}/votes": {
+      "get": {
+        "summary": "Votes d'un scrutin",
+        "tags": [
+          "Scrutins"
+        ],
+        "description": "Retourne la liste paginée des votes pour un scrutin",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ],
+              "default": "assemblee"
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "session",
+            "required": false,
+            "description": "Session parlementaire (ex: 2024 pour Sénat)"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pour",
+                "contre",
+                "abstention",
+                "absent"
+              ]
+            },
+            "in": "query",
+            "name": "position",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "groupe",
+            "required": false,
+            "description": "Slug du groupe politique"
+          },
+          {
+            "schema": {
+              "type": "integer"
+            },
+            "in": "path",
+            "name": "numero",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_scrutins__numero__votes"
+      }
+    },
+    "/api/v1/lobbying/": {
+      "get": {
+        "summary": "Liste des représentants d'intérêts",
+        "tags": [
+          "Lobbying"
+        ],
+        "description": "Retourne la liste paginée des lobbyistes enregistrés (données HATVP)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "entreprise",
+                "association",
+                "cabinet",
+                "syndicat",
+                "organisation_pro"
+              ]
+            },
+            "in": "query",
+            "name": "type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "secteur",
+            "required": false,
+            "description": "Secteur d'activité (legacy, string contains)"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "secteurs",
+            "required": false,
+            "description": "Secteur slugs séparés par virgule (intersection AND)"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "description": "Recherche par nom"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "nom",
+                "budget",
+                "actions"
+              ],
+              "default": "nom"
+            },
+            "in": "query",
+            "name": "sort",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "asc"
+            },
+            "in": "query",
+            "name": "order",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_lobbying_"
+      }
+    },
+    "/api/v1/lobbying/secteurs": {
+      "get": {
+        "summary": "Liste des secteurs",
+        "tags": [
+          "Lobbying"
+        ],
+        "description": "Retourne tous les secteurs normalisés avec counts lobbyistes et actions",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_lobbying_secteurs"
+      }
+    },
+    "/api/v1/lobbying/stats": {
+      "get": {
+        "summary": "Statistiques du lobbying",
+        "tags": [
+          "Lobbying"
+        ],
+        "description": "Retourne des statistiques globales sur le lobbying en France",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_lobbying_stats"
+      }
+    },
+    "/api/v1/lobbying/{id}": {
+      "get": {
+        "summary": "Détail d'un lobbyiste",
+        "tags": [
+          "Lobbying"
+        ],
+        "description": "Retourne les informations détaillées d'un représentant d'intérêts",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_lobbying__id_"
+      }
+    },
+    "/api/v1/lobbying/{id}/actions": {
+      "get": {
+        "summary": "Actions d'un lobbyiste",
+        "tags": [
+          "Lobbying"
+        ],
+        "description": "Retourne la liste des actions d'influence d'un lobbyiste",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "depute",
+                "ministre",
+                "administration"
+              ]
+            },
+            "in": "query",
+            "name": "cible",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_lobbying__id__actions"
+      }
+    },
+    "/api/v1/lobbying/actions": {
+      "get": {
+        "summary": "Liste toutes les actions de lobbying",
+        "tags": [
+          "Lobbying"
+        ],
+        "description": "Retourne toutes les actions de lobbying avec pagination et filtres",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "cible",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "texteVise",
+            "required": false,
+            "description": "Filtre par texte visé (contains)"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "secteur",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "secteurs",
+            "required": false,
+            "description": "Secteur slugs séparés par virgule (filtre par domaines action)"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "search",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateFrom",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "in": "query",
+            "name": "dateTo",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "dateDebut",
+                "lobbyiste"
+              ],
+              "default": "dateDebut"
+            },
+            "in": "query",
+            "name": "sort",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            },
+            "in": "query",
+            "name": "order",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_lobbying_actions"
+      }
+    },
+    "/api/v1/lobbying/actions/recent": {
+      "get": {
+        "summary": "Actions de lobbying récentes",
+        "tags": [
+          "Lobbying"
+        ],
+        "description": "Retourne les dernières actions de lobbying déclarées",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "secteur",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "secteurs",
+            "required": false,
+            "description": "Secteur slugs séparés par virgule"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_lobbying_actions_recent"
+      }
+    },
+    "/api/v1/search/": {
+      "get": {
+        "summary": "Recherche globale",
+        "tags": [
+          "Search"
+        ],
+        "description": "Recherche dans les parlementaires, scrutins, lobbyistes, dossiers, groupes, commissions et sujets",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 2
+            },
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "description": "Terme de recherche"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "deputes",
+                "senateurs",
+                "scrutins",
+                "lobbyistes",
+                "dossiers",
+                "groupes",
+                "commissions",
+                "sujets"
+              ],
+              "default": "all"
+            },
+            "in": "query",
+            "name": "type",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 30
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "description": "Page (ignoré pour type=all)"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false",
+                "1",
+                "0"
+              ],
+              "default": "false"
+            },
+            "in": "query",
+            "name": "inclureAnciens",
+            "required": false,
+            "description": "Inclut les parlementaires dont le mandat est clos (législatures antérieures)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_search_"
+      }
+    },
+    "/api/v1/search/suggest": {
+      "get": {
+        "summary": "Suggestions de recherche",
+        "tags": [
+          "Search"
+        ],
+        "description": "Retourne des suggestions basées sur le début de la saisie",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "query",
+            "name": "q",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "default": 5
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_search_suggest"
+      }
+    },
+    "/api/v1/analytics/stats": {
+      "get": {
+        "summary": "Statistiques globales",
+        "tags": [
+          "Analytics"
+        ],
+        "description": "Retourne les statistiques globales pour le dashboard",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "groupe",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1m",
+                "3m",
+                "6m",
+                "1y",
+                "all"
+              ]
+            },
+            "in": "query",
+            "name": "periode",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "theme",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_analytics_stats"
+      }
+    },
+    "/api/v1/analytics/groupes": {
+      "get": {
+        "summary": "Répartition par groupe",
+        "tags": [
+          "Analytics"
+        ],
+        "description": "Retourne la distribution des députés par groupe politique",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_analytics_groupes"
+      }
+    },
+    "/api/v1/analytics/voting-trends": {
+      "get": {
+        "summary": "Tendances de vote",
+        "tags": [
+          "Analytics"
+        ],
+        "description": "Retourne l'évolution des votes dans le temps",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "groupe",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1m",
+                "3m",
+                "6m",
+                "1y",
+                "all"
+              ]
+            },
+            "in": "query",
+            "name": "periode",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "theme",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_analytics_voting_trends"
+      }
+    },
+    "/api/v1/analytics/top-deputes": {
+      "get": {
+        "summary": "Top députés",
+        "tags": [
+          "Analytics"
+        ],
+        "description": "Retourne les députés les plus actifs",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "groupe",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1m",
+                "3m",
+                "6m",
+                "1y",
+                "all"
+              ]
+            },
+            "in": "query",
+            "name": "periode",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "theme",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 15
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_analytics_top_deputes"
+      }
+    },
+    "/api/v1/analytics/lobbying-sectors": {
+      "get": {
+        "summary": "Secteurs de lobbying",
+        "tags": [
+          "Analytics"
+        ],
+        "description": "Retourne la répartition des lobbyistes par secteur",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30,
+              "default": 10
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_analytics_lobbying_sectors"
+      }
+    },
+    "/api/v1/analytics/scrutins": {
+      "get": {
+        "summary": "Scrutins avec statistiques",
+        "tags": [
+          "Analytics"
+        ],
+        "description": "Retourne les scrutins récents avec leurs statistiques",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "groupe",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1m",
+                "3m",
+                "6m",
+                "1y",
+                "all"
+              ]
+            },
+            "in": "query",
+            "name": "periode",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "theme",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_analytics_scrutins"
+      }
+    },
+    "/api/v1/analytics/dissidents": {
+      "get": {
+        "summary": "Députés dissidents",
+        "tags": [
+          "Analytics"
+        ],
+        "description": "Retourne les députés qui votent le plus souvent contre leur groupe",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1m",
+                "3m",
+                "6m",
+                "1y",
+                "all"
+              ]
+            },
+            "in": "query",
+            "name": "periode",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_analytics_dissidents"
+      }
+    },
+    "/api/v1/analytics/themes": {
+      "get": {
+        "summary": "Thèmes de scrutins",
+        "tags": [
+          "Analytics"
+        ],
+        "description": "Retourne les thèmes avec le plus de scrutins",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1m",
+                "3m",
+                "6m",
+                "1y",
+                "all"
+              ]
+            },
+            "in": "query",
+            "name": "periode",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30,
+              "default": 15
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_analytics_themes"
+      }
+    },
+    "/api/v1/analytics/controverses": {
+      "get": {
+        "summary": "Scrutins controversés",
+        "tags": [
+          "Analytics"
+        ],
+        "description": "Retourne les scrutins les plus serrés",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1m",
+                "3m",
+                "6m",
+                "1y",
+                "all"
+              ]
+            },
+            "in": "query",
+            "name": "periode",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30,
+              "default": 10
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_analytics_controverses"
+      }
+    },
+    "/api/v1/analytics/lobbying-top": {
+      "get": {
+        "summary": "Top lobbyistes",
+        "tags": [
+          "Analytics"
+        ],
+        "description": "Retourne les lobbyistes les plus importants par budget",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 15
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_analytics_lobbying_top"
+      }
+    },
+    "/api/v1/homepage/": {
+      "get": {
+        "summary": "Données agrégées pour la page d'accueil",
+        "tags": [
+          "Homepage"
+        ],
+        "description": "Retourne toutes les stats et scrutins récents en un seul appel",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_homepage_"
+      }
+    },
+    "/api/v1/homepage/warm": {
+      "post": {
+        "summary": "Invalider et recharger le cache homepage",
+        "tags": [
+          "Homepage"
+        ],
+        "description": "Appelé par le service d'ingestion après la synchronisation quotidienne",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "post__api_v1_homepage_warm"
+      }
+    },
+    "/api/v1/dossiers/": {
+      "get": {
+        "summary": "Liste des dossiers législatifs",
+        "tags": [
+          "Dossiers"
+        ],
+        "description": "Retourne la liste paginée des dossiers législatifs avec filtres",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_dossiers_"
+      }
+    },
+    "/api/v1/dossiers/filters": {
+      "get": {
+        "summary": "Valeurs de filtres disponibles",
+        "tags": [
+          "Dossiers"
+        ],
+        "description": "Retourne les procedureLibelle distinctes (dossiers avec scrutins uniquement)",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_dossiers_filters"
+      }
+    },
+    "/api/v1/dossiers/trending": {
+      "get": {
+        "summary": "Dossiers législatifs en tendance",
+        "tags": [
+          "Dossiers"
+        ],
+        "description": "Retourne les dossiers avec le plus de scrutins récents (3 derniers mois)",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_dossiers_trending"
+      }
+    },
+    "/api/v1/dossiers/{uid}": {
+      "get": {
+        "summary": "Détail d'un dossier législatif",
+        "tags": [
+          "Dossiers"
+        ],
+        "description": "Retourne le détail d'un dossier avec ses scrutins et statistiques",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "uid",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_dossiers__uid_"
+      }
+    },
+    "/api/v1/dossiers/{uid}/chronologie": {
+      "get": {
+        "summary": "Parcours d'un dossier législatif",
+        "tags": [
+          "Dossiers"
+        ],
+        "description": "Les réunions de commission et les séances publiques où le texte a été examiné, dans l’ordre, avec ce que chacune a produit : prises de parole, avis sur amendements, votes.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "uid",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_dossiers__uid__chronologie"
+      }
+    },
+    "/api/v1/dossiers/{uid}/scrutins": {
+      "get": {
+        "summary": "Scrutins d'un dossier législatif",
+        "tags": [
+          "Dossiers"
+        ],
+        "description": "Retourne les scrutins paginés d'un dossier",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "solennel",
+                "ordinaire",
+                "motion"
+              ]
+            },
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "description": "Mode de scrutin (comment on vote)"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ensemble",
+                "article",
+                "amendement",
+                "credits",
+                "motion",
+                "declaration",
+                "autre"
+              ]
+            },
+            "in": "query",
+            "name": "nature",
+            "required": false,
+            "description": "Objet du vote (sur quoi on vote)"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "uid",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_dossiers__uid__scrutins"
+      }
+    },
+    "/api/v1/dossiers/{uid}/amendements": {
+      "get": {
+        "summary": "Amendements d'un dossier législatif",
+        "tags": [
+          "Dossiers"
+        ],
+        "description": "Retourne les amendements paginés d'un dossier",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "uid",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_dossiers__uid__amendements"
+      }
+    },
+    "/api/v1/sujets/": {
+      "get": {
+        "summary": "Liste des sujets",
+        "tags": [
+          "Sujets"
+        ],
+        "description": "Retourne la liste paginée des sujets avec leurs statistiques",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "description": "Filtrer par catégorie"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "description": "Recherche dans le label"
+          },
+          {
+            "schema": {
+              "type": "boolean"
+            },
+            "in": "query",
+            "name": "featured",
+            "required": false,
+            "description": "Filtrer les sujets mis en avant"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_sujets_"
+      }
+    },
+    "/api/v1/sujets/featured": {
+      "get": {
+        "summary": "Sujets mis en avant",
+        "tags": [
+          "Sujets"
+        ],
+        "description": "Retourne les sujets featured pour la homepage",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 6
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_sujets_featured"
+      }
+    },
+    "/api/v1/sujets/categories": {
+      "get": {
+        "summary": "Liste des catégories",
+        "tags": [
+          "Sujets"
+        ],
+        "description": "Retourne toutes les catégories de sujets avec leur count",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_sujets_categories"
+      }
+    },
+    "/api/v1/sujets/{slug}": {
+      "get": {
+        "summary": "Détail d'un sujet",
+        "tags": [
+          "Sujets"
+        ],
+        "description": "Retourne les informations détaillées d'un sujet",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_sujets__slug_"
+      }
+    },
+    "/api/v1/sujets/{slug}/archive": {
+      "get": {
+        "summary": "Destination d'un sujet désactivé",
+        "tags": [
+          "Sujets"
+        ],
+        "description": "Pour un sujet désactivé, renvoie l'UID du dossier qui en est la meilleure cible de redirection permanente, ou null s'il n'en portait aucun. 404 si le slug est inconnu ou toujours actif.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_sujets__slug__archive"
+      }
+    },
+    "/api/v1/sujets/{slug}/documents-lies": {
+      "get": {
+        "summary": "Documents liés à un sujet",
+        "tags": [
+          "Sujets"
+        ],
+        "description": "Rapports d'information, missions d'application et textes non votés citant la loi du sujet. Absents de la liste des dossiers, qui exige au moins un scrutin.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_sujets__slug__documents_lies"
+      }
+    },
+    "/api/v1/sujets/{slug}/dossiers": {
+      "get": {
+        "summary": "Dossiers d'un sujet",
+        "tags": [
+          "Sujets"
+        ],
+        "description": "Retourne les dossiers législatifs associés à un sujet",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_sujets__slug__dossiers"
+      }
+    },
+    "/api/v1/sujets/{slug}/chronologie": {
+      "get": {
+        "summary": "Parcours parlementaire d'un sujet",
+        "tags": [
+          "Sujets"
+        ],
+        "description": "Les réunions de commission et les séances publiques où les textes de ce sujet ont été examinés, dans l’ordre, chaque étape nommant le texte concerné.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_sujets__slug__chronologie"
+      }
+    },
+    "/api/v1/sujets/{slug}/scrutins": {
+      "get": {
+        "summary": "Scrutins d'un sujet",
+        "tags": [
+          "Sujets"
+        ],
+        "description": "Retourne les scrutins associés à un sujet avec pagination",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "assemblee",
+                "senat"
+              ]
+            },
+            "in": "query",
+            "name": "chambre",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ensemble",
+                "article",
+                "amendement",
+                "credits",
+                "motion",
+                "declaration",
+                "autre"
+              ]
+            },
+            "in": "query",
+            "name": "nature",
+            "required": false,
+            "description": "Objet du vote (sur quoi on vote)"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_sujets__slug__scrutins"
+      }
+    },
+    "/api/v1/sujets/{slug}/presse": {
+      "get": {
+        "summary": "Presse d'un sujet",
+        "tags": [
+          "Sujets"
+        ],
+        "description": "Articles de presse récupérés en live via Google Actualités (cache ~3h). Liens-only.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_sujets__slug__presse"
+      }
+    },
+    "/api/v1/sujets/{slug}/stats": {
+      "get": {
+        "summary": "Stats d'un sujet",
+        "tags": [
+          "Sujets"
+        ],
+        "description": "Retourne les statistiques de votes par groupe pour un sujet",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "operationId": "get__api_v1_sujets__slug__stats"
+      }
+    },
+    "/api/v1/feedback/": {
+      "post": {
+        "summary": "Envoyer un retour utilisateur",
+        "tags": [
+          "Feedback"
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [],
+        "operationId": "post__api_v1_feedback_"
+      }
+    },
+    "/api/v1/sitemap/": {
+      "get": {
+        "summary": "Données minimales pour la génération du sitemap",
+        "tags": [
+          "Sitemap"
+        ],
+        "description": "Retourne, pour chaque type d'entité indexable, uniquement les champs nécessaires à la construction d'une URL et d'une date de dernière modification. Périmètre identique à celui des listes publiques (parlementaires, groupes et sujets actifs uniquement).",
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "parameters": [],
+        "operationId": "get__api_v1_sitemap_"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.clair.vote",
+      "description": "Production (api.clair.vote)"
+    },
+    {
+      "url": "http://localhost:3001",
+      "description": "API locale Fastify (localhost:3001)"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health",
+      "description": "Endpoints de santé"
+    },
+    {
+      "name": "Parlementaires",
+      "description": "Données sur tous les parlementaires (députés + sénateurs)"
+    },
+    {
+      "name": "Députés",
+      "description": "Données sur les députés de l'Assemblée nationale"
+    },
+    {
+      "name": "Sénateurs",
+      "description": "Données sur les sénateurs"
+    },
+    {
+      "name": "Groupes politiques",
+      "description": "Groupes parlementaires de l'AN et du Sénat"
+    },
+    {
+      "name": "Scrutins",
+      "description": "Votes à l'Assemblée nationale et au Sénat"
+    },
+    {
+      "name": "Lobbying",
+      "description": "Données HATVP sur le lobbying"
+    },
+    {
+      "name": "Search",
+      "description": "Recherche globale"
+    },
+    {
+      "name": "Analytics",
+      "description": "Statistiques et analyses pour l'explorateur"
+    },
+    {
+      "name": "Dossiers",
+      "description": "Dossiers législatifs"
+    }
+  ]
+}

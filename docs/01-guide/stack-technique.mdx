@@ -1,0 +1,59 @@
+---
+title: "Stack Technique & Dépendances"
+sidebar_label: "Stack Technique"
+sidebar_icon: "layers"
+description: Technologies, frameworks et versions utilisés dans le monorepo CLAIR (Next.js 14, Fastify 4, Prisma 5, PostgreSQL 17, Redis 8, Mistral AI).
+---
+
+## 🧱 Socle Commun
+
+- **Runtime** : Node.js ≥ 20 (CI et conteneurs Docker basés sur Node 20 LTS).
+- **Langage** : TypeScript 5.
+- **Gestionnaire de paquets** : `pnpm 8 / 9` (`pnpm-lock.yaml`).
+- **Monorepo** : Turborepo 2 + pnpm workspaces.
+- **Tests** : Vitest 1 (pour l'API et le moteur d'ingestion).
+- **Logs** : Pino 8 avec formatage couleur en développement (`pino-pretty`).
+
+---
+
+## ⚡ API Backend (`apps/api`)
+
+- **Framework Web** : Fastify 4 (avec `@fastify/compress`, `@fastify/cors`, `@fastify/helmet`, `@fastify/rate-limit`, `@fastify/swagger` et `@fastify/swagger-ui`).
+- **ORM** : Prisma 5 avec client typé.
+- **Validation des schémas** : Zod 3.
+- **Cache et Limitation de Débit** : Redis via `ioredis`.
+- **Recherche plein texte** : Requêtes PostgreSQL `ILIKE / contains` optimisées, combinées à un reclassement applicatif par distance de similarité Jaro-Winkler.
+
+---
+
+## 💻 Frontend Web (`apps/web`)
+
+- **Framework** : Next.js 14 (App Router), React 18.
+- **Styling** : Tailwind CSS 3, `class-variance-authority`, `tailwind-merge`, `tailwindcss-animate`.
+- **Gestion des thèmes** : `next-themes` (thème sombre signature Figma `#0c0e12`).
+- **Requêtage Client** : TanStack Query 5 via proxy interne Next (`/api/v1/[...path]`).
+- **Graphiques** : Recharts 2.
+- **Icônes et UI** : `lucide-react`, Radix UI primitives.
+- **Analytics** : Plausible (respectueux de la vie privée, sans cookie).
+
+---
+
+## 📥 Moteur d'Ingestion (`services/ingestion`)
+
+- **CLI** : Commander 11.
+- **Extracteurs et Parsers** : `axios`, `cheerio` (HTML), `xml2js` (XML), `csv-parse` (CSV), extracteur XLSX sur-mesure, `pdftotext` (`poppler-utils`).
+- **Régulation de débit et Concurrence** : `p-limit`, `limiter`.
+- **IA Souveraine** : API Mistral (`mistral-small-latest` pour les synthèses textuelles, `mistral-embed` pour les embeddings contextuels).
+
+---
+
+## 🌐 Infrastructure et Environnements
+
+| Composant | Environnement Local (Dev) | Environnement Production |
+| :--- | :--- | :--- |
+| **PostgreSQL** | 16 (`postgres:16-alpine` via Docker) | 17 (Railway managé avec SSL) |
+| **Redis** | 7 (`redis:7-alpine` via Docker) | 8.2.1 (Railway managé) |
+| **Frontend Web** | `next dev` (port 3000) | Vercel (Région `cdg1` Paris) |
+| **API REST** | `tsx watch` (port 3001) | Railway (Conteneur Docker) |
+| **Documentation** | `zudoku dev` (port 3000 / auto) | Vercel (`docs.clair.vote`) |
+| **Ingestion Worker** | CLI manuelle | Railway (Tâches planifiées nocturne et intraday) |

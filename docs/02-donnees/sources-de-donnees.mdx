@@ -1,0 +1,63 @@
+---
+title: "Sources de Données Publiques"
+sidebar_label: "Sources Open Data"
+sidebar_icon: "cloud-download"
+description: Inventaire exhaustif des 22 flux Open Data parlementaires et gouvernementaux ingérés par CLAIR (formats, fréquences, clés de fraîcheur ETag).
+---
+
+Toutes les données présentées sur CLAIR proviennent exclusivement de sources publiques officielles françaises. Aucune n'exige de clé d'API, à l'exception des services d'enrichissement d'IA (Mistral, Tavily).
+
+Chaque source dispose d'un extracteur dédié dans le répertoire `services/ingestion/src/sources/`.
+
+---
+
+## 📊 Tableau des 22 Sources Suivies (`source_states`)
+
+Chaque source est identifiée par une clé canonique `organisme:type` enregistrée dans `source_freshness.ts`. Le batch nocturne les traite séquentiellement :
+
+| Clé Source | Organisme et Ressource Source | Format | Données Ingérées |
+| :--- | :--- | :--- | :--- |
+| `assemblee_nationale:commissions` | [data.assemblee-nationale.fr](https://data.assemblee-nationale.fr), archive `AMO10` | ZIP / JSON | Organes : commissions permanentes, délégations, offices, missions, groupes d'amitié |
+| `assemblee_nationale:deputes` | Archive `AMO10_deputes_actifs...` | ZIP / JSON | Députés, mandats, appartenances politiques, circonscriptions |
+| `assemblee_nationale:scrutins` | `Scrutins.json.zip` | ZIP / JSON | Scrutins publics et votes nominatifs (17e législature) |
+| `assemblee_nationale:amendements` | `Amendements.json.zip` | ZIP / JSON | Amendements déposés, auteurs, cosignataires, sort |
+| `assemblee_nationale:dossiers` | `Dossiers_Legislatifs.json.zip` | ZIP / JSON | Dossiers législatifs, étapes, saisines de commissions |
+| `assemblee_nationale:interventions` | `syseron.xml.zip` | ZIP / XML | Prises de parole en séance publique avec contexte |
+| `assemblee_nationale:reunions` | `Agenda.json.zip` | ZIP / JSON | Agenda parlementaire : réunions de commissions et séances |
+| `assemblee_nationale:seances_odj` | `seances_publique_excel.csv` | CSV | Ordre du jour prévisionnel des séances publiques |
+| `assemblee_nationale:videos` | [videos.assemblee-nationale.fr](https://videos.assemblee-nationale.fr) | HTML | Liens vers les flux et replays vidéo officiels |
+| `senat:senateurs` | [senat.fr/api-senat/senateurs.json](https://www.senat.fr/api-senat/senateurs.json) | JSON | Sénateurs en exercice, groupes, commissions |
+| `senat:senateurs_histo` | [data.senat.fr](https://data.senat.fr) (`ODSEN_ELUSEN.csv`) | CSV | Anciens sénateurs, mandats expirés, groupes historiques |
+| `senat:bureaux` | Pages commissions sur `senat.fr` | HTML | Rôles au bureau des commissions (présidents, secrétaires) |
+| `senat:scrutins` | Pages `scrutin-public` et `dosleg.zip` | HTML + Dump SQL | Scrutins publics solennels et votes individuels |
+| `senat:amendements` | `ameli.zip` et CSV par texte sur `senat.fr` | ZIP + CSV | Amendements sénatoriaux et cosignatures |
+| `senat:dossiers` | `dosleg.zip` de data.senat.fr | ZIP / SQL | Dossiers législatifs et navette parlementaire |
+| `senat:interventions` | `cri.zip` et comptes rendus HTML | ZIP + HTML | Débats et prises de parole au Palais du Luxembourg |
+| `senat:agenda` | API agenda senat.fr (`/api/v1/agenda/events`) | JSON | Réunions de commission et séances publiques |
+| `senat:reunions` | Comptes rendus de commission senat.fr | HTML | Comptes rendus de réunions, commissaires cités |
+| `senat:dossier_commissions` | Pages dossiers législatifs senat.fr | HTML | Commissions saisies au fond ou pour avis |
+| `senat:videos` | [videos.senat.fr](https://videos.senat.fr) | HTML | Liens directs vers les séances et auditions sénatoriales |
+| `hatvp:lobbyistes` | [hatvp.fr](https://www.hatvp.fr) Répertoire Agora | ZIP / CSV | Représentants d'intérêts, clients, domaines, budgets |
+| `interieur:candidatures` | [data.gouv.fr](https://data.gouv.fr) | XLSX | Candidats et listes aux élections sénatoriales |
+
+---
+
+## 🔍 Sources Spécialisées et Enrichissement
+
+1. **Déclarations d'intérêts et patrimoine (HATVP)** : Fichier `hatvp.fr/livraison/opendata/liste.csv` synchronisé à chaque passage où des données évoluent.
+2. **Comptes rendus de commission (PDF)** : Notices HTML de l'Assemblée avec extraction texte via `pdftotext` (poppler-utils) pour extraire les avis de commission sur les amendements.
+3. **Wikidata et Wikipedia FR** : API MediaWiki pour compléter les biographies factuelles (date de naissance, profession d'origine).
+4. **Mistral AI** : Modèle `mistral-small-latest` pour générer les résumés neutres de dossiers et scrutins, et `mistral-embed` pour la contextualisation sémantique.
+5. **Tavily Search** : Recherche restreinte au domaine `vie-publique.fr` pour associer des fiches thématiques neutres aux dossiers législatifs.
+
+---
+
+## 🆔 Clés et Identifiants Conservés
+
+Pour garantir une auditabilité parfaite, les identifiants officiels sont conservés en base :
+
+- **Députés** : `parlementaires.source_id` (ex: `PA795828`)
+- **Sénateurs** : `parlementaires.source_id` (matricule, ex: `14133K`)
+- **Dossiers législatifs** : `dossiers_legislatifs.uid` (ex: `DLR5L17N50168`)
+- **Commissions** : `commissions.uid` (ex: `PO59048`)
+- **Lobbyistes** : `lobbyistes.identifiant_national` (numéro SIREN ou RNA)

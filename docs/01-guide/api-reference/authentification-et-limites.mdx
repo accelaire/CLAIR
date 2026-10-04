@@ -1,0 +1,36 @@
+---
+title: "Limites de Débit & Cache Redis"
+sidebar_label: "Limites & Cache"
+sidebar_icon: "shield"
+description: Quotas de débit par IP (10 req/min anonyme, 60 req/min proxy web, illimité interne), secret interne et TTL du cache Redis.
+---
+
+## 🚦 Niveaux d'Accès et Limitation de Débit
+
+L'API applique des quotas de requêtes gérés via Redis :
+
+| Niveau d'Accès | Profil et Contexte | Quota de Requêtes |
+| :--- | :--- | :--- |
+| **Anonyme (Public)** | Tout appelant externe direct (`curl`, scripts tiers, intégrations partenaires). | **10 requêtes / minute** par IP |
+| **Navigateur Relayé** | Visiteur naviguant sur `clair.vote` (via le proxy Next.js `app/api/v1/[...path]`). | **60 requêtes / minute** par IP |
+| **Interne** | Rendu SSR de l'application web, sitemap, worker d'ingestion (porteur du secret). | **Illimité** |
+
+### Règles Particulières pour le Trafic Public :
+- **User-Agent Exigé** : Les User-Agents génériques bruts `node` ou `undici` sont rejetés avec un code `403 Forbidden`. Veuillez identifier votre outil (ex: `User-Agent: MonApplicationCivique/1.0`).
+- **Protection Anti-Abus** : Le déclenchement de plus de 30 erreurs `429 Too Many Requests` en moins de 5 minutes entraîne un bannissement temporaire de l'adresse IP pendant 1 heure.
+
+---
+
+## ⚡ Stratégie de Cache Redis
+
+Chaque ressource renvoyée est mise en mémoire cache dans Redis :
+
+| Ressource API | Durée de Rétention (TTL) |
+| :--- | :--- |
+| **Page d'Accueil** | 27 heures (bloc « à venir » : 15 min) |
+| **Listes de Députés / Sénateurs** | 1 heure à 12 heures selon les filtres |
+| **Scrutins Publics** | 1 heure (liste) / 12 heures (scrutins majeurs) / 24 heures (archives) |
+| **Dossiers Législatifs et Sujets** | 1 heure |
+| **Presse et Actualités Sujet** | 3 heures (15 min si le flux est vide) |
+| **Lobbying HATVP et Analytics** | 12 heures |
+| **Résultats Électoraux (Sénatoriales)** | 1 minute |

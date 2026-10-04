@@ -1,0 +1,56 @@
+---
+title: "Modèle de Données Prisma"
+sidebar_label: "Modèle Prisma"
+sidebar_icon: "database"
+description: Spécification des 39 modèles Prisma, conventions de nommage, gestion des mandats multi-législatures et volumétrie en production.
+---
+
+La base de données relationnelle est un cluster **PostgreSQL 17** décrit par le fichier unique `apps/api/prisma/schema.prisma`.
+
+Le schéma compte **39 modèles**, plus 2 tables de jointures implicites gérées par Prisma.
+
+---
+
+## 📐 Conventions Fondamentales
+
+- **Nommage** : Modèles et propriétés Prisma en `camelCase` (`DossierLegislatif.dateDepot`) ; tables et colonnes SQL physiques en `snake_case` (`dossiers_legislatifs.date_depot`) via les attributs `@map` et `@@map`.
+- **Clés Primaires** : UUID stockés sous forme `text` (`@default(uuid())`).
+- **Pas d'Enum SQL natif** : Les champs énumérés (`chambre`, `position`, `sort`) sont stockés en `text` et validés par l'application TypeScript.
+- **Chambre** : Vaut toujours `'assemblee'` ou `'senat'`.
+- **Législature** : `15`, `16` ou `17` pour l'Assemblée. Pour le Sénat, qui ne connaît pas de dissolution, la colonne vaut `NULL` sur `scrutins` et `groupes_politiques` (période définie par `session` ou `mandature`).
+
+---
+
+## 💡 Principes de Modélisation Métier
+
+### 1. Une personne, plusieurs mandats
+Il n'existe pas de table séparée « députés » ou « sénateurs ».
+- La table `parlementaires` contient des **personnes physiques**.
+- La table `mandats_parlementaires` enregistre leurs **sièges successifs** (une ligne par législature à l'Assemblée, par mandature au Sénat).
+
+### 2. Changement de chambre et continuité
+Lorsqu'un député est élu sénateur, sa fiche est conservée et bascule au Sénat. Son ancien identifiant `PA...` de l'Assemblée est historisé dans `parlementaires_identifiants`, garantissant que les votes ou amendements passés restent parfaitement rattachés.
+
+### 3. Le groupe politique appartient au mandat
+Le groupe politique, la circonscription et la commission permanente sont attachés à `mandats_parlementaires`. La colonne `parlementaires.groupe_id` n'indique que le groupe **actuel**.
+
+---
+
+## 📊 Catalogue et Volumétrie en Production
+
+| Domaine | Table SQL | Volumétrie | Rôle |
+| :--- | :--- | :--- | :--- |
+| **Parlementaires** | `parlementaires` | ~2 200 lignes | Identités, statistiques précalculées, résumés IA |
+| **Mandats Sièges** | `mandats_parlementaires` | ~3 600 lignes | Sièges par législature / mandature |
+| **Groupes** | `groupes_politiques` | ~46 lignes | Groupes politiques de l'AN et du Sénat |
+| **Scrutins** | `scrutins` | ~22 000 lignes | Scrutins publics solennels et ordinaires |
+| **Votes Individuels** | `votes` | ~3 900 000 lignes | Votes nominatifs (`pour`, `contre`, `abstention`, `absent`) |
+| **Amendements** | `amendements` | ~195 000 lignes | Amendements déposés, textes, sorts |
+| **Cosignatures** | `_AmendementCosignataires` | ~3 300 000 lignes | Jointure amendement vers cosignataire |
+| **Interventions** | `interventions` | ~1 420 000 lignes | Prises de parole en séance publique et commission |
+| **Liaisons Débats** | `intervention_scrutin` | ~350 000 lignes | Rapprochement chronologique débat vers vote |
+| **Dossiers Législatifs** | `dossiers_legislatifs` | ~21 500 lignes | Dossiers et textes de loi |
+| **Sujets Transverses** | `sujets` | ~1 750 lignes | Regroupements des textes AN + Sénat |
+| **Lobbyistes** | `lobbyistes` | ~4 100 lignes | Représentants d'intérêts déclarés HATVP |
+| **Actions Lobbying** | `actions_lobby` | ~102 000 lignes | Actions d'influence déclarées |
+| **Réunions & Séances** | `reunions` | ~8 800 lignes | Agenda et procès-verbaux |
