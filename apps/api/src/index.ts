@@ -13,6 +13,7 @@ import swaggerUi from '@fastify/swagger-ui';
 import { prismaPlugin } from './plugins/prisma';
 import { redisPlugin } from './plugins/redis';
 import { rateLimitPlugin } from './plugins/rate-limit';
+import { usageAnalyticsPlugin } from './plugins/usage-analytics';
 
 
 import { deputesRoutes, senateursRoutes, parlementairesRoutes } from './modules/parlementaires/parlementaires.controller';
@@ -150,6 +151,7 @@ async function buildApp() {
   await app.register(prismaPlugin);
   await app.register(redisPlugin);
   await app.register(rateLimitPlugin); // Depends on redis — must come after
+  await app.register(usageAnalyticsPlugin); // Inactif sans PLAUSIBLE_EVENTS_URL
 
   // ==========================================================================
   // ROUTES
