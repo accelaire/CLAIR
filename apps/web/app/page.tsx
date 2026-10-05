@@ -10,6 +10,7 @@ import { api } from '@/lib/api';
 import { useCountUp } from '@/hooks/useCountUp';
 import { useLiveNow } from '@/hooks/useLiveNow';
 import { matchLiveUrl } from '@/lib/live-url';
+import { CONTRIBUTION_GUIDE_URL } from '@/lib/docs-url';
 import { FAQAccordion } from '@/components/ui/faq-accordion';
 
 interface Stats {
@@ -847,6 +848,14 @@ export default function HomePage() {
                 className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white hover:bg-primary/90 transition-colors"
               >
                 Voir sur Github
+              </a>
+              <a
+                href={CONTRIBUTION_GUIDE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-lg border border-white/30 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/10"
+              >
+                Guide de contribution
               </a>
             </div>
           </div>

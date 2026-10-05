@@ -6,6 +6,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, "..");
 const OUTPUT_FILE = path.join(ROOT_DIR, "public", "openapi.json");
+// En dev, une spec déjà téléchargée suffit si l'API est injoignable (hors ligne,
+// rate limit) : sinon la doc tombe, et `turbo run dev` arrête tous les services
+// avec elle. Le build reste strict.
+const KEEP_STALE = process.argv.includes("--keep-stale");
 
 async function exportOpenApi() {
   console.log("Fetching full OpenAPI Swagger spec from https://api.clair.vote/docs/json...");
@@ -79,6 +83,10 @@ async function exportOpenApi() {
     fs.writeFileSync(OUTPUT_FILE, JSON.stringify(data, null, 2), "utf-8");
     console.log(`✓ Successfully updated ${OUTPUT_FILE} (${Object.keys(newPaths).length} paths).`);
   } catch (err) {
+    if (KEEP_STALE && fs.existsSync(OUTPUT_FILE)) {
+      console.warn(`⚠️ OpenAPI spec not refreshed (${err.message}), using the existing ${OUTPUT_FILE}.`);
+      return;
+    }
     console.error(`❌ Failed to fetch OpenAPI spec from remote API: ${err.message}`);
     process.exit(1);
   }

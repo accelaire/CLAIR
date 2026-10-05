@@ -42,6 +42,26 @@ function DiscordIcon({ className }: { className?: string }) {
   );
 }
 
+// Copie des listes de apps/web/components/layout/footer.tsx : les garder alignées.
+const explorerLinks = [
+  { name: "Députés", href: "/deputes" },
+  { name: "Sénateurs", href: "/senateurs" },
+  { name: "Groupes politiques", href: "/groupes" },
+  { name: "Sujets", href: "/sujets" },
+  { name: "Dossiers législatifs", href: "/dossiers" },
+  { name: "Scrutins", href: "/scrutins" },
+  { name: "Agenda", href: "/agenda" },
+  { name: "Lobbying", href: "/lobbying" },
+];
+
+const sources = [
+  { name: "Assemblée nationale", href: "https://data.assemblee-nationale.fr" },
+  { name: "Sénat", href: "https://data.senat.fr" },
+  { name: "HATVP", href: "https://www.hatvp.fr" },
+  { name: "Ministère de l'Intérieur", href: "https://www.elections.interieur.gouv.fr" },
+  { name: "DILA", href: "https://echanges.dila.gouv.fr/OPENDATA" },
+];
+
 export function Footer() {
   return (
     <div className="w-full">
@@ -93,26 +113,13 @@ export function Footer() {
           <div>
             <h3 className="text-sm font-semibold">Explorer</h3>
             <ul className="mt-3 space-y-2">
-              <li>
-                <a href="https://clair.vote/deputes" className="text-sm text-muted-foreground hover:text-foreground">
-                  Députés
-                </a>
-              </li>
-              <li>
-                <a href="https://clair.vote/senateurs" className="text-sm text-muted-foreground hover:text-foreground">
-                  Sénateurs
-                </a>
-              </li>
-              <li>
-                <a href="https://clair.vote/scrutins" className="text-sm text-muted-foreground hover:text-foreground">
-                  Scrutins
-                </a>
-              </li>
-              <li>
-                <a href="https://clair.vote/lobbying" className="text-sm text-muted-foreground hover:text-foreground">
-                  Lobbying
-                </a>
-              </li>
+              {explorerLinks.map((link) => (
+                <li key={link.href}>
+                  <a href={`https://clair.vote${link.href}`} className="text-sm text-muted-foreground hover:text-foreground">
+                    {link.name}
+                  </a>
+                </li>
+              ))}
             </ul>
           </div>
 
@@ -186,13 +193,14 @@ export function Footer() {
         <div className="mt-8 border-t pt-6">
           <p className="text-xs text-muted-foreground text-center md:text-left">
             © {new Date().getFullYear()} CLAIR. Sources :{' '}
-            <a href="https://data.assemblee-nationale.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">AN</a>
-            {' · '}
-            <a href="https://data.senat.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">Sénat</a>
-            {' · '}
-            <a href="https://www.hatvp.fr" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">HATVP</a>
-            {' · '}
-            <a href="https://echanges.dila.gouv.fr/OPENDATA" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">DILA</a>
+            {sources.map((source, i) => (
+              <span key={source.href}>
+                {i > 0 && ' · '}
+                <a href={source.href} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">
+                  {source.name}
+                </a>
+              </span>
+            ))}
           </p>
         </div>
     </div>

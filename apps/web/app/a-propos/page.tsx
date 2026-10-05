@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Users, Vote, Briefcase, Database, Github, Mail } from 'lucide-react';
+import { CONTRIBUTION_GUIDE_URL } from '@/lib/docs-url';
 
 export const metadata: Metadata = {
   title: 'À propos',
@@ -158,6 +159,14 @@ export default function AProposPage() {
           >
             <Github className="mr-2 h-4 w-4" />
             Voir sur GitHub
+          </a>
+          <a
+            href={CONTRIBUTION_GUIDE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+          >
+            Guide de contribution
           </a>
           <Link
             href="/methodologie"

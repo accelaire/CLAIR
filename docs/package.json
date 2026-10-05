@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Documentation technique, architecture, modèles de données et référence API de CLAIR",
   "scripts": {
-    "dev": "node scripts/export-openapi-spec.mjs && node scripts/generate-docs-navigation.mjs && ZUDOKU_DISABLE_UPDATE_CHECK=1 zudoku dev --port 3002",
+    "dev": "node scripts/export-openapi-spec.mjs --keep-stale && node scripts/generate-docs-navigation.mjs && ZUDOKU_DISABLE_UPDATE_CHECK=1 zudoku dev --port 3002",
     "build": "node scripts/export-openapi-spec.mjs && node scripts/generate-docs-navigation.mjs && ZUDOKU_DISABLE_UPDATE_CHECK=1 zudoku build",
     "preview": "ZUDOKU_DISABLE_UPDATE_CHECK=1 zudoku preview --port 3002",
     "docs:nav": "node scripts/generate-docs-navigation.mjs",
