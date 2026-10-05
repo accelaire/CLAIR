@@ -253,6 +253,7 @@ export class SenatSenateursClient {
       'INDEP': '#999999',   // Indépendants
       'NI': '#CCCCCC',      // Non inscrits
       'RN': '#0D378A',      // Rassemblement National
+      'UNT': '#0D378A',     // Union Nationale pour les Territoires (RN, depuis oct. 2026)
     };
     return colors[code] || null;
   }

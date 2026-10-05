@@ -1082,6 +1082,8 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
           // que la source ne renvoie pas : elle rend null pour les neuf groupes.
           // Écraser sans garde effacerait les couleurs déjà en base.
           ...(g.couleur ? { couleur: g.couleur } : {}),
+          // Un groupe que la source republie redevient actif (voir plus bas).
+          actif: true,
         },
       });
       continue;
@@ -1166,8 +1168,24 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
 
   const sortants = await cloturerSenateursSortants(senateurs.map((s) => s.uid));
 
+  // Un groupe que la source ne publie plus et qui ne porte plus aucun mandat ne
+  // vit plus que dans la liste des groupes. C'est le pseudo-groupe « AUCUN »
+  // (« Nouveaux Sénateurs ») une fois les groupes constitués après un
+  // renouvellement : resté actif, il s'affichait vide parmi les groupes du Sénat.
+  // Un groupe dissous qui garde des mandats reste actif : les vues par session
+  // le comptent encore.
+  const { count: groupesDesactives } = await prisma.groupePolitique.updateMany({
+    where: {
+      chambre: 'senat',
+      actif: true,
+      sourceId: { notIn: groupes.map((g) => g.uid) },
+      mandatsParlementaires: { none: {} },
+    },
+    data: { actif: false },
+  });
+
   logger.info(
-    { created, updated, mandatsCreated, sortants, total: senateurs.length },
+    { created, updated, mandatsCreated, sortants, groupesDesactives, total: senateurs.length },
     'Sénateurs sync completed',
   );
   return { created, updated };

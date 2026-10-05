@@ -133,6 +133,7 @@ const GROUP_ALIASES: Record<string, string[]> = {
   UC: ['union centriste'],
   RDSE: ['rassemblement démocratique et social européen'],
   RTLI: ['les indépendants'],
+  UNT: ['union nationale pour les territoires'],
   NI: ['non-inscrits', 'non inscrits'],
 };
 
