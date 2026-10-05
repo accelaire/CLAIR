@@ -11,20 +11,24 @@ article .h-px.bg-border {
 
 
 /*
- * « Nous soutenir » en bouton primaire, comme dans le header de clair.vote
- * (apps/web/components/layout/header.tsx). La config Zudoku ne permet pas de
- * styler un lien de navigation : on le cible par son URL.
+ * « Nous soutenir » en bouton primaire, à l'identique du header de clair.vote
+ * (apps/web/components/layout/header.tsx : rounded-lg px-4 py-1.5 text-sm
+ * font-medium bg-primary, soit 32 px de haut). La config Zudoku ne permet pas de
+ * styler un lien de navigation : on le cible par son URL, et `!important` passe
+ * devant ses variantes (dark:, data-[active], h-9) plus spécifiques.
  */
 header a[href="https://clair.vote/soutenir"] {
-  background-color: var(--primary);
-  color: var(--primary-foreground);
-  border-radius: var(--radius);
-  padding: 0.375rem 1rem;
-  font-weight: 500;
+  height: 2rem !important;
+  padding: 0.375rem 1rem !important;
+  border-radius: var(--radius) !important;
+  background-color: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+  font-size: 0.875rem !important;
+  line-height: 1.25rem !important;
+  font-weight: 500 !important;
   transition: background-color 150ms;
 }
 
 header a[href="https://clair.vote/soutenir"]:hover {
-  background-color: color-mix(in srgb, var(--primary) 90%, transparent);
-  color: var(--primary-foreground);
+  background-color: color-mix(in srgb, var(--primary) 90%, transparent) !important;
 }
