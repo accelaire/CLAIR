@@ -17,7 +17,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DIST_DIR = path.resolve(__dirname, "..", "dist");
+// Sur Vercel (variable VERCEL), Zudoku écrit le site dans `.vercel/output/static`
+// (Build Output API) et c'est ce dossier qui est servi : `dist/` n'existe plus.
+const DIST_DIR = process.env.VERCEL
+  ? path.resolve(__dirname, "..", ".vercel", "output", "static")
+  : path.resolve(__dirname, "..", "dist");
 const SITE_URL = "https://docs.clair.vote";
 const SITE_NAME = "CLAIR.vote Docs";
 const IMAGE = {
@@ -43,6 +47,11 @@ function pageUrl(file) {
   const route = path.relative(DIST_DIR, file).split(path.sep).join("/").replace(/\.html$/, "");
   if (route === "index") return `${SITE_URL}/`;
   return `${SITE_URL}/${route.replace(/\/index$/, "")}`;
+}
+
+if (!fs.existsSync(DIST_DIR)) {
+  console.error(`❌ Dossier de sortie introuvable : ${DIST_DIR}`);
+  process.exit(1);
 }
 
 let updated = 0;
@@ -77,4 +86,11 @@ for (const file of htmlFiles(DIST_DIR)) {
   updated++;
 }
 
-console.log(`✓ Balises Open Graph ajoutées à ${updated} pages.`);
+// Aucune page modifiée = sortie de Zudoku déplacée ou format changé : on le dit
+// plutôt que de publier une doc sans aperçus de partage.
+if (updated === 0) {
+  console.error(`❌ Aucune page HTML à compléter dans ${DIST_DIR}.`);
+  process.exit(1);
+}
+
+console.log(`✓ Balises Open Graph ajoutées à ${updated} pages (${path.relative(process.cwd(), DIST_DIR)}).`);

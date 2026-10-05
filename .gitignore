@@ -27,6 +27,7 @@ dist/
 docs/public/pagefind/
 docs/public/openapi.json
 .zudoku/
+.vercel/
 
 # IDE
 .idea/
