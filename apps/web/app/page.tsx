@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Search, ArrowRight, Calendar, ChevronLeft, ChevronRight, Landmark, Building2, Users, Lightbulb, Vote } from 'lucide-react';
 import { SENATORIALES_2026, renouvellementAVenir, resultatsEnDirect } from '@/lib/senatoriales';
+import { EncartResultatsSenatoriales } from '@/components/senatoriales/EncartResultats';
 import { api } from '@/lib/api';
 import { useCountUp } from '@/hooks/useCountUp';
 import { useLiveNow } from '@/hooks/useLiveNow';
@@ -709,6 +710,8 @@ export default function HomePage() {
               Voir l&apos;agenda complet
             </Link>
           </div>
+
+          <EncartResultatsSenatoriales />
         </div>
       </section>
 

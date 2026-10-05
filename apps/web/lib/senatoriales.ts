@@ -50,6 +50,21 @@ export const DIRECT_RESULTATS = {
   fin: '2026-09-28T05:00:00Z',
 } as const;
 
+/**
+ * Jusqu'à quand l'accueil met les résultats en avant, sous l'agenda : le temps
+ * que les élus s'installent (groupes le 5 octobre, commissions le 7) et que la
+ * recherche des lecteurs retombe. Passé ce jour, la page du scrutin reste
+ * accessible par l'agenda et par la recherche.
+ */
+export const RESULTATS_A_LA_UNE_JUSQU_AU = '2026-11-01';
+
+export function resultatsALaUne(aujourdhui: Date = new Date()): boolean {
+  const jour = aujourdhui.toISOString().slice(0, 10);
+  // À partir de la prise de fonction : avant, l'accroche au-dessus de l'agenda
+  // (`renouvellementAVenir`) annonçait déjà les résultats.
+  return jour >= SENATORIALES_2026.priseDeFonction && jour < RESULTATS_A_LA_UNE_JUSQU_AU;
+}
+
 export function resultatsEnDirect(maintenant: Date = new Date()): boolean {
   const t = maintenant.getTime();
   return t >= Date.parse(DIRECT_RESULTATS.debut) && t < Date.parse(DIRECT_RESULTATS.fin);

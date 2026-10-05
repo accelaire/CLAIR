@@ -54,6 +54,14 @@ export interface ResultatsNationaux {
     total: number;
     notes: string[];
   };
+  /** Absent d'une réponse servie par une API d'avant son ajout. */
+  elus?: {
+    total: number;
+    reelus: number;
+    parlementaires: number;
+    nouveaux: number;
+    femmes: number;
+  };
 }
 
 export interface PersonneElu {

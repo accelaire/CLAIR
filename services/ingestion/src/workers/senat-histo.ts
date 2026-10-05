@@ -139,6 +139,10 @@ export async function syncSenateursHistoriques(
     select: { id: true, nom: true },
   });
   const circoIdByNom = new Map(circos.map((c) => [c.nom, c.id]));
+  // ODSEN écrit « Français établis hors de France » ; nous avons une
+  // circonscription par série, nommée « … (Série 1) » et « … (Série 2) ».
+  const circoIdPour = (libelle: string, serie: string | null): string | null =>
+    circoIdByNom.get(libelle) ?? (serie ? circoIdByNom.get(`${libelle} (Série ${serie})`) ?? null : null);
 
   const existants = await prisma.parlementaire.findMany({
     where: { chambre: 'senat' },
@@ -244,7 +248,7 @@ export async function syncSenateursHistoriques(
       continue;
     }
 
-    const circoId = identite.circonscription ? circoIdByNom.get(identite.circonscription) ?? null : null;
+    const circoId = identite.circonscription ? circoIdPour(identite.circonscription, serie) : null;
 
     // 1) Résoudre la personne -------------------------------------------
     let personneId: string;

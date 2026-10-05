@@ -261,6 +261,18 @@ export interface ResultatsNationaux {
     total: number;
     notes: string[];
   };
+  /**
+   * Les élus connus, par parcours avant le scrutin (voir `Elu.parcours`) et
+   * par sexe. Un siège dont la liste n'est pas rattachée à nos candidatures
+   * compte comme `nouveau` et sans sexe connu, comme dans `elus()`.
+   */
+  elus: {
+    total: number;
+    reelus: number;
+    parlementaires: number;
+    nouveaux: number;
+    femmes: number;
+  };
 }
 
 export interface LigneResultatDetail {
@@ -637,6 +649,15 @@ export class ResultatsService {
     const dates = (cle: 'publieA' | 'verifieA') =>
       donnees.tours.map((t) => t[cle]).sort().at(-1) ?? null;
 
+    const tousLesElus = donnees.apercu.circonscriptions.flatMap((c) => this.elus(c.departement, donnees));
+    const elus = {
+      total: tousLesElus.length,
+      reelus: tousLesElus.filter((e) => e.parcours === 'reelu').length,
+      parlementaires: tousLesElus.filter((e) => e.parcours === 'parlementaire').length,
+      nouveaux: tousLesElus.filter((e) => e.parcours === 'nouveau').length,
+      femmes: tousLesElus.filter((e) => e.sexe === 'F').length,
+    };
+
     return {
       maintenant: maintenant.toISOString(),
       verifieA: dates('verifieA'),
@@ -644,6 +665,7 @@ export class ResultatsService {
       source: URL_SOURCE_RESULTATS,
       compteurs,
       circonscriptions,
+      elus,
       hemicycle: {
         avant,
         apres,

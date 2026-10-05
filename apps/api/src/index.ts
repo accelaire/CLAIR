@@ -13,6 +13,7 @@ import swaggerUi from '@fastify/swagger-ui';
 import { prismaPlugin } from './plugins/prisma';
 import { redisPlugin } from './plugins/redis';
 import { rateLimitPlugin } from './plugins/rate-limit';
+import { usageAnalyticsPlugin } from './plugins/usage-analytics';
 
 
 import { deputesRoutes, senateursRoutes, parlementairesRoutes } from './modules/parlementaires/parlementaires.controller';
@@ -32,6 +33,7 @@ import { feedbackRoutes } from './modules/feedback/feedback.controller';
 import { sitemapRoutes } from './modules/sitemap/sitemap.controller';
 
 import { errorHandler } from './utils/errors';
+import { INTERNAL_HEADER } from './utils/internal-auth';
 import { logger } from './utils/logger';
 
 const envToLogger: Record<string, object | boolean> = {
@@ -150,6 +152,7 @@ async function buildApp() {
   await app.register(prismaPlugin);
   await app.register(redisPlugin);
   await app.register(rateLimitPlugin); // Depends on redis — must come after
+  await app.register(usageAnalyticsPlugin); // Inactif sans PLAUSIBLE_EVENTS_URL
 
   // ==========================================================================
   // ROUTES
@@ -237,11 +240,22 @@ async function warmCache(fastifyApp: Awaited<ReturnType<typeof buildApp>>) {
     '/api/v1/lobbying?limit=20',  // Liste des lobbyistes
   ];
 
+  // Le préchauffage est du trafic interne. Sans le secret, `inject` arrivait
+  // en accès direct anonyme : compté comme un client (« lightMyRequest ») dans
+  // la mesure d'usage, et soumis au plafond de 10 req/min, sur un compteur
+  // 127.0.0.1 que les instances partagent via Redis au démarrage.
+  const secret = (process.env.CLAIR_INTERNAL_SECRET || '').trim();
+  const headers: Record<string, string> = {
+    'user-agent': 'CLAIR-API-Warmup/1.0',
+    ...(secret ? { [INTERNAL_HEADER]: secret } : {}),
+  };
+
   for (const route of routesToWarm) {
     try {
       const response = await fastifyApp.inject({
         method: 'GET',
         url: route,
+        headers,
       });
       logger.info({ route, status: response.statusCode }, 'Cache warmed');
 

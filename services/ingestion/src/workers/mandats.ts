@@ -563,9 +563,14 @@ async function upsertMandatSenatClos(
         serie: ctx.serie,
         dateDebut: ctx.dateDebut,
         dateFin: ctx.dateFin,
-        groupeId: input.groupeId,
-        circonscriptionId: input.circonscriptionId,
-        commissionPermanente: input.commissionPermanente,
+        // Une source qui ne sait pas n'efface pas ce qu'une autre a écrit.
+        // Quand le mandat courant se clôt, ODSEN en devient le propriétaire et
+        // le réécrit chaque nuit : sans ce garde, sa circonscription non
+        // résolue (« Français établis hors de France », le 04/10/2026) et sa
+        // commission, qu'il ne connaît pas, vidaient ce que le sync avait posé.
+        groupeId: input.groupeId ?? undefined,
+        circonscriptionId: input.circonscriptionId ?? undefined,
+        commissionPermanente: input.commissionPermanente ?? undefined,
       },
     });
     return { created: false };
