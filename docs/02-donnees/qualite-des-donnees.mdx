@@ -1,0 +1,63 @@
+---
+title: "Qualité des Données & Contrôles d'Intégrité"
+sidebar_label: "Qualité des Données"
+sidebar_icon: "check-circle"
+description: Invariants stricts (tolérance zéro), seuils minimaux de couverture parlementaire et contrôles d'intégrité automatisés.
+---
+
+Trois suites de garde-fous garantissent la fiabilité absolue des données affichées. Elles doivent être validées avant toute fusion de code modifiant l'ingestion ou le calcul des statistiques :
+
+```bash
+pnpm --filter @clair/ingestion test                 # Tests unitaires Vitest
+pnpm --filter @clair/ingestion check-quality        # Contrôle d'intégrité de la BDD
+pnpm --filter @clair/ingestion exec tsx src/cli.ts check-ia-quality # Contrôle des résumés IA
+```
+
+---
+
+## 🛡️ Invariants de Base de Données (`check-quality`)
+
+Le script vérifie que les anomalies critiques sont strictement égales à **0** :
+
+| Contrôle d'Invariant | Tolérance |
+| :--- | :--- |
+| Votes rattachés à un scrutin inexistant | **0** |
+| Scrutins orphelins sans aucun vote | **0** |
+| Doublons de scrutins (numéro + chambre + session) | **0** |
+| Doublons d'amendements sous une même clé canonique | **0** |
+| Parlementaires actifs non rattachés à un groupe politique | **0** |
+| Liaisons scrutin vers dossier entre chambres différentes | **0** |
+| Liaisons scrutin vers dossier entre législatures différentes (AN) | **0** |
+| Prises de parole rattachées au dossier d'une autre législature | **0** |
+| Amendements rattachés au dossier d'une autre législature | **0** |
+| Résumés IA contredisant l'état réel du dossier législatif | **0** |
+| Binômes d'élections sénatoriales de même sexe (art. L. 299) | **0** |
+| Ruptures d'alternance femme-homme sur les listes (art. L. 300) | **0** |
+
+---
+
+## 📈 Seuils Minimaux de Couverture
+
+Pour détecter immédiatement toute régression ou perte silencieuse de données :
+
+| Métrique de Couverture | Seuil Minimal Attendu |
+| :--- | :--- |
+| **Parlementaires actifs** | 900 minimum |
+| **Groupes politiques** | 15 minimum |
+| **Scrutins publics** | 5 000 minimum |
+| **Votes individuels** | 1 000 000 minimum |
+| **Amendements** | 150 000 minimum |
+| **Interventions et débats** | 500 000 minimum |
+| **Dossiers législatifs** | 6 000 minimum |
+| **Taux de liaison Scrutins vers Dossiers (AN et Sénat)** | 90 % minimum |
+| **Taux de liaison Scrutins vers Amendements (AN)** | 80 % minimum |
+| **Taux de liaison Réunions vers Commissions** | 85 % minimum |
+
+---
+
+## 🤖 Contrôle des Résumés IA (`check-ia-quality`)
+
+Le script `check-ia-quality` compare les résumés textuels générés par le modèle Mistral avec les tables de votes brutes :
+- Détection des **inversions de vote** (un groupe décrit comme favorable alors qu'il a voté contre).
+- Détection des **fausses positions** (attribuer une position sur un texte à un groupe n'ayant aucun vote enregistré).
+- Détection des **confusions sur l'abstention**.

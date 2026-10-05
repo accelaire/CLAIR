@@ -1,0 +1,40 @@
+---
+title: "Topologie de Déploiement en Production"
+sidebar_label: "Déploiement Production"
+sidebar_icon: "cloud"
+description: Architecture de production sur Vercel (clair.vote, docs.clair.vote) et Railway (API REST, workers d'ingestion, PostgreSQL 17, Redis 8).
+---
+
+## 🌐 Vue d'Ensemble de l'Infrastructure
+
+| Composant | Hébergeur | Déclenchement et Planification | URL Publique |
+| :--- | :--- | :--- | :--- |
+| **Frontend Web (`apps/web`)** | Vercel (Région `cdg1` Paris) | Déploiement continu sur `master` | [`clair.vote`](https://clair.vote) |
+| **Documentation (`docs/`)** | Vercel (Région `cdg1` Paris) | Déploiement continu sur `master` | [`docs.clair.vote`](https://docs.clair.vote) |
+| **API REST (`apps/api`)** | Railway (Conteneur Docker) | Déploiement continu sur `master` | [`api.clair.vote`](https://api.clair.vote) |
+| **Batch Nocturne** | Railway Worker | Cron `0 3 * * *` (UTC) | *(Service interne)* |
+| **Batch Intraday** | Railway Worker | Cron `0 6-21/2 * * *` (UTC) | *(Service interne)* |
+| **Base PostgreSQL 17** | Railway Managé avec SSL | Permanent avec sauvegardes | *(Réseau privé Railway)* |
+| **Cluster Redis 8** | Railway Managé | Permanent | *(Réseau privé Railway)* |
+
+---
+
+## 🌍 Configuration DNS (Dynadot)
+
+```text
+Type      Nom        Valeur / Cible
+A         @          76.76.21.21          (Vercel - clair.vote)
+CNAME     www        cname.vercel-dns.com (Vercel)
+CNAME     docs       cname.vercel-dns.com (Vercel - docs.clair.vote)
+CNAME     api        <domaine-railway-api> (Railway - api.clair.vote)
+```
+
+---
+
+## ⚙️ Déploiement du Portail Zudoku (`docs.clair.vote`)
+
+Le portail de documentation est configuré dans `docs/vercel.json` :
+- **Framework** : `vite`
+- **Build Command** : `pnpm build`
+- **Output Directory** : `dist`
+- **Domaine rattaché** : `docs.clair.vote`

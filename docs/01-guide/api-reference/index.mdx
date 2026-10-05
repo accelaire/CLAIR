@@ -1,0 +1,57 @@
+---
+title: "Référence & Guides de l'API REST"
+sidebar_label: "Vue d'ensemble"
+sidebar_icon: "code"
+description: Vue d'ensemble de l'API REST Fastify de CLAIR, préfixes /api/v1, politique publique en lecture seule et simulateur d'appels.
+---
+
+L'API de CLAIR (`https://api.clair.vote`) est un service HTTP/REST haute performance basé sur Fastify 4. Elle est **publique, gratuite, en lecture seule et accessible sans clé d'authentification**.
+
+---
+
+## 🚀 Tester l'API en Direct
+
+Vous pouvez tester l'ensemble des endpoints directement via notre [Explorateur interactif](/api) ou depuis l'interface Swagger native sur [api.clair.vote/docs](https://api.clair.vote/docs).
+
+---
+
+## 📑 Sommaire des Guides API
+
+<FeatureGrid cols={3}>
+  <FeatureCard
+    icon="🛡️"
+    title="Authentification et Limites"
+    description="Politique de rate limiting (10 req/min anonyme, 60 req/min web), politique User-Agent et cache Redis."
+    href="/01-guide/api-reference/authentification-et-limites"
+  />
+  <FeatureCard
+    icon="👥"
+    title="Parlementaires et Groupes"
+    description="Requêtage des députés et sénateurs, statistiques de loyauté, présence et fiches IA."
+    href="/01-guide/api-reference/parlementaires"
+  />
+  <FeatureCard
+    icon="🗳️"
+    title="Scrutins et Votes"
+    description="Consultation des scrutins publics, positions de vote individuelles et ventilations par parti."
+    href="/01-guide/api-reference/scrutins-et-votes"
+  />
+  <FeatureCard
+    icon="📜"
+    title="Dossiers et Amendements"
+    description="Suivi du parcours législatif, navette parlementaire, amendements et avis de commissions."
+    href="/01-guide/api-reference/dossiers-et-amendements"
+  />
+  <FeatureCard
+    icon="🏢"
+    title="Lobbying HATVP"
+    description="Données ouvertes sur les représentants d'intérêts, secteurs d'activité et actions d'influence."
+    href="/01-guide/api-reference/lobbying-hatvp"
+  />
+  <FeatureCard
+    icon="💻"
+    title="Exemples d'Intégration"
+    description="Snippets de code prêts à l'emploi en TypeScript, Python, cURL et Go."
+    href="/01-guide/api-reference/exemples-integration"
+  />
+</FeatureGrid>

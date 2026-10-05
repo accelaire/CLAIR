@@ -1,0 +1,31 @@
+{
+  "name": "@clair/docs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Documentation technique, architecture, modèles de données et référence API de CLAIR",
+  "scripts": {
+    "dev": "node scripts/export-openapi-spec.mjs --keep-stale && node scripts/generate-docs-navigation.mjs && ZUDOKU_DISABLE_UPDATE_CHECK=1 zudoku dev --port 3002",
+    "build": "node scripts/export-openapi-spec.mjs && node scripts/generate-docs-navigation.mjs && ZUDOKU_DISABLE_UPDATE_CHECK=1 zudoku build && node scripts/inject-og-meta.mjs",
+    "preview": "ZUDOKU_DISABLE_UPDATE_CHECK=1 zudoku preview --port 3002",
+    "docs:nav": "node scripts/generate-docs-navigation.mjs",
+    "validate": "node scripts/validate-mdx-syntax.mjs --strict && node scripts/check-links.mjs --strict",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "lucide-react": "^0.298.0",
+    "mermaid": "^11.17.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zudoku": "^0.86.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "pagefind": "1.5.2",
+    "prettier": "^3.0.0",
+    "typescript": "^5.3.0",
+    "vite": "^8.3.2"
+  }
+}

@@ -1,0 +1,64 @@
+---
+title: "L'Orchestrateur d'Ingestion"
+sidebar_label: "Orchestrateur d'Ingestion"
+sidebar_icon: "cpu"
+description: Architecture et séquencement de l'ingestion Node.js (batch nocturne smart-sync, batch intraday, rattachements cross-entités et réconciliation).
+---
+
+L'ingestion de CLAIR est une application Node.js / TypeScript pilotée par CLI (`services/ingestion/src/cli.ts` basée sur Commander). Elle télécharge les données publiques, effectue les transformations, alimente PostgreSQL, établit les liaisons cross-chambres et déclenche l'enrichissement par IA.
+
+---
+
+## ⏱️ Les Deux Passages Planifiés (Railway)
+
+| Passage | Planification (UTC) | Heure de Paris | Commande Exécutée |
+| :--- | :--- | :--- | :--- |
+| **Ingestion Nightly** | `0 3 * * *` | 5h (été) / 4h (hiver) | `node --max-old-space-size=6144 services/ingestion/dist/cli.js smart-sync --all` |
+| **Ingestion Intraday** | `0 6-21/2 * * *` | Toutes les 2h (8h à 22h) | `node services/ingestion/dist/cli.js sync-intraday` |
+
+- Le passage **intraday** ne rafraîchit que les éléments volatils du jour : agenda Sénat (J-2 à J+2), vidéos et replays de l'Assemblée et du Sénat. Il ne touche pas aux scrutins ou aux statistiques.
+- Le passage **nightly** effectue le rafraîchissement complet, la réconciliation de graphe et les calculs de statistiques.
+
+---
+
+## 🔄 Déroulement du Batch Nocturne (`smart-sync --all`)
+
+<Mermaid
+  title="Cycle d'Exécution du Batch Nocturne"
+  chart={`flowchart TD
+    A[Cron Railway 03:00 UTC] --> B[Événements Institutionnels<br/>Upsert idempotent sur slug]
+    B --> C{Itération sur les 22 sources}
+    C -->|ETag / Last-Modified identiques| D[Ignorée<br/>sync_logs : skipped]
+    C -->|Ressource modifiée ou 'toujours'| E[Téléchargement et Parsing<br/>sync_logs : started vers completed]
+    D --> C
+    E --> C
+    C -->|Toutes les sources traitées| F[Rattachements Cross-Entités]
+    F --> G[Calcul des Statistiques]
+    G --> H[Génération des Sujets et Compteurs]
+    H --> I[VACUUM ANALYZE PostgreSQL]
+    I --> J[Déclarations HATVP]
+    J --> K[Enrichissement IA Mistral]
+    K --> L[Pause de 120s et Préchauffe Cache API]
+`}
+/>
+
+---
+
+## 🔗 Algorithme des Rattachements d'Entités
+
+L'ordre des rattachements est strictement séquentiel pour éviter les faux positifs :
+
+1. **Débats et Scrutins** : Rattachement des prises de parole antérieures aux votes en séance.
+2. **Interventions et Dossiers** : Liaison par numéro de texte législatif.
+3. **Commissions et Avis** : Parsing des comptes rendus PDF (via `pdftotext`) pour extraire les positions de commission sur les amendements.
+4. **Scrutins et Dossiers** : Suppression des liaisons obsolètes, rattachement Sénat, analyse TF-IDF sur les titres de lois et numéros de texte.
+5. **Amendements et Scrutins** : Rapprochement dans la table de jointure `scrutin_amendement`, puis propagation du dossier vers les amendements.
+6. **Nature des Scrutins** : Classification automatique de la nature du vote (texte entier, amendement, motion, etc.).
+
+---
+
+## 🛡️ Résilience et Gestion des Échecs
+
+- **Non-blocage** : L'échec de téléchargement ou de parsing d'une source isole l'erreur dans `sync_logs.statut = 'failed'` et continue le traitement des sources suivantes.
+- **Idempotence** : Toutes les écritures en base utilisent des clauses `upsert` Prisma basées sur les identifiants uniques officiels.
+- **Traçabilité** : Consultation instantanée de la santé des flux via `pnpm ingestion:status`.

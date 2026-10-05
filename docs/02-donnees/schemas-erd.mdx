@@ -1,0 +1,349 @@
+---
+title: "Schémas Entité-Relation (ERD)"
+sidebar_label: "Schémas ERD"
+sidebar_icon: "git-fork"
+description: Architecture relationnelle simplifiée et schémas ERD des 6 domaines clés de la base de données de CLAIR.
+---
+
+La base de données relationnelle de CLAIR (PostgreSQL 17) est structurée autour de **6 domaines métiers**. 
+
+Pour faciliter la compréhension, chaque domaine dispose d'un schéma épuré mettant en valeur les clés de jointure (`PK`, `FK`) et la logique de rattachement.
+
+---
+
+## 🗺️ Flux et Relations entre les Domaines
+
+Ce schéma résume les flux d'information principaux entre les grands domaines de la plateforme :
+
+<Mermaid
+  title="Flux de Données et Liaisons Inter-Domaines"
+  chart={`graph LR
+    Elus["🏛️ <b>Élus & Groupes</b><br/>(parlementaires, mandats)"]
+    Lois["📜 <b>Textes & Dossiers</b><br/>(dossiers, textes, amendements)"]
+    Votes["🗳️ <b>Scrutins & Votes</b><br/>(scrutins, votes nominatifs)"]
+    Debats["🗣️ <b>Débats & Commissions</b><br/>(réunions, interventions)"]
+    Lobby["🏢 <b>Transparence HATVP</b><br/>(lobbyistes, déclarations)"]
+    Elec["🗳️ <b>Élections</b><br/>(candidatures, résultats)"]
+
+    Elus -->|dépose / cosigne| Lois
+    Elus -->|exprime| Votes
+    Elus -->|prend la parole| Debats
+    Lois -->|soumis au vote| Votes
+    Debats -->|rattaché au| Votes
+    Lobby -->|déclare influence sur| Elus
+    Elec -.->|rattachement sortant| Elus
+`}
+/>
+
+---
+
+## 🏛️ 1. Élus, Mandats & Groupes Politiques
+
+Modélise l'identité pérenne d'un parlementaire et son historique de sièges au fil des législatures (AN) ou mandatures (Sénat).
+
+<Mermaid
+  title="ERD : Parlementaires, Mandats et Groupes"
+  chart={`erDiagram
+    parlementaires ||--o{ mandats_parlementaires : "a pour sieges"
+    parlementaires ||--o{ mandats : "occupe fonction"
+    parlementaires ||--o{ parlementaires_identifiants : "anciennes chambres"
+    groupes_politiques ||--o{ mandats_parlementaires : "affiliation"
+    circonscriptions ||--o{ mandats_parlementaires : "territoire"
+
+    parlementaires {
+        uuid id PK
+        string slug UK
+        string nom
+        string prenom
+        string chambre
+        boolean actif
+        uuid groupe_id FK
+    }
+
+    mandats_parlementaires {
+        uuid id PK
+        uuid personne_id FK
+        uuid groupe_id FK
+        uuid circonscription_id FK
+        int legislature
+        int mandature
+        date date_debut
+        date date_fin
+    }
+
+    groupes_politiques {
+        uuid id PK
+        string slug
+        string nom
+        string nom_court
+        string chambre
+        int legislature
+    }
+
+    mandats {
+        uuid id PK
+        uuid parlementaire_id FK
+        uuid commission_id FK
+        string type_organe
+        string qualite
+    }
+`}
+/>
+
+- **Séparation Personne / Mandat** : `parlementaires` contient la personne physique stable ; `mandats_parlementaires` isole chaque mandat (législature, circonscription, groupe d'époque).
+- **Continuité inter-chambre** : `parlementaires_identifiants` conserve les anciens matricules (ex. `PA...` lors du passage de l'AN au Sénat).
+
+---
+
+## 📜 2. Dossiers Législatifs & Textes de Loi
+
+Fédère le travail parlementaire des deux assemblées sous une même bannière thématique (`sujets`).
+
+<Mermaid
+  title="ERD : Sujets Transverses et Dossiers Législatifs"
+  chart={`erDiagram
+    sujets ||--o{ dossiers_legislatifs : "regroupe"
+    sujets ||--o{ sujet_liens : "sources web"
+    dossiers_legislatifs ||--o{ textes_articles : "compose"
+    dossiers_legislatifs ||--o{ dossier_commissions : "examine par"
+    commissions ||--o{ dossier_commissions : "saisie"
+
+    sujets {
+        uuid id PK
+        string slug UK
+        string label
+        string status
+        int dossier_count
+    }
+
+    dossiers_legislatifs {
+        uuid id PK
+        string uid UK
+        uuid sujet_id FK
+        string titre
+        string etat
+        int legislature
+    }
+
+    textes_articles {
+        uuid id PK
+        uuid dossier_id FK
+        string texte_ref
+        string numero
+        string libelle
+    }
+
+    commissions {
+        uuid id PK
+        string uid UK
+        string nom
+        string type
+        string chambre
+    }
+`}
+/>
+
+- **Sujets Transverses** : Un `sujet` associe le dossier de l'Assemblée et celui du Sénat portant sur la même loi pour donner une vision unifiée.
+- **Articles & Versions** : `textes_articles` historise les rédactions successives des articles votés.
+
+---
+
+## 🗳️ 3. Scrutins, Votes & Amendements
+
+Modélise le vote en séance publique et les positions individuelles nominatives de chaque élu.
+
+<Mermaid
+  title="ERD : Scrutins Publics, Votes et Amendements"
+  chart={`erDiagram
+    dossiers_legislatifs ||--o{ scrutins : "donne lieu a"
+    dossiers_legislatifs ||--o{ amendements : "contient"
+    scrutins ||--o{ votes : "enregistre"
+    parlementaires ||--o{ votes : "exprime"
+    parlementaires ||--o{ amendements : "auteur"
+    amendements ||--o{ avis_commission : "oriente"
+    amendements }o--o{ scrutins : "soumis a"
+
+    scrutins {
+        uuid id PK
+        int numero
+        string chambre
+        string type_vote
+        string sort
+        int nombre_pour
+        int nombre_contre
+        uuid dossier_id FK
+    }
+
+    votes {
+        uuid id PK
+        uuid scrutin_id FK
+        uuid parlementaire_id FK
+        string position
+        boolean par_delegation
+    }
+
+    amendements {
+        uuid id PK
+        string uid UK
+        string numero
+        string sort
+        uuid dossier_id FK
+        uuid parlementaire_id FK
+    }
+
+    avis_commission {
+        uuid id PK
+        uuid reunion_id FK
+        uuid amendement_id FK
+        string sens
+    }
+`}
+/>
+
+- **Positions nominatives** : La table `votes` stocke chaque vote individuel (`pour`, `contre`, `abstention`, `absent`).
+- **Avis de commission** : `avis_commission` enregistre les recommandations préliminaires (art. 88 du Règlement) avant le vote en séance.
+
+---
+
+## 🗣️ 4. Débats & Rapprochement Temporel
+
+Capture les interventions orales et les relie aux scrutins correspondants.
+
+<Mermaid
+  title="ERD : Débats, Interventions et Rapprochement Scrutins"
+  chart={`erDiagram
+    commissions ||--o{ reunions : "organise"
+    reunions ||--o{ interventions : "debats en commission"
+    parlementaires ||--o{ interventions : "orateur"
+    dossiers_legislatifs ||--o{ interventions : "texte discute"
+    interventions ||--o{ intervention_scrutin : "precede"
+    scrutins ||--o{ intervention_scrutin : "vote resultant"
+
+    reunions {
+        uuid id PK
+        string uid UK
+        string type
+        datetime date_debut
+        uuid commission_id FK
+    }
+
+    interventions {
+        uuid id PK
+        string source_uid UK
+        uuid parlementaire_id FK
+        uuid dossier_id FK
+        uuid reunion_id FK
+        int ordre_absolu
+        string contenu
+    }
+
+    intervention_scrutin {
+        uuid intervention_id PK
+        uuid scrutin_id PK
+        string via
+    }
+`}
+/>
+
+- **Liaison Débat ↔ Vote** : La table `intervention_scrutin` établit le pont chronologique entre une prise de parole au perchoir et le scrutin intervenu dans la foulée (par `amendement`, `article` ou `fenetre`).
+
+---
+
+## 🏢 5. Transparence & Lobbying (HATVP)
+
+Enregistre les données déclaratives des représentants d'intérêts et le patrimoine des parlementaires.
+
+<Mermaid
+  title="ERD : Répertoire HATVP et Actions de Lobbying"
+  chart={`erDiagram
+    lobbyistes ||--o{ actions_lobby : "declare"
+    parlementaires ||--o{ actions_lobby : "cible"
+    parlementaires ||--o{ declarations_hatvp : "depose"
+    secteurs ||--o{ lobbyistes_secteurs : "categorise"
+    lobbyistes ||--o{ lobbyistes_secteurs : "appartient"
+
+    lobbyistes {
+        uuid id PK
+        string identifiant_national UK
+        string nom
+        string type
+        float budget_annuel
+    }
+
+    actions_lobby {
+        uuid id PK
+        uuid lobbyiste_id FK
+        uuid parlementaire_id FK
+        string cible
+        datetime date_debut
+        float budget
+    }
+
+    declarations_hatvp {
+        uuid id PK
+        uuid parlementaire_id FK
+        string type_document
+        datetime date_depot
+        string statut
+    }
+
+    secteurs {
+        string id PK
+        string label
+    }
+`}
+/>
+
+---
+
+## 🗳️ 6. Élections & Candidatures
+
+Gestion des candidatures électorales (Sénatoriales 2026), des listes et des résultats par tour.
+
+<Mermaid
+  title="ERD : Candidatures et Résultats Électoraux"
+  chart={`erDiagram
+    circonscriptions ||--o{ candidatures_listes : "circonscription"
+    circonscriptions ||--o{ resultats_tours : "participation"
+    circonscriptions ||--o{ resultats_listes : "voix"
+    candidatures_listes ||--o{ candidatures : "candidats"
+    parlementaires |o--o{ candidatures : "reconciliation sortant"
+
+    candidatures_listes {
+        uuid id PK
+        string source_uid UK
+        string scrutin
+        uuid circonscription_id FK
+        string mode_scrutin
+        string libelle
+    }
+
+    candidatures {
+        uuid id PK
+        uuid liste_id FK
+        uuid personne_id FK
+        int ordre
+        string nom
+        string prenom
+        boolean elu
+    }
+
+    resultats_tours {
+        uuid id PK
+        uuid circonscription_id FK
+        int tour
+        int votants
+        int exprimes
+    }
+
+    resultats_listes {
+        uuid id PK
+        uuid circonscription_id FK
+        string liste_source_uid
+        int voix
+        int sieges
+    }
+`}
+/>
+
+

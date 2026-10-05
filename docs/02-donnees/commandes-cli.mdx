@@ -1,0 +1,94 @@
+---
+title: "Commandes CLI & Scripts d'Ingestion"
+sidebar_label: "Commandes CLI"
+sidebar_icon: "terminal"
+description: Répertoire complet des commandes CLI (@clair/ingestion, smart-sync, sync ciblé, calcul de stats, recalculs et backfills).
+---
+
+## 🛠️ Scripts Principaux du Monorepo
+
+```bash
+# Lancer tous les modules (Web :3000, API :3001, Docs :3002)
+pnpm dev
+
+# Lancer des modules spécifiques
+pnpm dev:web
+pnpm dev:api
+pnpm dev:docs
+
+# Base de données
+pnpm db:generate
+pnpm db:push
+pnpm db:seed
+pnpm db:studio
+
+# Docker
+pnpm docker:up
+pnpm docker:down
+pnpm docker:logs
+```
+
+---
+
+## ⚙️ La CLI d'Ingestion (`@clair/ingestion`)
+
+Point d'entrée : `services/ingestion/src/cli.ts`. Raccourcis disponibles depuis la racine du dépôt :
+
+```bash
+pnpm ingestion:sync ...              # Synchronisation manuelle ciblée
+pnpm ingestion:smart-sync ...        # Synchronisation avec suivi de fraîcheur (ETag)
+pnpm ingestion:status                # Affichage de l'état et de la fraîcheur des 22 sources
+pnpm ingestion:calculate-stats       # Recalcul des statistiques des parlementaires et groupes
+pnpm ingestion:backfill              # Rapprochements rétroactifs
+pnpm ingestion:schedule              # Planificateur de tâches local
+```
+
+---
+
+## 🚀 Options de `smart-sync` (Batch Nocturne)
+
+```bash
+# Exécution complète dans l'ordre de production
+pnpm ingestion:smart-sync -a
+
+# Forcer le re-téléchargement sans tenir compte des ETags
+pnpm ingestion:smart-sync -a --force
+
+# Exécution sans recalculer les statistiques globales
+pnpm ingestion:smart-sync -a --skip-stats
+
+# Limiter le nombre d'éléments par ressource (mode test rapide)
+pnpm ingestion:smart-sync -a -l 50
+
+# Synchroniser uniquement des clés spécifiques
+pnpm ingestion:smart-sync --sources senat:agenda,senat:videos
+```
+
+---
+
+## 🎯 Options de `sync` (Synchronisation Manuelle Ciblée)
+
+Filtres de chambre : `--an` (Assemblée nationale), `--se` (Sénat).
+
+```bash
+# Parlementaires
+pnpm ingestion:sync -p                      # Députés + sénateurs actifs
+pnpm ingestion:sync -p --an --legislature 16 # Députés d'une législature passée
+
+# Scrutins & Votes
+pnpm ingestion:sync -s                      # Scrutins récents
+pnpm ingestion:sync -s --an --legislature 16
+pnpm ingestion:sync -s --se --sessions 2024,2025
+
+# Amendements & Dossiers
+pnpm ingestion:sync --am                    # Amendements
+pnpm ingestion:sync --do                    # Dossiers législatifs
+
+# Rapprochement Scrutins vers Amendements
+pnpm ingestion:sync --am --enrich           # Scraping des scrutins sans amendement
+pnpm ingestion:sync --am --link             # Rapprochement par numéro avec contrainte dossier
+
+# Lobbying HATVP
+pnpm ingestion:sync --lo                    # Répertoire complet des représentants d'intérêts
+pnpm ingestion:sync --de                    # Déclarations d'intérêts et de patrimoine des élus
+```

@@ -1,0 +1,118 @@
+---
+title: "Accueil & Vue d'ensemble"
+sidebar_label: "Accueil"
+sidebar_icon: "home"
+description: Portail d'ingénierie, d'architecture et de documentation pour CLAIR, plateforme ouverte de transparence sur le Parlement français.
+disable_pager: true
+---
+
+**CLAIR** (*Citoyen Libre, Analyse, Information, République*) est une plateforme ouverte et indépendante dédiée à la transparence sur le Parlement français : parlementaires, scrutins publics, dossiers législatifs, débats, commissions et lobbying. L'ensemble du code est publié sous licence **AGPL-3.0**.
+
+---
+
+## 🏛️ Vue d'Ensemble de l'Écosystème
+
+L'écosystème CLAIR s'articule autour d'une base de données relationnelle centralisée alimentée par des pipelines d'ingestion quotidiens et mise à disposition via une API en lecture seule et une application web accessible sur [clair.vote](https://clair.vote).
+
+<Mermaid
+  title="Architecture Globale de la Plateforme CLAIR"
+  chart={`graph TD
+  subgraph Sources ["Sources Officielles Open Data"]
+    AN["Assemblée Nationale<br/>(Scrutins, Députés, Amendements, Syceron)"]
+    SEN["Sénat<br/>(Sénateurs, Dosleg, Votes)"]
+    HATVP["HATVP<br/>(Lobbying et Représentants)"]
+    GOUV["data.gouv.fr / Intérieur<br/>(Élections et Territoires)"]
+  end
+
+  subgraph Ingestion ["Services d'Ingestion"]
+    Worker["CLI d'Ingestion CLAIR<br/>(TypeScript / Prisma / Mistral AI)"]
+  end
+
+  subgraph Storage ["Stockage Centralisé"]
+    PG[("PostgreSQL 17<br/>Prisma ORM")]
+    Redis[("Redis 8<br/>Cache et Rate Limit")]
+  end
+
+  subgraph API ["Couche de Diffusion"]
+    FastifyAPI["API REST Fastify<br/>api.clair.vote"]
+  end
+
+  subgraph Consumers ["Consommateurs"]
+    Web["Frontend Next.js 14<br/>clair.vote"]
+    Docs["Documentation Zudoku<br/>docs.clair.vote"]
+    External["Développeurs et Chercheurs<br/>(Open Data / API Publique)"]
+  end
+
+  AN -->|JSON / XML / ZIP| Worker
+  SEN -->|XML / CSV| Worker
+  HATVP -->|XML / JSON| Worker
+  GOUV -->|XLSX / CSV| Worker
+
+  Worker -->|Upsert et Sync| PG
+  Worker -->|Mistral AI| PG
+
+  PG --> FastifyAPI
+  Redis <--> FastifyAPI
+
+  FastifyAPI --> Web
+  FastifyAPI --> Docs
+  FastifyAPI --> External
+`}
+/>
+
+---
+
+## 🧭 Explorer la Documentation
+
+<FeatureGrid cols={3}>
+  <FeatureCard
+    icon="✨"
+    title="Plateforme & Guide"
+    description="Vision citoyenne, stack technique, guide de contribution développeur et référence de l'API REST."
+    badge="01"
+    href="/01-guide"
+  />
+  <FeatureCard
+    icon="🗄️"
+    title="Données & Modélisation"
+    description="Sources Open Data, orchestrateur d'ingestion nocturne/intraday, enrichissement IA, modèle Prisma et diagrammes ERD."
+    badge="02"
+    href="/02-donnees"
+  />
+  <FeatureCard
+    icon="🛠️"
+    title="Guide Développeur"
+    description="Installation locale pas à pas avec Docker Compose, exécution Turbo et stratégie de déploiement."
+    badge="Dev"
+    href="/01-guide/guide-developpeur"
+  />
+  <FeatureCard
+    icon="⚡"
+    title="Référence API"
+    description="Documentation des endpoints REST, limitation de débit, en-têtes et exemples multi-langages."
+    badge="API"
+    href="/01-guide/api-reference"
+  />
+  <FeatureCard
+    icon="📊"
+    title="Schémas ERD"
+    description="Diagrammes Entité-Relation interactifs de la base de données PostgreSQL (Prisma ORM)."
+    badge="BDD"
+    href="/02-donnees/schemas-erd"
+  />
+  <FeatureCard
+    icon="🎯"
+    title="Explorateur API"
+    description="Toutes les routes de l'API, générées depuis son code. Le Swagger UI natif reste disponible sur api.clair.vote/docs."
+    badge="OpenAPI"
+    href="/api"
+  />
+</FeatureGrid>
+
+---
+
+## 🔒 Principes d'Accès et Transparence
+
+- **Lecture Seule et Zéro Compte** : La plateforme ne comporte aucun système de compte utilisateur, ni cookie traceur. L'API est publique et consultable librement.
+- **Licence Libre AGPL-3.0** : Le code source de l'ensemble des modules (Web, API, Ingestion, Docs) est public.
+- **Traçabilité Intégrale** : Chaque donnée affichée est directement rattachable à son document légal source ou son identifiant officiel (UID AN/Sénat, déclaration HATVP).

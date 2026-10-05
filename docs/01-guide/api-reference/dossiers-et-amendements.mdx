@@ -1,0 +1,30 @@
+---
+title: "API Dossiers Législatifs & Amendements"
+sidebar_label: "Dossiers & Amendements"
+sidebar_icon: "file-text"
+description: Suivi du parcours législatif des textes de loi, navette parlementaire, amendements, chronologie et regroupements par sujet.
+---
+
+## 📜 Endpoints Dossiers Législatifs
+
+| Méthode | Route | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/dossiers` | Liste paginée des dossiers législatifs déposés à l'AN et au Sénat |
+| `GET` | `/api/v1/dossiers/trending` | Textes de loi actuellement au cœur de l'actualité parlementaire |
+| `GET` | `/api/v1/dossiers/:uid` | Fiche complète d'un dossier (titre, statut, procédure, résumé IA) |
+| `GET` | `/api/v1/dossiers/:uid/chronologie` | Historique des étapes de la navette parlementaire |
+| `GET` | `/api/v1/dossiers/:uid/scrutins` | Tous les scrutins publics rattachés à ce texte |
+| `GET` | `/api/v1/dossiers/:uid/amendements` | Amendements déposés sur le dossier |
+
+---
+
+## 🗂️ Endpoints Sujets Transverses
+
+Les sujets regroupent automatiquement les dossiers de l'Assemblée nationale et du Sénat traitant d'un même projet de loi :
+
+| Méthode | Route | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/sujets` | Liste des sujets avec pagination et filtres thématiques |
+| `GET` | `/api/v1/sujets/featured` | Sujets majeurs mis en avant |
+| `GET` | `/api/v1/sujets/:slug` | Synthèse complète du sujet (enjeux, résumés, positions comparées) |
+| `GET` | `/api/v1/sujets/:slug/presse` | Articles d'actualité récents rattachés au texte |

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { DOCS_URL, PUBLIC_API_URL } from '@/lib/docs-url';
 import { Database, Code, ExternalLink, Landmark, Users, Vote, Briefcase, BookOpen, FileText, Search, BarChart3, Folders } from 'lucide-react';
 
 export const metadata: Metadata = {
@@ -7,7 +8,7 @@ export const metadata: Metadata = {
   description: 'Accédez librement aux données politiques françaises via l\'API CLAIR : députés, sénateurs, scrutins, lobbying, dossiers législatifs. Données ouvertes, documentées et gratuites.',
 };
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_URL = PUBLIC_API_URL;
 
 const endpoints = [
   {
@@ -36,7 +37,7 @@ const endpoints = [
     title: 'Scrutins',
     description: 'Tous les votes de l\'Assemblée et du Sénat, avec le détail par parlementaire',
     path: '/api/v1/scrutins',
-    example: '/api/v1/scrutins?limit=5&sort=date',
+    example: '/api/v1/scrutins?limit=5',
   },
   {
     icon: Briefcase,
@@ -62,7 +63,7 @@ const endpoints = [
   {
     icon: Search,
     title: 'Recherche',
-    description: 'Recherche plein texte sur l\'ensemble des données (Meilisearch)',
+    description: 'Recherche sur les parlementaires, scrutins, dossiers, groupes et lobbyistes',
     path: '/api/v1/search',
     example: '/api/v1/search?q=retraites',
   },
@@ -71,12 +72,12 @@ const endpoints = [
     title: 'Statistiques',
     description: 'Chiffres clés et statistiques agrégées de l\'activité parlementaire',
     path: '/api/v1/analytics',
-    example: '/api/v1/analytics/explorer',
+    example: '/api/v1/analytics/stats',
   },
 ];
 
 const curlExample = `# Récupérer les 5 derniers scrutins
-curl "${API_URL}/api/v1/scrutins?limit=5&sort=date"
+curl "${API_URL}/api/v1/scrutins?limit=5"
 
 # Chercher un député
 curl "${API_URL}/api/v1/deputes?search=dupont"
@@ -109,13 +110,13 @@ export default function ApiPage() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <a
-              href={`${API_URL}/docs`}
+              href={`${DOCS_URL}/api`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-xl font-medium hover:bg-primary/90 transition-colors"
             >
               <FileText className="h-5 w-5" />
-              Documentation Swagger
+              Documentation de l&apos;API
               <ExternalLink className="h-4 w-4" />
             </a>
             <a
@@ -241,17 +242,26 @@ export default function ApiPage() {
           </div>
 
           <p className="text-sm text-muted-foreground mt-4 text-center">
-            Les réponses sont en JSON. Pagination via <code className="bg-muted px-1 py-0.5 rounded text-xs">limit</code> et <code className="bg-muted px-1 py-0.5 rounded text-xs">offset</code>.
+            Les réponses sont en JSON. Pagination via <code className="bg-muted px-1 py-0.5 rounded text-xs">page</code> et <code className="bg-muted px-1 py-0.5 rounded text-xs">limit</code>.
             Consultez la{' '}
+            <a
+              href={`${DOCS_URL}/api`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline"
+            >
+              documentation de l&apos;API
+            </a>
+            {' '}pour le détail de chaque endpoint, ou testez-les dans le{' '}
             <a
               href={`${API_URL}/docs`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-primary hover:underline"
             >
-              documentation Swagger
+              Swagger
             </a>
-            {' '}pour le détail de chaque endpoint.
+            .
           </p>
         </div>
       </section>
@@ -314,7 +324,7 @@ export default function ApiPage() {
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <a
-                href={`${API_URL}/docs`}
+                href={DOCS_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 bg-white/90 dark:bg-white px-6 py-3 rounded-xl font-medium text-gray-700 hover:bg-white transition-colors"

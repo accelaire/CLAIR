@@ -1,0 +1,66 @@
+/*
+ * Thème de documentation Zudoku pour CLAIR (clair.vote)
+ * Les tokens de couleur sont définis dans zudoku.config.tsx en référence à apps/web/app/globals.css
+ */
+
+/* Supprime le trait de séparation redondant en bas de contenu (seul le border-t du footer fait foi) */
+main .h-px.bg-border,
+article .h-px.bg-border {
+  display: none;
+}
+
+
+/*
+ * Grand écran : HeaderActions (src/components) reproduit la fin du header du site,
+ * sélecteur de thème puis « Nous soutenir ». On masque donc le sélecteur natif
+ * de Zudoku, rendu après la navigation, et le lien « Nous soutenir » de la
+ * navigation, qui ne reste que dans le menu mobile.
+ */
+header .lg\:flex.text-sm > button:is([aria-label="Switch to light mode"], [aria-label="Switch to dark mode"], [aria-label="Toggle theme"]),
+header .lg\:flex.text-sm li:has(> a[href="https://clair.vote/soutenir"]) {
+  display: none !important;
+}
+
+/*
+ * Sélecteur natif de Zudoku, qui ne sert plus que dans le menu mobile : une
+ * seule icône comme sur clair.vote (soleil en sombre, lune en clair, rounded-lg
+ * p-2, icône 20 px, muted-foreground). Ciblé par ses aria-label, seuls attributs
+ * stables du composant.
+ */
+button:is([aria-label="Switch to light mode"], [aria-label="Switch to dark mode"], [aria-label="Toggle theme"]) {
+  border: 0 !important;
+  border-radius: var(--radius) !important;
+  padding: 0.5rem !important;
+  gap: 0 !important;
+  color: var(--muted-foreground) !important;
+  transition: background-color 150ms, color 150ms;
+}
+
+button:is([aria-label="Switch to light mode"], [aria-label="Switch to dark mode"], [aria-label="Toggle theme"]):hover {
+  background-color: var(--accent) !important;
+  color: var(--foreground) !important;
+}
+
+button:is([aria-label="Switch to light mode"], [aria-label="Switch to dark mode"], [aria-label="Toggle theme"]) > div {
+  border: 0 !important;
+  background: none !important;
+  padding: 0 !important;
+  transform: none !important;
+}
+
+button:is([aria-label="Switch to light mode"], [aria-label="Switch to dark mode"], [aria-label="Toggle theme"]) svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+button:is([aria-label="Switch to light mode"], [aria-label="Switch to dark mode"], [aria-label="Toggle theme"]) svg * {
+  fill: none !important;
+  stroke: currentColor !important;
+  transform: none !important;
+}
+
+/* Soleil en sombre (pour repasser en clair), lune en clair, comme le site. */
+html:not(.dark) button:is([aria-label="Switch to dark mode"], [aria-label="Toggle theme"]) > div:first-child,
+html.dark button:is([aria-label="Switch to light mode"], [aria-label="Toggle theme"]) > div:last-child {
+  display: none;
+}

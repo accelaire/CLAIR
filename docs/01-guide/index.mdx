@@ -1,0 +1,62 @@
+---
+title: "Plateforme, Guide & API"
+sidebar_label: "Vue d'ensemble"
+sidebar_icon: "sparkles"
+description: Présentation de la mission de CLAIR, principes fondateurs, stack technique, guide développeur et référence API.
+---
+
+**CLAIR** (*Citoyen Libre, Analyse, Information, République*) a été conçu pour rapprocher les citoyens du travail parlementaire français à travers des visualisations intuitives, des synthèses objectives et une API ouverte.
+
+---
+
+## 📑 Sommaire de la Section
+
+<FeatureGrid cols={2}>
+  <FeatureCard
+    icon="⚖️"
+    title="Vision et Valeurs"
+    description="Principes de neutralité stricte, indépendance, licence AGPL-3.0 et politique sans comptes utilisateurs."
+    href="/01-guide/vision-et-valeurs"
+  />
+  <FeatureCard
+    icon="💻"
+    title="Stack Technique"
+    description="Détail des technologies utilisées : Next.js 14, Fastify 4, Prisma 5, PostgreSQL 17, Redis 8 et Mistral AI."
+    href="/01-guide/stack-technique"
+  />
+  <FeatureCard
+    icon="🛠️"
+    title="Guide Développeur"
+    description="Installation locale pas à pas, configuration Docker, tests et déploiement en production."
+    href="/01-guide/guide-developpeur"
+  />
+  <FeatureCard
+    icon="⚡"
+    title="Référence API"
+    description="Documentation des endpoints REST, quotas de requêtes, simulateur d'appels et exemples de code."
+    href="/01-guide/api-reference"
+  />
+</FeatureGrid>
+
+---
+
+## 🏢 Organisation du Monorepo
+
+Le projet est structuré sous forme de monorepo géré avec `pnpm workspaces` et `Turborepo` :
+
+```text
+CLAIR/
+├── apps/
+│   ├── web/              # Application Frontend Next.js 14 (App Router) — clair.vote
+│   └── api/              # API REST Fastify 4 + Prisma — api.clair.vote
+│       └── prisma/       # schema.prisma, migrations et seed
+├── services/
+│   └── ingestion/        # Worker & CLI d'ingestion : sources publiques → PostgreSQL
+├── docs/                 # Documentation Zudoku — docs.clair.vote
+├── packages/
+│   ├── config/           # Configurations partagées
+│   └── shared/           # Types et utilitaires partagés
+├── scripts/              # Scripts ponctuels (audits, géographie, logos)
+├── Dockerfile            # Image de production de l'API
+└── docker-compose.yml    # Environnement PostgreSQL + Redis de développement
+```

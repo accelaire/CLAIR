@@ -1,0 +1,57 @@
+---
+title: "Données, Ingestion & Base de Données"
+sidebar_label: "Vue d'ensemble"
+sidebar_icon: "database"
+description: Architecture du pipeline de données de CLAIR, collecte Open Data, orchestrateur d'ingestion, qualité des calculs, enrichissement IA, modèle Prisma et diagrammes ERD.
+---
+
+La fiabilité de CLAIR repose sur une chaîne d'ingestion robuste qui transforme des flux hétérogènes (JSON, XML, CSV, dumps SQL, pages HTML, arrêtés ministériels) en un modèle unifié et cohérent stocké dans PostgreSQL.
+
+---
+
+## 📑 Sommaire de la Section
+
+<FeatureGrid cols={3}>
+  <FeatureCard
+    icon="🌐"
+    title="Sources Open Data"
+    description="Inventaire des flux officiels : Assemblée nationale, Sénat, HATVP et ministère de l'Intérieur."
+    href="/02-donnees/sources-de-donnees"
+  />
+  <FeatureCard
+    icon="⚙️"
+    title="Orchestrateur d'Ingestion"
+    description="Déroulement pas à pas du batch nocturne, du batch intraday et de la gestion de la fraîcheur (ETag)."
+    href="/02-donnees/orchestrateur-ingestion"
+  />
+  <FeatureCard
+    icon="💻"
+    title="Commandes CLI"
+    description="Répertoire complet des commandes de synchronisation, d'audit, de rattachement et de calcul de statistiques."
+    href="/02-donnees/commandes-cli"
+  />
+  <FeatureCard
+    icon="✅"
+    title="Qualité des Données"
+    description="Règles de cohérence, seuils de tolérance, contrôles d'intégrité et audits automatisés."
+    href="/02-donnees/qualite-des-donnees"
+  />
+  <FeatureCard
+    icon="🤖"
+    title="Enrichissement IA"
+    description="Modèles souverains Mistral AI, prompts structurés, vulgarisation législative et garde-fous anti-hallucination."
+    href="/02-donnees/enrichissement-ia"
+  />
+  <FeatureCard
+    icon="🗄️"
+    title="Modèle Prisma"
+    description="Catalogue des 39 tables relationnelles, conventions de nommage et cycle de vie des mandats."
+    href="/02-donnees/modele-prisma"
+  />
+  <FeatureCard
+    icon="📊"
+    title="Schémas ERD"
+    description="Diagrammes Entité-Relation interactifs de la base de données PostgreSQL."
+    href="/02-donnees/schemas-erd"
+  />
+</FeatureGrid>

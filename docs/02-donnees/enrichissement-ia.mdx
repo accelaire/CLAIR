@@ -1,0 +1,41 @@
+---
+title: "Enrichissement par IA Souveraine"
+sidebar_label: "Enrichissement IA"
+sidebar_icon: "bot"
+description: Modèles Mistral AI souverains (mistral-small, mistral-embed), prompts structurés, résumés de scrutins et dossiers, et garde-fous anti-hallucination.
+---
+
+CLAIR exploite l'API **Mistral AI** (modèles souverains européens) pour transformer le jargon technique et juridique des projets de loi, amendements et scrutins en synthèses limpides, neutres et accessibles à tous les citoyens.
+
+Chaque texte généré porte la mention transparente **« Résumé généré par IA »** avec un lien direct vers la méthodologie.
+
+---
+
+## 🧩 Entités Enrichies & Modèles
+
+| Entité | Colonnes Écrites | Contenu Produit | Données Fournies au LLM |
+| :--- | :--- | :--- | :--- |
+| **Scrutin** | `scrutins.resume_ia` | 1 à 3 phrases : objet exact du vote et conséquences juridiques | Titre, objet, tags, dossier rattaché, jusqu'à 3 amendements (exposé sommaire et dispositif), texte de l'article visé |
+| **Dossier législatif** | `dossiers_legislatifs.resume_ia` | Résumé en 3 à 5 phrases, puis analyse des positions de chaque groupe | Titre, procédure d'urgence, étapes, scrutins clés, votes des groupes sur l'ensemble et article par article |
+| **Sujet** | `sujets.label`, `resume`, `enjeux` | Titre court sans sigle, résumé global et cartographie des enjeux | Synthèse des dossiers AN et Sénat, votes comparés des groupes politiques |
+| **Sujet par groupe** | `sujets.groupe_amendement_descriptions` | 1 à 2 phrases par groupe sur leurs propositions phares | Amendements rédigés et défendus par chaque groupe parlementaire |
+| **Fiche Parlementaire** | `parlementaires.resume_ia`, `parcours_ia`, `positions_cles_ia` | Synthèse biographique, parcours, engagements marquants | Circonscription, groupe, statistiques d'activité, mandats, déclarations HATVP, données Wikipédia/Wikidata |
+
+---
+
+## ⚙️ Paramètres d'Inférence Mistral
+
+- **Modèle de génération** : `mistral-small-latest`
+- **Température** : 0.3 (très faible pour garantir une factualité stricte et éliminer l'invention créative)
+- **Tokens de sortie** : 512 (scrutins), 1 024 (dossiers et sujets), 1 500 (fiches parlementaires)
+- **Empreinte SHA-256 (`ia_content_hash`)** : Chaque entité calcule une empreinte stricte de ses données d'entrée brutes. Mistral n'est réinterrogé que si l'empreinte change, évitant les surcoûts et les régénérations inutiles.
+- **Embeddings sémantiques** : `mistral-embed` pour sélectionner et classer les fiches de contexte officielles issues de `vie-publique.fr`.
+
+---
+
+## 🛡️ Règles Déontologiques Impératives des Prompts
+
+1. **Objectivité Absolue** : Aucun adjectif subjectif ou jugement de valeur.
+2. **Texte Brut** : Formatage en paragraphes fluides sans listes à puces.
+3. **Interdiction d'Extrapolation** : Si une information est absente des pièces officielles, le modèle ne doit sous aucun prétexte chercher à deviner ou déduire.
+4. **Prudence sur les Amendements** : Un vote sur un amendement ne permet jamais d'affirmer la position globale d'un groupe sur l'ensemble d'un texte de loi.

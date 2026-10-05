@@ -1,0 +1,50 @@
+---
+title: "API Scrutins & Votes Publics"
+sidebar_label: "Scrutins & Votes"
+sidebar_icon: "check-square"
+description: Consultation des scrutins publics, positions de vote individuelles nominatives (pour, contre, abstention, non-votant) et débats rattachés.
+---
+
+## 🗳️ Endpoints Disponibles
+
+| Méthode | Route | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/scrutins` | Liste paginée des scrutins publics avec filtres temporels et thématiques |
+| `GET` | `/api/v1/scrutins/importants` | Scrutins majeurs ou solennels mis en avant |
+| `GET` | `/api/v1/scrutins/tags` | Liste des mots-clés et tags de classification |
+| `GET` | `/api/v1/scrutins/:numero` | Détail d'un scrutin (objet, synthèse IA, sort, décompte) |
+| `GET` | `/api/v1/scrutins/:numero/votes` | Liste complète de tous les votes nominatifs des élus |
+| `GET` | `/api/v1/scrutins/:numero/interventions` | Débats et prises de parole ayant précédé le vote |
+
+---
+
+## 🏷️ Positions de Vote Prises en Charge
+
+Chaque vote nominatif d'un élu est classé selon l'une des positions officielles :
+
+- **POUR** : `pour`
+- **CONTRE** : `contre`
+- **ABSTENTION** : `abstention`
+- **NON_VOTANT / ABSENT** : `non_votant` ou `absent`
+
+---
+
+## 📋 Exemple de Réponse JSON (`GET /api/v1/scrutins/120`)
+
+```json
+{
+  "id": "VTANR5L17V120",
+  "numero": 120,
+  "chambre": "assemblee",
+  "titre": "Projet de loi de finances pour 2025 - Article 1er",
+  "sort": "ADOPTE",
+  "dateScrutin": "2024-10-25T16:30:00.000Z",
+  "resumeIa": "Vote sur l'évaluation des recettes de l'État pour l'année 2025.",
+  "decompte": {
+    "votants": 540,
+    "pour": 290,
+    "contre": 240,
+    "abstentions": 10
+  }
+}
+```
