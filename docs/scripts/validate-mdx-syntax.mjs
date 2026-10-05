@@ -56,9 +56,6 @@ for (const p of allPages) {
     "FeatureGrid",
     "TrackCard",
     "CodeTabs",
-    "PoliticalBadge",
-    "VoteBadge",
-    "ApiSimulator",
   ];
 
   for (const tag of customTags) {
@@ -67,11 +64,12 @@ for (const p of allPages) {
       .replace(/```[\s\S]*?```/g, "")
       .replace(/<!--[\s\S]*?-->/g, "");
 
-    // Nettoyer les chaînes de caractères littérales entre guillemets pour éviter les faux positifs sur les > et />
+    // Nettoyer les chaînes de caractères littérales sans avaler le texte entre apostrophes françaises
     const sanitized = cleaned
-      .replace(/"[\s\S]*?"/g, '""')
-      .replace(/'[\s\S]*?'/g, "''")
-      .replace(/`[\s\S]*?`/g, "``");
+      .replace(/\{`[\s\S]*?`\}/g, '=""')
+      .replace(/`[^`]*`/g, "``")
+      .replace(/"[^"\r\n]*"/g, '""')
+      .replace(/=\s*'[^'\r\n]*'/g, '=""');
 
     // 1. Détecter les balises auto-fermantes <Tag ... /> ou <Tag/>
     const selfClosingTagRegex = new RegExp(`<${tag}(?:\\s[^>]*?)?\\s*\\/>`, "g");

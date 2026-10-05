@@ -3,6 +3,7 @@ title: "Accueil & Vue d'ensemble"
 sidebar_label: "Accueil"
 sidebar_icon: "home"
 description: Portail d'ingénierie, d'architecture et de documentation pour CLAIR, plateforme ouverte de transparence sur le Parlement français.
+disable_pager: true
 ---
 
 **CLAIR** (*Citoyen Libre, Analyse, Information, République*) est une plateforme ouverte et indépendante dédiée à la transparence sur le Parlement français : parlementaires, scrutins publics, dossiers législatifs, débats, commissions et lobbying. L'ensemble du code est publié sous licence **AGPL-3.0**.
@@ -17,10 +18,10 @@ L'écosystème CLAIR s'articule autour d'une base de données relationnelle cent
   title="Architecture Globale de la Plateforme CLAIR"
   chart={`graph TD
   subgraph Sources ["Sources Officielles Open Data"]
-    AN["Assemblée Nationale<br/>(Scrutins, Députés, Amendements)"]
+    AN["Assemblée Nationale<br/>(Scrutins, Députés, Amendements, Syceron)"]
     SEN["Sénat<br/>(Sénateurs, Dosleg, Votes)"]
     HATVP["HATVP<br/>(Lobbying et Représentants)"]
-    DILA["DILA / Légifrance<br/>(Textes et JO)"]
+    GOUV["data.gouv.fr / Intérieur<br/>(Élections et Territoires)"]
   end
 
   subgraph Ingestion ["Services d'Ingestion"]
@@ -45,7 +46,7 @@ L'écosystème CLAIR s'articule autour d'une base de données relationnelle cent
   AN -->|JSON / XML / ZIP| Worker
   SEN -->|XML / CSV| Worker
   HATVP -->|XML / JSON| Worker
-  DILA -->|API / OpenData| Worker
+  GOUV -->|XLSX / CSV| Worker
 
   Worker -->|Upsert et Sync| PG
   Worker -->|Mistral AI| PG

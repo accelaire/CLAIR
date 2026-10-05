@@ -79,7 +79,8 @@ async function exportOpenApi() {
     fs.writeFileSync(OUTPUT_FILE, JSON.stringify(data, null, 2), "utf-8");
     console.log(`✓ Successfully updated ${OUTPUT_FILE} (${Object.keys(newPaths).length} paths).`);
   } catch (err) {
-    console.warn(`⚠️ Could not fetch from remote API: ${err.message}.`);
+    console.error(`❌ Failed to fetch OpenAPI spec from remote API: ${err.message}`);
+    process.exit(1);
   }
 }
 

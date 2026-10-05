@@ -30,7 +30,7 @@ export default defineConfig({
         target: "https://api.clair.vote",
         changeOrigin: true,
         secure: false,
-        rewrite: (p) => p.replace(/^\/api-proxy/, ""),
+        rewrite: (p: string) => p.replace(/^\/api-proxy/, ""),
       },
     },
   },

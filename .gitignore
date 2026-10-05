@@ -25,6 +25,7 @@ dist/
 .next/
 .turbo/
 docs/public/pagefind/
+docs/public/openapi.json
 .zudoku/
 
 # IDE

@@ -62,7 +62,9 @@ response.raise_for_status()
 
 deputes = response.json()
 for d in deputes.get("data", []):
-    print(f"{d['prenom']} {d['nom']} - Groupe: {d.get('groupe', {}).get('sigle')}")
+    groupe = d.get("groupe")
+    groupe_nom = groupe["nom"] if groupe else "Non-inscrit"
+    print(f"{d['prenom']} {d['nom']} - Groupe: {groupe_nom}")
 ```
 
 ---
@@ -80,7 +82,7 @@ import (
 
 func main() {
 	client := &http.Client{}
-	req, _ := http.NewRequest("GET", "https://api.clair.vote/api/v1/health", nil)
+	req, _ := http.NewRequest("GET", "https://api.clair.vote/health", nil)
 	req.Header.Set("User-Agent", "GoCivicBot/1.0")
 
 	resp, err := client.Do(req)

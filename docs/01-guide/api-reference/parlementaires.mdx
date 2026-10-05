@@ -23,11 +23,13 @@ description: Documentation des routes /api/v1/parlementaires, /api/v1/deputes et
 ## 🏛️ Filtres Supportés
 
 - `chambre` : `assemblee` ou `senat`
-- `groupe` : Code ou sigle du groupe (ex: `EPR` ou `RN`)
-- `departement` : Nom ou code du département
-- `actif` : `true` (en exercice) ou `false` (anciens élus)
+- `groupe` : Slug du groupe politique (ex: `ensemble-pour-la-republique` ou `rassemblement-national`)
+- `departement` : Numéro de département (ex: `78`, `75`, `2A`, `974`)
+- `actif` : `true` (en exercice, défaut) ou `false` (anciens élus)
 - `search` : Recherche textuelle sur le nom / prénom
-- `sort` : Tri par `nom`, `presence`, `loyaute`, `participation`, `interventions`
+- `sort` : Tri par `nom`, `prenom`, `presence`, `loyaute`, `activite`, `amendements`, `interventions`
+- `order` : Ordre `asc` ou `desc` (défaut : `asc`)
+- `periode` : `mandat` (défaut) ou `carriere`
 
 ---
 
@@ -35,7 +37,7 @@ description: Documentation des routes /api/v1/parlementaires, /api/v1/deputes et
 
 ```json
 {
-  "id": "PA795828",
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "slug": "yael-braun-pivet",
   "nom": "Braun-Pivet",
   "prenom": "Yaël",
@@ -43,19 +45,32 @@ description: Documentation des routes /api/v1/parlementaires, /api/v1/deputes et
   "chambre": "assemblee",
   "actif": true,
   "groupe": {
-    "nom": "Ensemble pour la République",
-    "sigle": "EPR",
-    "couleur": "#FFB300"
+    "id": "e5f6a7b8-c9d0-1234-ef56-7890abcdef12",
+    "slug": "ensemble-pour-la-republique",
+    "chambre": "assemblee",
+    "nom": "EPR",
+    "nomComplet": "Ensemble pour la République",
+    "couleur": "#FFB300",
+    "position": "centre"
   },
   "circonscription": {
-    "departement": "Yvelines",
-    "numero": 5
+    "id": "f0e1d2c3-b4a5-6789-0123-456789abcdef",
+    "departement": "78",
+    "numero": 5,
+    "nom": "Yvelines",
+    "type": "circonscription"
   },
   "stats": {
     "presence": 92,
+    "presenceSolennel": 95,
     "loyaute": 98,
-    "participation": 88,
-    "interventions": 1420
+    "participation": 342,
+    "interventions": 1420,
+    "amendements": {
+      "proposes": 12,
+      "adoptes": 4
+    },
+    "questions": 8
   }
 }
 ```
