@@ -25,7 +25,7 @@ L'écosystème CLAIR s'articule autour d'une base de données relationnelle cent
   end
 
   subgraph Ingestion ["Services d'Ingestion"]
-    Worker["CLI d'Ingestion CLAIR<br/>(TypeScript / Fastify / Mistral AI)"]
+    Worker["CLI d'Ingestion CLAIR<br/>(TypeScript / Prisma / Mistral AI)"]
   end
 
   subgraph Storage ["Stockage Centralisé"]
@@ -102,9 +102,9 @@ L'écosystème CLAIR s'articule autour d'une base de données relationnelle cent
   />
   <FeatureCard
     icon="🎯"
-    title="Explorateur Swagger"
-    description="Interface interactive OpenAPI directement connectée à api.clair.vote pour tester les requêtes en direct."
-    badge="Swagger"
+    title="Explorateur API"
+    description="Toutes les routes de l'API, générées depuis son code. Le Swagger UI natif reste disponible sur api.clair.vote/docs."
+    badge="OpenAPI"
     href="/api"
   />
 </FeatureGrid>

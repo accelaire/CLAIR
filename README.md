@@ -68,20 +68,22 @@ L'API REST est documentée via Swagger à `http://localhost:3001/docs` une fois 
 Le portail de documentation technique et de référence de l'API est propulsé par [Zudoku](https://zudoku.dev) dans le dossier `docs/` et déployé sur [docs.clair.vote](https://docs.clair.vote).
 
 ```bash
-# Lancer le portail de documentation en local (avec rechargement à chaud)
+# Lancer le portail de documentation en local sur http://localhost:3002 (rechargement à chaud)
 pnpm dev:docs
 
-# Régénérer la navigation après modification des fichiers .mdx
+# Construire le site statique (sortie dans docs/dist, c'est ce que déploie Vercel)
+pnpm build:docs
+
+# Régénérer la navigation après ajout, renommage ou suppression d'un fichier .mdx
 pnpm docs:nav
 
 # Valider la syntaxe MDX et l'intégrité des liens internes
 pnpm docs:validate
-
-# Télécharger et synchroniser la spécification OpenAPI depuis api.clair.vote
-pnpm --filter @clair/docs exec node scripts/export-openapi-spec.mjs
 ```
 
-> Pour contribuer ou auditer la solution, consulte notre [documentation en ligne](https://docs.clair.vote), notre [wiki](https://github.com/accelaire/CLAIR/wiki) ou contacte-nous par [mail](mailto:contact@clair.vote).
+La référence API de la doc n'est pas écrite à la main : `dev:docs` et `build:docs` téléchargent la spécification OpenAPI générée par l'API de production (`https://api.clair.vote/docs/json`) dans `docs/public/openapi.json`, fichier ignoré par git. Sans accès à l'API, les deux commandes échouent. Pour documenter une route, on modifie donc son schéma dans `apps/api`, pas la doc.
+
+> Pour contribuer ou auditer la solution, consulte notre [documentation en ligne](https://docs.clair.vote) ou contacte-nous par [mail](mailto:contact@clair.vote).
 
 ## Contact
 

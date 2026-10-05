@@ -5,6 +5,7 @@ import {
   FeatureGrid,
   Footer,
   Mermaid,
+  SwaggerLink,
   TrackCard,
 } from "./src/components";
 import { docsNavigation, docsRedirects } from "./zudoku.navigation";
@@ -29,7 +30,7 @@ const config: ZudokuConfig = {
       cardForeground: "#020817",
       popover: "#ffffff",
       popoverForeground: "#020817",
-      primary: "#1d70f5", // hsl(215, 91%, 51%)
+      primary: "#106ff4", // hsl(215, 91%, 51%)
       primaryForeground: "#f8fafc", // hsl(210, 40%, 98%)
       secondary: "#f1f5f9", // hsl(210, 40%, 96.1%)
       secondaryForeground: "#0f172a", // hsl(222.2, 47.4%, 11.2%)
@@ -41,7 +42,7 @@ const config: ZudokuConfig = {
       destructiveForeground: "#f8fafc",
       border: "#e2e8f0", // hsl(214.3, 31.8%, 91.4%)
       input: "#e2e8f0",
-      ring: "#1d70f5",
+      ring: "#106ff4",
       radius: "0.5rem",
     },
     dark: {
@@ -51,7 +52,7 @@ const config: ZudokuConfig = {
       cardForeground: "#ffffff",
       popover: "#12151b",
       popoverForeground: "#ffffff",
-      primary: "#1d70f5", // hsl(215, 91%, 51%) — brand blue
+      primary: "#106ff4", // hsl(215, 91%, 51%), brand blue
       primaryForeground: "#ffffff",
       secondary: "#22262f", // hsl(221, 16%, 15.9%) — Figma divider
       secondaryForeground: "#ffffff",
@@ -63,19 +64,19 @@ const config: ZudokuConfig = {
       destructiveForeground: "#ffffff",
       border: "#22262f",
       input: "#373a41", // hsl(222, 8%, 23.5%) — Figma subtle border
-      ring: "#1d70f5",
+      ring: "#106ff4",
       radius: "0.5rem",
     },
   },
   site: {
-    title: "CLAIR — Documentation",
+    title: "CLAIR.vote Docs",
     logo: {
       src: {
         light: "/logo-clair-light.svg",
         dark: "/logo-clair-dark.svg",
       },
-      alt: "CLAIR — Plateforme citoyenne",
-      width: 135,
+      alt: "CLAIR Docs",
+      width: 119,
       href: "/",
     },
     showPoweredBy: false,
@@ -83,6 +84,7 @@ const config: ZudokuConfig = {
   },
   slots: {
     "footer-before": <Footer />,
+    "content-before": <SwaggerLink />,
   },
   search: {
     type: "pagefind",

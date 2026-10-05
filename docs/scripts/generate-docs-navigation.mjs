@@ -244,10 +244,10 @@ function generateNavigation() {
   console.log("Scanning docs directory...");
   const navItems = scanDir(CONFIG.docsDir, CONFIG.docsDir);
 
-  // Add Interactive Swagger API Explorer category in the sidebar
+  // Explorateur OpenAPI (Zudoku) ; le Swagger UI natif reste sur api.clair.vote/docs
   navItems.push({
     type: "category",
-    label: "Explorateur Swagger (API)",
+    label: "Explorateur API",
     icon: "code",
     collapsed: false,
     items: [

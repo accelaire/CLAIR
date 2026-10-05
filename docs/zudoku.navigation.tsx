@@ -196,7 +196,7 @@ export const docsNavigation: ZudokuConfig["navigation"] = [
   },
   {
     type: "category",
-    label: "Explorateur Swagger (API)",
+    label: "Explorateur API",
     icon: "code",
     collapsed: false,
     items: [
