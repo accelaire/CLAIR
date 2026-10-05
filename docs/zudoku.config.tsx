@@ -4,6 +4,7 @@ import {
   FeatureCard,
   FeatureGrid,
   Footer,
+  HeaderActions,
   Mermaid,
   SwaggerLink,
   TrackCard,
@@ -85,6 +86,7 @@ const config: ZudokuConfig = {
   slots: {
     "footer-before": <Footer />,
     "content-before": <SwaggerLink />,
+    "head-navigation-end": <HeaderActions />,
   },
   search: {
     type: "pagefind",
