@@ -179,6 +179,18 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // législature, faute de dossier ingéré pour la leur.
     query: `SELECT COUNT(*)::int AS value FROM scrutins s JOIN dossiers_legislatifs d ON s.dossier_id = d.id WHERE s.chambre = 'assemblee' AND d.uid NOT LIKE 'SENAT%' AND s.session ~ '^[0-9]+$' AND d.legislature <> s.session::int`,
   },
+  scrutins_sur_dossier_sans_vote: {
+    type: 'invariant',
+    label: 'Scrutins incompatibles avec la procédure de leur dossier (rapport, mission, 49.3)',
+    min: 0,
+    max: 0,
+    // Un rapport ou une mission d'information ne se vote pas, et un 49.3 ne
+    // porte que la motion de censure ; leur titre reprend pourtant celui du
+    // texte : non nul = un rattacheur leur a donné les scrutins du texte
+    // (1 533 + 247 en prod au 2026-10-06). Voir procedureCompatible dans
+    // workers/sync.ts.
+    query: `SELECT COUNT(*)::int AS value FROM scrutins s JOIN dossiers_legislatifs d ON s.dossier_id = d.id WHERE d.procedure_code IN ('10', '12', '16', '19', '20') OR (d.procedure_code = '13' AND s.titre !~* 'motion de censure')`,
+  },
   amendements_uid_canonique_doublons: {
     type: 'invariant',
     label: 'Amendements en double sous une même clé canonique',

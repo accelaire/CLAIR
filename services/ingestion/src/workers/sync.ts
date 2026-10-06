@@ -4214,6 +4214,18 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.error({ error: errorMessage(error) }, 'AN legislature guard failed (non-blocking)');
     }
 
+    // Même logique pour la procédure du dossier : un rapport ne se vote pas, un
+    // 49.3 ne porte que la motion de censure.
+    logger.info('Unlinking scrutins incompatible with their dossier procedure...');
+    try {
+      const guardResult = await unlinkScrutinsProcedureIncompatible();
+      logger.info({
+        unlinked: guardResult.unlinked,
+      }, 'Procedure guard completed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Procedure guard failed (non-blocking)');
+    }
+
     // Scrutin→dossier linking MUST run BEFORE scrutin→amendement linking
     // because the CTE requires dossier_id to avoid cross-dossier false positives.
     logger.info('Linking Sénat scrutins to dossiers...');
@@ -5327,8 +5339,10 @@ export async function syncDossiers(
         created++;
       }
 
-      // Lier les scrutins au dossier via voteRefs
-      if (linkScrutins && dossier.voteRefs.length > 0) {
+      // Lier les scrutins au dossier via voteRefs. Jamais vers une procédure sans
+      // vote : le garde-fou de procédure défairait le lien chaque nuit.
+      const procedureSansVote = (PROCEDURES_SANS_VOTE as readonly string[]).includes(dossier.procedureCode ?? '');
+      if (linkScrutins && !procedureSansVote && dossier.voteRefs.length > 0) {
         for (const voteRef of dossier.voteRefs) {
           // voteRef format: VTANR5L17V451 -> législature 17, numero 451.
           // Les deux sont nécessaires : les numéros de scrutin repartent de 1 à
@@ -5586,6 +5600,82 @@ export async function unlinkANScrutinsWrongLegislature(): Promise<{ unlinked: nu
 }
 
 // =============================================================================
+// GARDE-FOU PROCÉDURE (AN) : un rapport d'information ne se vote pas
+// =============================================================================
+
+/**
+ * Procédures AN (`procedure_code`) qui ne passent jamais au vote : mission
+ * d'information (10), message du Président de la République (12), pétitions
+ * (16), rapport d'information sans mission (19), allocution du Président de
+ * l'Assemblée (20).
+ *
+ * Leur titre reprend souvent mot pour mot celui du texte qu'elles étudient
+ * (« Projet de loi de finances pour 2025 », « rapport d'information … sur la
+ * proposition de loi apportant une réponse intégrale au phénomène des violences
+ * sexuelles… »). Les rattacheurs par titre leur donnaient donc les scrutins du
+ * texte, que le vrai dossier n'avait plus : 1 533 scrutins en prod au
+ * 2026-10-06, dont 343 du PLF 2025 et les 101 de la PPL sur les violences
+ * sexuelles et sexistes.
+ *
+ * La commission d'enquête (9) reste candidate : la résolution qui la crée se
+ * vote, et l'AN la range dans le dossier de la commission. Les codes du Sénat
+ * (PPL, PJL…) ne sont jamais dans la liste : le filtre est sans effet sur eux.
+ */
+export const PROCEDURES_SANS_VOTE = ['10', '12', '16', '19', '20'] as const;
+
+/**
+ * Engagement de la responsabilité du Gouvernement (art. 49, al. 3) : le seul
+ * scrutin de ce dossier est la motion de censure. Son titre reprend celui du
+ * texte (« … sur la troisième partie du projet de loi de financement de la
+ * sécurité sociale pour 2023 »), et les rattacheurs y rangeaient les votes
+ * d'articles et d'amendements du texte : 247 scrutins de la réforme des
+ * retraites de 2020 en prod au 2026-10-06.
+ */
+export const PROCEDURE_ENGAGEMENT_RESPONSABILITE = '13';
+export const MOTION_DE_CENSURE = /motion de censure/i;
+
+/**
+ * Le scrutin `s` peut appartenir au dossier d'alias `alias` au vu de sa
+ * procédure : jamais un rapport ou une mission, et une motion de censure
+ * seulement pour un engagement de responsabilité.
+ */
+function procedureCompatible(alias: 'd' | 'd2'): Prisma.Sql {
+  const col = Prisma.raw(`${alias}.procedure_code`);
+  return Prisma.sql`(
+    ${dossierVotable(alias)}
+    AND (${col} IS DISTINCT FROM ${PROCEDURE_ENGAGEMENT_RESPONSABILITE} OR s.titre ~* 'motion de censure')
+  )`;
+}
+
+/** Le dossier d'alias `alias` peut porter des scrutins, quel que soit le scrutin. */
+function dossierVotable(alias: 'd' | 'd2'): Prisma.Sql {
+  const col = Prisma.raw(`${alias}.procedure_code`);
+  return Prisma.sql`(${col} IS NULL OR ${col} NOT IN (${Prisma.join([...PROCEDURES_SANS_VOTE])}))`;
+}
+
+/**
+ * Casse les liens scrutin → dossier incompatibles avec la procédure du dossier
+ * (voir `procedureCompatible`). Les scrutins redeviennent orphelins et les
+ * rattacheurs, qui appliquent la même règle, les reposent sur le texte voté.
+ * Doit tourner AVANT le matching : le rattachement par numéro de texte et par
+ * pairs propage les liens existants.
+ */
+export async function unlinkScrutinsProcedureIncompatible(): Promise<{ unlinked: number }> {
+  const unlinked = await prisma.$executeRaw`
+    UPDATE scrutins s
+    SET dossier_id = NULL
+    FROM dossiers_legislatifs d
+    WHERE s.dossier_id = d.id
+      AND NOT ${procedureCompatible('d')}
+  `;
+
+  if (unlinked > 0) {
+    logger.warn({ unlinked }, 'Unlinked scrutins incompatible with their dossier procedure (rapport, mission, 49.3)');
+  }
+  return { unlinked };
+}
+
+// =============================================================================
 // LINK AN SCRUTINS TO DOSSIERS BY TITLE MATCHING
 // =============================================================================
 
@@ -5625,6 +5715,7 @@ export async function linkANScrutinsByTitle(): Promise<{ linked: number }> {
         AND LENGTH(d.titre) > 15
         AND LOWER(s.titre) LIKE '%' || LOWER(d.titre) || '%'
         AND ${AN_LEGISLATURE_MATCHES}
+        AND ${procedureCompatible('d')}
       GROUP BY s.id
       HAVING COUNT(DISTINCT d.id) = 1
     )
@@ -5652,6 +5743,7 @@ export async function linkANScrutinsByTitle(): Promise<{ linked: number }> {
         AND LENGTH(d.titre) > 15
         AND LOWER(s.titre) LIKE '%' || LOWER(d.titre) || '%'
         AND ${AN_LEGISLATURE_MATCHES}
+        AND ${procedureCompatible('d')}
     )
     UPDATE scrutins SET dossier_id = r.dossier_id
     FROM ranked r WHERE scrutins.id = r.scrutin_id AND r.rn = 1
@@ -5700,8 +5792,8 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
       ? Prisma.sql`d.uid LIKE 'SENAT%'`
       : Prisma.sql`d.uid NOT LIKE 'SENAT%'`;
 
-    const dossiers = await prisma.$queryRaw<{ id: string; titre: string; legislature: number }[]>`
-      SELECT id, legislature,
+    const dossiers = await prisma.$queryRaw<{ id: string; titre: string; legislature: number; procedure_code: string | null }[]>`
+      SELECT id, legislature, procedure_code,
         CASE
           WHEN titre ~ '^[a-zàâäéèêëïîôùûüÿçœæ]' AND procedure_libelle IS NOT NULL
           THEN procedure_libelle || ' ' || titre
@@ -5710,6 +5802,7 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
       FROM dossiers_legislatifs d
       WHERE ${dossierFilter}
         AND titre IS NOT NULL AND LENGTH(titre) > 5
+        AND ${dossierVotable('d')}
     `;
 
     if (dossiers.length === 0) {
@@ -5782,6 +5875,13 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
           legislatureSkipped++;
           continue;
         }
+      }
+
+      // Un 49.3 ne porte que sa motion de censure (voir procedureCompatible).
+      if (!MOTION_DE_CENSURE.test(orphan.titre)) {
+        candidates = (candidates ?? dossiers.map((_, j) => j)).filter(
+          (j) => dossiers[j]?.procedure_code !== PROCEDURE_ENGAGEMENT_RESPONSABILITE,
+        );
       }
 
       const match = bestMatch(scrutinVector, dossierVectors, candidates);
@@ -7512,6 +7612,7 @@ export async function linkOrphansByLoiTitre(): Promise<{ linked: number }> {
         AND d.loi_titre IS NOT NULL AND LENGTH(d.loi_titre) > 15
         AND ${dossierFilter}
         AND ${legislatureFilter}
+        AND ${procedureCompatible('d')}
         AND LOWER(s.titre) LIKE '%' || LOWER(d.loi_titre) || '%'
         -- Only use unambiguous matches (exactly 1 dossier matches)
         AND (
@@ -7520,6 +7621,7 @@ export async function linkOrphansByLoiTitre(): Promise<{ linked: number }> {
           WHERE d2.loi_titre IS NOT NULL AND LENGTH(d2.loi_titre) > 15
             AND d2.uid ${chambre === 'senat' ? Prisma.sql`LIKE 'SENAT%'` : Prisma.sql`NOT LIKE 'SENAT%'`}
             AND ${legislatureFilterD2}
+            AND ${procedureCompatible('d2')}
             AND LOWER(s.titre) LIKE '%' || LOWER(d2.loi_titre) || '%'
         ) = 1
     `;

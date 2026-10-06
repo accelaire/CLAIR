@@ -29,6 +29,7 @@ import {
   syncLobbyistes,
   linkANScrutinsByTitle,
   unlinkANScrutinsWrongLegislature,
+  unlinkScrutinsProcedureIncompatible,
   linkOrphanScrutinsByTFIDF,
   linkOrphanScrutinsByTexteNumero,
   linkOrphansByLoiTitre,
@@ -800,6 +801,26 @@ program
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'unlink-wrong-legislature failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: unlink-dossiers-sans-vote
+// =============================================================================
+program
+  .command('unlink-procedure-incompatible')
+  .description('Casser les liens scrutin → dossier incompatibles avec la procédure du dossier : rapport ou mission d\'information, 49.3 hors motion de censure (réparation one-shot)')
+  .action(async () => {
+    try {
+      logger.info('Starting procedure guard cleanup...');
+      const result = await unlinkScrutinsProcedureIncompatible();
+      console.log(`\n🔗 Garde-fou procédure:`);
+      console.log(`   Liens cassés: ${result.unlinked}`);
+      console.log(`   Relancer link-scrutins-tfidf, link-scrutins-dossiers, link-by-texte-numero et link-by-loi-titre pour les reposer.`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'unlink-procedure-incompatible failed');
       process.exit(1);
     }
   });
