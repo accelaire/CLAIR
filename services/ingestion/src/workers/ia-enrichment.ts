@@ -29,6 +29,63 @@ import { errorMessage } from '../utils/errors.js';
 
 const prisma = new PrismaClient();
 
+// -----------------------------------------------------------------------------
+// Groupe d'époque
+// -----------------------------------------------------------------------------
+//
+// Le groupe est un attribut du MANDAT, jamais de la personne. Les prompts
+// agrégeaient les votes et les amendements par `parlementaires.groupe_id`, le
+// groupe d'AUJOURD'HUI : la loi de finances 2018 se lisait « Ensemble pour la
+// République (EPR) et Renaissance ont voté pour », EPR n'existant qu'en 2024 ;
+// les votes à l'AN des députés devenus sénateurs passaient sous leur groupe du
+// Sénat ; et chaque changement de groupe courant (renouvellement du Sénat,
+// pseudo-groupe « AUCUN » du 1er au 5 octobre 2026) changeait le hash et
+// régénérait tout le corpus.
+//
+// Même règle que `votes_epoque` dans stats-calculator : à l'AN le mandat de la
+// législature du scrutin, au Sénat le mandat en cours à sa date. Sans mandat
+// d'époque doté d'un groupe (anciens sénateurs dont ODSEN ne publie pas le
+// groupe, 2,5 % des votes du Sénat), la ligne est écartée plutôt que rangée
+// sous le groupe actuel. `ORDER BY … LIMIT 1` départage les mandats qui se
+// touchent à une borne (fin le jour où le suivant commence).
+
+/** Groupe d'époque d'un vote : attend les alias `v` (votes) et `s` (scrutins), expose `gp`. */
+const GROUPE_DU_VOTE = Prisma.sql`
+  JOIN LATERAL (
+    SELECT m.groupe_id
+    FROM mandats_parlementaires m
+    WHERE m.personne_id = v.parlementaire_id
+      AND m.chambre = s.chambre
+      AND m.groupe_id IS NOT NULL
+      AND (
+        (s.chambre = 'assemblee' AND s.legislature IS NOT NULL AND m.legislature = s.legislature)
+        OR (s.chambre = 'senat' AND m.date_debut <= s.date AND (m.date_fin IS NULL OR m.date_fin >= s.date))
+      )
+    ORDER BY m.date_debut DESC, m.id
+    LIMIT 1
+  ) groupe_epoque ON TRUE
+  JOIN groupes_politiques gp ON gp.id = groupe_epoque.groupe_id
+`;
+
+/** Groupe d'époque de l'auteur d'un amendement (alias `a`), à son dépôt. Expose `gp`. */
+const GROUPE_DE_L_AMENDEMENT = Prisma.sql`
+  JOIN LATERAL (
+    SELECT m.groupe_id
+    FROM mandats_parlementaires m
+    WHERE m.personne_id = a.parlementaire_id
+      AND m.chambre = a.chambre
+      AND m.groupe_id IS NOT NULL
+      AND (
+        (a.chambre = 'assemblee' AND a.legislature IS NOT NULL AND m.legislature = a.legislature)
+        OR (a.chambre = 'senat' AND a.date_depot IS NOT NULL
+            AND m.date_debut <= a.date_depot AND (m.date_fin IS NULL OR m.date_fin >= a.date_depot))
+      )
+    ORDER BY m.date_debut DESC, m.id
+    LIMIT 1
+  ) groupe_epoque ON TRUE
+  JOIN groupes_politiques gp ON gp.id = groupe_epoque.groupe_id
+`;
+
 // =============================================================================
 // RATTACHEMENT D'UN SCRUTIN AU TEXTE DE SON ARTICLE
 // =============================================================================
@@ -472,9 +529,8 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
               SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
               SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
             FROM votes v
-            JOIN parlementaires p ON p.id = v.parlementaire_id
-            JOIN groupes_politiques gp ON gp.id = p.groupe_id
             JOIN scrutins s ON s.id = v.scrutin_id
+            ${GROUPE_DU_VOTE}
             WHERE s.dossier_id = ${dossier.id}
               AND (s.type_vote = 'solennel' OR s.titre ILIKE '%ensemble%')
               AND v.position != 'absent'
@@ -496,9 +552,8 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
               SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
               SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
             FROM votes v
-            JOIN parlementaires p ON p.id = v.parlementaire_id
-            JOIN groupes_politiques gp ON gp.id = p.groupe_id
             JOIN scrutins s ON s.id = v.scrutin_id
+            ${GROUPE_DU_VOTE}
             WHERE s.dossier_id = ${dossier.id}
               AND s.titre ILIKE '%article%'
               AND s.titre NOT ILIKE '%amendement%'
@@ -731,9 +786,8 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
                   SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
                   SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
                 FROM votes v
-                JOIN parlementaires p ON p.id = v.parlementaire_id
-                JOIN groupes_politiques gp ON gp.id = p.groupe_id
                 JOIN scrutins s ON s.id = v.scrutin_id
+                ${GROUPE_DU_VOTE}
                 WHERE s.dossier_id = ANY(${dossierIds})
                   AND (s.type_vote = 'solennel' OR s.titre ILIKE '%ensemble%')
                   AND v.position != 'absent'
@@ -771,9 +825,8 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
                   SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
                   SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
                 FROM votes v
-                JOIN parlementaires p ON p.id = v.parlementaire_id
-                JOIN groupes_politiques gp ON gp.id = p.groupe_id
                 JOIN scrutins s ON s.id = v.scrutin_id
+                ${GROUPE_DU_VOTE}
                 WHERE s.dossier_id = ANY(${dossierIds})
                   AND s.titre ILIKE '%article%'
                   AND s.titre NOT ILIKE '%amendement%'
@@ -957,7 +1010,7 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
 // =============================================================================
 
 export async function enrichSujetGroupeAmendements(options: EnrichmentOptions = {}): Promise<EnrichmentResult> {
-  const { limit, dryRun = false, concurrency = 2, force = false } = options;
+  const { limit, dryRun = false, concurrency = 2, force = false, only } = options;
 
   const result: EnrichmentResult = {
     enriched: 0, skipped: 0, errors: 0, totalTokensIn: 0, totalTokensOut: 0,
@@ -971,10 +1024,15 @@ export async function enrichSujetGroupeAmendements(options: EnrichmentOptions = 
   const mistral = new CLAIRMistralClient();
   const limiter = pLimit(concurrency);
 
-  logger.info({ dryRun, concurrency, limit, force }, 'Starting groupe amendement descriptions enrichment...');
+  logger.info({ dryRun, concurrency, limit, force, only }, 'Starting groupe amendement descriptions enrichment...');
 
-  // Voir enrichScrutinsIA : balayage complet, le hash arbitre.
-  const where: Prisma.SujetWhereInput = { dossiers: { some: { amendements: { some: {} } } } };
+  // Voir enrichScrutinsIA : balayage complet, le hash arbitre. `only` cible des
+  // slugs de sujet, comme pour enrichSujetsIA : sans lui, `--only <slug> --force`
+  // régénérait les descriptions de TOUS les sujets.
+  const where: Prisma.SujetWhereInput = {
+    dossiers: { some: { amendements: { some: {} } } },
+    ...(only && only.length > 0 ? { slug: { in: only } } : {}),
+  };
 
   // `limit` borne le nombre de fiches RÉGÉNÉRÉES, pas le nombre examinées : les
   // fiches inchangées ne doivent pas le consommer. Le budget est décrémenté au
@@ -1018,12 +1076,14 @@ export async function enrichSujetGroupeAmendements(options: EnrichmentOptions = 
               a.sort
             FROM amendements a
             JOIN dossiers_legislatifs dl ON a.dossier_id = dl.id
-            JOIN parlementaires p ON a.parlementaire_id = p.id
-            JOIN groupes_politiques gp ON p.groupe_id = gp.id
+            ${GROUPE_DE_L_AMENDEMENT}
             WHERE dl.sujet_id = ${sujet.id}
               AND a.expose_sommaire IS NOT NULL
               AND a.expose_sommaire != ''
-            ORDER BY gp.slug, gp.chambre, a.date_depot DESC NULLS LAST
+            -- a.id départage : les 8 premiers amendements de chaque groupe
+            -- alimentent le prompt et le hash, deux dépôts du même jour qui
+            -- permutent suffiraient à régénérer la description.
+            ORDER BY gp.slug, gp.chambre, a.date_depot DESC NULLS LAST, a.id
           `;
 
           if (amendements.length === 0) {
