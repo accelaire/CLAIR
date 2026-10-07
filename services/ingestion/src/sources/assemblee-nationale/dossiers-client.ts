@@ -111,6 +111,28 @@ export interface TransformedDossier {
 // =============================================================================
 
 /**
+ * État d'un dossier après une décision de séance (`statutConclusion.libelle`).
+ *
+ * Un texte « modifié » (ou « adopté avec modifications ») par une chambre doit
+ * repasser devant l'autre : la navette continue. Sans cette règle, le libellé
+ * n'était reconnu ni comme adoption ni comme rejet, et l'état restait celui de
+ * l'étape PRÉCÉDENTE. Les lois d'approbation des comptes 2025, rejetées par
+ * l'AN le 9 juin 2026 puis modifiées par le Sénat le 22, restaient « rejetées »,
+ * donc « procédure close » pour le sujet, pendant que le dossier du Sénat
+ * disait « en cours » : le résumé IA recevait les deux et affirmait que le
+ * Sénat n'avait pas encore examiné le texte.
+ *
+ * « adopté sans modification » reste une adoption.
+ */
+export function etatApresDecision(etat: string | null, libelle: string): string | null {
+  const statut = libelle.trim().toLowerCase();
+  if (/^modifiée?$/.test(statut) || statut.includes('avec modifications')) return 'en_cours';
+  if (statut.includes('adopt')) return 'adopte';
+  if (statut.includes('rejet')) return 'rejete';
+  return etat;
+}
+
+/**
  * Nom de l'archive des dossiers pour une législature donnée.
  *
  * L'AN n'a pas rétro-nommé ses anciennes archives : la 15e est publiée sous
@@ -401,10 +423,8 @@ export class DossiersLegislatifsClient {
         const statut = acte.statutConclusion.libelle?.toLowerCase() || '';
         if (statut.includes('adopt') && acte.dateActe) {
           dateAdoption = this.parseDate(acte.dateActe);
-          etat = 'adopte';
-        } else if (statut.includes('rejet')) {
-          etat = 'rejete';
         }
+        etat = etatApresDecision(etat, statut);
       }
 
       // Extract promulgation info
