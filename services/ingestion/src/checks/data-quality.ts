@@ -124,10 +124,21 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
   },
   scrutins_without_votes: {
     type: 'invariant',
-    label: 'Scrutins sans aucun vote',
+    label: 'Scrutins sans aucun vote (hors Congrès)',
     min: 0,
     max: 0,
-    query: `SELECT COUNT(*)::int AS value FROM scrutins s WHERE NOT EXISTS (SELECT 1 FROM votes v WHERE v.scrutin_id = s.id)`,
+    // Les scrutins du Congrès (députés et sénateurs réunis à Versailles) sont
+    // publiés par l'AN sous un uid `VTCG…` avec leurs totaux, mais SANS aucun
+    // vote nominatif : la source ne contient pas de liste de votants. Ce n'est
+    // ni une perte à l'ingestion ni un scrutin cassé, rien à réparer.
+    // Seul cas en base au 2026-10-07 : VTCGR5L16V1, révision constitutionnelle
+    // sur l'IVG du 4 mars 2024 (780 pour, 72 contre), ramené par le backfill de
+    // la 16e. Il cassait l'invariant depuis le 23/09 et on le redécouvrait à
+    // chaque contrôle. L'exclusion tient au préfixe d'uid `VTCG` (CG = Congrès,
+    // AN = Assemblée) : elle ne peut pas masquer un scrutin de l'AN ni du Sénat.
+    query: `SELECT COUNT(*)::int AS value FROM scrutins s
+      WHERE NOT EXISTS (SELECT 1 FROM votes v WHERE v.scrutin_id = s.id)
+        AND s.source_url NOT LIKE '%/scrutins/VTCG%'`,
   },
   duplicate_scrutins: {
     type: 'invariant',
