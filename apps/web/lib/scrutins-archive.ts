@@ -27,7 +27,10 @@ export const MONTH_NAMES_FR = [
   'décembre',
 ];
 
-export const MIN_ARCHIVE_YEAR = 2012;
+// Plancher de l'historique des scrutins du Sénat (`SENAT_SESSION_MIN` dans
+// l'ingestion). Le sitemap et /votes listent les années présentes en base :
+// une borne plus haute renvoie leurs pages en 404.
+export const MIN_ARCHIVE_YEAR = 2006;
 export const MAX_ARCHIVE_YEAR = new Date().getFullYear();
 
 /**
