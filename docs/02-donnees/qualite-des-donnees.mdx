@@ -22,17 +22,20 @@ Le script vérifie que les anomalies critiques sont strictement égales à **0**
 | Contrôle d'Invariant | Tolérance |
 | :--- | :--- |
 | Votes rattachés à un scrutin inexistant | **0** |
-| Scrutins orphelins sans aucun vote | **0** |
+| Scrutins orphelins sans aucun vote (hors Congrès, voir plus bas) | **0** |
 | Doublons de scrutins (numéro + chambre + session) | **0** |
 | Doublons d'amendements sous une même clé canonique | **0** |
 | Parlementaires actifs non rattachés à un groupe politique | **0** |
 | Liaisons scrutin vers dossier entre chambres différentes | **0** |
 | Liaisons scrutin vers dossier entre législatures différentes (AN) | **0** |
+| Scrutins rattachés à une procédure sans vote (rapport ou mission d'information, 49.3 hors motion de censure) | **0** |
 | Prises de parole rattachées au dossier d'une autre législature | **0** |
 | Amendements rattachés au dossier d'une autre législature | **0** |
 | Résumés IA contredisant l'état réel du dossier législatif | **0** |
 | Binômes d'élections sénatoriales de même sexe (art. L. 299) | **0** |
 | Ruptures d'alternance femme-homme sur les listes (art. L. 300) | **0** |
+
+**Le Congrès n'a pas de votes nominatifs, c'est normal.** Les scrutins du Congrès (députés et sénateurs réunis à Versailles) sont publiés par l'AN sous un uid `VTCG…` (CG pour Congrès, AN pour Assemblée) avec leurs totaux, mais sans aucune liste de votants. Ce n'est ni une perte à l'ingestion ni un scrutin cassé : il n'y a rien à réparer. Ces scrutins sont donc exclus de l'invariant « scrutins sans aucun vote », ce qui ne peut masquer aucun scrutin de l'Assemblée ni du Sénat. Au 7 octobre 2026, la base en compte un seul : `VTCGR5L16V1`, la révision constitutionnelle sur l'IVG du 4 mars 2024 (780 pour, 72 contre).
 
 ---
 
@@ -61,3 +64,5 @@ Le script `check-ia-quality` compare les résumés textuels générés par le mo
 - Détection des **inversions de vote** (un groupe décrit comme favorable alors qu'il a voté contre).
 - Détection des **fausses positions** (attribuer une position sur un texte à un groupe n'ayant aucun vote enregistré).
 - Détection des **confusions sur l'abstention**.
+
+Les votes y sont comptés sous le groupe du **mandat** à la date du scrutin, exactement comme dans les prompts (fragment partagé `services/ingestion/src/utils/groupe-epoque.ts`) : un résumé de 2018 qui cite LAREM ou LR est jugé sur les groupes de 2018, pas sur ceux d'aujourd'hui.
