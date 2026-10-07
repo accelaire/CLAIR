@@ -72,6 +72,8 @@ describe('familyOf', () => {
     expect(familyOf('LFI-NUPES')).toBe(familyOf('LFI-NFP'));
     expect(familyOf('SOC-A')).toBe(familyOf('SOC'));
     expect(familyOf('GDR-NUPES')).toBe(familyOf('GDR'));
+    // LAREM (AN) et LREM (Sénat, devenu RDPI) : le modèle écrit « LREM » pour l'AN.
+    expect(familyOf('LREM')).toBe(familyOf('LAREM'));
   });
 
   it('ne fusionne pas des familles distinctes', () => {
@@ -172,6 +174,20 @@ describe('checkGrounding', () => {
       votes,
       knownGroups,
       new Set([familyOf('LFI-NFP')]),
+    );
+    expect(issues.filter(i => i.kind === 'group_not_in_data')).toHaveLength(0);
+  });
+
+  it('ne signale pas « LREM » écrit pour le groupe LAREM de l’Assemblée', () => {
+    const groupes = [...knownGroups, ...['LREM', 'LAREM'].map(nom => ({
+      nom, nomComplet: null, orientation: null, matcher: buildGroupMatcher(nom, null),
+    }))];
+    const votes = [groupeVote('LAREM', 'La République en Marche', 369, 1, 1)];
+    const issues = checkGrounding(
+      'Le groupe LREM [centre] a massivement soutenu le texte, avec 369 voix pour.',
+      votes,
+      groupes,
+      new Set([familyOf('LAREM')]),
     );
     expect(issues.filter(i => i.kind === 'group_not_in_data')).toHaveLength(0);
   });

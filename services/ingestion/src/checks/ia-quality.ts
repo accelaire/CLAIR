@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { PrismaClient } from '@prisma/client';
+import { groupeDuVote } from '../utils/groupe-epoque.js';
 
 // =============================================================================
 // Types
@@ -116,6 +117,10 @@ const GROUP_ALIASES: Record<string, string[]> = {
   EPR: ['ensemble pour la république', 'renaissance'],
   RE: ['renaissance'],
   LAREM: ['la république en marche'],
+  // Groupe du Sénat « La République En Marche » (2017-2020), devenu RDPI sans
+  // changer de code source. Le modèle écrit « LREM », le sigle d'usage, pour le
+  // groupe LAREM de l'AN : même famille, sinon 61 faux « groupe absent ».
+  LREM: ['la république en marche'],
   ECOS: ['écologistes', 'écologiste', 'ecologistes'],
   ECOLO: ['écologistes', 'écologiste', 'ecologistes'],
   GEST: ['écologistes', 'écologiste'],
@@ -536,6 +541,10 @@ function indexPresence(rows: PresenceRow[]): Map<string, Set<string>> {
   return map;
 }
 
+// Les votes sont comptés sous le groupe du mandat à la date du scrutin, comme
+// dans les prompts : le contrôle doit voir les mêmes groupes que le générateur.
+const GROUPE_DU_VOTE = groupeDuVote('v', 'sc');
+
 export async function runIAQualityChecks(prisma: PrismaClient): Promise<IAQualityReport> {
   const start = Date.now();
   const inversions: IAInversion[] = [];
@@ -570,8 +579,7 @@ export async function runIAQualityChecks(prisma: PrismaClient): Promise<IAQualit
         JOIN dossiers_legislatifs d ON d.sujet_id = s.id
         JOIN scrutins sc ON sc.dossier_id = d.id
         JOIN votes v ON v.scrutin_id = sc.id
-        JOIN parlementaires p ON p.id = v.parlementaire_id
-        JOIN groupes_politiques gp ON gp.id = p.groupe_id
+        ${GROUPE_DU_VOTE}
         WHERE s.id = ANY(${sujetIds})
           AND (sc.type_vote = 'solennel' OR sc.titre ILIKE '%ensemble%')
           AND v.position != 'absent'
@@ -589,8 +597,7 @@ export async function runIAQualityChecks(prisma: PrismaClient): Promise<IAQualit
         JOIN dossiers_legislatifs d ON d.sujet_id = s.id
         JOIN scrutins sc ON sc.dossier_id = d.id
         JOIN votes v ON v.scrutin_id = sc.id
-        JOIN parlementaires p ON p.id = v.parlementaire_id
-        JOIN groupes_politiques gp ON gp.id = p.groupe_id
+        ${GROUPE_DU_VOTE}
         WHERE s.id = ANY(${sujetIds}) AND v.position != 'absent'
       `
     : []);
@@ -629,8 +636,7 @@ export async function runIAQualityChecks(prisma: PrismaClient): Promise<IAQualit
     FROM dossiers_legislatifs d
     JOIN scrutins sc ON sc.dossier_id = d.id
     JOIN votes v ON v.scrutin_id = sc.id
-    JOIN parlementaires p ON p.id = v.parlementaire_id
-    JOIN groupes_politiques gp ON gp.id = p.groupe_id
+    ${GROUPE_DU_VOTE}
     WHERE d.resume_ia IS NOT NULL
       AND (sc.type_vote = 'solennel' OR sc.titre ILIKE '%ensemble%')
       AND v.position != 'absent'
@@ -645,8 +651,7 @@ export async function runIAQualityChecks(prisma: PrismaClient): Promise<IAQualit
     FROM dossiers_legislatifs d
     JOIN scrutins sc ON sc.dossier_id = d.id
     JOIN votes v ON v.scrutin_id = sc.id
-    JOIN parlementaires p ON p.id = v.parlementaire_id
-    JOIN groupes_politiques gp ON gp.id = p.groupe_id
+    ${GROUPE_DU_VOTE}
     WHERE d.resume_ia IS NOT NULL AND v.position != 'absent'
   `);
 
