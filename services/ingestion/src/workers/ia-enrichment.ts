@@ -27,6 +27,8 @@ import { articleKeyFromArticleVise } from '../sources/assemblee-nationale/textes
 import { logger } from '../utils/logger.js';
 import { errorMessage } from '../utils/errors.js';
 import { groupeDuVote } from '../utils/groupe-epoque.js';
+import { voteSurLEnsemble } from '../utils/vote-ensemble.js';
+import { parcoursDossier } from '../sources/assemblee-nationale/dossiers-client.js';
 
 const prisma = new PrismaClient();
 
@@ -260,6 +262,12 @@ export interface EnrichmentOptions {
    * diverger.
    */
   rehashOnly?: boolean;
+  /**
+   * Scrutins, dossiers et sujets : appelle le LLM et AFFICHE le texte produit, sans rien
+   * écrire. Sert à valider un changement de prompt sur des fiches réelles
+   * (`--only … --force --preview`) avant que le cron ne régénère le corpus.
+   */
+  preview?: boolean;
 }
 
 // =============================================================================
@@ -267,7 +275,7 @@ export interface EnrichmentOptions {
 // =============================================================================
 
 export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise<EnrichmentResult> {
-  const { limit, dryRun = false, concurrency = 3, force = false, only } = options;
+  const { limit, dryRun = false, concurrency = 3, force = false, only, preview = false } = options;
 
   // `only` cible des ID de scrutin, et non des numéros : le numéro n'est unique
   // dans aucune des deux chambres (réinitialisé à chaque session au Sénat, à
@@ -316,6 +324,7 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
         tags: true,
         iaContentHash: true,
         date: true,
+        chambre: true,
         dossierId: true,
         dossier: { select: { titre: true } },
         amendements: {
@@ -360,6 +369,12 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
             // C'est une donnée SOURCE, jamais réécrite par le modèle : elle ne
             // peut pas déclencher de régénération en boucle.
             article ? `${article.numero}:${article.contenu}` : '',
+            // La chambre n'entre dans le hash que pour le Sénat : ses résumés
+            // attribuaient le vote aux députés et doivent tous être refaits une
+            // fois. À l'AN, le modèle supposait déjà les députés, à juste titre :
+            // l'ajouter régénérerait 17 000 résumés corrects. Un élément vide
+            // changerait lui aussi le hash (jointure par « | »), d'où le spread.
+            ...(scrutin.chambre === 'senat' ? ['chambre:senat'] : []),
           );
 
           if (!force && scrutin.iaContentHash === contentHash) {
@@ -380,6 +395,7 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
             titre: scrutin.titre,
             sort: scrutin.sort,
             typeVote: scrutin.typeVote,
+            chambre: scrutin.chambre === 'senat' ? 'senat' : 'assemblee',
             objetLibelle: scrutin.objetLibelle,
             tags: scrutin.tags,
             dossierTitre: scrutin.dossier?.titre,
@@ -389,6 +405,12 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
           });
 
           const resumeIA = cleanLLMOutput(await mistral.complete(SYSTEM_PROMPT, userPrompt));
+
+          if (preview) {
+            console.log(`\n===== APERÇU scrutin ${scrutin.id} (${scrutin.chambre}) =====\n${resumeIA}\n`);
+            result.enriched++;
+            return;
+          }
 
           await prisma.scrutin.update({
             where: { id: scrutin.id },
@@ -428,7 +450,7 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
 // =============================================================================
 
 export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise<EnrichmentResult> {
-  const { limit, dryRun = false, concurrency = 2, force = false, only, rehashOnly = false } = options;
+  const { limit, dryRun = false, concurrency = 2, force = false, only, rehashOnly = false, preview = false } = options;
 
   const result: EnrichmentResult = {
     enriched: 0, skipped: 0, errors: 0, totalTokensIn: 0, totalTokensOut: 0,
@@ -471,6 +493,7 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
         procedureLibelle: true,
         etat: true,
         iaContentHash: true,
+        sourceData: true,
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       skip: offset,
@@ -484,7 +507,7 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
         try {
           const scrutinsClefs = await prisma.scrutin.findMany({
             where: { dossierId: dossier.id },
-            select: { id: true, titre: true, sort: true, typeVote: true, resumeIA: true, iaContentHash: true },
+            select: { id: true, titre: true, sort: true, typeVote: true, resumeIA: true, iaContentHash: true, date: true, chambre: true },
             // `id` départage : le tri alimente le hash ET la sélection des 10
             // scrutins clefs, deux ex æquo qui permutent suffiraient à faire
             // croire à un changement de contenu.
@@ -505,7 +528,7 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             JOIN scrutins s ON s.id = v.scrutin_id
             ${GROUPE_DU_VOTE}
             WHERE s.dossier_id = ${dossier.id}
-              AND (s.type_vote = 'solennel' OR s.titre ILIKE '%ensemble%')
+              AND ${voteSurLEnsemble('s')}
               AND v.position != 'absent'
             GROUP BY gp.nom, gp.nom_complet, gp.slug, gp.position
             ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
@@ -575,6 +598,11 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
           const amendementsForHash = amendementsClefs
             .map(a => `amd:${a.numero}:${a.sort ?? ''}`)
             .join('|');
+          // Navette datée : n'existe que pour les dossiers AN (le Sénat n'a pas de
+          // données source en base). Elle entre dans le hash : un texte qui avance
+          // d'une étape doit voir son résumé régénéré. Ajoutée seulement si elle
+          // existe, pour ne pas invalider les dossiers qui n'en ont pas.
+          const parcours = parcoursDossier(dossier.sourceData);
           const hashParts = [
             dossier.titre,
             dossier.titreCourt,
@@ -588,6 +616,7 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             ensembleForHash,
             articlesForHash,
             amendementsForHash,
+            ...(parcours.length > 0 ? [`parcours:${parcours.join('|')}`] : []),
           ];
           const contentHash = computeContentHash(...hashParts);
 
@@ -632,8 +661,10 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             chambre,
             procedureLibelle: dossier.procedureLibelle,
             etat: dossier.etat,
+            parcours,
             scrutinsResumes: scrutinsClefs.map(s => ({
               titre: s.titre, sort: s.sort, typeVote: s.typeVote, resumeIA: s.resumeIA,
+              date: s.date, chambre: s.chambre,
             })),
             positionsEnsemble: toGroupeArray(positionsEnsemble),
             votesArticles: votesArticles.map(va => ({
@@ -649,6 +680,12 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
 
           const response = await mistral.complete(SYSTEM_PROMPT_DOSSIER, userPrompt, { maxTokens: 1024 });
           const resumeIA = cleanLLMOutput(response.replace(/\n*---POSITIONS---\n*/g, '\n\n'));
+
+          if (preview) {
+            console.log(`\n===== APERÇU dossier ${dossier.uid} =====\n${resumeIA}\n`);
+            result.enriched++;
+            return;
+          }
 
           await prisma.dossierLegislatif.update({
             where: { id: dossier.id },
@@ -686,7 +723,7 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
 // =============================================================================
 
 export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<EnrichmentResult> {
-  const { limit, dryRun = false, concurrency = 2, force = false, only, rehashOnly = false } = options;
+  const { limit, dryRun = false, concurrency = 2, force = false, only, rehashOnly = false, preview = false } = options;
 
   const result: EnrichmentResult = {
     enriched: 0, skipped: 0, errors: 0, totalTokensIn: 0, totalTokensOut: 0,
@@ -762,7 +799,7 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
                 JOIN scrutins s ON s.id = v.scrutin_id
                 ${GROUPE_DU_VOTE}
                 WHERE s.dossier_id = ANY(${dossierIds})
-                  AND (s.type_vote = 'solennel' OR s.titre ILIKE '%ensemble%')
+                  AND ${voteSurLEnsemble('s')}
                   AND v.position != 'absent'
                 GROUP BY gp.nom, gp.nom_complet, gp.slug, gp.position
                 ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
@@ -939,6 +976,12 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
             logger.debug({ sujetId: sujet.id, oldLabel: sujet.label, newLabel: labelIA }, 'Sujet label updated');
           } else {
             labelIA = null;
+          }
+
+          if (preview) {
+            console.log(`\n===== APERÇU sujet ${sujet.id} (${sujet.label}) =====\n${resume}\n\n--- ENJEUX ---\n${enjeux ?? ''}\n`);
+            result.enriched++;
+            return;
           }
 
           await prisma.sujet.update({

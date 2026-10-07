@@ -132,6 +132,66 @@ export function etatApresDecision(etat: string | null, libelle: string): string 
   return etat;
 }
 
+const CHAMBRES: Record<string, string> = { AN: 'Assemblée nationale', SN: 'Sénat' };
+const LECTURES: Record<string, string> = {
+  NLEC: 'nouvelle lecture', LDEF: 'lecture définitive', LUNI: 'lecture unique',
+};
+
+/** Étape lisible d'une décision de séance, `null` pour les décisions de commission. */
+export function etapeDecision(codeActe: string): string | null {
+  if (codeActe === 'CMP-DEC') return 'Commission mixte paritaire';
+  const cmp = /^CMP-DEBATS-(AN|SN)-DEC$/.exec(codeActe);
+  if (cmp) return `${CHAMBRES[cmp[1]!]}, texte de la commission mixte paritaire`;
+  const lecture = /^(AN|SN)(\d+|NLEC|LDEF|LUNI)-DEBATS-DEC$/.exec(codeActe);
+  if (lecture) {
+    const l = lecture[2]!;
+    const libelle = LECTURES[l] ?? (l === '1' ? '1re lecture' : `${l}e lecture`);
+    return `${CHAMBRES[lecture[1]!]}, ${libelle}`;
+  }
+  if (/^CG\d*-DEBATS-DEC$/.test(codeActe)) return 'Congrès';
+  return null;
+}
+
+const dateFr = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
+/**
+ * Décisions datées d'un dossier AN, dans l'ordre : « 09/06/2026 — Assemblée
+ * nationale, 1re lecture : rejeté ». Le dossier AN porte toute la navette, Sénat
+ * compris. Sans elle, le prompt IA n'avait que l'état et les votes, sans date ni
+ * chambre, et le modèle supposait l'ordre habituel : un texte rejeté par l'AN puis
+ * modifié par le Sénat devenait « adopté par les députés, il doit encore être
+ * examiné par le Sénat ».
+ */
+export function parcoursDossier(sourceData: unknown): string[] {
+  const decisions: { date: string; ligne: string }[] = [];
+  const visiter = (noeud: unknown): void => {
+    if (Array.isArray(noeud)) { noeud.forEach(visiter); return; }
+    if (!noeud || typeof noeud !== 'object') return;
+    const acte = noeud as Record<string, unknown>;
+    const code = typeof acte.codeActe === 'string' ? acte.codeActe : '';
+    const date = typeof acte.dateActe === 'string' ? acte.dateActe.slice(0, 10) : '';
+    if (code && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      const statut = acte.statutConclusion as { libelle?: unknown } | undefined;
+      const libelle = typeof statut?.libelle === 'string' ? statut.libelle.trim() : '';
+      const etape = code.includes('DEC') && libelle ? etapeDecision(code) : null;
+      if (etape) decisions.push({ date, ligne: `${dateFr(date)} — ${etape} : ${libelle}` });
+      if (code === 'PROM-PUB') {
+        const loi = typeof acte.codeLoi === 'string' ? ` (loi n° ${acte.codeLoi})` : '';
+        decisions.push({ date, ligne: `${dateFr(date)} — Promulgation${loi}` });
+      }
+    }
+    for (const valeur of Object.values(acte)) {
+      if (valeur && typeof valeur === 'object') visiter(valeur);
+    }
+  };
+  visiter((sourceData as { actesLegislatifs?: unknown } | null)?.actesLegislatifs);
+  // Tri stable : à date égale, l'ordre du document (séance avant CMP…) est gardé.
+  return decisions
+    .map((d, i) => ({ ...d, i }))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.i - b.i)
+    .map((d) => d.ligne);
+}
+
 /**
  * Nom de l'archive des dossiers pour une législature donnée.
  *

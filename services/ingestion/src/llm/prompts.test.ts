@@ -260,3 +260,39 @@ describe('buildSujetResumePrompt — procédure close', () => {
     }
   });
 });
+
+describe('buildScrutinResumePrompt — chambre', () => {
+  const base = { titre: "sur l'ensemble du projet de loi relative aux résultats de la gestion", sort: 'adopte', typeVote: 'ordinaire' };
+
+  it('dit au modèle que les sénateurs ont voté', () => {
+    // 1 664 résumés du Sénat commençaient par « Les députés ont… ».
+    const prompt = buildScrutinResumePrompt({ ...base, chambre: 'senat' });
+    expect(prompt).toContain('Chambre : Sénat');
+    expect(prompt).toMatch(/ne parle jamais des députés/);
+  });
+
+  it("ne demande plus d'annoncer la suite du parcours", () => {
+    const prompt = buildScrutinResumePrompt({ ...base, chambre: 'assemblee' });
+    expect(prompt).not.toMatch(/implique pour la suite du parcours/);
+    expect(prompt).toMatch(/N'annonce aucune étape à venir/);
+  });
+});
+
+describe('buildDossierResumePrompt — parcours et votes datés', () => {
+  it('transmet la navette datée et la chambre de chaque vote', () => {
+    const prompt = buildDossierResumePrompt({
+      titre: 'Projet de loi relative aux résultats de la gestion 2025',
+      chambre: 'assemblee',
+      etat: 'en_cours',
+      parcours: ['09/06/2026 — Assemblée nationale, 1re lecture : rejeté', '22/06/2026 — Sénat, 1re lecture : modifié'],
+      scrutinsResumes: [{ titre: 'la motion de rejet préalable', sort: 'adopte', typeVote: 'ordinaire', date: new Date('2026-06-09T12:00:00Z'), chambre: 'assemblee' }],
+      positionsEnsemble: [],
+      votesArticles: [],
+      amendementsClefs: [],
+    });
+    expect(prompt).toContain('Parcours officiel');
+    expect(prompt).toContain('22/06/2026 — Sénat, 1re lecture : modifié');
+    expect(prompt).toContain('[ordinaire, Adopté, 09/06/2026, Assemblée nationale] la motion de rejet préalable');
+    expect(prompt).toMatch(/N'annonce aucune étape/);
+  });
+});

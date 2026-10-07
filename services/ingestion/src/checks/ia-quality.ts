@@ -5,6 +5,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { groupeDuVote } from '../utils/groupe-epoque.js';
+import { voteSurLEnsemble } from '../utils/vote-ensemble.js';
 
 // =============================================================================
 // Types
@@ -581,7 +582,7 @@ export async function runIAQualityChecks(prisma: PrismaClient): Promise<IAQualit
         JOIN votes v ON v.scrutin_id = sc.id
         ${GROUPE_DU_VOTE}
         WHERE s.id = ANY(${sujetIds})
-          AND (sc.type_vote = 'solennel' OR sc.titre ILIKE '%ensemble%')
+          AND ${voteSurLEnsemble('sc')}
           AND v.position != 'absent'
         GROUP BY s.slug, gp.nom, gp.nom_complet, gp.position
         HAVING SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
@@ -638,7 +639,7 @@ export async function runIAQualityChecks(prisma: PrismaClient): Promise<IAQualit
     JOIN votes v ON v.scrutin_id = sc.id
     ${GROUPE_DU_VOTE}
     WHERE d.resume_ia IS NOT NULL
-      AND (sc.type_vote = 'solennel' OR sc.titre ILIKE '%ensemble%')
+      AND ${voteSurLEnsemble('sc')}
       AND v.position != 'absent'
     GROUP BY d.uid, d.titre, d.resume_ia, gp.nom, gp.nom_complet, gp.position
     HAVING SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +

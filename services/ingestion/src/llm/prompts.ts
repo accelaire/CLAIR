@@ -63,6 +63,12 @@ interface ScrutinPromptData {
   titre: string;
   sort: string;
   typeVote: string;
+  /**
+   * Chambre du vote. Absente, le modèle prenait tout vote pour un vote des
+   * députés : le 7 octobre 2026, 1 664 des 4 775 résumés de scrutins du Sénat
+   * commençaient par « Les députés ont… ».
+   */
+  chambre?: 'assemblee' | 'senat' | null;
   objetLibelle?: string | null;
   tags?: string[];
   dossierTitre?: string | null;
@@ -96,13 +102,18 @@ export function buildScrutinResumePrompt(data: ScrutinPromptData): string {
     `Résultat : ${data.sort === 'adopte' ? 'Adopté' : 'Rejeté'}`,
     `Type : ${data.typeVote}`,
   ];
+  if (data.chambre === 'senat') {
+    parts.push('Chambre : Sénat. Ce sont les SÉNATEURS qui ont voté : ne parle jamais des députés comme auteurs de ce vote.');
+  } else if (data.chambre === 'assemblee') {
+    parts.push('Chambre : Assemblée nationale. Ce sont les députés qui ont voté.');
+  }
 
   if (data.objetLibelle) {
     parts.push(`Objet : ${data.objetLibelle}`);
   }
-  if (data.tags && data.tags.length > 0) {
-    parts.push(`Thèmes : ${data.tags.join(', ')}`);
-  }
+  // `tags` n'est plus transmis : mots-clés cherchés en sous-chaîne, « europe »
+  // y est faux à 95 % (via « ue »), et le modèle en tirait « un sujet lié à
+  // l'Europe » sur l'IVG ou la chaîne pénale.
   if (data.dossierTitre) {
     parts.push(`Dossier législatif : ${data.dossierTitre}`);
   }
@@ -156,7 +167,10 @@ export function buildScrutinResumePrompt(data: ScrutinPromptData): string {
   } else {
     parts.push(
       '',
-      "Explique en 1 à 3 phrases simples ce qui a été voté et ce que cela implique pour la suite du parcours législatif. Tiens-toi à ce qu'établissent le libellé, le dossier et le résultat."
+      // « ce que cela implique pour la suite du parcours » faisait inventer la
+      // suite : « le texte doit encore être examiné au Sénat », écrit sur des
+      // votes… du Sénat. Le modèle ne connaît pas les étapes suivantes.
+      "Explique en 1 à 3 phrases simples ce qui a été voté et sa portée. Tiens-toi à ce qu'établissent le libellé, le dossier et le résultat. N'annonce aucune étape à venir du parcours législatif : tu ne la connais pas."
     );
   }
 
@@ -192,7 +206,12 @@ interface DossierPromptData {
   chambre?: 'assemblee' | 'senat' | null;
   procedureLibelle?: string | null;
   etat?: string | null;
-  scrutinsResumes: { titre: string; sort: string; typeVote: string; resumeIA?: string | null }[];
+  /** Décisions datées de la navette (`parcoursDossier`), connues pour les dossiers AN. */
+  parcours?: string[];
+  scrutinsResumes: {
+    titre: string; sort: string; typeVote: string; resumeIA?: string | null;
+    date?: Date | null; chambre?: string | null;
+  }[];
   positionsEnsemble: GroupePosition[];
   votesArticles: VoteArticle[];
   amendementsClefs: { numero: string; exposeSommaire?: string | null; auteurLibelle?: string | null; sort?: string | null }[];
@@ -307,16 +326,24 @@ export function buildDossierResumePrompt(data: DossierPromptData): string {
     parts.push(`État : ${STATUTS_SUJET[data.etat] ?? data.etat}`);
   }
 
-  // Scrutins clés avec leurs résumés IA
+  // La navette datée : sans elle le modèle supposait l'ordre habituel (AN puis
+  // Sénat) et inventait des étapes, cf. `parcoursDossier`.
+  if (data.parcours && data.parcours.length > 0) {
+    parts.push('\n--- Parcours officiel (décisions datées, dans l\'ordre — fait foi) ---');
+    parts.push(...data.parcours);
+  }
+
+  // Scrutins clés avec leurs résumés IA, datés et situés.
   if (data.scrutinsResumes.length > 0) {
     parts.push('\n--- Votes clés ---');
     for (const s of data.scrutinsResumes) {
-      const résultat = s.sort === 'adopte' ? 'Adopté' : 'Rejeté';
-      if (s.resumeIA) {
-        parts.push(`[${s.typeVote}, ${résultat}] ${s.resumeIA}`);
-      } else {
-        parts.push(`[${s.typeVote}, ${résultat}] ${s.titre}`);
-      }
+      const contexte = [
+        s.typeVote,
+        s.sort === 'adopte' ? 'Adopté' : 'Rejeté',
+        ...(s.date ? [s.date.toISOString().slice(0, 10).split('-').reverse().join('/')] : []),
+        ...(s.chambre ? [s.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale'] : []),
+      ].join(', ');
+      parts.push(`[${contexte}] ${s.resumeIA ?? s.titre}`);
     }
   }
 
@@ -369,6 +396,8 @@ export function buildDossierResumePrompt(data: DossierPromptData): string {
     '- N\'attribue un contenu à un article numéroté que si les données ci-dessus le disent. Un exposé sommaire d\'amendement décrit ce que son auteur veut changer, PAS le contenu de l\'article ni celui du texte adopté.',
     '- Si tu ne sais pas ce que contient un article, décris la mesure sans la numéroter plutôt que d\'inventer le rattachement.',
     '- Ne présente pas une mesure de portée limitée (dérogation locale, cas particulier) comme une mesure principale du texte.',
+    '- Décris l\'avancement de la procédure UNIQUEMENT d\'après le parcours officiel et les votes datés ci-dessus. N\'annonce aucune étape (examen par une chambre, lecture, promulgation) qui n\'y figure pas, et n\'écris jamais qu\'une chambre n\'a pas encore examiné le texte si une de ses décisions ou un de ses votes est listé.',
+    '- Un vote sur une partie d\'une loi de finances (« la première partie… ») ne porte pas sur l\'ensemble du texte : ne le présente pas comme le vote final.',
     data.positionsEnsemble.length > 0 || data.votesArticles.length > 0
       ? '2. POSITIONS (3 à 6 phrases) : Analyse les positions de chaque groupe politique majeur. RÈGLES STRICTES :'
       : '2. POSITIONS (1 à 2 phrases) : Indique simplement que les votes disponibles ne portent que sur des amendements et ne permettent pas de déterminer la position globale des groupes. Ne décris AUCUNE position de groupe.',
