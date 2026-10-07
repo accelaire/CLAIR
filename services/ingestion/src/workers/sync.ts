@@ -27,6 +27,7 @@ import { logger } from '../utils/logger';
 import { errorMessage } from '../utils/errors';
 import { asArray, isRecord, readString } from '../utils/json';
 import { extractCommissionSaisines } from '../utils/dossier-commissions';
+import { commissionsQuittees } from '../utils/commissions-senat';
 import { classifyNatureScrutin } from '../utils/nature-scrutin';
 import { choisirAmendement, type CandidatAmendement } from '../utils/amendement-scrutin';
 import { uidCanoniqueAmendement, uneEmissionParAmendement } from '../utils/uid-amendement';
@@ -1167,6 +1168,7 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
   }
 
   const sortants = await cloturerSenateursSortants(senateurs.map((s) => s.uid));
+  const commissionsCloses = await cloturerCommissionsSenatQuittees(senateurs);
 
   // Un groupe que la source ne publie plus et qui ne porte plus aucun mandat ne
   // vit plus que dans la liste des groupes. C'est le pseudo-groupe « AUCUN »
@@ -1185,7 +1187,7 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
   });
 
   logger.info(
-    { created, updated, mandatsCreated, sortants, groupesDesactives, total: senateurs.length },
+    { created, updated, mandatsCreated, sortants, commissionsCloses, groupesDesactives, total: senateurs.length },
     'Sénateurs sync completed',
   );
   return { created, updated };
@@ -1261,6 +1263,71 @@ async function cloturerSenateursSortants(sourceUids: string[]): Promise<number> 
     'Sénateurs sortants désactivés et mandats clos',
   );
   return ids.length;
+}
+
+/**
+ * Clôt les mandats de commission que l'annuaire ne porte plus : sénateurs
+ * sortis, ou passés dans une autre commission. Voir `utils/commissions-senat`.
+ * Sur les organes que l'annuaire ne publie pas (affaires européennes,
+ * délégations…), seules les appartenances des personnes sorties sont closes.
+ */
+async function cloturerCommissionsSenatQuittees(senateurs: TransformedSenateur[]): Promise<number> {
+  if (senateurs.length < SENAT_EFFECTIF_MIN) {
+    logger.warn(
+      { recus: senateurs.length, minimum: SENAT_EFFECTIF_MIN },
+      'Effectif Sénat source anormalement bas — clôture des commissions ANNULÉE',
+    );
+    return 0;
+  }
+
+  const annuaire = senateurs.flatMap((s) =>
+    (s.sourceData.organismes ?? [])
+      .filter((o) => o.type === 'COMMISSION' && o.code)
+      .map((o) => ({ matricule: s.uid, organeRef: o.code })),
+  );
+  // Annuaire de transition sans aucune commission : on ne touche à rien.
+  if (annuaire.length === 0) return 0;
+
+  const ouverts = await prisma.mandat.findMany({
+    where: { dateFin: null, organeRef: { not: null }, commission: { chambre: 'senat' } },
+    select: {
+      id: true, parlementaireId: true, organeRef: true, dateDebut: true,
+      parlementaire: { select: { sourceId: true } },
+    },
+  });
+
+  const personnes = [...new Set(ouverts.map((m) => m.parlementaireId))];
+  const derniersMandats = await prisma.mandatParlementaire.findMany({
+    where: { personneId: { in: personnes }, chambre: 'senat', dateFin: { not: null } },
+    select: { personneId: true, dateFin: true },
+  });
+  const finSenat = new Map<string, Date>();
+  for (const m of derniersMandats) {
+    const precedent = finSenat.get(m.personneId);
+    if (m.dateFin && (!precedent || m.dateFin > precedent)) finSenat.set(m.personneId, m.dateFin);
+  }
+
+  const clotures = commissionsQuittees(
+    ouverts.map((m) => ({
+      id: m.id,
+      parlementaireId: m.parlementaireId,
+      matricule: m.parlementaire.sourceId,
+      organeRef: m.organeRef ?? '',
+      dateDebut: m.dateDebut,
+    })),
+    annuaire,
+    new Set(senateurs.map((s) => s.uid.toUpperCase())),
+    finSenat,
+    new Date(),
+  );
+
+  for (const c of clotures) {
+    await prisma.mandat.update({ where: { id: c.id }, data: { dateFin: c.dateFin } });
+  }
+  if (clotures.length > 0) {
+    logger.info({ clos: clotures.length }, 'Mandats de commission du Sénat quittés clos');
+  }
+  return clotures.length;
 }
 
 async function syncSingleSenateur(
@@ -1387,7 +1454,8 @@ async function syncSingleSenateur(
   // Mandats de commission depuis sourceData.organismes.
   // `SenatOrganisme` n'expose que { code, type, libelle, ordre } : ni qualité ni
   // dates. On ancre donc le mandat sur le début de la mandature du sénateur
-  // (stable et idempotent) plutôt que sur la date du run.
+  // (stable et idempotent) plutôt que sur la date du run. Les appartenances
+  // que l'annuaire ne porte plus sont closes par `cloturerCommissionsSenatQuittees`.
   const organismes = s.sourceData.organismes || [];
   for (const org of organismes) {
     if (org.type !== 'COMMISSION' || !org.code) continue;
@@ -1397,8 +1465,11 @@ async function syncSingleSenateur(
     // `Mandat` n'a PAS de contrainte unique (parlementaireId, organeRef) : on
     // résout à la main plutôt que via un upsert sur une clé inexistante (qui
     // faisait planter le sync dès que le lookup commission aboutissait).
+    // Le mandat EN COURS seulement : une appartenance close (commission quittée
+    // puis retrouvée) ne doit pas absorber la nouvelle, qui ne serait jamais
+    // rouverte.
     const existingMandat = await prisma.mandat.findFirst({
-      where: { parlementaireId, organeRef: org.code },
+      where: { parlementaireId, organeRef: org.code, dateFin: null },
       select: { id: true },
     });
 
@@ -1408,12 +1479,23 @@ async function syncSingleSenateur(
         data: { commissionId, institution: org.libelle },
       });
     } else {
+      // Ancre au début de mandature, sauf changement de commission EN COURS de
+      // mandature : la personne avait déjà une appartenance commencée après ce
+      // début. La date du changement n'est pas publiée, on prend celle où on
+      // l'observe. Sans ça, un sénateur de la série 1 passé dans une autre
+      // commission au renouvellement de 2026 y figurait « depuis 2023 ».
+      const precedente = await prisma.mandat.findFirst({
+        where: { parlementaireId, organeRef: { not: org.code }, commission: { chambre: 'senat' } },
+        orderBy: { dateDebut: 'desc' },
+        select: { dateDebut: true },
+      });
+      const changementEnCours = precedente !== null && precedente.dateDebut >= ctx.dateDebut;
       await prisma.mandat.create({
         data: {
           typeOrgane: 'COMMISSION',
           institution: org.libelle,
           qualite: 'Membre',
-          dateDebut: ctx.dateDebut,
+          dateDebut: changementEnCours ? new Date() : ctx.dateDebut,
           dateFin: null,
           organeRef: org.code,
           parlementaireId,
