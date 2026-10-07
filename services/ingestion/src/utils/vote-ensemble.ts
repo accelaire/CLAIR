@@ -29,5 +29,7 @@ const ALIAS = /^[a-z][a-z0-9_]*$/;
 export function voteSurLEnsemble(scrutins: string): Prisma.Sql {
   if (!ALIAS.test(scrutins)) throw new Error(`Alias SQL invalide : ${scrutins}`);
   const s = Prisma.raw(scrutins);
-  return Prisma.sql`((${s}.type_vote = 'solennel' OR ${s}.titre ILIKE '%ensemble%') AND ${s}.titre !~* ${PARTIE_DE_TEXTE})`;
+  // Une motion de censure ne porte pas sur l'ensemble d'un texte : seules ses
+  // voix POUR existent, elles ont leur propre section dans le prompt.
+  return Prisma.sql`((${s}.type_vote = 'solennel' OR ${s}.titre ILIKE '%ensemble%') AND ${s}.titre !~* ${PARTIE_DE_TEXTE} AND ${s}.titre !~* 'motion de censure')`;
 }

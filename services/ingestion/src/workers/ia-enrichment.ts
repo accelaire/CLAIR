@@ -17,6 +17,8 @@ import {
   buildDossierResumePrompt,
   buildSujetResumePrompt,
   buildGroupeAmendementPrompt,
+  positionsAvecMotions,
+  separerResumePositions,
 } from '../llm/prompts.js';
 import {
   articleNumeroFromTitre,
@@ -31,6 +33,8 @@ import { voteSurLEnsemble } from '../utils/vote-ensemble.js';
 import { parcoursDossier } from '../sources/assemblee-nationale/dossiers-client.js';
 
 const prisma = new PrismaClient();
+
+const MOTION_CENSURE = /motion de censure/i;
 
 // -----------------------------------------------------------------------------
 // Groupe d'époque
@@ -375,6 +379,8 @@ export async function enrichScrutinsIA(options: EnrichmentOptions = {}): Promise
             // l'ajouter régénérerait 17 000 résumés corrects. Un élément vide
             // changerait lui aussi le hash (jointure par « | »), d'où le spread.
             ...(scrutin.chambre === 'senat' ? ['chambre:senat'] : []),
+            // Portée d'une motion de censure ajoutée au prompt : à refaire une fois.
+            ...(MOTION_CENSURE.test(scrutin.titre) ? ['motion:portee'] : []),
           );
 
           if (!force && scrutin.iaContentHash === contentHash) {
@@ -552,6 +558,8 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             ${GROUPE_DU_VOTE}
             WHERE s.dossier_id = ${dossier.id}
               AND s.titre ILIKE '%article%'
+              -- « l'article 49 » d'une motion de censure n'en fait pas un vote d'article
+              AND s.titre !~* 'motion de censure'
               AND s.titre NOT ILIKE '%amendement%'
               AND s.titre NOT ILIKE '%ensemble%'
               AND v.position != 'absent'
@@ -580,6 +588,29 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
           const votesArticles = [...articlesMap.values()]
             .sort((a, b) => scoreClivage(b.groupes) - scoreClivage(a.groupes) || a.article.localeCompare(b.article))
             .slice(0, MAX_ARTICLES_PROMPT);
+
+          // Motions de censure : seules les voix POUR existent (cf. porteeMotionDeCensure).
+          type MotionRow = { id: string; date: Date; titre: string; sort: string; nom: string; pour: bigint };
+          const motionsRaw = await prisma.$queryRaw<MotionRow[]>`
+            SELECT s.id, s.date, s.titre, s.sort, gp.nom, COUNT(*)::bigint AS pour
+            FROM votes v
+            JOIN scrutins s ON s.id = v.scrutin_id
+            ${GROUPE_DU_VOTE}
+            WHERE s.dossier_id = ${dossier.id}
+              AND s.titre ~* 'motion de censure'
+              AND v.position = 'pour'
+            GROUP BY s.id, s.date, s.titre, s.sort, gp.nom
+            ORDER BY s.date, s.id, COUNT(*) DESC, gp.nom
+          `;
+          const motionsCensure: { date: Date; titre: string; sort: string; pourParGroupe: { nom: string; pour: number }[] }[] = [];
+          for (const row of motionsRaw) {
+            let m = motionsCensure.find((x) => x.titre === row.titre && x.date.getTime() === row.date.getTime());
+            if (!m) {
+              m = { date: row.date, titre: row.titre, sort: row.sort, pourParGroupe: [] };
+              motionsCensure.push(m);
+            }
+            m.pourParGroupe.push({ nom: row.nom, pour: Number(row.pour) });
+          }
 
           // Amendements clés : adoptés en priorité, puis rejetés, avec exposé sommaire
           const amendementsClefs = await prisma.amendement.findMany({
@@ -617,6 +648,9 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             articlesForHash,
             amendementsForHash,
             ...(parcours.length > 0 ? [`parcours:${parcours.join('|')}`] : []),
+            ...(motionsCensure.length > 0
+              ? [`motions:${motionsCensure.map((m) => `${m.date.toISOString().slice(0, 10)}:${m.sort}:${m.pourParGroupe.map((g) => `${g.nom}=${g.pour}`).join(',')}`).join('|')}`]
+              : []),
           ];
           const contentHash = computeContentHash(...hashParts);
 
@@ -662,6 +696,7 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
             procedureLibelle: dossier.procedureLibelle,
             etat: dossier.etat,
             parcours,
+            motionsCensure,
             scrutinsResumes: scrutinsClefs.map(s => ({
               titre: s.titre, sort: s.sort, typeVote: s.typeVote, resumeIA: s.resumeIA,
               date: s.date, chambre: s.chambre,
@@ -679,7 +714,13 @@ export async function enrichDossiersIA(options: EnrichmentOptions = {}): Promise
           });
 
           const response = await mistral.complete(SYSTEM_PROMPT_DOSSIER, userPrompt, { maxTokens: 1024 });
-          const resumeIA = cleanLLMOutput(response.replace(/\n*---POSITIONS---\n*/g, '\n\n'));
+          // Les voix sur une motion de censure sont écrites par le code, pas par le modèle.
+          let reponse = response.replace(/\n*---POSITIONS---\n*/g, '\n\n');
+          if (motionsCensure.length > 0) {
+            const { resume, positions } = separerResumePositions(response);
+            reponse = `${resume}\n\n${positionsAvecMotions(positions.replace(/^.*voir ci-dessous\.?\s*$/im, ''), motionsCensure)}`;
+          }
+          const resumeIA = cleanLLMOutput(reponse);
 
           if (preview) {
             console.log(`\n===== APERÇU dossier ${dossier.uid} =====\n${resumeIA}\n`);
@@ -839,6 +880,8 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
                 ${GROUPE_DU_VOTE}
                 WHERE s.dossier_id = ANY(${dossierIds})
                   AND s.titre ILIKE '%article%'
+              -- « l'article 49 » d'une motion de censure n'en fait pas un vote d'article
+              AND s.titre !~* 'motion de censure'
                   AND s.titre NOT ILIKE '%amendement%'
                   AND s.titre NOT ILIKE '%ensemble%'
                   AND v.position != 'absent'

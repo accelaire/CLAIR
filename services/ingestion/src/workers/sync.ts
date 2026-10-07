@@ -28,6 +28,7 @@ import { errorMessage } from '../utils/errors';
 import { asArray, isRecord, readString } from '../utils/json';
 import { extractCommissionSaisines } from '../utils/dossier-commissions';
 import { commissionsQuittees } from '../utils/commissions-senat';
+import { cleMotion, dossierMotionSansReferences } from '../utils/motions-censure';
 import { classifyNatureScrutin } from '../utils/nature-scrutin';
 import { choisirAmendement, type CandidatAmendement } from '../utils/amendement-scrutin';
 import { uidCanoniqueAmendement, uneEmissionParAmendement } from '../utils/uid-amendement';
@@ -4308,6 +4309,15 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.error({ error: errorMessage(error) }, 'Procedure guard failed (non-blocking)');
     }
 
+    // Le lien publié par la source fait foi, avant que les rattacheurs ne
+    // comblent les orphelins restants.
+    try {
+      const { relinked } = await relinkScrutinsParVoteRefs();
+      logger.info({ relinked }, 'VoteRefs relink completed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'VoteRefs relink failed (non-blocking)');
+    }
+
     // Scrutin→dossier linking MUST run BEFORE scrutin→amendement linking
     // because the CTE requires dossier_id to avoid cross-dossier false positives.
     logger.info('Linking Sénat scrutins to dossiers...');
@@ -5717,16 +5727,108 @@ export const PROCEDURE_ENGAGEMENT_RESPONSABILITE = '13';
 export const MOTION_DE_CENSURE = /motion de censure/i;
 
 /**
- * Le scrutin `s` peut appartenir au dossier d'alias `alias` au vu de sa
- * procédure : jamais un rapport ou une mission, et une motion de censure
- * seulement pour un engagement de responsabilité.
+ * Rattachements APPROXIMATIFS (titre, TF-IDF, loi_titre) : jamais vers un
+ * rapport ou une mission, jamais vers un dossier d'engagement de
+ * responsabilité, et jamais pour une motion de censure.
+ *
+ * Une motion ne se rattache que par les `voteRefs` du dossier (voir
+ * `relinkScrutinsParVoteRefs`). Son titre (« la motion de censure déposée en
+ * application de l'article 49, alinéa 3, … par Mme X ») ne nomme pas le texte
+ * et ressemble à celui de toutes les autres motions : le TF-IDF les empilait
+ * sur le premier dossier « Motion de censure » venu. Au 2026-10-07, 39 motions
+ * étaient sur un dossier de motion qui ne les référençait pas, dont 31 sur
+ * DLR5L16N45938, parmi lesquelles les 49.3 budgétaires de 2022-2023.
  */
 function procedureCompatible(alias: 'd' | 'd2'): Prisma.Sql {
   const col = Prisma.raw(`${alias}.procedure_code`);
   return Prisma.sql`(
     ${dossierVotable(alias)}
+    AND ${col} IS DISTINCT FROM ${PROCEDURE_ENGAGEMENT_RESPONSABILITE}
+    AND s.titre !~* 'motion de censure'
+  )`;
+}
+
+/**
+ * Lien EXISTANT acceptable au vu de la procédure (garde-fou) : un 49.3 ne porte
+ * que des motions de censure. Plus large que `procedureCompatible`, qui ne régit
+ * que les rattachements approximatifs : une motion posée par `voteRefs` sur son
+ * dossier de 49.3 doit y rester.
+ */
+function lienProcedureValide(alias: 'd'): Prisma.Sql {
+  const col = Prisma.raw(`${alias}.procedure_code`);
+  return Prisma.sql`(
+    ${dossierVotable(alias)}
     AND (${col} IS DISTINCT FROM ${PROCEDURE_ENGAGEMENT_RESPONSABILITE} OR s.titre ~* 'motion de censure')
   )`;
+}
+
+/**
+ * Références de vote des dossiers AN (`acteLegislatif.voteRefs.voteRef`, une
+ * chaîne ou une liste) : couples (dossier_id, uid du scrutin). C'est le seul
+ * lien publié par la source elle-même ; il fait foi sur tout appariement.
+ */
+const VOTE_REFS_AN = Prisma.sql`
+  SELECT d.id AS dossier_id, r.uid
+  FROM dossiers_legislatifs d
+  CROSS JOIN LATERAL jsonb_path_query(d.source_data, 'strict $.**.voteRefs.voteRef') v
+  CROSS JOIN LATERAL jsonb_array_elements_text(
+    CASE jsonb_typeof(v) WHEN 'array' THEN v ELSE jsonb_build_array(v) END
+  ) AS r(uid)
+  WHERE d.uid LIKE 'DL%' AND d.source_data IS NOT NULL
+`;
+
+/** uid AN du scrutin (`VTANR5L17V451`), dernier segment de son URL source. */
+const UID_SCRUTIN_AN = Prisma.sql`regexp_replace(s.source_url, '^.*/', '')`;
+
+/**
+ * Rattache chaque scrutin AN au dossier qui le référence, quand un seul dossier
+ * votable le fait, y compris en corrigeant un lien posé par un autre
+ * rattacheur. Les rattacheurs ne comblent que les orphelins : sans cette étape,
+ * un lien approximatif posé avant l'arrivée de la référence n'était jamais
+ * corrigé (15 scrutins au 2026-10-07, dont 4 motions de censure que leur
+ * propre dossier référençait).
+ */
+export async function relinkScrutinsParVoteRefs(): Promise<{ relinked: number }> {
+  const relinked = await prisma.$executeRaw`
+    WITH refs AS (${VOTE_REFS_AN}),
+    uniques AS (
+      SELECT r.uid, min(r.dossier_id) AS dossier_id
+      FROM refs r JOIN dossiers_legislatifs d ON d.id = r.dossier_id
+      WHERE ${dossierVotable('d')}
+      GROUP BY r.uid
+      HAVING count(DISTINCT r.dossier_id) = 1
+    )
+    UPDATE scrutins s
+    SET dossier_id = u.dossier_id
+    FROM uniques u
+    WHERE s.chambre = 'assemblee'
+      AND ${UID_SCRUTIN_AN} = u.uid
+      AND s.dossier_id IS DISTINCT FROM u.dossier_id
+  `;
+  if (relinked > 0) logger.warn({ relinked }, 'Scrutins AN rattachés au dossier qui les référence');
+
+  // Motions de censure dont le dossier ne publie pas de références : par les
+  // auteurs, si l'appariement est unique des deux côtés (utils/motions-censure).
+  const motions = await prisma.$executeRaw`
+    WITH paires AS (
+      SELECT s.id AS scrutin_id, d.id AS dossier_id
+      FROM scrutins s
+      JOIN dossiers_legislatifs d
+        ON ${Prisma.raw(dossierMotionSansReferences('d'))}
+       AND d.legislature = s.legislature
+       AND ${Prisma.raw(cleMotion('d.titre'))} = ${Prisma.raw(cleMotion('s.titre'))}
+      WHERE s.chambre = 'assemblee' AND s.dossier_id IS NULL AND s.titre ~* 'motion de censure'
+        AND NOT EXISTS (SELECT 1 FROM scrutins s2 WHERE s2.dossier_id = d.id)
+    ),
+    uniques AS (
+      SELECT p.scrutin_id, p.dossier_id FROM paires p
+      WHERE (SELECT count(*) FROM paires p2 WHERE p2.scrutin_id = p.scrutin_id) = 1
+        AND (SELECT count(*) FROM paires p3 WHERE p3.dossier_id = p.dossier_id) = 1
+    )
+    UPDATE scrutins s SET dossier_id = u.dossier_id FROM uniques u WHERE s.id = u.scrutin_id
+  `;
+  if (motions > 0) logger.info({ motions }, 'Motions de censure rattachées par leurs auteurs');
+  return { relinked: relinked + motions };
 }
 
 /** Le dossier d'alias `alias` peut porter des scrutins, quel que soit le scrutin. */
@@ -5743,13 +5845,35 @@ function dossierVotable(alias: 'd' | 'd2'): Prisma.Sql {
  * pairs propage les liens existants.
  */
 export async function unlinkScrutinsProcedureIncompatible(): Promise<{ unlinked: number }> {
-  const unlinked = await prisma.$executeRaw`
+  const incompatibles = await prisma.$executeRaw`
     UPDATE scrutins s
     SET dossier_id = NULL
     FROM dossiers_legislatifs d
     WHERE s.dossier_id = d.id
-      AND NOT ${procedureCompatible('d')}
+      AND NOT ${lienProcedureValide('d')}
   `;
+  // Une motion de censure n'est à sa place que sur un dossier qui la référence
+  // (voir `procedureCompatible`).
+  const motions = await prisma.$executeRaw`
+    WITH refs AS (${VOTE_REFS_AN})
+    UPDATE scrutins s
+    SET dossier_id = NULL
+    WHERE s.chambre = 'assemblee'
+      AND s.dossier_id IS NOT NULL
+      AND s.titre ~* 'motion de censure'
+      AND NOT EXISTS (
+        SELECT 1 FROM refs WHERE refs.dossier_id = s.dossier_id AND refs.uid = ${UID_SCRUTIN_AN}
+      )
+      -- Dossier de motion sans références : la clé d'auteurs fait foi.
+      AND NOT EXISTS (
+        SELECT 1 FROM dossiers_legislatifs d
+        WHERE d.id = s.dossier_id
+          AND ${Prisma.raw(dossierMotionSansReferences('d'))}
+          AND d.legislature = s.legislature
+          AND ${Prisma.raw(cleMotion('d.titre'))} = ${Prisma.raw(cleMotion('s.titre'))}
+      )
+  `;
+  const unlinked = incompatibles + motions;
 
   if (unlinked > 0) {
     logger.warn({ unlinked }, 'Unlinked scrutins incompatible with their dossier procedure (rapport, mission, 49.3)');
@@ -5959,12 +6083,12 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
         }
       }
 
-      // Un 49.3 ne porte que sa motion de censure (voir procedureCompatible).
-      if (!MOTION_DE_CENSURE.test(orphan.titre)) {
-        candidates = (candidates ?? dossiers.map((_, j) => j)).filter(
-          (j) => dossiers[j]?.procedure_code !== PROCEDURE_ENGAGEMENT_RESPONSABILITE,
-        );
-      }
+      // Une motion ne se rattache que par voteRefs, et un dossier de 49.3 ne
+      // reçoit rien d'approximatif (voir procedureCompatible).
+      if (MOTION_DE_CENSURE.test(orphan.titre)) continue;
+      candidates = (candidates ?? dossiers.map((_, j) => j)).filter(
+        (j) => dossiers[j]?.procedure_code !== PROCEDURE_ENGAGEMENT_RESPONSABILITE,
+      );
 
       const match = bestMatch(scrutinVector, dossierVectors, candidates);
       if (match.index >= 0 && match.score >= MIN_TFIDF_SIMILARITY) {

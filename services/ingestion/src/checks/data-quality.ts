@@ -2,6 +2,7 @@
 // Data Quality Checks — Invariants & Threshold-based regression detection
 // =============================================================================
 
+import { cleMotion, dossierMotionSansReferences } from '../utils/motions-censure';
 import { PrismaClient } from '@prisma/client';
 import { LEGISLATURE_AN_COURANTE } from '../workers/mandats';
 
@@ -201,6 +202,45 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // (1 533 + 247 en prod au 2026-10-06). Voir procedureCompatible dans
     // workers/sync.ts.
     query: `SELECT COUNT(*)::int AS value FROM scrutins s JOIN dossiers_legislatifs d ON s.dossier_id = d.id WHERE d.procedure_code IN ('10', '12', '16', '19', '20') OR (d.procedure_code = '13' AND s.titre !~* 'motion de censure')`,
+  },
+  scrutins_contre_voterefs: {
+    type: 'invariant',
+    label: "Scrutins AN rattachés ailleurs que le dossier qui les référence",
+    min: 0,
+    max: 0,
+    // Les voteRefs des dossiers AN sont le seul lien publié par la source : un
+    // scrutin référencé par un seul dossier votable doit y être. Même requête
+    // que `relinkScrutinsParVoteRefs` (workers/sync.ts).
+    query: `SELECT COUNT(*)::int AS value FROM scrutins s
+      JOIN (
+        SELECT r.uid, min(d.id) AS dossier_id
+        FROM dossiers_legislatifs d
+        CROSS JOIN LATERAL jsonb_path_query(d.source_data, 'strict $.**.voteRefs.voteRef') v
+        CROSS JOIN LATERAL jsonb_array_elements_text(CASE jsonb_typeof(v) WHEN 'array' THEN v ELSE jsonb_build_array(v) END) AS r(uid)
+        WHERE d.uid LIKE 'DL%' AND d.source_data IS NOT NULL
+          AND (d.procedure_code IS NULL OR d.procedure_code NOT IN ('10', '12', '16', '19', '20'))
+        GROUP BY r.uid HAVING count(DISTINCT d.id) = 1
+      ) u ON regexp_replace(s.source_url, '^.*/', '') = u.uid
+      WHERE s.chambre = 'assemblee' AND s.dossier_id IS DISTINCT FROM u.dossier_id`,
+  },
+  motions_censure_non_referencees: {
+    type: 'invariant',
+    label: 'Motions de censure rattachées à un dossier qui ne les référence pas',
+    min: 0,
+    max: 0,
+    // Le titre d'une motion ne nomme pas le texte : seul voteRefs la rattache.
+    // 39 motions empilées sur des dossiers « Motion de censure » au 2026-10-07.
+    query: `SELECT COUNT(*)::int AS value FROM scrutins s
+      WHERE s.chambre = 'assemblee' AND s.dossier_id IS NOT NULL AND s.titre ~* 'motion de censure'
+        AND NOT EXISTS (
+          SELECT 1 FROM dossiers_legislatifs d
+          CROSS JOIN LATERAL jsonb_path_query(d.source_data, 'strict $.**.voteRefs.voteRef') v
+          CROSS JOIN LATERAL jsonb_array_elements_text(CASE jsonb_typeof(v) WHEN 'array' THEN v ELSE jsonb_build_array(v) END) AS r(uid)
+          WHERE d.id = s.dossier_id AND r.uid = regexp_replace(s.source_url, '^.*/', ''))
+        AND NOT EXISTS (
+          SELECT 1 FROM dossiers_legislatifs d
+          WHERE d.id = s.dossier_id AND ${dossierMotionSansReferences('d')}
+            AND d.legislature = s.legislature AND ${cleMotion('d.titre')} = ${cleMotion('s.titre')})`,
   },
   amendements_uid_canonique_doublons: {
     type: 'invariant',

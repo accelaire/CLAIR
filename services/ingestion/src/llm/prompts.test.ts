@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   buildDossierResumePrompt,
   buildScrutinResumePrompt,
+  porteeMotionDeCensure,
+  positionsAvecMotions,
+  separerResumePositions,
   buildSujetResumePrompt,
 } from './prompts';
 
@@ -294,5 +297,101 @@ describe('buildDossierResumePrompt — parcours et votes datés', () => {
     expect(prompt).toContain('22/06/2026 — Sénat, 1re lecture : modifié');
     expect(prompt).toContain('[ordinaire, Adopté, 09/06/2026, Assemblée nationale] la motion de rejet préalable');
     expect(prompt).toMatch(/N'annonce aucune étape/);
+  });
+});
+
+describe('porteeMotionDeCensure', () => {
+  it('dit que le rejet d’une motion sur un 49.3 vaut adoption du texte', () => {
+    const p = porteeMotionDeCensure("la motion de censure déposée en application de l'article 49, alinéa 3, de la Constitution par Mme Mathilde Panot et 90 députés.");
+    expect(p).toMatch(/rejetée, le texte est considéré comme adopté/);
+    expect(p).toMatch(/Seules les voix POUR/);
+  });
+
+  it('distingue la motion spontanée (49.2)', () => {
+    expect(porteeMotionDeCensure("la motion de censure déposée en application de l'article 49, alinéa 2, de la Constitution par M. Boris Vallaud")).toMatch(/alinéa 2/);
+  });
+
+  it("ne s'applique pas aux autres scrutins", () => {
+    expect(porteeMotionDeCensure('la motion de rejet préalable du projet de loi')).toBeNull();
+  });
+});
+
+describe('buildDossierResumePrompt — motions de censure', () => {
+  it('liste les seules voix POUR par groupe et interdit de prêter un vote contre', () => {
+    const prompt = buildDossierResumePrompt({
+      titre: 'Projet de loi de finances pour 2025',
+      scrutinsResumes: [],
+      positionsEnsemble: [],
+      votesArticles: [],
+      amendementsClefs: [],
+      motionsCensure: [{
+        date: new Date('2025-02-05T12:00:00Z'),
+        titre: "la motion de censure déposée en application de l'article 49, alinéa 3, de la Constitution par Mme Mathilde Panot",
+        sort: 'rejete',
+        pourParGroupe: [{ nom: 'LFI-NFP', pour: 71 }, { nom: 'ECOS', pour: 37 }],
+      }],
+    });
+    expect(prompt).toContain('Motion du 05/02/2025, REJETÉE faute de majorité absolue.');
+    expect(prompt).toContain("Ont voté POUR la motion, donc l'ont SOUTENUE : LFI-NFP (71), ECOS (37).");
+    expect(prompt).toMatch(/Ne parle PAS des motions de censure dans POSITIONS/);
+  });
+});
+
+describe('buildDossierResumePrompt — groupes qui n’ont pas voté la motion', () => {
+  it('les nomme pour que le modèle n’écrive pas « opposé »', () => {
+    const prompt = buildDossierResumePrompt({
+      titre: 'Projet de loi de finances pour 2025',
+      scrutinsResumes: [],
+      positionsEnsemble: [],
+      votesArticles: [{ article: "l'article liminaire", sort: 'adopte', groupes: [
+        { nom: 'RN', slug: 'rn', pour: 120, contre: 0, abstention: 0 },
+        { nom: 'LFI-NFP', slug: 'lfi-nfp', pour: 0, contre: 70, abstention: 0 },
+      ] }],
+      amendementsClefs: [],
+      motionsCensure: [{ date: new Date('2025-02-05T12:00:00Z'), titre: "la motion de censure … article 49, alinéa 3 …", sort: 'rejete', pourParGroupe: [{ nom: 'LFI-NFP', pour: 71 }] }],
+    });
+    expect(prompt).toContain("N'ont pas voté la motion (aucune voix pour, ce qui ne veut PAS dire contre) : RN.");
+  });
+
+  it('demande les seules voix pour quand le dossier n’a que la motion', () => {
+    const prompt = buildDossierResumePrompt({
+      titre: 'Motion de censure', scrutinsResumes: [], positionsEnsemble: [], votesArticles: [], amendementsClefs: [],
+      motionsCensure: [{ date: new Date('2025-10-16T12:00:00Z'), titre: 'la motion de censure … alinéa 2 …', sort: 'rejete', pourParGroupe: [{ nom: 'RN', pour: 122 }] }],
+    });
+    expect(prompt).toMatch(/Voix sur la motion : voir ci-dessous/);
+    expect(prompt).not.toMatch(/ne portent que sur des amendements/);
+  });
+});
+
+describe('positionsAvecMotions', () => {
+  const motions = [{
+    date: new Date('2025-02-05T12:00:00Z'), titre: 'la motion de censure … alinéa 3 …', sort: 'rejete',
+    pourParGroupe: [{ nom: 'LFI-NFP', pour: 71 }, { nom: 'ECOS', pour: 38 }],
+  }];
+
+  it('retire les phrases du modèle sur la motion et ajoute la phrase calculée', () => {
+    const sortie = positionsAvecMotions(
+      "Le RN a soutenu l'article liminaire. Il s'est opposé à la motion de censure. LFI a voté contre l'article 40.",
+      motions,
+    );
+    expect(sortie).not.toMatch(/opposé à la motion/);
+    expect(sortie).toContain("Le RN a soutenu l'article liminaire. LFI a voté contre l'article 40.");
+    expect(sortie).toContain('Motion de censure du 05/02/2025, rejetée : ont voté pour LFI-NFP (71), ECOS (38).');
+  });
+
+  it('laisse les positions intactes sans motion', () => {
+    expect(positionsAvecMotions('Texte.', [])).toBe('Texte.');
+  });
+});
+
+describe('separerResumePositions', () => {
+  it('reconnaît les variantes de séparateur observées', () => {
+    for (const r of ['Résumé.\n---POSITIONS---\nPos.', 'Résumé.\n\n---\nPOSITIONS\n\nPos.', 'Résumé.\n\nPOSITIONS ---\nPos.']) {
+      expect(separerResumePositions(r)).toEqual({ resume: 'Résumé.', positions: 'Pos.' });
+    }
+  });
+
+  it('sans séparateur, prend le premier paragraphe comme résumé', () => {
+    expect(separerResumePositions('Résumé.\n\nPos 1.\n\nPos 2.')).toEqual({ resume: 'Résumé.', positions: 'Pos 1.\n\nPos 2.' });
   });
 });

@@ -30,6 +30,7 @@ import {
   linkANScrutinsByTitle,
   unlinkANScrutinsWrongLegislature,
   unlinkScrutinsProcedureIncompatible,
+  relinkScrutinsParVoteRefs,
   linkOrphanScrutinsByTFIDF,
   linkOrphanScrutinsByTexteNumero,
   linkOrphansByLoiTitre,
@@ -817,10 +818,28 @@ program
       const result = await unlinkScrutinsProcedureIncompatible();
       console.log(`\n🔗 Garde-fou procédure:`);
       console.log(`   Liens cassés: ${result.unlinked}`);
-      console.log(`   Relancer link-scrutins-tfidf, link-scrutins-dossiers, link-by-texte-numero et link-by-loi-titre pour les reposer.`);
+      console.log(`   Relancer relink-voterefs, puis link-scrutins-tfidf, link-scrutins-dossiers, link-by-texte-numero et link-by-loi-titre pour les reposer.`);
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'unlink-procedure-incompatible failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: relink-voterefs
+// =============================================================================
+program
+  .command('relink-voterefs')
+  .description('Rattacher chaque scrutin AN au dossier qui le référence (voteRefs de la source), en corrigeant les liens approximatifs contraires')
+  .action(async () => {
+    try {
+      const result = await relinkScrutinsParVoteRefs();
+      console.log(`\n🔗 Rattachement par voteRefs:`);
+      console.log(`   Scrutins rattachés ou corrigés: ${result.relinked}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'relink-voterefs failed');
       process.exit(1);
     }
   });

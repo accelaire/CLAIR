@@ -96,12 +96,77 @@ interface ScrutinPromptData {
  */
 const MAX_ARTICLE_CHARS = 6000;
 
+/**
+ * Portée d'une motion de censure, que le modèle ignorait : « la motion est
+ * rejetée, le projet de loi de finances pour 2025 poursuit son examen
+ * normalement », alors que le rejet d'une motion déposée sur un 49.3 vaut
+ * adoption du texte. Seules les voix POUR sont décomptées et publiées.
+ */
+export function porteeMotionDeCensure(titre: string): string | null {
+  if (!/motion de censure/i.test(titre)) return null;
+  const regle = /alin[ée]a\s*3/i.test(titre)
+    ? 'motion déposée après un engagement de responsabilité (article 49, alinéa 3) : rejetée, le texte est considéré comme adopté sans vote ; adoptée, le Gouvernement est renversé et le texte rejeté'
+    : 'motion de censure spontanée (article 49, alinéa 2) : elle ne porte sur aucun texte ; adoptée, elle renverse le Gouvernement, rejetée, il reste en place';
+  return `Nature : ${regle}. Seules les voix POUR la motion sont décomptées et publiées : un député qui ne l'a pas votée n'a pas « voté contre », et on ne connaît ni les voix contre ni les abstentions.`;
+}
+
+type MotionVoix = { date: Date; titre: string; sort: string; pourParGroupe: { nom: string; pour: number }[] };
+
+/**
+ * Phrase des voix sur les motions de censure, calculée et non générée. Même
+ * avec la liste des groupes qui n'avaient pas voté la motion, le modèle leur
+ * prêtait d'un tirage à l'autre une opposition ou un vote « contre » (le RN sur
+ * la motion du PLF 2025), voire faisait « rejeter » la motion par LFI qui
+ * l'avait déposée. Les voix pour étant les seules publiées, la phrase s'écrit
+ * sans le modèle.
+ */
+export function phraseMotionsCensure(motions: MotionVoix[]): string {
+  return motions.map((m) => {
+    const date = m.date.toISOString().slice(0, 10).split('-').reverse().join('/');
+    const voix = m.pourParGroupe.map((g) => `${g.nom} (${g.pour})`).join(', ');
+    const issue = m.sort === 'adopte' ? 'adoptée' : 'rejetée';
+    return voix
+      ? `Motion de censure du ${date}, ${issue} : ont voté pour ${voix}. Les autres groupes ne l'ont pas votée ; seules les voix pour sont publiées.`
+      : `Motion de censure du ${date}, ${issue} : aucune voix pour n'est publiée.`;
+  }).join(' ');
+}
+
+/**
+ * Sépare RÉSUMÉ et POSITIONS d'une réponse de dossier. Le modèle n'écrit pas
+ * toujours la ligne exacte demandée : « ---POSITIONS--- », « ---\nPOSITIONS »,
+ * « POSITIONS --- » ont été observés le même jour. Sans séparateur reconnu, tout
+ * ce qui suit le premier paragraphe compte comme POSITIONS.
+ */
+export function separerResumePositions(reponse: string): { resume: string; positions: string } {
+  const sep = /\n*(?:-{3}\s*POSITIONS\s*(?:-{3})?|POSITIONS\s*-{3})[ \t]*\n*/i;
+  const m = sep.exec(reponse);
+  if (m) {
+    return { resume: reponse.slice(0, m.index).replace(/\n*-{3}\s*$/, ''), positions: reponse.slice(m.index + m[0].length) };
+  }
+  const paragraphes = reponse.split(/\n{2,}/);
+  return { resume: paragraphes[0] ?? '', positions: paragraphes.slice(1).join('\n\n') };
+}
+
+/**
+ * Partie POSITIONS d'un dossier à motions : retire les phrases du modèle qui
+ * parlent d'une motion de censure, puis ajoute la phrase calculée.
+ */
+export function positionsAvecMotions(positions: string, motions: MotionVoix[]): string {
+  if (motions.length === 0) return positions;
+  const paragraphes = positions.split(/\n{2,}/).map((p) =>
+    p.split(/(?<=[.!?])\s+/).filter((phrase) => !/motion de censure|la motion\b/i.test(phrase)).join(' ').trim(),
+  ).filter(Boolean);
+  return [...paragraphes, phraseMotionsCensure(motions)].join('\n\n');
+}
+
 export function buildScrutinResumePrompt(data: ScrutinPromptData): string {
   const parts: string[] = [
     `Titre du scrutin : ${data.titre}`,
     `Résultat : ${data.sort === 'adopte' ? 'Adopté' : 'Rejeté'}`,
     `Type : ${data.typeVote}`,
   ];
+  const motion = porteeMotionDeCensure(data.titre);
+  if (motion) parts.push(motion);
   if (data.chambre === 'senat') {
     parts.push('Chambre : Sénat. Ce sont les SÉNATEURS qui ont voté : ne parle jamais des députés comme auteurs de ce vote.');
   } else if (data.chambre === 'assemblee') {
@@ -208,6 +273,8 @@ interface DossierPromptData {
   etat?: string | null;
   /** Décisions datées de la navette (`parcoursDossier`), connues pour les dossiers AN. */
   parcours?: string[];
+  /** Motions de censure du dossier, avec les seules voix POUR par groupe. */
+  motionsCensure?: { date: Date; titre: string; sort: string; pourParGroupe: { nom: string; pour: number }[] }[];
   scrutinsResumes: {
     titre: string; sort: string; typeVote: string; resumeIA?: string | null;
     date?: Date | null; chambre?: string | null;
@@ -347,6 +414,30 @@ export function buildDossierResumePrompt(data: DossierPromptData): string {
     }
   }
 
+  if (data.motionsCensure && data.motionsCensure.length > 0) {
+    parts.push('\n--- Motions de censure (seules les voix POUR sont publiées) ---');
+    // Une ligne par fait : « rejetée — … — Voix pour : LFI-NFP 71 » sur une même
+    // ligne faisait écrire au modèle que LFI avait « rejeté » la motion qu'elle
+    // avait déposée et votée.
+    for (const m of data.motionsCensure) {
+      const date = m.date.toISOString().slice(0, 10).split('-').reverse().join('/');
+      const issue = m.sort === 'adopte' ? 'ADOPTÉE' : 'REJETÉE faute de majorité absolue';
+      parts.push(`Motion du ${date}, ${issue}. ${porteeMotionDeCensure(m.titre) ?? ''}`);
+      const voix = m.pourParGroupe.map((g) => `${g.nom} (${g.pour})`).join(', ') || 'aucun groupe';
+      parts.push(`  Ont voté POUR la motion, donc l'ont SOUTENUE : ${voix}.`);
+      // Groupes présents ailleurs dans le dossier sans aucune voix pour : le
+      // modèle écrivait qu'ils s'étaient « opposés à la motion ».
+      const votants = new Set(m.pourParGroupe.map((g) => g.nom));
+      const absents = [...new Set([
+        ...data.positionsEnsemble.map((g) => g.nom),
+        ...data.votesArticles.flatMap((va) => va.groupes.map((g) => g.nom)),
+      ])].filter((nom) => !votants.has(nom));
+      if (absents.length > 0) {
+        parts.push(`  N'ont pas voté la motion (aucune voix pour, ce qui ne veut PAS dire contre) : ${absents.join(', ')}.`);
+      }
+    }
+  }
+
   // Positions des groupes — votes sur l'ensemble du texte (solennel ou ordinaire)
   if (data.positionsEnsemble.length > 0) {
     parts.push('\n--- Positions des groupes sur l\'ensemble du texte (données fiables) ---');
@@ -398,9 +489,12 @@ export function buildDossierResumePrompt(data: DossierPromptData): string {
     '- Ne présente pas une mesure de portée limitée (dérogation locale, cas particulier) comme une mesure principale du texte.',
     '- Décris l\'avancement de la procédure UNIQUEMENT d\'après le parcours officiel et les votes datés ci-dessus. N\'annonce aucune étape (examen par une chambre, lecture, promulgation) qui n\'y figure pas, et n\'écris jamais qu\'une chambre n\'a pas encore examiné le texte si une de ses décisions ou un de ses votes est listé.',
     '- Un vote sur une partie d\'une loi de finances (« la première partie… ») ne porte pas sur l\'ensemble du texte : ne le présente pas comme le vote final.',
+    '- Ne parle PAS des motions de censure dans POSITIONS : les voix sur les motions y sont ajoutées automatiquement à partir des données.',
     data.positionsEnsemble.length > 0 || data.votesArticles.length > 0
       ? '2. POSITIONS (3 à 6 phrases) : Analyse les positions de chaque groupe politique majeur. RÈGLES STRICTES :'
-      : '2. POSITIONS (1 à 2 phrases) : Indique simplement que les votes disponibles ne portent que sur des amendements et ne permettent pas de déterminer la position globale des groupes. Ne décris AUCUNE position de groupe.',
+      : (data.motionsCensure?.length ?? 0) > 0
+        ? '2. POSITIONS : écris seulement « Voix sur la motion : voir ci-dessous. » Les voix sont ajoutées automatiquement à partir des données.'
+        : '2. POSITIONS (1 à 2 phrases) : Indique simplement que les votes disponibles ne portent que sur des amendements et ne permettent pas de déterminer la position globale des groupes. Ne décris AUCUNE position de groupe.',
     ...(data.positionsEnsemble.length > 0 || data.votesArticles.length > 0 ? [
     '- Base-toi UNIQUEMENT sur les votes sur l\'ensemble du texte et/ou sur les articles fournis ci-dessus.',
     '- Si des votes par article sont disponibles, mentionne les positions nuancées (ex: "le groupe X s\'est opposé à l\'article 3 sur la clause de conscience").',
