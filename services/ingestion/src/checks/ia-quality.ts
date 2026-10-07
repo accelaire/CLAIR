@@ -118,10 +118,6 @@ const GROUP_ALIASES: Record<string, string[]> = {
   EPR: ['ensemble pour la république', 'renaissance'],
   RE: ['renaissance'],
   LAREM: ['la république en marche'],
-  // Groupe du Sénat « La République En Marche » (2017-2020), devenu RDPI sans
-  // changer de code source. Le modèle écrit « LREM », le sigle d'usage, pour le
-  // groupe LAREM de l'AN : même famille, sinon 61 faux « groupe absent ».
-  LREM: ['la république en marche'],
   ECOS: ['écologistes', 'écologiste', 'ecologistes'],
   ECOLO: ['écologistes', 'écologiste', 'ecologistes'],
   GEST: ['écologistes', 'écologiste'],
@@ -142,6 +138,17 @@ const GROUP_ALIASES: Record<string, string[]> = {
   UNT: ['union nationale pour les territoires'],
   NI: ['non-inscrits', 'non inscrits'],
 };
+
+/**
+ * Familles rapprochées SANS alias de texte commun. LREM, groupe du Sénat « La
+ * République En Marche » (2017-2020) devenu RDPI sans changer de code source :
+ * le modèle écrit « LREM », le sigle d'usage, pour le groupe LAREM de l'AN, d'où
+ * 61 faux « groupe absent ». Un alias « la république en marche » sur LREM
+ * réglait ça mais faisait lire au Sénat chaque mention du groupe de l'AN, et
+ * comptait ses abstentions à tort (11 faux « abstention décrite comme un vote »
+ * le 7 octobre 2026).
+ */
+const FAMILLES_SANS_ALIAS: [string, string][] = [['LREM', 'LAREM']];
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -176,6 +183,11 @@ const FAMILY_OF: Map<string, string> = (() => {
     const [premier, ...autres] = sigles;
     if (!premier) continue;
     for (const autre of autres) union(premier, autre);
+  }
+  for (const [a, b] of FAMILLES_SANS_ALIAS) {
+    if (!parent.has(a)) parent.set(a, a);
+    if (!parent.has(b)) parent.set(b, b);
+    union(a, b);
   }
 
   return new Map([...parent.keys()].map(s => [s, find(s)]));
