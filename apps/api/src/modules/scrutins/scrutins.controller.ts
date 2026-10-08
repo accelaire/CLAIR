@@ -7,7 +7,8 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { ApiError } from '../../utils/errors';
 import { buildTextSearchCondition } from '../../utils/search';
-import { INTERVENTIONS_DE_FOND, journeeDeSeance } from '../../utils/interventions';
+import { INTERVENTIONS_DE_FOND, jourDeSeanceSenat, journeeDeSeance } from '../../utils/interventions';
+import { defensesDesAmendements, numeroCite } from './defense-amendement';
 import {
   joinMandatEpoque,
   chargerGroupesEpoque,
@@ -616,7 +617,20 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       // parole s'y rattachent. Ne compter que les prises laissait la date en
       // texte pour une séance déjà à l'agenda dont le compte rendu n'est pas
       // encore paru, quand le parcours menait à la même page.
-      const [seanceInterventions, totalSeanceInterventions, seanceConsultable] = await Promise.all([
+      //
+      // Faute de séance nommée, le Sénat range ses prises de parole sous leur
+      // journée (`d20260721`), qui a sa page : c'est le repli du parcours d'un
+      // dossier, et le seul chemin d'un vote du Sénat vers son débat complet.
+      const seanceUid = scrutin.seanceRef
+        ?? (scrutin.chambre === 'senat' ? jourDeSeanceSenat(scrutin.date) : null);
+      const numerosCites = scrutin.amendements.map((a) => numeroCite(a.numero)).filter(Boolean);
+      const [
+        seanceInterventions,
+        totalSeanceInterventions,
+        seanceConsultable,
+        debutDansLaSeance,
+        prisesQuiNommentLAmendement,
+      ] = await Promise.all([
         fastify.prisma.intervention.findMany({
           where: seanceWhere,
           take: 5,
@@ -624,10 +638,34 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           select: INTERVENTION_DEBAT_SELECT,
         }),
         fastify.prisma.intervention.count({ where: seanceWhere }),
-        scrutin.seanceRef
-          ? seanceAUnePage(fastify.prisma, scrutin.seanceRef)
+        seanceUid
+          ? seanceAUnePage(fastify.prisma, seanceUid)
           : Promise.resolve(false),
+        // Où le débat de ce vote commence dans le déroulé de la séance. La page
+        // de la séance y descend directement : sans ce rang, le lecteur devait
+        // chercher la 600e prise d'une séance servie par tranches de cinquante.
+        // Seules comptent les prises de CETTE séance : un débat repris après
+        // une levée de séance a son rang dans une autre numérotation.
+        seanceUid && debatsDuScrutin > 0
+          ? fastify.prisma.intervention.aggregate({
+              where: { seanceId: seanceUid, scrutinsLies: { some: { scrutinId: scrutin.id } } },
+              _min: { ordre: true },
+            })
+          : Promise.resolve(null),
+        // Les prises qui nomment un amendement mis aux voix, prises dans le
+        // seul débat rattaché au vote. Voir `defense-amendement.ts`.
+        debatsDuScrutin > 0 && numerosCites.length > 0
+          ? fastify.prisma.intervention.findMany({
+              where: {
+                scrutinsLies: { some: { scrutinId: scrutin.id } },
+                amendementsVises: { hasSome: numerosCites },
+                ...INTERVENTIONS_DE_FOND,
+              },
+              select: INTERVENTION_DEBAT_SELECT,
+            })
+          : Promise.resolve([]),
       ]);
+      const defenses = defensesDesAmendements(scrutin.amendements, prisesQuiNommentLAmendement);
 
       // Sélection des champs votes communs
       const voteSelect = {
@@ -727,13 +765,29 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
       return {
         data: {
           ...scrutin,
+          // Chaque amendement porte la prise où il a été défendu, quand le
+          // compte rendu permet de la reconnaître.
+          amendements: scrutin.amendements.map((a) => {
+            const defense = defenses.get(a.id);
+            return { ...a, defense: defense ? truncateContenu(defense) : null };
+          }),
           interventions: seanceInterventions.map(truncateContenu),
           sourceUrl: fixSourceUrl(scrutin.sourceUrl, scrutin.chambre, scrutin.numero),
           votesByPosition,
           votesByGroupe,
           totalVotes: scrutin.nombrePour + scrutin.nombreContre + scrutin.nombreAbstention,
           totalInterventions: totalSeanceInterventions,
+          // Ce que compte `totalInterventions` : le débat de ce vote, ou faute
+          // de rattachement celui de toute la journée. L'onglet le dit dès le
+          // premier rendu, sans attendre la liste.
+          debatRattache: debatsDuScrutin > 0,
           seanceADesDebats: seanceConsultable,
+          // La séance où le vote a eu lieu, quand elle a une page chez nous, et
+          // le rang où son débat y commence — null quand aucune prise de cette
+          // séance n'est rattachée au vote : la page s'ouvre alors en haut.
+          seance: seanceUid && seanceConsultable
+            ? { uid: seanceUid, rang: debutDansLaSeance?._min.ordre ?? null }
+            : null,
         },
       };
     },
