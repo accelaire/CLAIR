@@ -6,6 +6,7 @@ import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { AmendementSortBadge } from '@/components/AmendementSortBadge';
 import { FicheCompareCallout } from '@/components/FicheCompareCallout';
 import { bilanMandats, fonctionParlementaire } from '@/lib/meta-parlementaire';
+import { StatsParlementaire } from '@/components/parlementaire/stats-parlementaire';
 import { SoutenirCallout } from '@/components/donations/SoutenirCallout';
 import { aucunFiltre, STALE_TIME_LISTE_MS } from '@/lib/liste-ssr';
 import { useParams, useRouter } from 'next/navigation';
@@ -19,9 +20,7 @@ import {
   Twitter,
   Mail,
   Globe,
-  ShieldCheck,
   Vote,
-  MessageSquare,
   FileText,
   ArrowLeft,
   ThumbsUp,
@@ -36,12 +35,10 @@ import {
   ExternalLink,
   Info,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { api } from '@/lib/api';
 import { scrutinHref } from '@/lib/scrutin-url';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
-import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
 import { InterventionsList } from '@/components/parlementaire/interventions-list';
 import { MandatsBlock } from '@/components/parlementaire/mandats-timeline';
 import {
@@ -83,6 +80,7 @@ export interface SenateurDetail {
   } | null;
   stats?: {
     presence: number;
+    presenceSolennel?: number | null;
     loyaute: number;
     participation: number;
     interventions: number;
@@ -146,38 +144,6 @@ interface VoteItem {
     nombreContre: number;
     nombreAbstention: number;
   };
-}
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  suffix = '',
-  tooltip,
-  tooltipHref,
-}: {
-  label: string;
-  value: number | string;
-  icon: LucideIcon;
-  suffix?: string;
-  tooltip?: string;
-  tooltipHref?: string;
-}) {
-  return (
-    <div className="rounded-lg border bg-card p-4">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Icon className="h-4 w-4" />
-        <span className="text-sm">{label}</span>
-        {tooltip && (
-          <DidacticielTooltip content={tooltip} learnMoreHref={tooltipHref} />
-        )}
-      </div>
-      <div className="mt-2 text-2xl font-bold">
-        {typeof value === 'number' ? value.toLocaleString('fr-FR') : value}
-        {suffix}
-      </div>
-    </div>
-  );
 }
 
 function VotePositionBadge({ position }: { position: string }) {
@@ -878,43 +844,10 @@ export default function PageClient({
 
       {/* Statistiques */}
       {senateur.stats && (
-        <div className="mb-8">
-          <h2 className="mb-4 text-xl font-semibold">
-            {fonction.enCours ? 'Statistiques' : bilanMandats(fonction.plusieursMandats)}
-          </h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              label="Présence"
-              value={senateur.stats.presence}
-              suffix="%"
-              icon={ShieldCheck}
-              tooltip="Pourcentage de scrutins publics auxquels ce parlementaire a participé (voté pour, contre ou abstention). Calculé sur l'ensemble de la carrière au Sénat, tous mandats confondus."
-              tooltipHref="/comprendre/parlementaire"
-            />
-            <StatCard
-              label="Loyauté au groupe"
-              value={senateur.stats.loyaute}
-              suffix="%"
-              icon={Users}
-              tooltip="Pourcentage de votes alignés avec la position majoritaire du groupe politique. Calculé sur l'ensemble de la carrière au Sénat, tous mandats confondus."
-              tooltipHref="/comprendre/parlementaire"
-            />
-            <StatCard
-              label="Votes"
-              value={senateur.stats.participation}
-              icon={Vote}
-              tooltip="Nombre total de scrutins publics auxquels ce parlementaire a pris part. Calculé sur l'ensemble de la carrière au Sénat, tous mandats confondus."
-              tooltipHref="/comprendre/parlementaire"
-            />
-            <StatCard
-              label="Interventions"
-              value={senateur.stats.interventions}
-              icon={MessageSquare}
-              tooltip="Nombre de prises de parole en séance publique. Calculé sur l'ensemble de la carrière au Sénat, tous mandats confondus."
-              tooltipHref="/comprendre/parlementaire"
-            />
-          </div>
-        </div>
+        <StatsParlementaire
+          stats={senateur.stats}
+          titre={fonction.enCours ? 'Statistiques' : bilanMandats(fonction.plusieursMandats)}
+        />
       )}
 
       {/* Mandats et fonctions */}
