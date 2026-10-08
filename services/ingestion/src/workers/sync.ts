@@ -1269,8 +1269,8 @@ async function cloturerSenateursSortants(sourceUids: string[]): Promise<number> 
 /**
  * Clôt les mandats de commission que l'annuaire ne porte plus : sénateurs
  * sortis, ou passés dans une autre commission. Voir `utils/commissions-senat`.
- * Sur les organes que l'annuaire ne publie pas (affaires européennes,
- * délégations…), seules les appartenances des personnes sorties sont closes.
+ * Sur les organes que l'annuaire ne publie pas (délégations…), seules les
+ * appartenances des personnes sorties sont closes.
  */
 async function cloturerCommissionsSenatQuittees(senateurs: TransformedSenateur[]): Promise<number> {
   if (senateurs.length < SENAT_EFFECTIF_MIN) {

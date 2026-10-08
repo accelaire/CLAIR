@@ -2,9 +2,11 @@
 // Commissions du Sénat — mandats que l'annuaire ne porte plus
 // =============================================================================
 //
-// `senateurs.json` donne, pour chaque sénateur en exercice, sa commission
-// permanente du moment, sans aucune date. La synchro ouvrait un mandat de
-// commission à chaque appartenance nouvelle et ne fermait JAMAIS l'ancienne.
+// `senateurs.json` donne, pour chaque sénateur en exercice, ses commissions du
+// moment, sans aucune date : sa commission permanente et, depuis le 8 octobre
+// 2026, la commission des affaires européennes (41 membres), absente de
+// l'annuaire auparavant. La synchro ouvrait un mandat de commission à chaque
+// appartenance nouvelle et ne fermait JAMAIS l'ancienne.
 // Mesure du 7 octobre 2026, au lendemain du renouvellement : 475 mandats
 // ouverts dans les 7 commissions permanentes pour 347 appartenances réelles.
 // 71 lignes appartenaient à des sénateurs sortis (dont la présidence de la
@@ -13,10 +15,12 @@
 // lieu de 49 à 51.
 //
 // L'annuaire est la vérité du jour : un mandat ouvert sur l'une de ses
-// commissions qu'il ne liste plus pour la personne est clos. Les autres organes
-// du Sénat (commission des affaires européennes, délégations), que l'annuaire
-// ne publie pas, ne sont clos que pour les personnes qui ne sont plus
-// sénateurs : 11 sortants y restaient, dont 4 vice-présidents. La date de fin
+// commissions qu'il ne liste plus pour la personne est clos. Les organes qu'il
+// ne publie pas (délégations, et les affaires européennes jusqu'au 7 octobre
+// 2026) ne sont clos que pour les personnes qui ne sont plus sénateurs : 11
+// sortants restaient aux affaires européennes, dont 4 vice-présidents. Le jour
+// où l'annuaire a publié cette commission, ses 9 anciens membres encore
+// sénateurs ont été clos à la date d'observation. La date de fin
 // n'est pas publiée, on la reconstitue au plus près :
 // - sénateur sorti : la fin de son dernier mandat de sénateur ;
 // - changement de commission : la veille du début de la nouvelle appartenance,
