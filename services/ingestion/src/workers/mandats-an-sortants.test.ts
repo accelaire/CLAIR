@@ -44,10 +44,16 @@ describe('decisionsSortants', () => {
 });
 
 describe('ORGANES_AN_HORS_MANDAT', () => {
-  it('ne vise que les mandats d’organe AN ouverts dont le mandat de départ est clos', () => {
+  it("ne touche qu'aux personnes sans mandat de député ouvert", () => {
     expect(ORGANES_AN_HORS_MANDAT).toContain("o.source_uid LIKE 'PM%'");
     expect(ORGANES_AN_HORS_MANDAT).toContain('o.date_fin IS NULL');
-    expect(ORGANES_AN_HORS_MANDAT).toContain('depart.date_fin IS NOT NULL');
-    expect(ORGANES_AN_HORS_MANDAT).toContain('GREATEST(o.date_debut, depart.date_fin)');
+    expect(ORGANES_AN_HORS_MANDAT).toMatch(/NOT EXISTS[\s\S]*mp\.date_fin IS NULL/);
+  });
+
+  it("date la fin par le mandat qui courait, jamais par le mandat « commencé avant »", () => {
+    // Un organe commence le jour de l'élection, le mandat le lendemain : 437
+    // organes de députés en exercice clos à tort le 8 octobre 2026.
+    expect(ORGANES_AN_HORS_MANDAT).toContain('mp.date_fin >= o.date_debut');
+    expect(ORGANES_AN_HORS_MANDAT).not.toContain('mp.date_debut <= o.date_debut');
   });
 });

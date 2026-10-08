@@ -21,8 +21,9 @@
 //    mandats périmés ne voit que les députés présents dans l'AMO10. 9 885
 //    mandats d'organe d'anciens députés de la 15e et de la 16e étaient ouverts :
 //    la page de la commission des finances comptait 134 membres, dont une
-//    cinquantaine d'anciens députés. Règle : un mandat d'organe de l'Assemblée ne
-//    survit pas au mandat de député pendant lequel il a commencé.
+//    cinquantaine d'anciens députés. Règle : sans mandat de député ouvert, plus
+//    de mandat d'organe de l'Assemblée ouvert ; il prend fin avec le mandat de
+//    député pendant lequel il courait.
 
 import type { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
@@ -149,26 +150,37 @@ export async function cloturerDeputesSortants(
 }
 
 /**
- * Mandats d'organe de l'Assemblée (`source_uid` PM…) encore ouverts alors que le
- * mandat de député pendant lequel ils ont commencé est clos. Ce mandat de départ
- * est le dernier mandat de député de la personne commencé au plus tard le jour
- * de l'organe. Fin donnée : celle de ce mandat, jamais avant le début de
- * l'organe (31 organes commencent après la fin connue de leur mandat de départ).
+ * Mandats d'organe de l'Assemblée (`source_uid` PM…) encore ouverts chez une
+ * personne qui n'a plus de mandat de député ouvert. Ceux d'un député en
+ * exercice restent à l'AMO10, qui les liste et clôt ceux qu'elle ne porte plus
+ * (`syncMandatsFromSourceData`).
+ *
+ * Fin donnée : la fin du premier mandat de député qui se termine après le début
+ * de l'organe, c'est-à-dire celui pendant lequel il courait. Sans un tel mandat
+ * (organe commencé après la dernière fin connue), le début de l'organe.
+ *
+ * Ne JAMAIS rattacher l'organe au mandat « commencé avant lui » : un organe
+ * commence le jour de l'élection et le mandat le lendemain, à la prise de
+ * fonction. Le 8 octobre 2026, cette règle a rattaché 437 organes de députés
+ * en exercice à leur mandat de la 16e et les a clos.
  *
  * La même requête sert l'invariant `organes_an_au_dela_du_mandat` de
  * checks/data-quality.ts.
  */
 export const ORGANES_AN_HORS_MANDAT = `
-  SELECT o.id, GREATEST(o.date_debut, depart.date_fin) AS fin
+  SELECT o.id, GREATEST(o.date_debut, COALESCE(courant.date_fin, o.date_debut)) AS fin
   FROM mandats o
-  JOIN LATERAL (
-    SELECT mp.date_fin FROM mandats_parlementaires mp
+  LEFT JOIN LATERAL (
+    SELECT min(mp.date_fin) AS date_fin FROM mandats_parlementaires mp
     WHERE mp.personne_id = o.parlementaire_id AND mp.chambre = 'assemblee'
-      AND mp.date_debut <= o.date_debut
-    ORDER BY mp.date_debut DESC, mp.id
-    LIMIT 1
-  ) depart ON TRUE
-  WHERE o.date_fin IS NULL AND o.source_uid LIKE 'PM%' AND depart.date_fin IS NOT NULL`;
+      AND mp.date_fin >= o.date_debut
+  ) courant ON TRUE
+  WHERE o.date_fin IS NULL AND o.source_uid LIKE 'PM%'
+    AND EXISTS (SELECT 1 FROM mandats_parlementaires mp
+                WHERE mp.personne_id = o.parlementaire_id AND mp.chambre = 'assemblee')
+    AND NOT EXISTS (SELECT 1 FROM mandats_parlementaires mp
+                    WHERE mp.personne_id = o.parlementaire_id AND mp.chambre = 'assemblee'
+                      AND mp.date_fin IS NULL)`;
 
 export async function cloreOrganesANHorsMandat(
   prisma: PrismaClient,

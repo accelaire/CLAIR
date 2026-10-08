@@ -240,7 +240,7 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
   },
   organes_an_au_dela_du_mandat: {
     type: 'invariant',
-    label: "Mandats d'organe AN ouverts après la fin du mandat de député",
+    label: "Mandats d'organe AN ouverts sans mandat de député ouvert",
     min: 0,
     max: 0,
     // Commissions, groupes d'études et d'amitié d'anciens députés jamais clos :
