@@ -81,6 +81,25 @@ export interface ANMandat {
     causeMandat: string;
     refCirconscription: string;
   };
+  /** Mandat de député uniquement. `datePriseFonction` : entrée en fonction réelle. */
+  mandature?: {
+    datePriseFonction?: string | null;
+  };
+}
+
+/**
+ * Début réel d'un mandat de député : la prise de fonction, pas l'élection.
+ *
+ * Pour un suppléant, `dateDebut` est le jour de l'élection du titulaire (juillet
+ * 2024) et `datePriseFonction` celui où il le remplace. Le 8 octobre 2026, 68
+ * députés en exercice étaient datés de l'élection : leur présence se calculait
+ * sur des scrutins tenus avant leur arrivée (0 % pour un député entré le
+ * 5 août 2026). Pour les autres, la prise de fonction suit l'élection d'un jour.
+ */
+export function debutReelMandat(dateDebut: Date | null, datePriseFonction: Date | null): Date | null {
+  if (!datePriseFonction) return dateDebut;
+  if (!dateDebut) return datePriseFonction;
+  return datePriseFonction > dateDebut ? datePriseFonction : dateDebut;
 }
 
 export interface ANOrgane {
@@ -471,7 +490,10 @@ export class AssembleeNationaleDeputesClient {
       const d = new Date(s);
       return isNaN(d.getTime()) ? null : d;
     };
-    const mandatDateDebut = parseMandatDate(mandatDepute.dateDebut);
+    const mandatDateDebut = debutReelMandat(
+      parseMandatDate(mandatDepute.dateDebut),
+      parseMandatDate(mandatDepute.mandature?.datePriseFonction),
+    );
     const mandatDateFin = parseMandatDate(mandatDepute.dateFin);
 
     // Extraire la circonscription depuis le mandat
