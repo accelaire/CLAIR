@@ -48,6 +48,7 @@ import {
   upsertMandatParlementaire,
 } from './mandats';
 import { ajouterIdentifiantsConserves, rattacherDeputeElu } from './changement-chambre';
+import { cloreOrganesANHorsMandat, cloturerDeputesSortants } from './mandats-an-sortants';
 import {
   checkSourceFreshness,
   updateSourceState,
@@ -568,8 +569,12 @@ async function syncMandatsFromSourceData(
 }
 
 /**
- * Sync commission mandats for all AN députés from their stored sourceData (AMO10).
+ * Sync commission mandats for AN députés EN EXERCICE from their stored sourceData (AMO10).
  * Runs on every sync to keep PM IDs fresh (deputies get reassigned to different commissions).
+ *
+ * Les anciens députés sont exclus : leur `sourceData` est l'instantané de l'AMO10
+ * du temps où ils siégeaient, où leurs mandats d'organe n'ont pas de fin. Le
+ * repasser chaque nuit rouvrait ces mandats (9 885 au 8 octobre 2026).
  */
 async function backfillCommissionMandats(
   organeRefToCommissionId: Map<string, string>
@@ -577,6 +582,7 @@ async function backfillCommissionMandats(
   const deputes = await prisma.parlementaire.findMany({
     where: {
       chambre: 'assemblee',
+      actif: true,
       sourceData: { not: Prisma.JsonNull },
     },
     select: { id: true, sourceData: true },
@@ -699,12 +705,19 @@ export async function syncDeputes(
   let sortants = 0;
   if (isCurrent) {
     // AMO10 ne liste QUE les députés en exercice : un partant (ministre, démission,
-    // décès) disparaît de la source sans passer `actif=false` → passe sortants.
-    sortants = await cloturerDeputesSortants(parlementaires.map((p) => p.uid));
+    // décès, élection au Sénat) disparaît de la source sans date de fin → passe
+    // sortants, puis fermeture des mandats d'organe qui survivraient à son mandat.
+    const decisions = await cloturerDeputesSortants(prisma, parlementaires.map((p) => p.uid), {
+      finLegislature: LEGISLATURE_FIN[LEGISLATURE_AN_COURANTE],
+    });
+    sortants = decisions.length;
 
     logger.info('Backfilling commission mandats for existing deputes...');
     const backfilled = await backfillCommissionMandats(organeRefToCommissionId);
     logger.info({ backfilled }, 'Commission mandats backfill completed');
+
+    // En dernier : rien après ne doit rouvrir ce qu'elle ferme.
+    await cloreOrganesANHorsMandat(prisma);
   }
 
   logger.info(
@@ -712,52 +725,6 @@ export async function syncDeputes(
     'Parlementaires AN sync completed',
   );
   return { created, updated };
-}
-
-/** Effectif plancher attendu de l'Assemblée (577 sièges). En dessous, on considère le
- *  fetch source comme dégradé et on REFUSE de désactiver qui que ce soit. */
-const AN_EFFECTIF_MIN = 550;
-
-/**
- * Sortants AN : députés actifs en base absents de la source (nommés au gouvernement,
- * démissions, décès en cours de législature). Symétrique de `cloturerSenateursSortants` :
- * on ne supprime JAMAIS, on désactive la personne et on clôt son mandat AN ouvert. Sans
- * cette passe, les partants restent `actif=true` et polluent les classements publics.
- */
-async function cloturerDeputesSortants(sourceUids: string[]): Promise<number> {
-  // Garde-fou : un fetch partiel/dégradé ne doit pas désactiver l'Assemblée en masse.
-  if (sourceUids.length < AN_EFFECTIF_MIN) {
-    logger.warn(
-      { recus: sourceUids.length, minimum: AN_EFFECTIF_MIN },
-      'Effectif AN source anormalement bas — passe sortants ANNULÉE',
-    );
-    return 0;
-  }
-
-  const sortants = await prisma.parlementaire.findMany({
-    where: { chambre: 'assemblee', actif: true, sourceId: { notIn: sourceUids } },
-    select: { id: true },
-  });
-  if (sortants.length === 0) return 0;
-
-  const ids = sortants.map((p) => p.id);
-  const now = new Date();
-  // Départ en cours de législature → date d'observation. Cas théorique où le run passe
-  // après la fin de la législature courante → on borne à cette fin.
-  const finLegislature = LEGISLATURE_FIN[LEGISLATURE_AN_COURANTE];
-  const dateFin = finLegislature && now >= finLegislature ? finLegislature : now;
-
-  await prisma.parlementaire.updateMany({ where: { id: { in: ids } }, data: { actif: false } });
-  const clos = await prisma.mandatParlementaire.updateMany({
-    where: { personneId: { in: ids }, chambre: 'assemblee', dateFin: null },
-    data: { dateFin },
-  });
-
-  logger.info(
-    { sortants: ids.length, mandatsClos: clos.count },
-    'Députés sortants désactivés et mandats clos',
-  );
-  return ids.length;
 }
 
 // =============================================================================

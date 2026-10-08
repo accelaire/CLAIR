@@ -845,6 +845,41 @@ program
   });
 
 // =============================================================================
+// COMMANDE: clore-mandats-an
+// =============================================================================
+program
+  .command('clore-mandats-an')
+  .description("Clore les mandats de député des sortants (y compris élus sénateurs) et les mandats d'organe AN qui survivent au mandat de député")
+  .option('--dry-run', 'Compter sans rien écrire')
+  .action(async (options: { dryRun?: boolean }) => {
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+      try {
+        const { AssembleeNationaleDeputesClient } = await import('./sources/assemblee-nationale/deputes-client.js');
+        const { LEGISLATURE_AN_COURANTE, LEGISLATURE_FIN } = await import('./workers/mandats.js');
+        const { cloturerDeputesSortants, cloreOrganesANHorsMandat } = await import('./workers/mandats-an-sortants.js');
+        const { deputes } = await new AssembleeNationaleDeputesClient(LEGISLATURE_AN_COURANTE).getDeputes();
+        const decisions = await cloturerDeputesSortants(prisma, deputes.map((d) => d.uid), {
+          finLegislature: LEGISLATURE_FIN[LEGISLATURE_AN_COURANTE],
+          dryRun: options.dryRun,
+        });
+        const organes = await cloreOrganesANHorsMandat(prisma, { dryRun: options.dryRun });
+        console.log(`\n🏛️  Mandats AN${options.dryRun ? ' (DRY RUN)' : ''} :`);
+        console.log(`   Députés listés par la source : ${deputes.length}`);
+        console.log(`   Sortants                     : ${decisions.length} (dont passés au Sénat : ${decisions.filter((d) => !d.desactiver).length})`);
+        console.log(`   Mandats d'organe à clore     : ${organes}`);
+      } finally {
+        await prisma.$disconnect();
+      }
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'clore-mandats-an failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
 // COMMANDE: link-scrutins-tfidf
 // =============================================================================
 program

@@ -5,6 +5,7 @@
 import { cleMotion, dossierMotionSansReferences } from '../utils/motions-censure';
 import { PrismaClient } from '@prisma/client';
 import { LEGISLATURE_AN_COURANTE } from '../workers/mandats';
+import { ORGANES_AN_HORS_MANDAT } from '../workers/mandats-an-sortants';
 
 // =============================================================================
 // Périmètre des taux de liaison
@@ -222,6 +223,30 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
         GROUP BY r.uid HAVING count(DISTINCT d.id) = 1
       ) u ON regexp_replace(s.source_url, '^.*/', '') = u.uid
       WHERE s.chambre = 'assemblee' AND s.dossier_id IS DISTINCT FROM u.dossier_id`,
+  },
+  deputes_senateurs_simultanes: {
+    type: 'invariant',
+    label: 'Personnes à la fois député et sénateur en cours de mandat',
+    min: 0,
+    max: 0,
+    // Les deux mandats sont incompatibles. Le 8 octobre 2026, les 8 députés élus
+    // sénateurs le 1er gardaient leur mandat de député ouvert (rouvert par
+    // l'Assemblée qui les listait encore, voir workers/mandats-an-sortants.ts).
+    query: `SELECT COUNT(DISTINCT an.personne_id)::int AS value
+      FROM mandats_parlementaires an
+      JOIN mandats_parlementaires se ON se.personne_id = an.personne_id
+        AND se.chambre = 'senat' AND se.date_fin IS NULL
+      WHERE an.chambre = 'assemblee' AND an.date_fin IS NULL`,
+  },
+  organes_an_au_dela_du_mandat: {
+    type: 'invariant',
+    label: "Mandats d'organe AN ouverts après la fin du mandat de député",
+    min: 0,
+    max: 0,
+    // Commissions, groupes d'études et d'amitié d'anciens députés jamais clos :
+    // 9 885 au 8 octobre 2026, la commission des finances affichait 134 membres.
+    // Même requête que `cloreOrganesANHorsMandat`.
+    query: `SELECT COUNT(*)::int AS value FROM (${ORGANES_AN_HORS_MANDAT}) x`,
   },
   motions_censure_non_referencees: {
     type: 'invariant',
