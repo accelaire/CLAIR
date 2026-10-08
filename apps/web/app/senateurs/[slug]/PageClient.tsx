@@ -994,22 +994,22 @@ export default function PageClient({
 
       {/* Onglets */}
       <div className="border-b">
-        <nav className="flex gap-8">
+        <nav className="flex gap-8 overflow-x-auto scrollbar-none">
           <button
             onClick={() => setActiveTab('votes')}
-            className={`pb-4 ${activeTab === 'votes' ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            className={`shrink-0 whitespace-nowrap pb-4 ${activeTab === 'votes' ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted-foreground hover:text-foreground'}`}
           >
             Votes récents
           </button>
           <button
             onClick={() => setActiveTab('interventions')}
-            className={`pb-4 ${activeTab === 'interventions' ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            className={`shrink-0 whitespace-nowrap pb-4 ${activeTab === 'interventions' ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted-foreground hover:text-foreground'}`}
           >
             Interventions
           </button>
           <button
             onClick={() => setActiveTab('amendements')}
-            className={`pb-4 ${activeTab === 'amendements' ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            className={`shrink-0 whitespace-nowrap pb-4 ${activeTab === 'amendements' ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted-foreground hover:text-foreground'}`}
           >
             Amendements
           </button>
