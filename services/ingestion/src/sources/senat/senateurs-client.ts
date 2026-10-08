@@ -55,6 +55,21 @@ export interface SenatOrganisme {
 // TYPES TRANSFORMÉS (pour Prisma - compatible avec TransformedParlementaire)
 // =============================================================================
 
+/**
+ * La commission permanente parmi les organismes d'un sénateur.
+ *
+ * Le type `COMMISSION` ne suffit pas : depuis le 8 octobre 2026, l'annuaire y
+ * range aussi la commission des affaires européennes (`COMEUR-AFEU`), qui n'est
+ * pas une commission permanente et dont font partie 41 sénateurs, en plus de
+ * leur commission permanente. Prendre le premier organisme de ce type affichait
+ * « Commission des affaires européennes » comme commission permanente de 13
+ * d'entre eux, selon l'ordre de la liste. Les sept commissions permanentes ont
+ * un code en `COM-`.
+ */
+export function commissionPermanenteDe(organismes: SenatOrganisme[] | undefined): SenatOrganisme | undefined {
+  return organismes?.find((o) => o.type === 'COMMISSION' && o.code?.startsWith('COM-'));
+}
+
 export interface TransformedSenateur {
   uid: string;
   slug: string;
@@ -168,8 +183,7 @@ export class SenatSenateursClient {
     // Construire le slug
     const slug = this.buildSlug(raw.prenom, raw.nom);
 
-    // Trouver la commission permanente
-    const commission = raw.organismes?.find(o => o.type === 'COMMISSION');
+    const commission = commissionPermanenteDe(raw.organismes);
 
     // Photo URL - format: /senimg/matricule_carre.jpg
     const photoUrl = raw.urlAvatar
