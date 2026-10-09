@@ -1425,6 +1425,8 @@ program
       });
       console.log(`\nSéances lues          : ${result.seances}`);
       console.log(`Séances déjà en base  : ${result.seancesIgnorees}`);
+      console.log(`Séances récentes relues : ${result.relues} (remplacées : ${result.remplacees})`);
+      console.log(`Comptes rendus provisoires : ${result.provisoires}`);
       console.log(`Interventions écrites : ${result.interventions}`);
       console.log(`Orateurs non résolus  : ${result.sansParlementaire}`);
       process.exit(0);

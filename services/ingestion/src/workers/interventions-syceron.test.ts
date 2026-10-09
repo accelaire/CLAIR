@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { regrouperPrises, estMembreDuGouvernement } from './interventions-syceron';
+import { createHash } from 'node:crypto';
+import {
+  regrouperPrises,
+  estMembreDuGouvernement,
+  repartirSeances,
+  empreinteDesLignes,
+  RELECTURE_JOURS,
+} from './interventions-syceron';
 import { TYPE_INTERRUPTION, TYPE_REPONSE } from '../utils/interventions';
 import type { PriseDeParoleSyceron } from '../sources/assemblee-nationale/syceron-parser';
 
@@ -313,5 +320,49 @@ describe('tours de parole traversés par le chahut', () => {
       prise({ ordreAbsolu: 11, orateurRef: 'PA9', orateurNom: 'Autre', contenu: 'Le propos du second orateur.' }),
     ]);
     expect(groupes.filter((g) => g.type !== TYPE_INTERRUPTION)).toHaveLength(2);
+  });
+});
+
+describe('repartirSeances', () => {
+  const maintenant = new Date('2026-10-09T03:00:00Z');
+  const enBase = new Map([
+    // Ingérée provisoire le 6 octobre, 43 prises de parole sur 332.
+    ['CRSANR5L17S2027O1N007', new Date('2026-10-05T21:30:00Z')],
+    ['CRSANR5L17S2026O1N168', new Date('2026-07-10T15:00:00Z')],
+    ['LIMITE', new Date(maintenant.getTime() - RELECTURE_JOURS * 24 * 60 * 60 * 1000)],
+  ]);
+
+  it('relit les séances de la fenêtre, limite comprise, et ignore les plus anciennes', () => {
+    const { ignorer, aRelire } = repartirSeances(enBase, maintenant);
+    expect([...aRelire].sort()).toEqual(['CRSANR5L17S2027O1N007', 'LIMITE']);
+    expect([...ignorer]).toEqual(['CRSANR5L17S2026O1N168']);
+  });
+
+  it('ne relit rien avec une fenêtre nulle', () => {
+    expect(repartirSeances(enBase, maintenant, 0).aRelire.size).toBe(0);
+  });
+});
+
+describe('empreinteDesLignes', () => {
+  const a = { sourceUid: '4177613', contenu: 'Je soutiendrai par la même occasion le groupe Écologiste.' };
+  const b = { sourceUid: '4177617', contenu: 'Monsieur le président,\tchers collègues.' };
+
+  it("ne dépend pas de l'ordre des lignes", () => {
+    expect(empreinteDesLignes([a, b])).toBe(empreinteDesLignes([b, a]));
+  });
+
+  it('change avec une correction du compte rendu, même sans ligne ajoutée', () => {
+    // Séance du 6 octobre 2026 : provisoire et complet comptent 251 prises de
+    // parole, mais 8 ont été corrigées (« groupe Écologiste » → « écologiste »).
+    const corrigee = { ...a, contenu: a.contenu.replace('Écologiste', 'écologiste') };
+    expect(empreinteDesLignes([a, b])).not.toBe(empreinteDesLignes([corrigee, b]));
+  });
+
+  it('reproduit le calcul SQL : tri binaire, tabulation puis saut de ligne, md5 UTF-8', () => {
+    // md5(string_agg(source_uid || E'\t' || contenu, E'\n' ORDER BY source_uid COLLATE "C"))
+    const attendu = createHash('md5')
+      .update(`${a.sourceUid}\t${a.contenu}\n${b.sourceUid}\t${b.contenu}`, 'utf8')
+      .digest('hex');
+    expect(empreinteDesLignes([b, a])).toBe(attendu);
   });
 });
