@@ -6289,7 +6289,31 @@ export async function effacerLiensAmendementApresLeVote(): Promise<{ effaces: nu
  * Seulement quand TOUS les amendements du scrutin ont le même dossier, jamais
  * contre les `voteRefs` (qui font foi), et vers un dossier qui vaut pour la
  * législature du scrutin et peut porter des votes.
+ *
+ * LA PAGE DU SCRUTIN SE TROMPE PARFOIS. Le scrutin n° 7317 (17e, « suppression
+ * de l'article 5 » d'un texte sur les pensions) affiche « Voir l'amendement
+ * n°4 » vers le texte 2838, sur la vaisselle en plastique. Suivre ses amendements
+ * aurait rangé des scrutins sur la prévention cardio-neuro-vasculaire sous
+ * « millefeuille territorial ». On ne suit donc les amendements que :
+ *  - vers un dossier poursuivi d'une législature précédente, que le titre ne
+ *    pouvait pas proposer (`AN_LEGISLATURE_MATCHES` l'excluait) ;
+ *  - ou quand le libellé du scrutin nomme le dossier des amendements et pas
+ *    celui qu'il a.
+ * Audité sur la prod le 10 octobre 2026 : 365 alignements retenus, tous vers un
+ * dossier poursuivi ; 49 écartés entre dossiers de la 17e.
  */
+/**
+ * Le libellé du scrutin `s` nomme-t-il le dossier `alias` ? Son titre, sans
+ * « proposition de loi » ni « projet de loi » en tête, figure dans le libellé.
+ */
+function titreNommeDans(alias: string): Prisma.Sql {
+  const d = Prisma.raw(alias);
+  return Prisma.sql`(
+    lower(s.titre) LIKE '%' || lower(regexp_replace(${d}.titre,
+      '^(proposition|projet) de (loi|résolution)( organique)? ', '', 'i')) || '%'
+  )`;
+}
+
 export async function alignerDossierDesScrutinsSurLeursAmendements(): Promise<{ alignes: number }> {
   const alignes = await prisma.$executeRaw`
     WITH ${CTE_LEGISLATURES_DOSSIER},
@@ -6311,6 +6335,16 @@ export async function alignerDossierDesScrutinsSurLeursAmendements(): Promise<{ 
       AND NOT EXISTS (SELECT 1 FROM refs WHERE refs.uid = ${UID_SCRUTIN_AN})
       AND ${dossierValantPour('d', "(CASE WHEN s.session ~ '^[0-9]+$' THEN s.session::int END)")}
       AND ${procedureCompatible('d')}
+      AND (
+        substring(d.uid from 'DLR5L([0-9]+)N')::int IS DISTINCT FROM s.legislature
+        OR (
+          ${titreNommeDans('d')}
+          AND NOT EXISTS (
+            SELECT 1 FROM dossiers_legislatifs actuel
+            WHERE actuel.id = s.dossier_id AND ${titreNommeDans('actuel')}
+          )
+        )
+      )
   `;
   if (alignes > 0) {
     logger.warn({ alignes }, 'Scrutins AN alignés sur le dossier de leurs amendements');
@@ -6525,6 +6559,11 @@ export async function linkScrutinsToAmendements(
   // Used in CTEs below as: NOT EXISTS (SELECT 1 FROM "_AmendementToScrutin" WHERE "B" = s.id)
 
   // === ASSEMBLÉE NATIONALE ===
+  // ANTISLASHS DOUBLÉS. Prisma reçoit le gabarit « cuit » : `\s` y devient `s`,
+  // `\d` devient `d`. Écrites avec un seul antislash jusqu'au 10 octobre 2026,
+  // les regex d'article ne trouvaient jamais rien : la contrainte d'article du
+  // repli n'a jamais joué, et un amendement « II-593 » sur l'article 79 se
+  // rattachait à un scrutin sur l'article 27. Écrire `\\s`, `\\d`, `\\.`.
   if (!chambre || chambre === 'assemblee') {
     if (dryRun) {
       const countResult = await prisma.$queryRaw<{ linked: bigint; not_found: bigint }[]>`
@@ -6535,15 +6574,16 @@ export async function linkScrutinsToAmendements(
             s.legislature,
             SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero,
             (s.titre ILIKE '%rectifi%' OR s.titre ILIKE '%(rect.)%') as is_rectifie,
-            LOWER(SUBSTRING(s.titre FROM '(?:après l''article|à l''article|article)\s+(premier|\d+)')) as article_numero,
-            s.titre ILIKE '%après l''article%' as is_apres,
+            -- Apostrophe droite ou typographique : « après l’article 15 ».
+            LOWER(SUBSTRING(s.titre FROM '(?:après l[''’]article|à l[''’]article|article)\\s+(premier|liminaire|\\d+)')) as article_numero,
+            s.titre ~* 'après l[''’]article' as is_apres,
             s.date::date as date_vote,
             -- Le numéro du texte, seulement s'il est annoncé comme tel (« n° 1234 »).
             -- Sans le « n° » obligatoire, « projet de loi de finances pour 2026 »
             -- donnait le texte n° 2026.
             COALESCE(
               SUBSTRING(s.source_data->'objet'->>'referenceLegislative' FROM 'B(?:TC)?([0-9]{3,5})'),
-              SUBSTRING(s.titre FROM '(?:projet|proposition|texte)[^0-9]*n[°º]\s*([0-9]{3,5})')
+              SUBSTRING(s.titre FROM '(?:projet|proposition|texte)[^0-9]*n[°º]\\s*([0-9]{3,5})')
             ) as texte_numero
           FROM scrutins s
           WHERE s.titre ILIKE '%amendement%'
@@ -6557,8 +6597,14 @@ export async function linkScrutinsToAmendements(
             a.legislature,
             a.numero,
             SPLIT_PART(a.numero, ' ', 1) as numero_clean,
+            -- Les lois de finances numérotent leurs amendements de séance par
+            -- partie en première lecture (« I-989 », « II-989 ») ; le libellé
+            -- du scrutin dit « n° 989 ». Ceux des commissions (« I-CF989 »)
+            -- ne passent pas en scrutin public et gardent leurs lettres.
+            regexp_replace(SPLIT_PART(a.numero, ' ', 1), '^(I|II|III)-([0-9]+)$', '\\2') as numero_seance,
             a.numero LIKE '% (Rect%' as is_rect,
-            LOWER(SUBSTRING(a.article_vise FROM 'ART\.\s+(PREMIER|\d+)')) as article_num,
+            -- « ART. 1ER BIS » est l'article « premier » du libellé.
+            regexp_replace(LOWER(SUBSTRING(a.article_vise FROM 'ART\\.\\s+(PREMIER|1ER|LIMINAIRE|\\d+)')), '^1er$', 'premier') as article_num,
             a.article_vise ILIKE 'APRÈS%' as amdt_is_apres,
             a.date_depot::date as date_depot,
             SUBSTRING(a.texte_ref FROM 'B(?:TC)?([0-9]+)') as amendement_texte_numero
@@ -6569,7 +6615,7 @@ export async function linkScrutinsToAmendements(
           SELECT swn.id, awt.id as amendement_id
           FROM scrutins_with_info swn
           LEFT JOIN amendements_with_texte awt ON
-            awt.numero_clean = swn.amendement_numero
+            awt.numero_seance = swn.amendement_numero
             -- Garde-fou législature : les textes sont renumérotés à chaque
             -- législature, le n°3 existe en 15e, 16e ET 17e. texte_numero est
             -- extrait sans le préfixe de législature, il ne discrimine donc
@@ -6610,15 +6656,16 @@ export async function linkScrutinsToAmendements(
             s.legislature,
             SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero,
             (s.titre ILIKE '%rectifi%' OR s.titre ILIKE '%(rect.)%') as is_rectifie,
-            LOWER(SUBSTRING(s.titre FROM '(?:après l''article|à l''article|article)\s+(premier|\d+)')) as article_numero,
-            s.titre ILIKE '%après l''article%' as is_apres,
+            -- Apostrophe droite ou typographique : « après l’article 15 ».
+            LOWER(SUBSTRING(s.titre FROM '(?:après l[''’]article|à l[''’]article|article)\\s+(premier|liminaire|\\d+)')) as article_numero,
+            s.titre ~* 'après l[''’]article' as is_apres,
             s.date::date as date_vote,
             -- Le numéro du texte, seulement s'il est annoncé comme tel (« n° 1234 »).
             -- Sans le « n° » obligatoire, « projet de loi de finances pour 2026 »
             -- donnait le texte n° 2026.
             COALESCE(
               SUBSTRING(s.source_data->'objet'->>'referenceLegislative' FROM 'B(?:TC)?([0-9]{3,5})'),
-              SUBSTRING(s.titre FROM '(?:projet|proposition|texte)[^0-9]*n[°º]\s*([0-9]{3,5})')
+              SUBSTRING(s.titre FROM '(?:projet|proposition|texte)[^0-9]*n[°º]\\s*([0-9]{3,5})')
             ) as texte_numero
           FROM scrutins s
           WHERE s.titre ILIKE '%amendement%'
@@ -6632,19 +6679,31 @@ export async function linkScrutinsToAmendements(
             a.legislature,
             a.numero,
             SPLIT_PART(a.numero, ' ', 1) as numero_clean,
+            -- Les lois de finances numérotent leurs amendements de séance par
+            -- partie en première lecture (« I-989 », « II-989 ») ; le libellé
+            -- du scrutin dit « n° 989 ». Ceux des commissions (« I-CF989 »)
+            -- ne passent pas en scrutin public et gardent leurs lettres.
+            regexp_replace(SPLIT_PART(a.numero, ' ', 1), '^(I|II|III)-([0-9]+)$', '\\2') as numero_seance,
             a.numero LIKE '% (Rect%' as is_rect,
-            LOWER(SUBSTRING(a.article_vise FROM 'ART\.\s+(PREMIER|\d+)')) as article_num,
+            -- « ART. 1ER BIS » est l'article « premier » du libellé.
+            regexp_replace(LOWER(SUBSTRING(a.article_vise FROM 'ART\\.\\s+(PREMIER|1ER|LIMINAIRE|\\d+)')), '^1er$', 'premier') as article_num,
             a.article_vise ILIKE 'APRÈS%' as amdt_is_apres,
             a.date_depot::date as date_depot,
             SUBSTRING(a.texte_ref FROM 'B(?:TC)?([0-9]+)') as amendement_texte_numero
           FROM amendements a
           WHERE a.chambre = 'assemblee'
         ),
-        best_match AS (
-          SELECT DISTINCT ON (swn.id) swn.id as scrutin_id, awt.id as amendement_id
+        candidats AS (
+          SELECT swn.id as scrutin_id, awt.id as amendement_id,
+            swn.article_numero, awt.article_num, swn.texte_numero,
+            awt.amendement_texte_numero, swn.is_rectifie, awt.is_rect, awt.date_depot,
+            -- Sans article dans le libellé, rien ne départage des homonymes
+            -- (« I-3 » et « II-3 » d'une loi de finances) : un seul candidat,
+            -- ou pas de lien.
+            count(*) OVER (PARTITION BY swn.id) as nb_candidats
           FROM scrutins_with_info swn
           INNER JOIN amendements_with_texte awt ON
-            awt.numero_clean = swn.amendement_numero
+            awt.numero_seance = swn.amendement_numero
             -- Garde-fou législature : les textes sont renumérotés à chaque
             -- législature, le n°3 existe en 15e, 16e ET 17e. texte_numero est
             -- extrait sans le préfixe de législature, il ne discrimine donc
@@ -6661,13 +6720,18 @@ export async function linkScrutinsToAmendements(
             -- lecture suivante, pas celui qu'on a voté (utils/amendement-scrutin).
             AND (awt.date_depot IS NULL OR awt.date_depot <= swn.date_vote)
           WHERE swn.amendement_numero IS NOT NULL
-          ORDER BY swn.id,
-            CASE WHEN swn.article_numero IS NOT NULL AND awt.article_num = swn.article_numero THEN 0 ELSE 1 END,
-            CASE WHEN swn.texte_numero IS NOT NULL AND awt.amendement_texte_numero = swn.texte_numero THEN 0 ELSE 1 END,
-            CASE WHEN swn.is_rectifie = awt.is_rect THEN 0 ELSE 1 END,
+        ),
+        best_match AS (
+          SELECT DISTINCT ON (scrutin_id) scrutin_id, amendement_id
+          FROM candidats
+          WHERE article_numero IS NOT NULL OR nb_candidats = 1
+          ORDER BY scrutin_id,
+            CASE WHEN article_numero IS NOT NULL AND article_num = article_numero THEN 0 ELSE 1 END,
+            CASE WHEN texte_numero IS NOT NULL AND amendement_texte_numero = texte_numero THEN 0 ELSE 1 END,
+            CASE WHEN is_rectifie = is_rect THEN 0 ELSE 1 END,
             -- Entre deux lectures d'un même dossier, la plus récente avant le vote.
-            awt.date_depot DESC NULLS LAST,
-            awt.id
+            date_depot DESC NULLS LAST,
+            amendement_id
         )
         INSERT INTO "_AmendementToScrutin" ("A", "B")
         SELECT amendement_id, scrutin_id FROM best_match

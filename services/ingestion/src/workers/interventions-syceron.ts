@@ -373,7 +373,7 @@ async function seancesDejaEnBase(legislature: number): Promise<Map<string, Date>
 /** Même calcul que `empreinteDesLignes`, sur les lignes en base. */
 async function empreinteEnBase(seanceUid: string): Promise<string | null> {
   const [ligne] = await prisma.$queryRaw<{ empreinte: string | null }[]>`
-    SELECT md5(string_agg(source_uid || E'\t' || contenu, E'\n' ORDER BY source_uid COLLATE "C")) AS empreinte
+    SELECT md5(string_agg(source_uid || E'\\t' || contenu, E'\\n' ORDER BY source_uid COLLATE "C")) AS empreinte
     FROM interventions
     WHERE seance_uid = ${seanceUid}
   `;
