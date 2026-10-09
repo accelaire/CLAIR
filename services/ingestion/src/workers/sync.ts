@@ -4409,6 +4409,16 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.error({ error: errorMessage(error) }, 'Sibling texte_ref dossier propagation failed (non-blocking)');
     }
 
+    // Un lien dont l'article contredit le libellé du scrutin vise souvent un
+    // homonyme (autre lecture, autre numéro) : on le remplace, ou on le retire
+    // sur deux signaux concordants (workers/liens-amendements-discordants.ts).
+    try {
+      const { corrigerLiensArticleDiscordant } = await import('./liens-amendements-discordants.js');
+      await corrigerLiensArticleDiscordant();
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Liens à l’article discordant : correction échouée (non bloquante)');
+    }
+
     // Les amendements ont leur dossier de source : le scrutin qui les met aux
     // voix les suit, là où son titre l'avait rangé ailleurs.
     try {

@@ -972,8 +972,16 @@ program
   )
   .option('--dry-run', 'Lister les scrutins douteux sans rien écrire')
   .option('--concurrence <n>', 'Pages AN lues en parallèle', (v: string) => parseInt(v, 10), 3)
-  .action(async (options: { dryRun?: boolean; concurrence: number }) => {
+  .option('--articles', "Seulement les liens dont l'article contredit le libellé : remplacer, retirer ou garder")
+  .action(async (options: { dryRun?: boolean; concurrence: number; articles?: boolean }) => {
     try {
+      if (options.articles) {
+        const { corrigerLiensArticleDiscordant } = await import('./workers/liens-amendements-discordants.js');
+        const r = await corrigerLiensArticleDiscordant({ dryRun: options.dryRun });
+        console.log(`\nLiens comparables : ${r.comparables}, discordants : ${r.discordants}`);
+        console.log(`  remplacés : ${r.remplaces}, retirés : ${r.retires}, gardés : ${r.gardes}${options.dryRun ? ' (dry-run)' : ''}`);
+        process.exit(0);
+      }
       const { PrismaClient } = await import('@prisma/client');
       const prisma = new PrismaClient();
       // Les scrutins douteux, relevés AVANT d'effacer quoi que ce soit : ceux
