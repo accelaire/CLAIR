@@ -1449,6 +1449,13 @@ program
       console.log(`Prises de parole situées : ${r.interventions}`);
       console.log(`  dont liens corrigés    : ${r.corrigees}`);
       console.log(`Liens inter-législatures effacés : ${r.effaces}`);
+      if (r.ordreDuJour) {
+        const o = r.ordreDuJour;
+        console.log(`\nPoints d'ordre du jour   : ${o.points}`);
+        console.log(`  rattachés par numéro   : ${o.rattaches}`);
+        console.log(`  sans dossier           : ${o.sansDossier}`);
+        console.log(`Prises sans numéro situées : ${o.interventions}${options.dryRun ? ' (dry-run)' : ''}`);
+      }
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'link-interventions-dossiers failed');

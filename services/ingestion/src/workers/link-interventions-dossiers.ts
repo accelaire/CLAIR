@@ -38,6 +38,7 @@
 
 import { PrismaClient, Prisma } from '@prisma/client';
 import { logger } from '../utils/logger';
+import { lierParOrdreDuJour, type ResultatOrdreDuJour } from './link-interventions-ordre-du-jour';
 
 const prisma = new PrismaClient();
 
@@ -57,6 +58,11 @@ export interface ResultatLienInterventionsDossiers {
   corrigees: number;
   /** Liens vers le dossier d'une autre législature, effacés faute de mieux. */
   effaces: number;
+  /**
+   * Les prises de parole SANS numéro de texte, rattachées par le point
+   * d'ordre du jour où elles tombent (link-interventions-ordre-du-jour.ts).
+   */
+  ordreDuJour?: ResultatOrdreDuJour;
 }
 
 /**
@@ -186,6 +192,7 @@ export async function lierInterventionsAuxDossiers(
   };
 
   if (options.dryRun) {
+    resultat.ordreDuJour = await lierParOrdreDuJour(CORRESPONDANCE_SQL, { dryRun: true });
     logger.info(resultat, 'Rattachement des prises de parole à leur dossier (simulation)');
     return resultat;
   }
@@ -234,6 +241,9 @@ export async function lierInterventionsAuxDossiers(
       AND substring(i.seance_uid from 'CRSANR5L([0-9]+)')
           <> substring(d.uid from 'DLR5L([0-9]+)N')
   `;
+
+  // Les prises sans numéro, par le numéro de l'annonce qui ouvre leur point.
+  resultat.ordreDuJour = await lierParOrdreDuJour(CORRESPONDANCE_SQL);
 
   logger.info(resultat, 'Rattachement des prises de parole à leur dossier terminé');
   return resultat;
