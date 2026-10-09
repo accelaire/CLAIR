@@ -28,6 +28,7 @@ import axios from 'axios';
 
 import { logger } from './logger.js';
 import { errorMessage, httpStatus } from './errors.js';
+import { urlAJourAN } from './cdn-an.js';
 
 export interface DownloadOptions {
   /**
@@ -58,6 +59,13 @@ export interface DownloadResult {
   attempts: number;
   durationMs: number;
 }
+
+/**
+ * Timeout d'une tentative servie par l'origine du portail AN, hors cache :
+ * 400 à 470 Ko/s mesurés le 9 octobre 2026, soit 11 à 13 min pour l'archive
+ * des amendements (315 Mo). Le défaut de 10 min la ferait échouer.
+ */
+const TIMEOUT_ORIGINE_AN_MS = 1_800_000;
 
 const DEFAULTS = {
   timeoutMs: 600_000,
@@ -120,6 +128,12 @@ export async function downloadWithRetry(
 ): Promise<DownloadResult> {
   const opts = { ...DEFAULTS, ...options };
   const startedAt = Date.now();
+
+  // Portail open data de l'Assemblée : son cache pouvait servir l'archive de
+  // la veille au batch nocturne. On va à l'origine quand il est périmé
+  // (cf. cdn-an.ts).
+  const cible = await urlAJourAN(url);
+  const timeoutMs = cible.origine ? Math.max(opts.timeoutMs, TIMEOUT_ORIGINE_AN_MS) : opts.timeoutMs;
   let lastDiagnostic = '';
 
   for (let attempt = 1; attempt <= opts.maxAttempts; attempt++) {
@@ -130,9 +144,9 @@ export async function downloadWithRetry(
     try {
       const response = await axios({
         method: 'GET',
-        url,
+        url: cible.url,
         responseType: 'stream',
-        timeout: opts.timeoutMs,
+        timeout: timeoutMs,
         headers: { 'User-Agent': opts.userAgent, Accept: opts.accept },
       });
 
@@ -150,7 +164,7 @@ export async function downloadWithRetry(
       }
 
       logger.info(
-        { url, bytes: received, attempt, durationMs: Date.now() - attemptStart },
+        { url, origine: cible.origine, bytes: received, attempt, durationMs: Date.now() - attemptStart },
         'Archive downloaded',
       );
 
