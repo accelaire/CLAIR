@@ -5654,9 +5654,15 @@ export async function linkSenatScrutinsToDossiers(): Promise<{ linked: number }>
  * `scrutins.session` est un texte ('15', '16', '17') côté AN ; on ne compare que
  * lorsqu'il est numérique. Côté Sénat, `session` est une année et
  * `dossiers_legislatifs.legislature` vaut 0 : le garde-fou ne s'applique pas.
+ *
+ * « Sa » législature au sens de `legislatures-dossier-sql.ts` : un dossier ouvert
+ * en 16e et poursuivi en 17e est candidat pour les scrutins de la 17e. Les
+ * scrutins sur « simplification de la vie économique » (dossier de la 16e,
+ * examiné en 17e) restaient orphelins. Suppose le CTE `legislatures_dossier`.
  */
 const AN_LEGISLATURE_MATCHES = Prisma.sql`
-  (s.session ~ '^[0-9]+$' AND d.legislature = s.session::int)
+  (s.session ~ '^[0-9]+$'
+   AND ${dossierValantPour('d', "(CASE WHEN s.session ~ '^[0-9]+$' THEN s.session::int END)")})
 `;
 
 /**
@@ -5909,7 +5915,7 @@ export async function linkANScrutinsByTitle(): Promise<{ linked: number }> {
   // Pass 1: Match unique via titre du dossier (substring match dans scrutin.titre)
   // Only AN scrutins against AN dossiers (uid NOT LIKE 'SENAT%')
   const uniqueMatches = await prisma.$executeRaw`
-    WITH unique_matches AS (
+    WITH ${CTE_LEGISLATURES_DOSSIER}, unique_matches AS (
       SELECT s.id as scrutin_id, MIN(d.id) as dossier_id
       FROM scrutins s
       CROSS JOIN dossiers_legislatifs d
@@ -5933,7 +5939,7 @@ export async function linkANScrutinsByTitle(): Promise<{ linked: number }> {
   // Pass 2: Ambigus - disambiguër par proximité de date
   // Same chamber filter: AN scrutins only match AN dossiers
   const dateMatches = await prisma.$executeRaw`
-    WITH ranked AS (
+    WITH ${CTE_LEGISLATURES_DOSSIER}, ranked AS (
       SELECT s.id as scrutin_id, d.id as dossier_id,
         ROW_NUMBER() OVER (
           PARTITION BY s.id
@@ -7835,11 +7841,13 @@ export async function linkOrphansByLoiTitre(): Promise<{ linked: number }> {
       : Prisma.sql`TRUE`;
     // Même garde-fou pour la sous-requête d'ambiguïté, qui utilise l'alias d2.
     const legislatureFilterD2 = chambre === 'assemblee'
-      ? Prisma.sql`(s.session ~ '^[0-9]+$' AND d2.legislature = s.session::int)`
+      ? Prisma.sql`(s.session ~ '^[0-9]+$'
+          AND ${dossierValantPour('d2', "(CASE WHEN s.session ~ '^[0-9]+$' THEN s.session::int END)")})`
       : Prisma.sql`TRUE`;
 
     // Pass 1: loi_titre substring match
     const loiTitreResult = await prisma.$executeRaw`
+      WITH ${CTE_LEGISLATURES_DOSSIER}
       UPDATE scrutins s
       SET dossier_id = d.id
       FROM dossiers_legislatifs d
