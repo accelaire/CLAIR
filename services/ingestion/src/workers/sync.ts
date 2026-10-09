@@ -30,6 +30,7 @@ import { extractCommissionSaisines } from '../utils/dossier-commissions';
 import { commissionsQuittees } from '../utils/commissions-senat';
 import { cleMotion, dossierMotionSansReferences } from '../utils/motions-censure';
 import { classifyNatureScrutin } from '../utils/nature-scrutin';
+import { CTE_LEGISLATURES_DOSSIER, CTE_TEXTE_DU_DOSSIER, dossierValantPour } from '../utils/legislatures-dossier';
 import { choisirAmendement, type CandidatAmendement } from '../utils/amendement-scrutin';
 import { uidCanoniqueAmendement, uneEmissionParAmendement } from '../utils/uid-amendement';
 import {
@@ -4365,6 +4366,19 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.error({ error: errorMessage(error) }, 'Amendements inter-législatures : nettoyage échoué (non bloquant)');
     }
 
+    // D'abord le dossier où la source range le texte : il fait foi à
+    // l'Assemblée, et corrige ce que les propagations avaient posé de travers.
+    // Les propagations qui suivent ne comblent que ce qui reste vide.
+    try {
+      const texteRefResult = await linkAmendementsToDossiersByTexteRef();
+      logger.info({
+        linked: texteRefResult.linked,
+        corriges: texteRefResult.corriges,
+      }, 'Amendements-dossiers linking via texteRef completed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Amendements-dossiers linking via texteRef failed (non-blocking)');
+    }
+
     // Propagate dossier_id from scrutins to amendements (only fills NULL, never resets)
     logger.info('Propagating dossier_id from scrutins to amendements...');
     try {
@@ -4374,16 +4388,6 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       }, 'Amendements-dossiers linking via scrutins completed');
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'Amendements-dossiers linking via scrutins failed (non-blocking)');
-    }
-
-    // Link amendements to dossiers via texte_ref (catches non-voted amendements)
-    try {
-      const texteRefResult = await linkAmendementsToDossiersByTexteRef();
-      logger.info({
-        linked: texteRefResult.linked,
-      }, 'Amendements-dossiers linking via texteRef completed');
-    } catch (error) {
-      logger.error({ error: errorMessage(error) }, 'Amendements-dossiers linking via texteRef failed (non-blocking)');
     }
 
     // Propagate dossier_id between sibling amendments on same texte_ref (safe: unanimous only)
@@ -5327,6 +5331,19 @@ export async function syncAmendementsSenatCsv(
 // SYNC DOSSIERS LÉGISLATIFS (Assemblée Nationale)
 // =============================================================================
 
+/**
+ * La législature la plus récente dont le dossier cite un texte ou un vote
+ * (`…ANR5L17B0481`, `VTANR5L17V451`) ; 0 sans source.
+ */
+export function derniereLegislatureCitee(sourceData: unknown): number {
+  if (!sourceData) return 0;
+  let max = 0;
+  for (const m of JSON.stringify(sourceData).matchAll(/ANR5L(\d+)[BV]/g)) {
+    max = Math.max(max, Number(m[1]));
+  }
+  return max;
+}
+
 export async function syncDossiers(
   options: { limit?: number; linkScrutins?: boolean; legislature?: number } = {}
 ): Promise<{ created: number; updated: number; scrutinsLinked: number; amendementsLinked: number; commissionsLinked: number }> {
@@ -5345,6 +5362,7 @@ export async function syncDossiers(
   let scrutinsLinked = 0;
   let amendementsLinked = 0;
   let commissionsLinked = 0;
+  let plusRecentsGardes = 0;
 
   // Batch load all commissions for organeRef lookup (avoids N queries in the loop)
   const commissions = await prisma.commission.findMany({
@@ -5382,6 +5400,14 @@ export async function syncDossiers(
       const existing = await prisma.dossierLegislatif.findUnique({
         where: { uid: dossier.uid },
       });
+
+      // Un dossier poursuivi figure dans les archives de plusieurs législatures.
+      // La plus récente porte tous ses actes : une archive plus ancienne,
+      // rejouée à la main, ne doit pas la remplacer par une version tronquée.
+      if (existing && derniereLegislatureCitee(existing.sourceData) > legislature) {
+        plusRecentsGardes++;
+        continue;
+      }
 
       let dossierId: string;
 
@@ -5486,7 +5512,7 @@ export async function syncDossiers(
     logger.info({ propagated }, 'Propagated urlLegifrance to Sénat dossiers');
   }
 
-  logger.info({ created, updated, scrutinsLinked, amendementsLinked, commissionsLinked, total: dossiers.length }, 'Dossiers législatifs sync completed');
+  logger.info({ created, updated, scrutinsLinked, amendementsLinked, commissionsLinked, plusRecentsGardes, total: dossiers.length }, 'Dossiers législatifs sync completed');
   return { created, updated, scrutinsLinked, amendementsLinked, commissionsLinked };
 }
 
@@ -5639,9 +5665,15 @@ const AN_LEGISLATURE_MATCHES = Prisma.sql`
  * Les scrutins concernés redeviennent orphelins, ce qui est l'état honnête tant
  * que les dossiers de leur législature ne sont pas ingérés. Doit tourner AVANT
  * les étapes de matching pour qu'elles ne repartent pas d'un état contaminé.
+ *
+ * « D'une autre législature » au sens de `legislatures-dossier.ts` : un dossier
+ * ouvert en 16e et poursuivi en 17e vaut pour les scrutins de la 17e qu'il
+ * cite. La comparaison de sa seule législature d'origine les déliait chaque
+ * nuit, alors que ses `voteRefs` venaient de les poser.
  */
 export async function unlinkANScrutinsWrongLegislature(): Promise<{ unlinked: number }> {
   const unlinked = await prisma.$executeRaw`
+    WITH ${CTE_LEGISLATURES_DOSSIER}
     UPDATE scrutins s
     SET dossier_id = NULL
     FROM dossiers_legislatifs d
@@ -5649,7 +5681,7 @@ export async function unlinkANScrutinsWrongLegislature(): Promise<{ unlinked: nu
       AND s.chambre = 'assemblee'
       AND d.uid NOT LIKE 'SENAT%'
       AND s.session ~ '^[0-9]+$'
-      AND d.legislature <> s.session::int
+      AND NOT ${dossierValantPour('d', "(CASE WHEN s.session ~ '^[0-9]+$' THEN s.session::int END)")}
   `;
 
   if (unlinked > 0) {
@@ -6153,14 +6185,13 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
 // =============================================================================
 
 /**
- * Un dossier de l'Assemblée porte sa législature dans son uid (`DLR5L17N…`), et
- * un amendement de l'Assemblée la sienne dans sa colonne `legislature`. Les
- * propagations ci-dessous n'ont le droit d'écrire que là où les deux concordent.
+ * Un amendement de l'Assemblée porte sa législature dans sa colonne
+ * `legislature`. Les propagations ci-dessous n'ont le droit d'écrire que vers
+ * un dossier qui vaut pour elle : celui de son identifiant, ou un dossier
+ * poursuivi qui cite des textes de cette législature (`legislatures-dossier.ts`).
+ * Suppose le CTE `legislatures_dossier`.
  */
-const DOSSIER_DE_MEME_LEGISLATURE = Prisma.sql`
-  (d.uid NOT LIKE 'DLR5L%'
-   OR substring(d.uid from 'DLR5L([0-9]+)N')::int = a.legislature)
-`;
+const DOSSIER_DE_MEME_LEGISLATURE = dossierValantPour('d', "a.legislature");
 
 /**
  * Efface les rattachements d'amendements au dossier d'une autre législature.
@@ -6175,6 +6206,7 @@ const DOSSIER_DE_MEME_LEGISLATURE = Prisma.sql`
  */
 export async function effacerDossiersDAutreLegislature(): Promise<{ effaces: number }> {
   const effaces = await prisma.$executeRaw`
+    WITH ${CTE_LEGISLATURES_DOSSIER}
     UPDATE amendements a
     SET dossier_id = NULL
     FROM dossiers_legislatifs d
@@ -6199,6 +6231,7 @@ export async function linkAmendementsToDossiers(): Promise<{ linked: number }> {
   logger.info('Propagating dossier_id from scrutins to amendements...');
 
   const linked = await prisma.$executeRaw`
+    WITH ${CTE_LEGISLATURES_DOSSIER}
     UPDATE amendements a
     SET dossier_id = s.dossier_id
     FROM "_AmendementToScrutin" ats
@@ -6214,19 +6247,50 @@ export async function linkAmendementsToDossiers(): Promise<{ linked: number }> {
 }
 
 /**
- * Lie les amendements aux dossiers via texte_ref.
- * Extrait les texteRefs de chaque dossier (sourceData JSON) et matche
- * avec amendements.texte_ref. Ne touche pas les liens existants.
+ * Lie les amendements aux dossiers via texte_ref : le dossier où la source
+ * range leur texte (`CTE_TEXTE_DU_DOSSIER`).
+ *
+ * À L'ASSEMBLÉE, LA SOURCE FAIT FOI. La passe ne comblait que les dossiers
+ * vides : un lien posé de travers par une propagation n'était jamais revu.
+ * 2 750 amendements de « simplification de la vie économique » restaient ainsi
+ * sous un dossier sur l'énergie, alors que l'archive de la 17e range leurs
+ * textes (n° 481 et 1191) dans `DLR5L16N49868`. On réécrit donc tout
+ * amendement de l'Assemblée dont le dossier diffère de celui de son texte.
+ * Un texte que deux dossiers revendiquent n'est pas tranché ici.
+ *
+ * Ailleurs (Sénat), on ne fait que combler, comme avant.
  */
-export async function linkAmendementsToDossiersByTexteRef(): Promise<{ linked: number }> {
+export async function linkAmendementsToDossiersByTexteRef(): Promise<{ linked: number; corriges: number }> {
   logger.info('Linking amendements to dossiers by texte_ref...');
 
+  const [{ corriges }] = await prisma.$queryRaw<[{ corriges: bigint }]>`
+    WITH ${CTE_TEXTE_DU_DOSSIER}
+    SELECT count(*) AS corriges
+    FROM amendements a
+    JOIN texte_du_dossier t ON t.texte_ref = a.texte_ref
+    WHERE a.chambre = 'assemblee'
+      AND a.dossier_id IS NOT NULL
+      AND a.dossier_id <> t.dossier_id
+  `;
+  const convergesAN = await prisma.$executeRaw`
+    WITH ${CTE_TEXTE_DU_DOSSIER}
+    UPDATE amendements a
+    SET dossier_id = t.dossier_id
+    FROM texte_du_dossier t
+    WHERE t.texte_ref = a.texte_ref
+      AND a.chambre = 'assemblee'
+      AND a.dossier_id IS DISTINCT FROM t.dossier_id
+  `;
+  if (Number(corriges) > 0) {
+    logger.warn({ corriges: Number(corriges) }, 'Amendements AN rattachés à un autre dossier que celui de leur texte : corrigés');
+  }
+
   const dossiers = await prisma.dossierLegislatif.findMany({
+    where: { uid: { not: { startsWith: 'DLR5L' } } },
     select: { id: true, sourceData: true },
   });
 
-  let totalLinked = 0;
-
+  let comblesAilleurs = 0;
   for (const dossier of dossiers) {
     const texteRefs = extractTexteRefsFromSourceData(dossier.sourceData);
     if (texteRefs.length === 0) continue;
@@ -6234,19 +6298,17 @@ export async function linkAmendementsToDossiersByTexteRef(): Promise<{ linked: n
     const result = await prisma.amendement.updateMany({
       where: {
         texteRef: { in: texteRefs },
+        chambre: { not: 'assemblee' },
         dossierId: null,
       },
       data: { dossierId: dossier.id },
     });
-
-    if (result.count > 0) {
-      totalLinked += result.count;
-      logger.debug({ dossierId: dossier.id, refs: texteRefs.length, linked: result.count }, 'Linked amendements by texteRef');
-    }
+    comblesAilleurs += result.count;
   }
 
-  logger.info({ linked: totalLinked }, 'Amendements-dossiers texteRef linking completed');
-  return { linked: totalLinked };
+  const linked = convergesAN + comblesAilleurs;
+  logger.info({ linked, corriges: Number(corriges) }, 'Amendements-dossiers texteRef linking completed');
+  return { linked, corriges: Number(corriges) };
 }
 
 /**
@@ -6258,6 +6320,7 @@ export async function propagateDossierIdBySiblingTexteRef(): Promise<{ linked: n
   logger.info('Propagating dossier_id between sibling amendments on same texte_ref (safe mode)...');
 
   const linked = await prisma.$executeRaw`
+    WITH ${CTE_LEGISLATURES_DOSSIER}
     UPDATE amendements a
     SET dossier_id = sibling.dossier_id
     FROM (

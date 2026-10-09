@@ -36,9 +36,11 @@ describe('THRESHOLDS Configuration', () => {
     }
   });
 
-  it('toutes les queries devraient commencer par SELECT', () => {
+  it('toutes les queries devraient être en lecture seule (SELECT, ou WITH … SELECT)', () => {
     for (const [, config] of entries) {
-      expect(config.query.trimStart().toUpperCase()).toMatch(/^SELECT/);
+      const q = config.query.trimStart().toUpperCase();
+      expect(q).toMatch(/^(SELECT|WITH)\b/);
+      expect(q).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE|DROP|ALTER)\b/);
     }
   });
 

@@ -6,6 +6,12 @@ import { cleMotion, dossierMotionSansReferences } from '../utils/motions-censure
 import { PrismaClient } from '@prisma/client';
 import { LEGISLATURE_AN_COURANTE } from '../workers/mandats';
 import { ORGANES_AN_HORS_MANDAT } from '../workers/mandats-an-sortants';
+import { CTE_LEGISLATURES_DOSSIER_SQL, CTE_TEXTE_DU_DOSSIER_SQL, dossierValantPourSql } from '../utils/legislatures-dossier-sql';
+
+// Les contrôles sont des requêtes texte : les fragments SQL partagés y entrent
+// tels quels (legislatures-dossier-sql.ts, sans import de Prisma).
+const AVEC_LEGISLATURES = `WITH ${CTE_LEGISLATURES_DOSSIER_SQL}`;
+const valantPour = dossierValantPourSql;
 
 // =============================================================================
 // Périmètre des taux de liaison
@@ -187,10 +193,11 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     label: 'Liens scrutin-dossier inter-législatures (AN)',
     min: 0,
     max: 0,
-    // Un scrutin AN ne peut appartenir qu'à un dossier de sa propre législature.
-    // Non nul = le matching a rattaché des scrutins à un dossier d'une autre
-    // législature, faute de dossier ingéré pour la leur.
-    query: `SELECT COUNT(*)::int AS value FROM scrutins s JOIN dossiers_legislatifs d ON s.dossier_id = d.id WHERE s.chambre = 'assemblee' AND d.uid NOT LIKE 'SENAT%' AND s.session ~ '^[0-9]+$' AND d.legislature <> s.session::int`,
+    // Un scrutin AN ne peut appartenir qu'à un dossier qui vaut pour sa
+    // législature : le sien, ou un dossier poursuivi qui cite ses textes ou
+    // ses votes (utils/legislatures-dossier-sql.ts). Non nul = le matching a
+    // rattaché des scrutins à un dossier d'une autre législature.
+    query: `${AVEC_LEGISLATURES} SELECT COUNT(*)::int AS value FROM scrutins s JOIN dossiers_legislatifs d ON s.dossier_id = d.id WHERE s.chambre = 'assemblee' AND d.uid NOT LIKE 'SENAT%' AND s.session ~ '^[0-9]+$' AND NOT ${valantPour('d', "(CASE WHEN s.session ~ '^[0-9]+$' THEN s.session::int END)")}`,
   },
   scrutins_sur_dossier_sans_vote: {
     type: 'invariant',
@@ -326,15 +333,15 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // du linker n'en tenait pas compte, et la passe nocturne ne revoyait que
     // les liens vides : 53 093 prises des 15e et 16e sont restées rattachées à
     // des dossiers de la 17e. La législature du compte rendu se lit sur son
-    // uid (`CRSANR5L15…`), celle du dossier sur le sien (`DLR5L17N…`).
-    query: `SELECT COUNT(*)::int AS value
+    // uid (`CRSANR5L15…`) ; un dossier vaut pour la sienne et pour celles des
+    // textes qu'il cite (dossier poursuivi).
+    query: `${AVEC_LEGISLATURES} SELECT COUNT(*)::int AS value
             FROM interventions i
             JOIN dossiers_legislatifs d ON d.id = i.dossier_id
             WHERE i.chambre = 'assemblee'
               AND i.seance_uid LIKE 'CRSANR5L%'
               AND d.uid LIKE 'DLR5L%'
-              AND substring(i.seance_uid from 'CRSANR5L([0-9]+)')
-                  <> substring(d.uid from 'DLR5L([0-9]+)N')`,
+              AND NOT ${valantPour('d', "substring(i.seance_uid from 'CRSANR5L([0-9]+)')::int")}`,
   },
 
   cross_legislature_amendements_dossiers: {
@@ -345,13 +352,33 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // Le dossier d'un scrutin, rattaché jadis par son seul numéro, est descendu
     // sur ses amendements puis sur tout leur texte : 518 amendements de la 17e
     // pointaient vers « Bioéthique » (15e) ou un dossier de la 16e. Les passes
-    // de propagation ne revoyant que les vides, rien ne les corrigeait.
-    query: `SELECT COUNT(*)::int AS value
+    // de propagation ne revoyant que les vides, rien ne les corrigeait. Un
+    // dossier poursuivi vaut aussi pour les législatures des textes qu'il cite.
+    query: `${AVEC_LEGISLATURES} SELECT COUNT(*)::int AS value
             FROM amendements a
             JOIN dossiers_legislatifs d ON d.id = a.dossier_id
             WHERE a.chambre = 'assemblee'
               AND d.uid LIKE 'DLR5L%'
-              AND substring(d.uid from 'DLR5L([0-9]+)N')::int <> a.legislature`,
+              AND NOT ${valantPour('d', 'a.legislature')}`,
+  },
+
+  amendements_hors_dossier_du_texte: {
+    type: 'invariant',
+    label: 'Amendements AN rattachés à un autre dossier que celui de leur texte',
+    min: 0,
+    max: 0,
+    // La source range chaque texte dans un dossier ; ses amendements y vont.
+    // Les propagations (scrutin → amendement → voisins) posaient des liens de
+    // travers que rien ne revoyait : 5 514 amendements de la 17e au 9 octobre
+    // 2026, dont les 2 750 de « simplification de la vie économique » sous un
+    // dossier sur l'énergie. Même requête que la passe qui les corrige
+    // (linkAmendementsToDossiersByTexteRef).
+    query: `WITH ${CTE_TEXTE_DU_DOSSIER_SQL}
+            SELECT COUNT(*)::int AS value
+            FROM amendements a
+            JOIN texte_du_dossier t ON t.texte_ref = a.texte_ref
+            WHERE a.chambre = 'assemblee'
+              AND a.dossier_id IS DISTINCT FROM t.dossier_id`,
   },
 
   cross_legislature_amendements: {

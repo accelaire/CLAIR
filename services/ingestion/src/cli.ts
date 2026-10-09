@@ -940,15 +940,17 @@ program
 // =============================================================================
 program
   .command('link-amendements-dossiers')
-  .description('Propager dossier_id des scrutins vers les amendements')
+  .description("Rattacher les amendements à leur dossier : texte de la source d'abord, puis scrutins et voisins")
   .action(async () => {
     try {
       const { effaces } = await effacerDossiersDAutreLegislature();
       console.log(`\nLiens inter-législatures effacés: ${effaces}`);
+      // Même ordre que le batch : le dossier du texte fait foi, les
+      // propagations ne comblent que ce qui reste vide.
+      const result2 = await linkAmendementsToDossiersByTexteRef();
+      console.log(`Amendements liés via texteRef: ${result2.linked} (dont corrigés : ${result2.corriges})`);
       const result = await linkAmendementsToDossiers();
       console.log(`Amendements liés via scrutins: ${result.linked}`);
-      const result2 = await linkAmendementsToDossiersByTexteRef();
-      console.log(`Amendements liés via texteRef: ${result2.linked}`);
       const result3 = await propagateDossierIdBySiblingTexteRef();
       console.log(`Amendements liés via sibling texteRef (safe): ${result3.linked}`);
       process.exit(0);
