@@ -31,7 +31,7 @@ import { commissionsQuittees } from '../utils/commissions-senat';
 import { cleMotion, dossierMotionSansReferences } from '../utils/motions-censure';
 import { classifyNatureScrutin } from '../utils/nature-scrutin';
 import { CTE_LEGISLATURES_DOSSIER, CTE_TEXTE_DU_DOSSIER, dossierValantPour } from '../utils/legislatures-dossier';
-import { choisirAmendement, type CandidatAmendement } from '../utils/amendement-scrutin';
+import { choisirAmendement, deposeApresLeVote, type CandidatAmendement } from '../utils/amendement-scrutin';
 import { uidCanoniqueAmendement, uneEmissionParAmendement } from '../utils/uid-amendement';
 import {
   LEGISLATURE_AN_COURANTE,
@@ -4218,6 +4218,15 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
   }
 
   if (hasAmendementsChanged || hasScrutinsChanged) {
+    // D'abord retirer les liens impossibles : les rattacheurs qui suivent ne
+    // comblent que les scrutins sans lien, et les reposent ainsi sur le bon
+    // amendement.
+    try {
+      await effacerLiensAmendementApresLeVote();
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Liens amendement après le vote : nettoyage échoué (non bloquant)');
+    }
+
     logger.info('Enriching scrutins with amendements (HTML scraping for new scrutins only)...');
     try {
       // Enrichissement AN: scrape les pages HTML des scrutins RÉCENTS sans lien
@@ -4398,6 +4407,14 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       }, 'Sibling texte_ref dossier propagation completed');
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'Sibling texte_ref dossier propagation failed (non-blocking)');
+    }
+
+    // Les amendements ont leur dossier de source : le scrutin qui les met aux
+    // voix les suit, là où son titre l'avait rangé ailleurs.
+    try {
+      await alignerDossierDesScrutinsSurLeursAmendements();
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Alignement scrutins → dossier des amendements échoué (non bloquant)');
     }
 
   }
@@ -6227,6 +6244,81 @@ export async function effacerDossiersDAutreLegislature(): Promise<{ effaces: num
 }
 
 /**
+ * Efface les liens scrutin AN → amendement déposé après le jour du vote.
+ *
+ * Un tel lien est impossible : c'est l'homonyme d'une lecture suivante, ou d'un
+ * autre texte, posé par un repli qui ne regardait que le numéro. 835 liens au
+ * 10 octobre 2026, presque tous des scrutins de la première lecture du PLF 2026
+ * (octobre-novembre 2025) vers les amendements de sa nouvelle lecture (janvier
+ * 2026), plus 18 scrutins sur la sûreté dans les transports liés aux
+ * amendements d'une résolution sur l'Ukraine déposés un mois après le vote. Les
+ * rattacheurs, qui ne comblent que les scrutins sans lien, les reposent ensuite.
+ */
+export async function effacerLiensAmendementApresLeVote(): Promise<{ effaces: number }> {
+  const effaces = await prisma.$executeRaw`
+    DELETE FROM "_AmendementToScrutin" ats
+    USING scrutins s, amendements a
+    WHERE ats."B" = s.id
+      AND ats."A" = a.id
+      AND s.chambre = 'assemblee'
+      AND a.date_depot IS NOT NULL
+      AND a.date_depot::date > s.date::date
+  `;
+  if (effaces > 0) {
+    logger.warn({ effaces }, 'Liens scrutin → amendement déposé après le vote : effacés');
+  }
+  return { effaces };
+}
+
+/**
+ * Aligne le dossier d'un scrutin AN sur celui de ses amendements.
+ *
+ * Le dossier d'un scrutin d'amendement se devinait par son titre ; celui de ses
+ * amendements vient de la source (le dossier où l'archive range leur texte,
+ * `linkAmendementsToDossiersByTexteRef`). Quand ils divergent, le titre s'est
+ * trompé : 197 scrutins sur la proposition de loi du Sénat « programmation
+ * énergie » (texte n° 1522, dossier `DLR5L16N49849`) étaient rangés sous
+ * l'homonyme « Programmation énergie-climat » de la 17e, un autre texte.
+ *
+ * POURQUOI C'EST SÛR MAINTENANT. Longtemps interdit, parce qu'un lien scrutin →
+ * amendement posé de travers aurait emporté le scrutin avec lui. Le lien vient
+ * désormais de la page du scrutin, qui nomme le texte, ou d'un repli qui exige
+ * le dossier du scrutin et une date de dépôt antérieure au vote ; les liens
+ * impossibles sont effacés avant (`effacerLiensAmendementApresLeVote`).
+ *
+ * Seulement quand TOUS les amendements du scrutin ont le même dossier, jamais
+ * contre les `voteRefs` (qui font foi), et vers un dossier qui vaut pour la
+ * législature du scrutin et peut porter des votes.
+ */
+export async function alignerDossierDesScrutinsSurLeursAmendements(): Promise<{ alignes: number }> {
+  const alignes = await prisma.$executeRaw`
+    WITH ${CTE_LEGISLATURES_DOSSIER},
+    refs AS (${VOTE_REFS_AN}),
+    dossier_des_amendements AS (
+      SELECT ats."B" AS scrutin_id, min(a.dossier_id) AS dossier_id
+      FROM "_AmendementToScrutin" ats
+      JOIN amendements a ON a.id = ats."A"
+      GROUP BY ats."B"
+      HAVING count(DISTINCT a.dossier_id) = 1 AND count(*) = count(a.dossier_id)
+    )
+    UPDATE scrutins s
+    SET dossier_id = x.dossier_id
+    FROM dossier_des_amendements x
+    JOIN dossiers_legislatifs d ON d.id = x.dossier_id
+    WHERE s.id = x.scrutin_id
+      AND s.chambre = 'assemblee'
+      AND s.dossier_id IS DISTINCT FROM x.dossier_id
+      AND NOT EXISTS (SELECT 1 FROM refs WHERE refs.uid = ${UID_SCRUTIN_AN})
+      AND ${dossierValantPour('d', "(CASE WHEN s.session ~ '^[0-9]+$' THEN s.session::int END)")}
+      AND ${procedureCompatible('d')}
+  `;
+  if (alignes > 0) {
+    logger.warn({ alignes }, 'Scrutins AN alignés sur le dossier de leurs amendements');
+  }
+  return { alignes };
+}
+
+/**
  * Propage dossier_id des scrutins vers les amendements.
  * Si un amendement est lié (M:N) à un scrutin qui a un dossier_id,
  * on set l'amendement.dossier_id à la même valeur.
@@ -6445,9 +6537,13 @@ export async function linkScrutinsToAmendements(
             (s.titre ILIKE '%rectifi%' OR s.titre ILIKE '%(rect.)%') as is_rectifie,
             LOWER(SUBSTRING(s.titre FROM '(?:après l''article|à l''article|article)\s+(premier|\d+)')) as article_numero,
             s.titre ILIKE '%après l''article%' as is_apres,
+            s.date::date as date_vote,
+            -- Le numéro du texte, seulement s'il est annoncé comme tel (« n° 1234 »).
+            -- Sans le « n° » obligatoire, « projet de loi de finances pour 2026 »
+            -- donnait le texte n° 2026.
             COALESCE(
               SUBSTRING(s.source_data->'objet'->>'referenceLegislative' FROM 'B(?:TC)?([0-9]{3,5})'),
-              SUBSTRING(s.titre FROM '(?:projet|proposition|texte)[^0-9]*n[°º]?\s*([0-9]{3,5})')
+              SUBSTRING(s.titre FROM '(?:projet|proposition|texte)[^0-9]*n[°º]\s*([0-9]{3,5})')
             ) as texte_numero
           FROM scrutins s
           WHERE s.titre ILIKE '%amendement%'
@@ -6464,6 +6560,7 @@ export async function linkScrutinsToAmendements(
             a.numero LIKE '% (Rect%' as is_rect,
             LOWER(SUBSTRING(a.article_vise FROM 'ART\.\s+(PREMIER|\d+)')) as article_num,
             a.article_vise ILIKE 'APRÈS%' as amdt_is_apres,
+            a.date_depot::date as date_depot,
             SUBSTRING(a.texte_ref FROM 'B(?:TC)?([0-9]+)') as amendement_texte_numero
           FROM amendements a
           WHERE a.chambre = 'assemblee'
@@ -6485,6 +6582,9 @@ export async function linkScrutinsToAmendements(
             )
             AND (swn.article_numero IS NULL OR awt.article_num = swn.article_numero)
             AND (swn.article_numero IS NULL OR awt.amdt_is_apres = swn.is_apres)
+            -- Un amendement déposé après le jour du vote est l'homonyme d'une
+            -- lecture suivante, pas celui qu'on a voté (utils/amendement-scrutin).
+            AND (awt.date_depot IS NULL OR awt.date_depot <= swn.date_vote)
           WHERE swn.amendement_numero IS NOT NULL
         )
         SELECT
@@ -6512,9 +6612,13 @@ export async function linkScrutinsToAmendements(
             (s.titre ILIKE '%rectifi%' OR s.titre ILIKE '%(rect.)%') as is_rectifie,
             LOWER(SUBSTRING(s.titre FROM '(?:après l''article|à l''article|article)\s+(premier|\d+)')) as article_numero,
             s.titre ILIKE '%après l''article%' as is_apres,
+            s.date::date as date_vote,
+            -- Le numéro du texte, seulement s'il est annoncé comme tel (« n° 1234 »).
+            -- Sans le « n° » obligatoire, « projet de loi de finances pour 2026 »
+            -- donnait le texte n° 2026.
             COALESCE(
               SUBSTRING(s.source_data->'objet'->>'referenceLegislative' FROM 'B(?:TC)?([0-9]{3,5})'),
-              SUBSTRING(s.titre FROM '(?:projet|proposition|texte)[^0-9]*n[°º]?\s*([0-9]{3,5})')
+              SUBSTRING(s.titre FROM '(?:projet|proposition|texte)[^0-9]*n[°º]\s*([0-9]{3,5})')
             ) as texte_numero
           FROM scrutins s
           WHERE s.titre ILIKE '%amendement%'
@@ -6531,6 +6635,7 @@ export async function linkScrutinsToAmendements(
             a.numero LIKE '% (Rect%' as is_rect,
             LOWER(SUBSTRING(a.article_vise FROM 'ART\.\s+(PREMIER|\d+)')) as article_num,
             a.article_vise ILIKE 'APRÈS%' as amdt_is_apres,
+            a.date_depot::date as date_depot,
             SUBSTRING(a.texte_ref FROM 'B(?:TC)?([0-9]+)') as amendement_texte_numero
           FROM amendements a
           WHERE a.chambre = 'assemblee'
@@ -6552,11 +6657,16 @@ export async function linkScrutinsToAmendements(
             )
             AND (swn.article_numero IS NULL OR awt.article_num = swn.article_numero)
             AND (swn.article_numero IS NULL OR awt.amdt_is_apres = swn.is_apres)
+            -- Un amendement déposé après le jour du vote est l'homonyme d'une
+            -- lecture suivante, pas celui qu'on a voté (utils/amendement-scrutin).
+            AND (awt.date_depot IS NULL OR awt.date_depot <= swn.date_vote)
           WHERE swn.amendement_numero IS NOT NULL
           ORDER BY swn.id,
             CASE WHEN swn.article_numero IS NOT NULL AND awt.article_num = swn.article_numero THEN 0 ELSE 1 END,
             CASE WHEN swn.texte_numero IS NOT NULL AND awt.amendement_texte_numero = swn.texte_numero THEN 0 ELSE 1 END,
             CASE WHEN swn.is_rectifie = awt.is_rect THEN 0 ELSE 1 END,
+            -- Entre deux lectures d'un même dossier, la plus récente avant le vote.
+            awt.date_depot DESC NULLS LAST,
             awt.id
         )
         INSERT INTO "_AmendementToScrutin" ("A", "B")
@@ -6710,9 +6820,9 @@ export async function linkScrutinsToAmendements(
   // === PROPAGATION: dossierId from amendement → scrutin (Sénat only) ===
   // When a scrutin votes on an amendement that belongs to a dossier,
   // the scrutin should also be linked to that dossier.
-  // NOTE: AN scrutins get dossier_id exclusively from linkANScrutinsByTitle (title matching).
-  // Reverse-propagating from amendments for AN would cause contamination if the CTE
-  // ever matched a wrong amendment (the wrong dossier_id would stick across runs).
+  // NOTE: côté AN, le dossier d'un scrutin vient du titre, puis de ses amendements
+  // une fois leurs liens fiabilisés (alignerDossierDesScrutinsSurLeursAmendements,
+  // après le nettoyage des liens impossibles). Pas de propagation ici.
   // SAFETY: For Sénat scrutins with sourceData.dossierRef, only propagate if
   // the amendment's dossier matches the expected ref (prevents cross-dossier contamination).
   if (!dryRun) {
@@ -6786,9 +6896,17 @@ export async function enrichScrutinsANAmendements(
      * pour un rattrapage.
      */
     depuisJours?: number;
+    /**
+     * Avec `only` : remplacer les liens d'un scrutin par ceux que sa page publie,
+     * et seulement si elle en publie. C'est la vérification d'un lien existant :
+     * `reset` effaçait d'abord, et un scrutin dont la page ne publie pas de lien
+     * perdait le sien, juste ou non.
+     */
+    remplacer?: boolean;
   } = {}
 ): Promise<{ enriched: number; notFound: number; errors: number; resetCount?: number }> {
   const dryRun = options.dryRun ?? false;
+  const remplacer = (options.remplacer ?? false) && !!options.only?.length;
   const concurrency = options.concurrency ?? 3; // Limiter les requêtes parallèles pour éviter le rate limiting
   const limitCount = options.limit;
   const reset = options.reset ?? false;
@@ -6856,6 +6974,7 @@ export async function enrichScrutinsANAmendements(
       session: true,
       legislature: true,
       dossierId: true,
+      date: true,
     },
     take: limitCount,
     orderBy: { numero: 'desc' }, // Plus récents d'abord
@@ -6879,9 +6998,10 @@ export async function enrichScrutinsANAmendements(
     where: { chambre: 'assemblee' },
     select: {
       id: true, uid: true, numero: true, texteRef: true, legislature: true,
-      dossierId: true, articleVise: true,
+      dossierId: true, articleVise: true, dateDepot: true,
     },
   });
+  const dateDeDepot = new Map(amendementsAN.map((a) => [a.id, a.dateDepot]));
 
   const amendementMap = new Map<string, CandidatAmendement[]>();
   const ajouter = (key: string, candidat: CandidatAmendement): void => {
@@ -6960,20 +7080,27 @@ export async function enrichScrutinsANAmendements(
 
           // Collecter tous les amendements trouvés (avec validation dossier)
           const foundAmendementIds: string[] = [];
-          let dossierFiltered = 0;
           let ambigus = 0;
           for (const match of allMatches) {
             const [, texteNumero, , amendementNumero] = match;
             const key = `${scrutin.legislature}-${texteNumero}-${amendementNumero}`.toUpperCase();
-            const candidats = amendementMap.get(key);
-            if (!candidats || candidats.length === 0) continue;
-            // Le filtre dossier reste la première barrière ; choisirAmendement()
-            // départage ensuite les homonymes sur l'article que nomme le libellé,
-            // et rend null plutôt que de deviner.
-            const amendement = choisirAmendement(candidats, scrutin.titre, scrutin.dossierId);
+            // Un amendement déposé après le jour du vote n'a pas pu être voté :
+            // c'est l'homonyme d'une lecture suivante (la nouvelle lecture du PLF
+            // 2026 renumérote ses amendements à partir de 1).
+            const candidats = (amendementMap.get(key) ?? []).filter(
+              (c) => !deposeApresLeVote(dateDeDepot.get(c.id) ?? null, scrutin.date),
+            );
+            if (candidats.length === 0) continue;
+            // La page du scrutin désigne le texte par son numéro : c'est elle qui
+            // fait foi, pas le dossier du scrutin, qu'un rattachement par titre a
+            // pu poser sur un homonyme (« Programmation énergie-climat » au lieu
+            // du dossier poursuivi qui porte le texte n° 1522). Pas de filtre de
+            // dossier ici : choisirAmendement() départage les homonymes du même
+            // texte sur l'article que nomme le libellé, et rend null plutôt que de
+            // deviner.
+            const amendement = choisirAmendement(candidats, scrutin.titre, null);
             if (!amendement) {
-              if (candidats.length === 1) dossierFiltered++;
-              else ambigus++;
+              ambigus++;
               continue;
             }
             if (!foundAmendementIds.includes(amendement.id)) {
@@ -6986,21 +7113,19 @@ export async function enrichScrutinsANAmendements(
             return { status: 'notFound' as const };
           }
 
-          // Connecter tous les amendements trouvés (M:N)
+          // Connecter tous les amendements trouvés (M:N). En vérification, la
+          // page remplace les liens existants.
           if (!dryRun) {
             await prisma.scrutin.update({
               where: { id: scrutin.id },
               data: {
-                amendements: {
-                  connect: foundAmendementIds.map(id => ({ id })),
-                },
+                amendements: remplacer
+                  ? { set: foundAmendementIds.map(id => ({ id })) }
+                  : { connect: foundAmendementIds.map(id => ({ id })) },
               },
             });
           }
 
-          if (dossierFiltered > 0) {
-            logger.debug({ scrutinNumero: scrutin.numero, dossierFiltered }, 'Skipped cross-dossier amendment matches');
-          }
           if (ambigus > 0) {
             logger.debug({ scrutinNumero: scrutin.numero, ambigus }, 'Skipped ambiguous amendment matches');
           }

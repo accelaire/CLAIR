@@ -381,6 +381,25 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
               AND a.dossier_id IS DISTINCT FROM t.dossier_id`,
   },
 
+  liens_amendement_apres_le_vote: {
+    type: 'invariant',
+    label: 'Scrutins AN liés à un amendement déposé après le vote',
+    min: 0,
+    max: 0,
+    // Un amendement déposé après le jour du vote est l'homonyme d'une lecture
+    // suivante ou d'un autre texte : 835 liens au 10 octobre 2026, la première
+    // lecture du PLF 2026 pointant vers les amendements de sa nouvelle lecture.
+    // Effacés chaque nuit (effacerLiensAmendementApresLeVote) : non nul =
+    // un rattacheur en repose.
+    query: `SELECT COUNT(*)::int AS value
+            FROM "_AmendementToScrutin" ats
+            JOIN scrutins s ON s.id = ats."B"
+            JOIN amendements a ON a.id = ats."A"
+            WHERE s.chambre = 'assemblee'
+              AND a.date_depot IS NOT NULL
+              AND a.date_depot::date > s.date::date`,
+  },
+
   cross_legislature_amendements: {
     type: 'invariant',
     label: 'Liens scrutin-amendement inter-législatures (AN)',

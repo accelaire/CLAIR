@@ -38,6 +38,8 @@ import {
   linkAmendementsToDossiers,
   linkAmendementsToDossiersByTexteRef,
   propagateDossierIdBySiblingTexteRef,
+  effacerLiensAmendementApresLeVote,
+  alignerDossierDesScrutinsSurLeursAmendements,
   syncCommissions,
   syncReunions,
   syncSeancesODJ,
@@ -956,6 +958,62 @@ program
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'link-amendements-dossiers failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: verifier-amendements-scrutins-an
+// =============================================================================
+program
+  .command('verifier-amendements-scrutins-an')
+  .description(
+    "Fiabiliser les liens scrutin AN → amendement : effacer les impossibles, revérifier sur la page AN les scrutins douteux, puis aligner leur dossier",
+  )
+  .option('--dry-run', 'Lister les scrutins douteux sans rien écrire')
+  .option('--concurrence <n>', 'Pages AN lues en parallèle', (v: string) => parseInt(v, 10), 3)
+  .action(async (options: { dryRun?: boolean; concurrence: number }) => {
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+      // Les scrutins douteux, relevés AVANT d'effacer quoi que ce soit : ceux
+      // qui pointent vers un amendement déposé après le vote, et ceux dont le
+      // dossier diffère de celui de tous leurs amendements.
+      const douteux = await prisma.$queryRaw<{ id: string; motif: string }[]>`
+        SELECT DISTINCT s.id, 'apres_le_vote' AS motif
+        FROM scrutins s
+        JOIN "_AmendementToScrutin" ats ON ats."B" = s.id
+        JOIN amendements a ON a.id = ats."A"
+        WHERE s.chambre = 'assemblee' AND a.date_depot::date > s.date::date
+        UNION
+        SELECT s.id, 'dossier_different'
+        FROM scrutins s
+        JOIN "_AmendementToScrutin" ats ON ats."B" = s.id
+        JOIN amendements a ON a.id = ats."A"
+        WHERE s.chambre = 'assemblee'
+        GROUP BY s.id, s.dossier_id
+        HAVING count(DISTINCT a.dossier_id) = 1 AND count(*) = count(a.dossier_id)
+           AND s.dossier_id IS DISTINCT FROM min(a.dossier_id)
+      `;
+      const ids = [...new Set(douteux.map((d) => d.id))];
+      console.log(`\nScrutins douteux : ${ids.length}`);
+      console.log(`  amendement déposé après le vote : ${douteux.filter((d) => d.motif === 'apres_le_vote').length}`);
+      console.log(`  dossier différent de celui des amendements : ${douteux.filter((d) => d.motif === 'dossier_different').length}`);
+      await prisma.$disconnect();
+      if (options.dryRun || ids.length === 0) process.exit(0);
+
+      const { effaces } = await effacerLiensAmendementApresLeVote();
+      console.log(`Liens impossibles effacés : ${effaces}`);
+      // La page du scrutin fait foi ; elle ne remplace les liens que si elle en publie.
+      const html = await enrichScrutinsANAmendements({ only: ids, remplacer: true, concurrency: options.concurrence });
+      console.log(`Revérifiés sur la page AN : ${html.enriched} (sans lien publié : ${html.notFound}, erreurs : ${html.errors})`);
+      const cte = await linkScrutinsToAmendements({ chambre: 'assemblee' });
+      console.log(`Comblés par le repli : ${cte.linked}`);
+      const { alignes } = await alignerDossierDesScrutinsSurLeursAmendements();
+      console.log(`Scrutins alignés sur le dossier de leurs amendements : ${alignes}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'verifier-amendements-scrutins-an failed');
       process.exit(1);
     }
   });
