@@ -28,7 +28,7 @@ import axios from 'axios';
 
 import { logger } from './logger.js';
 import { errorMessage, httpStatus } from './errors.js';
-import { urlAJourAN } from './cdn-an.js';
+import { fraicheur, urlAJourAN, urlSansCacheAN, versionContredite } from './cdn-an.js';
 
 export interface DownloadOptions {
   /**
@@ -132,8 +132,8 @@ export async function downloadWithRetry(
   // Portail open data de l'Assemblée : son cache pouvait servir l'archive de
   // la veille au batch nocturne. On va à l'origine quand il est périmé
   // (cf. cdn-an.ts).
-  const cible = await urlAJourAN(url);
-  const timeoutMs = cible.origine ? Math.max(opts.timeoutMs, TIMEOUT_ORIGINE_AN_MS) : opts.timeoutMs;
+  let cible = await urlAJourAN(url);
+  let timeoutMs = cible.origine ? Math.max(opts.timeoutMs, TIMEOUT_ORIGINE_AN_MS) : opts.timeoutMs;
   let lastDiagnostic = '';
 
   for (let attempt = 1; attempt <= opts.maxAttempts; attempt++) {
@@ -149,6 +149,26 @@ export async function downloadWithRetry(
         timeout: timeoutMs,
         headers: { 'User-Agent': opts.userAgent, Accept: opts.accept },
       });
+
+      // Le cache n'est pas UN serveur : le 10 octobre 2026, la vérification
+      // de fraîcheur a vu la version du jour de l'archive des débats, puis la
+      // troisième tentative est tombée sur un nœud qui servait encore celle de
+      // la veille (56 955 715 octets au lieu de 57 204 770). Trois séances du
+      // 9 octobre manquaient. Chaque réponse est donc confrontée à la version
+      // de l'origine ; une autre version fait basculer sur l'origine.
+      if (!cible.origine && cible.version && versionContredite(fraicheur(response.headers), cible.version)) {
+        response.data.destroy();
+        logger.warn(
+          { url, servie: fraicheur(response.headers), attendue: cible.version, attempt },
+          "Le cache du portail AN sert une autre version que l'origine : téléchargement depuis l'origine",
+        );
+        cible = { url: urlSansCacheAN(url), origine: true, version: cible.version };
+        timeoutMs = Math.max(opts.timeoutMs, TIMEOUT_ORIGINE_AN_MS);
+        // Tentative non comptée : rien n'a échoué. Une seule fois, puisque
+        // `cible.origine` est désormais vrai.
+        attempt--;
+        continue;
+      }
 
       const declared = Number(response.headers['content-length']);
       expected = Number.isFinite(declared) && declared > 0 ? declared : null;

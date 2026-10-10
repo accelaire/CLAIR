@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { estOpenDataAN, memeVersion, urlSansCacheAN } from './cdn-an';
+import { estOpenDataAN, memeVersion, urlSansCacheAN, versionContredite } from './cdn-an';
 
 const AMO10 =
   'https://data.assemblee-nationale.fr/static/openData/repository/17/amo/deputes_actifs_mandats_actifs_organes/AMO10_deputes_actifs_mandats_actifs_organes.json.zip';
@@ -51,5 +51,23 @@ describe('memeVersion', () => {
   it("se rabat sur Last-Modified sans ETag, et tient pour périmé ce qu'il ne peut comparer", () => {
     expect(memeVersion({ etag: null, lastModified: jour.lastModified }, { etag: null, lastModified: jour.lastModified })).toBe(true);
     expect(memeVersion({ etag: null, lastModified: null }, jour)).toBe(false);
+  });
+});
+
+describe('versionContredite', () => {
+  const veille = { etag: '"368e022-65d4aacc3bb07"', lastModified: 'Thu, 08 Oct 2026 02:06:07 GMT' };
+  const jour = { etag: '"368e022-65d72e7f8c21e"', lastModified: 'Sat, 10 Oct 2026 02:05:59 GMT' };
+
+  it("repère une réponse qui porte une autre version que l'origine", () => {
+    expect(versionContredite(veille, jour)).toBe(true);
+    expect(versionContredite({ etag: null, lastModified: veille.lastModified }, jour)).toBe(true);
+  });
+
+  it('accepte la même version', () => {
+    expect(versionContredite({ ...jour }, jour)).toBe(false);
+  });
+
+  it("ne refuse pas une réponse qu'il ne peut comparer", () => {
+    expect(versionContredite({ etag: null, lastModified: null }, jour)).toBe(false);
   });
 });

@@ -64,7 +64,8 @@ export async function lireEnTetesParGet(url: string) {
   });
 }
 
-function fraicheur(headers: Record<string, unknown>): EnTetesFraicheur {
+/** ETag et Last-Modified d'une réponse. */
+export function fraicheur(headers: Record<string, unknown>): EnTetesFraicheur {
   const lire = (k: string) => (typeof headers[k] === 'string' ? (headers[k] as string) : null);
   return { etag: lire('etag'), lastModified: lire('last-modified') };
 }
@@ -77,23 +78,41 @@ export function memeVersion(cache: EnTetesFraicheur, origine: EnTetesFraicheur):
 }
 
 /**
+ * La réponse porte-t-elle une AUTRE version que celle attendue ? Faux quand on
+ * ne peut pas comparer : sans en-tête, on ne refuse pas une réponse.
+ */
+export function versionContredite(servie: EnTetesFraicheur, attendue: EnTetesFraicheur): boolean {
+  if (servie.etag && attendue.etag) return servie.etag !== attendue.etag;
+  if (servie.lastModified && attendue.lastModified) return servie.lastModified !== attendue.lastModified;
+  return false;
+}
+
+export interface CibleAN {
+  url: string;
+  /** L'URL force-t-elle l'origine ? */
+  origine: boolean;
+  /** La version publiée par l'origine, quand on a pu la lire. */
+  version: EnTetesFraicheur | null;
+}
+
+/**
  * L'URL à télécharger : celle du cache s'il sert la version de l'origine,
  * sinon celle qui force l'origine. Toute URL hors du portail AN est rendue
  * telle quelle. Si l'origine ne répond pas, on se rabat sur le cache : mieux
  * vaut la version de la veille que pas de synchro du tout.
  */
-export async function urlAJourAN(url: string): Promise<{ url: string; origine: boolean }> {
-  if (!estOpenDataAN(url)) return { url, origine: false };
+export async function urlAJourAN(url: string): Promise<CibleAN> {
+  if (!estOpenDataAN(url)) return { url, origine: false, version: null };
   const urlOrigine = urlSansCacheAN(url);
   const [cache, origine] = await Promise.allSettled([lireEnTetesParGet(url), lireEnTetesParGet(urlOrigine)]);
 
   if (origine.status === 'rejected') {
     logger.warn({ url, error: errorMessage(origine.reason) }, "Origine du portail AN injoignable, version du cache");
-    return { url, origine: false };
+    return { url, origine: false, version: null };
   }
   const versionOrigine = fraicheur(origine.value.headers);
   if (cache.status === 'fulfilled' && memeVersion(fraicheur(cache.value.headers), versionOrigine)) {
-    return { url, origine: false };
+    return { url, origine: false, version: versionOrigine };
   }
   logger.warn(
     {
@@ -103,5 +122,5 @@ export async function urlAJourAN(url: string): Promise<{ url: string; origine: b
     },
     "Cache du portail AN périmé : téléchargement depuis l'origine",
   );
-  return { url: urlOrigine, origine: true };
+  return { url: urlOrigine, origine: true, version: versionOrigine };
 }
