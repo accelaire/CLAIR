@@ -439,8 +439,10 @@ export async function upsertMandatParlementaire(
  *  désormais fournies par la source (idempotent). */
 async function upsertMandatAN(
   prisma: PrismaLike,
-  input: UpsertMandatInput,
+  sourceInput: UpsertMandatInput,
 ): Promise<{ created: boolean }> {
+  const dateFin = await finBorneeParLeSenat(prisma, sourceInput.personneId, sourceInput.ctx);
+  const input = { ...sourceInput, ctx: { ...sourceInput.ctx, dateFin } };
   const { personneId, chambre, ctx } = input;
 
   const existing = await prisma.mandatParlementaire.findFirst({
@@ -592,6 +594,36 @@ async function upsertMandatSenatClos(
     data: mandatCreateData(input, ctx.dateDebut),
   });
   return { created: true };
+}
+
+const JOUR_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Fin d'un mandat de député, bornée par l'entrée au Sénat.
+ *
+ * L'Assemblée met quelques jours à retirer un député élu sénateur de la liste
+ * des députés en exercice. Le 2 octobre 2026, elle listait encore les 8 députés
+ * élus le 1er : l'upsert a réécrit leur mandat avec la fin publiée, c'est-à-dire
+ * aucune, et rouvert ce que le rattachement au Sénat venait de clore la veille
+ * (`changement-chambre.ts`). Leurs pages affichaient deux mandats en cours.
+ *
+ * Un mandat de sénateur commencé APRÈS le début du mandat de député le clôt donc
+ * au plus tard la veille. Un mandat de sénateur antérieur (sénateur devenu
+ * député) ne borne rien.
+ */
+async function finBorneeParLeSenat(
+  prisma: PrismaLike,
+  personneId: string,
+  ctx: MandatContext,
+): Promise<Date | null> {
+  const senat = await prisma.mandatParlementaire.findFirst({
+    where: { personneId, chambre: 'senat', dateDebut: { gt: ctx.dateDebut } },
+    orderBy: { dateDebut: 'asc' },
+    select: { dateDebut: true },
+  });
+  if (!senat) return ctx.dateFin;
+  const veille = new Date(senat.dateDebut.getTime() - JOUR_MS);
+  return ctx.dateFin === null || ctx.dateFin > veille ? veille : ctx.dateFin;
 }
 
 /** Payload de création d'un mandat : le contexte, avec la `dateDebut` déjà résolue

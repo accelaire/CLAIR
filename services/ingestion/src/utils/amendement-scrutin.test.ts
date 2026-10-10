@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { choisirAmendement, type CandidatAmendement } from './amendement-scrutin';
+import { choisirAmendement, deposeApresLeVote, type CandidatAmendement } from './amendement-scrutin';
 
 const amdt = (
   id: string,
@@ -100,5 +100,24 @@ describe('choisirAmendement — délibérations d’un même article', () => {
     const a = amdt('x', 'ART. UNIQUE', null, 'uid-inconnu-1');
     const b = amdt('y', 'ART. UNIQUE', null, 'uid-inconnu-2');
     expect(choisirAmendement([a, b], TITRE, null)).toBeNull();
+  });
+});
+
+describe('deposeApresLeVote', () => {
+  // Scrutin n° 3316 du 31 octobre 2025 (PLF 2026, première lecture) et
+  // l'amendement n° 989 de la nouvelle lecture, déposé le 9 janvier 2026.
+  const vote = new Date('2025-10-31T00:00:00Z');
+
+  it("écarte un amendement déposé après le jour du vote", () => {
+    expect(deposeApresLeVote(new Date('2026-01-09T10:00:00Z'), vote)).toBe(true);
+  });
+
+  it('garde un amendement déposé le jour même, en séance', () => {
+    expect(deposeApresLeVote(new Date('2025-10-31T15:42:00Z'), vote)).toBe(false);
+  });
+
+  it('ne conclut rien sans date', () => {
+    expect(deposeApresLeVote(null, vote)).toBe(false);
+    expect(deposeApresLeVote(new Date('2026-01-09T10:00:00Z'), null)).toBe(false);
   });
 });

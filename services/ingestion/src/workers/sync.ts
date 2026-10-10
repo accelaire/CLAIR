@@ -30,7 +30,8 @@ import { extractCommissionSaisines } from '../utils/dossier-commissions';
 import { commissionsQuittees } from '../utils/commissions-senat';
 import { cleMotion, dossierMotionSansReferences } from '../utils/motions-censure';
 import { classifyNatureScrutin } from '../utils/nature-scrutin';
-import { choisirAmendement, type CandidatAmendement } from '../utils/amendement-scrutin';
+import { CTE_LEGISLATURES_DOSSIER, CTE_TEXTE_DU_DOSSIER, dossierValantPour } from '../utils/legislatures-dossier';
+import { choisirAmendement, deposeApresLeVote, type CandidatAmendement } from '../utils/amendement-scrutin';
 import { uidCanoniqueAmendement, uneEmissionParAmendement } from '../utils/uid-amendement';
 import {
   LEGISLATURE_AN_COURANTE,
@@ -48,6 +49,7 @@ import {
   upsertMandatParlementaire,
 } from './mandats';
 import { ajouterIdentifiantsConserves, rattacherDeputeElu } from './changement-chambre';
+import { cloreOrganesANHorsMandat, cloturerDeputesSortants } from './mandats-an-sortants';
 import {
   checkSourceFreshness,
   updateSourceState,
@@ -568,8 +570,12 @@ async function syncMandatsFromSourceData(
 }
 
 /**
- * Sync commission mandats for all AN députés from their stored sourceData (AMO10).
+ * Sync commission mandats for AN députés EN EXERCICE from their stored sourceData (AMO10).
  * Runs on every sync to keep PM IDs fresh (deputies get reassigned to different commissions).
+ *
+ * Les anciens députés sont exclus : leur `sourceData` est l'instantané de l'AMO10
+ * du temps où ils siégeaient, où leurs mandats d'organe n'ont pas de fin. Le
+ * repasser chaque nuit rouvrait ces mandats (9 885 au 8 octobre 2026).
  */
 async function backfillCommissionMandats(
   organeRefToCommissionId: Map<string, string>
@@ -577,6 +583,7 @@ async function backfillCommissionMandats(
   const deputes = await prisma.parlementaire.findMany({
     where: {
       chambre: 'assemblee',
+      actif: true,
       sourceData: { not: Prisma.JsonNull },
     },
     select: { id: true, sourceData: true },
@@ -699,12 +706,19 @@ export async function syncDeputes(
   let sortants = 0;
   if (isCurrent) {
     // AMO10 ne liste QUE les députés en exercice : un partant (ministre, démission,
-    // décès) disparaît de la source sans passer `actif=false` → passe sortants.
-    sortants = await cloturerDeputesSortants(parlementaires.map((p) => p.uid));
+    // décès, élection au Sénat) disparaît de la source sans date de fin → passe
+    // sortants, puis fermeture des mandats d'organe qui survivraient à son mandat.
+    const decisions = await cloturerDeputesSortants(prisma, parlementaires.map((p) => p.uid), {
+      finLegislature: LEGISLATURE_FIN[LEGISLATURE_AN_COURANTE],
+    });
+    sortants = decisions.length;
 
     logger.info('Backfilling commission mandats for existing deputes...');
     const backfilled = await backfillCommissionMandats(organeRefToCommissionId);
     logger.info({ backfilled }, 'Commission mandats backfill completed');
+
+    // En dernier : rien après ne doit rouvrir ce qu'elle ferme.
+    await cloreOrganesANHorsMandat(prisma);
   }
 
   logger.info(
@@ -712,52 +726,6 @@ export async function syncDeputes(
     'Parlementaires AN sync completed',
   );
   return { created, updated };
-}
-
-/** Effectif plancher attendu de l'Assemblée (577 sièges). En dessous, on considère le
- *  fetch source comme dégradé et on REFUSE de désactiver qui que ce soit. */
-const AN_EFFECTIF_MIN = 550;
-
-/**
- * Sortants AN : députés actifs en base absents de la source (nommés au gouvernement,
- * démissions, décès en cours de législature). Symétrique de `cloturerSenateursSortants` :
- * on ne supprime JAMAIS, on désactive la personne et on clôt son mandat AN ouvert. Sans
- * cette passe, les partants restent `actif=true` et polluent les classements publics.
- */
-async function cloturerDeputesSortants(sourceUids: string[]): Promise<number> {
-  // Garde-fou : un fetch partiel/dégradé ne doit pas désactiver l'Assemblée en masse.
-  if (sourceUids.length < AN_EFFECTIF_MIN) {
-    logger.warn(
-      { recus: sourceUids.length, minimum: AN_EFFECTIF_MIN },
-      'Effectif AN source anormalement bas — passe sortants ANNULÉE',
-    );
-    return 0;
-  }
-
-  const sortants = await prisma.parlementaire.findMany({
-    where: { chambre: 'assemblee', actif: true, sourceId: { notIn: sourceUids } },
-    select: { id: true },
-  });
-  if (sortants.length === 0) return 0;
-
-  const ids = sortants.map((p) => p.id);
-  const now = new Date();
-  // Départ en cours de législature → date d'observation. Cas théorique où le run passe
-  // après la fin de la législature courante → on borne à cette fin.
-  const finLegislature = LEGISLATURE_FIN[LEGISLATURE_AN_COURANTE];
-  const dateFin = finLegislature && now >= finLegislature ? finLegislature : now;
-
-  await prisma.parlementaire.updateMany({ where: { id: { in: ids } }, data: { actif: false } });
-  const clos = await prisma.mandatParlementaire.updateMany({
-    where: { personneId: { in: ids }, chambre: 'assemblee', dateFin: null },
-    data: { dateFin },
-  });
-
-  logger.info(
-    { sortants: ids.length, mandatsClos: clos.count },
-    'Députés sortants désactivés et mandats clos',
-  );
-  return ids.length;
 }
 
 // =============================================================================
@@ -4250,6 +4218,15 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
   }
 
   if (hasAmendementsChanged || hasScrutinsChanged) {
+    // D'abord retirer les liens impossibles : les rattacheurs qui suivent ne
+    // comblent que les scrutins sans lien, et les reposent ainsi sur le bon
+    // amendement.
+    try {
+      await effacerLiensAmendementApresLeVote();
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Liens amendement après le vote : nettoyage échoué (non bloquant)');
+    }
+
     logger.info('Enriching scrutins with amendements (HTML scraping for new scrutins only)...');
     try {
       // Enrichissement AN: scrape les pages HTML des scrutins RÉCENTS sans lien
@@ -4398,6 +4375,19 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.error({ error: errorMessage(error) }, 'Amendements inter-législatures : nettoyage échoué (non bloquant)');
     }
 
+    // D'abord le dossier où la source range le texte : il fait foi à
+    // l'Assemblée, et corrige ce que les propagations avaient posé de travers.
+    // Les propagations qui suivent ne comblent que ce qui reste vide.
+    try {
+      const texteRefResult = await linkAmendementsToDossiersByTexteRef();
+      logger.info({
+        linked: texteRefResult.linked,
+        corriges: texteRefResult.corriges,
+      }, 'Amendements-dossiers linking via texteRef completed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Amendements-dossiers linking via texteRef failed (non-blocking)');
+    }
+
     // Propagate dossier_id from scrutins to amendements (only fills NULL, never resets)
     logger.info('Propagating dossier_id from scrutins to amendements...');
     try {
@@ -4409,16 +4399,6 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.error({ error: errorMessage(error) }, 'Amendements-dossiers linking via scrutins failed (non-blocking)');
     }
 
-    // Link amendements to dossiers via texte_ref (catches non-voted amendements)
-    try {
-      const texteRefResult = await linkAmendementsToDossiersByTexteRef();
-      logger.info({
-        linked: texteRefResult.linked,
-      }, 'Amendements-dossiers linking via texteRef completed');
-    } catch (error) {
-      logger.error({ error: errorMessage(error) }, 'Amendements-dossiers linking via texteRef failed (non-blocking)');
-    }
-
     // Propagate dossier_id between sibling amendments on same texte_ref (safe: unanimous only)
     try {
       const siblingResult = await propagateDossierIdBySiblingTexteRef();
@@ -4427,6 +4407,24 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       }, 'Sibling texte_ref dossier propagation completed');
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'Sibling texte_ref dossier propagation failed (non-blocking)');
+    }
+
+    // Un lien dont l'article contredit le libellé du scrutin vise souvent un
+    // homonyme (autre lecture, autre numéro) : on le remplace, ou on le retire
+    // sur deux signaux concordants (workers/liens-amendements-discordants.ts).
+    try {
+      const { corrigerLiensArticleDiscordant } = await import('./liens-amendements-discordants.js');
+      await corrigerLiensArticleDiscordant();
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Liens à l’article discordant : correction échouée (non bloquante)');
+    }
+
+    // Les amendements ont leur dossier de source : le scrutin qui les met aux
+    // voix les suit, là où son titre l'avait rangé ailleurs.
+    try {
+      await alignerDossierDesScrutinsSurLeursAmendements();
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Alignement scrutins → dossier des amendements échoué (non bloquant)');
     }
 
   }
@@ -5360,6 +5358,19 @@ export async function syncAmendementsSenatCsv(
 // SYNC DOSSIERS LÉGISLATIFS (Assemblée Nationale)
 // =============================================================================
 
+/**
+ * La législature la plus récente dont le dossier cite un texte ou un vote
+ * (`…ANR5L17B0481`, `VTANR5L17V451`) ; 0 sans source.
+ */
+export function derniereLegislatureCitee(sourceData: unknown): number {
+  if (!sourceData) return 0;
+  let max = 0;
+  for (const m of JSON.stringify(sourceData).matchAll(/ANR5L(\d+)[BV]/g)) {
+    max = Math.max(max, Number(m[1]));
+  }
+  return max;
+}
+
 export async function syncDossiers(
   options: { limit?: number; linkScrutins?: boolean; legislature?: number } = {}
 ): Promise<{ created: number; updated: number; scrutinsLinked: number; amendementsLinked: number; commissionsLinked: number }> {
@@ -5378,6 +5389,7 @@ export async function syncDossiers(
   let scrutinsLinked = 0;
   let amendementsLinked = 0;
   let commissionsLinked = 0;
+  let plusRecentsGardes = 0;
 
   // Batch load all commissions for organeRef lookup (avoids N queries in the loop)
   const commissions = await prisma.commission.findMany({
@@ -5415,6 +5427,14 @@ export async function syncDossiers(
       const existing = await prisma.dossierLegislatif.findUnique({
         where: { uid: dossier.uid },
       });
+
+      // Un dossier poursuivi figure dans les archives de plusieurs législatures.
+      // La plus récente porte tous ses actes : une archive plus ancienne,
+      // rejouée à la main, ne doit pas la remplacer par une version tronquée.
+      if (existing && derniereLegislatureCitee(existing.sourceData) > legislature) {
+        plusRecentsGardes++;
+        continue;
+      }
 
       let dossierId: string;
 
@@ -5519,7 +5539,7 @@ export async function syncDossiers(
     logger.info({ propagated }, 'Propagated urlLegifrance to Sénat dossiers');
   }
 
-  logger.info({ created, updated, scrutinsLinked, amendementsLinked, commissionsLinked, total: dossiers.length }, 'Dossiers législatifs sync completed');
+  logger.info({ created, updated, scrutinsLinked, amendementsLinked, commissionsLinked, plusRecentsGardes, total: dossiers.length }, 'Dossiers législatifs sync completed');
   return { created, updated, scrutinsLinked, amendementsLinked, commissionsLinked };
 }
 
@@ -5661,9 +5681,15 @@ export async function linkSenatScrutinsToDossiers(): Promise<{ linked: number }>
  * `scrutins.session` est un texte ('15', '16', '17') côté AN ; on ne compare que
  * lorsqu'il est numérique. Côté Sénat, `session` est une année et
  * `dossiers_legislatifs.legislature` vaut 0 : le garde-fou ne s'applique pas.
+ *
+ * « Sa » législature au sens de `legislatures-dossier-sql.ts` : un dossier ouvert
+ * en 16e et poursuivi en 17e est candidat pour les scrutins de la 17e. Les
+ * scrutins sur « simplification de la vie économique » (dossier de la 16e,
+ * examiné en 17e) restaient orphelins. Suppose le CTE `legislatures_dossier`.
  */
 const AN_LEGISLATURE_MATCHES = Prisma.sql`
-  (s.session ~ '^[0-9]+$' AND d.legislature = s.session::int)
+  (s.session ~ '^[0-9]+$'
+   AND ${dossierValantPour('d', "(CASE WHEN s.session ~ '^[0-9]+$' THEN s.session::int END)")})
 `;
 
 /**
@@ -5672,9 +5698,15 @@ const AN_LEGISLATURE_MATCHES = Prisma.sql`
  * Les scrutins concernés redeviennent orphelins, ce qui est l'état honnête tant
  * que les dossiers de leur législature ne sont pas ingérés. Doit tourner AVANT
  * les étapes de matching pour qu'elles ne repartent pas d'un état contaminé.
+ *
+ * « D'une autre législature » au sens de `legislatures-dossier.ts` : un dossier
+ * ouvert en 16e et poursuivi en 17e vaut pour les scrutins de la 17e qu'il
+ * cite. La comparaison de sa seule législature d'origine les déliait chaque
+ * nuit, alors que ses `voteRefs` venaient de les poser.
  */
 export async function unlinkANScrutinsWrongLegislature(): Promise<{ unlinked: number }> {
   const unlinked = await prisma.$executeRaw`
+    WITH ${CTE_LEGISLATURES_DOSSIER}
     UPDATE scrutins s
     SET dossier_id = NULL
     FROM dossiers_legislatifs d
@@ -5682,7 +5714,7 @@ export async function unlinkANScrutinsWrongLegislature(): Promise<{ unlinked: nu
       AND s.chambre = 'assemblee'
       AND d.uid NOT LIKE 'SENAT%'
       AND s.session ~ '^[0-9]+$'
-      AND d.legislature <> s.session::int
+      AND NOT ${dossierValantPour('d', "(CASE WHEN s.session ~ '^[0-9]+$' THEN s.session::int END)")}
   `;
 
   if (unlinked > 0) {
@@ -5910,7 +5942,7 @@ export async function linkANScrutinsByTitle(): Promise<{ linked: number }> {
   // Pass 1: Match unique via titre du dossier (substring match dans scrutin.titre)
   // Only AN scrutins against AN dossiers (uid NOT LIKE 'SENAT%')
   const uniqueMatches = await prisma.$executeRaw`
-    WITH unique_matches AS (
+    WITH ${CTE_LEGISLATURES_DOSSIER}, unique_matches AS (
       SELECT s.id as scrutin_id, MIN(d.id) as dossier_id
       FROM scrutins s
       CROSS JOIN dossiers_legislatifs d
@@ -5934,7 +5966,7 @@ export async function linkANScrutinsByTitle(): Promise<{ linked: number }> {
   // Pass 2: Ambigus - disambiguër par proximité de date
   // Same chamber filter: AN scrutins only match AN dossiers
   const dateMatches = await prisma.$executeRaw`
-    WITH ranked AS (
+    WITH ${CTE_LEGISLATURES_DOSSIER}, ranked AS (
       SELECT s.id as scrutin_id, d.id as dossier_id,
         ROW_NUMBER() OVER (
           PARTITION BY s.id
@@ -6186,14 +6218,13 @@ export async function linkOrphanScrutinsByTFIDF(): Promise<{ linked: number; ski
 // =============================================================================
 
 /**
- * Un dossier de l'Assemblée porte sa législature dans son uid (`DLR5L17N…`), et
- * un amendement de l'Assemblée la sienne dans sa colonne `legislature`. Les
- * propagations ci-dessous n'ont le droit d'écrire que là où les deux concordent.
+ * Un amendement de l'Assemblée porte sa législature dans sa colonne
+ * `legislature`. Les propagations ci-dessous n'ont le droit d'écrire que vers
+ * un dossier qui vaut pour elle : celui de son identifiant, ou un dossier
+ * poursuivi qui cite des textes de cette législature (`legislatures-dossier.ts`).
+ * Suppose le CTE `legislatures_dossier`.
  */
-const DOSSIER_DE_MEME_LEGISLATURE = Prisma.sql`
-  (d.uid NOT LIKE 'DLR5L%'
-   OR substring(d.uid from 'DLR5L([0-9]+)N')::int = a.legislature)
-`;
+const DOSSIER_DE_MEME_LEGISLATURE = dossierValantPour('d', "a.legislature");
 
 /**
  * Efface les rattachements d'amendements au dossier d'une autre législature.
@@ -6208,6 +6239,7 @@ const DOSSIER_DE_MEME_LEGISLATURE = Prisma.sql`
  */
 export async function effacerDossiersDAutreLegislature(): Promise<{ effaces: number }> {
   const effaces = await prisma.$executeRaw`
+    WITH ${CTE_LEGISLATURES_DOSSIER}
     UPDATE amendements a
     SET dossier_id = NULL
     FROM dossiers_legislatifs d
@@ -6222,6 +6254,115 @@ export async function effacerDossiersDAutreLegislature(): Promise<{ effaces: num
 }
 
 /**
+ * Efface les liens scrutin AN → amendement déposé après le jour du vote.
+ *
+ * Un tel lien est impossible : c'est l'homonyme d'une lecture suivante, ou d'un
+ * autre texte, posé par un repli qui ne regardait que le numéro. 835 liens au
+ * 10 octobre 2026, presque tous des scrutins de la première lecture du PLF 2026
+ * (octobre-novembre 2025) vers les amendements de sa nouvelle lecture (janvier
+ * 2026), plus 18 scrutins sur la sûreté dans les transports liés aux
+ * amendements d'une résolution sur l'Ukraine déposés un mois après le vote. Les
+ * rattacheurs, qui ne comblent que les scrutins sans lien, les reposent ensuite.
+ */
+export async function effacerLiensAmendementApresLeVote(): Promise<{ effaces: number }> {
+  const effaces = await prisma.$executeRaw`
+    DELETE FROM "_AmendementToScrutin" ats
+    USING scrutins s, amendements a
+    WHERE ats."B" = s.id
+      AND ats."A" = a.id
+      AND s.chambre = 'assemblee'
+      AND a.date_depot IS NOT NULL
+      AND a.date_depot::date > s.date::date
+  `;
+  if (effaces > 0) {
+    logger.warn({ effaces }, 'Liens scrutin → amendement déposé après le vote : effacés');
+  }
+  return { effaces };
+}
+
+/**
+ * Aligne le dossier d'un scrutin AN sur celui de ses amendements.
+ *
+ * Le dossier d'un scrutin d'amendement se devinait par son titre ; celui de ses
+ * amendements vient de la source (le dossier où l'archive range leur texte,
+ * `linkAmendementsToDossiersByTexteRef`). Quand ils divergent, le titre s'est
+ * trompé : 197 scrutins sur la proposition de loi du Sénat « programmation
+ * énergie » (texte n° 1522, dossier `DLR5L16N49849`) étaient rangés sous
+ * l'homonyme « Programmation énergie-climat » de la 17e, un autre texte.
+ *
+ * POURQUOI C'EST SÛR MAINTENANT. Longtemps interdit, parce qu'un lien scrutin →
+ * amendement posé de travers aurait emporté le scrutin avec lui. Le lien vient
+ * désormais de la page du scrutin, qui nomme le texte, ou d'un repli qui exige
+ * le dossier du scrutin et une date de dépôt antérieure au vote ; les liens
+ * impossibles sont effacés avant (`effacerLiensAmendementApresLeVote`).
+ *
+ * Seulement quand TOUS les amendements du scrutin ont le même dossier, jamais
+ * contre les `voteRefs` (qui font foi), et vers un dossier qui vaut pour la
+ * législature du scrutin et peut porter des votes.
+ *
+ * LA PAGE DU SCRUTIN SE TROMPE PARFOIS. Le scrutin n° 7317 (17e, « suppression
+ * de l'article 5 » d'un texte sur les pensions) affiche « Voir l'amendement
+ * n°4 » vers le texte 2838, sur la vaisselle en plastique. Suivre ses amendements
+ * aurait rangé des scrutins sur la prévention cardio-neuro-vasculaire sous
+ * « millefeuille territorial ». On ne suit donc les amendements que :
+ *  - vers un dossier poursuivi d'une législature précédente, que le titre ne
+ *    pouvait pas proposer (`AN_LEGISLATURE_MATCHES` l'excluait) ;
+ *  - ou quand le libellé du scrutin nomme le dossier des amendements et pas
+ *    celui qu'il a.
+ * Audité sur la prod le 10 octobre 2026 : 365 alignements retenus, tous vers un
+ * dossier poursuivi ; 49 écartés entre dossiers de la 17e.
+ */
+/**
+ * Le libellé du scrutin `s` nomme-t-il le dossier `alias` ? Son titre, sans
+ * « proposition de loi » ni « projet de loi » en tête, figure dans le libellé.
+ */
+function titreNommeDans(alias: string): Prisma.Sql {
+  const d = Prisma.raw(alias);
+  return Prisma.sql`(
+    lower(s.titre) LIKE '%' || lower(regexp_replace(${d}.titre,
+      '^(proposition|projet) de (loi|résolution)( organique)? ', '', 'i')) || '%'
+  )`;
+}
+
+export async function alignerDossierDesScrutinsSurLeursAmendements(): Promise<{ alignes: number }> {
+  const alignes = await prisma.$executeRaw`
+    WITH ${CTE_LEGISLATURES_DOSSIER},
+    refs AS (${VOTE_REFS_AN}),
+    dossier_des_amendements AS (
+      SELECT ats."B" AS scrutin_id, min(a.dossier_id) AS dossier_id
+      FROM "_AmendementToScrutin" ats
+      JOIN amendements a ON a.id = ats."A"
+      GROUP BY ats."B"
+      HAVING count(DISTINCT a.dossier_id) = 1 AND count(*) = count(a.dossier_id)
+    )
+    UPDATE scrutins s
+    SET dossier_id = x.dossier_id
+    FROM dossier_des_amendements x
+    JOIN dossiers_legislatifs d ON d.id = x.dossier_id
+    WHERE s.id = x.scrutin_id
+      AND s.chambre = 'assemblee'
+      AND s.dossier_id IS DISTINCT FROM x.dossier_id
+      AND NOT EXISTS (SELECT 1 FROM refs WHERE refs.uid = ${UID_SCRUTIN_AN})
+      AND ${dossierValantPour('d', "(CASE WHEN s.session ~ '^[0-9]+$' THEN s.session::int END)")}
+      AND ${procedureCompatible('d')}
+      AND (
+        substring(d.uid from 'DLR5L([0-9]+)N')::int IS DISTINCT FROM s.legislature
+        OR (
+          ${titreNommeDans('d')}
+          AND NOT EXISTS (
+            SELECT 1 FROM dossiers_legislatifs actuel
+            WHERE actuel.id = s.dossier_id AND ${titreNommeDans('actuel')}
+          )
+        )
+      )
+  `;
+  if (alignes > 0) {
+    logger.warn({ alignes }, 'Scrutins AN alignés sur le dossier de leurs amendements');
+  }
+  return { alignes };
+}
+
+/**
  * Propage dossier_id des scrutins vers les amendements.
  * Si un amendement est lié (M:N) à un scrutin qui a un dossier_id,
  * on set l'amendement.dossier_id à la même valeur.
@@ -6232,6 +6373,7 @@ export async function linkAmendementsToDossiers(): Promise<{ linked: number }> {
   logger.info('Propagating dossier_id from scrutins to amendements...');
 
   const linked = await prisma.$executeRaw`
+    WITH ${CTE_LEGISLATURES_DOSSIER}
     UPDATE amendements a
     SET dossier_id = s.dossier_id
     FROM "_AmendementToScrutin" ats
@@ -6247,19 +6389,50 @@ export async function linkAmendementsToDossiers(): Promise<{ linked: number }> {
 }
 
 /**
- * Lie les amendements aux dossiers via texte_ref.
- * Extrait les texteRefs de chaque dossier (sourceData JSON) et matche
- * avec amendements.texte_ref. Ne touche pas les liens existants.
+ * Lie les amendements aux dossiers via texte_ref : le dossier où la source
+ * range leur texte (`CTE_TEXTE_DU_DOSSIER`).
+ *
+ * À L'ASSEMBLÉE, LA SOURCE FAIT FOI. La passe ne comblait que les dossiers
+ * vides : un lien posé de travers par une propagation n'était jamais revu.
+ * 2 750 amendements de « simplification de la vie économique » restaient ainsi
+ * sous un dossier sur l'énergie, alors que l'archive de la 17e range leurs
+ * textes (n° 481 et 1191) dans `DLR5L16N49868`. On réécrit donc tout
+ * amendement de l'Assemblée dont le dossier diffère de celui de son texte.
+ * Un texte que deux dossiers revendiquent n'est pas tranché ici.
+ *
+ * Ailleurs (Sénat), on ne fait que combler, comme avant.
  */
-export async function linkAmendementsToDossiersByTexteRef(): Promise<{ linked: number }> {
+export async function linkAmendementsToDossiersByTexteRef(): Promise<{ linked: number; corriges: number }> {
   logger.info('Linking amendements to dossiers by texte_ref...');
 
+  const [{ corriges }] = await prisma.$queryRaw<[{ corriges: bigint }]>`
+    WITH ${CTE_TEXTE_DU_DOSSIER}
+    SELECT count(*) AS corriges
+    FROM amendements a
+    JOIN texte_du_dossier t ON t.texte_ref = a.texte_ref
+    WHERE a.chambre = 'assemblee'
+      AND a.dossier_id IS NOT NULL
+      AND a.dossier_id <> t.dossier_id
+  `;
+  const convergesAN = await prisma.$executeRaw`
+    WITH ${CTE_TEXTE_DU_DOSSIER}
+    UPDATE amendements a
+    SET dossier_id = t.dossier_id
+    FROM texte_du_dossier t
+    WHERE t.texte_ref = a.texte_ref
+      AND a.chambre = 'assemblee'
+      AND a.dossier_id IS DISTINCT FROM t.dossier_id
+  `;
+  if (Number(corriges) > 0) {
+    logger.warn({ corriges: Number(corriges) }, 'Amendements AN rattachés à un autre dossier que celui de leur texte : corrigés');
+  }
+
   const dossiers = await prisma.dossierLegislatif.findMany({
+    where: { uid: { not: { startsWith: 'DLR5L' } } },
     select: { id: true, sourceData: true },
   });
 
-  let totalLinked = 0;
-
+  let comblesAilleurs = 0;
   for (const dossier of dossiers) {
     const texteRefs = extractTexteRefsFromSourceData(dossier.sourceData);
     if (texteRefs.length === 0) continue;
@@ -6267,19 +6440,17 @@ export async function linkAmendementsToDossiersByTexteRef(): Promise<{ linked: n
     const result = await prisma.amendement.updateMany({
       where: {
         texteRef: { in: texteRefs },
+        chambre: { not: 'assemblee' },
         dossierId: null,
       },
       data: { dossierId: dossier.id },
     });
-
-    if (result.count > 0) {
-      totalLinked += result.count;
-      logger.debug({ dossierId: dossier.id, refs: texteRefs.length, linked: result.count }, 'Linked amendements by texteRef');
-    }
+    comblesAilleurs += result.count;
   }
 
-  logger.info({ linked: totalLinked }, 'Amendements-dossiers texteRef linking completed');
-  return { linked: totalLinked };
+  const linked = convergesAN + comblesAilleurs;
+  logger.info({ linked, corriges: Number(corriges) }, 'Amendements-dossiers texteRef linking completed');
+  return { linked, corriges: Number(corriges) };
 }
 
 /**
@@ -6291,6 +6462,7 @@ export async function propagateDossierIdBySiblingTexteRef(): Promise<{ linked: n
   logger.info('Propagating dossier_id between sibling amendments on same texte_ref (safe mode)...');
 
   const linked = await prisma.$executeRaw`
+    WITH ${CTE_LEGISLATURES_DOSSIER}
     UPDATE amendements a
     SET dossier_id = sibling.dossier_id
     FROM (
@@ -6397,6 +6569,11 @@ export async function linkScrutinsToAmendements(
   // Used in CTEs below as: NOT EXISTS (SELECT 1 FROM "_AmendementToScrutin" WHERE "B" = s.id)
 
   // === ASSEMBLÉE NATIONALE ===
+  // ANTISLASHS DOUBLÉS. Prisma reçoit le gabarit « cuit » : `\s` y devient `s`,
+  // `\d` devient `d`. Écrites avec un seul antislash jusqu'au 10 octobre 2026,
+  // les regex d'article ne trouvaient jamais rien : la contrainte d'article du
+  // repli n'a jamais joué, et un amendement « II-593 » sur l'article 79 se
+  // rattachait à un scrutin sur l'article 27. Écrire `\\s`, `\\d`, `\\.`.
   if (!chambre || chambre === 'assemblee') {
     if (dryRun) {
       const countResult = await prisma.$queryRaw<{ linked: bigint; not_found: bigint }[]>`
@@ -6407,11 +6584,16 @@ export async function linkScrutinsToAmendements(
             s.legislature,
             SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero,
             (s.titre ILIKE '%rectifi%' OR s.titre ILIKE '%(rect.)%') as is_rectifie,
-            LOWER(SUBSTRING(s.titre FROM '(?:après l''article|à l''article|article)\s+(premier|\d+)')) as article_numero,
-            s.titre ILIKE '%après l''article%' as is_apres,
+            -- Apostrophe droite ou typographique : « après l’article 15 ».
+            LOWER(SUBSTRING(s.titre FROM '(?:après l[''’]article|à l[''’]article|article)\\s+(premier|liminaire|\\d+)')) as article_numero,
+            s.titre ~* 'après l[''’]article' as is_apres,
+            s.date::date as date_vote,
+            -- Le numéro du texte, seulement s'il est annoncé comme tel (« n° 1234 »).
+            -- Sans le « n° » obligatoire, « projet de loi de finances pour 2026 »
+            -- donnait le texte n° 2026.
             COALESCE(
               SUBSTRING(s.source_data->'objet'->>'referenceLegislative' FROM 'B(?:TC)?([0-9]{3,5})'),
-              SUBSTRING(s.titre FROM '(?:projet|proposition|texte)[^0-9]*n[°º]?\s*([0-9]{3,5})')
+              SUBSTRING(s.titre FROM '(?:projet|proposition|texte)[^0-9]*n[°º]\\s*([0-9]{3,5})')
             ) as texte_numero
           FROM scrutins s
           WHERE s.titre ILIKE '%amendement%'
@@ -6425,9 +6607,16 @@ export async function linkScrutinsToAmendements(
             a.legislature,
             a.numero,
             SPLIT_PART(a.numero, ' ', 1) as numero_clean,
+            -- Les lois de finances numérotent leurs amendements de séance par
+            -- partie en première lecture (« I-989 », « II-989 ») ; le libellé
+            -- du scrutin dit « n° 989 ». Ceux des commissions (« I-CF989 »)
+            -- ne passent pas en scrutin public et gardent leurs lettres.
+            regexp_replace(SPLIT_PART(a.numero, ' ', 1), '^(I|II|III)-([0-9]+)$', '\\2') as numero_seance,
             a.numero LIKE '% (Rect%' as is_rect,
-            LOWER(SUBSTRING(a.article_vise FROM 'ART\.\s+(PREMIER|\d+)')) as article_num,
+            -- « ART. 1ER BIS » est l'article « premier » du libellé.
+            regexp_replace(LOWER(SUBSTRING(a.article_vise FROM 'ART\\.\\s+(PREMIER|1ER|LIMINAIRE|\\d+)')), '^1er$', 'premier') as article_num,
             a.article_vise ILIKE 'APRÈS%' as amdt_is_apres,
+            a.date_depot::date as date_depot,
             SUBSTRING(a.texte_ref FROM 'B(?:TC)?([0-9]+)') as amendement_texte_numero
           FROM amendements a
           WHERE a.chambre = 'assemblee'
@@ -6436,7 +6625,7 @@ export async function linkScrutinsToAmendements(
           SELECT swn.id, awt.id as amendement_id
           FROM scrutins_with_info swn
           LEFT JOIN amendements_with_texte awt ON
-            awt.numero_clean = swn.amendement_numero
+            awt.numero_seance = swn.amendement_numero
             -- Garde-fou législature : les textes sont renumérotés à chaque
             -- législature, le n°3 existe en 15e, 16e ET 17e. texte_numero est
             -- extrait sans le préfixe de législature, il ne discrimine donc
@@ -6449,6 +6638,9 @@ export async function linkScrutinsToAmendements(
             )
             AND (swn.article_numero IS NULL OR awt.article_num = swn.article_numero)
             AND (swn.article_numero IS NULL OR awt.amdt_is_apres = swn.is_apres)
+            -- Un amendement déposé après le jour du vote est l'homonyme d'une
+            -- lecture suivante, pas celui qu'on a voté (utils/amendement-scrutin).
+            AND (awt.date_depot IS NULL OR awt.date_depot <= swn.date_vote)
           WHERE swn.amendement_numero IS NOT NULL
         )
         SELECT
@@ -6474,11 +6666,16 @@ export async function linkScrutinsToAmendements(
             s.legislature,
             SUBSTRING(s.titre FROM '[°º[:space:]]([A-Z]*-?[0-9]+)[[:space:],]') as amendement_numero,
             (s.titre ILIKE '%rectifi%' OR s.titre ILIKE '%(rect.)%') as is_rectifie,
-            LOWER(SUBSTRING(s.titre FROM '(?:après l''article|à l''article|article)\s+(premier|\d+)')) as article_numero,
-            s.titre ILIKE '%après l''article%' as is_apres,
+            -- Apostrophe droite ou typographique : « après l’article 15 ».
+            LOWER(SUBSTRING(s.titre FROM '(?:après l[''’]article|à l[''’]article|article)\\s+(premier|liminaire|\\d+)')) as article_numero,
+            s.titre ~* 'après l[''’]article' as is_apres,
+            s.date::date as date_vote,
+            -- Le numéro du texte, seulement s'il est annoncé comme tel (« n° 1234 »).
+            -- Sans le « n° » obligatoire, « projet de loi de finances pour 2026 »
+            -- donnait le texte n° 2026.
             COALESCE(
               SUBSTRING(s.source_data->'objet'->>'referenceLegislative' FROM 'B(?:TC)?([0-9]{3,5})'),
-              SUBSTRING(s.titre FROM '(?:projet|proposition|texte)[^0-9]*n[°º]?\s*([0-9]{3,5})')
+              SUBSTRING(s.titre FROM '(?:projet|proposition|texte)[^0-9]*n[°º]\\s*([0-9]{3,5})')
             ) as texte_numero
           FROM scrutins s
           WHERE s.titre ILIKE '%amendement%'
@@ -6492,18 +6689,31 @@ export async function linkScrutinsToAmendements(
             a.legislature,
             a.numero,
             SPLIT_PART(a.numero, ' ', 1) as numero_clean,
+            -- Les lois de finances numérotent leurs amendements de séance par
+            -- partie en première lecture (« I-989 », « II-989 ») ; le libellé
+            -- du scrutin dit « n° 989 ». Ceux des commissions (« I-CF989 »)
+            -- ne passent pas en scrutin public et gardent leurs lettres.
+            regexp_replace(SPLIT_PART(a.numero, ' ', 1), '^(I|II|III)-([0-9]+)$', '\\2') as numero_seance,
             a.numero LIKE '% (Rect%' as is_rect,
-            LOWER(SUBSTRING(a.article_vise FROM 'ART\.\s+(PREMIER|\d+)')) as article_num,
+            -- « ART. 1ER BIS » est l'article « premier » du libellé.
+            regexp_replace(LOWER(SUBSTRING(a.article_vise FROM 'ART\\.\\s+(PREMIER|1ER|LIMINAIRE|\\d+)')), '^1er$', 'premier') as article_num,
             a.article_vise ILIKE 'APRÈS%' as amdt_is_apres,
+            a.date_depot::date as date_depot,
             SUBSTRING(a.texte_ref FROM 'B(?:TC)?([0-9]+)') as amendement_texte_numero
           FROM amendements a
           WHERE a.chambre = 'assemblee'
         ),
-        best_match AS (
-          SELECT DISTINCT ON (swn.id) swn.id as scrutin_id, awt.id as amendement_id
+        candidats AS (
+          SELECT swn.id as scrutin_id, awt.id as amendement_id,
+            swn.article_numero, awt.article_num, swn.texte_numero,
+            awt.amendement_texte_numero, swn.is_rectifie, awt.is_rect, awt.date_depot,
+            -- Sans article dans le libellé, rien ne départage des homonymes
+            -- (« I-3 » et « II-3 » d'une loi de finances) : un seul candidat,
+            -- ou pas de lien.
+            count(*) OVER (PARTITION BY swn.id) as nb_candidats
           FROM scrutins_with_info swn
           INNER JOIN amendements_with_texte awt ON
-            awt.numero_clean = swn.amendement_numero
+            awt.numero_seance = swn.amendement_numero
             -- Garde-fou législature : les textes sont renumérotés à chaque
             -- législature, le n°3 existe en 15e, 16e ET 17e. texte_numero est
             -- extrait sans le préfixe de législature, il ne discrimine donc
@@ -6516,12 +6726,22 @@ export async function linkScrutinsToAmendements(
             )
             AND (swn.article_numero IS NULL OR awt.article_num = swn.article_numero)
             AND (swn.article_numero IS NULL OR awt.amdt_is_apres = swn.is_apres)
+            -- Un amendement déposé après le jour du vote est l'homonyme d'une
+            -- lecture suivante, pas celui qu'on a voté (utils/amendement-scrutin).
+            AND (awt.date_depot IS NULL OR awt.date_depot <= swn.date_vote)
           WHERE swn.amendement_numero IS NOT NULL
-          ORDER BY swn.id,
-            CASE WHEN swn.article_numero IS NOT NULL AND awt.article_num = swn.article_numero THEN 0 ELSE 1 END,
-            CASE WHEN swn.texte_numero IS NOT NULL AND awt.amendement_texte_numero = swn.texte_numero THEN 0 ELSE 1 END,
-            CASE WHEN swn.is_rectifie = awt.is_rect THEN 0 ELSE 1 END,
-            awt.id
+        ),
+        best_match AS (
+          SELECT DISTINCT ON (scrutin_id) scrutin_id, amendement_id
+          FROM candidats
+          WHERE article_numero IS NOT NULL OR nb_candidats = 1
+          ORDER BY scrutin_id,
+            CASE WHEN article_numero IS NOT NULL AND article_num = article_numero THEN 0 ELSE 1 END,
+            CASE WHEN texte_numero IS NOT NULL AND amendement_texte_numero = texte_numero THEN 0 ELSE 1 END,
+            CASE WHEN is_rectifie = is_rect THEN 0 ELSE 1 END,
+            -- Entre deux lectures d'un même dossier, la plus récente avant le vote.
+            date_depot DESC NULLS LAST,
+            amendement_id
         )
         INSERT INTO "_AmendementToScrutin" ("A", "B")
         SELECT amendement_id, scrutin_id FROM best_match
@@ -6674,9 +6894,9 @@ export async function linkScrutinsToAmendements(
   // === PROPAGATION: dossierId from amendement → scrutin (Sénat only) ===
   // When a scrutin votes on an amendement that belongs to a dossier,
   // the scrutin should also be linked to that dossier.
-  // NOTE: AN scrutins get dossier_id exclusively from linkANScrutinsByTitle (title matching).
-  // Reverse-propagating from amendments for AN would cause contamination if the CTE
-  // ever matched a wrong amendment (the wrong dossier_id would stick across runs).
+  // NOTE: côté AN, le dossier d'un scrutin vient du titre, puis de ses amendements
+  // une fois leurs liens fiabilisés (alignerDossierDesScrutinsSurLeursAmendements,
+  // après le nettoyage des liens impossibles). Pas de propagation ici.
   // SAFETY: For Sénat scrutins with sourceData.dossierRef, only propagate if
   // the amendment's dossier matches the expected ref (prevents cross-dossier contamination).
   if (!dryRun) {
@@ -6750,9 +6970,17 @@ export async function enrichScrutinsANAmendements(
      * pour un rattrapage.
      */
     depuisJours?: number;
+    /**
+     * Avec `only` : remplacer les liens d'un scrutin par ceux que sa page publie,
+     * et seulement si elle en publie. C'est la vérification d'un lien existant :
+     * `reset` effaçait d'abord, et un scrutin dont la page ne publie pas de lien
+     * perdait le sien, juste ou non.
+     */
+    remplacer?: boolean;
   } = {}
 ): Promise<{ enriched: number; notFound: number; errors: number; resetCount?: number }> {
   const dryRun = options.dryRun ?? false;
+  const remplacer = (options.remplacer ?? false) && !!options.only?.length;
   const concurrency = options.concurrency ?? 3; // Limiter les requêtes parallèles pour éviter le rate limiting
   const limitCount = options.limit;
   const reset = options.reset ?? false;
@@ -6820,6 +7048,7 @@ export async function enrichScrutinsANAmendements(
       session: true,
       legislature: true,
       dossierId: true,
+      date: true,
     },
     take: limitCount,
     orderBy: { numero: 'desc' }, // Plus récents d'abord
@@ -6843,9 +7072,10 @@ export async function enrichScrutinsANAmendements(
     where: { chambre: 'assemblee' },
     select: {
       id: true, uid: true, numero: true, texteRef: true, legislature: true,
-      dossierId: true, articleVise: true,
+      dossierId: true, articleVise: true, dateDepot: true,
     },
   });
+  const dateDeDepot = new Map(amendementsAN.map((a) => [a.id, a.dateDepot]));
 
   const amendementMap = new Map<string, CandidatAmendement[]>();
   const ajouter = (key: string, candidat: CandidatAmendement): void => {
@@ -6924,20 +7154,27 @@ export async function enrichScrutinsANAmendements(
 
           // Collecter tous les amendements trouvés (avec validation dossier)
           const foundAmendementIds: string[] = [];
-          let dossierFiltered = 0;
           let ambigus = 0;
           for (const match of allMatches) {
             const [, texteNumero, , amendementNumero] = match;
             const key = `${scrutin.legislature}-${texteNumero}-${amendementNumero}`.toUpperCase();
-            const candidats = amendementMap.get(key);
-            if (!candidats || candidats.length === 0) continue;
-            // Le filtre dossier reste la première barrière ; choisirAmendement()
-            // départage ensuite les homonymes sur l'article que nomme le libellé,
-            // et rend null plutôt que de deviner.
-            const amendement = choisirAmendement(candidats, scrutin.titre, scrutin.dossierId);
+            // Un amendement déposé après le jour du vote n'a pas pu être voté :
+            // c'est l'homonyme d'une lecture suivante (la nouvelle lecture du PLF
+            // 2026 renumérote ses amendements à partir de 1).
+            const candidats = (amendementMap.get(key) ?? []).filter(
+              (c) => !deposeApresLeVote(dateDeDepot.get(c.id) ?? null, scrutin.date),
+            );
+            if (candidats.length === 0) continue;
+            // La page du scrutin désigne le texte par son numéro : c'est elle qui
+            // fait foi, pas le dossier du scrutin, qu'un rattachement par titre a
+            // pu poser sur un homonyme (« Programmation énergie-climat » au lieu
+            // du dossier poursuivi qui porte le texte n° 1522). Pas de filtre de
+            // dossier ici : choisirAmendement() départage les homonymes du même
+            // texte sur l'article que nomme le libellé, et rend null plutôt que de
+            // deviner.
+            const amendement = choisirAmendement(candidats, scrutin.titre, null);
             if (!amendement) {
-              if (candidats.length === 1) dossierFiltered++;
-              else ambigus++;
+              ambigus++;
               continue;
             }
             if (!foundAmendementIds.includes(amendement.id)) {
@@ -6950,21 +7187,19 @@ export async function enrichScrutinsANAmendements(
             return { status: 'notFound' as const };
           }
 
-          // Connecter tous les amendements trouvés (M:N)
+          // Connecter tous les amendements trouvés (M:N). En vérification, la
+          // page remplace les liens existants.
           if (!dryRun) {
             await prisma.scrutin.update({
               where: { id: scrutin.id },
               data: {
-                amendements: {
-                  connect: foundAmendementIds.map(id => ({ id })),
-                },
+                amendements: remplacer
+                  ? { set: foundAmendementIds.map(id => ({ id })) }
+                  : { connect: foundAmendementIds.map(id => ({ id })) },
               },
             });
           }
 
-          if (dossierFiltered > 0) {
-            logger.debug({ scrutinNumero: scrutin.numero, dossierFiltered }, 'Skipped cross-dossier amendment matches');
-          }
           if (ambigus > 0) {
             logger.debug({ scrutinNumero: scrutin.numero, ambigus }, 'Skipped ambiguous amendment matches');
           }
@@ -7805,11 +8040,13 @@ export async function linkOrphansByLoiTitre(): Promise<{ linked: number }> {
       : Prisma.sql`TRUE`;
     // Même garde-fou pour la sous-requête d'ambiguïté, qui utilise l'alias d2.
     const legislatureFilterD2 = chambre === 'assemblee'
-      ? Prisma.sql`(s.session ~ '^[0-9]+$' AND d2.legislature = s.session::int)`
+      ? Prisma.sql`(s.session ~ '^[0-9]+$'
+          AND ${dossierValantPour('d2', "(CASE WHEN s.session ~ '^[0-9]+$' THEN s.session::int END)")})`
       : Prisma.sql`TRUE`;
 
     // Pass 1: loi_titre substring match
     const loiTitreResult = await prisma.$executeRaw`
+      WITH ${CTE_LEGISLATURES_DOSSIER}
       UPDATE scrutins s
       SET dossier_id = d.id
       FROM dossiers_legislatifs d

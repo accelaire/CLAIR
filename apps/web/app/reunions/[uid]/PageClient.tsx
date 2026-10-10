@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -12,10 +12,13 @@ import {
   Video,
   FileText,
   ExternalLink,
+  Vote,
 } from 'lucide-react';
 import { libelleDeSeance } from '@/lib/debats';
 import { urlDuCompteRendu } from '@/lib/compte-rendu-url';
 import { pointsDeLOrdreDuJour } from '@/lib/ordre-du-jour';
+import { scrutinHref } from '@/lib/scrutin-url';
+import { voteDOrigine } from '@/lib/seance-url';
 import { DebatDeReunion, type ScrutinDeSeance } from './DebatDeReunion';
 import { SommaireDeSeance, type EntreeDuSommaire } from './SommaireDeSeance';
 
@@ -32,6 +35,12 @@ export interface ReunionDetail {
   captationVideo: boolean;
   urlVideo: string | null;
   compteRenduRef: string | null;
+  /**
+   * Le compte rendu de la chambre lu sur les prises de parole, quand l'agenda
+   * n'en donne pas la référence. Optionnel : absent d'une réponse servie d'un
+   * cache antérieur.
+   */
+  compteRenduUrl?: string | null;
   commission: {
     id: string;
     slug: string;
@@ -95,7 +104,24 @@ export default function PageClient({ reunion }: { reunion: ReunionDetail }) {
   // Un compteur l'accompagne : recliquer le même point doit refaire défiler.
   const [cible, setCible] = useState<{ rang: number; clic: number } | null>(null);
   const chambreLabel = reunion.commission?.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale';
-  const crUrl = urlDuCompteRendu(reunion.compteRenduRef);
+  const crUrl = urlDuCompteRendu(reunion.compteRenduRef) ?? reunion.compteRenduUrl ?? null;
+
+  // LE VOTE D'OÙ L'ON ARRIVE. La page d'un vote mène ici avec `?vote=…&rang=…`
+  // (voir `lib/seance-url.ts`) : la séance se déroule jusqu'au débat de ce
+  // vote et le met en évidence. Lu après le montage, pas au rendu serveur : la
+  // page reste la même en cache pour tous, d'où qu'on vienne. Le débat attend
+  // cette lecture pour se charger, puisqu'elle décide de la taille des pages.
+  const [arrivee, setArrivee] = useState<{ vote: string; rang: number | null } | null>(null);
+  const [urlLue, setUrlLue] = useState(false);
+  useEffect(() => {
+    const origine = voteDOrigine(window.location.search);
+    setArrivee(origine);
+    if (origine?.rang != null) setCible({ rang: origine.rang, clic: 1 });
+    setUrlLue(true);
+  }, []);
+  const voteSuivi = arrivee
+    ? (reunion.scrutins ?? []).find((s) => s.id === arrivee.vote) ?? null
+    : null;
 
   const points = pointsDeLOrdreDuJour(reunion.odjResume, reunion.odjComplet);
   // Défensif : une réponse servie d'un cache antérieur peut ne pas porter le
@@ -234,6 +260,49 @@ export default function PageClient({ reunion }: { reunion: ReunionDetail }) {
         </section>
       )}
 
+      {/* D'où l'on vient, et le chemin du retour : arrivé depuis un vote, le
+          lecteur doit pouvoir y revenir sans compter sur le bouton précédent,
+          et retrouver le passage s'il a fait défiler la séance.
+
+          EMPILÉ, PAS EN LIGNE. Titre et actions côte à côte écrasaient le
+          titre en colonne d'un mot sous 420 px. Le titre d'un vote fait
+          souvent trois lignes : il est coupé à deux, les actions passent
+          dessous. */}
+      {voteSuivi && (
+        <div className="mb-8 rounded-lg border bg-card px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <Vote className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-300" />
+            <span>
+              Vous suivez le <span className="font-semibold">vote n°{voteSuivi.numero}</span>
+            </span>
+            <span
+              className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                voteSuivi.sort === 'adopte' ? 'badge-adopte' : 'badge-rejete'
+              }`}
+            >
+              {voteSuivi.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
+            </span>
+          </div>
+          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground first-letter:uppercase">
+            {voteSuivi.titre}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+            {arrivee?.rang != null && (
+              <button
+                type="button"
+                onClick={() => setCible((c) => ({ rang: arrivee.rang!, clic: (c?.clic ?? 0) + 1 }))}
+                className="font-medium text-primary hover:underline"
+              >
+                Aller à son débat
+              </button>
+            )}
+            <Link href={scrutinHref(voteSuivi)} className="font-medium text-primary hover:underline">
+              Revenir au vote
+            </Link>
+          </div>
+        </div>
+      )}
+
       <SommaireDeSeance
         entrees={sommaire}
         votesDuJour={reunion.votesDuJour ?? false}
@@ -245,6 +314,12 @@ export default function PageClient({ reunion }: { reunion: ReunionDetail }) {
         total={reunion.nbInterventions ?? 0}
         scrutins={reunion.scrutins}
         cible={cible}
+        voteSuivi={voteSuivi?.id ?? null}
+        pret={urlLue}
+        // Arrivé sur un passage lointain, on charge par grandes tranches : la
+        // 600e prise demande trois allers-retours au lieu de douze, sous un
+        // plafond de soixante requêtes par minute et par visiteur.
+        parPage={arrivee?.rang != null ? 200 : undefined}
       />
 
       {reunion.avisCommission.length > 0 && (

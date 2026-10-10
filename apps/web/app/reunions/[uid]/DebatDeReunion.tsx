@@ -81,6 +81,9 @@ export function DebatDeReunion({
   total,
   scrutins,
   cible,
+  voteSuivi,
+  pret = true,
+  parPage = PRISES_PAR_PAGE,
 }: {
   uid: string;
   total: number;
@@ -95,19 +98,25 @@ export function DebatDeReunion({
    * après avoir fait défiler la page ne ferait rien.
    */
   cible?: { rang: number; clic: number } | null;
+  /** Le vote d'où l'on arrive : son débat et son résultat sont mis en évidence. */
+  voteSuivi?: string | null;
+  /** Faux tant que la page n'a pas lu l'URL, qui décide de `parPage`. */
+  pret?: boolean;
+  /** Taille des tranches chargées, constante pour toute la lecture. */
+  parPage?: number;
 }) {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError } =
     useInfiniteQuery<PageDeDebat>({
-      queryKey: ['debat-reunion', uid],
+      queryKey: ['debat-reunion', uid, parPage],
       queryFn: async ({ pageParam = 1 }) => {
         const res = await api.get(`/agenda/${encodeURIComponent(uid)}/debat`, {
-          params: { page: pageParam, limit: PRISES_PAR_PAGE },
+          params: { page: pageParam, limit: parPage },
         });
         return res.data;
       },
       getNextPageParam: (derniere, pages) => (derniere.meta.hasNext ? pages.length + 1 : undefined),
       initialPageParam: 1,
-      enabled: total > 0,
+      enabled: total > 0 && pret,
     });
 
   const { loadMoreRef } = useInfiniteScroll({ hasNextPage, isFetchingNextPage, fetchNextPage });
@@ -230,7 +239,15 @@ export function DebatDeReunion({
 
               <div className="divide-y">
                 {groupe.interventions.map((prise) => (
-                  <div key={prise.id} data-prise={prise.id} className="scroll-mt-20">
+                  <div
+                    key={prise.id}
+                    data-prise={prise.id}
+                    className={`scroll-mt-20 ${
+                      voteSuivi && prise.scrutinIds.includes(voteSuivi)
+                        ? 'bg-indigo-50/50 dark:bg-indigo-950/20'
+                        : ''
+                    }`}
+                  >
                     <PriseDeParoleItem prise={prise} />
                     {/* Le vote tombe juste après la DERNIÈRE prise qui le
                         porte : c'est l'instant où il a eu lieu. Le mettre en
@@ -238,7 +255,11 @@ export function DebatDeReunion({
                         premières prises d'une séance forment souvent un seul
                         long passage sans sujet déclaré. */}
                     {(votesApres.get(prise.id) ?? []).map((scrutin) => (
-                      <ResultatDuVote key={scrutin.id} scrutin={scrutin} />
+                      <ResultatDuVote
+                        key={scrutin.id}
+                        scrutin={scrutin}
+                        suivi={scrutin.id === voteSuivi}
+                      />
                     ))}
                   </div>
                 ))}
@@ -305,17 +326,25 @@ function PriseDeParoleItem({ prise }: { prise: PriseDeParole }) {
  * contre 79 » et « adopté par 400 voix contre 12 » ne racontent pas la même
  * séance.
  */
-function ResultatDuVote({ scrutin }: { scrutin: ScrutinDeSeance }) {
+function ResultatDuVote({ scrutin, suivi = false }: { scrutin: ScrutinDeSeance; suivi?: boolean }) {
   const adopte = scrutin.sort === 'adopte';
   return (
     <Link
       href={scrutinHref(scrutin)}
-      className="flex flex-wrap items-center gap-x-3 gap-y-1 border-l-2 border-indigo-400 bg-indigo-50/60 px-4 py-2.5 transition-colors hover:bg-indigo-100/60 dark:border-indigo-500 dark:bg-indigo-950/30 dark:hover:bg-indigo-950/50"
+      aria-current={suivi ? 'true' : undefined}
+      className={`flex flex-wrap items-center gap-x-3 gap-y-1 border-l-2 border-indigo-400 bg-indigo-50/60 px-4 py-2.5 transition-colors hover:bg-indigo-100/60 dark:border-indigo-500 dark:bg-indigo-950/30 dark:hover:bg-indigo-950/50 ${
+        suivi ? 'border-l-4 ring-2 ring-inset ring-indigo-400 dark:ring-indigo-500' : ''
+      }`}
     >
       <Vote className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-300" />
       <span className="text-sm font-semibold text-indigo-900 dark:text-indigo-200">
         Vote n&deg;{scrutin.numero}
       </span>
+      {suivi && (
+        <span className="rounded bg-indigo-600 px-1.5 py-0.5 text-xs font-medium text-white dark:bg-indigo-500">
+          Le vote que vous consultiez
+        </span>
+      )}
       <span
         className={`rounded px-1.5 py-0.5 text-xs font-medium ${
           adopte ? 'badge-adopte' : 'badge-rejete'

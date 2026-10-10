@@ -38,6 +38,8 @@ import {
   linkAmendementsToDossiers,
   linkAmendementsToDossiersByTexteRef,
   propagateDossierIdBySiblingTexteRef,
+  effacerLiensAmendementApresLeVote,
+  alignerDossierDesScrutinsSurLeursAmendements,
   syncCommissions,
   syncReunions,
   syncSeancesODJ,
@@ -845,6 +847,41 @@ program
   });
 
 // =============================================================================
+// COMMANDE: clore-mandats-an
+// =============================================================================
+program
+  .command('clore-mandats-an')
+  .description("Clore les mandats de député des sortants (y compris élus sénateurs) et les mandats d'organe AN qui survivent au mandat de député")
+  .option('--dry-run', 'Compter sans rien écrire')
+  .action(async (options: { dryRun?: boolean }) => {
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+      try {
+        const { AssembleeNationaleDeputesClient } = await import('./sources/assemblee-nationale/deputes-client.js');
+        const { LEGISLATURE_AN_COURANTE, LEGISLATURE_FIN } = await import('./workers/mandats.js');
+        const { cloturerDeputesSortants, cloreOrganesANHorsMandat } = await import('./workers/mandats-an-sortants.js');
+        const { deputes } = await new AssembleeNationaleDeputesClient(LEGISLATURE_AN_COURANTE).getDeputes();
+        const decisions = await cloturerDeputesSortants(prisma, deputes.map((d) => d.uid), {
+          finLegislature: LEGISLATURE_FIN[LEGISLATURE_AN_COURANTE],
+          dryRun: options.dryRun,
+        });
+        const organes = await cloreOrganesANHorsMandat(prisma, { dryRun: options.dryRun });
+        console.log(`\n🏛️  Mandats AN${options.dryRun ? ' (DRY RUN)' : ''} :`);
+        console.log(`   Députés listés par la source : ${deputes.length}`);
+        console.log(`   Sortants                     : ${decisions.length} (dont passés au Sénat : ${decisions.filter((d) => !d.desactiver).length})`);
+        console.log(`   Mandats d'organe à clore     : ${organes}`);
+      } finally {
+        await prisma.$disconnect();
+      }
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'clore-mandats-an failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
 // COMMANDE: link-scrutins-tfidf
 // =============================================================================
 program
@@ -905,20 +942,86 @@ program
 // =============================================================================
 program
   .command('link-amendements-dossiers')
-  .description('Propager dossier_id des scrutins vers les amendements')
+  .description("Rattacher les amendements à leur dossier : texte de la source d'abord, puis scrutins et voisins")
   .action(async () => {
     try {
       const { effaces } = await effacerDossiersDAutreLegislature();
       console.log(`\nLiens inter-législatures effacés: ${effaces}`);
+      // Même ordre que le batch : le dossier du texte fait foi, les
+      // propagations ne comblent que ce qui reste vide.
+      const result2 = await linkAmendementsToDossiersByTexteRef();
+      console.log(`Amendements liés via texteRef: ${result2.linked} (dont corrigés : ${result2.corriges})`);
       const result = await linkAmendementsToDossiers();
       console.log(`Amendements liés via scrutins: ${result.linked}`);
-      const result2 = await linkAmendementsToDossiersByTexteRef();
-      console.log(`Amendements liés via texteRef: ${result2.linked}`);
       const result3 = await propagateDossierIdBySiblingTexteRef();
       console.log(`Amendements liés via sibling texteRef (safe): ${result3.linked}`);
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'link-amendements-dossiers failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: verifier-amendements-scrutins-an
+// =============================================================================
+program
+  .command('verifier-amendements-scrutins-an')
+  .description(
+    "Fiabiliser les liens scrutin AN → amendement : effacer les impossibles, revérifier sur la page AN les scrutins douteux, puis aligner leur dossier",
+  )
+  .option('--dry-run', 'Lister les scrutins douteux sans rien écrire')
+  .option('--concurrence <n>', 'Pages AN lues en parallèle', (v: string) => parseInt(v, 10), 3)
+  .option('--articles', "Seulement les liens dont l'article contredit le libellé : remplacer, retirer ou garder")
+  .action(async (options: { dryRun?: boolean; concurrence: number; articles?: boolean }) => {
+    try {
+      if (options.articles) {
+        const { corrigerLiensArticleDiscordant } = await import('./workers/liens-amendements-discordants.js');
+        const r = await corrigerLiensArticleDiscordant({ dryRun: options.dryRun });
+        console.log(`\nLiens comparables : ${r.comparables}, discordants : ${r.discordants}`);
+        console.log(`  remplacés : ${r.remplaces}, retirés : ${r.retires}, gardés : ${r.gardes}${options.dryRun ? ' (dry-run)' : ''}`);
+        process.exit(0);
+      }
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+      // Les scrutins douteux, relevés AVANT d'effacer quoi que ce soit : ceux
+      // qui pointent vers un amendement déposé après le vote, et ceux dont le
+      // dossier diffère de celui de tous leurs amendements.
+      const douteux = await prisma.$queryRaw<{ id: string; motif: string }[]>`
+        SELECT DISTINCT s.id, 'apres_le_vote' AS motif
+        FROM scrutins s
+        JOIN "_AmendementToScrutin" ats ON ats."B" = s.id
+        JOIN amendements a ON a.id = ats."A"
+        WHERE s.chambre = 'assemblee' AND a.date_depot::date > s.date::date
+        UNION
+        SELECT s.id, 'dossier_different'
+        FROM scrutins s
+        JOIN "_AmendementToScrutin" ats ON ats."B" = s.id
+        JOIN amendements a ON a.id = ats."A"
+        WHERE s.chambre = 'assemblee'
+        GROUP BY s.id, s.dossier_id
+        HAVING count(DISTINCT a.dossier_id) = 1 AND count(*) = count(a.dossier_id)
+           AND s.dossier_id IS DISTINCT FROM min(a.dossier_id)
+      `;
+      const ids = [...new Set(douteux.map((d) => d.id))];
+      console.log(`\nScrutins douteux : ${ids.length}`);
+      console.log(`  amendement déposé après le vote : ${douteux.filter((d) => d.motif === 'apres_le_vote').length}`);
+      console.log(`  dossier différent de celui des amendements : ${douteux.filter((d) => d.motif === 'dossier_different').length}`);
+      await prisma.$disconnect();
+      if (options.dryRun || ids.length === 0) process.exit(0);
+
+      const { effaces } = await effacerLiensAmendementApresLeVote();
+      console.log(`Liens impossibles effacés : ${effaces}`);
+      // La page du scrutin fait foi ; elle ne remplace les liens que si elle en publie.
+      const html = await enrichScrutinsANAmendements({ only: ids, remplacer: true, concurrency: options.concurrence });
+      console.log(`Revérifiés sur la page AN : ${html.enriched} (sans lien publié : ${html.notFound}, erreurs : ${html.errors})`);
+      const cte = await linkScrutinsToAmendements({ chambre: 'assemblee' });
+      console.log(`Comblés par le repli : ${cte.linked}`);
+      const { alignes } = await alignerDossierDesScrutinsSurLeursAmendements();
+      console.log(`Scrutins alignés sur le dossier de leurs amendements : ${alignes}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'verifier-amendements-scrutins-an failed');
       process.exit(1);
     }
   });
@@ -1390,6 +1493,8 @@ program
       });
       console.log(`\nSéances lues          : ${result.seances}`);
       console.log(`Séances déjà en base  : ${result.seancesIgnorees}`);
+      console.log(`Séances récentes relues : ${result.relues} (remplacées : ${result.remplacees})`);
+      console.log(`Comptes rendus provisoires : ${result.provisoires}`);
       console.log(`Interventions écrites : ${result.interventions}`);
       console.log(`Orateurs non résolus  : ${result.sansParlementaire}`);
       process.exit(0);
@@ -1412,6 +1517,13 @@ program
       console.log(`Prises de parole situées : ${r.interventions}`);
       console.log(`  dont liens corrigés    : ${r.corrigees}`);
       console.log(`Liens inter-législatures effacés : ${r.effaces}`);
+      if (r.ordreDuJour) {
+        const o = r.ordreDuJour;
+        console.log(`\nPoints d'ordre du jour   : ${o.points}`);
+        console.log(`  rattachés par numéro   : ${o.rattaches}`);
+        console.log(`  sans dossier           : ${o.sansDossier}`);
+        console.log(`Prises sans numéro situées : ${o.interventions}${options.dryRun ? ' (dry-run)' : ''}`);
+      }
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'link-interventions-dossiers failed');

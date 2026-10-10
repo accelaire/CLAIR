@@ -80,7 +80,10 @@ describe('lireTitreScrutinSenat — la cible', () => {
       "sur la demande de seconde délibération, présentée par le Gouvernement, de l'article 1er de la proposition de loi",
     );
     expect(objet.cible).toBe('article');
-    expect(objet.article).toBe('1');
+    // « 1er » se lit « premier », comme « l'article premier » ; la clé de
+    // rapprochement du Sénat le ramène à « 1 ».
+    expect(objet.article).toBe('PREMIER');
+    expect(cleArticleSenat(objet.article)).toBe('1');
   });
 });
 

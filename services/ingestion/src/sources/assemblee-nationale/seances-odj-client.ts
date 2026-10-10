@@ -6,6 +6,7 @@
 import { LEGISLATURE_AN_COURANTE } from '../../workers/mandats';
 import axios from 'axios';
 import { logger } from '../../utils/logger';
+import { urlSansCacheAN } from '../../utils/cdn-an';
 import { errorMessage } from '../../utils/errors';
 
 // =============================================================================
@@ -38,7 +39,9 @@ export class SeancesODJClient {
 
     const response = await axios({
       method: 'GET',
-      url: this.csvUrl,
+      // Toujours la version de l'origine (cf. cdn-an.ts) : le fichier ne
+      // pèse que 22 Ko, le débit de l'origine ne coûte rien ici.
+      url: urlSansCacheAN(this.csvUrl),
       responseType: 'arraybuffer',
       timeout: 30000,
       headers: {

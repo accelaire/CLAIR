@@ -35,6 +35,13 @@ describe('articleNumeroFromTitre', () => {
     expect(articleNumeroFromTitre("l'article 15 bis de la proposition de loi.")).toBe('15 BIS');
     expect(articleNumeroFromTitre("l'article 4 quater de la proposition de loi.")).toBe('4 QUATER');
     expect(articleNumeroFromTitre("l'article premier bis A du projet de loi.")).toBe('PREMIER BIS A');
+    // « 1er » est l'article premier, suffixes compris.
+    expect(articleNumeroFromTitre("l'amendement n° 27 à l'article 1er bis de la proposition de loi.")).toBe('PREMIER BIS');
+    expect(articleNumeroFromTitre("l'amendement n° 17 à l'article 1er A de la proposition de loi.")).toBe('PREMIER A');
+    expect(articleNumeroFromTitre("l'amendement n° 3 à l'article 1er de la proposition de loi.")).toBe('PREMIER');
+    // Suffixes latins au-delà de 14.
+    expect(articleNumeroFromTitre("l'amendement n° 151 après l'article 5 quindecies du projet de loi.")).toBe('5 QUINDECIES');
+    expect(articleNumeroFromTitre("l'amendement n° 2 à l'article 3 vicies A du projet de loi.")).toBe('3 VICIES A');
   });
 
   it('accepte l’apostrophe typographique', () => {
@@ -97,17 +104,19 @@ describe('articleNumeroFromTitre', () => {
 
 describe('articleLookupKeys', () => {
   it('tente les deux graphies du premier article', () => {
-    expect(articleLookupKeys('PREMIER')).toEqual(['PREMIER', '1']);
-    expect(articleLookupKeys('1')).toEqual(['1', 'PREMIER']);
+    expect(articleLookupKeys('PREMIER')).toEqual(['PREMIER', '1', '1ER']);
+    expect(articleLookupKeys('1')).toEqual(['1', 'PREMIER', '1ER']);
   });
 
   it('propage la double graphie aux articles suffixés', () => {
-    expect(articleLookupKeys('1 BIS')).toEqual(['1 BIS', 'PREMIER BIS']);
-    expect(articleLookupKeys('PREMIER BIS')).toEqual(['PREMIER BIS', '1 BIS']);
+    expect(articleLookupKeys('1 BIS')).toEqual(['1 BIS', 'PREMIER BIS', '1ER BIS']);
+    expect(articleLookupKeys('PREMIER BIS')).toEqual(['PREMIER BIS', '1 BIS', '1ER BIS']);
+    expect(articleLookupKeys('1ER BIS')).toEqual(['1ER BIS', 'PREMIER BIS', '1 BIS']);
   });
 
   it("ne fabrique pas d'alternative pour les autres articles", () => {
     expect(articleLookupKeys('15')).toEqual(['15']);
+    expect(articleLookupKeys('10')).toEqual(['10']);
     expect(articleLookupKeys('UNIQUE')).toEqual(['UNIQUE']);
   });
 
