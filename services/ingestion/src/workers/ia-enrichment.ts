@@ -267,7 +267,7 @@ export interface EnrichmentOptions {
    */
   rehashOnly?: boolean;
   /**
-   * Scrutins, dossiers et sujets : appelle le LLM et AFFICHE le texte produit, sans rien
+   * Scrutins, dossiers, sujets et parlementaires : appelle le LLM et AFFICHE le texte produit, sans rien
    * écrire. Sert à valider un changement de prompt sur des fiches réelles
    * (`--only … --force --preview`) avant que le cron ne régénère le corpus.
    */

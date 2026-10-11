@@ -144,7 +144,7 @@ function extractMandatsSenat(sourceData: unknown): ExtractedMandat[] {
 export async function enrichParlementairesIA(
   options: EnrichmentOptions = {}
 ): Promise<EnrichmentResult> {
-  const { limit, dryRun = false, concurrency = 2, force = false, randomSample, skipRecentDays = 3, only } = options;
+  const { limit, dryRun = false, concurrency = 2, force = false, randomSample, skipRecentDays = 3, only, preview = false } = options;
   const cibles = only?.length ? only : null;
 
   const result: EnrichmentResult = {
@@ -233,6 +233,14 @@ export async function enrichParlementairesIA(
         // Relations
         groupe: { select: { nom: true } },
         circonscription: { select: { departement: true, numero: true, nom: true } },
+        // Les mandats de député ou de sénateur eux-mêmes : `extractMandatsAN`
+        // écarte le type ASSEMBLEE, le modèle ne voyait donc que des commissions
+        // et devinait la carrière (« ne se représente pas en 2024 » pour un
+        // député réélu en 2024).
+        mandatsParlementaires: {
+          select: { chambre: true, legislature: true, mandature: true, dateDebut: true, dateFin: true },
+          orderBy: [{ dateDebut: 'asc' }, { id: 'asc' }],
+        },
       },
       // Départage obligatoire dès qu'on pagine avec un décalage : deux
       // parlementaires de même chambre et de même nom ne sont pas rendus dans
@@ -282,6 +290,9 @@ export async function enrichParlementairesIA(
             String(parl.statsPresence), String(parl.statsLoyaute),
             String(parl.statsParticipation), String(parl.statsAmendements),
             mandats.map(m => `${m.typeOrgane}:${m.qualite}:${m.dateDebut}`).join('|'),
+            parl.mandatsParlementaires
+              .map(m => `${m.chambre}:${m.legislature ?? m.mandature ?? ''}:${m.dateDebut.getUTCFullYear()}:${m.dateFin?.getUTCFullYear() ?? ''}`)
+              .join('|'),
             lobbyActions.map(a => a.lobbyiste.nom).join('|'),
             declarations.map(d => `${d.typeDocument}:${d.datePublication?.toISOString() ?? ''}`).join('|'),
           ];
@@ -329,6 +340,13 @@ export async function enrichParlementairesIA(
               amendements: parl.statsAmendements,
               amendementsAdoptes: parl.statsAmendementsAdoptes,
             },
+            mandatsParlementaires: parl.mandatsParlementaires.map(m => ({
+              chambre: m.chambre,
+              legislature: m.legislature,
+              mandature: m.mandature,
+              anneeDebut: m.dateDebut.getUTCFullYear(),
+              anneeFin: m.dateFin?.getUTCFullYear() ?? null,
+            })),
             mandats: mandats.map(m => ({
               typeOrgane: m.typeOrgane,
               institution: m.institution,
@@ -400,6 +418,15 @@ export async function enrichParlementairesIA(
             // Fallback: entire response as resumeIA
             resumeIA = response;
             logger.warn({ parlId: parl.id }, 'Parlementaire response missing separators');
+          }
+
+          if (preview) {
+            console.log(
+              `\n===== APERÇU ${parl.chambre} ${parl.prenom} ${parl.nom}${parl.actif ? '' : ' (ancien)'} =====\n`
+              + `${resumeIA}\n\n--- PARCOURS ---\n${parcoursIA ?? ''}\n\n--- POSITIONS ---\n${positionsClesIA ?? ''}\n\n--- FAITS ---\n${faitsNotablesIA ?? ''}\n`,
+            );
+            result.enriched++;
+            return;
           }
 
           // Persist mandats to DB (upsert by sourceUid)

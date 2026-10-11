@@ -1097,7 +1097,7 @@ program
   .option('--force', 'Ignorer le hash, regénérer tout')
   .option('--only <ids...>', 'Restreindre à des entités précises (id de scrutin, uid de dossier, slug de sujet ou de parlementaire). Corrige une fiche fautive sans relancer tout le corpus')
   .option('--rehash', 'Recalculer et stocker le hash de contenu SANS appeler le LLM ni modifier les textes. À utiliser après un changement de formule de hash sur un corpus déjà correct')
-  .option('--preview', 'Scrutins, dossiers et sujets : générer et AFFICHER les textes sans rien écrire, pour valider un prompt (avec --only et --force)')
+  .option('--preview', 'Scrutins, dossiers, sujets et parlementaires : générer et AFFICHER les textes sans rien écrire, pour valider un prompt (avec --only et --force)')
   .option('-c, --concurrency <number>', 'Nombre d\'appels LLM en parallèle (défaut: 3)', parseInt)
   .action(async (options) => {
     try {

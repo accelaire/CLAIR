@@ -6,6 +6,8 @@ import {
   positionsAvecMotions,
   separerResumePositions,
   buildSujetResumePrompt,
+  buildParlementaireResumePrompt,
+  SYSTEM_PROMPT_PARLEMENTAIRE,
 } from './prompts';
 
 // =============================================================================
@@ -393,5 +395,97 @@ describe('separerResumePositions', () => {
 
   it('sans séparateur, prend le premier paragraphe comme résumé', () => {
     expect(separerResumePositions('Résumé.\n\nPos 1.\n\nPos 2.')).toEqual({ resume: 'Résumé.', positions: 'Pos 1.\n\nPos 2.' });
+  });
+});
+
+// =============================================================================
+// Fiche d'un ancien parlementaire
+// =============================================================================
+//
+// La fiche de David Guiraud, régénérée après son départ de l'Assemblée,
+// s'ouvrait sur « est un député français » : l'en-tête « (ancien) » ne suffisait
+// pas à faire écrire le mandat au passé.
+
+describe('buildParlementaireResumePrompt — ancien parlementaire', () => {
+  const parl = (over: Partial<Parameters<typeof buildParlementaireResumePrompt>[0]> = {}) =>
+    buildParlementaireResumePrompt({
+      prenom: 'David',
+      nom: 'Guiraud',
+      chambre: 'assemblee',
+      groupe: 'LFI-NFP',
+      actif: false,
+      stats: { presence: null, loyaute: null, participation: null, interventions: null, amendements: null, amendementsAdoptes: null },
+      mandats: [
+        { typeOrgane: 'COMPER', institution: 'Commission permanente', qualite: 'Membre', dateDebut: '2024-07-18' },
+        { typeOrgane: 'GOUVERNEMENT', institution: 'Gouvernement', qualite: 'Ministre', dateDebut: '2026-04-07' },
+      ],
+      lobbyingActions: [],
+      declarations: [],
+      ...over,
+    });
+
+  it('énonce en toutes lettres que le mandat est terminé', () => {
+    expect(parl()).toContain("Statut : mandat de député terminé — n'est plus député aujourd'hui.");
+  });
+
+  it('dit sénateur pour un ancien sénateur', () => {
+    expect(parl({ chambre: 'senat' })).toContain('Statut : mandat de sénateur terminé');
+  });
+
+  it('présente le groupe comme le dernier', () => {
+    expect(parl()).toContain('Dernier groupe politique : LFI-NFP');
+  });
+
+  it("ne laisse pas « en cours » un organe de la chambre que la source n'a pas clos", () => {
+    expect(parl()).toContain('2024-07-18 → terminé (date non publiée) : Membre — Commission permanente');
+  });
+
+  it('garde en cours une fonction au gouvernement, qui survit au mandat', () => {
+    expect(parl()).toContain('2026-04-07 → en cours : Ministre — Gouvernement');
+  });
+
+  it("ne demande plus son « rôle actuel » comme s'il siégeait encore", () => {
+    const prompt = parl();
+    expect(prompt).not.toContain('son rôle actuel');
+    expect(prompt).toContain('Qui est cet ancien député ?');
+  });
+
+  it("ne change rien pour un parlementaire en exercice", () => {
+    const prompt = parl({ actif: true });
+    expect(prompt).not.toContain('Statut :');
+    expect(prompt).toContain('Groupe politique : LFI-NFP');
+    expect(prompt).toContain('2024-07-18 → en cours : Membre');
+    expect(prompt).toContain('son rôle actuel');
+  });
+
+  it("n'expose pas au modèle le code brut de l'organe", () => {
+    const prompt = parl({
+      mandats: [{ typeOrgane: 'CNPE', institution: "Commission d'enquête", qualite: 'Membre', dateDebut: '2021-01-01', dateFin: '2021-06-30' }],
+    });
+    expect(prompt).toContain("2021-01-01 → 2021-06-30 : Membre — Commission d'enquête");
+    expect(prompt).not.toContain('CNPE');
+  });
+
+  it('donne au modèle chaque mandat parlementaire, réélection comprise', () => {
+    const prompt = parl({
+      mandatsParlementaires: [
+        { chambre: 'assemblee', legislature: 16, anneeDebut: 2022, anneeFin: 2024 },
+        { chambre: 'assemblee', legislature: 17, anneeDebut: 2024, anneeFin: 2026 },
+      ],
+    });
+    expect(prompt).toContain('Député, 16e législature : 2022 → 2024');
+    expect(prompt).toContain('Député, 17e législature : 2024 → 2026');
+  });
+
+  it("ne déclare pas en cours le mandat sans fin d'un ancien", () => {
+    const prompt = parl({
+      chambre: 'senat',
+      mandatsParlementaires: [{ chambre: 'senat', mandature: 2020, anneeDebut: 2020, anneeFin: null }],
+    });
+    expect(prompt).toContain('Sénateur, renouvellement de 2020 : 2020 → terminé (année non publiée)');
+  });
+
+  it('la consigne système impose le passé pour un mandat terminé', () => {
+    expect(SYSTEM_PROMPT_PARLEMENTAIRE).toContain('jamais au présent (« est député »');
   });
 });
