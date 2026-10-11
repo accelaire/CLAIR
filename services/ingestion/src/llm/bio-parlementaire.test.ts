@@ -57,6 +57,13 @@ describe("defautsBio — chiffres d'activité", () => {
     expect(defautsBio(phrase, deputeEnExercice).some(d => d.startsWith("chiffre d'activité"))).toBe(true);
   });
 
+  it.each([
+    'Candidat aux municipales à Montpellier, il recueille 1,67 % des suffrages.',
+    'Elle est élue avec 52 % des voix au second tour.',
+  ])('accepte un score électoral « %s »', (phrase) => {
+    expect(defautsBio(phrase, deputeEnExercice)).toEqual([]);
+  });
+
   it("accepte une loi ou un article chiffrés, qui ne périment pas", () => {
     expect(defautsBio("Il s'est opposé à l'usage du 49.3 sur la loi de 2023.", deputeEnExercice)).toEqual([]);
   });

@@ -131,9 +131,11 @@ function siegeDans(chambre: 'assemblee' | 'senat'): RegExp {
 }
 
 // Chiffres d'activité : périmés au scrutin suivant, et affichés à jour par la
-// page. « 148 amendements », « dont 21 ont été adoptés », « 26 % ».
+// page. « 148 amendements », « dont 21 ont été adoptés », « 26 % » de présence.
 const CHIFFRE_ACTIVITE = new RegExp(
-  '\\d[\\d\\s\\u00a0.,]*\\s?%'
+  // Sauf un score électoral (« 1,67 % des suffrages »), qui ne périme pas :
+  // faux positif sur la fiche de Jean-Louis Roumegas le 2026-10-11.
+  '\\d[\\d\\s\\u00a0.,]*\\s?%(?!\\s*des\\s+(?:suffrages|voix|exprimés|votants|inscrits))'
     + '|\\b\\d[\\d\\s\\u00a0]*\\s+(?:amendements?|votes?|scrutins?|interventions?|questions?|prises?\\s+de\\s+parole)\\b'
     + '|\\bdont\\s+\\d+\\s+(?:ont\\s+été\\s+)?adoptés?\\b',
   'iu',
