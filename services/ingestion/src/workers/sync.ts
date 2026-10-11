@@ -4691,11 +4691,22 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         tokensIn: iaParl.totalTokensIn, tokensOut: iaParl.totalTokensOut,
       }, 'Parlementaires IA enrichment completed');
 
-      // 2) Rotation : le backfill ne retouche jamais une fiche déjà enrichie, donc la date
-      // affichée vieillit indéfiniment. On régénère chaque jour un échantillon aléatoire parmi
-      // les fiches non rafraîchies depuis 25 jours.
+      // 2) Fiches périmées : celles dont un fait affirmé a changé (mandat terminé,
+      //    groupe, commission, chambre) ou écrites avec une version antérieure du
+      //    prompt. Plafond par nuit pour ne pas rallonger le batch : après un
+      //    changement de prompt, le parc entier se régénère en quelques nuits, puis
+      //    il ne reste que quelques fiches par semaine. Cf. llm/bio-parlementaire.ts.
+      const iaParlPerimees = await enrichParlementairesIA({ concurrency: 2, perimees: 200 });
+      logger.info({
+        enriched: iaParlPerimees.enriched, errors: iaParlPerimees.errors,
+        tokensIn: iaParlPerimees.totalTokensIn, tokensOut: iaParlPerimees.totalTokensOut,
+      }, 'Parlementaires IA : fiches périmées régénérées');
+
+      // 3) Rotation : ce que nos données ignorent (un ancien député devenu maire n'est
+      // connu que de Wikidata) ne périme aucune empreinte. On régénère donc chaque jour un
+      // échantillon aléatoire, élus en exercice et anciens qui ont une fiche, parmi les
+      // fiches non rafraîchies depuis 25 jours.
       // Sources gratuites (Wikipedia + Wikidata, sans quota) : le seul coût est Mistral.
-      // 25/jour rafraîchit les ~950 fiches en ~38 jours ; ce plafond est ajustable librement.
       const iaParlRefresh = await enrichParlementairesIA({
         concurrency: 2,
         randomSample: 25,

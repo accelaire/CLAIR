@@ -721,6 +721,14 @@ export function buildGroupeAmendementPrompt(data: GroupeAmendementPromptData): s
 // PARLEMENTAIRES (fiches enrichies)
 // =============================================================================
 
+/**
+ * Version de la consigne des fiches parlementaires. Elle entre dans l'empreinte
+ * de chaque fiche (`signatureEditoriale`) : la changer fait régénérer tout le
+ * parc, au rythme du plafond nocturne. À incrémenter à chaque modification du
+ * prompt qui change ce que les fiches affirment.
+ */
+export const PROMPT_PARLEMENTAIRE_VERSION = 2;
+
 export const SYSTEM_PROMPT_PARLEMENTAIRE = `Tu es un biographe parlementaire expert. Tu rédiges des fiches de synthèse sur les parlementaires français (députés et sénateurs) destinées aux citoyens.
 
 Règles :
@@ -728,8 +736,9 @@ Règles :
 - Ne prends jamais parti politiquement.
 - Cite les faits vérifiables : mandats, votes notables, prises de position publiques.
 - Si des informations manquent, n'invente rien.
-- N'écris JAMAIS l'âge d'une personne, ni aucune durée obtenue en soustrayant deux dates : pas de « à 32 ans », « à seulement 23 ans », « âgé de 81 ans », « depuis 12 ans », « après 18 ans de mandat ». Écris les années elles-mêmes (« élu en 2022 », « maire de 2014 à 2020 »). Deux raisons : ces soustractions sont fausses une fois sur deux, et une fiche reste en ligne des mois après sa génération, donc un âge juste le jour même devient faux ensuite. La date de naissance est affichée par la page, calculée depuis la base.
+- N'écris JAMAIS l'âge d'une personne, ni aucune durée obtenue en soustrayant deux dates : pas de « à 32 ans », « à seulement 23 ans », « âgé de 81 ans », « depuis 12 ans », « après 18 ans de mandat ». Écris les années elles-mêmes (« élu en 2022 », « maire de 2014 à 2020 »). Deux raisons : ces soustractions sont fausses une fois sur deux, et une fiche reste en ligne des mois après sa génération, donc un âge juste le jour même devient faux ensuite. La date de naissance est affichée par la page, calculée depuis la base, et ne t'est donc pas transmise.
 - Si les données indiquent « Statut : mandat … terminé », la personne n'est PLUS parlementaire. Parle de ce mandat au passé (« a été député de 2022 à 2026 », « a siégé », « s'est opposé »), jamais au présent (« est député », « siège », « s'oppose »). Ne donne de la fin du mandat que l'année, et n'en donne la raison (démission, défaite, nomination) que si une source la fournit. Si une source indique une fonction actuelle (maire, ministre, sénateur…), présente-la comme son rôle aujourd'hui ; sinon, n'en invente pas.
+- N'écris AUCUN chiffre d'activité : ni nombre de votes, d'amendements, d'interventions ou de questions, ni taux de présence ou de loyauté, ni pourcentage. La page les affiche à côté de la fiche, recalculés chaque jour, alors que ta fiche reste en ligne des semaines et ses chiffres seraient vite faux. Sers-t'en seulement pour savoir sur quels sujets la personne s'est investie. Ne qualifie pas non plus son assiduité (« très actif », « peu présent ») d'après le taux de présence : il dépend surtout du nombre de scrutins de la chambre.
 - Les données CLAIR (groupe, mandats, statistiques de vote, HATVP) sont à jour quotidiennement et FONT FOI : en cas de contradiction avec une source web (Wikipédia, Wikidata), privilégie toujours les données CLAIR, notamment sur le mandat et le groupe en cours.
 - Réponds en texte brut, sans markdown.
 - Utilise un ton accessible et engageant, comme un journaliste politique de qualité.`;
@@ -763,8 +772,10 @@ export interface ParlementairePromptData {
   nom: string;
   chambre: string;
   groupe?: string | null;
+  /** Intitulé complet du groupe : le sigle seul (« RTLI ») laissait le modèle
+   *  reprendre le parti de Wikipédia (« groupe Renaissance au Sénat »). */
+  groupeIntitule?: string | null;
   profession?: string | null;
-  dateNaissance?: string | null;
   circonscription?: string | null;
   commissionPermanente?: string | null;
   actif: boolean;
@@ -795,7 +806,6 @@ export interface ParlementairePromptData {
   wikipediaBio?: string | null;
   wikidataFacts?: {
     description?: string;
-    naissance?: string;
     partis: { label: string; debut?: string; fin?: string }[];
     fonctions: { label: string; debut?: string; fin?: string }[];
   } | null;
@@ -827,17 +837,24 @@ export function buildParlementaireResumePrompt(data: ParlementairePromptData): s
   // est donc énoncé en toutes lettres. Sans date : nos dates de fin de mandat
   // AN ne sont pas fiables (2026-07-22 en base pour une démission d'avril).
   if (!data.actif) {
-    parts.push(`Statut : mandat de ${role} terminé — n'est plus ${role} aujourd'hui.`);
+    // L'année de fin, quand nos données la donnent : sans elle, le modèle la
+    // reconstruisait (« député de 2017 à 2024 » pour un mandat clos en 2026).
+    const dernier = data.mandatsParlementaires?.at(-1);
+    const fin = dernier?.anneeFin != null ? ` en ${dernier.anneeFin}` : '';
+    parts.push(`Statut : mandat de ${role} terminé${fin} — n'est plus ${role} aujourd'hui.`);
   }
 
   if (data.groupe) {
-    parts.push(`${data.actif ? 'Groupe politique' : 'Dernier groupe politique'} : ${data.groupe}`);
+    const chambre = data.chambre === 'senat' ? 'au Sénat' : "à l'Assemblée nationale";
+    const libelle = data.actif ? `Groupe politique actuel ${chambre}` : `Dernier groupe politique ${chambre}`;
+    const intitule = data.groupeIntitule && data.groupeIntitule !== data.groupe ? ` (${data.groupeIntitule})` : '';
+    parts.push(`${libelle} : ${data.groupe}${intitule}`);
   }
+  // Pas de date de naissance : la règle interdisant les âges ne suffisait pas,
+  // le modèle s'en servait encore (« élu pour la première fois à 22 ans »,
+  // refusé deux fois de suite sur la fiche de Louis Boyard le 2026-10-11).
   if (data.profession) {
     parts.push(`Profession : ${data.profession}`);
-  }
-  if (data.dateNaissance) {
-    parts.push(`Date de naissance : ${data.dateNaissance}`);
   }
   if (data.circonscription) {
     parts.push(`Circonscription : ${data.circonscription}`);
@@ -929,7 +946,6 @@ export function buildParlementaireResumePrompt(data: ParlementairePromptData): s
     const wd = data.wikidataFacts;
     const wdLines: string[] = [];
     if (wd.description) wdLines.push(`Description : ${wd.description}`);
-    if (wd.naissance) wdLines.push(`Année de naissance : ${wd.naissance}`);
     if (wd.partis.length > 0) {
       wdLines.push('Partis politiques : ' + wd.partis.map(p => `${p.label}${periodeStr(p)}`).join(' ; '));
     }
@@ -951,7 +967,7 @@ export function buildParlementaireResumePrompt(data: ParlementairePromptData): s
     '---PARCOURS---',
     '2. PARCOURS (3 à 8 phrases) : Détaille sa carrière politique, ses mandats importants, ses responsabilités passées et actuelles. Mentionne sa formation ou profession d\'origine si pertinent.',
     '---POSITIONS---',
-    '3. POSITIONS CLÉS (3 à 6 phrases) : Ses prises de position notables, ses combats politiques, les sujets sur lesquels il s\'est distingué. Appuie-toi sur ses votes, amendements et interventions.',
+    '3. POSITIONS CLÉS (3 à 6 phrases) : Ses prises de position notables, ses combats politiques, les sujets sur lesquels il s\'est distingué. Appuie-toi sur ses votes, amendements et interventions, sans en citer le nombre.',
     '---FAITS---',
     '4. FAITS NOTABLES (2 à 4 phrases) : Faits marquants, controverses, réalisations spécifiques ou anecdotes pertinentes. Uniquement des faits vérifiables.',
   );

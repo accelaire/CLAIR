@@ -428,12 +428,27 @@ describe('buildParlementaireResumePrompt — ancien parlementaire', () => {
     expect(parl()).toContain("Statut : mandat de député terminé — n'est plus député aujourd'hui.");
   });
 
+  it("donne l'année de fin du dernier mandat quand elle est connue", () => {
+    const prompt = parl({
+      mandatsParlementaires: [
+        { chambre: 'assemblee', legislature: 15, anneeDebut: 2017, anneeFin: 2022 },
+        { chambre: 'assemblee', legislature: 17, anneeDebut: 2024, anneeFin: 2026 },
+      ],
+    });
+    expect(prompt).toContain('Statut : mandat de député terminé en 2026 —');
+  });
+
   it('dit sénateur pour un ancien sénateur', () => {
     expect(parl({ chambre: 'senat' })).toContain('Statut : mandat de sénateur terminé');
   });
 
+  it("donne l'intitulé complet du groupe et sa chambre (Kervran présenté « Renaissance au Sénat »)", () => {
+    const prompt = parl({ chambre: 'senat', actif: true, groupe: 'RTLI', groupeIntitule: 'Les Indépendants - République et Territoires' });
+    expect(prompt).toContain('Groupe politique actuel au Sénat : RTLI (Les Indépendants - République et Territoires)');
+  });
+
   it('présente le groupe comme le dernier', () => {
-    expect(parl()).toContain('Dernier groupe politique : LFI-NFP');
+    expect(parl()).toContain("Dernier groupe politique à l'Assemblée nationale : LFI-NFP");
   });
 
   it("ne laisse pas « en cours » un organe de la chambre que la source n'a pas clos", () => {
@@ -453,7 +468,7 @@ describe('buildParlementaireResumePrompt — ancien parlementaire', () => {
   it("ne change rien pour un parlementaire en exercice", () => {
     const prompt = parl({ actif: true });
     expect(prompt).not.toContain('Statut :');
-    expect(prompt).toContain('Groupe politique : LFI-NFP');
+    expect(prompt).toContain("Groupe politique actuel à l'Assemblée nationale : LFI-NFP");
     expect(prompt).toContain('2024-07-18 → en cours : Membre');
     expect(prompt).toContain('son rôle actuel');
   });
@@ -483,6 +498,17 @@ describe('buildParlementaireResumePrompt — ancien parlementaire', () => {
       mandatsParlementaires: [{ chambre: 'senat', mandature: 2020, anneeDebut: 2020, anneeFin: null }],
     });
     expect(prompt).toContain('Sénateur, renouvellement de 2020 : 2020 → terminé (année non publiée)');
+  });
+
+  it("ne transmet pas la date de naissance, dont le modèle tirait des âges", () => {
+    const prompt = parl({
+      wikidataFacts: { description: 'homme politique français', partis: [], fonctions: [] },
+    });
+    expect(prompt).not.toMatch(/naissance/i);
+  });
+
+  it("la consigne système interdit les chiffres d'activité, périmés au scrutin suivant", () => {
+    expect(SYSTEM_PROMPT_PARLEMENTAIRE).toContain("N'écris AUCUN chiffre d'activité");
   });
 
   it('la consigne système impose le passé pour un mandat terminé', () => {
