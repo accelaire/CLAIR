@@ -96,31 +96,60 @@ export interface CibleAN {
 }
 
 /**
+ * Attentes avant chaque lecture de l'origine. Le 11 octobre 2026 à 3 h 19 UTC,
+ * l'origine a répondu 503 ; le batch s'est rabattu sur le cache, qui servait
+ * l'archive des débats de la veille, et deux séances sont restées en compte
+ * rendu provisoire. Un quart d'heure plus tard, l'origine répondait.
+ */
+const ATTENTES_ORIGINE_MS = [0, 30_000, 90_000];
+
+const attendre = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
  * L'URL à télécharger : celle du cache s'il sert la version de l'origine,
  * sinon celle qui force l'origine. Toute URL hors du portail AN est rendue
- * telle quelle. Si l'origine ne répond pas, on se rabat sur le cache : mieux
- * vaut la version de la veille que pas de synchro du tout.
+ * telle quelle. Si l'origine ne répond toujours pas après plusieurs essais, on
+ * se rabat sur le cache : mieux vaut la version de la veille que pas de synchro
+ * du tout, mais c'est une version NON VÉRIFIÉE, journalisée en erreur.
  */
-export async function urlAJourAN(url: string): Promise<CibleAN> {
+export async function urlAJourAN(
+  url: string,
+  options: { attentesMs?: number[] } = {},
+): Promise<CibleAN> {
   if (!estOpenDataAN(url)) return { url, origine: false, version: null };
-  const urlOrigine = urlSansCacheAN(url);
-  const [cache, origine] = await Promise.allSettled([lireEnTetesParGet(url), lireEnTetesParGet(urlOrigine)]);
+  const attentes = options.attentesMs ?? ATTENTES_ORIGINE_MS;
+  const lectureCache = lireEnTetesParGet(url).then(
+    (r) => ({ ok: true as const, version: fraicheur(r.headers) }),
+    (e: unknown) => ({ ok: false as const, erreur: errorMessage(e) }),
+  );
 
-  if (origine.status === 'rejected') {
-    logger.warn({ url, error: errorMessage(origine.reason) }, "Origine du portail AN injoignable, version du cache");
+  let versionOrigine: EnTetesFraicheur | null = null;
+  let derniereErreur = '';
+  for (const [essai, attente] of attentes.entries()) {
+    if (attente > 0) await attendre(attente);
+    try {
+      versionOrigine = fraicheur((await lireEnTetesParGet(urlSansCacheAN(url))).headers);
+      break;
+    } catch (error) {
+      derniereErreur = errorMessage(error);
+      logger.warn({ url, essai: essai + 1, essais: attentes.length, error: derniereErreur }, 'Origine du portail AN injoignable');
+    }
+  }
+  const cache = await lectureCache;
+
+  if (!versionOrigine) {
+    logger.error(
+      { url, error: derniereErreur, essais: attentes.length },
+      "Origine du portail AN injoignable : version du cache NON VÉRIFIÉE, possiblement celle de la veille",
+    );
     return { url, origine: false, version: null };
   }
-  const versionOrigine = fraicheur(origine.value.headers);
-  if (cache.status === 'fulfilled' && memeVersion(fraicheur(cache.value.headers), versionOrigine)) {
+  if (cache.ok && memeVersion(cache.version, versionOrigine)) {
     return { url, origine: false, version: versionOrigine };
   }
   logger.warn(
-    {
-      url,
-      cache: cache.status === 'fulfilled' ? fraicheur(cache.value.headers) : errorMessage(cache.reason),
-      origine: versionOrigine,
-    },
+    { url, cache: cache.ok ? cache.version : cache.erreur, origine: versionOrigine },
     "Cache du portail AN périmé : téléchargement depuis l'origine",
   );
-  return { url: urlOrigine, origine: true, version: versionOrigine };
+  return { url: urlSansCacheAN(url), origine: true, version: versionOrigine };
 }

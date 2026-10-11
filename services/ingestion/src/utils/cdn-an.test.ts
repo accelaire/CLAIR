@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest';
-import { estOpenDataAN, memeVersion, urlSansCacheAN, versionContredite } from './cdn-an';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+const { axiosGet } = vi.hoisted(() => ({ axiosGet: vi.fn() }));
+vi.mock('axios', () => ({ default: { get: axiosGet } }));
+
+import { estOpenDataAN, memeVersion, urlAJourAN, urlSansCacheAN, versionContredite } from './cdn-an';
 
 const AMO10 =
   'https://data.assemblee-nationale.fr/static/openData/repository/17/amo/deputes_actifs_mandats_actifs_organes/AMO10_deputes_actifs_mandats_actifs_organes.json.zip';
@@ -69,5 +72,43 @@ describe('versionContredite', () => {
 
   it("ne refuse pas une réponse qu'il ne peut comparer", () => {
     expect(versionContredite({ etag: null, lastModified: null }, jour)).toBe(false);
+  });
+});
+
+describe('urlAJourAN quand l’origine flanche', () => {
+  const DEBATS = 'https://data.assemblee-nationale.fr/static/openData/repository/17/vp/syceronbrut/syseron.xml.zip';
+  const veille = '"368e022-65d72e7f8c21e"';
+  const jour = '"36adb2d-65d8706059f82"';
+  const erreur503 = Object.assign(new Error('Request failed with status code 503'), { response: { status: 503 } });
+
+  beforeEach(() => {
+    axiosGet.mockReset();
+  });
+
+  it("réessaie l'origine avant de conclure, et va la chercher si le cache est périmé", async () => {
+    let essaisOrigine = 0;
+    axiosGet.mockImplementation(async (u: string) => {
+      if (!u.includes('?_=')) return { headers: { etag: veille } };
+      essaisOrigine++;
+      if (essaisOrigine < 3) throw erreur503;
+      return { headers: { etag: jour } };
+    });
+
+    const cible = await urlAJourAN(DEBATS, { attentesMs: [0, 0, 0] });
+
+    expect(essaisOrigine).toBe(3);
+    expect(cible.origine).toBe(true);
+    expect(cible.version).toEqual({ etag: jour, lastModified: null });
+  });
+
+  it('se rabat sur le cache, version non vérifiée, quand l’origine ne répond jamais', async () => {
+    axiosGet.mockImplementation(async (u: string) => {
+      if (u.includes('?_=')) throw erreur503;
+      return { headers: { etag: veille } };
+    });
+
+    const cible = await urlAJourAN(DEBATS, { attentesMs: [0, 0] });
+
+    expect(cible).toEqual({ url: DEBATS, origine: false, version: null });
   });
 });

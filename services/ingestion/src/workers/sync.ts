@@ -4117,6 +4117,22 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     // mises aux voix du compte rendu et on rend à chaque scrutin le débat qui
     // l'a précédé, ce qui est le seul moyen de distinguer les scrutins d'une
     // même journée — une séance en porte dix en moyenne, jusqu'à quatre-vingts.
+    // Seconde lecture des comptes rendus juste avant le rattachement : sans
+    // effet si rien n'a bougé (séances déjà en base sautées, relues remplacées
+    // seulement si leur empreinte change), elle rattrape une première lecture
+    // faite sur l'archive de la veille. Le 11 octobre 2026, l'origine du
+    // portail répondait 503 à 3 h 19 UTC et plus à 3 h 34 : deux séances du 9
+    // sont restées en compte rendu provisoire.
+    if (hasInterventionsChanged) {
+      try {
+        const { syncInterventionsSyceron } = await import('./interventions-syceron.js');
+        const relecture = await syncInterventionsSyceron({ legislature: LEGISLATURE_AN_COURANTE });
+        logger.info(relecture, 'Seconde lecture des débats AN terminée');
+      } catch (error) {
+        logger.error({ error: errorMessage(error) }, 'Seconde lecture des débats AN échouée (non bloquante)');
+      }
+    }
+
     try {
       logger.info('Rattachement fin des débats AN aux scrutins...');
       const { linkDebatsScrutins } = await import('./link-debats-scrutins.js');
