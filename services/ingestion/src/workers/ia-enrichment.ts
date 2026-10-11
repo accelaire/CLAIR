@@ -267,11 +267,19 @@ export interface EnrichmentOptions {
    */
   rehashOnly?: boolean;
   /**
-   * Scrutins, dossiers et sujets : appelle le LLM et AFFICHE le texte produit, sans rien
+   * Scrutins, dossiers, sujets et parlementaires : appelle le LLM et AFFICHE le texte produit, sans rien
    * écrire. Sert à valider un changement de prompt sur des fiches réelles
    * (`--only … --force --preview`) avant que le cron ne régénère le corpus.
    */
   preview?: boolean;
+  /**
+   * Parlementaires : régénère au plus N fiches dont l'empreinte éditoriale ne
+   * correspond plus aux données (mandat terminé, changement de groupe, de
+   * commission ou de chambre, nouvelle version du prompt), les plus anciennes
+   * d'abord. C'est ce qui empêche une fiche de rester fausse. Cf.
+   * `llm/bio-parlementaire.ts`.
+   */
+  perimees?: number;
 }
 
 // =============================================================================

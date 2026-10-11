@@ -6,6 +6,7 @@
 import { PrismaClient } from '@prisma/client';
 import { groupeDuVote } from '../utils/groupe-epoque.js';
 import { voteSurLEnsemble } from '../utils/vote-ensemble.js';
+import { defautsBio } from '../llm/bio-parlementaire.js';
 
 // =============================================================================
 // Types
@@ -56,6 +57,14 @@ export interface IAQualityReport {
   dossiersWithEnsemble: number;
   inversions: IAInversion[];
   grounding: IAGroundingIssue[];
+  /**
+   * Fiches parlementaires en ligne qui portent un défaut que le worker refuse
+   * désormais à l'écriture (âge, chiffre d'activité, mandat terminé au présent).
+   * Informatif : le corpus écrit avant ce garde-fou en est plein, et se
+   * régénère au rythme du plafond nocturne des fiches périmées. Doit tendre
+   * vers 0 en quelques nuits.
+   */
+  fichesParlementaires: { total: number; avecDefauts: { slug: string; defauts: string[] }[] };
   passed: boolean;
   duration: string;
 }
@@ -691,6 +700,25 @@ export async function runIAQualityChecks(prisma: PrismaClient): Promise<IAQualit
     }
   }
 
+  // 3. Fiches parlementaires : mêmes défauts que ceux refusés à l'écriture.
+  const fiches = await prisma.parlementaire.findMany({
+    where: { resumeIA: { not: null } },
+    select: {
+      slug: true, actif: true, chambre: true,
+      resumeIA: true, parcoursIA: true, positionsClesIA: true, faitsNotablesIA: true,
+    },
+    orderBy: { slug: 'asc' },
+  });
+  const fichesAvecDefauts = fiches
+    .map(f => ({
+      slug: f.slug,
+      defauts: defautsBio(
+        [f.resumeIA, f.parcoursIA, f.positionsClesIA, f.faitsNotablesIA].filter(Boolean).join('\n\n'),
+        { actif: f.actif, chambre: f.chambre },
+      ),
+    }))
+    .filter(f => f.defauts.length > 0);
+
   const duration = `${((Date.now() - start) / 1000).toFixed(1)}s`;
   const count = (k: IAGroundingKind) => grounding.filter(g => g.kind === k).length;
 
@@ -701,6 +729,7 @@ export async function runIAQualityChecks(prisma: PrismaClient): Promise<IAQualit
     dossiersWithEnsemble: dossierMap.size,
     inversions,
     grounding,
+    fichesParlementaires: { total: fiches.length, avecDefauts: fichesAvecDefauts },
     // `group_missing_from_text` est informatif : un résumé n'a pas à citer les
     // douze groupes. Les deux autres familles sont des affirmations fausses.
     passed:
@@ -746,6 +775,14 @@ export function printIAQualityReport(report: IAQualityReport): void {
       console.log(`      ${inv.entityType}:${inv.entityId} — ${inv.groupe} [${inv.orientation}] décrit ${inv.describedAs} mais ${inv.actualPour}P/${inv.actualContre}C (${inv.actualTendency})`);
     }
     if (highConfidence.length > 15) console.log(`      ... et ${highConfidence.length - 15} autres`);
+  }
+
+  const { total, avecDefauts } = report.fichesParlementaires;
+  const parType = (prefixe: string) => avecDefauts.filter(f => f.defauts.some(d => d.startsWith(prefixe))).length;
+  console.log(`\n   ℹ️  Fiches parlementaires avec un défaut refusé à l'écriture: ${avecDefauts.length} sur ${total} (informatif, doit tendre vers 0)`);
+  console.log(`      âge: ${parType('âge')} · durée qui court encore: ${parType('durée')} · chiffres d'activité: ${parType('chiffre')} · mandat terminé au présent: ${parType('mandat terminé')} · autre chambre au présent: ${parType('présenté')}`);
+  for (const f of avecDefauts.filter(f => f.defauts.some(d => !d.startsWith('chiffre'))).slice(0, 15)) {
+    console.log(`      ${f.slug} — ${f.defauts.filter(d => !d.startsWith('chiffre')).join(' | ')}`);
   }
 
   console.log(`\n   ${report.passed ? '✅ PASSED' : '❌ FAILED'} — durée: ${report.duration}`);

@@ -1194,13 +1194,14 @@ program
   .option('--parlementaires', 'Enrichir uniquement les fiches parlementaires (Wikipedia + Tavily + Mistral)')
   .option('--groupe-amendements', 'Enrichir les descriptions d\'amendements par groupe pour les sujets')
   .option('--random <number>', 'Parlementaires uniquement : régénérer un échantillon aléatoire de N fiches actives (rafraîchit aussi la date)', parseInt)
+  .option('--perimees <number>', "Parlementaires uniquement : régénérer au plus N fiches dont l'empreinte ne correspond plus aux données (mandat terminé, groupe, commission, chambre, version du prompt), les plus anciennes d'abord", parseInt)
   .option('--skip-recent-days <number>', 'Avec --random : exclure les fiches déjà rafraîchies dans les N derniers jours (défaut 3, 0 pour désactiver)', parseInt)
   .option('-l, --limit <number>', 'Nombre max d\'entités à traiter', parseInt)
   .option('--dry-run', 'Mode simulation (calcule mais n\'écrit pas)')
   .option('--force', 'Ignorer le hash, regénérer tout')
   .option('--only <ids...>', 'Restreindre à des entités précises (id de scrutin, uid de dossier, slug de sujet ou de parlementaire). Corrige une fiche fautive sans relancer tout le corpus')
   .option('--rehash', 'Recalculer et stocker le hash de contenu SANS appeler le LLM ni modifier les textes. À utiliser après un changement de formule de hash sur un corpus déjà correct')
-  .option('--preview', 'Scrutins, dossiers et sujets : générer et AFFICHER les textes sans rien écrire, pour valider un prompt (avec --only et --force)')
+  .option('--preview', 'Scrutins, dossiers, sujets et parlementaires : générer et AFFICHER les textes sans rien écrire, pour valider un prompt (avec --only et --force)')
   .option('-c, --concurrency <number>', 'Nombre d\'appels LLM en parallèle (défaut: 3)', parseInt)
   .action(async (options) => {
     try {
@@ -1212,15 +1213,16 @@ program
         force: options.force,
         concurrency: options.concurrency,
         randomSample: options.random,
+        perimees: options.perimees,
         skipRecentDays: options.skipRecentDays,
         only: options.only,
         rehashOnly: options.rehash,
         preview: options.preview,
       };
 
-      // --random cible exclusivement les parlementaires (pas de cascade complète)
+      // --random et --perimees ciblent exclusivement les parlementaires (pas de cascade complète)
       // Sans flag spécifique → cascade complète : scrutins → dossiers → sujets → parlementaires
-      const enrichAll = !options.scrutins && !options.dossiers && !options.sujets && !options.parlementaires && !options.groupeAmendements && options.random == null;
+      const enrichAll = !options.scrutins && !options.dossiers && !options.sujets && !options.parlementaires && !options.groupeAmendements && options.random == null && options.perimees == null;
 
       if (options.scrutins || enrichAll) {
         const { enrichScrutinsIA } = await import('./workers/ia-enrichment.js');
@@ -1262,7 +1264,7 @@ program
         console.log(`   Tokens IN: ${result.totalTokensIn} | OUT: ${result.totalTokensOut}`);
       }
 
-      if (options.parlementaires || options.random != null || enrichAll) {
+      if (options.parlementaires || options.random != null || options.perimees != null || enrichAll) {
         const { enrichParlementairesIA } = await import('./workers/parlementaire-enrichment.js');
         const result = await enrichParlementairesIA(enrichOptions);
         console.log(`\n📊 Enrichissement IA des parlementaires${options.dryRun ? ' (DRY RUN)' : ''}:`);

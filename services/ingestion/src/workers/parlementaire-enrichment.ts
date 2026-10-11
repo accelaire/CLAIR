@@ -6,13 +6,13 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import pLimit from 'p-limit';
 import { CLAIRMistralClient } from '../llm/mistral-client.js';
-import { computeContentHash } from '../llm/content-hash.js';
 import { cleanLLMOutput } from '../llm/clean-output.js';
 import {
   SYSTEM_PROMPT_PARLEMENTAIRE,
   buildParlementaireResumePrompt,
   type ParlementairePromptData,
 } from '../llm/prompts.js';
+import { defautsBio, signatureEditoriale } from '../llm/bio-parlementaire.js';
 import { fetchWikipediaBio } from '../sources/wikipedia/client.js';
 import { fetchWikidataFacts } from '../sources/wikidata/client.js';
 import { DECLARATION_TYPES } from '../sources/hatvp/declarations-client.js';
@@ -144,7 +144,7 @@ function extractMandatsSenat(sourceData: unknown): ExtractedMandat[] {
 export async function enrichParlementairesIA(
   options: EnrichmentOptions = {}
 ): Promise<EnrichmentResult> {
-  const { limit, dryRun = false, concurrency = 2, force = false, randomSample, skipRecentDays = 3, only } = options;
+  const { limit, dryRun = false, concurrency = 2, force = false, randomSample, skipRecentDays = 3, only, preview = false, perimees } = options;
   const cibles = only?.length ? only : null;
 
   const result: EnrichmentResult = {
@@ -177,15 +177,19 @@ export async function enrichParlementairesIA(
   // ligne d'aide de `--only` décrit : corriger une fiche sans relancer le corpus.
   const bypassHash = force || randomSample != null || cibles != null;
 
-  // Optional random sample: pick N active parlementaires at random (ORDER BY random()),
+  // Optional random sample: pick N parlementaires at random (ORDER BY random()),
   // excluding those already refreshed in the last `skipRecentDays` days so a daily rotation
-  // converges over the whole parc instead of re-hitting fresh fiches (waste of Tavily quota).
-  // skipRecentDays = 0 disables the exclusion (pure random over all active).
+  // converges over the whole parc instead of re-hitting fresh fiches.
+  // skipRecentDays = 0 disables the exclusion.
+  //
+  // Le tirage couvre les élus en exercice ET les anciens qui ont une fiche : la
+  // rotation est le seul moyen d'apprendre ce que nos données ignorent (un ancien
+  // député devenu maire de Roubaix n'apparaît que dans Wikidata).
   let sampleIds: string[] | null = null;
   if (randomSample != null) {
     const rows = await prisma.$queryRaw<Array<{ id: string }>>`
       SELECT id FROM parlementaires
-      WHERE actif = true
+      WHERE (actif = true OR resume_ia IS NOT NULL)
         AND (ia_generated_at IS NULL OR ia_generated_at < now() - make_interval(days => ${skipRecentDays}::int))
       ORDER BY random()
       LIMIT ${randomSample}
@@ -194,6 +198,41 @@ export async function enrichParlementairesIA(
     logger.info(
       { requested: randomSample, selected: sampleIds.length, skipRecentDays },
       'Random parlementaire sample selected'
+    );
+  }
+
+  // Fiches périmées : celles dont l'empreinte éditoriale ne correspond plus aux
+  // données. Calcul en mémoire sur le parc entier (quelques milliers de lignes
+  // légères, sans `sourceData`), par la même fonction que l'écriture.
+  let perimeesIds: string[] | null = null;
+  if (randomSample == null && perimees != null) {
+    const fiches = await prisma.parlementaire.findMany({
+      where: { resumeIA: { not: null } },
+      select: {
+        id: true,
+        nom: true,
+        prenom: true,
+        chambre: true,
+        actif: true,
+        commissionPermanente: true,
+        iaContentHash: true,
+        iaGeneratedAt: true,
+        groupe: { select: { nom: true } },
+        circonscription: { select: { departement: true, numero: true } },
+        mandatsParlementaires: {
+          select: { chambre: true, legislature: true, mandature: true, dateDebut: true, dateFin: true },
+        },
+      },
+    });
+    const perimes = fiches
+      .filter(f => f.iaContentHash !== signatureEditoriale({ ...f, groupe: f.groupe?.nom }))
+      // Les plus anciennes d'abord ; départage par id pour un ordre stable.
+      .sort((a, b) =>
+        (a.iaGeneratedAt?.getTime() ?? 0) - (b.iaGeneratedAt?.getTime() ?? 0) || a.id.localeCompare(b.id));
+    perimeesIds = perimes.slice(0, perimees).map(f => f.id);
+    logger.info(
+      { fiches: fiches.length, perimees: perimes.length, retenues: perimeesIds.length },
+      'Fiches parlementaires périmées sélectionnées',
     );
   }
 
@@ -214,11 +253,11 @@ export async function enrichParlementairesIA(
       where,
       select: {
         id: true,
+        slug: true,
         prenom: true,
         nom: true,
         chambre: true,
         profession: true,
-        dateNaissance: true,
         actif: true,
         commissionPermanente: true,
         iaContentHash: true,
@@ -231,8 +270,16 @@ export async function enrichParlementairesIA(
         statsAmendements: true,
         statsAmendementsAdoptes: true,
         // Relations
-        groupe: { select: { nom: true } },
+        groupe: { select: { nom: true, nomComplet: true } },
         circonscription: { select: { departement: true, numero: true, nom: true } },
+        // Les mandats de député ou de sénateur eux-mêmes : `extractMandatsAN`
+        // écarte le type ASSEMBLEE, le modèle ne voyait donc que des commissions
+        // et devinait la carrière (« ne se représente pas en 2024 » pour un
+        // député réélu en 2024).
+        mandatsParlementaires: {
+          select: { chambre: true, legislature: true, mandature: true, dateDebut: true, dateFin: true },
+          orderBy: [{ dateDebut: 'asc' }, { id: 'asc' }],
+        },
       },
       // Départage obligatoire dès qu'on pagine avec un décalage : deux
       // parlementaires de même chambre et de même nom ne sont pas rendus dans
@@ -252,6 +299,31 @@ export async function enrichParlementairesIA(
           const mandats = parl.chambre === 'senat'
             ? extractMandatsSenat(parl.sourceData)
             : extractMandatsAN(parl.sourceData);
+
+          // Empreinte des seuls faits que la fiche affirme (statut, chambre, groupe,
+          // commission, mandats, version du prompt) : cf. llm/bio-parlementaire.ts.
+          // Les statistiques et le lobbying n'y entrent plus : ils changeaient à
+          // chaque scrutin, et le prompt interdit désormais d'en citer les chiffres.
+          const contentHash = signatureEditoriale({
+            nom: parl.nom,
+            prenom: parl.prenom,
+            chambre: parl.chambre,
+            actif: parl.actif,
+            groupe: parl.groupe?.nom,
+            commissionPermanente: parl.commissionPermanente,
+            circonscription: parl.circonscription,
+            mandatsParlementaires: parl.mandatsParlementaires,
+          });
+
+          if (!bypassHash && parl.iaContentHash === contentHash) {
+            result.skipped++;
+            return;
+          }
+
+          if (dryRun) {
+            result.enriched++;
+            return;
+          }
 
           // Fetch lobbying actions targeting this parlementaire
           const lobbyActions = await prisma.actionLobby.findMany({
@@ -275,28 +347,6 @@ export async function enrichParlementairesIA(
             orderBy: { datePublication: 'desc' },
           });
 
-          // Build content hash from structured data (before web fetches)
-          const hashParts = [
-            parl.nom, parl.prenom, parl.chambre,
-            parl.groupe?.nom,
-            String(parl.statsPresence), String(parl.statsLoyaute),
-            String(parl.statsParticipation), String(parl.statsAmendements),
-            mandats.map(m => `${m.typeOrgane}:${m.qualite}:${m.dateDebut}`).join('|'),
-            lobbyActions.map(a => a.lobbyiste.nom).join('|'),
-            declarations.map(d => `${d.typeDocument}:${d.datePublication?.toISOString() ?? ''}`).join('|'),
-          ];
-          const contentHash = computeContentHash(...hashParts);
-
-          if (!bypassHash && parl.iaContentHash === contentHash) {
-            result.skipped++;
-            return;
-          }
-
-          if (dryRun) {
-            result.enriched++;
-            return;
-          }
-
           // Fetch Wikipedia bio (rate-limit friendly, 1 req per parl)
           const role = parl.chambre === 'senat' ? 'sénateur' : 'député';
           const wikiBio = await fetchWikipediaBio(parl.prenom, parl.nom, { role });
@@ -316,8 +366,8 @@ export async function enrichParlementairesIA(
             nom: parl.nom,
             chambre: parl.chambre,
             groupe: parl.groupe?.nom,
+            groupeIntitule: parl.groupe?.nomComplet,
             profession: parl.profession,
-            dateNaissance: parl.dateNaissance?.toISOString().split('T')[0],
             circonscription: circoStr,
             commissionPermanente: parl.commissionPermanente,
             actif: parl.actif,
@@ -329,6 +379,13 @@ export async function enrichParlementairesIA(
               amendements: parl.statsAmendements,
               amendementsAdoptes: parl.statsAmendementsAdoptes,
             },
+            mandatsParlementaires: parl.mandatsParlementaires.map(m => ({
+              chambre: m.chambre,
+              legislature: m.legislature,
+              mandature: m.mandature,
+              anneeDebut: m.dateDebut.getUTCFullYear(),
+              anneeFin: m.dateFin?.getUTCFullYear() ?? null,
+            })),
             mandats: mandats.map(m => ({
               typeOrgane: m.typeOrgane,
               institution: m.institution,
@@ -351,7 +408,6 @@ export async function enrichParlementairesIA(
             wikipediaBio: wikiBio?.extract,
             wikidataFacts: wikidata && {
               description: wikidata.description,
-              naissance: wikidata.naissance,
               partis: wikidata.partis,
               fonctions: wikidata.fonctions,
             },
@@ -366,40 +422,48 @@ export async function enrichParlementairesIA(
 
           const userPrompt = buildParlementaireResumePrompt(promptData);
 
-          const response = await mistral.complete(
+          // Une consigne ne suffit pas : le modèle écrit encore des âges, des
+          // chiffres d'activité ou un mandat terminé au présent. Une fiche qui en
+          // porte n'est pas publiée ; chaque nouvel essai lui renvoie ses fautes.
+          const ctxDefauts = { actif: parl.actif, chambre: parl.chambre };
+          let fiche = decouperFiche(await mistral.complete(
             SYSTEM_PROMPT_PARLEMENTAIRE,
             userPrompt,
             { maxTokens: 1500 },
-          );
+          ));
+          let defauts = defautsBio(texteDeLaFiche(fiche), ctxDefauts);
+          // Deux essais de plus au maximum : sur 8 fiches de prod le 2026-10-11,
+          // un seul nouvel essai laissait encore 2 fiches refusées (des durées).
+          for (let essai = 2; defauts.length > 0 && essai <= ESSAIS_MAX; essai++) {
+            logger.info({ slug: parl.slug, essai, defauts }, 'Fiche parlementaire refusée, nouvel essai');
+            fiche = decouperFiche(await mistral.complete(
+              SYSTEM_PROMPT_PARLEMENTAIRE,
+              userPrompt + consigneDeNouvelEssai(defauts),
+              { maxTokens: 1500 },
+            ));
+            defauts = defautsBio(texteDeLaFiche(fiche), ctxDefauts);
+          }
+          if (fiche.separateursManquants) {
+            logger.warn({ parlId: parl.id, manquants: fiche.separateursManquants }, 'Parlementaire response missing separators');
+          }
+          const { resumeIA, parcoursIA, positionsClesIA, faitsNotablesIA } = fiche;
 
-          // Parse structured response
-          const parcoursSep = '---PARCOURS---';
-          const positionsSep = '---POSITIONS---';
-          const faitsSep = '---FAITS---';
+          if (preview) {
+            console.log(
+              `\n===== APERÇU ${parl.chambre} ${parl.prenom} ${parl.nom}${parl.actif ? '' : ' (ancien)'} =====\n`
+              + `${resumeIA}\n\n--- PARCOURS ---\n${parcoursIA ?? ''}\n\n--- POSITIONS ---\n${positionsClesIA ?? ''}\n\n--- FAITS ---\n${faitsNotablesIA ?? ''}\n`,
+            );
+            if (defauts.length > 0) console.log(`⛔ REFUSÉE après ${ESSAIS_MAX} essais :\n- ${defauts.join('\n- ')}\n`);
+            result.enriched++;
+            return;
+          }
 
-          const parcoursIdx = response.indexOf(parcoursSep);
-          const positionsIdx = response.indexOf(positionsSep);
-          const faitsIdx = response.indexOf(faitsSep);
-
-          let resumeIA: string;
-          let parcoursIA: string | null = null;
-          let positionsClesIA: string | null = null;
-          let faitsNotablesIA: string | null = null;
-
-          if (parcoursIdx !== -1 && positionsIdx !== -1 && faitsIdx !== -1) {
-            resumeIA = cleanLLMOutput(response.slice(0, parcoursIdx));
-            parcoursIA = cleanLLMOutput(response.slice(parcoursIdx + parcoursSep.length, positionsIdx));
-            positionsClesIA = cleanLLMOutput(response.slice(positionsIdx + positionsSep.length, faitsIdx));
-            faitsNotablesIA = cleanLLMOutput(response.slice(faitsIdx + faitsSep.length));
-          } else if (parcoursIdx !== -1 && positionsIdx !== -1) {
-            resumeIA = cleanLLMOutput(response.slice(0, parcoursIdx));
-            parcoursIA = cleanLLMOutput(response.slice(parcoursIdx + parcoursSep.length, positionsIdx));
-            positionsClesIA = cleanLLMOutput(response.slice(positionsIdx + positionsSep.length));
-            logger.warn({ parlId: parl.id }, 'Parlementaire response missing ---FAITS--- separator');
-          } else {
-            // Fallback: entire response as resumeIA
-            resumeIA = response;
-            logger.warn({ parlId: parl.id }, 'Parlementaire response missing separators');
+          // Refusée à chaque essai : la fiche en ligne reste, et comme l'empreinte
+          // n'est pas mise à jour, la fiche sera retentée la nuit suivante.
+          if (defauts.length > 0) {
+            result.errors++;
+            logger.warn({ slug: parl.slug, defauts }, 'Fiche parlementaire refusée à chaque essai, non publiée');
+            return;
           }
 
           // Persist mandats to DB (upsert by sourceUid)
@@ -448,14 +512,15 @@ export async function enrichParlementairesIA(
       });
 
   // Run the per-parlementaire enrichment over the chosen working set.
-  if (sampleIds) {
-    for (let off = 0; off < sampleIds.length; off += BATCH_SIZE) {
-      const chunk = sampleIds.slice(off, off + BATCH_SIZE);
+  const idsDesignes = sampleIds ?? perimeesIds;
+  if (idsDesignes) {
+    for (let off = 0; off < idsDesignes.length; off += BATCH_SIZE) {
+      const chunk = idsDesignes.slice(off, off + BATCH_SIZE);
       const records = await fetchBatch({ id: { in: chunk } }, chunk.length);
       await Promise.all(records.map(processParl));
       logger.info(
-        { processed: Math.min(off + BATCH_SIZE, sampleIds.length), total: sampleIds.length },
-        'Random sample batch processed'
+        { processed: Math.min(off + BATCH_SIZE, idsDesignes.length), total: idsDesignes.length },
+        sampleIds ? 'Random sample batch processed' : 'Fiches périmées : lot traité',
       );
     }
   } else {
@@ -504,6 +569,76 @@ export async function enrichParlementairesIA(
   }, 'Parlementaires IA enrichment completed');
 
   return result;
+}
+
+// =============================================================================
+// Réponse du modèle : découpage et nouvel essai
+// =============================================================================
+
+interface FicheGeneree {
+  resumeIA: string;
+  parcoursIA: string | null;
+  positionsClesIA: string | null;
+  faitsNotablesIA: string | null;
+  /** Séparateurs absents de la réponse, `null` si elle est complète. */
+  separateursManquants: string | null;
+}
+
+function decouperFiche(response: string): FicheGeneree {
+  const parcoursSep = '---PARCOURS---';
+  const positionsSep = '---POSITIONS---';
+  const faitsSep = '---FAITS---';
+
+  const parcoursIdx = response.indexOf(parcoursSep);
+  const positionsIdx = response.indexOf(positionsSep);
+  const faitsIdx = response.indexOf(faitsSep);
+
+  if (parcoursIdx !== -1 && positionsIdx !== -1 && faitsIdx !== -1) {
+    return {
+      resumeIA: cleanLLMOutput(response.slice(0, parcoursIdx)),
+      parcoursIA: cleanLLMOutput(response.slice(parcoursIdx + parcoursSep.length, positionsIdx)),
+      positionsClesIA: cleanLLMOutput(response.slice(positionsIdx + positionsSep.length, faitsIdx)),
+      faitsNotablesIA: cleanLLMOutput(response.slice(faitsIdx + faitsSep.length)),
+      separateursManquants: null,
+    };
+  }
+  if (parcoursIdx !== -1 && positionsIdx !== -1) {
+    return {
+      resumeIA: cleanLLMOutput(response.slice(0, parcoursIdx)),
+      parcoursIA: cleanLLMOutput(response.slice(parcoursIdx + parcoursSep.length, positionsIdx)),
+      positionsClesIA: cleanLLMOutput(response.slice(positionsIdx + positionsSep.length)),
+      faitsNotablesIA: null,
+      separateursManquants: faitsSep,
+    };
+  }
+  // Sans séparateurs : la réponse entière tient lieu de résumé.
+  return {
+    resumeIA: response,
+    parcoursIA: null,
+    positionsClesIA: null,
+    faitsNotablesIA: null,
+    separateursManquants: [parcoursSep, positionsSep, faitsSep].join(' '),
+  };
+}
+
+function texteDeLaFiche(f: FicheGeneree): string {
+  return [f.resumeIA, f.parcoursIA, f.positionsClesIA, f.faitsNotablesIA].filter(Boolean).join('\n\n');
+}
+
+/** Nombre total d'appels au modèle pour une fiche, premier compris. */
+const ESSAIS_MAX = 3;
+
+function consigneDeNouvelEssai(defauts: string[]): string {
+  return [
+    '',
+    '',
+    'Ta réponse précédente a été refusée pour ces raisons :',
+    ...defauts.map(d => `- ${d}`),
+    'Réécris la fiche entière, avec les mêmes séparateurs, en respectant toutes les règles.',
+    'Pour une durée ou un âge : ne le reformule pas autrement (« une décennie », « près de vingt ans ») ; écris les années de début et de fin tirées des données (« de 2004 à 2026 »), ou supprime la précision.',
+    'Pour un chiffre d\'activité : supprime-le, sans le remplacer par un autre chiffre.',
+    'Pour un mandat terminé : écris-le au passé (« a été sénateur »).',
+  ].join('\n');
 }
 
 // =============================================================================
