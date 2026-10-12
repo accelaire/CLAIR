@@ -21,6 +21,31 @@ import { parseCompteRendu, type SeanceSyceron } from './syceron-parser';
 
 const BASE_URL = 'https://data.assemblee-nationale.fr/static/openData/repository';
 
+// Dernière archive décompressée par ce processus, par législature.
+//
+// Le batch de nuit lit l'archive trois fois : la moisson, la seconde lecture
+// et le rattachement aux scrutins. Chaque lecture la retélécharge, pour voir
+// une version publiée entre-temps, mais l'origine du portail coupe souvent :
+// le 2026-10-12, le rattachement est tombé sur trois échecs dix-sept minutes
+// après une moisson réussie, et les séances relues cette nuit-là sont restées
+// sans lien vers leurs scrutins. Faute de mieux, on relit la dernière archive
+// obtenue : celle-là même dont viennent les débats en base.
+const archivesDuProcessus = new Map<number, { racine: string; repertoire: string }>();
+
+function oublierArchives(): void {
+  for (const { racine } of archivesDuProcessus.values()) {
+    fs.rmSync(racine, { recursive: true, force: true });
+  }
+  archivesDuProcessus.clear();
+}
+
+/** Pour les tests : libère les archives retenues, comme la fin du processus. */
+export function oublierArchivesSyceron(): void {
+  oublierArchives();
+}
+
+process.once('exit', oublierArchives);
+
 export interface SyceronOptions {
   /** Ne parser que ces séances (leur `uid`). Vide ou absent : toutes. */
   seulement?: Set<string>;
@@ -138,9 +163,23 @@ export class SyceronClient {
       // reste : sur le volume de production, ces 53 Mo comptent.
       await fs.promises.rm(zip, { force: true }).catch(() => {});
 
-      return { repertoire, nettoyage };
+      // Gardée jusqu'à la fin du processus, à la place de la précédente : une
+      // seule archive décompressée à la fois sur le disque.
+      const precedente = archivesDuProcessus.get(this.legislature);
+      if (precedente) await fs.promises.rm(precedente.racine, { recursive: true, force: true }).catch(() => {});
+      archivesDuProcessus.set(this.legislature, { racine: temp, repertoire });
+
+      return { repertoire, nettoyage: async () => {} };
     } catch (error) {
       await nettoyage();
+      const derniere = archivesDuProcessus.get(this.legislature);
+      if (derniere) {
+        logger.warn(
+          { legislature: this.legislature, error: errorMessage(error) },
+          'Archive syceron indisponible : relecture de celle déjà téléchargée par ce processus',
+        );
+        return { repertoire: derniere.repertoire, nettoyage: async () => {} };
+      }
       throw new Error(`Archive syceron indisponible (législature ${this.legislature}) : ${errorMessage(error)}`);
     }
   }
