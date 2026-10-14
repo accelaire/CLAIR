@@ -53,7 +53,8 @@ L'ordre des rattachements est strictement séquentiel pour éviter les faux posi
 3. **Commissions et Avis** : Parsing des comptes rendus PDF (via `pdftotext`) pour extraire les positions de commission sur les amendements.
 4. **Scrutins et Dossiers** : Suppression des liaisons obsolètes, rattachement Sénat, analyse TF-IDF sur les titres de lois et numéros de texte.
 5. **Amendements et Scrutins** : Rapprochement dans la table de jointure `scrutin_amendement`, puis propagation du dossier vers les amendements.
-6. **Nature des Scrutins** : Classification automatique de la nature du vote (texte entier, amendement, motion, etc.).
+6. **Texte des Articles** : Récupération des articles de chaque nouvelle version de texte AN amendée (`textes_articles`). Une version déjà ingérée n'est jamais retéléchargée ; seuls les textes non servis par la source ou au gabarit non couvert (budgets) sont retentés.
+7. **Nature des Scrutins** : Classification automatique de la nature du vote (texte entier, amendement, motion, etc.).
 
 ---
 

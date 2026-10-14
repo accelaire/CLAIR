@@ -144,7 +144,7 @@ Fédère le travail parlementaire des deux assemblées sous une même bannière 
 />
 
 - **Sujets Transverses** : Un `sujet` associe le dossier de l'Assemblée et celui du Sénat portant sur la même loi pour donner une vision unifiée.
-- **Articles & Versions** : `textes_articles` historise les rédactions successives des articles votés.
+- **Articles & Versions** : `textes_articles` stocke les articles de chaque version de texte AN amendée (initial, texte de commission…), une ligne par (`texte_ref`, `numero`). Les versions ne sont pas chaînées entre elles : un article renuméroté d'une version à l'autre n'est pas suivi. Un amendement retrouve son article par `texte_ref` et `article_vise` (« ART. PREMIER » ↔ « PREMIER »), sans clé étrangère. Le Sénat n'est pas couvert.
 
 ---
 

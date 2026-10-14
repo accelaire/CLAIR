@@ -4445,6 +4445,27 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
 
   }
 
+  // Le texte des articles des nouvelles versions de textes AN. Une version déjà
+  // ingérée est sautée sans requête : elle ne bouge plus une fois publiée. Ne
+  // repartent chaque nuit que les textes que la source ne sert pas ou dont le
+  // gabarit n'est pas couvert (budgets), ~70 requêtes espacées, ~100 s.
+  // Placé après le rattachement aux dossiers, dont il recopie le `dossier_id`,
+  // et avant l'IA, qui met l'article dans le prompt des scrutins.
+  if (hasAmendementsChanged) {
+    try {
+      const { syncTextesArticles } = await import('./textes-articles.js');
+      const textesResult = await syncTextesArticles();
+      logger.info({
+        textesTraites: textesResult.textesTraites,
+        articlesEcrits: textesResult.articlesEcrits,
+        textesNonServis: textesResult.textesNonServis,
+        textesGabaritInconnu: textesResult.textesGabaritInconnu,
+      }, 'Textes-articles sync completed');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Textes-articles sync failed (non-blocking)');
+    }
+  }
+
   if (hasScrutinsChanged) {
     // Rattrapage de la nature des scrutins. Les scrutins écrits par ce sync la
     // portent déjà (elle est calculée à l'upsert) : ce passage ne concerne que
