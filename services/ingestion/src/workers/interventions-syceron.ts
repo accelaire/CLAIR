@@ -2,6 +2,7 @@
 // Ingestion des débats AN depuis les comptes rendus syceron
 // =============================================================================
 
+import { createHash } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { errorMessage } from '../utils/errors';
@@ -23,6 +24,20 @@ const DELAI_TRANSACTION = 120_000;
 /** Attente maximale d'une connexion libre dans le pool avant d'abandonner. */
 const DELAI_ATTENTE = 30_000;
 
+/**
+ * Âge, en jours, en deçà duquel une séance déjà en base est relue chaque nuit.
+ *
+ * Le compte rendu d'une séance paraît d'abord en version `provisoire`, souvent
+ * tronquée, puis en version `complet` quelques jours plus tard. Une séance
+ * n'était lue qu'une fois : celle qu'on avait prise provisoire le restait. Le
+ * 9 octobre 2026, les 7 séances d'octobre ingérées ainsi manquaient de 797
+ * prises de parole (43 sur 332 le 5 octobre, 319 sur 711 le 7). Au-delà de
+ * cette fenêtre, le compte rendu est définitif et la séance n'est plus relue.
+ */
+export const RELECTURE_JOURS = 15;
+
+const JOUR_MS = 24 * 60 * 60 * 1000;
+
 export interface OptionsSyceron {
   legislature: number;
   maxSeances?: number;
@@ -38,13 +53,54 @@ export interface OptionsSyceron {
    * et une interruption ne coûte que la séance en cours.
    */
   reingerer?: boolean;
+  /** Date de référence de la fenêtre de relecture ; maintenant par défaut. */
+  maintenant?: Date;
 }
 
 export interface ResultatSyceron {
+  /** Séances écrites : nouvelles, ou relues et remplacées. */
   seances: number;
   interventions: number;
+  /** Séances déjà en base et hors de la fenêtre de relecture. */
   seancesIgnorees: number;
+  /** Séances récentes relues pour voir si leur compte rendu a changé. */
+  relues: number;
+  /** Parmi les relues, celles dont le compte rendu avait changé. */
+  remplacees: number;
+  /** Comptes rendus encore provisoires dans l'archive : ils seront relus. */
+  provisoires: number;
   sansParlementaire: number;
+}
+
+/**
+ * Sépare les séances déjà en base entre celles à ignorer et celles à relire,
+ * selon la date de la séance.
+ */
+export function repartirSeances(
+  enBase: Map<string, Date>,
+  maintenant: Date,
+  jours: number = RELECTURE_JOURS,
+): { ignorer: Set<string>; aRelire: Set<string> } {
+  const seuil = maintenant.getTime() - jours * JOUR_MS;
+  const ignorer = new Set<string>();
+  const aRelire = new Set<string>();
+  for (const [uid, date] of enBase) {
+    (date.getTime() >= seuil ? aRelire : ignorer).add(uid);
+  }
+  return { ignorer, aRelire };
+}
+
+/**
+ * Empreinte du contenu d'une séance : ses prises de parole, identifiées par
+ * leur `source_uid`. Calculée à l'identique en SQL par `empreinteEnBase`
+ * (tri binaire, mêmes séparateurs) pour comparer la séance relue à celle en
+ * base sans rapatrier ses lignes.
+ */
+export function empreinteDesLignes(lignes: { sourceUid: string; contenu: string }[]): string {
+  const triees = lignes
+    .map((l) => `${l.sourceUid}\t${l.contenu}`)
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return createHash('md5').update(triees.join('\n'), 'utf8').digest('hex');
 }
 
 /**
@@ -242,24 +298,40 @@ export async function syncInterventionsSyceron(options: OptionsSyceron): Promise
 
   const parlementaireParRef = await chargerParlementaires();
 
-  const dejaEnBase = options.reingerer ? new Set<string>() : await seancesDejaEnBase(legislature);
-  logger.info({ dejaEnBase: dejaEnBase.size }, 'Séances déjà ingérées');
+  const enBase = options.reingerer ? new Map<string, Date>() : await seancesDejaEnBase(legislature);
+  const { ignorer, aRelire } = repartirSeances(enBase, options.maintenant ?? new Date());
+  logger.info({ dejaEnBase: enBase.size, aRelire: aRelire.size }, 'Séances déjà ingérées');
 
   const client = new SyceronClient(legislature);
   const resultat: ResultatSyceron = {
     seances: 0,
     interventions: 0,
-    seancesIgnorees: dejaEnBase.size,
+    seancesIgnorees: ignorer.size,
+    relues: 0,
+    remplacees: 0,
+    provisoires: 0,
     sansParlementaire: 0,
   };
 
   for await (const seance of client.seances({
-    ignorer: dejaEnBase,
+    ignorer,
     maxSeances: options.maxSeances,
     repertoireLocal: options.repertoireLocal,
   })) {
     try {
-      const ecrites = await ecrireSeance(seance, parlementaireParRef, options.reingerer ?? false);
+      if (seance.etat === 'provisoire') resultat.provisoires++;
+      const relue = aRelire.has(seance.uid);
+      const mode: ModeEcriture = options.reingerer ? 'remplacer' : relue ? 'siChangee' : 'ajouter';
+      const ecrites = await ecrireSeance(seance, parlementaireParRef, mode);
+      if (relue) {
+        resultat.relues++;
+        if (!ecrites.ecrite) continue;
+        resultat.remplacees++;
+        logger.info(
+          { seance: seance.uid, etat: seance.etat, interventions: ecrites.ecrites },
+          'Séance relue : compte rendu changé, remplacée',
+        );
+      }
       resultat.seances++;
       resultat.interventions += ecrites.ecrites;
       resultat.sansParlementaire += ecrites.sansParlementaire;
@@ -286,23 +358,42 @@ async function chargerParlementaires(): Promise<Map<string, string>> {
   return parRef;
 }
 
-async function seancesDejaEnBase(legislature: number): Promise<Set<string>> {
-  const rows = await prisma.$queryRaw<{ seance_uid: string }[]>`
-    SELECT DISTINCT seance_uid
+/** Séances déjà en base, avec leur date. */
+async function seancesDejaEnBase(legislature: number): Promise<Map<string, Date>> {
+  const rows = await prisma.$queryRaw<{ seance_uid: string; date: Date }[]>`
+    SELECT seance_uid, max(date) AS date
     FROM interventions
     WHERE seance_uid IS NOT NULL
       AND seance_uid LIKE ${`CRSANR5L${legislature}%`}
+    GROUP BY seance_uid
   `;
-  return new Set(rows.map((r: { seance_uid: string }) => r.seance_uid));
+  return new Map(rows.map((r) => [r.seance_uid, r.date]));
 }
+
+/** Même calcul que `empreinteDesLignes`, sur les lignes en base. */
+async function empreinteEnBase(seanceUid: string): Promise<string | null> {
+  const [ligne] = await prisma.$queryRaw<{ empreinte: string | null }[]>`
+    SELECT md5(string_agg(source_uid || E'\\t' || contenu, E'\\n' ORDER BY source_uid COLLATE "C")) AS empreinte
+    FROM interventions
+    WHERE seance_uid = ${seanceUid}
+  `;
+  return ligne?.empreinte ?? null;
+}
+
+/**
+ * `ajouter` : séance nouvelle. `remplacer` : réingestion forcée.
+ * `siChangee` : séance récente relue, remplacée seulement si son compte rendu
+ * a changé depuis l'écriture.
+ */
+type ModeEcriture = 'ajouter' | 'remplacer' | 'siChangee';
 
 async function ecrireSeance(
   seance: SeanceSyceron,
   parlementaireParRef: Map<string, string>,
-  remplacer: boolean,
-): Promise<{ ecrites: number; sansParlementaire: number }> {
+  mode: ModeEcriture,
+): Promise<{ ecrites: number; sansParlementaire: number; ecrite: boolean }> {
   const groupes = regrouperPrises(seance.prises);
-  if (groupes.length === 0) return { ecrites: 0, sansParlementaire: 0 };
+  if (groupes.length === 0) return { ecrites: 0, sansParlementaire: 0, ecrite: false };
 
   let sansParlementaire = 0;
 
@@ -350,9 +441,16 @@ async function ecrireSeance(
 
   // `skipDuplicates` sur `source_uid` : une séance déjà ingérée ne produit rien,
   // ce qui rend la commande rejouable sans précaution particulière.
-  if (!remplacer) {
+  if (mode === 'ajouter') {
     const { count } = await prisma.intervention.createMany({ data: lignes, skipDuplicates: true });
-    return { ecrites: count, sansParlementaire };
+    return { ecrites: count, sansParlementaire, ecrite: true };
+  }
+
+  // Séance relue à l'identique : rien à faire, et surtout rien à défaire. Le
+  // remplacement supprime ses liens vers les scrutins (cascade), que le
+  // rattachement des débats repose ensuite.
+  if (mode === 'siChangee' && empreinteDesLignes(lignes) === (await empreinteEnBase(seance.uid))) {
+    return { ecrites: 0, sansParlementaire, ecrite: false };
   }
 
   // Réingestion : l'ancienne lecture de la séance cède la place à la nouvelle
@@ -373,7 +471,7 @@ async function ecrireSeance(
     // rien perdre, mais sans être corrigée non plus.
     { timeout: DELAI_TRANSACTION, maxWait: DELAI_ATTENTE },
   );
-  return { ecrites: count, sansParlementaire };
+  return { ecrites: count, sansParlementaire, ecrite: true };
 }
 
 /** Page publique du compte rendu, pour renvoyer le lecteur à la source. */

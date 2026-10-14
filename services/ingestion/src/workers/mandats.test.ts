@@ -60,6 +60,9 @@ function matchWhere(row: MandatRow, where: Record<string, unknown>): boolean {
       } else if (cond && typeof cond === 'object' && 'not' in cond) {
         if (value === null) return false; // { not: null }
       }
+    } else if (key === 'dateDebut' && cond && typeof cond === 'object' && 'gt' in cond) {
+      const gt = (cond as { gt: Date }).gt;
+      if (!(value instanceof Date && value.getTime() > gt.getTime())) return false;
     } else if (key === 'mandature' && cond && typeof cond === 'object' && 'lt' in cond) {
       const lt = (cond as { lt: number }).lt;
       if (!(row.mandature !== null && row.mandature < lt)) return false;
@@ -517,6 +520,78 @@ describe('upsertMandatParlementaire — AN (match par personne+législature)', (
     expect(created).toBe(false);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.dateFin?.toISOString()).toBe('2019-10-01T00:00:00.000Z');
+  });
+});
+
+describe('upsertMandatParlementaire — AN, député élu sénateur', () => {
+  const ctx17EnCours: MandatContext = {
+    legislature: 17,
+    mandature: null,
+    serie: null,
+    dateDebut: new Date('2024-07-07T00:00:00Z'),
+    dateFin: null, // l'Assemblée le liste encore le lendemain de son élection
+  };
+  const inputAN = {
+    personneId: 'P',
+    chambre: 'assemblee',
+    ctx: ctx17EnCours,
+    groupeId: 'g',
+    circonscriptionId: null,
+    commissionPermanente: null,
+  };
+
+  it("ne rouvre pas le mandat de député clos à la veille de l'entrée au Sénat", async () => {
+    const { prisma, rows } = makeMockPrisma([
+      {
+        personneId: 'P',
+        chambre: 'assemblee',
+        legislature: 17,
+        dateDebut: new Date('2024-07-07T00:00:00Z'),
+        dateFin: new Date('2026-09-30T00:00:00Z'),
+      },
+      { personneId: 'P', chambre: 'senat', mandature: 2026, dateDebut: new Date('2026-10-01T00:00:00Z') },
+    ]);
+    await upsertMandatParlementaire(prisma, inputAN);
+    const an = rows.find((r) => r.chambre === 'assemblee')!;
+    expect(an.dateFin?.toISOString()).toBe('2026-09-30T00:00:00.000Z');
+  });
+
+  it('borne aussi un mandat créé alors que le Sénat a déjà commencé', async () => {
+    const { prisma, rows } = makeMockPrisma([
+      { personneId: 'P', chambre: 'senat', mandature: 2026, dateDebut: new Date('2026-10-01T00:00:00Z') },
+    ]);
+    const { created } = await upsertMandatParlementaire(prisma, inputAN);
+    expect(created).toBe(true);
+    expect(rows.find((r) => r.chambre === 'assemblee')!.dateFin?.toISOString()).toBe(
+      '2026-09-30T00:00:00.000Z',
+    );
+  });
+
+  it('garde une fin publiée antérieure à la veille', async () => {
+    const { prisma, rows } = makeMockPrisma([
+      { personneId: 'P', chambre: 'senat', mandature: 2026, dateDebut: new Date('2026-10-01T00:00:00Z') },
+    ]);
+    await upsertMandatParlementaire(prisma, {
+      ...inputAN,
+      ctx: { ...ctx17EnCours, dateFin: new Date('2026-06-15T00:00:00Z') },
+    });
+    expect(rows.find((r) => r.chambre === 'assemblee')!.dateFin?.toISOString()).toBe(
+      '2026-06-15T00:00:00.000Z',
+    );
+  });
+
+  it("un mandat de sénateur antérieur (sénateur devenu député) ne borne rien", async () => {
+    const { prisma, rows } = makeMockPrisma([
+      {
+        personneId: 'P',
+        chambre: 'senat',
+        mandature: 2020,
+        dateDebut: new Date('2020-10-01T00:00:00Z'),
+        dateFin: new Date('2024-07-06T00:00:00Z'),
+      },
+    ]);
+    await upsertMandatParlementaire(prisma, inputAN);
+    expect(rows.find((r) => r.chambre === 'assemblee')!.dateFin).toBeNull();
   });
 });
 

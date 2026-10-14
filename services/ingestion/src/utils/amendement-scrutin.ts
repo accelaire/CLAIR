@@ -55,6 +55,23 @@ function deliberationDeLUid(uid: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
+/** Le jour civil (UTC) d'une date, comme `::date` côté SQL. */
+function jour(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Un amendement déposé après le jour du vote ne peut pas être celui que le
+ * scrutin met aux voix. C'est l'homonyme d'une lecture suivante : la nouvelle
+ * lecture du PLF 2026 (texte n° 2247, janvier 2026) renumérote ses amendements,
+ * et 835 liens de scrutins de la première lecture (octobre-novembre 2025)
+ * pointaient vers eux au 10 octobre 2026. Sans date connue, on ne conclut rien.
+ */
+export function deposeApresLeVote(dateDepot: Date | null, dateScrutin: Date | null): boolean {
+  if (!dateDepot || !dateScrutin) return false;
+  return jour(dateDepot) > jour(dateScrutin);
+}
+
 /**
  * Choisit l'amendement que vise un scrutin parmi des homonymes.
  *

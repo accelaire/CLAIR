@@ -28,6 +28,7 @@ import axios from 'axios';
 
 import { logger } from './logger.js';
 import { errorMessage, httpStatus } from './errors.js';
+import { fraicheur, urlAJourAN, urlSansCacheAN, versionContredite } from './cdn-an.js';
 
 export interface DownloadOptions {
   /**
@@ -58,6 +59,13 @@ export interface DownloadResult {
   attempts: number;
   durationMs: number;
 }
+
+/**
+ * Timeout d'une tentative servie par l'origine du portail AN, hors cache :
+ * 400 à 470 Ko/s mesurés le 9 octobre 2026, soit 11 à 13 min pour l'archive
+ * des amendements (315 Mo). Le défaut de 10 min la ferait échouer.
+ */
+const TIMEOUT_ORIGINE_AN_MS = 1_800_000;
 
 const DEFAULTS = {
   timeoutMs: 600_000,
@@ -120,6 +128,12 @@ export async function downloadWithRetry(
 ): Promise<DownloadResult> {
   const opts = { ...DEFAULTS, ...options };
   const startedAt = Date.now();
+
+  // Portail open data de l'Assemblée : son cache pouvait servir l'archive de
+  // la veille au batch nocturne. On va à l'origine quand il est périmé
+  // (cf. cdn-an.ts).
+  let cible = await urlAJourAN(url);
+  let timeoutMs = cible.origine ? Math.max(opts.timeoutMs, TIMEOUT_ORIGINE_AN_MS) : opts.timeoutMs;
   let lastDiagnostic = '';
 
   for (let attempt = 1; attempt <= opts.maxAttempts; attempt++) {
@@ -130,11 +144,31 @@ export async function downloadWithRetry(
     try {
       const response = await axios({
         method: 'GET',
-        url,
+        url: cible.url,
         responseType: 'stream',
-        timeout: opts.timeoutMs,
+        timeout: timeoutMs,
         headers: { 'User-Agent': opts.userAgent, Accept: opts.accept },
       });
+
+      // Le cache n'est pas UN serveur : le 10 octobre 2026, la vérification
+      // de fraîcheur a vu la version du jour de l'archive des débats, puis la
+      // troisième tentative est tombée sur un nœud qui servait encore celle de
+      // la veille (56 955 715 octets au lieu de 57 204 770). Trois séances du
+      // 9 octobre manquaient. Chaque réponse est donc confrontée à la version
+      // de l'origine ; une autre version fait basculer sur l'origine.
+      if (!cible.origine && cible.version && versionContredite(fraicheur(response.headers), cible.version)) {
+        response.data.destroy();
+        logger.warn(
+          { url, servie: fraicheur(response.headers), attendue: cible.version, attempt },
+          "Le cache du portail AN sert une autre version que l'origine : téléchargement depuis l'origine",
+        );
+        cible = { url: urlSansCacheAN(url), origine: true, version: cible.version };
+        timeoutMs = Math.max(opts.timeoutMs, TIMEOUT_ORIGINE_AN_MS);
+        // Tentative non comptée : rien n'a échoué. Une seule fois, puisque
+        // `cible.origine` est désormais vrai.
+        attempt--;
+        continue;
+      }
 
       const declared = Number(response.headers['content-length']);
       expected = Number.isFinite(declared) && declared > 0 ? declared : null;
@@ -150,7 +184,7 @@ export async function downloadWithRetry(
       }
 
       logger.info(
-        { url, bytes: received, attempt, durationMs: Date.now() - attemptStart },
+        { url, origine: cible.origine, bytes: received, attempt, durationMs: Date.now() - attemptStart },
         'Archive downloaded',
       );
 

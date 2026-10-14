@@ -315,10 +315,20 @@ export class DossiersLegislatifsClient {
 
       logger.info({ totalFiles: jsonFiles.length }, 'Dossier files found');
 
-      // Filter to current legislature only
-      const legislaturePrefix = `DLR5L${this.legislature}`;
-      jsonFiles = jsonFiles.filter(f => path.basename(f).startsWith(legislaturePrefix));
-      logger.info({ filteredFiles: jsonFiles.length }, `Filtered to legislature ${this.legislature}`);
+      // TOUS les dossiers de l'archive, pas seulement ceux ouverts dans cette
+      // législature. L'archive de la 17e porte aussi 196 dossiers ouverts avant
+      // elle et poursuivis (texte du Sénat transmis, texte repris après la
+      // dissolution) : ils gardent leur identifiant d'origine (`DLR5L16N…`) et
+      // c'est ici qu'ils reçoivent leurs actes de la 17e. Le filtre sur le
+      // préfixe, présent depuis le premier commit, les écartait : leurs textes,
+      // amendements et votes de la 17e n'avaient pas de dossier (cf.
+      // utils/legislatures-dossier.ts).
+      const parLegislature: Record<string, number> = {};
+      for (const f of jsonFiles) {
+        const leg = /^DLR5L(\d+)N/.exec(path.basename(f))?.[1] ?? '?';
+        parLegislature[leg] = (parLegislature[leg] ?? 0) + 1;
+      }
+      logger.info({ legislature: this.legislature, parLegislatureDOrigine: parLegislature }, 'Dossiers de l’archive');
 
       // Apply limit
       const filesToProcess = limit && limit > 0 ? jsonFiles.slice(0, limit) : jsonFiles;

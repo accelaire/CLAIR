@@ -4,12 +4,12 @@ import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
-  Users, ExternalLink, ArrowDown, Loader2, Search,
+  Users, ExternalLink, ArrowDown, ArrowRight, Landmark, Loader2, Search,
 } from 'lucide-react';
 import { ExpandableText } from '@/components/ui/expandable-text';
 import { grouperParSujet } from '@/lib/debats';
 
-interface InterventionScrutin {
+export interface InterventionScrutin {
   id: string;
   type: string;
   contenu: string;
@@ -55,6 +55,10 @@ interface ScrutinDebatsTabProps {
   onTypeChange: (type: string) => void;
   /** Nombre de prises par nature, filtre de nature exclu. */
   parType: Record<string, number>;
+  /** Les prises qui défendent un amendement mis aux voix, et son numéro. */
+  defenses?: Map<string, string>;
+  /** Le passage du vote dans la page de la séance, quand elle existe. */
+  seanceHref?: string | null;
 }
 
 /**
@@ -85,6 +89,8 @@ export function ScrutinDebatsTab({
   typeFiltre,
   onTypeChange,
   parType,
+  defenses,
+  seanceHref,
 }: ScrutinDebatsTabProps) {
   // Seules les natures réellement présentes sont proposées : une option qui ne
   // mène nulle part est pire que pas d'option. Une explication de vote n'existe
@@ -105,6 +111,23 @@ export function ScrutinDebatsTab({
         <p className="mb-4 rounded-lg border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
           Ce vote n’a pas pu être relié à un moment précis du compte rendu :
           voici les débats de la journée, qui peuvent porter sur d’autres textes.
+        </p>
+      )}
+
+      {/* Le cas courant : un extrait de la séance, celui qui porte sur ce
+          vote. On le dit, l'ancien intitulé « Débats de la séance » laissait
+          croire à la séance entière. */}
+      {rattachement === 'scrutin' && precision !== 'fenetre' && precision !== 'finances' && (
+        <p className="mb-4 text-xs text-muted-foreground">
+          Les prises de parole qui ont précédé ce vote, extraites de la séance.
+          {seanceHref && (
+            <>
+              {' '}
+              <Link href={seanceHref} className="font-medium text-primary hover:underline">
+                Voir le débat complet
+              </Link>
+            </>
+          )}
         </p>
       )}
 
@@ -264,8 +287,19 @@ export function ScrutinDebatsTab({
                         {intervention.orateurQualite}
                       </span>
                     ) : null}
+                    {defenses?.has(intervention.id) && (
+                      <span className="px-2 py-0.5 text-xs rounded-full bg-primary/10 text-primary font-medium">
+                        Défense de l’amendement n°{defenses.get(intervention.id)}
+                      </span>
+                    )}
                   </div>
-                  <div className="rounded-lg p-3 bg-muted/50">
+                  <div
+                    className={`rounded-lg p-3 ${
+                      defenses?.has(intervention.id)
+                        ? 'border border-primary/20 bg-primary/5'
+                        : 'bg-muted/50'
+                    }`}
+                  >
                     <ExpandableText
                       text={intervention.contenu}
                       hasMore={intervention.hasMore}
@@ -297,22 +331,38 @@ export function ScrutinDebatsTab({
         </div>
       </div>
 
-      {/* Source link global */}
-      {interventions.some(i => i.sourceUrl) && (
-        <div className="mt-4 pt-4 flex justify-start">
-          <a
-            href={(() => {
-              const url = interventions.find(i => i.sourceUrl)?.sourceUrl || '';
-              // Retirer l'ancre #par_N pour le lien global
-              return url.replace(/#par_\d+$/, '');
-            })()}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
-          >
-            Voir le compte-rendu intégral
-            <ExternalLink className="h-3.5 w-3.5" />
-          </a>
+      {/* LA SUITE EST CHEZ NOUS. Ce qui précède n'est qu'un extrait de la
+          séance : le seul lien en pied de liste menait jusqu'ici au compte
+          rendu de la chambre, hors du site, quand la page de la séance montre
+          le même débat en entier, avec ses votes en place. Elle passe donc en
+          premier, et le compte rendu officiel reste en source. */}
+      {(seanceHref || interventions.some(i => i.sourceUrl)) && (
+        <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-t pt-4">
+          {seanceHref && (
+            <Link
+              href={seanceHref}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+            >
+              <Landmark className="h-4 w-4" />
+              Lire ce passage dans toute la séance
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          )}
+          {interventions.some(i => i.sourceUrl) && (
+            <a
+              href={(() => {
+                const url = interventions.find(i => i.sourceUrl)?.sourceUrl || '';
+                // Retirer l'ancre #par_N pour le lien global
+                return url.replace(/#par_\d+$/, '');
+              })()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:underline"
+            >
+              Compte rendu officiel sur {chambre === 'senat' ? 'senat.fr' : 'assemblee-nationale.fr'}
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
         </div>
       )}
     </div>

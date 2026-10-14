@@ -1,7 +1,8 @@
-import { ReactNode } from 'react';
 import Link from 'next/link';
 import { ScrollText } from 'lucide-react';
 import { legislatureLabel, mandatureLabel, sessionForDate } from '@/lib/periodes';
+import { mandatDeChaqueFonction } from '@/lib/fonctions-par-mandat';
+import { FonctionsMandat, type FonctionItem } from './fonctions-mandat';
 
 export interface MandatParlementaireItem {
   /** Chambre du MANDAT, qui peut différer de celle de la fiche (député élu sénateur). */
@@ -43,23 +44,23 @@ function moisAnnee(date: string): string {
 /**
  * Bloc « Mandats » unifié : la frise des mandats parlementaires (une période par
  * législature AN / mandature Sénat, avec le groupe et la circonscription de
- * l'époque) sert de colonne vertébrale, et les fonctions en commission de la
- * période en cours viennent s'y rattacher via `fonctionsCourantes`.
+ * l'époque) sert de colonne vertébrale, et chaque fonction (commission, groupe
+ * d'études, mission…) s'y range sous le mandat de sa chambre qui la recouvre
+ * (`lib/fonctions-par-mandat`).
  *
- * Dégrade proprement : sans frise (une seule période connue, cas de la prod tant
- * que l'historique n'est pas ingéré), on rend les fonctions telles quelles.
+ * Dégrade proprement : sans frise, on rend les fonctions telles quelles.
  */
 export function MandatsBlock({
   mandats: mandatsRecus,
   chambre,
   sexe,
-  fonctionsCourantes,
+  fonctions = [],
 }: {
   mandats: MandatParlementaireItem[];
   /** Chambre de la fiche : celle des mandats qui ne disent pas la leur. */
   chambre: Chambre;
   sexe?: string | null;
-  fonctionsCourantes?: ReactNode;
+  fonctions?: FonctionItem[];
 }) {
   // Du plus récent au plus ancien. L'API trie par législature puis par
   // mandature : dans une frise qui mêle les deux chambres, cet ordre les
@@ -82,10 +83,13 @@ export function MandatsBlock({
     return (
       <div>
         {entete}
-        {fonctionsCourantes}
+        <FonctionsMandat fonctions={fonctions} enCours />
       </div>
     );
   }
+
+  const rattachement = mandatDeChaqueFonction(mandats, fonctions, chambre);
+  const fonctionsDe = (i: number) => fonctions.filter((_, j) => rattachement[j] === i);
 
   return (
     <div>
@@ -147,8 +151,7 @@ export function MandatsBlock({
                 </div>
               </div>
 
-              {/* Fonctions en commission, rattachées à la période en cours */}
-              {enCours && fonctionsCourantes && <div className="mt-3">{fonctionsCourantes}</div>}
+              <FonctionsMandat fonctions={fonctionsDe(i)} enCours={enCours} />
             </li>
           );
         })}

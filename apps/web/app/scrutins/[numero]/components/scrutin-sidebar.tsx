@@ -2,21 +2,18 @@
 
 import Link from 'next/link';
 import {
-  Calendar, CheckCircle, XCircle, ExternalLink,
+  ArrowRight, Calendar, CheckCircle, XCircle, ExternalLink,
 } from 'lucide-react';
 import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
-import { scrutinPeriodeLabel } from '@/lib/periodes';
 
 interface ScrutinSidebarProps {
   chambre: string;
   date: string;
-  /** La séance où ce vote a eu lieu, quand la source la nomme. */
-  seanceRef?: string | null;
-  /** Vrai seulement si cette séance a un débat chez nous : sinon, pas de lien. */
-  seanceADesDebats?: boolean;
-  /** Session (Sénat) ou numéro de législature (Assemblée). */
-  session?: string | null;
-  legislature?: number | null;
+  /**
+   * Le passage de ce vote dans la page de sa séance, seulement quand cette
+   * page existe chez nous : sinon la date reste du texte.
+   */
+  seanceHref?: string | null;
   typeVote: string;
   sort: string;
   tags: string[];
@@ -40,10 +37,7 @@ const typeVoteLabels: Record<string, string> = {
 export function ScrutinSidebar({
   chambre,
   date,
-  seanceRef,
-  seanceADesDebats,
-  session,
-  legislature,
+  seanceHref,
   typeVote,
   sort,
   tags,
@@ -53,9 +47,6 @@ export function ScrutinSidebar({
   formatDemandeurs,
 }: ScrutinSidebarProps) {
   const isAdopted = sort === 'adopte';
-  // Le numéro de scrutin étant réinitialisé à chaque période, la période est ce
-  // qui distingue deux scrutins de même numéro.
-  const periode = scrutinPeriodeLabel({ chambre, session, legislature });
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('fr-FR', {
@@ -70,26 +61,31 @@ export function ScrutinSidebar({
     <div className="space-y-5">
       {/* Date */}
       <div>
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Date du scrutin</h3>
-        {/* La date mène à la séance : c'est là qu'on lit ce qui a été dit
-            avant le vote, et les autres votes de la journée. Le Sénat ne nomme
-            pas la séance de ses scrutins — la date reste alors du texte. */}
-        {seanceRef && seanceADesDebats ? (
-          <Link
-            href={`/reunions/${encodeURIComponent(seanceRef)}`}
-            className="text-sm flex items-center gap-1.5 text-primary hover:underline"
-          >
-            <Calendar className="h-4 w-4" />
-            {formatDate(date)}
+        {/* La date mène à la séance, à l'endroit du vote : c'est là qu'on lit
+            ce qui a été dit avant lui, et les autres votes de la journée. Une
+            date en bleu ne disait pas où elle menait : l'intitulé nomme la
+            séance, et une ligne dit ce qu'on y trouve. */}
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+          {seanceHref
+            ? (chambre === 'senat' ? 'Journée de séance' : 'Séance publique')
+            : 'Date du scrutin'}
+        </h3>
+        {seanceHref ? (
+          <Link href={seanceHref} className="group flex items-start gap-1.5 text-sm text-primary">
+            <Calendar className="mt-0.5 h-4 w-4 shrink-0" />
+            <span className="min-w-0">
+              <span className="group-hover:underline">{formatDate(date)}</span>
+              <span className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground group-hover:text-primary">
+                Voir ce vote dans la séance
+                <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+              </span>
+            </span>
           </Link>
         ) : (
           <p className="text-sm flex items-center gap-1.5">
             <Calendar className="h-4 w-4 text-muted-foreground" />
             {formatDate(date)}
           </p>
-        )}
-        {periode && (
-          <p className="text-xs text-muted-foreground mt-1 pl-[22px]">{periode}</p>
         )}
       </div>
 

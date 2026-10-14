@@ -38,6 +38,8 @@
 
 import { PrismaClient, Prisma } from '@prisma/client';
 import { logger } from '../utils/logger';
+import { CTE_LEGISLATURES_DOSSIER, dossierValantPour } from '../utils/legislatures-dossier';
+import { lierParOrdreDuJour, type ResultatOrdreDuJour } from './link-interventions-ordre-du-jour';
 
 const prisma = new PrismaClient();
 
@@ -57,6 +59,11 @@ export interface ResultatLienInterventionsDossiers {
   corrigees: number;
   /** Liens vers le dossier d'une autre législature, effacés faute de mieux. */
   effaces: number;
+  /**
+   * Les prises de parole SANS numéro de texte, rattachées par le point
+   * d'ordre du jour où elles tombent (link-interventions-ordre-du-jour.ts).
+   */
+  ordreDuJour?: ResultatOrdreDuJour;
 }
 
 /**
@@ -88,7 +95,8 @@ export function cleDuTexte(legislature: string | number, numero: string): string
  * là où il sert : le rattachement est une jointure, pas une boucle.
  */
 const CORRESPONDANCE_SQL = Prisma.sql`
-  WITH par_amendement AS (
+  WITH ${CTE_LEGISLATURES_DOSSIER},
+  par_amendement AS (
     SELECT DISTINCT
            substring(a.texte_ref from 'ANR5L([0-9]+)B') AS legislature,
            substring(a.texte_ref from 'B(?:TC)?([0-9]+)$') AS numero,
@@ -112,17 +120,17 @@ const CORRESPONDANCE_SQL = Prisma.sql`
     UNION
     SELECT * FROM par_dossier
   ),
-  -- Un dossier de l'Assemblée porte sa législature dans son uid (\`DLR5L17N…\`)
-  -- et n'en change jamais. Une référence d'une autre législature qui y mène
-  -- est une erreur d'amont : 518 amendements de la 17e étaient rattachés à
-  -- « Bioéthique » (15e) ou à un dossier de la 16e, et faisaient pointer vers
-  -- eux les débats de la 17e sur les mêmes numéros.
+  -- Une référence ne mène qu'à un dossier qui vaut pour sa législature :
+  -- celui de son identifiant, ou un dossier poursuivi qui cite des textes de
+  -- cette législature (utils/legislatures-dossier.ts). 518 amendements de la
+  -- 17e rattachés à « Bioéthique » (15e) faisaient pointer vers ce dossier les
+  -- débats de la 17e sur les mêmes numéros ; « Bioéthique » ne cite aucun
+  -- texte de la 17e et reste écarté.
   coherents AS (
     SELECT c.*
     FROM candidats c
     JOIN dossiers_legislatifs d ON d.id = c.dossier_id
-    WHERE d.uid NOT LIKE 'DLR5L%'
-       OR substring(d.uid from 'DLR5L([0-9]+)N') = c.legislature
+    WHERE ${dossierValantPour('d', "c.legislature::int")}
   )
   SELECT legislature, numero, min(dossier_id) AS dossier_id
   FROM coherents
@@ -154,7 +162,7 @@ export async function lierInterventionsAuxDossiers(
       effaces: bigint;
     }>
   >`
-    WITH correspondance AS (${CORRESPONDANCE_SQL})
+    WITH ${CTE_LEGISLATURES_DOSSIER}, correspondance AS (${CORRESPONDANCE_SQL})
     SELECT substring(i.seance_uid from 'CRSANR5L([0-9]+)') AS legislature,
            count(DISTINCT i.texte_numero) AS vus,
            count(DISTINCT c.numero) AS resolus,
@@ -166,8 +174,7 @@ export async function lierInterventionsAuxDossiers(
            count(*) FILTER (WHERE c.numero IS NULL
                               AND i.chambre = 'assemblee'
                               AND d.uid LIKE 'DLR5L%'
-                              AND substring(i.seance_uid from 'CRSANR5L([0-9]+)')
-                                  <> substring(d.uid from 'DLR5L([0-9]+)N')) AS effaces
+                              AND NOT ${dossierValantPour('d', "substring(i.seance_uid from 'CRSANR5L([0-9]+)')::int")}) AS effaces
     FROM interventions i
     LEFT JOIN correspondance c
       ON c.numero = i.texte_numero
@@ -186,6 +193,7 @@ export async function lierInterventionsAuxDossiers(
   };
 
   if (options.dryRun) {
+    resultat.ordreDuJour = await lierParOrdreDuJour(CORRESPONDANCE_SQL, { dryRun: true });
     logger.info(resultat, 'Rattachement des prises de parole à leur dossier (simulation)');
     return resultat;
   }
@@ -221,9 +229,10 @@ export async function lierInterventionsAuxDossiers(
 
   // Ce qui reste rattaché au dossier d'une autre législature n'a pas de bon
   // dossier connu : un numéro nu vaut mieux qu'un titre faux. La législature
-  // du compte rendu se lit sur son uid, celle du dossier sur le sien, sans
-  // rien demander à la correspondance.
+  // du compte rendu se lit sur son uid ; un dossier vaut pour la sienne et pour
+  // celles des textes qu'il cite (dossier poursuivi, utils/legislatures-dossier.ts).
   resultat.effaces = await prisma.$executeRaw`
+    WITH ${CTE_LEGISLATURES_DOSSIER}
     UPDATE interventions i
     SET dossier_id = NULL
     FROM dossiers_legislatifs d
@@ -231,9 +240,11 @@ export async function lierInterventionsAuxDossiers(
       AND i.chambre = 'assemblee'
       AND i.seance_uid LIKE 'CRSANR5L%'
       AND d.uid LIKE 'DLR5L%'
-      AND substring(i.seance_uid from 'CRSANR5L([0-9]+)')
-          <> substring(d.uid from 'DLR5L([0-9]+)N')
+      AND NOT ${dossierValantPour('d', "substring(i.seance_uid from 'CRSANR5L([0-9]+)')::int")}
   `;
+
+  // Les prises sans numéro, par le numéro de l'annonce qui ouvre leur point.
+  resultat.ordreDuJour = await lierParOrdreDuJour(CORRESPONDANCE_SQL);
 
   logger.info(resultat, 'Rattachement des prises de parole à leur dossier terminé');
   return resultat;

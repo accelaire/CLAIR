@@ -49,14 +49,23 @@ export interface SignatureEditorialeInput {
  * au jour près ne rend aucun texte faux.
  */
 export function signatureEditoriale(p: SignatureEditorialeInput): string {
-  const mandats = [...p.mandatsParlementaires]
-    .sort((a, b) => a.dateDebut.getTime() - b.dateDebut.getTime())
-    .map(m => [
-      m.chambre,
-      m.legislature ?? m.mandature ?? '',
-      m.dateDebut.getUTCFullYear(),
-      m.dateFin?.getUTCFullYear() ?? '',
-    ].join(':'))
+  // Tri total : un mandat scindé par une entrée au gouvernement donne deux
+  // lignes de même date de début (Agnès Canayer, 2020-2024 et 2020-2026). Trié
+  // sur la seule date, leur ordre restait celui de la requête, et la sélection
+  // nocturne, sans ORDER BY, voyait une autre empreinte que l'écriture : la
+  // fiche était retenue comme périmée puis sautée, chaque nuit.
+  const mandats = p.mandatsParlementaires
+    .map(m => ({
+      debut: m.dateDebut.getTime(),
+      cle: [
+        m.chambre,
+        m.legislature ?? m.mandature ?? '',
+        m.dateDebut.getUTCFullYear(),
+        m.dateFin?.getUTCFullYear() ?? '',
+      ].join(':'),
+    }))
+    .sort((a, b) => a.debut - b.debut || (a.cle < b.cle ? -1 : a.cle > b.cle ? 1 : 0))
+    .map(m => m.cle)
     .join(',');
   return computeContentHash(
     `v${PROMPT_PARLEMENTAIRE_VERSION}`,

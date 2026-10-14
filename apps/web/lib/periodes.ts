@@ -71,15 +71,6 @@ export interface ScrutinPeriodeRef {
   legislature?: number | null;
 }
 
-/** Libellé complet : « Session 2024-2025 » / « XVIIe législature ». */
-export function scrutinPeriodeLabel(scrutin: ScrutinPeriodeRef): string | null {
-  if (scrutin.chambre === 'senat') {
-    return scrutin.session ? sessionLabel(scrutin.session) : null;
-  }
-  const legislature = scrutin.legislature ?? Number(scrutin.session);
-  return Number.isFinite(legislature) ? legislatureLabel(legislature) : null;
-}
-
 /** Version compacte pour les badges de liste : « 2024-2025 » / « XVIIe ». */
 export function scrutinPeriodeBadge(scrutin: ScrutinPeriodeRef): string | null {
   if (scrutin.chambre === 'senat') {

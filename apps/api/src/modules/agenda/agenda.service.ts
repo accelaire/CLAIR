@@ -532,6 +532,26 @@ export class AgendaService {
     });
   }
 
+  /**
+   * Le compte rendu de la séance chez la chambre, lu sur ses prises de parole.
+   *
+   * L'agenda ne donne pas toujours la référence du compte rendu : la séance de
+   * l'Assemblée du 2 octobre 2026 n'en a pas, et une séance que ses seules
+   * prises attestent n'a pas d'agenda du tout. Sa page ne renvoyait alors nulle
+   * part, quand la page d'un vote de cette séance renvoyait, elle, au compte
+   * rendu. Chaque prise porte pourtant l'adresse de son paragraphe : sans
+   * l'ancre, c'est celle du compte rendu entier.
+   */
+  private async compteRenduPublie(cadre: CadreDeSeance): Promise<string | null> {
+    if (cadre.type !== 'seance') return null;
+    const prise = await this.prisma.intervention.findFirst({
+      where: { ...ouSontLesPrises(cadre), sourceUrl: { not: null } },
+      select: { sourceUrl: true },
+      orderBy: [{ ordre: 'asc' }, { id: 'asc' }],
+    });
+    return prise?.sourceUrl?.replace(/#.*$/u, '') || null;
+  }
+
   private async getSeanceSansReunion(uid: string) {
     const [agregat, premiere] = await Promise.all([
       this.prisma.intervention.aggregate({
@@ -558,7 +578,10 @@ export class AgendaService {
       nommeeParSonCompteRendu: premiere?.seanceUid === uid,
     };
 
-    const scrutins = await this.votesDeLaSeance(cadre);
+    const [scrutins, compteRenduUrl] = await Promise.all([
+      this.votesDeLaSeance(cadre),
+      this.compteRenduPublie(cadre),
+    ]);
     const sommaire = await this.getSommaire(cadre, scrutins);
 
     return {
@@ -574,6 +597,7 @@ export class AgendaService {
       captationVideo: false,
       urlVideo: null,
       compteRenduRef: null,
+      compteRenduUrl,
       // La chambre est tout ce qu'on sait de son rattachement : pas de
       // commission, donc pas de fil d'Ariane vers l'une d'elles.
       commission: premiere
@@ -662,9 +686,12 @@ export class AgendaService {
 
     // Les votes de la séance, dans l'ordre où ils ont été appelés. Une séance
     // en compte huit en moyenne et jusqu'à 83 ; les commissions n'en ont pas.
-    const [nbInterventions, scrutins] = await Promise.all([
+    const [nbInterventions, scrutins, compteRenduUrl] = await Promise.all([
       this.prisma.intervention.count({ where: ouSontLesPrises(cadre) }),
       this.votesDeLaSeance(cadre),
+      // La référence de l'agenda prime quand elle existe : le front sait en
+      // tirer l'adresse, pour les commissions comme pour les séances.
+      reunion.compteRenduRef ? Promise.resolve(null) : this.compteRenduPublie(cadre),
     ]);
 
     const sommaire = await this.getSommaire(cadre, scrutins);
@@ -689,6 +716,7 @@ export class AgendaService {
       scrutins,
       sommaire,
       seanceCanonique,
+      compteRenduUrl,
       // Le Sénat ne rattache ses scrutins qu'à une journée : quand la journée
       // compte plusieurs séances, la page le dit plutôt que de laisser croire
       // à un rattachement séance par séance.

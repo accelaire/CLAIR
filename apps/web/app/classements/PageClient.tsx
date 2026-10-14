@@ -614,13 +614,13 @@ function ClassementsPageContent() {
 
       {/* Tabs */}
       <div className="mb-6 border-b">
-        <div className="flex gap-0">
+        <div className="flex gap-0 overflow-x-auto scrollbar-none">
           {TABS.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
               type="button"
               onClick={() => setFilter('tab', key)}
-              className={`inline-flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
+              className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
                 activeTab === key
                   ? 'border-primary text-primary'
                   : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30'

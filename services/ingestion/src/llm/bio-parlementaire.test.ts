@@ -157,4 +157,13 @@ describe('signatureEditoriale', () => {
     const inverse = { ...base, mandatsParlementaires: [...base.mandatsParlementaires].reverse() };
     expect(signatureEditoriale(inverse)).toBe(signatureEditoriale(base));
   });
+
+  it("ne dépend pas de l'ordre de deux mandats commencés le même jour", () => {
+    const debut = new Date('2020-10-01T00:00:00Z');
+    const avantGouvernement = { chambre: 'senat', legislature: null, mandature: 2020, dateDebut: debut, dateFin: new Date('2024-10-21T00:00:00Z') };
+    const mandatComplet = { chambre: 'senat', legislature: null, mandature: 2020, dateDebut: debut, dateFin: new Date('2026-09-30T00:00:00Z') };
+    const a = { ...base, mandatsParlementaires: [avantGouvernement, mandatComplet] };
+    const b = { ...base, mandatsParlementaires: [mandatComplet, avantGouvernement] };
+    expect(signatureEditoriale(a)).toBe(signatureEditoriale(b));
+  });
 });

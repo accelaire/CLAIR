@@ -17,6 +17,9 @@ import {
   ScrutinAmendementsTab,
 } from './components';
 import type { ScrutinDossier } from './components/scrutin-dossier-banner';
+import type { AmendementDetail } from './components/scrutin-amendements-tab';
+import type { InterventionScrutin } from './components/scrutin-debats-tab';
+import { seanceDuVoteHref, type SeanceDuVote } from '@/lib/seance-url';
 
 // ── Types ──
 
@@ -36,45 +39,6 @@ interface VoteRecord {
       couleur: string | null;
     } | null;
   };
-}
-
-interface AmendementDetail {
-  id: string;
-  uid: string;
-  numero: string;
-  articleVise: string | null;
-  dispositif: string | null;
-  exposeSommaire: string | null;
-  auteurLibelle: string | null;
-  sort: string | null;
-  dateDepot: string | null;
-}
-
-interface InterventionScrutin {
-  id: string;
-  type: string;
-  contenu: string;
-  hasMore?: boolean;
-  date: string;
-  ordre: number | null;
-  sourceUrl: string | null;
-  orateurNom: string | null;
-  orateurPrenom: string | null;
-  orateurQualite: string | null;
-  articleVise: string | null;
-  amendementsVises: string[] | null;
-  texteNumero: string | null;
-  parlementaire: {
-    id: string;
-    slug: string;
-    nom: string;
-    prenom: string;
-    photoUrl: string | null;
-    groupe: {
-      nom: string;
-      couleur: string | null;
-    } | null;
-  } | null;
 }
 
 export interface ScrutinDetail {
@@ -115,6 +79,14 @@ export interface ScrutinDetail {
   totalInterventions: number;
   /** La séance nommée par le scrutin a-t-elle un débat chez nous ? */
   seanceADesDebats?: boolean;
+  /**
+   * La séance du vote quand elle a une page chez nous, et le rang où son débat
+   * y commence. Optionnel : une réponse servie d'un cache antérieur ne le
+   * porte pas.
+   */
+  seance?: SeanceDuVote | null;
+  /** `totalInterventions` compte-t-il le débat du vote, ou celui de la journée ? */
+  debatRattache?: boolean;
 }
 
 interface InterventionsResponse {
@@ -522,14 +494,29 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
 
   const scrutin = data.data;
 
+  // Le passage de ce vote dans la page de sa séance : la date, la défense d'un
+  // amendement et le pied de l'onglet des débats y mènent tous.
+  const seanceHref = scrutin.seance ? seanceDuVoteHref(scrutin.seance, scrutin.id) : null;
+  // Les prises qui défendent un amendement mis aux voix, signalées dans le fil.
+  const defensesParPrise = new Map(
+    (scrutin.amendements ?? []).flatMap((a) =>
+      a.defense ? [[a.defense.id, a.numero] as const] : []),
+  );
+
   // Tab counts
   const amendementsCount = scrutin.amendements?.length ?? 0;
+  // L'onglet dit ce qu'il montre. « Débats de la séance » laissait croire à
+  // la séance entière, quand il n'en montre que le passage qui précède ce
+  // vote — ou, faute de rattachement, tout ce qui s'est dit ce jour-là.
+  const libelleDebats = scrutin.debatRattache === undefined
+    ? 'Débats'
+    : scrutin.debatRattache ? 'Débat du vote' : 'Débats du jour';
   const tabConfig: { key: TabType; label: string; icon: typeof FileText; count: number }[] = [
     ...(amendementsCount > 0
       ? [{ key: 'amendements' as const, label: 'Amendements', icon: FileText, count: amendementsCount }]
       : []),
     ...(totalInterventions > 0
-      ? [{ key: 'debats' as const, label: 'Débats de la séance', icon: MessageSquare, count: totalInterventions }]
+      ? [{ key: 'debats' as const, label: libelleDebats, icon: MessageSquare, count: totalInterventions }]
       : []),
     { key: 'vote' as const, label: 'Vote', icon: Vote, count: scrutin.totalVotes },
   ];
@@ -595,10 +582,7 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
             <ScrutinSidebar
               chambre={scrutin.chambre}
               date={scrutin.date}
-              seanceRef={scrutin.seanceRef}
-              seanceADesDebats={scrutin.seanceADesDebats}
-              session={scrutin.session}
-              legislature={scrutin.legislature}
+              seanceHref={seanceHref}
               typeVote={scrutin.typeVote}
               sort={scrutin.sort}
               tags={scrutin.tags}
@@ -622,13 +606,16 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
                   <button
                     key={tab.key}
                     onClick={() => setActiveTab(tab.key)}
-                    className={`inline-flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    // Un onglet ne rétrécit ni ne passe à la ligne : la barre
+                    // défile. Sans cela, « Débat du vote » s'empilait sur trois
+                    // lignes sous 400 px, icône écrasée.
+                    className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                       isActive
                         ? 'text-primary border-primary'
                         : 'text-muted-foreground border-transparent hover:text-foreground hover:border-muted-foreground/30'
                     }`}
                   >
-                    <Icon className="h-4 w-4" />
+                    <Icon className="h-4 w-4 shrink-0" />
                     {tab.label}
                     <span className={`px-1.5 py-0.5 rounded text-xs ${
                       isActive ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
@@ -643,7 +630,12 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
 
           {/* Tab content */}
           {currentTab === 'amendements' && scrutin.amendements && scrutin.amendements.length > 0 && (
-            <ScrutinAmendementsTab amendements={scrutin.amendements} />
+            <ScrutinAmendementsTab
+              amendements={scrutin.amendements}
+              chambre={scrutin.chambre}
+              onVoirDebat={totalInterventions > 0 ? () => setActiveTab('debats') : undefined}
+              seanceHref={seanceHref}
+            />
           )}
 
           {currentTab === 'debats' && totalInterventions > 0 && (
@@ -665,6 +657,8 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
                 setInterventionsType(type);
               }}
               parType={interventionsParType}
+              defenses={defensesParPrise}
+              seanceHref={seanceHref}
             />
           )}
 

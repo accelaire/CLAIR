@@ -21,6 +21,7 @@ const SEANCE = `<?xml version='1.0' encoding='UTF-8'?>
   <metadonnees>
     <dateSeance>20250523213000000</dateSeance>
     <legislature>17</legislature>
+    <etat>provisoire</etat>
   </metadonnees>
   <contenu>
     <point nivpoint="2" code_grammaire="DISC_ARTICLES_1_1" bibard=" (n[[o]]&#160;1364)" art="">
@@ -137,6 +138,10 @@ describe('parseCompteRendu', () => {
     expect(seance?.date.toISOString()).toBe('2025-05-23T21:30:00.000Z');
   });
 
+  it("lit l'état du compte rendu, provisoire ou complet", () => {
+    expect(seance?.etat).toBe('provisoire');
+  });
+
   it("fait hériter l'article et le texte des <point> englobants", () => {
     // `art` est porté par le point de niveau 3, `bibard` par celui de niveau 2 :
     // sans héritage, un paragraphe n'aurait ni l'un ni l'autre.
@@ -195,6 +200,10 @@ describe('parseCompteRendu', () => {
   it('situe chaque vote dans son article et son texte', () => {
     expect(seance?.votes.every((v) => v.articleVise === '15')).toBe(true);
     expect(seance?.votes.every((v) => v.texteNumero === '1364')).toBe(true);
+  });
+
+  it("laisse l'état à null quand le compte rendu ne le déclare pas", () => {
+    expect(parseCompteRendu(SEANCE.replace('<etat>provisoire</etat>', ''))?.etat).toBeNull();
   });
 
   it('refuse un document sans métadonnées exploitables', () => {

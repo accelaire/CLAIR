@@ -23,6 +23,12 @@
 const SUFFIXES_ORDINAUX = new Set([
   'bis', 'ter', 'quater', 'quinquies', 'sexies', 'septies', 'octies',
   'nonies', 'decies', 'undecies', 'duodecies', 'terdecies', 'quaterdecies',
+  // Au-delà de 14 : un texte long en navette en compte. « Après l'article 5
+  // quindecies » se lisait « 5 », et le lien vers l'amendement « APRÈS ART. 5
+  // QUINDECIES » passait pour discordant (10 octobre 2026).
+  'quindecies', 'sexdecies', 'septdecies', 'octodecies', 'novodecies',
+  'vicies', 'unvicies', 'duovicies', 'tervicies', 'quatervicies', 'quinvicies',
+  'sexvicies', 'septvicies', 'octovicies', 'novovicies', 'tricies',
 ]);
 
 /**
@@ -35,7 +41,7 @@ const SUFFIXES_ORDINAUX = new Set([
  * « liminaire » est le premier article des lois de finances, qui n'est pas
  * numéroté.
  */
-const BASE_RE = /l['’]article\s+(\d+(?:-\d+)?|premier|unique|liminaire)/giu;
+const BASE_RE = /l['’]article\s+(1er(?![\p{L}\d])|\d+(?:-\d+)?|premier|unique|liminaire)/giu;
 
 /**
  * Une norme extérieure, citée comme fondement du vote et non comme son objet.
@@ -73,7 +79,9 @@ export function articleNumeroFromTitre(titre: string | null | undefined): string
     // minuscules (« 15 bis »), les lettres de rang en majuscules (« 15 A ») — une
     // classe `[A-Z]` sous un flag insensible à la casse avalerait « de la … ».
     let rest = titre.slice(base.index + base[0].length);
-    const parts = [base[1]!];
+    // « 1er » est l'article premier : lu « 1 », il perdait ses suffixes
+    // (« l'article 1er bis » devenait l'article 1).
+    const parts = [base[1]!.toLowerCase() === '1er' ? 'premier' : base[1]!];
     for (;;) {
       const next = rest.match(/^\s+([A-Za-z]{1,14})\b/);
       if (!next) break;
@@ -107,14 +115,12 @@ export function normalizeArticleNumero(raw: string): string {
  */
 export function articleLookupKeys(numero: string): string[] {
   const key = normalizeArticleNumero(numero);
-  const keys = [key];
-  if (key === '1' || key.startsWith('1 ')) {
-    keys.push(key.replace(/^1\b/, 'PREMIER'));
-  }
-  if (key === 'PREMIER' || key.startsWith('PREMIER ')) {
-    keys.push(key.replace(/^PREMIER\b/, '1'));
-  }
-  return keys;
+  // Trois graphies du premier article : « 1 » (libellés), « PREMIER » (articles
+  // et amendements), « 1ER » (amendements : « ART. 1ER BIS »).
+  const premier = key.match(/^(?:1|1ER|PREMIER)(?=$| )(.*)$/);
+  if (!premier) return [key];
+  const suite = premier[1]!;
+  return [key, ...['PREMIER', '1', '1ER'].map((b) => b + suite).filter((k) => k !== key)];
 }
 
 /**

@@ -6,6 +6,7 @@ import axios from 'axios';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { logger } from './logger';
 import { errorMessage, httpStatus } from './errors';
+import { estOpenDataAN, lireEnTetesParGet, urlSansCacheAN } from './cdn-an';
 import { LEGISLATURE_AN_COURANTE } from '../workers/mandats';
 
 const prisma = new PrismaClient();
@@ -269,12 +270,7 @@ export async function checkSourceFreshness(
   let currentLastModified: Date | null = null;
 
   try {
-    const response = await axios.head(url, {
-      timeout: 30000,
-      headers: {
-        'User-Agent': 'CLAIR-Bot/1.0 (https://github.com/clair)',
-      },
-    });
+    const response = await lireEnTetes(url);
 
     currentEtag = response.headers['etag'] || null;
     const lastModHeader = response.headers['last-modified'];
@@ -305,12 +301,7 @@ export async function checkSourceFreshness(
       );
 
       try {
-        const fallbackResponse = await axios.head(previousYearUrl, {
-          timeout: 30000,
-          headers: {
-            'User-Agent': 'CLAIR-Bot/1.0 (https://github.com/clair)',
-          },
-        });
+        const fallbackResponse = await lireEnTetes(previousYearUrl);
 
         currentEtag = fallbackResponse.headers['etag'] || null;
         const lastModHeader = fallbackResponse.headers['last-modified'];
@@ -391,6 +382,23 @@ export async function checkSourceFreshness(
     previousLastModified: previousState?.lastModified || null,
     lastSyncAt: previousState?.lastSyncAt || null,
   };
+}
+
+/**
+ * En-têtes de fraîcheur d'une source, sans télécharger le fichier.
+ *
+ * Un HEAD partout, sauf sur le portail open data de l'Assemblée : son cache
+ * renvoyait l'en-tête de la VEILLE, et le contrôle pouvait conclure « source
+ * inchangée » et sauter la synchro. Un paramètre inédit force l'origine, mais
+ * celle-ci répond 503 à un HEAD qui en porte un ; on lit donc l'en-tête d'un
+ * GET réduit au premier octet (cf. cdn-an.ts).
+ */
+async function lireEnTetes(url: string) {
+  const headers = { 'User-Agent': 'CLAIR-Bot/1.0 (https://github.com/clair)' };
+  if (!estOpenDataAN(url)) {
+    return axios.head(url, { timeout: 30000, headers });
+  }
+  return lireEnTetesParGet(urlSansCacheAN(url));
 }
 
 /**

@@ -6,6 +6,7 @@ import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { ExpandableAmendementCard } from '@/components/ExpandableAmendementCard';
 import { FicheCompareCallout } from '@/components/FicheCompareCallout';
 import { bilanMandats, fonctionParlementaire } from '@/lib/meta-parlementaire';
+import { StatsParlementaire } from '@/components/parlementaire/stats-parlementaire';
 import { SoutenirCallout } from '@/components/donations/SoutenirCallout';
 import { aucunFiltre, STALE_TIME_LISTE_MS } from '@/lib/liste-ssr';
 import { useParams, useRouter } from 'next/navigation';
@@ -19,10 +20,7 @@ import {
   Twitter,
   Mail,
   Globe,
-  ShieldCheck,
   Vote,
-  MessageSquare,
-  HelpCircle,
   ArrowLeft,
   ThumbsUp,
   ThumbsDown,
@@ -35,8 +33,6 @@ import {
   ExternalLink,
   Info,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
 import { api } from '@/lib/api';
 import { scrutinHref } from '@/lib/scrutin-url';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
@@ -99,6 +95,8 @@ export interface DeputeDetail {
     dateDebut: string;
     dateFin: string | null;
     commission?: { slug: string; nom: string; chambre: string } | null;
+    sourceUid?: string | null;
+    organeRef?: string | null;
   }>;
   // Mandats parlementaires (parcours par législature : groupe + circonscription)
   mandatsParlementaires?: Array<{
@@ -137,44 +135,6 @@ interface VoteItem {
     nombreContre: number;
     nombreAbstention: number;
   };
-}
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  suffix = '',
-  subtitle,
-  tooltip,
-  tooltipHref,
-}: {
-  label: string;
-  value: number | string | null;
-  icon: LucideIcon;
-  suffix?: string;
-  subtitle?: string;
-  tooltip?: string;
-  tooltipHref?: string;
-}) {
-  return (
-    <div className="rounded-lg border bg-card p-4">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Icon className="h-4 w-4" />
-        <span className="text-sm">{label}</span>
-        {tooltip && (
-          <DidacticielTooltip content={tooltip} learnMoreHref={tooltipHref} />
-        )}
-      </div>
-      <div className="mt-2 flex items-baseline gap-2 flex-wrap">
-        <span className="text-2xl font-bold">
-          {value !== null ? `${typeof value === 'number' ? value.toLocaleString('fr-FR') : value}${suffix}` : 'N/A'}
-        </span>
-        {subtitle && (
-          <span className="text-sm text-muted-foreground">{subtitle}</span>
-        )}
-      </div>
-    </div>
-  );
 }
 
 function VotePositionBadge({ position }: { position: string }) {
@@ -523,8 +483,6 @@ export default function PageClient({
   const router = useRouter();
   const slug = params.slug as string;
   const [activeTab, setActiveTab] = useState<'votes' | 'interventions' | 'amendements'>('votes');
-  const [showAnciensMandats, setShowAnciensMandats] = useState(false);
-  const [showAllMandats, setShowAllMandats] = useState(false);
   const [showAllDeclarations, setShowAllDeclarations] = useState(false);
 
   const { data, isLoading, error } = useQuery({
@@ -740,51 +698,10 @@ export default function PageClient({
 
       {/* Statistiques */}
       {depute.stats && (
-        <div className="mb-8">
-          <h2 className="mb-4 text-xl font-semibold">
-            {fonction.enCours ? 'Statistiques' : bilanMandats(fonction.plusieursMandats)}
-          </h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <StatCard
-              label="Présence solennelle"
-              value={depute.stats.presenceSolennel ?? depute.stats.presence}
-              suffix="%"
-              subtitle={`${depute.stats.presence}% tous scrutins`}
-              icon={ShieldCheck}
-              tooltip="Pourcentage de scrutins solennels auxquels ce parlementaire a participé (voté pour, contre ou abstention)."
-              tooltipHref="/comprendre/parlementaire"
-            />
-            <StatCard
-              label="Loyauté au groupe"
-              value={depute.stats.loyaute}
-              suffix="%"
-              icon={Users}
-              tooltip="Pourcentage de votes alignés avec la position majoritaire du groupe politique."
-              tooltipHref="/comprendre/parlementaire"
-            />
-            <StatCard
-              label="Votes"
-              value={depute.stats.participation}
-              icon={Vote}
-              tooltip="Nombre total de scrutins publics auxquels ce parlementaire a pris part."
-              tooltipHref="/comprendre/parlementaire"
-            />
-            <StatCard
-              label="Interventions"
-              value={depute.stats.interventions}
-              icon={MessageSquare}
-              tooltip="Nombre de prises de parole en séance publique, hors interruptions."
-              tooltipHref="/comprendre/parlementaire"
-            />
-            <StatCard
-              label="Questions posées"
-              value={depute.stats.questions}
-              icon={HelpCircle}
-              tooltip="Questions au Gouvernement, orales sans débat ou au Premier ministre. Les réponses d’un membre du Gouvernement n’y comptent pas, même lorsqu’il est aussi parlementaire."
-              tooltipHref="/comprendre/parlementaire"
-            />
-          </div>
-        </div>
+        <StatsParlementaire
+          stats={depute.stats}
+          titre={fonction.enCours ? 'Statistiques' : bilanMandats(fonction.plusieursMandats)}
+        />
       )}
 
       {/* Mandats et fonctions */}
@@ -792,89 +709,12 @@ export default function PageClient({
         (depute.mandatsParlementaires?.length ?? 0) > 0) && (
         <div className="mb-8">
           {/* Mandats : frise des législatures + fonctions en commission rattachées */}
-          {(() => {
-            const mandatsActifs = (depute.mandats ?? []).filter((m) => !m.dateFin);
-            const mandatsAnciens = (depute.mandats ?? []).filter((m) => !!m.dateFin);
-            const renderMandat = (m: NonNullable<typeof depute.mandats>[0]) => {
-              const commissionLabel = m.commission?.nom || m.institution || m.typeOrgane;
-              const commissionHref = m.commission ? `/commissions/${m.commission.slug}` : null;
-              return (
-                <div key={m.id} className="flex items-start gap-3 rounded-lg border bg-card p-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">{m.qualite || 'Membre'}</p>
-                    {commissionHref ? (
-                      <Link href={commissionHref} className="text-sm text-primary hover:underline line-clamp-2">
-                        {commissionLabel}
-                      </Link>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">{commissionLabel}</p>
-                    )}
-                  </div>
-                  <div className="text-xs text-muted-foreground text-right flex-shrink-0">
-                    <p>{new Date(m.dateDebut).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}</p>
-                    <p>{m.dateFin ? new Date(m.dateFin).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' }) : 'en cours'}</p>
-                  </div>
-                </div>
-              );
-            };
-
-            // Fonctions en commission : accordéons « Voir N de plus » / « Anciens
-            // mandats » conservés tels quels, simplement rattachés à la période.
-            const fonctions = (depute.mandats?.length ?? 0) > 0 ? (
-              <>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {showAllMandats
-                    ? mandatsActifs.map(renderMandat)
-                    : mandatsActifs.slice(0, 4).map(renderMandat)}
-                </div>
-                {mandatsActifs.length > 4 && (
-                  <div className="mt-2">
-                    <button
-                      onClick={() => setShowAllMandats(!showAllMandats)}
-                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      {showAllMandats ? (
-                        <>
-                          <ChevronUp className="h-3.5 w-3.5" />
-                          Réduire
-                        </>
-                      ) : (
-                        <>
-                          <ChevronDown className="h-3.5 w-3.5" />
-                          Voir {mandatsActifs.length - 4} de plus
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
-                {mandatsAnciens.length > 0 && (
-                  <div className="mt-3">
-                    <button
-                      onClick={() => setShowAnciensMandats((v) => !v)}
-                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showAnciensMandats ? 'rotate-180' : ''}`} />
-                      Anciens mandats ({mandatsAnciens.length})
-                    </button>
-                    {showAnciensMandats && (
-                      <div className="mt-2 grid gap-2 sm:grid-cols-2 opacity-70">
-                        {mandatsAnciens.map(renderMandat)}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            ) : null;
-
-            return (
-              <MandatsBlock
-                mandats={depute.mandatsParlementaires ?? []}
-                sexe={depute.sexe}
-                chambre="assemblee"
-                fonctionsCourantes={fonctions}
-              />
-            );
-          })()}
+          <MandatsBlock
+            mandats={depute.mandatsParlementaires ?? []}
+            sexe={depute.sexe}
+            chambre="assemblee"
+            fonctions={depute.mandats ?? []}
+          />
         </div>
       )}
 
@@ -1001,22 +841,22 @@ export default function PageClient({
 
       {/* Onglets */}
       <div className="border-b">
-        <nav className="flex gap-8">
+        <nav className="flex gap-8 overflow-x-auto scrollbar-none">
           <button
             onClick={() => setActiveTab('votes')}
-            className={`pb-4 ${activeTab === 'votes' ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            className={`shrink-0 whitespace-nowrap pb-4 ${activeTab === 'votes' ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted-foreground hover:text-foreground'}`}
           >
             Votes récents
           </button>
           <button
             onClick={() => setActiveTab('interventions')}
-            className={`pb-4 ${activeTab === 'interventions' ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            className={`shrink-0 whitespace-nowrap pb-4 ${activeTab === 'interventions' ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted-foreground hover:text-foreground'}`}
           >
             Interventions
           </button>
           <button
             onClick={() => setActiveTab('amendements')}
-            className={`pb-4 ${activeTab === 'amendements' ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            className={`shrink-0 whitespace-nowrap pb-4 ${activeTab === 'amendements' ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted-foreground hover:text-foreground'}`}
           >
             Amendements
           </button>

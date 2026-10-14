@@ -122,6 +122,13 @@ export interface SeanceSyceron {
   seanceRef: string | null;
   legislature: number;
   date: Date;
+  /**
+   * `provisoire` tant que l'Assemblée n'a pas publié le compte rendu définitif,
+   * `complet` ensuite. La dernière séance de la veille est souvent encore
+   * provisoire quand le batch passe : elle s'arrête en cours de débat (le 5
+   * octobre 2026, 43 prises de parole sur 332).
+   */
+  etat: string | null;
   prises: PriseDeParoleSyceron[];
   votes: VoteAnnonceSyceron[];
 }
@@ -410,6 +417,7 @@ export function parseCompteRendu(xml: string): SeanceSyceron | null {
     seanceRef: $('compteRendu > seanceRef').first().text().trim() || null,
     legislature,
     date,
+    etat: $('metadonnees > etat').first().text().trim() || null,
     prises: prisesDeParole(paragraphes),
     votes: releverVotes(paragraphes),
   };

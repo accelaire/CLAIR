@@ -675,7 +675,7 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
         {hasAmendements && (
           <button
             onClick={() => setActiveTab('amendements')}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            className={`whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               effectiveTab === 'amendements'
                 ? 'border-primary text-primary'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -687,7 +687,7 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
         )}
         <button
           onClick={() => setActiveTab('scrutins')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+          className={`whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             effectiveTab === 'scrutins'
               ? 'border-primary text-primary'
               : 'border-transparent text-muted-foreground hover:text-foreground'
