@@ -717,6 +717,17 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     min: 40,
     query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (linked * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE dossier_id IS NOT NULL) AS linked FROM amendements) sub`,
   },
+  senat_amendement_article_vise_rate: {
+    type: 'threshold',
+    // Le chemin AMELI ne renseignait pas l'article visé : 25 % des amendements
+    // du Sénat en avaient un le 14/10/2026, contre 100 % à l'Assemblée. Comblé
+    // depuis `amd.subid` → `sub` : 61 427 sur 66 950 au passage à blanc du
+    // 18/10/2026, soit 91 %. Le reste : des amendements absents du dump actuel
+    // ou sans subdivision.
+    label: 'Taux d\'amendements Sénat avec article visé (%)',
+    min: 90,
+    query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (avec * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(article_vise) AS avec FROM amendements WHERE chambre = 'senat') sub`,
+  },
 
   // ---- Commissions & Agenda ----
   commissions_count: {

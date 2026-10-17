@@ -5077,7 +5077,9 @@ export async function syncAmendementsSenat(
           groupeRef: null,
           auteurLibelle: amd.auteurLibelle,
           texteRef: amd.texteRef,
-          articleVise: null,
+          // Absent plutôt que null : une row sans subdivision AMELI garde
+          // l'article qu'un autre chemin lui a donné.
+          ...(amd.articleVise ? { articleVise: amd.articleVise } : {}),
           dispositif: amd.dispositif,
           exposeSommaire: amd.exposeSommaire,
           sort: amd.sort,
@@ -5141,8 +5143,12 @@ export async function syncAmendementsSenatCsv(
   // 1. Get AMELI mappings: texteId → { num, session } + cosignataires par amendement
   // (un seul téléchargement du dump pour les deux)
   logger.info('Fetching AMELI mappings...');
-  const { texteMapping, cosignatairesByKey } = await client.getAmeliMappings();
-  logger.info({ textes: texteMapping.size, clesCosignataires: cosignatairesByKey.size }, 'AMELI mappings loaded');
+  const { texteMapping, cosignatairesByKey, articlesVisesByKey, articlesVisesByAmdId } = await client.getAmeliMappings();
+  logger.info({
+    textes: texteMapping.size,
+    clesCosignataires: cosignatairesByKey.size,
+    articlesVises: articlesVisesByAmdId.size,
+  }, 'AMELI mappings loaded');
 
   // 2. Determine which textes to fetch
   let texteIds: number[];
@@ -5289,6 +5295,11 @@ export async function syncAmendementsSenatCsv(
         if (parlementaireId) linked++;
 
         const numeroOrdre = parseInt(amd.numero.replace(/[^0-9]/g, ''), 10) || null;
+        // La colonne « Subdivision » du CSV fait foi ; AMELI la complète
+        // quand elle est vide.
+        const articleVise = amd.articleVise
+          || articlesVisesByKey.get(`${texte.session}/${texte.texteNum}:${normalizeSenatNumero(amd.numero)}`)
+          || null;
 
         const data = {
           numero: amd.numero,
@@ -5299,7 +5310,7 @@ export async function syncAmendementsSenatCsv(
           groupeRef: null as string | null,
           auteurLibelle: amd.auteurLibelle,
           texteRef,
-          articleVise: amd.articleVise || null,
+          articleVise,
           dispositif: amd.dispositif,
           exposeSommaire: amd.exposeSommaire,
           sort: amd.sort,
@@ -5312,7 +5323,10 @@ export async function syncAmendementsSenatCsv(
         const uidCanonique = uidCanoniqueAmendement(amd.uid);
         const existingId = existingByUid.get(uidCanonique);
         if (existingId) {
-          toUpdate.push({ id: existingId, data });
+          // Sans article ni d'un côté ni de l'autre, on n'efface pas celui
+          // qu'un passage précédent a écrit.
+          const { articleVise: _articleVise, ...sansArticle } = data;
+          toUpdate.push({ id: existingId, data: articleVise ? data : sansArticle });
         } else {
           toCreate.push({ uid: amd.uid, uidCanonique, ...data });
         }
@@ -5396,6 +5410,15 @@ export async function syncAmendementsSenatCsv(
     if ((ti + 1) % 20 === 0 || ti === textes.length - 1) {
       logger.info({ texte: ti + 1, total: textes.length, created, updated, linked, totalAmendements }, 'CSV sync progress');
     }
+  }
+
+  // Les rows que ce passage n'a pas relues (full sync AMELI, textes des
+  // sessions antérieures) prennent leur article du même dump, déjà en mémoire.
+  try {
+    const { remplirArticlesVisesSenat } = await import('./article-vise-senat.js');
+    await remplirArticlesVisesSenat(prisma, { texteMapping, articlesVisesByKey, articlesVisesByAmdId });
+  } catch (error) {
+    logger.warn({ error: errorMessage(error) }, 'Article visé Sénat depuis AMELI : échec du comblement');
   }
 
   logger.info({ created, updated, linked, cosignatairesLinked, totalAmendements }, 'Amendements Sénat CSV sync completed');

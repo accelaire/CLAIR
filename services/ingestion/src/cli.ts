@@ -1728,6 +1728,32 @@ program
   });
 
 // =============================================================================
+// COMMANDE: fill-article-vise-senat
+// =============================================================================
+program
+  .command('fill-article-vise-senat')
+  .description("Combler l'article visé des amendements du Sénat depuis le dump AMELI, sans écraser une valeur existante")
+  .option('--depuis-annee <annee>', 'Amendements AMELI déposés depuis cette année (défaut : 3 ans)', (v: string) => parseInt(v, 10))
+  .option('--dry-run', 'Compter sans rien écrire')
+  .action(async (options: { depuisAnnee?: number; dryRun?: boolean }) => {
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const { SenatAmendementsClient } = await import('./sources/senat/amendements-client.js');
+      const { remplirArticlesVisesSenat } = await import('./workers/article-vise-senat.js');
+      const prisma = new PrismaClient();
+      const ameli = await new SenatAmendementsClient().getAmeliMappings({ minYear: options.depuisAnnee });
+      const r = await remplirArticlesVisesSenat(prisma, ameli, { dryRun: options.dryRun });
+      console.log(`\nAmendements Sénat sans article visé : ${r.sansArticle}`);
+      console.log(`Comblés depuis AMELI                : ${r.remplis}${options.dryRun ? ' (dry-run)' : ''}`);
+      await prisma.$disconnect();
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'fill-article-vise-senat failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
 // COMMANDE: sync-candidatures
 // =============================================================================
 program

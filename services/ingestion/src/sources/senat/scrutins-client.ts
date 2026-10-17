@@ -125,6 +125,48 @@ export function dateDuScrutinSenat(jour: string, moisTexte: string, annee: strin
 }
 
 // =============================================================================
+// VOTES NOMINATIFS PAR LE JSON DU SCRUTIN
+// =============================================================================
+//
+// DOSLEG publie un scrutin avec ses totaux avant ses votes nominatifs : le
+// 17/10/2026, la table `scr` portait le scrutin 2026-1 (13/10) et `votsen`
+// aucune ligne de la session 2026. senat.fr publie pourtant déjà le détail en
+// JSON à côté de la page du scrutin. Comparé à DOSLEG sur trois scrutins de la
+// session 2025 (348 sénateurs chacun) : aucune position divergente.
+
+const POSITION_JSON: Record<string, TransformedVoteSenat['position']> = {
+  p: 'pour',
+  c: 'contre',
+  a: 'abstention',
+  // Non-participation : DOSLEG la code 4, que le client lit aussi « absent ».
+  n: 'absent',
+};
+
+/** Votes nominatifs du JSON d'un scrutin (`{ votes: [{ matricule, vote, siege }] }`). */
+export function votesDuJsonScrutin(data: unknown): TransformedVoteSenat[] {
+  const votes = (data as { votes?: unknown } | null)?.votes;
+  if (!Array.isArray(votes)) return [];
+  const resultat: TransformedVoteSenat[] = [];
+  for (const v of votes as Array<{ matricule?: unknown; vote?: unknown }>) {
+    const position = typeof v.vote === 'string' ? POSITION_JSON[v.vote] : undefined;
+    if (typeof v.matricule !== 'string' || !v.matricule || !position) continue;
+    resultat.push({ matricule: v.matricule, position, parDelegation: false });
+  }
+  return resultat;
+}
+
+/** Les votes lus concordent-ils avec les totaux que DOSLEG donne du scrutin ? */
+export function votesConcordentAvecTotaux(
+  votes: TransformedVoteSenat[],
+  scrutin: Pick<TransformedScrutinSenat, 'nombrePour' | 'nombreContre' | 'nombreAbstention'>,
+): boolean {
+  const compte = (position: TransformedVoteSenat['position']) => votes.filter(v => v.position === position).length;
+  return compte('pour') === scrutin.nombrePour
+    && compte('contre') === scrutin.nombreContre
+    && compte('abstention') === scrutin.nombreAbstention;
+}
+
+// =============================================================================
 // CLIENT
 // =============================================================================
 
@@ -283,8 +325,54 @@ export class SenatScrutinsClient {
       });
     }
 
+    await this.completerVotesManquants(results);
+
     logger.info({ scrutins: results.length }, 'Scrutins Sénat processing completed');
     return results;
+  }
+
+  /**
+   * Prend au JSON du scrutin les votes nominatifs que DOSLEG n'a pas encore
+   * publiés. Ne touche qu'aux scrutins à zéro vote : une requête par scrutin
+   * manquant, aucune quand DOSLEG est à jour. Un JSON dont les comptes ne
+   * retombent pas sur les totaux du scrutin est écarté : le scrutin reste sans
+   * votes, comme avant, plutôt qu'avec des votes faux.
+   */
+  private async completerVotesManquants(results: ScrutinSenatWithVotes[]): Promise<void> {
+    const manquants = results.filter(r => r.votes.length === 0 && r.scrutin.nombreVotants > 0);
+    if (manquants.length === 0) return;
+
+    let completes = 0;
+    for (const r of manquants) {
+      const url = r.scrutin.sourceUrl.replace(/\.html$/, '.json');
+      try {
+        const response = await axios.get(url, {
+          timeout: 30000,
+          headers: { 'User-Agent': 'CLAIR-Bot/1.0' },
+          validateStatus: (status) => status < 500,
+        });
+        if (response.status !== 200) {
+          logger.warn({ url, status: response.status }, 'Scrutin Sénat sans votes : JSON indisponible');
+          continue;
+        }
+        const votes = votesDuJsonScrutin(response.data);
+        if (!votesConcordentAvecTotaux(votes, r.scrutin)) {
+          logger.warn({
+            url,
+            votes: votes.length,
+            totaux: { pour: r.scrutin.nombrePour, contre: r.scrutin.nombreContre, abstention: r.scrutin.nombreAbstention },
+          }, 'Scrutin Sénat sans votes : le JSON ne concorde pas avec les totaux, écarté');
+          continue;
+        }
+        r.votes = votes;
+        completes++;
+      } catch (error) {
+        logger.warn({ url, error: errorMessage(error) }, 'Scrutin Sénat sans votes : échec du JSON');
+      }
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+
+    logger.info({ manquants: manquants.length, completes }, 'Votes nominatifs Sénat absents de DOSLEG, pris au JSON du scrutin');
   }
 
   // ===========================================================================
