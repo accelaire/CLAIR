@@ -55,8 +55,11 @@ export const DIRECT_RESULTATS = {
  * que les élus s'installent (groupes le 5 octobre, commissions le 7) et que la
  * recherche des lecteurs retombe. Passé ce jour, la page du scrutin reste
  * accessible par l'agenda et par la recherche.
+ *
+ * Avancé du 1er novembre au 17 octobre : l'hémicycle de l'encart compte par
+ * nuance du ministère, alors que les groupes sont constitués depuis le 5.
  */
-export const RESULTATS_A_LA_UNE_JUSQU_AU = '2026-11-01';
+export const RESULTATS_A_LA_UNE_JUSQU_AU = '2026-10-17';
 
 export function resultatsALaUne(aujourdhui: Date = new Date()): boolean {
   const jour = aujourdhui.toISOString().slice(0, 10);
