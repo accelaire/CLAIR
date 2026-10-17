@@ -27,6 +27,8 @@ export interface SenatAmendement {
   sort: string | null;
   sortCode: string | null;
   texteId: number;
+  subid: number | null;
+  subpos: string | null;
   auteurs: SenatAmendementAuteur[];
 }
 
@@ -117,6 +119,128 @@ function stripHtml(html: string | null): string | null {
  */
 export function normalizeSenatNumero(numero: string): string {
   return numero.replace(/\s+rect\b.*$/i, '').trim();
+}
+
+// =============================================================================
+// ARTICLE VISÉ (tables `amd.subid` / `amd.subpos` et `sub`)
+// =============================================================================
+//
+// Le CSV par texte donne l'article visé dans sa colonne « Subdivision » ; le
+// dump AMELI le donne par `amd.subid`, qui pointe vers la table `sub`. Les
+// règles ci-dessous reproduisent l'écriture du CSV, pour que les deux chemins
+// stockent la même valeur. Calibrées le 18/10/2026 sur 49 597 amendements
+// présents des deux côtés : 99,2 % identiques, le reste étant des amendements
+// qu'AMELI rattache à une autre subdivision que le CSV — d'où la priorité au
+// CSV quand il renseigne la colonne.
+
+/** Une ligne de la table `sub` d'AMELI, réduite à ce que le libellé utilise. */
+export interface SubdivisionAmeli {
+  lib: string;
+  /** Type `typsub` : 1 intitulé du texte, 2 titre, 3 chapitre, 4 article, 5 article de code, 6 article de loi, 7 annexe… */
+  typid: number;
+  /** Subdivision parente (`merid`) : l'article qui porte l'article de code, de loi ou l'annexe. */
+  merid: number | null;
+}
+
+/**
+ * Préfixe selon `amd.subpos` : 0 l'amendement porte sur la subdivision, ±20/±10
+ * il insère un article ou une division avant ou après elle. L'asymétrie (20 et
+ * -10 pour les articles, 10 et -20 pour les divisions) est celle de la source.
+ */
+const PREFIXE_POSITION: Record<string, string> = {
+  '0': '',
+  '20': 'art. add. après ',
+  '-10': 'art. add. avant ',
+  '10': 'div. add. après ',
+  '-20': 'div. add. avant ',
+};
+
+/** Article de code, article de loi, annexe : le CSV les nomme dans leur article. */
+const TYPES_DANS_LEUR_ARTICLE = new Set([5, 6, 7]);
+
+// Le dump est lu en latin1 alors que ses libellés sont en windows-1252 :
+// l'apostrophe typographique y arrive en U+0092, un caractère de contrôle. On
+// la remet en « ’ ». Table explicite : sous Node 20, `TextDecoder('windows-1252')`
+// décode en réalité comme latin1 et laisse U+0092 tel quel.
+const CP1252: Record<number, string> = {
+  0x80: '€', 0x82: '‚', 0x83: 'ƒ', 0x84: '„', 0x85: '…', 0x86: '†', 0x87: '‡',
+  0x88: 'ˆ', 0x89: '‰', 0x8a: 'Š', 0x8b: '‹', 0x8c: 'Œ', 0x8e: 'Ž',
+  0x91: '‘', 0x92: '’', 0x93: '“', 0x94: '”', 0x95: '•', 0x96: '–', 0x97: '—',
+  0x98: '˜', 0x99: '™', 0x9a: 'š', 0x9b: '›', 0x9c: 'œ', 0x9e: 'ž', 0x9f: 'Ÿ',
+};
+
+function decoderCp1252(texte: string): string {
+  return texte.replace(/[\x80-\x9f]/g, c => CP1252[c.charCodeAt(0)] ?? c);
+}
+
+/** Lit une ligne COPY de la table `sub` (id, txtid, merid, typid, lic, lib, …). */
+export function lireSubdivisionAmeli(fields: string[]): [number, SubdivisionAmeli] | null {
+  if (fields.length < 6) return null;
+  const id = parseInt(fields[0] ?? '', 10);
+  const lib = fields[5] ?? '';
+  if (!id || !lib || lib === '\\N') return null;
+  const merid = parseInt(fields[2] ?? '', 10);
+  return [id, {
+    lib: decoderCp1252(lib).trim(),
+    typid: parseInt(fields[3] ?? '', 10) || 0,
+    merid: Number.isNaN(merid) ? null : merid,
+  }];
+}
+
+/**
+ * Libellé de l'article visé, écrit comme la colonne « Subdivision » du CSV :
+ * « Article 1er », « art. add. après Article 12 »,
+ * « Article 49 (crédits de la mission) (État B) ».
+ *
+ * `null` quand l'amendement n'a pas de subdivision, qu'elle manque au dump, ou
+ * que la position est d'un type inconnu : mieux vaut rien qu'un libellé faux.
+ */
+export function libelleArticleVise(
+  subid: number | null,
+  subpos: string | null,
+  subdivisions: Map<number, SubdivisionAmeli>,
+): string | null {
+  if (subid === null) return null;
+  const sub = subdivisions.get(subid);
+  if (!sub?.lib) return null;
+  const prefixe = PREFIXE_POSITION[subpos ?? ''];
+  if (prefixe === undefined) return null;
+  let libelle = sub.lib;
+  if (TYPES_DANS_LEUR_ARTICLE.has(sub.typid) && sub.merid !== null) {
+    const parent = subdivisions.get(sub.merid);
+    if (parent?.lib) libelle = `${parent.lib} (${libelle})`;
+  }
+  return prefixe + libelle;
+}
+
+/** Lit `subid` (colonne 1) et `subpos` (colonne 24) d'une ligne COPY de `amd`. */
+export function lirePositionAmd(fields: string[]): { subid: number | null; subpos: string | null } {
+  const subid = parseInt(fields[1] ?? '', 10);
+  const subpos = fields[24] ?? '\\N';
+  return {
+    subid: Number.isNaN(subid) ? null : subid,
+    subpos: subpos === '\\N' ? null : subpos.trim(),
+  };
+}
+
+/**
+ * Colonnes lues par position dans les tables COPY. Une réorganisation du dump
+ * décalerait les champs sans erreur : on vérifie l'en-tête plutôt que de
+ * produire des libellés faux.
+ */
+const COLONNES_ATTENDUES: Record<string, Record<number, string>> = {
+  amd: { 1: 'subid', 24: 'subpos' },
+  sub: { 0: 'id', 2: 'merid', 3: 'typid', 5: 'lib' },
+};
+
+/** L'en-tête `COPY table (…)` a-t-il les colonnes là où on les lit ? */
+export function enTeteCopyConforme(line: string): boolean {
+  const match = line.match(/^COPY (\w+) \(([^)]*)\)/);
+  if (!match) return true;
+  const attendues = COLONNES_ATTENDUES[match[1]!];
+  if (!attendues) return true;
+  const colonnes = match[2]!.split(',').map(c => c.trim().replace(/"/g, ''));
+  return Object.entries(attendues).every(([i, nom]) => colonnes[Number(i)] === nom);
 }
 
 function parseDate(dateStr: string | null | undefined): Date | null {
@@ -243,6 +367,7 @@ export class SenatAmendementsClient {
   private async parseSqlDump(sqlPath: string, options: { maxAmendements?: number; minYear?: number } = {}): Promise<{
     amendements: Map<number, SenatAmendement>;
     senateurs: Map<number, { matricule: string; nom: string; prenom: string }>;
+    subdivisions: Map<number, SubdivisionAmeli>;
   }> {
     const maxAmendements = options.maxAmendements || 50000;
     const minYear = options.minYear || new Date().getFullYear() - 3;
@@ -252,6 +377,9 @@ export class SenatAmendementsClient {
     const amdSenLinks: Array<{ amdId: number; senId: number; rang: number; qua: string; nom: string; prenom: string; grpId: number }> = [];
     const senateurs = new Map<number, { matricule: string; nom: string; prenom: string }>();
     const sortMap = new Map<string, { lib: string; cod: string }>();
+    // `sub` vient après `amd` dans le dump : les libellés se résolvent après la lecture.
+    const subdivisions = new Map<number, SubdivisionAmeli>();
+    let subdivisionsLisibles = true;
 
     const rl = readline.createInterface({
       input: createReadStream(sqlPath, { encoding: 'latin1' }),
@@ -270,6 +398,10 @@ export class SenatAmendementsClient {
         const match = line.match(/COPY (\w+)/);
         if (match?.[1]) {
           currentTable = match[1];
+        }
+        if (!enTeteCopyConforme(line)) {
+          logger.error({ copy: line.slice(0, 200) }, 'AMELI : colonnes déplacées, article visé non renseigné');
+          subdivisionsLisibles = false;
         }
         continue;
       }
@@ -311,6 +443,7 @@ export class SenatAmendementsClient {
               sort: sortMap.get(sorid ?? '')?.lib ?? null,
               sortCode: sorid,
               texteId: txtid,
+              ...lirePositionAmd(fields),
               auteurs: [],
             });
             amendementCount++;
@@ -358,6 +491,11 @@ export class SenatAmendementsClient {
           sortMap.set(id, { lib, cod });
         }
 
+        if (currentTable === 'sub') {
+          const subdivision = lireSubdivisionAmeli(fields);
+          if (subdivision) subdivisions.set(...subdivision);
+        }
+
       } catch (e) {
         // Skip malformed lines
         if (lineCount % 100000 === 0) {
@@ -366,7 +504,8 @@ export class SenatAmendementsClient {
       }
     }
 
-    logger.info({ amendements: amendements.size, senateurs: senateurs.size, links: amdSenLinks.length }, 'SQL parsing completed');
+    if (!subdivisionsLisibles) subdivisions.clear();
+    logger.info({ amendements: amendements.size, senateurs: senateurs.size, links: amdSenLinks.length, subdivisions: subdivisions.size }, 'SQL parsing completed');
 
     // Link authors to amendments
     for (const link of amdSenLinks) {
@@ -390,7 +529,7 @@ export class SenatAmendementsClient {
       amd.auteurs.sort((a, b) => a.rang - b.rang);
     }
 
-    return { amendements, senateurs };
+    return { amendements, senateurs, subdivisions };
   }
 
   // ===========================================================================
@@ -414,7 +553,7 @@ export class SenatAmendementsClient {
 
       // Parse
       logger.info('Parsing SQL dump...');
-      const { amendements } = await this.parseSqlDump(sqlPath, options);
+      const { amendements, subdivisions } = await this.parseSqlDump(sqlPath, options);
 
       // Transform
       const transformed: TransformedAmendementSenat[] = [];
@@ -445,6 +584,7 @@ export class SenatAmendementsClient {
           auteurLibelle,
           texteRef: amd.texteId ? `SENAT-TXT-${amd.texteId}` : null,
           sourceUrl: amd.numero ? `https://www.senat.fr/amendements/${amd.numero}.html` : null,
+          articleVise: libelleArticleVise(amd.subid, amd.subpos, subdivisions),
           cosignatairesMatricules: amd.auteurs.slice(1)
             .map(a => a.matricule)
             .filter((m): m is string => !!m),
@@ -467,15 +607,19 @@ export class SenatAmendementsClient {
    * Parse AMELI dump to extract:
    * - texteMapping: texteId → { num (externe), session }
    * - cosignatairesByKey: `${session}/${texteNum}:${numeroAmendement}` → matricules cosignataires
+   * - articlesVisesByKey: même clé → article visé (cf. libelleArticleVise)
+   * - articlesVisesByAmdId: id AMELI → article visé, pour les rows `SENAT-AMD-{id}`
    *
    * Single pass over the dump. Table order in the dump is alphabetical
-   * (amd → amdsen → sen_ameli → ses → txt_ameli), so amdsen links can be
-   * filtered against retained amd ids inline, but ses/txt_ameli resolution
+   * (amd → amdsen → sen_ameli → ses → sub → txt_ameli), so amdsen links can be
+   * filtered against retained amd ids inline, but ses/sub/txt_ameli resolution
    * happens after the loop. Much lighter than the full parse (no dispositif/objet).
    */
   async getAmeliMappings(options: { minYear?: number } = {}): Promise<{
     texteMapping: Map<number, { num: string; session: string }>;
     cosignatairesByKey: Map<string, string[]>;
+    articlesVisesByKey: Map<string, string>;
+    articlesVisesByAmdId: Map<number, string>;
   }> {
     const tempDir = path.join(os.tmpdir(), 'clair-ameli-mapping');
     const zipPath = path.join(tempDir, 'ameli.zip');
@@ -484,11 +628,13 @@ export class SenatAmendementsClient {
     const minYear = options.minYear ?? (new Date().getFullYear() - 3);
     const minDate = new Date(minYear, 0, 1);
 
-    const amdMap = new Map<number, { txtid: number; numero: string }>();
+    const amdMap = new Map<number, { txtid: number; numero: string; subid: number | null; subpos: string | null }>();
     const amdSenLinks: Array<{ amdId: number; senId: number; rang: number }> = [];
     const senMatriculeMap = new Map<number, string>();
     const sesMap = new Map<number, string>(); // sesId → session label (e.g. "2025-2026")
     const texteMapping = new Map<number, { num: string; session: string }>();
+    const subdivisions = new Map<number, SubdivisionAmeli>();
+    let subdivisionsLisibles = true;
 
     try {
       await fs.promises.rm(tempDir, { recursive: true, force: true });
@@ -508,6 +654,10 @@ export class SenatAmendementsClient {
         if (line.startsWith('COPY ')) {
           const match = line.match(/COPY (\w+)/);
           if (match) currentTable = match[1] ?? null;
+          if (!enTeteCopyConforme(line)) {
+            logger.error({ copy: line.slice(0, 200) }, 'AMELI : colonnes déplacées, article visé non renseigné');
+            subdivisionsLisibles = false;
+          }
           continue;
         }
         if (line === '\\.') {
@@ -529,7 +679,7 @@ export class SenatAmendementsClient {
             const datdep = (fields[20] ?? '') !== '\\N' ? (fields[20] ?? null) : null;
             const dateDepot = parseDate(datdep);
             if (dateDepot && dateDepot >= minDate) {
-              amdMap.set(id, { txtid, numero: num });
+              amdMap.set(id, { txtid, numero: num, ...lirePositionAmd(fields) });
             }
           }
 
@@ -561,6 +711,12 @@ export class SenatAmendementsClient {
             if (id && lil && lil !== '\\N') {
               sesMap.set(id, lil);
             }
+          }
+
+          // sub table: id(0), txtid, merid(2), typid(3), lic, lib(5), ...
+          if (currentTable === 'sub') {
+            const subdivision = lireSubdivisionAmeli(fields);
+            if (subdivision) subdivisions.set(...subdivision);
           }
 
           // txt_ameli table: id(0), ..., sesinsid(3), ..., num(6), ...
@@ -624,14 +780,40 @@ export class SenatAmendementsClient {
         cosignatairesByKey.set(key, cosignataires);
       }
 
+      // Article visé. Même règle de collision que les cosignataires, mais le
+      // txtid le plus grand se choisit parmi TOUS les amendements de la clé :
+      // si la lecture la plus récente n'a pas de subdivision, on ne lui prête
+      // pas celle d'une lecture antérieure.
+      if (!subdivisionsLisibles) subdivisions.clear();
+      const articlesVisesByAmdId = new Map<number, string>();
+      const articleParCle = new Map<string, { txtid: number; article: string | null }>();
+      for (const [amdId, amdData] of amdMap) {
+        const article = libelleArticleVise(amdData.subid, amdData.subpos, subdivisions);
+        if (article) articlesVisesByAmdId.set(amdId, article);
+        if (!amdData.numero) continue;
+        const texte = texteMapping.get(amdData.txtid);
+        if (!texte) continue;
+        const key = `${texte.session}/${texte.num}:${normalizeSenatNumero(amdData.numero)}`;
+        const existing = articleParCle.get(key);
+        if (!existing || amdData.txtid > existing.txtid) {
+          articleParCle.set(key, { txtid: amdData.txtid, article });
+        }
+      }
+      const articlesVisesByKey = new Map<string, string>();
+      for (const [key, { article }] of articleParCle) {
+        if (article) articlesVisesByKey.set(key, article);
+      }
+
       logger.info({
         sessions: sesMap.size,
         textes: texteMapping.size,
         amendementsRetenus: amdMap.size,
         clesCosignataires: cosignatairesByKey.size,
+        subdivisions: subdivisions.size,
+        articlesVises: articlesVisesByAmdId.size,
       }, 'AMELI mappings extracted');
 
-      return { texteMapping, cosignatairesByKey };
+      return { texteMapping, cosignatairesByKey, articlesVisesByKey, articlesVisesByAmdId };
 
     } finally {
       await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});

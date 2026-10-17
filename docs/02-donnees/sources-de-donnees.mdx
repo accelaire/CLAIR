@@ -30,7 +30,7 @@ Chaque source est identifiée par une clé canonique `organisme:type` enregistr�
 | `senat:senateurs_histo` | [data.senat.fr](https://data.senat.fr) (`ODSEN_ELUSEN.csv`) | CSV | Anciens sénateurs, mandats expirés, groupes historiques |
 | `senat:bureaux` | Pages commissions sur `senat.fr` | HTML | Rôles au bureau des commissions (présidents, secrétaires) |
 | `senat:scrutins` | Pages `scrutin-public` et `dosleg.zip` | HTML + Dump SQL | Scrutins publics solennels et votes individuels |
-| `senat:amendements` | `ameli.zip` et CSV par texte sur `senat.fr` | ZIP + CSV | Amendements sénatoriaux et cosignatures |
+| `senat:amendements` | `ameli.zip` et CSV par texte sur `senat.fr` | ZIP + CSV | Amendements sénatoriaux, cosignatures et article visé (colonne « Subdivision » du CSV, sinon `amd.subid` → `sub` d'AMELI) |
 | `senat:dossiers` | `dosleg.zip` de data.senat.fr | ZIP / SQL | Dossiers législatifs et navette parlementaire |
 | `senat:interventions` | `cri.zip` et comptes rendus HTML | ZIP + HTML | Débats et prises de parole au Palais du Luxembourg |
 | `senat:agenda` | API agenda senat.fr (`/api/v1/agenda/events`) | JSON | Réunions de commission et séances publiques |
