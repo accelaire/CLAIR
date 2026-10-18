@@ -17,7 +17,7 @@
 import { PrismaClient } from '@prisma/client';
 import * as crypto from 'crypto';
 import { logger } from '../utils/logger';
-import { tavilySearch } from '../sources/tavily/client';
+import { fetchTavilyCredits, tavilySearch, type TavilyCredits } from '../sources/tavily/client';
 import { embedTexts, cosineSim } from '../sources/mistral/embeddings';
 
 // -----------------------------------------------------------------------------
@@ -365,11 +365,47 @@ function cleanVpTitle(title: string): string {
   return title.replace(/\s*[|–-]\s*vie[- ]publique(\.fr)?\s*$/i, '').trim();
 }
 
-// `ok: false` = source indisponible (clé absente, erreur réseau/API) : le résultat
-// ne fait pas foi et ne doit ni marquer le sujet résolu ni supprimer ses liens.
+// `ok: false` = source indisponible (clé absente, erreur réseau/API, budget du
+// jour épuisé) : le résultat ne fait pas foi et ne doit ni marquer le sujet
+// résolu ni supprimer ses liens.
 interface ResolveOutcome { cand: ContextCandidate | null; ok: boolean; }
 
-async function resolveViePublique(label: string): Promise<ResolveOutcome> {
+/** Recherches Tavily encore permises sur ce run, partagé entre les workers. */
+export interface BudgetTavily { restant: number; reportes: number; }
+
+const JOUR_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Nombre de recherches vie-publique permises pour ce run.
+ *
+ * Le plan Tavily donne 1000 crédits par mois. En octobre 2026, les deux premiers
+ * runs après la remise à zéro en ont dépensé 878 sur le retard accumulé, et
+ * vie-publique est restée muette le reste du mois. On étale donc les crédits restants sur les
+ * jours qui restent jusqu'au 1er du mois suivant (UTC) : un retard se résorbe en
+ * quelques nuits sans priver les sujets qui arrivent ensuite.
+ *
+ * La lecture des crédits n'est pas fiable : le 18/10/2026, `/usage` a répondu
+ * une fois `plan_usage: 0` entre deux réponses à 1002. Une lecture trop haute
+ * est bornée par le prorata, et sur un quota réellement épuisé `tavilySearch`
+ * coupe court au premier 432. Une lecture absente (endpoint injoignable) ou un
+ * plan sans plafond (paygo, facturé à l'appel) ne lève donc pas la borne : on
+ * retombe sur l'équivalent d'un jour du plan à 1000 crédits.
+ */
+export const BUDGET_TAVILY_PAR_DEFAUT = 32;
+
+export function budgetTavilyDuJour(credits: TavilyCredits | null, now: Date = new Date()): number {
+  if (credits === null || credits.remaining === null) return BUDGET_TAVILY_PAR_DEFAUT;
+  const debutMoisSuivant = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+  const joursRestants = Math.max(1, Math.ceil((debutMoisSuivant - now.getTime()) / JOUR_MS));
+  return Math.min(credits.remaining, Math.ceil(credits.remaining / joursRestants));
+}
+
+export async function resolveViePublique(label: string, budget: BudgetTavily): Promise<ResolveOutcome> {
+  if (budget.restant <= 0) {
+    budget.reportes++;
+    return { cand: null, ok: false };
+  }
+  budget.restant--;
   const results = await tavilySearch(label, { includeDomains: [VP_DOMAIN], maxResults: CONTEXT_TOPK });
   if (results === null) return { cand: null, ok: false };
   if (results.length === 0) return { cand: null, ok: true };
@@ -458,17 +494,26 @@ async function resolveWikipedia(label: string): Promise<ResolveOutcome> {
 /** Liens de contexte d'un sujet : vie-publique (ordre 0) + Wikipédia (ordre 1).
  *  `ok: false` si au moins une source était indisponible : les liens trouvés
  *  restent insérables, mais le résultat est incomplet. */
-async function resolveContextLinks(label: string): Promise<{ links: ContextLink[]; ok: boolean }> {
-  const [vp, wiki] = await Promise.all([resolveViePublique(label), resolveWikipedia(label)]);
+async function resolveContextLinks(label: string, budget: BudgetTavily): Promise<{ links: ContextLink[]; ok: boolean }> {
+  const [vp, wiki] = await Promise.all([resolveViePublique(label, budget), resolveWikipedia(label)]);
   const links: ContextLink[] = [];
   if (vp.cand) links.push({ source: 'vie-publique', sourceLabel: 'Vie-publique', titre: vp.cand.titre, url: vp.cand.url, ordre: 0 });
   if (wiki.cand) links.push({ source: 'wikipedia', sourceLabel: 'Wikipédia', titre: wiki.cand.titre, url: wiki.cand.url, ordre: 1 });
   return { links, ok: vp.ok && wiki.ok };
 }
 
-/** Hash d'entrée pour la résolution incrémentale (change si label/statut change). */
-function contextHash(label: string, status: string): string {
-  return crypto.createHash('md5').update(`${label}|${status}`).digest('hex');
+/**
+ * Hash d'entrée pour la résolution incrémentale : change si le slug ou le statut
+ * change.
+ *
+ * Jamais le label : l'enrichissement IA le réécrit avec le titre qu'il génère.
+ * Hashé avec le label, chaque régénération relançait une recherche Tavily pour
+ * une reformulation (626 sujets le 07/10/2026, près des deux tiers du quota
+ * mensuel). Le slug, figé à la création, ne change que si `repairSlugs` répare
+ * un sujet né d'un UID technique, cas où une nouvelle recherche se justifie.
+ */
+export function contextHash(slug: string, status: string): string {
+  return crypto.createHash('md5').update(`${slug}|${status}`).digest('hex');
 }
 
 export interface GenerateSujetContextResult {
@@ -478,6 +523,8 @@ export interface GenerateSujetContextResult {
   deleted: number;
   viePublique: number;
   wikipedia: number;
+  /** Sujets dont la recherche vie-publique attend le budget d'un prochain run. */
+  viePubliqueReportes: number;
 }
 
 export async function generateSujetContextLinks(
@@ -493,12 +540,13 @@ export async function generateSujetContextLinks(
     // ORDER BY scrutin_count : un éventuel --limit cible les sujets importants.
     const allSujets = await prisma.$queryRaw<Array<{
       id: string;
+      slug: string;
       label: string;
       status: string;
       contextResolvedAt: Date | null;
       contextInputHash: string | null;
     }>>`
-      SELECT id, label, status,
+      SELECT id, slug, label, status,
              context_resolved_at AS "contextResolvedAt",
              context_input_hash AS "contextInputHash"
       FROM sujets WHERE actif = true
@@ -518,17 +566,31 @@ export async function generateSujetContextLinks(
     }
 
     // Mode incrémental : ne traiter que les sujets nouveaux, dont le hash
-    // (label|status) a changé, ou sans lien depuis >30j. Sinon : tous.
+    // (slug|status) a changé, ou sans lien depuis >30j. Sinon : tous.
+    // Le budget Tavily va d'abord aux sujets jamais résolus, puis aux modifiés,
+    // puis aux relances du long-tail ; à rang égal, l'ordre par scrutin_count.
     const candidates = typeof limit === 'number' ? allSujets.slice(0, limit) : allSujets;
     const now = Date.now();
+    const rangIncremental = (s: (typeof candidates)[number]): number | null => {
+      if (s.contextResolvedAt == null) return 0;
+      if (s.contextInputHash !== contextHash(s.slug, s.status)) return 1;
+      const hasLink = (existingBySujet.get(s.id)?.length ?? 0) > 0;
+      return !hasLink && now - new Date(s.contextResolvedAt).getTime() > STALE_MS ? 2 : null;
+    };
     const sujets = incremental
-      ? candidates.filter(s => {
-          if (s.contextResolvedAt == null) return true;
-          if (s.contextInputHash !== contextHash(s.label, s.status)) return true;
-          const hasLink = (existingBySujet.get(s.id)?.length ?? 0) > 0;
-          return !hasLink && now - new Date(s.contextResolvedAt).getTime() > STALE_MS;
-        })
+      ? candidates
+          .map(s => ({ s, rang: rangIncremental(s) }))
+          .filter((c): c is { s: (typeof candidates)[number]; rang: number } => c.rang !== null)
+          .sort((a, b) => a.rang - b.rang)
+          .map(c => c.s)
       : candidates;
+
+    const credits = sujets.length > 0 ? await fetchTavilyCredits() : null;
+    const budget: BudgetTavily = { restant: budgetTavilyDuJour(credits), reportes: 0 };
+    logger.info(
+      { sujets: sujets.length, creditsRestants: credits?.remaining ?? null, budgetDuRun: budget.restant },
+      'Sujet context links: budget Tavily',
+    );
 
     // Résolution multi-sources (concurrence bornée — appels Tavily + embeddings).
     // okIds = sujets dont toutes les sources ont répondu : eux seuls peuvent être
@@ -540,7 +602,7 @@ export async function generateSujetContextLinks(
     const worker = async (): Promise<void> => {
       while (idx < sujets.length) {
         const s = sujets[idx++]!;
-        const { links, ok } = await resolveContextLinks(s.label);
+        const { links, ok } = await resolveContextLinks(s.label, budget);
         if (links.length > 0) desired.set(s.id, links);
         if (ok) okIds.add(s.id);
       }
@@ -576,9 +638,16 @@ export async function generateSujetContextLinks(
         toDelete: deleteIds.length,
         viePublique: countViePublique,
         wikipedia: countWikipedia,
+        viePubliqueReportes: budget.reportes,
       },
       'Sujet context links diff computed',
     );
+    if (budget.reportes > 0) {
+      logger.warn(
+        { reportes: budget.reportes, creditsRestants: credits?.remaining ?? null },
+        'Recherches vie-publique reportées : budget Tavily du jour atteint',
+      );
+    }
 
     if (!dryRun) {
       if (deleteIds.length > 0) {
@@ -603,7 +672,7 @@ export async function generateSujetContextLinks(
       const resolvedSujets = sujets.filter(s => okIds.has(s.id));
       if (resolvedSujets.length > 0) {
         const ids = resolvedSujets.map(s => s.id);
-        const hashes = resolvedSujets.map(s => contextHash(s.label, s.status));
+        const hashes = resolvedSujets.map(s => contextHash(s.slug, s.status));
         await prisma.$executeRawUnsafe(
           `UPDATE sujets s SET context_resolved_at = NOW(), context_input_hash = d.h
            FROM (SELECT unnest($1::text[]) AS id, unnest($2::text[]) AS h) d
@@ -620,6 +689,7 @@ export async function generateSujetContextLinks(
       deleted: deleteIds.length,
       viePublique: countViePublique,
       wikipedia: countWikipedia,
+      viePubliqueReportes: budget.reportes,
     };
     logger.info(result, 'Sujet context links generation completed');
     return result;

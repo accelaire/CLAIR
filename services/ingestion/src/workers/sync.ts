@@ -4573,7 +4573,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
 
   // Liens "contexte" des sujets — vie-publique + Wikipédia FR.
   // INCRÉMENTAL : ne ré-interroge Tavily/Wikipédia que pour les sujets nouveaux,
-  // au label/statut changé, ou sans lien depuis >30j → coût quasi nul au quotidien.
+  // au slug/statut changé, ou sans lien depuis >30j, dans la limite du budget
+  // Tavily du jour (crédits restants étalés jusqu'à la fin du mois).
   if (results.sourcesChanged.length > 0) {
     try {
       const { generateSujetContextLinks } = await import('./sujet-links-generator.js');
@@ -4583,6 +4584,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
         resolved: ctxResult.resolved,
         created: ctxResult.created,
         deleted: ctxResult.deleted,
+        viePubliqueReportes: ctxResult.viePubliqueReportes,
       }, 'Sujet context links generation completed');
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'Sujet context links generation failed (non-blocking)');

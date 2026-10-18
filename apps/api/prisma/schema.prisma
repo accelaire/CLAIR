@@ -892,8 +892,9 @@ model Sujet {
   iaGroupeAmendementHash       String? @map("ia_groupe_amendement_hash")
 
   // Résolution incrémentale des liens "contexte" (vie-publique + Wikipédia) :
-  // hash = md5(label|status). On ne ré-interroge Tavily que si le hash change,
-  // si jamais résolu, ou si sans lien depuis >30j (retry du long-tail).
+  // hash = md5(slug|status), jamais le label que l'IA réécrit. On ne ré-interroge
+  // Tavily que si le hash change, si jamais résolu, ou si sans lien depuis >30j
+  // (retry du long-tail), dans la limite du budget Tavily du jour.
   contextResolvedAt DateTime? @map("context_resolved_at")
   contextInputHash  String?   @map("context_input_hash")
 
