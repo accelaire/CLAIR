@@ -51,6 +51,7 @@ import {
 import { ajouterIdentifiantsConserves, rattacherDeputeElu } from './changement-chambre';
 import { cloreOrganesANHorsMandat, cloturerDeputesSortants } from './mandats-an-sortants';
 import { ecrireVotesDuScrutin } from './ecriture-votes';
+import { alignerLiens, differencier, tranches } from '../utils/synchro-differentielle';
 import {
   checkSourceFreshness,
   updateSourceState,
@@ -4930,13 +4931,21 @@ export async function syncAmendements(
       // transaction, si bien que l'empreinte n'est jamais posée sur une ligne
       // dont les cosignataires n'auraient pas suivi. Une liste vide ne remplace
       // rien — une résolution ratée ne doit pas effacer les cosignataires.
-      const cosignataires = cosignataireIds.length > 0
-        ? { cosignataires: { set: cosignataireIds.map(id => ({ id })) } }
-        : {};
       if (dejaEnBase) {
+        // Seuls les liens qui changent sont écrits : `set` réinsère toute la
+        // liste et daterait l'amendement même à cosignataires inchangés.
+        const liens = cosignataireIds.length > 0
+          ? alignerLiens(
+              (await prisma.amendement.findUniqueOrThrow({
+                where: { uidCanonique },
+                select: { cosignataires: { select: { id: true } } },
+              })).cosignataires.map((c) => c.id),
+              cosignataireIds,
+            )
+          : undefined;
         await prisma.amendement.update({
           where: { uidCanonique },
-          data: { ...data, sourceHash, ...cosignataires },
+          data: { ...data, sourceHash, ...(liens ? { cosignataires: liens } : {}) },
         });
         connus.set(uidCanonique, sourceHash);
         updated++;
@@ -5095,10 +5104,14 @@ export async function syncAmendementsSenat(
             .map(m => parlementaireByMatricule.get(m))
             .filter((id): id is string => !!id);
           if (cosignataireIds.length > 0) {
-            await prisma.amendement.update({
+            const courants = await prisma.amendement.findUniqueOrThrow({
               where: { uidCanonique },
-              data: { cosignataires: { set: cosignataireIds.map(id => ({ id })) } },
+              select: { cosignataires: { select: { id: true } } },
             });
+            const liens = alignerLiens(courants.cosignataires.map((c) => c.id), cosignataireIds);
+            if (liens) {
+              await prisma.amendement.update({ where: { uidCanonique }, data: { cosignataires: liens } });
+            }
           }
         }
 
@@ -5373,15 +5386,30 @@ export async function syncAmendementsSenatCsv(
         }
 
         if (pairs.length > 0) {
-          // Reset puis insert (idempotent, gère les retraits de cosignataires)
+          // Par différence (gère les retraits de cosignataires) : effacer puis
+          // réinsérer les mêmes paires réécrivait ~140 000 lignes chaque nuit, et
+          // chaque réécriture marque l'amendement comme modifié (updated_at).
           const amendementIds = Array.from(new Set(pairs.map(p => p[0])));
-          await prisma.$executeRaw`DELETE FROM "_AmendementCosignataires" WHERE "A" IN (${Prisma.join(amendementIds)})`;
-          const PAIR_CHUNK = 1000;
-          for (let i = 0; i < pairs.length; i += PAIR_CHUNK) {
-            const chunk = pairs.slice(i, i + PAIR_CHUNK);
+          const existantes = await prisma.$queryRaw<Array<{ A: string; B: string }>>`
+            SELECT "A", "B" FROM "_AmendementCosignataires" WHERE "A" = ANY(${amendementIds}::text[])
+          `;
+          const d = differencier(
+            existantes,
+            pairs.map(([A, B]) => ({ A, B })),
+            { existant: (p) => `${p.A}:${p.B}`, voulu: (p) => `${p.A}:${p.B}` },
+            [],
+          );
+          for (const chunk of tranches(d.aSupprimer, 1000)) {
+            await prisma.$executeRaw`
+              DELETE FROM "_AmendementCosignataires" c
+              USING unnest(${chunk.map(p => p.A)}::text[], ${chunk.map(p => p.B)}::text[]) AS r("A", "B")
+              WHERE c."A" = r."A" AND c."B" = r."B"
+            `;
+          }
+          for (const chunk of tranches(d.aCreer, 1000)) {
             await prisma.$executeRaw`
               INSERT INTO "_AmendementCosignataires" ("A", "B")
-              VALUES ${Prisma.join(chunk.map(([a, b]) => Prisma.sql`(${a}, ${b})`))}
+              VALUES ${Prisma.join(chunk.map(({ A, B }) => Prisma.sql`(${A}, ${B})`))}
               ON CONFLICT DO NOTHING
             `;
           }
@@ -7249,16 +7277,21 @@ export async function enrichScrutinsANAmendements(
           }
 
           // Connecter tous les amendements trouvés (M:N). En vérification, la
-          // page remplace les liens existants.
+          // page remplace les liens existants, en n'écrivant que ceux qui
+          // changent (`set` daterait le scrutin même à liens inchangés).
           if (!dryRun) {
-            await prisma.scrutin.update({
-              where: { id: scrutin.id },
-              data: {
-                amendements: remplacer
-                  ? { set: foundAmendementIds.map(id => ({ id })) }
-                  : { connect: foundAmendementIds.map(id => ({ id })) },
-              },
-            });
+            const liens = remplacer
+              ? alignerLiens(
+                  (await prisma.scrutin.findUniqueOrThrow({
+                    where: { id: scrutin.id },
+                    select: { amendements: { select: { id: true } } },
+                  })).amendements.map((a) => a.id),
+                  foundAmendementIds,
+                )
+              : { connect: foundAmendementIds.map(id => ({ id })) };
+            if (liens) {
+              await prisma.scrutin.update({ where: { id: scrutin.id }, data: { amendements: liens } });
+            }
           }
 
           if (ambigus > 0) {
