@@ -1,0 +1,106 @@
+---
+title: "Suivi des modifications"
+sidebar_label: "Suivi des Modifications"
+sidebar_icon: "history"
+description: Ce que garantit updated_at, les colonnes et liaisons concernées, les identifiants stables et la règle pour reprendre une synchronisation sans rien manquer.
+---
+
+Cette page s'adresse à ceux qui réutilisent les données de CLAIR et veulent récupérer, d'une synchronisation à l'autre, seulement ce qui a changé. Elle décrit ce que garantit la colonne `updated_at`, ce qu'elle ne garantit pas, et la règle à suivre pour ne rien manquer. Le détail des tables est sur la page [Modèle Prisma](/02-donnees/modele-prisma).
+
+## Ce que garantit `updated_at`
+
+Toutes les tables portent `created_at` et `updated_at` (`timestamp(3)`, en UTC). Seules les deux tables de jointure de Prisma, `_AmendementCosignataires` et `_AmendementToScrutin`, n'en ont pas (voir plus bas).
+
+`updated_at` est la date du dernier **changement de contenu** de la ligne. Elle est posée par la base elle-même, par un trigger (`apps/api/prisma/triggers.sql`), quelle que soit l'origine de l'écriture : l'API, l'ingestion, ou une requête SQL écrite à la main. Deux conséquences :
+
+- une ligne réécrite à l'identique garde son `updated_at`. L'ingestion relit chaque nuit l'essentiel des sources et réécrit des centaines de milliers de lignes inchangées : elles ne remontent pas ;
+- la date est celle du **début de la transaction** qui a écrit la ligne, lue sur l'horloge de la base. Toutes les lignes d'un même changement portent donc la même date.
+
+Sur les lignes antérieures à la mise en service du suivi (migration `20261018000000_horodatage_des_lignes`, octobre 2026), les colonnes ajoutées valent la date de cette migration. Elle se lit « modifiée au plus tard à cette date ». Les 15 tables qui avaient déjà `updated_at` gardent leurs valeurs.
+
+## Ce qui ne compte pas comme un changement
+
+Certaines colonnes décrivent notre traitement et non la donnée : la date d'un calcul, une empreinte, la date d'une génération par l'IA. Elles changent sans que le contenu change. Une écriture qui ne modifie que ces colonnes ne fait pas bouger `updated_at`.
+
+| Table | Colonnes ignorées |
+|---|---|
+| `parlementaires` | `stats_calculated_at`, `ia_content_hash`, `ia_generated_at` |
+| `mandats_parlementaires` | `stats_calculated_at` |
+| `groupes_politiques` | `stats_calculated_at` |
+| `groupes_alliances` | `calculated_at` |
+| `groupes_thematiques` | `calculated_at` |
+| `resultats_tours` | `verifie_a` (dernière lecture de la page, qu'elle ait changé quelque chose ou non) |
+| `sujets` | `ia_content_hash`, `ia_generated_at`, `ia_groupe_amendement_hash`, `context_input_hash`, `context_resolved_at` |
+| `scrutins` | `source_hash`, `ia_content_hash`, `ia_generated_at` |
+| `amendements` | `source_hash` |
+| `dossiers_legislatifs` | `ia_content_hash`, `ia_generated_at` |
+
+Toutes les autres colonnes comptent. Les statistiques (`stats_*`, alliances, thématiques) et les textes produits par l'IA (résumés, fiches) sont du contenu : quand leur valeur change, `updated_at` bouge. En session, les statistiques d'un parlementaire changent chaque fois qu'il y a de nouveaux scrutins.
+
+Les statistiques ne changent que si les votes changent. La position majoritaire d'un groupe sur un scrutin n'existe que si une seule position est en tête : en cas d'égalité, le groupe n'a pas de majorité sur ce scrutin, qui ne compte ni pour la loyauté, ni pour les alliances, ni pour les thématiques. Avant octobre 2026, une égalité était tranchée au hasard et faisait varier ces chiffres d'une nuit à l'autre.
+
+## Les liaisons datent leur parent
+
+Une liaison qui change fait bouger l'`updated_at` de la ligne à laquelle elle appartient :
+
+| Liaison | Parent dont `updated_at` bouge |
+|---|---|
+| `_AmendementCosignataires` (cosignataires d'un amendement) | `amendements` |
+| `_AmendementToScrutin` (amendements mis aux voix par un scrutin) | `amendements` et `scrutins` |
+| `lobbyistes_secteurs` | `lobbyistes` |
+| `actions_secteurs` | `actions_lobby` |
+| `reunion_participants` | `reunions` |
+
+C'est la seule façon de voir un changement dans les deux tables de jointure de Prisma, qui n'ont pas de colonne `updated_at`. Les autres liaisons ont aussi leur propre `updated_at`.
+
+`intervention_scrutin`, qui rattache une prise de parole au scrutin qu'elle précède, ne date pas ses parents : c'est un index recalculé par l'ingestion, suivi par son propre `updated_at`.
+
+## Des identifiants stables
+
+Une ligne garde son `id` tant qu'elle existe à la source. L'ingestion compare ce qu'elle lit à ce qui est en base sur une clé naturelle, met à jour en place ce qui a changé, et ne supprime que ce que la source a retiré.
+
+| Table | Clé naturelle |
+|---|---|
+| `votes` | parlementaire et scrutin |
+| `interventions` (séance de l'Assemblée) | `source_uid`, l'identifiant du paragraphe dans le compte rendu, stable de la version provisoire à la version complète |
+| `candidatures_listes` | `source_uid` |
+| `candidatures` | liste, rôle et rang |
+| `lobbyistes_secteurs`, `actions_secteurs` | le couple de clés |
+| `reunion_participants` | réunion et parlementaire |
+| `textes_articles` | `texte_ref` et `numero` |
+| `avis_commission` | `reunion_id` et `numero` |
+| `candidats_mandats_locaux` | scrutin, nom, prénom et date de naissance |
+
+Jusqu'en octobre 2026, ces tables étaient effacées puis réécrites : chaque nuit, 184 000 secteurs d'actions de lobbying, 18 900 secteurs de lobbyistes, les 1 936 candidatures et quelque 37 700 votes du Sénat changeaient d'identifiant sans changer de contenu. Un réutilisateur qui suivait ces lignes par leur `id` les voyait disparaître et réapparaître.
+
+## Reprendre là où on s'est arrêté
+
+Un dump est un instantané cohérent, pris à un instant précis par `pg_dump`. Une ligne écrite par une transaction encore en cours à cet instant n'y figure pas, mais elle portera une date `updated_at` **antérieure** à l'instant du dump, puisque la date est celle du début de sa transaction. Repartir de l'instant du dump la ferait manquer.
+
+Chaque dump est donc publié avec un **repère** `W` : la plus petite des deux valeurs, l'instant de la mesure et le début de la plus ancienne transaction ouverte à cet instant, tronquée à la milliseconde. Il est mesuré juste avant le lancement de `pg_dump`. Toute ligne absente du dump porte une date supérieure ou égale à `W`.
+
+Pour la synchronisation suivante, prendre les lignes dont `updated_at` est **supérieur ou égal** à `W` :
+
+```sql
+-- W = repère publié avec le dump précédent
+SELECT *
+FROM amendements
+WHERE updated_at >= TIMESTAMP '2026-10-20 14:03:17.482'
+ORDER BY updated_at, id;
+```
+
+Certaines lignes reviennent alors une seconde fois, parce qu'elles figuraient déjà dans le dump précédent : elles se reconnaissent à leur `id` et remplacent la version reçue avant. Pour les tables de jointure, qui n'ont pas d'`id`, la ligne se reconnaît à son couple de colonnes `A` et `B`.
+
+La comparaison doit être inclusive (`>=`) : la colonne est stockée à la milliseconde et Postgres arrondit, une comparaison stricte pourrait manquer une ligne écrite à la milliseconde du repère.
+
+**Sans repère publié**, prendre une marge d'une heure avant l'instant du dump. La plus longue écriture du batch nocturne mesurée dure 159 secondes, et les transactions de l'ingestion sont plafonnées à 10 minutes. La marge ne coûte que quelques lignes reçues deux fois.
+
+Les dumps sont réalisés hors de la fenêtre du batch nocturne, qui commence à 3 h UTC et se termine vers 8 h UTC.
+
+## Les suppressions
+
+`updated_at` ne dit rien d'une ligne supprimée : elle n'existe plus. Entre deux dumps complets, une suppression se lit par l'absence de la ligne. Il n'existe pas encore de journal des suppressions. Il sera nécessaire le jour où l'API proposera de ne renvoyer que les lignes modifiées depuis une date, et viendra avec ce filtre.
+
+## Ce que `updated_at` n'est pas
+
+`updated_at` dit quand CLAIR a enregistré un changement, pas quand la source l'a fait. Ce qui arrive par le batch nocturne est daté à un jour près. La date de modification que l'Assemblée publie sur ses amendements (`chronotag`) n'est pas encore stockée ; le Sénat n'en publie pas.

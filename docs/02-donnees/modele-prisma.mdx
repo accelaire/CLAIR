@@ -17,6 +17,7 @@ Le schéma compte **39 modèles**, plus 2 tables de jointures implicites gérée
 - **Clés Primaires** : UUID stockés sous forme `text` (`@default(uuid())`).
 - **Pas d'Enum SQL natif** : Les champs énumérés (`chambre`, `position`, `sort`) sont stockés en `text` et validés par l'application TypeScript.
 - **Chambre** : Vaut toujours `'assemblee'` ou `'senat'`.
+- **Horodatage** : Toutes les tables portent `created_at` et `updated_at` (sauf les deux tables de jointure implicites). `updated_at` est tenu par la base, par un trigger, et ne bouge que si le contenu de la ligne change. Voir [Suivi des modifications](/02-donnees/suivi-des-modifications).
 - **Législature** : `15`, `16` ou `17` pour l'Assemblée. Pour le Sénat, qui ne connaît pas de dissolution, la colonne vaut `NULL` sur `scrutins` et `groupes_politiques` (période définie par `session` ou `mandature`).
 
 ---
@@ -33,6 +34,17 @@ Lorsqu'un député est élu sénateur, sa fiche est conservée et bascule au Sé
 
 ### 3. Le groupe politique appartient au mandat
 Le groupe politique, la circonscription et la commission permanente sont attachés à `mandats_parlementaires`. La colonne `parlementaires.groupe_id` n'indique que le groupe **actuel**.
+
+---
+
+## 🕒 Triggers et Migrations
+
+Les triggers qui tiennent `updated_at` sont dans `apps/api/prisma/triggers.sql`. Prisma ne les connaît pas : `prisma db push` ne les crée pas, et `prisma migrate diff` ne les voit pas, ni pour les créer ni pour les supprimer.
+
+- **Nouvelle table** : `createdAt` et `updatedAt` en `@default(now())`, jamais `@updatedAt`, et son trigger écrit à la main dans `triggers.sql` **et** dans le `migration.sql` qui crée la table. Le test `apps/api/src/test/triggers-horodatage.test.ts` et l'invariant `tables_sans_horodatage` de `check-quality` signalent un oubli.
+- **Nouvelle colonne** : elle compte comme du contenu. Si elle décrit le traitement plutôt que la donnée (date de calcul, empreinte), l'ajouter aux colonnes ignorées du trigger de sa table, dans `triggers.sql` et dans la migration.
+- **Liaison many-to-many** : ne pas écrire `{ set: [...] }`. Prisma le joue en effaçant puis réinsérant tous les liens, ce qui date le parent même quand la liste n'a pas changé. `alignerLiens()` (`services/ingestion/src/utils/synchro-differentielle.ts`) calcule les seuls `connect` et `disconnect` nécessaires.
+- **Échec de `prisma migrate deploy`** : une migration qui échoue (sur un `lock_timeout`, quand une requête longue retient un verrou) est annulée en entier, mais Prisma la garde marquée en échec et refuse d'aller plus loin. La débloquer avec `npx prisma migrate resolve --rolled-back <nom>`, puis relancer `migrate deploy`.
 
 ---
 

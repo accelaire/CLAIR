@@ -192,6 +192,13 @@ export const docsNavigation: ZudokuConfig["navigation"] = [
         label: "Sources Open Data",
         icon: "cloud-download",
       },
+      {
+        type: "doc",
+        file: "02-donnees/suivi-des-modifications.mdx",
+        path: "/02-donnees/suivi-des-modifications",
+        label: "Suivi des Modifications",
+        icon: "history",
+      },
     ],
   },
   {
