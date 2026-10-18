@@ -786,11 +786,12 @@ export class ParlementairesService {
             AND s.chambre = $2
             AND s.date >= $3
         ),
-        group_majority AS (
+        group_tallies AS (
           SELECT
             gv.scrutin_id,
             gv.position,
-            ROW_NUMBER() OVER (PARTITION BY gv.scrutin_id ORDER BY COUNT(*) DESC) as rn
+            COUNT(*) as nb,
+            MAX(COUNT(*)) OVER (PARTITION BY gv.scrutin_id) as nb_max
           FROM votes gv
           JOIN scrutins gs ON gs.id = gv.scrutin_id
           JOIN parlementaires gp ON gp.id = gv.parlementaire_id
@@ -800,12 +801,22 @@ export class ParlementairesService {
            AND pv.groupe_id = COALESCE(gm.groupe_id, gp.groupe_id)
           WHERE gv.position != 'absent'
           GROUP BY gv.scrutin_id, gv.position
+        ),
+        group_majority AS (
+          -- Une seule position en tête : c'est la majorité. Ex æquo : aucune,
+          -- et le scrutin sort du dénominateur (même règle que le batch et
+          -- que CTE_GROUP_MAJORITY_EPOQUE).
+          SELECT scrutin_id, MIN(position) as position
+          FROM group_tallies
+          WHERE nb = nb_max
+          GROUP BY scrutin_id
+          HAVING COUNT(*) = 1
         )
         SELECT
           COUNT(CASE WHEN pv.position = gm2.position THEN 1 END)::bigint as loyal_count,
-          COUNT(*)::bigint as total_count
+          COUNT(gm2.position)::bigint as total_count
         FROM parlementaire_votes pv
-        LEFT JOIN group_majority gm2 ON pv.scrutin_id = gm2.scrutin_id AND gm2.rn = 1
+        LEFT JOIN group_majority gm2 ON pv.scrutin_id = gm2.scrutin_id
         `,
         parlementaireId,
         chambre,
