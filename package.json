@@ -30,6 +30,7 @@
     "db:generate": "pnpm --filter @clair/api db:generate",
     "db:migrate": "pnpm --filter @clair/api db:migrate",
     "db:push": "pnpm --filter @clair/api db:push",
+    "db:triggers": "pnpm --filter @clair/api db:triggers",
     "db:seed": "pnpm --filter @clair/api db:seed",
     "db:studio": "pnpm --filter @clair/api db:studio",
     "docker:up": "docker compose up -d",

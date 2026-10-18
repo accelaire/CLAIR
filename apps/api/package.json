@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:push": "prisma db push",
+    "db:push": "sh -c 'prisma db push \"$@\" && pnpm db:triggers' --",
+    "db:triggers": "prisma db execute --schema prisma/schema.prisma --file prisma/triggers.sql",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "clean": "rm -rf dist node_modules .turbo"

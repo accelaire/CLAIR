@@ -174,6 +174,46 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // une copie de plus à chaque nuit de relecture.
     query: `SELECT COUNT(*)::int AS value FROM (SELECT seance_id, ordre FROM interventions WHERE chambre = 'senat' AND seance_id IS NOT NULL GROUP BY seance_id, ordre HAVING COUNT(*) > 1) sub`,
   },
+  tables_sans_horodatage: {
+    type: 'invariant',
+    label: 'Tables sans updated_at tenu par la base',
+    min: 0,
+    max: 0,
+    // `updated_at` n'a de sens que si le trigger de `prisma/triggers.sql` le
+    // tient : sans lui, la colonne reste à sa date d'insertion et un client qui
+    // synchronise par `updated_at` (Data for Good) manque toutes les
+    // modifications, sans que rien ne le signale. Deux façons d'y arriver :
+    // une table ajoutée au schéma sans son trigger dans une migration, ou une
+    // base montée par `prisma db push` sans `db:triggers`. Les tables M:N
+    // implicites de Prisma (`_…`) n'ont pas la colonne : leurs changements
+    // datent leur parent (invariant suivant).
+    query: `SELECT COUNT(*)::int AS value
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = current_schema() AND c.relkind = 'r'
+              AND left(c.relname, 1) <> '_'
+              AND (
+                NOT EXISTS (SELECT 1 FROM pg_attribute a
+                            WHERE a.attrelid = c.oid AND a.attname = 'updated_at' AND NOT a.attisdropped)
+                OR NOT EXISTS (SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
+                               WHERE t.tgrelid = c.oid AND p.proname = 'clair_set_updated_at' AND t.tgenabled <> 'D')
+              )`,
+  },
+  liaisons_sans_propagation: {
+    type: 'invariant',
+    label: 'Liaisons qui ne datent pas leur parent',
+    min: 0,
+    max: 0,
+    // Une liaison qui change (cosignataire ajouté, secteur retiré…) doit faire
+    // bouger l'`updated_at` de son parent : trois triggers par parent
+    // (insertion, mise à jour, suppression), cf. `prisma/triggers.sql`.
+    query: `SELECT COUNT(*)::int AS value
+            FROM (VALUES ('_AmendementCosignataires', 3), ('_AmendementToScrutin', 6),
+                         ('lobbyistes_secteurs', 3), ('actions_secteurs', 3), ('reunion_participants', 3)) e(t, n)
+            WHERE (SELECT COUNT(*) FROM pg_trigger tg JOIN pg_proc p ON p.oid = tg.tgfoid
+                   WHERE tg.tgrelid = to_regclass(quote_ident(e.t)) AND p.proname = 'clair_touch_parent'
+                     AND tg.tgenabled <> 'D') < e.n`,
+  },
   parlementaires_without_groupe: {
     type: 'invariant',
     label: 'Parlementaires actifs sans groupe',

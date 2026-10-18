@@ -2,6 +2,17 @@
 // CLAIR - Schema Prisma
 // Base de données PostgreSQL pour la plateforme de transparence politique
 // =============================================================================
+//
+// HORODATAGE DES LIGNES. Chaque table porte `created_at` et `updated_at`.
+// `updated_at` est la date du dernier changement de CONTENU de la ligne, posée
+// par la base et non par Prisma : un trigger (`clair_set_updated_at`, voir
+// `prisma/triggers.sql`) la fait bouger quelle que soit l'origine de l'écriture
+// (Prisma, `$executeRaw`, SQL écrit à la main), et seulement si la ligne a
+// vraiment changé. Une réécriture à l'identique la laisse en place ; les
+// colonnes qui décrivent notre traitement (dates de calcul, empreintes) ne
+// comptent pas. D'où `@default(now())` et jamais `@updatedAt`, qui écrirait
+// l'horloge du client à chaque update. `db push` ne crée pas les triggers :
+// `pnpm db:push` joue `triggers.sql` juste après.
 
 generator client {
   provider      = "prisma-client-js"
@@ -98,7 +109,7 @@ model Parlementaire {
   sourceData Json?   @map("source_data")
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@index([slug])
   @@index([chambre])
@@ -126,6 +137,7 @@ model ParlementaireIdentifiant {
   sourceId String @map("source_id")
 
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@unique([chambre, sourceId])
   @@index([personneId])
@@ -183,7 +195,7 @@ model GroupePolitique {
 
   sourceId  String?  @map("source_id")
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@unique([slug, chambre, legislature])
   @@index([chambre])
@@ -239,7 +251,7 @@ model MandatParlementaire {
   sourceData Json?   @map("source_data")
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   // Garde best-effort : AN distinct par législature, Sénat par mandature.
   // (Postgres NULLS DISTINCT → dédup réel assuré par `mandatUid` + upsert Phase 1.)
@@ -283,6 +295,7 @@ model Mandat {
   organeRef String? @map("organe_ref")
 
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@index([parlementaireId])
   @@index([parlementaireId, organeRef, dateFin])
@@ -327,6 +340,9 @@ model Commission {
   reunions           Reunion[]
   dossierCommissions DossierCommission[]
 
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
   @@index([chambre])
   @@index([type])
   @@index([actif])
@@ -364,6 +380,9 @@ model Reunion {
   interventions  Intervention[]
   avisCommission AvisCommission[]
 
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
   @@index([dateDebut])
   @@index([commissionId])
   @@index([type])
@@ -380,6 +399,9 @@ model ReunionParticipant {
 
   reunion       Reunion       @relation(fields: [reunionId], references: [id], onDelete: Cascade)
   parlementaire Parlementaire @relation(fields: [parlementaireId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@unique([reunionId, parlementaireId])
   @@index([parlementaireId])
@@ -433,7 +455,7 @@ model EvenementInstitutionnel {
   important Boolean @default(false)
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@index([dateDebut])
   @@index([type])
@@ -467,6 +489,7 @@ model DeclarationHATVP {
   departement String?
 
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@unique([parlementaireId, typeDocument, dateDepot])
   @@index([parlementaireId])
@@ -494,6 +517,9 @@ model GroupeAlliance {
   tauxAccord   Int @map("taux_accord") // % d'accord (votesCommuns / votesTotaux * 100)
 
   calculatedAt DateTime @map("calculated_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@unique([groupeFromId, groupeToId])
   @@index([groupeFromId])
@@ -525,6 +551,9 @@ model GroupeThematique {
 
   calculatedAt DateTime @map("calculated_at")
 
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
   @@unique([groupeId, thematique])
   @@index([groupeId])
   @@index([thematique])
@@ -548,6 +577,7 @@ model Circonscription {
   resultatsListes       ResultatListe[]
 
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@unique([departement, numero, type])
   @@index([type])
@@ -609,7 +639,7 @@ model CandidatureListe {
   sourceUid String @unique @map("source_uid")
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@index([scrutin, circonscriptionId])
   @@index([scrutin, modeScrutin])
@@ -660,7 +690,7 @@ model Candidature {
   tourElection Int?    @map("tour_election")
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@unique([listeId, role, ordre])
   @@index([personneId])
@@ -690,7 +720,7 @@ model CandidatMandatsLocaux {
   sourceDate DateTime @map("source_date") @db.Date
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@unique([scrutin, nom, prenom, dateNaissance])
   @@map("candidats_mandats_locaux")
@@ -726,7 +756,7 @@ model ResultatTour {
   verifieA  DateTime @map("verifie_a")
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@unique([scrutin, circonscriptionId, tour])
   @@map("resultats_tours")
@@ -767,7 +797,7 @@ model ResultatListe {
   nuanceSource  String? @map("nuance_source")
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@unique([scrutin, listeSourceUid, tour])
   @@index([scrutin, circonscriptionId])
@@ -824,7 +854,7 @@ model DossierLegislatif {
   // Métadonnées source
   sourceData Json?    @map("source_data")
   createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  updatedAt  DateTime @default(now()) @map("updated_at")
 
   @@index([legislature])
   @@index([etat])
@@ -847,7 +877,7 @@ model DossierCommission {
   commission Commission        @relation(fields: [commissionId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@unique([dossierId, commissionId, role])
   @@index([commissionId])
@@ -902,7 +932,7 @@ model Sujet {
   liens    SujetLien[]
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@index([actif])
   @@index([category])
@@ -929,7 +959,7 @@ model SujetLien {
   sujet Sujet @relation(fields: [sujetId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@unique([sujetId, url])
   @@index([sujetId, famille, ordre])
@@ -1005,6 +1035,7 @@ model Scrutin {
   sourceHash String? @map("source_hash")
 
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@unique([numero, chambre, session])
   @@index([chambre])
@@ -1037,6 +1068,7 @@ model Vote {
   parDelegation Boolean @default(false) @map("par_delegation")
 
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@unique([parlementaireId, scrutinId])
   @@index([parlementaireId])
@@ -1129,6 +1161,7 @@ model Intervention {
 
   sourceUrl String?  @map("source_url")
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@index([parlementaireId])
   @@index([chambre])
@@ -1203,6 +1236,7 @@ model Amendement {
   sourceHash String? @map("source_hash")
 
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@index([parlementaireId])
   @@index([chambre])
@@ -1271,6 +1305,7 @@ model AvisCommission {
   ordre Int
 
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   /// Un amendement n'apparaît qu'une fois par réunion : la clé rend
   /// l'ingestion rejouable sans doublon.
@@ -1315,7 +1350,7 @@ model TexteArticle {
 
   sourceUrl String?  @map("source_url")
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@unique([texteRef, numero])
   @@index([texteRef])
@@ -1353,7 +1388,7 @@ model Lobbyiste {
   sourceData Json? @map("source_data")
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@index([secteur])
   @@index([type])
@@ -1394,6 +1429,7 @@ model ActionLobby {
 
   sourceUrl String?  @map("source_url")
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@index([lobbyisteId])
   @@index([parlementaireId])
@@ -1409,6 +1445,7 @@ model Secteur {
   lobbyistes LobbyisteSecteur[]
   actions    ActionSecteur[]
   createdAt  DateTime           @default(now()) @map("created_at")
+  updatedAt  DateTime           @default(now()) @map("updated_at")
 
   @@map("secteurs")
 }
@@ -1419,6 +1456,9 @@ model LobbyisteSecteur {
   lobbyiste   Lobbyiste @relation(fields: [lobbyisteId], references: [id], onDelete: Cascade)
   secteurId   String    @map("secteur_id")
   secteur     Secteur   @relation(fields: [secteurId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@unique([lobbyisteId, secteurId])
   @@index([lobbyisteId])
@@ -1432,6 +1472,9 @@ model ActionSecteur {
   action    ActionLobby @relation(fields: [actionId], references: [id], onDelete: Cascade)
   secteurId String      @map("secteur_id")
   secteur   Secteur     @relation(fields: [secteurId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@unique([actionId, secteurId])
   @@index([actionId])
@@ -1448,6 +1491,9 @@ model CibleType {
   label   String        @unique
   actions ActionLobby[]
 
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
   @@map("cible_types")
 }
 
@@ -1455,6 +1501,9 @@ model ActionDescription {
   id      Int           @id @default(autoincrement())
   texte   String        @unique
   actions ActionLobby[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@map("action_descriptions")
 }
@@ -1481,6 +1530,9 @@ model SyncLog {
   startedAt   DateTime  @map("started_at")
   completedAt DateTime? @map("completed_at")
 
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
   @@index([source])
   @@index([source, dataType])
   @@index([startedAt])
@@ -1500,6 +1552,9 @@ model SourceState {
   lastCheckAt  DateTime  @map("last_check_at") // Date de dernière vérification (même si pas de changement)
 
   metadata Json? // Infos supplémentaires (nombre d'items, etc.)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@unique([source, dataType])
   @@index([source])
@@ -1523,6 +1578,7 @@ model Feedback {
   userAgent String? @map("user_agent")
 
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@index([createdAt])
   @@index([type])
@@ -1553,6 +1609,7 @@ model InterventionScrutin {
   scrutin      Scrutin      @relation(fields: [scrutinId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@id([interventionId, scrutinId])
   @@index([scrutinId, via])
