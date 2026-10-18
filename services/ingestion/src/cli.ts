@@ -1172,6 +1172,9 @@ program
       console.log(`   Sujets traités: ${result.sujetsProcessed}`);
       console.log(`   Sujets avec ≥1 lien: ${result.resolved}`);
       console.log(`   vie-publique: ${result.viePublique}   ·   Wikipédia: ${result.wikipedia}`);
+      if (result.viePubliqueReportes > 0) {
+        console.log(`   vie-publique reportés (budget Tavily): ${result.viePubliqueReportes}`);
+      }
       console.log(`   Liens créés: ${result.created}`);
       console.log(`   Liens supprimés: ${result.deleted}`);
 
