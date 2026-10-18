@@ -412,9 +412,28 @@ export async function syncReunions(options: { limit?: number } = {}): Promise<{
           }
 
           if (participantRecords.length > 0) {
+            // Par différence : un participant garde son identifiant d'une
+            // lecture à l'autre, seule sa présence est mise à jour.
             await prisma.$transaction(async (tx) => {
-              await tx.reunionParticipant.deleteMany({ where: { reunionId } });
-              await tx.reunionParticipant.createMany({ data: participantRecords });
+              const existants = await tx.reunionParticipant.findMany({
+                where: { reunionId },
+                select: { id: true, parlementaireId: true, presence: true },
+              });
+              const d = differencier(
+                existants,
+                participantRecords,
+                { existant: (p) => p.parlementaireId, voulu: (p) => p.parlementaireId },
+                ['presence'],
+              );
+              if (d.aSupprimer.length > 0) {
+                await tx.reunionParticipant.deleteMany({ where: { id: { in: d.aSupprimer.map((p) => p.id) } } });
+              }
+              for (const { existant, voulu } of d.aModifier) {
+                await tx.reunionParticipant.update({ where: { id: existant.id }, data: { presence: voulu.presence } });
+              }
+              if (d.aCreer.length > 0) {
+                await tx.reunionParticipant.createMany({ data: d.aCreer });
+              }
             });
             participantsLinked += participantRecords.length;
           }

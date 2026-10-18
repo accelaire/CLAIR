@@ -21,6 +21,7 @@ import { PrismaClient } from '@prisma/client';
 import { fetchTexteArticles } from '../sources/assemblee-nationale/textes-client';
 import { logger } from '../utils/logger';
 import { errorMessage } from '../utils/errors';
+import { differencier } from '../utils/synchro-differentielle';
 
 const prisma = new PrismaClient();
 
@@ -48,7 +49,7 @@ export interface TextesArticlesSyncResult {
   /** `texteRef` des textes au gabarit non couvert, pour mesurer le trou. */
   refsGabaritInconnu: string[];
   articlesEcrits: number;
-  /** Articles remplacés lors d'une réingestion (`--force`). */
+  /** Articles modifiés ou retirés lors d'une réingestion (`--force`). */
   articlesRemplaces: number;
 }
 
@@ -166,8 +167,11 @@ export async function syncTextesArticles(
     // Un `upsert` par article ferait un aller-retour réseau par article — un
     // texte en compte jusqu'à 261, et la base de prod est derrière un proxy.
     // C'était le goulot du backfill (~68 s par texte, contre 3 à 8 s de fetch).
-    // On réécrit donc le texte d'un bloc : deux requêtes, dans une transaction
-    // pour qu'aucun lecteur ne voie le texte amputé de ses articles.
+    // On écrit donc le texte par différence : une lecture, puis une requête
+    // par article réellement changé, dans une transaction pour qu'aucun lecteur
+    // ne voie le texte amputé de ses articles. Effacer puis recréer le texte
+    // aurait aussi marché, mais en donnant un identifiant neuf à chaque
+    // article, modifié ou non.
     const rows = fetched.articles.map((article) => ({
       texteRef: candidate.texteRef,
       numero: article.numero,
@@ -181,12 +185,30 @@ export async function syncTextesArticles(
     }));
 
     try {
-      const [supprimes] = await prisma.$transaction([
-        prisma.texteArticle.deleteMany({ where: { texteRef: candidate.texteRef } }),
-        prisma.texteArticle.createMany({ data: rows }),
-      ]);
+      const remplaces = await prisma.$transaction(
+        async (tx) => {
+          const existants = await tx.texteArticle.findMany({ where: { texteRef: candidate.texteRef } });
+          const d = differencier(
+            existants,
+            rows,
+            { existant: (a) => a.numero, voulu: (a) => a.numero },
+            ['libelle', 'ordre', 'contenu', 'chambre', 'legislature', 'dossierId', 'sourceUrl'],
+          );
+          if (d.aSupprimer.length > 0) {
+            await tx.texteArticle.deleteMany({ where: { id: { in: d.aSupprimer.map((a) => a.id) } } });
+          }
+          for (const { existant, voulu } of d.aModifier) {
+            await tx.texteArticle.update({ where: { id: existant.id }, data: voulu });
+          }
+          if (d.aCreer.length > 0) {
+            await tx.texteArticle.createMany({ data: d.aCreer });
+          }
+          return d.aModifier.length + d.aSupprimer.length;
+        },
+        { timeout: 60_000, maxWait: 10_000 },
+      );
       result.articlesEcrits += rows.length;
-      result.articlesRemplaces += supprimes.count;
+      result.articlesRemplaces += remplaces;
     } catch (error) {
       logger.warn(
         { texteRef: candidate.texteRef, articles: rows.length, error: errorMessage(error) },
