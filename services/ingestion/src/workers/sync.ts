@@ -52,6 +52,8 @@ import { ajouterIdentifiantsConserves, rattacherDeputeElu } from './changement-c
 import { cloreOrganesANHorsMandat, cloturerDeputesSortants } from './mandats-an-sortants';
 import { ecrireVotesDuScrutin } from './ecriture-votes';
 import { alignerLiens, differencier, tranches } from '../utils/synchro-differentielle';
+import { actionRetenue, type ActionCandidate } from '../utils/action-lobby-retenue';
+import { libelleRetenu } from '../utils/libelle-secteur';
 import {
   checkSourceFreshness,
   updateSourceState,
@@ -7594,6 +7596,32 @@ const SECTEUR_NORMALIZATION: Record<string, string> = {
   'Sports': 'Sports, loisirs, tourisme',
 };
 
+/**
+ * Sépare les lignes du fichier qui écrivent un lobbyiste de celles qui en
+ * doublent une autre (même identifiant national). À identifiant égal, la ligne
+ * retenue est celle au plus grand identifiant HATVP, comparé comme un nombre.
+ */
+export function lignesLobbyistesRetenues<T extends { id: string; identifiantNational?: string | null }>(
+  lignes: readonly T[],
+): { retenues: T[]; doublons: Set<T> } {
+  const parCle = new Map<string, T>();
+  const rang = (l: T) => (/^\d+$/.test(l.id) ? Number(l.id) : -1);
+  for (const l of lignes) {
+    const cle = l.identifiantNational?.trim();
+    if (!cle) continue;
+    const deja = parCle.get(cle);
+    if (!deja || rang(l) > rang(deja) || (rang(l) === rang(deja) && l.id > deja.id)) parCle.set(cle, l);
+  }
+  const doublons = new Set<T>();
+  const retenues: T[] = [];
+  for (const l of lignes) {
+    const cle = l.identifiantNational?.trim();
+    if (cle && parCle.get(cle) !== l) doublons.add(l);
+    else retenues.push(l);
+  }
+  return { retenues, doublons };
+}
+
 function normalizeSecteurLabel(label: string): string {
   const trimmed = label.trim();
   return SECTEUR_NORMALIZATION[trimmed] || trimmed;
@@ -7633,10 +7661,20 @@ export async function syncLobbyistes(
     }
   }
 
-  logger.info({ count: allSecteurLabels.size }, 'Upserting secteurs...');
+  // Un libellé par identifiant : deux graphies d'un même secteur (avec et sans
+  // accent) réécrivaient tour à tour la même ligne (cf. libelleRetenu).
+  const libellesParSlug = new Map<string, Set<string>>();
   for (const label of allSecteurLabels) {
     const slug = slugifySecteur(label);
     if (!slug) continue;
+    const libelles = libellesParSlug.get(slug) ?? new Set<string>();
+    libelles.add(label);
+    libellesParSlug.set(slug, libelles);
+  }
+
+  logger.info({ count: libellesParSlug.size }, 'Upserting secteurs...');
+  for (const [slug, libelles] of libellesParSlug) {
+    const label = libelleRetenu(libelles);
     await prisma.secteur.upsert({
       where: { id: slug },
       create: { id: slug, label },
@@ -7668,6 +7706,13 @@ export async function syncLobbyistes(
   };
 
   const lobbyisteIdMap = new Map<string, string>();
+  const secteursParLobbyiste = new Map<string, Array<{ id: string; secteurId: string }>>();
+  const secteursVoulusParLobbyiste = new Map<string, Set<string>>();
+  for (const p of await prisma.lobbyisteSecteur.findMany({ select: { id: true, lobbyisteId: true, secteurId: true } })) {
+    const liste = secteursParLobbyiste.get(p.lobbyisteId);
+    if (liste) liste.push(p);
+    else secteursParLobbyiste.set(p.lobbyisteId, [p]);
+  }
   const budgetByLobbyiste = new Map<string, number>();
   const salariesByLobbyiste = new Map<string, number>();
 
@@ -7682,7 +7727,15 @@ export async function syncLobbyistes(
     }
   }
 
-  for (const csvLobbyiste of csvLobbyistes) {
+  // Deux lignes du fichier peuvent porter le même identifiant national (la HATVP
+  // recycle des identifiants) et désigner la même ligne en base. Chacune la
+  // réécrivait avec ses valeurs, et elle changeait deux fois par passage. Une
+  // seule l'écrit désormais : celle au plus grand identifiant HATVP, quel que
+  // soit l'ordre du fichier. Les autres s'y rattachent (actions, secteurs), et
+  // passent après elle pour la trouver en base.
+  const { retenues, doublons } = lignesLobbyistesRetenues(csvLobbyistes);
+
+  for (const csvLobbyiste of [...retenues, ...doublons]) {
     try {
       const siren = csvLobbyiste.typeIdentifiant === 'SIREN' ? csvLobbyiste.identifiantNational : null;
       const identifiantNational = csvLobbyiste.identifiantNational?.trim() || null;
@@ -7720,7 +7773,9 @@ export async function syncLobbyistes(
 
       let lobbyisteId: string;
 
-      if (existing) {
+      if (existing && doublons.has(csvLobbyiste)) {
+        lobbyisteId = existing.id;
+      } else if (existing) {
         await prisma.lobbyiste.update({ where: { id: existing.id }, data });
         lobbyisteId = existing.id;
         lobbyistesUpdated++;
@@ -7738,14 +7793,9 @@ export async function syncLobbyistes(
           .map((s: string) => slugifySecteur(normalizeSecteurLabel(s)))
           .filter((s: string) => s);
         if (secteurSlugs.length > 0) {
-          await prisma.lobbyisteSecteur.deleteMany({ where: { lobbyisteId } });
-          await prisma.lobbyisteSecteur.createMany({
-            data: secteurSlugs.map((slug: string) => ({
-              lobbyisteId,
-              secteurId: slug,
-            })),
-            skipDuplicates: true,
-          });
+          const voulus = secteursVoulusParLobbyiste.get(lobbyisteId) ?? new Set<string>();
+          for (const slug of secteurSlugs) voulus.add(slug);
+          secteursVoulusParLobbyiste.set(lobbyisteId, voulus);
         }
       }
     } catch (error) {
@@ -7753,7 +7803,32 @@ export async function syncLobbyistes(
     }
   }
 
-  logger.info({ created: lobbyistesCreated, updated: lobbyistesUpdated }, 'Lobbyistes synced');
+  // Secteurs des lobbyistes, par différence : effacer puis recréer donnait
+  // chaque nuit un nouvel identifiant aux 18 900 lignes, identiques à la veille.
+  // Écrits après la boucle : deux lignes du fichier peuvent désigner le même
+  // lobbyiste (identifiant HATVP recyclé), et ses secteurs réunissent alors
+  // ceux des deux, quel que soit leur ordre, au lieu de basculer de l'une à
+  // l'autre à chaque passage.
+  let secteursCrees = 0;
+  let secteursSupprimes = 0;
+  for (const [lobbyisteId, voulus] of secteursVoulusParLobbyiste) {
+    const d = differencier(
+      secteursParLobbyiste.get(lobbyisteId) ?? [],
+      [...voulus].map((secteurId) => ({ lobbyisteId, secteurId })),
+      { existant: (p) => p.secteurId, voulu: (p) => p.secteurId },
+      [],
+    );
+    if (d.aSupprimer.length > 0) {
+      await prisma.lobbyisteSecteur.deleteMany({ where: { id: { in: d.aSupprimer.map((p) => p.id) } } });
+    }
+    if (d.aCreer.length > 0) {
+      await prisma.lobbyisteSecteur.createMany({ data: d.aCreer, skipDuplicates: true });
+    }
+    secteursCrees += d.aCreer.length;
+    secteursSupprimes += d.aSupprimer.length;
+  }
+
+  logger.info({ created: lobbyistesCreated, updated: lobbyistesUpdated, secteursCrees, secteursSupprimes }, 'Lobbyistes synced');
 
   const actionDetailsByActivite = new Map<string, typeof actionDetails[0]>();
   for (const detail of actionDetails) {
@@ -7854,23 +7929,29 @@ export async function syncLobbyistes(
     existingActions.length = 0; // Free raw array
     logger.info({ count: existingActionMap.size }, 'Existing actions loaded');
 
-    // 2. Single pass: collect batch operations (zero DB queries)
+    // 2. Single pass: one retained activity per (lobbyiste, description) key
+    // (cf. actionRetenue), then the batch operations (zero DB queries)
     const toCreate: Array<{ id: string; lobbyisteId: string; descriptionId: number; dateDebut: Date; cible: string | null; cibleTypeId: number | null; texteVise: string | null; texteViseNom: string | null }> = [];
     const toUpdate: Array<{ id: string; descriptionId: number; cible: string | null; cibleTypeId: number | null; texteVise: string | null; texteViseNom: string | null }> = [];
     const pivotActionIds: string[] = [];
     const pivotPairs: Array<{ actionId: string; secteurId: string }> = [];
     const validActionKeys = new Set<string>();
+    type ActionVoulue = ActionCandidate & { lobbyisteId: string; descriptionId: number; dateDebut: Date };
+    const actionsVoulues = new Map<string, ActionVoulue>();
+    // Les secteurs d'une clé réunissent ceux de toutes ses activités, comme avant.
+    const secteursVoulus = new Map<string, Set<string>>();
 
     for (const act of csvActivites) {
       if (!act.objet) continue;
       const lobbyisteId = lobbyisteIdMap.get(act.lobbyisteId);
       if (!lobbyisteId) continue;
 
-      let dateDebut = new Date();
+      let datePublication: Date | null = null;
       if (act.datePublication) {
         const parsed = new Date(act.datePublication);
-        if (!isNaN(parsed.getTime())) dateDebut = parsed;
+        if (!isNaN(parsed.getTime())) datePublication = parsed;
       }
+      const dateDebut = datePublication ?? new Date();
 
       const details = actionDetailsByActivite.get(act.activiteId);
 
@@ -7902,6 +7983,25 @@ export async function syncLobbyistes(
       }
 
       const key = `${lobbyisteId}::${descriptionId}`;
+      const candidate: ActionVoulue = { lobbyisteId, descriptionId, dateDebut, datePublication, cible, cibleTypeId, texteVise, texteViseNom };
+      const dejaVue = actionsVoulues.get(key);
+      actionsVoulues.set(key, dejaVue ? actionRetenue(dejaVue, candidate) : candidate);
+
+      // Collect pivot pairs
+      if (act.domaines.length > 0) {
+        const domaineSlugs = act.domaines
+          .map((d: string) => slugifySecteur(normalizeSecteurLabel(d)))
+          .filter((s: string) => s);
+        if (domaineSlugs.length > 0) {
+          const secteurs = secteursVoulus.get(key) ?? new Set<string>();
+          for (const slug of domaineSlugs) secteurs.add(slug);
+          secteursVoulus.set(key, secteurs);
+        }
+      }
+    }
+
+    for (const [key, voulue] of actionsVoulues) {
+      const { lobbyisteId, descriptionId, dateDebut, cible, cibleTypeId, texteVise, texteViseNom } = voulue;
       const existing = existingActionMap.get(key);
 
       let actionId: string;
@@ -7916,24 +8016,17 @@ export async function syncLobbyistes(
       } else {
         actionId = randomUUID();
         toCreate.push({ id: actionId, lobbyisteId, descriptionId, dateDebut, cible, cibleTypeId, texteVise, texteViseNom });
-        // Track to avoid duplicate creates for same key
-        existingActionMap.set(key, { id: actionId, cible, cibleTypeId, texteVise, texteViseNom });
         actionsCreated++;
       }
 
-      // Collect pivot pairs
-      if (act.domaines.length > 0) {
-        const domaineSlugs = act.domaines
-          .map((d: string) => slugifySecteur(normalizeSecteurLabel(d)))
-          .filter((s: string) => s);
-        if (domaineSlugs.length > 0) {
-          pivotActionIds.push(actionId);
-          for (const slug of domaineSlugs) {
-            pivotPairs.push({ actionId, secteurId: slug });
-          }
-        }
+      const secteurs = secteursVoulus.get(key);
+      if (secteurs) {
+        pivotActionIds.push(actionId);
+        for (const secteurId of secteurs) pivotPairs.push({ actionId, secteurId });
       }
     }
+    actionsVoulues.clear();
+    secteursVoulus.clear();
 
     logger.info({ toCreate: toCreate.length, toUpdate: toUpdate.length, pivotPairs: pivotPairs.length }, 'Batch operations prepared');
 
@@ -7970,22 +8063,31 @@ export async function syncLobbyistes(
       }
     }
 
-    // 5. Batch pivots: single deleteMany + batched createMany
+    // 5. Batch pivots, par différence : effacer puis recréer les pivots de
+    // toutes les actions donnait chaque nuit un nouvel identifiant aux 184 000
+    // lignes, identiques à la veille.
     if (pivotActionIds.length > 0) {
       logger.info({ actions: pivotActionIds.length, pairs: pivotPairs.length }, 'Batch syncing action-secteur pivots...');
-      // Delete existing pivots for all affected actions
-      for (let i = 0; i < pivotActionIds.length; i += 5000) {
-        await prisma.actionSecteur.deleteMany({
-          where: { actionId: { in: pivotActionIds.slice(i, i + 5000) } },
-        });
+      const existants = [];
+      for (const ids of tranches(pivotActionIds, 5000)) {
+        existants.push(...await prisma.actionSecteur.findMany({
+          where: { actionId: { in: ids } },
+          select: { id: true, actionId: true, secteurId: true },
+        }));
       }
-      // Create all new pivots
-      for (let i = 0; i < pivotPairs.length; i += 5000) {
-        await prisma.actionSecteur.createMany({
-          data: pivotPairs.slice(i, i + 5000),
-          skipDuplicates: true,
-        });
+      const d = differencier(
+        existants,
+        pivotPairs,
+        { existant: (p) => `${p.actionId}:${p.secteurId}`, voulu: (p) => `${p.actionId}:${p.secteurId}` },
+        [],
+      );
+      for (const chunk of tranches(d.aSupprimer, 5000)) {
+        await prisma.actionSecteur.deleteMany({ where: { id: { in: chunk.map((p) => p.id) } } });
       }
+      for (const chunk of tranches(d.aCreer, 5000)) {
+        await prisma.actionSecteur.createMany({ data: chunk, skipDuplicates: true });
+      }
+      logger.info({ crees: d.aCreer.length, supprimes: d.aSupprimer.length, inchanges: d.inchanges }, 'Action-secteur pivots synced');
     }
 
     // Free batch arrays
