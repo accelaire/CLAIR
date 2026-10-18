@@ -4,15 +4,16 @@
 //
 // Le fichier du ministère est un instantané complet du scrutin, et il est
 // republié corrigé (l'édition 2023 l'a été le jour même de sa parution).
-// L'ingestion est donc un **remplacement intégral du périmètre du scrutin**,
-// dans une transaction : on efface les unités de vote de ce scrutin et on
-// réécrit celles du fichier.
+// L'ingestion **aligne donc tout le périmètre du scrutin sur le fichier**, dans
+// une transaction : une candidature retirée entre deux publications doit
+// disparaître, pas survivre parce qu'aucune ligne ne la contredit.
 //
-// C'est volontairement plus brutal qu'une réconciliation ligne à ligne, et
-// c'est le bon choix ici : une candidature retirée entre deux publications
-// doit disparaître, pas survivre parce qu'aucune ligne ne la contredit. Rien
-// ne pointe vers ces lignes — le web adresse les candidats par circonscription
-// et par personne — donc la rotation des identifiants est sans conséquence.
+// L'alignement se fait par différence, sur les clés stables de la source : la
+// liste par son `source_uid`, la candidature par (liste, rôle, rang). Effacer
+// puis réécrire le scrutin aurait le même résultat visible, mais redonnait
+// chaque nuit un identifiant neuf aux 1 936 candidatures et 483 listes, alors
+// que les réutilisateurs des données (dumps, Data for Good) suivent les lignes
+// par identifiant et par `updated_at`.
 //
 // Ce module n'écrit jamais rien qu'il ne sache justifier :
 //   — une circonscription introuvable fait échouer l'ingestion, elle n'est pas
@@ -34,6 +35,7 @@ import type { ListeBrute } from './candidatures-parser.js';
 import { nuanceInconnue, resoudreNuance } from './nuances.js';
 import { rattacherLot } from './rattachement.js';
 import type { StatistiquesRattachement } from './rattachement.js';
+import { differencier } from '../../utils/synchro-differentielle.js';
 
 /**
  * Baisse maximale tolérée du nombre de candidats d'un passage à l'autre.
@@ -61,8 +63,8 @@ export interface OptionsIngestionCandidatures {
    * Par défaut, une ingestion qui ferait perdre plus de `CHUTE_MAX` du corpus
    * déjà en place échoue au lieu d'écrire. Ce garde-fou n'existait pas tant que
    * l'ingestion était un acte manuel et vérifié ; il devient indispensable dès
-   * lors qu'elle tourne toutes les nuits, parce que l'écriture est un
-   * **remplacement intégral** : un fichier tronqué par la source effacerait
+   * lors qu'elle tourne toutes les nuits, parce que l'écriture **aligne tout le
+   * scrutin sur le fichier** : un fichier tronqué par la source effacerait
    * des candidats d'une page publique, à dix jours du scrutin, sans que
    * personne ne l'ait demandé.
    */
@@ -167,7 +169,7 @@ export async function ingererCandidatures(
   if (chute > CHUTE_MAX && !options.forcerChute) {
     throw new Error(
       `Le fichier ne contient que ${candidats.length} candidats contre ${existants} en base ` +
-        `(${Math.round(chute * 100)} % de moins). L'ingestion remplace l'intégralité du ` +
+        `(${Math.round(chute * 100)} % de moins). L'ingestion aligne l'intégralité du ` +
         'scrutin : elle est interrompue plutôt que d\'effacer des candidatures publiées. ' +
         'Vérifier la source, puis relancer avec --forcer-chute si la baisse est réelle.',
     );
@@ -300,13 +302,63 @@ function preparerEcritures(
   };
 }
 
+/** Les colonnes d'une liste que le fichier fournit, donc que l'ingestion compare. */
+const CHAMPS_LISTE = [
+  'circonscriptionId', 'modeScrutin', 'numeroDepot', 'libelle', 'nuance', 'nuanceLibelle', 'famille',
+] as const;
+
 /**
- * Remplace le scrutin en base, en une transaction.
+ * Les colonnes d'une candidature que le fichier et le rattachement fournissent.
+ * `elu` et `tourElection` n'en font pas partie : l'ingestion n'y touche pas.
+ */
+const CHAMPS_CANDIDATURE = [
+  'nom', 'prenom', 'sexe', 'anneeNaissance', 'dateNaissance', 'professionCode', 'professionLabel',
+  'sortantDeclare', 'personneId', 'matchConfiance',
+] as const;
+
+type ListeEnBase = ListeAEcrire;
+type CandidatureEnBase = CandidatureAEcrire;
+
+/**
+ * Ce qu'il faut écrire pour aligner la base sur le fichier.
  *
- * La suppression des unités de vote emporte les candidatures par cascade. Le
- * délai est porté à deux minutes : le défaut de cinq secondes de Prisma ne
- * tient pas sur deux milliers de lignes, et un échec de délai laisserait la
- * table vide le temps d'une reprise.
+ * Une liste déjà connue garde son identifiant, et ses candidatures sont
+ * rapportées à lui : l'identifiant tiré par `preparerEcritures` ne sert qu'aux
+ * listes nouvelles.
+ */
+export function planifierEcritures(
+  listesEnBase: ListeEnBase[],
+  candidaturesEnBase: CandidatureEnBase[],
+  listes: ListeAEcrire[],
+  candidats: CandidatureAEcrire[],
+) {
+  const listesD = differencier(
+    listesEnBase,
+    listes,
+    { existant: (l) => l.sourceUid, voulu: (l) => l.sourceUid },
+    CHAMPS_LISTE,
+  );
+
+  const enBaseParUid = new Map(listesEnBase.map((l) => [l.sourceUid, l.id]));
+  const idDefinitif = new Map(listes.map((l) => [l.id, enBaseParUid.get(l.sourceUid) ?? l.id]));
+
+  const cle = (c: { listeId: string; role: string; ordre: number }) => `${c.listeId}|${c.role}|${c.ordre}`;
+  const candidaturesD = differencier(
+    candidaturesEnBase,
+    candidats.map((c) => ({ ...c, listeId: idDefinitif.get(c.listeId) ?? c.listeId })),
+    { existant: cle, voulu: cle },
+    CHAMPS_CANDIDATURE,
+  );
+
+  return { listes: listesD, candidatures: candidaturesD };
+}
+
+/**
+ * Aligne le scrutin en base sur le fichier, en une transaction.
+ *
+ * Le délai est porté à deux minutes : le défaut de cinq secondes de Prisma ne
+ * tient pas sur deux milliers de lignes, et un échec de délai ferait échouer
+ * l'ingestion (la transaction annulée laisse l'état précédent intact).
  */
 async function ecrire(
   prisma: PrismaClient,
@@ -316,15 +368,63 @@ async function ecrire(
 ): Promise<void> {
   await prisma.$transaction(
     async transaction => {
-      const supprimees = await transaction.candidatureListe.deleteMany({ where: { scrutin } });
-      await transaction.candidatureListe.createMany({ data: listes });
-      await transaction.candidature.createMany({ data: candidats });
+      const listesEnBase = await transaction.candidatureListe.findMany({
+        where: { scrutin },
+        select: { id: true, scrutin: true, sourceUid: true, ...selection(CHAMPS_LISTE) },
+      });
+      const candidaturesEnBase = await transaction.candidature.findMany({
+        where: { liste: { scrutin } },
+        select: { id: true, listeId: true, role: true, ordre: true, ...selection(CHAMPS_CANDIDATURE) },
+      });
+      const plan = planifierEcritures(listesEnBase, candidaturesEnBase, listes, candidats);
+
+      // Les suppressions d'abord : une candidature retirée libère sa place
+      // (liste, rôle, rang) avant qu'une autre ne la prenne. Supprimer une
+      // liste emporte ses candidatures par cascade.
+      const candidaturesRetirees = plan.candidatures.aSupprimer.map(c => c.id);
+      if (candidaturesRetirees.length > 0) {
+        await transaction.candidature.deleteMany({ where: { id: { in: candidaturesRetirees } } });
+      }
+      const listesRetirees = plan.listes.aSupprimer.map(l => l.id);
+      if (listesRetirees.length > 0) {
+        await transaction.candidatureListe.deleteMany({ where: { id: { in: listesRetirees } } });
+      }
+
+      for (const { existant, voulu } of plan.listes.aModifier) {
+        await transaction.candidatureListe.update({ where: { id: existant.id }, data: extraire(voulu, CHAMPS_LISTE) });
+      }
+      if (plan.listes.aCreer.length > 0) {
+        await transaction.candidatureListe.createMany({ data: plan.listes.aCreer });
+      }
+
+      for (const { existant, voulu } of plan.candidatures.aModifier) {
+        await transaction.candidature.update({ where: { id: existant.id }, data: extraire(voulu, CHAMPS_CANDIDATURE) });
+      }
+      if (plan.candidatures.aCreer.length > 0) {
+        await transaction.candidature.createMany({ data: plan.candidatures.aCreer });
+      }
 
       logger.info(
-        { scrutin, supprimees: supprimees.count, listes: listes.length, candidats: candidats.length },
-        'candidatures réécrites'
+        {
+          scrutin,
+          listes: { creees: plan.listes.aCreer.length, modifiees: plan.listes.aModifier.length, supprimees: listesRetirees.length },
+          candidatures: {
+            creees: plan.candidatures.aCreer.length,
+            modifiees: plan.candidatures.aModifier.length,
+            supprimees: candidaturesRetirees.length,
+          },
+        },
+        'candidatures alignées sur le fichier'
       );
     },
     { timeout: 120_000, maxWait: 10_000 }
   );
+}
+
+function selection<C extends string>(champs: readonly C[]): Record<C, true> {
+  return Object.fromEntries(champs.map(c => [c, true])) as Record<C, true>;
+}
+
+function extraire<T extends object, C extends keyof T>(ligne: T, champs: readonly C[]): Pick<T, C> {
+  return Object.fromEntries(champs.map(c => [c, ligne[c]])) as Pick<T, C>;
 }

@@ -25,6 +25,8 @@ Le script vérifie que les anomalies critiques sont strictement égales à **0**
 | Scrutins orphelins sans aucun vote (hors Congrès, voir plus bas) | **0** |
 | Doublons de scrutins (numéro + chambre + session) | **0** |
 | Doublons d'amendements sous une même clé canonique | **0** |
+| Tables sans `updated_at` tenu par la base (colonne ou trigger manquant, voir [Suivi des modifications](/02-donnees/suivi-des-modifications)) | **0** |
+| Liaisons qui ne datent pas leur parent (cosignataires, amendement vers scrutin, secteurs, participants) | **0** |
 | Parlementaires actifs non rattachés à un groupe politique | **0** |
 | Liaisons scrutin vers dossier entre chambres différentes | **0** |
 | Liaisons scrutin vers dossier entre législatures différentes (AN) | **0** |

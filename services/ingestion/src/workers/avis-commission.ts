@@ -28,6 +28,7 @@
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { errorMessage } from '../utils/errors';
+import { differencier } from '../utils/synchro-differentielle';
 import { ComptesRendusCommissionClient } from '../sources/assemblee-nationale/comptes-rendus-commission-client';
 import {
   parserAvisCommission,
@@ -265,9 +266,24 @@ export async function syncAvisCommission(
       if (options.dryRun) continue;
 
       if (options.reingerer) {
+        // Par différence : un avis garde son identifiant d'une lecture à l'autre.
         await prisma.$transaction(async (tx) => {
-          await tx.avisCommission.deleteMany({ where: { reunionId: reunion.id } });
-          await tx.avisCommission.createMany({ data: lignes });
+          const existants = await tx.avisCommission.findMany({ where: { reunionId: reunion.id } });
+          const d = differencier(
+            existants,
+            lignes,
+            { existant: (a) => a.numero, voulu: (a) => a.numero },
+            ['amendementId', 'position', 'sens', 'place', 'auteur', 'groupe', 'ordre'],
+          );
+          if (d.aSupprimer.length > 0) {
+            await tx.avisCommission.deleteMany({ where: { id: { in: d.aSupprimer.map((a) => a.id) } } });
+          }
+          for (const { existant, voulu } of d.aModifier) {
+            await tx.avisCommission.update({ where: { id: existant.id }, data: voulu });
+          }
+          if (d.aCreer.length > 0) {
+            await tx.avisCommission.createMany({ data: d.aCreer });
+          }
         });
       } else {
         await prisma.avisCommission.createMany({ data: lignes, skipDuplicates: true });

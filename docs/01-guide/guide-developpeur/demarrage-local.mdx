@@ -43,9 +43,11 @@ pnpm docker:up
 # Générer le client Prisma
 pnpm db:generate
 
-# Pousser le schéma dans la base locale
+# Pousser le schéma dans la base locale, puis ses triggers
 pnpm db:push
 ```
+
+`prisma db push` ne connaît pas les triggers qui tiennent `updated_at` : `pnpm db:push` joue donc aussi `apps/api/prisma/triggers.sql`. Après un `prisma db push` lancé à la main, rejouer `pnpm db:triggers`.
 
 ### 4. Lancer l'Application
 

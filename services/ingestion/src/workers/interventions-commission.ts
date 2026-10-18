@@ -34,6 +34,7 @@
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { errorMessage } from '../utils/errors';
+import { differencier } from '../utils/synchro-differentielle';
 import { ComptesRendusCommissionClient } from '../sources/assemblee-nationale/comptes-rendus-commission-client';
 import {
   parserCompteRenduCommission,
@@ -472,11 +473,31 @@ export async function syncInterventionsCommission(
       }
 
       if (options.reingerer) {
-        // La relecture remplace d'un seul tenant : jamais de réunion à moitié
-        // écrite, même si la transaction échoue.
+        // La relecture aligne la réunion d'un seul tenant : jamais de réunion à
+        // moitié écrite, même si la transaction échoue. Par différence sur le
+        // `source_uid`, pour qu'une prise de parole inchangée garde son
+        // identifiant (cf. interventions-syceron.ts).
         await prisma.$transaction(async (tx) => {
-          await tx.intervention.deleteMany({ where: { reunionId: reunion.id } });
-          await tx.intervention.createMany({ data: lignes });
+          const existantes = await tx.intervention.findMany({ where: { reunionId: reunion.id } });
+          const d = differencier(
+            existantes,
+            lignes,
+            { existant: (i) => i.sourceUid ?? `id:${i.id}`, voulu: (l) => l.sourceUid },
+            [
+              'parlementaireId', 'orateurNom', 'orateurPrenom', 'orateurQualite', 'orateurGroupe', 'chambre',
+              'date', 'ordre', 'type', 'contenu', 'estPresidence', 'sourceUrl',
+            ],
+          );
+          if (d.aSupprimer.length > 0) {
+            await tx.intervention.deleteMany({ where: { id: { in: d.aSupprimer.map((i) => i.id) } } });
+          }
+          for (const { existant, voulu } of d.aModifier) {
+            const { sourceUid: _cle, ...valeurs } = voulu;
+            await tx.intervention.update({ where: { id: existant.id }, data: valeurs });
+          }
+          if (d.aCreer.length > 0) {
+            await tx.intervention.createMany({ data: d.aCreer });
+          }
         });
         resultat.interventions += lignes.length;
       } else {

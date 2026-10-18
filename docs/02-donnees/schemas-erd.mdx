@@ -9,6 +9,8 @@ La base de données relationnelle de CLAIR (PostgreSQL 17) est structurée autou
 
 Pour faciliter la compréhension, chaque domaine dispose d'un schéma épuré mettant en valeur les clés de jointure (`PK`, `FK`) et la logique de rattachement.
 
+Toutes les tables portent en plus `created_at` et `updated_at`, non représentées ici : `updated_at` est tenu par la base et ne bouge que si le contenu de la ligne change (voir [Suivi des modifications](/02-donnees/suivi-des-modifications)).
+
 ---
 
 ## 🗺️ Flux et Relations entre les Domaines

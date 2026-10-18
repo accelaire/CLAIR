@@ -139,8 +139,14 @@ jobs:
       # Ici on ne cherche qu'un schéma conforme à schema.prisma pour faire vivre
       # l'API : `db push` le donne directement. Rendre l'historique rejouable est
       # un chantier à part.
+      #
+      # `db push` ignore les triggers : `db:triggers` pose ceux qui tiennent
+      # `updated_at` (prisma/triggers.sql), sans quoi la base de la CI ne se
+      # comporterait pas comme la prod.
       - name: Apply database schema
-        run: pnpm --filter @clair/api exec prisma db push --skip-generate
+        run: |
+          pnpm --filter @clair/api exec prisma db push --skip-generate
+          pnpm --filter @clair/api db:triggers
 
       - name: Build API
         run: pnpm build:api

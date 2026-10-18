@@ -10,6 +10,7 @@ import { TYPE_INTERRUPTION, TYPE_REPONSE } from '../utils/interventions';
 import { SyceronClient } from '../sources/assemblee-nationale/syceron-client';
 import type { PriseDeParoleSyceron, SeanceSyceron } from '../sources/assemblee-nationale/syceron-parser';
 import { ajouterIdentifiantsConserves } from './changement-chambre';
+import { differencier } from '../utils/synchro-differentielle';
 
 const prisma = new PrismaClient();
 
@@ -453,15 +454,49 @@ async function ecrireSeance(
     return { ecrites: 0, sansParlementaire, ecrite: false };
   }
 
-  // Réingestion : l'ancienne lecture de la séance cède la place à la nouvelle
-  // d'un seul tenant. La transaction garantit qu'on ne laisse jamais la séance
-  // à moitié écrite, et le `scrutin_id` posé par le linker se repose au
-  // rattachement suivant.
+  // Réingestion : la séance est alignée sur la nouvelle lecture d'un seul
+  // tenant. La transaction garantit qu'on ne laisse jamais la séance à moitié
+  // écrite.
+  //
+  // PAR DIFFÉRENCE SUR `source_uid`. Effacer puis réécrire la séance donnait un
+  // identifiant neuf à chacune de ses interventions, y compris celles que la
+  // nouvelle lecture laissait intactes : ~2 000 chaque nuit (mesuré le
+  // 18/10/2026). Or l'`id_syceron` qui fait le `source_uid` survit au passage
+  // du compte rendu provisoire au complet : 1 952 des 1 956 interventions
+  // effacées cette nuit-là sont revenues sous le même. Une intervention garde
+  // donc son identifiant ; seules les colonnes que la lecture écrit sont
+  // comparées, et celles que posent les étapes suivantes (dossier) restent.
+  //
+  // Les liens vers les scrutins de la séance sont effacés comme le faisait la
+  // cascade : le rattachement des débats (link-debats-scrutins), qui ne fait
+  // qu'ajouter, reprend ainsi la séance entière à son prochain passage.
   const count = await prisma.$transaction(
     async (tx) => {
-      await tx.intervention.deleteMany({ where: { seanceUid: seance.uid } });
-      const { count: ecrites } = await tx.intervention.createMany({ data: lignes });
-      return ecrites;
+      const existantes = await tx.intervention.findMany({
+        where: { seanceUid: seance.uid },
+        select: { id: true, sourceUid: true, ...selectionChampsSeance() },
+      });
+      const d = differencier(
+        existantes,
+        lignes,
+        { existant: (i) => i.sourceUid ?? `id:${i.id}`, voulu: (l) => l.sourceUid },
+        CHAMPS_SEANCE,
+      );
+      await tx.$executeRaw`
+        DELETE FROM intervention_scrutin
+        WHERE intervention_id IN (SELECT id FROM interventions WHERE seance_uid = ${seance.uid})
+      `;
+      if (d.aSupprimer.length > 0) {
+        await tx.intervention.deleteMany({ where: { id: { in: d.aSupprimer.map((i) => i.id) } } });
+      }
+      for (const { existant, voulu } of d.aModifier) {
+        const { sourceUid: _cle, ...valeurs } = voulu;
+        await tx.intervention.update({ where: { id: existant.id }, data: valeurs });
+      }
+      if (d.aCreer.length > 0) {
+        await tx.intervention.createMany({ data: d.aCreer });
+      }
+      return d.aCreer.length + d.aModifier.length;
     },
     // Prisma ferme une transaction interactive au bout de 5 secondes par
     // défaut, ce qui suffit à la plupart des séances mais pas aux plus
@@ -472,6 +507,17 @@ async function ecrireSeance(
     { timeout: DELAI_TRANSACTION, maxWait: DELAI_ATTENTE },
   );
   return { ecrites: count, sansParlementaire, ecrite: true };
+}
+
+/** Les colonnes qu'écrit la lecture d'une séance, donc celles qu'elle compare. */
+const CHAMPS_SEANCE = [
+  'parlementaireId', 'orateurNom', 'orateurPrenom', 'orateurQualite', 'chambre', 'seanceId', 'seanceUid',
+  'date', 'ordre', 'ordreAbsolu', 'codeGrammaire', 'articleVise', 'texteNumero', 'amendementsVises',
+  'estPresidence', 'type', 'contenu', 'sourceUrl',
+] as const;
+
+function selectionChampsSeance(): Record<(typeof CHAMPS_SEANCE)[number], true> {
+  return Object.fromEntries(CHAMPS_SEANCE.map((c) => [c, true])) as Record<(typeof CHAMPS_SEANCE)[number], true>;
 }
 
 /** Page publique du compte rendu, pour renvoyer le lecteur à la source. */
