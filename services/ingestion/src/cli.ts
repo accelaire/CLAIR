@@ -1775,7 +1775,7 @@ program
     '--forcer-chute',
     'Écrire même si le fichier contient beaucoup moins de candidats que la base. ' +
       'À n\'utiliser qu\'après avoir vérifié que la baisse est réelle : l\'ingestion ' +
-      'remplace l\'intégralité du scrutin.'
+      'aligne l\'intégralité du scrutin sur le fichier, et supprime ce qu\'il ne contient plus.'
   )
   .action(
     async (options: {

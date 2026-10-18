@@ -23,6 +23,7 @@ import type { PrismaClient, Prisma } from '@prisma/client';
 
 import { logger } from '../../utils/logger.js';
 import { downloadWithRetry } from '../../utils/download.js';
+import { differencier } from '../../utils/synchro-differentielle.js';
 import { clefDate } from './rattachement.js';
 import {
   FICHIERS_RNE,
@@ -186,10 +187,31 @@ export async function synchroniserMandatsLocaux(
     }
 
     if (!rapport.simulation) {
+      // Par différence, sur la clé unique (scrutin, nom, prénom, date de
+      // naissance) : une ligne garde son identifiant d'une lecture à l'autre.
       await prisma.$transaction(async (transaction) => {
-        await transaction.candidatMandatsLocaux.deleteMany({ where: { scrutin: options.scrutin } });
-        await transaction.candidatMandatsLocaux.createMany({ data: [...lignesEcrites.values()] });
-      });
+        const existants = await transaction.candidatMandatsLocaux.findMany({ where: { scrutin: options.scrutin } });
+        const clefLigne = (l: { nom: string; prenom: string; dateNaissance: Date | string }) =>
+          `${l.nom}|${l.prenom}|${new Date(l.dateNaissance).toISOString().slice(0, 10)}`;
+        const d = differencier(
+          existants,
+          [...lignesEcrites.values()],
+          { existant: clefLigne, voulu: clefLigne },
+          ['mandats', 'confiance', 'sourceDate'],
+        );
+        if (d.aSupprimer.length > 0) {
+          await transaction.candidatMandatsLocaux.deleteMany({ where: { id: { in: d.aSupprimer.map((l) => l.id) } } });
+        }
+        for (const { existant, voulu } of d.aModifier) {
+          await transaction.candidatMandatsLocaux.update({
+            where: { id: existant.id },
+            data: { mandats: voulu.mandats, confiance: voulu.confiance, sourceDate: voulu.sourceDate },
+          });
+        }
+        if (d.aCreer.length > 0) {
+          await transaction.candidatMandatsLocaux.createMany({ data: d.aCreer });
+        }
+      }, { timeout: 60_000, maxWait: 10_000 });
     }
 
     logger.info({ ...rapport }, 'mandats locaux des candidats');

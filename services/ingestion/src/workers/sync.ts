@@ -129,8 +129,8 @@ function slugifyCommission(nom: string, chambre: string): string {
  *
  * Une constante et non une option : tant qu'une seule élection est en cours,
  * la rendre configurable inviterait à se tromper de valeur une nuit sans que
- * rien ne le signale — l'ingestion remplace l'intégralité du périmètre qu'on
- * lui nomme.
+ * rien ne le signale — l'ingestion aligne l'intégralité du périmètre qu'on
+ * lui nomme sur le fichier, et supprime ce qu'il ne contient pas.
  */
 const SCRUTIN_CANDIDATURES = 'senatoriales-2026';
 
