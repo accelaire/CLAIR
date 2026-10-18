@@ -50,6 +50,7 @@ import {
 } from './mandats';
 import { ajouterIdentifiantsConserves, rattacherDeputeElu } from './changement-chambre';
 import { cloreOrganesANHorsMandat, cloturerDeputesSortants } from './mandats-an-sortants';
+import { ecrireVotesDuScrutin } from './ecriture-votes';
 import {
   checkSourceFreshness,
   updateSourceState,
@@ -1661,13 +1662,12 @@ export async function syncScrutins(
         scrutinsCreated++;
       }
 
-      // Synchroniser les votes individuels.
-      // Remplacement complet plutôt qu'upsert : c'est la seule façon simple de
-      // faire disparaître un vote retiré à la source (mise au point).
-      const voteRecords = votesRattaches.map((v) => ({ ...v, scrutinId }));
+      // Synchroniser les votes individuels, par différence : un vote retiré à
+      // la source (mise au point) disparaît, les autres gardent leur identifiant.
+      const voteRecords = votesRattaches;
 
       // La source annonce des votes mais aucun ne se rattache à un
-      // parlementaire connu : le remplacement viderait le scrutin, proprement
+      // parlementaire connu : la synchronisation viderait le scrutin, proprement
       // et sans erreur. Ce cas ne traduit jamais une réalité parlementaire,
       // seulement un décalage de notre côté (refs d'un format inattendu, ou
       // scrutins synchronisés avant les parlementaires après un renouvellement).
@@ -1682,17 +1682,11 @@ export async function syncScrutins(
         continue;
       }
 
-      // La suppression et la réinsertion DOIVENT être atomiques : hors
-      // transaction, le scrutin traverse un état sans aucun vote, que l'API
-      // sert telle quelle. C'est aussi l'invariant « scrutins sans votes »
-      // (tolérance zéro) que les checks qualité font respecter par ailleurs.
-      await prisma.$transaction([
-        prisma.vote.deleteMany({ where: { scrutinId } }),
-        ...(voteRecords.length > 0
-          ? [prisma.vote.createMany({ data: voteRecords })]
-          : []),
-        prisma.scrutin.update({ where: { id: scrutinId }, data: { sourceHash } }),
-      ]);
+      // L'écriture DOIT être atomique : hors transaction, le scrutin traverse un
+      // état à moitié écrit, que l'API sert tel quel. C'est aussi l'invariant
+      // « scrutins sans votes » (tolérance zéro) que les checks qualité font
+      // respecter par ailleurs. L'empreinte est posée dans la même transaction.
+      await ecrireVotesDuScrutin(prisma, scrutinId, voteRecords, sourceHash);
       votesCreated += voteRecords.length;
 
     } catch (error) {
@@ -1891,7 +1885,7 @@ export async function syncScrutinsSenat(
       }
 
       // Synchroniser les votes individuels (cf. syncScrutins pour le pourquoi
-      // du remplacement complet et de la transaction).
+      // de la différence et de la transaction).
       const voteRecords = [];
       for (const vote of votes) {
         const parlementaireId = parlementaireMap.get(vote.matricule);
@@ -1899,7 +1893,6 @@ export async function syncScrutinsSenat(
 
         voteRecords.push({
           parlementaireId,
-          scrutinId,
           position: vote.position,
           parDelegation: vote.parDelegation,
         });
@@ -1918,12 +1911,7 @@ export async function syncScrutinsSenat(
         continue;
       }
 
-      await prisma.$transaction([
-        prisma.vote.deleteMany({ where: { scrutinId } }),
-        ...(voteRecords.length > 0
-          ? [prisma.vote.createMany({ data: voteRecords })]
-          : []),
-      ]);
+      await ecrireVotesDuScrutin(prisma, scrutinId, voteRecords);
       votesCreated += voteRecords.length;
 
     } catch (error) {
