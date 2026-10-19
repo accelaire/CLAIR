@@ -1221,6 +1221,40 @@ model Amendement {
   // Ordre numérique extrait du numéro (pour tri naturel)
   numeroOrdre Int? @map("numero_ordre")
 
+  // Alinéa visé. `alinea` est le libellé publié : « Après l'alinéa 9 » à l'AN,
+  // la colonne « Alinéa » du CSV au Sénat (« 2 », « Rédaction complète »).
+  // `alineaNumero` est le numéro seul (AN ; Sénat depuis AMELI).
+  alinea       String? @map("alinea")
+  alineaNumero Int?    @map("alinea_numero")
+
+  // Amendements discutés ensemble (discussion commune) ou identiques. Un
+  // identifiant n'est unique qu'au sein d'une chambre : l'AN et AMELI ont
+  // chacun leur numérotation. La position (Premier, Milieu, Dernier) n'est
+  // publiée que par l'AN.
+  idDiscussionCommune         String? @map("id_discussion_commune")
+  positionDiscussionCommune   String? @map("position_discussion_commune")
+  idDiscussionIdentique       String? @map("id_discussion_identique")
+  positionDiscussionIdentique String? @map("position_discussion_identique")
+
+  // AN seulement. `chronotag` : date de la dernière modification publiée par
+  // l'AN (le Sénat n'en publie pas ; `updated_at` dit quand CLAIR a vu le
+  // changement). `triAmendement` : clé de l'ordre d'appel en séance, à trier
+  // en ordre lexicographique. `seanceDiscussionRef` : uid de la séance de
+  // discussion, soit `reunions.uid` quand la réunion est chez nous (sans clé
+  // étrangère : une partie des séances n'y est pas).
+  chronotag           DateTime? @map("chronotag")
+  triAmendement       String?   @map("tri_amendement")
+  seanceDiscussionRef String?   @map("seance_discussion_ref")
+
+  // Sous-amendement : l'amendement qu'il modifie. `amendementParentRef` est la
+  // référence lue à la source (uid AN ; `SENAT-AMD-<id AMELI>` au Sénat),
+  // `amendementParentId` sa résolution dans cette table, posée par une passe
+  // dédiée après l'écriture de tous les amendements.
+  amendementParentRef String?      @map("amendement_parent_ref")
+  amendementParentId  String?      @map("amendement_parent_id")
+  amendementParent    Amendement?  @relation("SousAmendements", fields: [amendementParentId], references: [id], onDelete: SetNull)
+  sousAmendements     Amendement[] @relation("SousAmendements")
+
   // Co-signataires (M:N)
   cosignataires Parlementaire[] @relation("AmendementCosignataires")
 
@@ -1248,6 +1282,9 @@ model Amendement {
   @@index([numero, chambre, texteRef])
   @@index([chambre, texteRef, numero])
   @@index([numeroOrdre])
+  @@index([amendementParentId])
+  @@index([chambre, idDiscussionCommune])
+  @@index([chambre, idDiscussionIdentique])
   @@map("amendements")
 }
 
