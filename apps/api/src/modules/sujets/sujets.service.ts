@@ -7,6 +7,7 @@ import { PrismaClient } from '@prisma/client';
 import { chronologieDesDossiers } from '../dossiers/chronologie';
 import { parseActesLegislatifs } from '../../utils/parse-actes-legislatifs';
 import { buildJournalOfficielUrl } from '../../utils/journal-officiel';
+import { GROUPE_DE_L_AMENDEMENT } from '../../utils/groupe-epoque';
 import { fetchGoogleNews } from '../../utils/google-news';
 import type {
   SujetsListQuery,
@@ -501,7 +502,7 @@ export class SujetsService {
       FROM amendements a
       JOIN dossiers_legislatifs dl ON a.dossier_id = dl.id
       JOIN parlementaires p ON a.parlementaire_id = p.id
-      JOIN groupes_politiques gp ON p.groupe_id = gp.id
+      ${GROUPE_DE_L_AMENDEMENT}
       WHERE dl.sujet_id = ${sujet.id}
       GROUP BY gp.slug, gp.chambre
     `;

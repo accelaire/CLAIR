@@ -10,6 +10,8 @@ import { chronologieDuDossier } from './chronologie';
 import { ApiError } from '../../utils/errors';
 import { buildMultiFieldSearchCondition } from '../../utils/search';
 import { buildJournalOfficielUrl } from '../../utils/journal-officiel';
+import { METADONNEES_AMENDEMENT_SELECT, avecNombreDeSousAmendements } from '../../utils/amendements';
+import { GROUPE_DE_L_AMENDEMENT } from '../../utils/groupe-epoque';
 
 const CACHE_TTL_1H = 3600;
 
@@ -352,9 +354,10 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
             },
           },
           amendements: {
-            orderBy: [{ dateDepot: { sort: 'desc', nulls: 'last' } }, { numeroOrdre: { sort: 'desc', nulls: 'last' } }],
+            orderBy: [{ dateDepot: { sort: 'desc', nulls: 'last' } }, { numeroOrdre: { sort: 'desc', nulls: 'last' } }, { id: 'asc' }],
             take: 20,
             select: {
+              ...METADONNEES_AMENDEMENT_SELECT,
               id: true,
               uid: true,
               numero: true,
@@ -421,7 +424,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
           SELECT gp.slug, COALESCE(gp.nom_court, gp.nom) as nom, gp.couleur, COUNT(*) as count
           FROM amendements a
           JOIN parlementaires p ON a.parlementaire_id = p.id
-          JOIN groupes_politiques gp ON p.groupe_id = gp.id
+          ${GROUPE_DE_L_AMENDEMENT}
           WHERE a.dossier_id = ${dossier.id}
           GROUP BY gp.slug, gp.nom_court, gp.nom, gp.couleur
           ORDER BY count DESC
@@ -511,6 +514,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
 
       const result = {
         ...dossier,
+        amendements: await avecNombreDeSousAmendements(fastify.prisma, dossier.amendements),
         sourceData: undefined,
         // Aplati pour éviter au client de traverser la table de liaison.
         // Le rang est explicite : un tri alphabétique sur `role` placerait
@@ -687,9 +691,13 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
     },
     handler: async (request, _reply) => {
       const { uid } = z.object({ uid: z.string() }).parse(request.params);
-      const { page, limit, voted, groupe, sort: sortValue } = amendementsQuerySchema.parse(request.query);
+      const {
+        page, limit, voted, groupe, sort: sortValue,
+        racines, parentId, discussionCommune, discussionIdentique, chambre, amendement,
+      } = amendementsQuerySchema.parse(request.query);
 
-      const cacheKey = `dossiers:${uid}:amendements:${page}:${limit}:${voted ?? 'all'}:${groupe ?? 'all'}:${sortValue ?? 'all'}`;
+      const cacheKey = `dossiers:${uid}:amendements:${page}:${limit}:${voted ?? 'all'}:${groupe ?? 'all'}:${sortValue ?? 'all'}`
+        + `:${racines ? 'racines' : 'tous'}:${parentId ?? '-'}:${discussionCommune ?? '-'}:${discussionIdentique ?? '-'}:${chambre ?? '-'}:${amendement ?? '-'}`;
       const cached = await fastify.redis.get(cacheKey);
       if (cached) return JSON.parse(cached);
 
@@ -707,21 +715,45 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
         where.scrutins = { some: {} };
       }
       if (groupe) {
-        where.parlementaire = { groupe: { slug: groupe } };
+        // Le groupe de l'auteur au dépôt, comme la facette du détail : pas son
+        // groupe d'aujourd'hui (cf. GROUPE_DE_L_AMENDEMENT).
+        const duGroupe = await fastify.prisma.$queryRaw<Array<{ id: string }>>`
+          SELECT a.id
+          FROM amendements a
+          JOIN parlementaires p ON a.parlementaire_id = p.id
+          ${GROUPE_DE_L_AMENDEMENT}
+          WHERE a.dossier_id = ${dossier.id} AND gp.slug = ${groupe}
+        `;
+        where.id = { in: duGroupe.map((r) => r.id) };
       }
       if (sortValue) {
         where.sort = sortValue;
       }
+      if (racines) where.amendementParentId = null;
+      if (parentId) where.amendementParentId = parentId;
+      if (discussionCommune) where.idDiscussionCommune = discussionCommune;
+      if (discussionIdentique) where.idDiscussionIdentique = discussionIdentique;
+      if (chambre) where.chambre = chambre;
+      if (amendement) where.uid = amendement;
+
+      // Une discussion ou les sous-amendements d'un amendement se lisent dans
+      // l'ordre d'appel en séance ; la liste du dossier, du plus récent au plus
+      // ancien. `id` départage dans les deux cas.
+      const ordreDAppel = !!(parentId || discussionCommune || discussionIdentique);
+      const orderBy: Prisma.AmendementOrderByWithRelationInput[] = ordreDAppel
+        ? [{ triAmendement: { sort: 'asc', nulls: 'last' } }, { numeroOrdre: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }]
+        : [{ dateDepot: { sort: 'desc', nulls: 'last' } }, { numeroOrdre: { sort: 'desc', nulls: 'last' } }, { id: 'asc' }];
 
       const skip = (page - 1) * limit;
 
       const [amendements, total] = await Promise.all([
         fastify.prisma.amendement.findMany({
           where,
-          orderBy: [{ dateDepot: { sort: 'desc', nulls: 'last' } }, { numeroOrdre: { sort: 'desc', nulls: 'last' } }],
+          orderBy,
           skip,
           take: limit,
           select: {
+            ...METADONNEES_AMENDEMENT_SELECT,
             id: true,
             uid: true,
             numero: true,
@@ -750,7 +782,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
       const totalPages = Math.ceil(total / limit);
 
       const result = {
-        data: amendements,
+        data: await avecNombreDeSousAmendements(fastify.prisma, amendements),
         meta: {
           total,
           page,
