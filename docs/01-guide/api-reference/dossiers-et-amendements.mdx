@@ -18,6 +18,43 @@ description: Suivi du parcours législatif des textes de loi, navette parlementa
 
 ---
 
+## ✏️ Amendements d'un dossier
+
+`GET /api/v1/dossiers/:uid/amendements` est paginé (`page`, `limit` jusqu'à 100), du dépôt le plus récent au plus ancien. Filtres :
+
+| Paramètre | Effet |
+| :--- | :--- |
+| `voted=true` | Seulement les amendements mis aux voix par un scrutin public |
+| `groupe=<slug>` | Seulement ceux dont l'auteur siégeait dans ce groupe **au dépôt** (pas son groupe actuel) |
+| `sort=<valeur>` | Seulement ceux qui ont ce sort, tel que publié |
+| `racines=true` | Sans les sous-amendements |
+| `parentId=<id>` | Les sous-amendements d'un amendement |
+| `discussionCommune=<id>&chambre=<chambre>` | Les amendements d'une même discussion commune |
+| `discussionIdentique=<id>&chambre=<chambre>` | Les amendements identiques entre eux |
+| `amendement=<uid>` | Un seul amendement, par son uid, s'il est rangé dans ce dossier |
+
+Avec `parentId`, `discussionCommune` ou `discussionIdentique`, la liste suit l'ordre d'appel en séance plutôt que la date de dépôt. Un identifiant de discussion n'est unique qu'au sein d'une chambre, d'où le paramètre `chambre`.
+
+La fiche du dossier (`GET /api/v1/dossiers/:uid`) donne les 20 premiers amendements, sous-amendements compris ; chacun porte son parent et son nombre de sous-amendements, de quoi les regrouper.
+
+### Champs de séance
+
+Chaque amendement renvoyé par l'API (liste d'un dossier, détail d'un scrutin, liste d'un parlementaire) porte, en plus de son texte :
+
+| Champ | Contenu |
+| :--- | :--- |
+| `alinea` | L'alinéa visé, tel que publié : « Après l'alinéa 9 » à l'Assemblée, « 2 » ou « Rédaction complète » au Sénat |
+| `alineaNumero` | Le numéro de l'alinéa seul |
+| `idDiscussionCommune`, `positionDiscussionCommune` | La discussion commune (amendements discutés ensemble) et la place qu'y occupe l'amendement : `Premier`, `Milieu` ou `Dernier`. La place n'est publiée que par l'Assemblée |
+| `idDiscussionIdentique`, `positionDiscussionIdentique` | Le groupe d'amendements identiques, mis aux voix ensemble |
+| `chronotag` | Date de la dernière modification publiée par l'Assemblée. Le Sénat n'en publie pas |
+| `triAmendement` | Clé de l'ordre d'appel en séance (Assemblée), à trier en ordre lexicographique |
+| `seanceDiscussionRef` | Uid de la séance de discussion (Assemblée), soit l'`uid` d'une réunion de l'agenda quand elle y figure |
+| `amendementParentId`, `amendementParent` | Pour un sous-amendement : l'amendement qu'il modifie (`id`, `uid`, `numero`, `auteurLibelle`) |
+| `sousAmendementsCount` | Le nombre de sous-amendements de l'amendement |
+
+---
+
 ## 🗂️ Endpoints Sujets Transverses
 
 Les sujets regroupent automatiquement les dossiers de l'Assemblée nationale et du Sénat traitant d'un même projet de loi :
