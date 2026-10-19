@@ -56,7 +56,24 @@ export interface TransformedAmendementSenat {
   texteRef: string | null;
   sourceUrl: string | null;
   articleVise?: string | null;
+  /** Colonne « Alinéa » du CSV, telle que publiée (« 2 », « Rédaction complète »). */
+  alinea?: string | null;
   cosignatairesMatricules: string[];
+}
+
+/**
+ * Ce qu'AMELI dit d'un amendement au-delà de son texte : son groupe de
+ * discussion commune (`discomid`), son groupe d'amendements identiques
+ * (`ideid`), le numéro de l'alinéa visé et, pour un sous-amendement,
+ * l'amendement qu'il modifie (`amdperid`). Le Sénat ne publie ni la position
+ * dans la discussion ni de date de modification.
+ */
+export interface MetadonneesAmeli {
+  idDiscussionCommune: string | null;
+  idDiscussionIdentique: string | null;
+  alineaNumero: number | null;
+  /** Le parent : son id AMELI et sa clé `session/texteNum:numero`, si son texte est connu. */
+  parent: { amdId: number; cle: string | null } | null;
 }
 
 // =============================================================================
@@ -233,6 +250,45 @@ const COLONNES_ATTENDUES: Record<string, Record<number, string>> = {
   sub: { 0: 'id', 2: 'merid', 3: 'typid', 5: 'lib' },
 };
 
+/**
+ * Colonnes de `amd` lues pour les métadonnées. Contrôlées à part : un
+ * décalage suspend ces champs sans priver les amendements de leur article.
+ */
+const COLONNES_METADONNEES_AMD: Record<number, string> = {
+  0: 'id', 2: 'amdperid', 10: 'txtid', 13: 'ideid', 14: 'discomid', 15: 'num', 29: 'alinea',
+};
+
+/** L'en-tête `COPY amd (…)` a-t-il les colonnes des métadonnées là où on les lit ? */
+export function enTeteMetadonneesConforme(line: string): boolean {
+  const match = line.match(/^COPY amd \(([^)]*)\)/);
+  if (!match) return true;
+  const colonnes = match[1]!.split(',').map(c => c.trim().replace(/"/g, ''));
+  return Object.entries(COLONNES_METADONNEES_AMD).every(([i, nom]) => colonnes[Number(i)] === nom);
+}
+
+/** Métadonnées d'une ligne COPY de `amd`, parent encore sous forme d'id AMELI. */
+export function lireMetadonneesAmd(fields: string[]): {
+  idDiscussionCommune: string | null;
+  idDiscussionIdentique: string | null;
+  alineaNumero: number | null;
+  parentId: number | null;
+} {
+  const valeur = (i: number): string | null => {
+    const v = (fields[i] ?? '\\N').trim();
+    return v === '\\N' || v === '' ? null : v;
+  };
+  const entier = (i: number): number | null => {
+    const v = valeur(i);
+    return v !== null && /^\d+$/.test(v) ? parseInt(v, 10) : null;
+  };
+  return {
+    idDiscussionCommune: valeur(14),
+    idDiscussionIdentique: valeur(13),
+    alineaNumero: entier(29),
+    parentId: entier(2),
+  };
+}
+
 /** L'en-tête `COPY table (…)` a-t-il les colonnes là où on les lit ? */
 export function enTeteCopyConforme(line: string): boolean {
   const match = line.match(/^COPY (\w+) \(([^)]*)\)/);
@@ -241,6 +297,46 @@ export function enTeteCopyConforme(line: string): boolean {
   if (!attendues) return true;
   const colonnes = match[2]!.split(',').map(c => c.trim().replace(/"/g, ''));
   return Object.entries(attendues).every(([i, nom]) => colonnes[Number(i)] === nom);
+}
+
+/**
+ * Indexe les métadonnées AMELI par id et par clé `session/texteNum:numero`.
+ *
+ * Même règle de collision que l'article visé : plusieurs lectures d'un texte
+ * peuvent porter le même numéro, et la clé prend celle du txtid le plus grand,
+ * qu'elle ait des métadonnées ou non. Le parent garde son id AMELI et prend la
+ * clé de SON texte, pour se retrouver aussi parmi les rows du CSV.
+ */
+export function indexerMetadonneesAmeli(
+  brutes: Map<number, { txtid: number; numero: string } & ReturnType<typeof lireMetadonneesAmd>>,
+  texteMapping: Map<number, { num: string; session: string }>,
+): { metadonneesByAmdId: Map<number, MetadonneesAmeli>; metadonneesByKey: Map<string, MetadonneesAmeli> } {
+  const cleDe = (txtid: number, numero: string): string | null => {
+    const texte = texteMapping.get(txtid);
+    return texte && numero ? `${texte.session}/${texte.num}:${normalizeSenatNumero(numero)}` : null;
+  };
+
+  const metadonneesByAmdId = new Map<number, MetadonneesAmeli>();
+  const parCle = new Map<string, { txtid: number; meta: MetadonneesAmeli }>();
+  for (const [id, b] of brutes) {
+    const parent = b.parentId !== null ? brutes.get(b.parentId) : undefined;
+    const meta: MetadonneesAmeli = {
+      idDiscussionCommune: b.idDiscussionCommune,
+      idDiscussionIdentique: b.idDiscussionIdentique,
+      alineaNumero: b.alineaNumero,
+      parent: b.parentId !== null
+        ? { amdId: b.parentId, cle: parent ? cleDe(parent.txtid, parent.numero) : null }
+        : null,
+    };
+    metadonneesByAmdId.set(id, meta);
+    const cle = cleDe(b.txtid, b.numero);
+    if (!cle) continue;
+    const existant = parCle.get(cle);
+    if (!existant || b.txtid > existant.txtid) parCle.set(cle, { txtid: b.txtid, meta });
+  }
+  const metadonneesByKey = new Map<string, MetadonneesAmeli>();
+  for (const [cle, { meta }] of parCle) metadonneesByKey.set(cle, meta);
+  return { metadonneesByAmdId, metadonneesByKey };
 }
 
 function parseDate(dateStr: string | null | undefined): Date | null {
@@ -609,6 +705,11 @@ export class SenatAmendementsClient {
    * - cosignatairesByKey: `${session}/${texteNum}:${numeroAmendement}` → matricules cosignataires
    * - articlesVisesByKey: même clé → article visé (cf. libelleArticleVise)
    * - articlesVisesByAmdId: id AMELI → article visé, pour les rows `SENAT-AMD-{id}`
+   * - metadonneesByAmdId / metadonneesByKey : discussions, alinéa et parent
+   *   (MetadonneesAmeli), par id AMELI et par la même clé que les cosignataires.
+   *   Ceux-là couvrent TOUT le dump, sans le filtre de date : ils remplissent
+   *   aussi l'historique, et une ligne d'id et quatre petits champs par
+   *   amendement tiennent en mémoire.
    *
    * Single pass over the dump. Table order in the dump is alphabetical
    * (amd → amdsen → sen_ameli → ses → sub → txt_ameli), so amdsen links can be
@@ -620,6 +721,8 @@ export class SenatAmendementsClient {
     cosignatairesByKey: Map<string, string[]>;
     articlesVisesByKey: Map<string, string>;
     articlesVisesByAmdId: Map<number, string>;
+    metadonneesByAmdId: Map<number, MetadonneesAmeli>;
+    metadonneesByKey: Map<string, MetadonneesAmeli>;
   }> {
     const tempDir = path.join(os.tmpdir(), 'clair-ameli-mapping');
     const zipPath = path.join(tempDir, 'ameli.zip');
@@ -635,6 +738,8 @@ export class SenatAmendementsClient {
     const texteMapping = new Map<number, { num: string; session: string }>();
     const subdivisions = new Map<number, SubdivisionAmeli>();
     let subdivisionsLisibles = true;
+    const metaBrutes = new Map<number, { txtid: number; numero: string } & ReturnType<typeof lireMetadonneesAmd>>();
+    let metadonneesLisibles = true;
 
     try {
       await fs.promises.rm(tempDir, { recursive: true, force: true });
@@ -658,6 +763,10 @@ export class SenatAmendementsClient {
             logger.error({ copy: line.slice(0, 200) }, 'AMELI : colonnes déplacées, article visé non renseigné');
             subdivisionsLisibles = false;
           }
+          if (!enTeteMetadonneesConforme(line)) {
+            logger.error({ copy: line.slice(0, 200) }, 'AMELI : colonnes déplacées, discussions, alinéas et parents non renseignés');
+            metadonneesLisibles = false;
+          }
           continue;
         }
         if (line === '\\.') {
@@ -676,6 +785,7 @@ export class SenatAmendementsClient {
             const id = parseInt(fields[0] ?? '0', 10);
             const txtid = parseInt(fields[10] ?? '0', 10);
             const num = (fields[15] ?? '').trim();
+            if (metadonneesLisibles) metaBrutes.set(id, { txtid, numero: num, ...lireMetadonneesAmd(fields) });
             const datdep = (fields[20] ?? '') !== '\\N' ? (fields[20] ?? null) : null;
             const dateDepot = parseDate(datdep);
             if (dateDepot && dateDepot >= minDate) {
@@ -804,6 +914,11 @@ export class SenatAmendementsClient {
         if (article) articlesVisesByKey.set(key, article);
       }
 
+      const { metadonneesByAmdId, metadonneesByKey } = indexerMetadonneesAmeli(
+        metadonneesLisibles ? metaBrutes : new Map(),
+        texteMapping,
+      );
+
       logger.info({
         sessions: sesMap.size,
         textes: texteMapping.size,
@@ -811,9 +926,13 @@ export class SenatAmendementsClient {
         clesCosignataires: cosignatairesByKey.size,
         subdivisions: subdivisions.size,
         articlesVises: articlesVisesByAmdId.size,
+        metadonnees: metadonneesByAmdId.size,
       }, 'AMELI mappings extracted');
 
-      return { texteMapping, cosignatairesByKey, articlesVisesByKey, articlesVisesByAmdId };
+      return {
+        texteMapping, cosignatairesByKey, articlesVisesByKey, articlesVisesByAmdId,
+        metadonneesByAmdId, metadonneesByKey,
+      };
 
     } finally {
       await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -921,6 +1040,7 @@ export class SenatAmendementsClient {
         const objet = colIdx.objet >= 0 ? cols[colIdx.objet] || null : null;
         const sortStr = (colIdx.sort >= 0 ? cols[colIdx.sort] : '')?.trim() || null;
         const subdivision = (colIdx.subdivision >= 0 ? cols[colIdx.subdivision] : '')?.trim() || null;
+        const alinea = (colIdx.alinea >= 0 ? cols[colIdx.alinea] : '')?.trim() || null;
 
         // Build UID from URL if available
         let uid: string;
@@ -969,6 +1089,7 @@ export class SenatAmendementsClient {
           texteRef: `SENAT-TXT-${texteId}`,
           sourceUrl,
           articleVise: subdivision,
+          alinea,
           cosignatairesMatricules: [],
         });
       }

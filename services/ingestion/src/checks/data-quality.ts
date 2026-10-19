@@ -768,6 +768,47 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     min: 90,
     query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (avec * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(article_vise) AS avec FROM amendements WHERE chambre = 'senat') sub`,
   },
+  an_amendements_chronotag_rate: {
+    type: 'threshold',
+    // L'archive AN date chaque amendement (`chronotag`) : une ligne AN sans
+    // date est une ligne que la synchro n'a pas relue depuis l'ajout des
+    // métadonnées de séance (tickets #95 et #96).
+    label: 'Taux d\'amendements AN datés par la source (chronotag, %)',
+    min: 99,
+    query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (avec * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(chronotag) AS avec FROM amendements WHERE chambre = 'assemblee') sub`,
+  },
+  sous_amendements_an_parent_resolu_rate: {
+    type: 'threshold',
+    // L'AN cite le parent par son uid ; il se retrouve par uid ou uid canonique
+    // (resoudreParentsAmendementsAN). Un parent absent est un amendement que
+    // l'archive cite sans le publier.
+    label: 'Sous-amendements AN dont le parent est retrouvé (%)',
+    min: 99,
+    query: `SELECT CASE WHEN total = 0 THEN 100 ELSE (resolus * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(amendement_parent_id) AS resolus FROM amendements WHERE chambre = 'assemblee' AND amendement_parent_ref IS NOT NULL) sub`,
+  },
+  sous_amendements_an_autre_texte: {
+    type: 'invariant',
+    // Un sous-amendement modifie un amendement du même texte. Comparé sur le
+    // texte canonique : l'AN republie le texte de la commission sous un `BTC`
+    // (cf. uidCanoniqueAmendement), et parent et enfant peuvent avoir été lus
+    // chacun sous l'une des deux formes.
+    label: 'Sous-amendements AN rattachés à un amendement d\'un autre texte',
+    min: 0,
+    max: 0,
+    query: `SELECT COUNT(*)::int AS value
+            FROM amendements e JOIN amendements p ON p.id = e.amendement_parent_id
+            WHERE e.chambre = 'assemblee'
+              AND regexp_replace(e.texte_ref, 'BTC', 'B') IS DISTINCT FROM regexp_replace(p.texte_ref, 'BTC', 'B')`,
+  },
+  positions_discussion_sans_discussion: {
+    type: 'invariant',
+    label: 'Amendements placés dans une discussion sans identifiant de discussion',
+    min: 0,
+    max: 0,
+    query: `SELECT COUNT(*)::int AS value FROM amendements
+            WHERE (position_discussion_commune IS NOT NULL AND id_discussion_commune IS NULL)
+               OR (position_discussion_identique IS NOT NULL AND id_discussion_identique IS NULL)`,
+  },
 
   // ---- Commissions & Agenda ----
   commissions_count: {
