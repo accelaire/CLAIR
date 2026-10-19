@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { booleenDeRequete } from '../../utils/requete';
 
 export const dossiersListQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -35,7 +36,7 @@ export const scrutinsQuerySchema = paginationQuerySchema.extend({
 });
 
 export const amendementsQuerySchema = paginationQuerySchema.extend({
-  voted: z.coerce.boolean().optional(),
+  voted: booleenDeRequete.optional(),
   groupe: z.string().optional(), // slug du groupe politique pour filtrer par auteur
   sort: z.string().optional(), // valeur exacte du sort (ex: "adopté", "rejeté", "retiré")
 });

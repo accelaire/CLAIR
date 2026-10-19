@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { z } from 'zod';
+import { booleenDeRequete } from '../../utils/requete';
 
 // =============================================================================
 // ENUMS
@@ -60,7 +61,7 @@ export const parlementairesListQuerySchema = z.object({
     .describe(
       "Sénat : filtrer les sénateurs ayant siégé pendant cette session ordinaire (1er oct. → 30 sept.). L'appartenance est dérivée du chevauchement avec l'intervalle du mandat ; le groupe/circonscription de la période sont renvoyés. Cf. /senateurs/sessions pour les sessions disponibles.",
     ),
-  actif: z.coerce.boolean().optional().default(true).describe('Filtrer les actifs'),
+  actif: booleenDeRequete.default(true).describe('Filtrer les actifs'),
   sort: z
     .enum(['nom', 'prenom', 'presence', 'loyaute', 'activite', 'amendements', 'interventions'])
     .default('nom')
@@ -93,7 +94,7 @@ export const parlementaireVotesQuerySchema = z.object({
   tag: z.string().optional().describe('Filtrer par tag de scrutin'),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
-  dissidentOnly: z.coerce.boolean().default(false).describe('Afficher uniquement les votes dissidents (différents du groupe)'),
+  dissidentOnly: booleenDeRequete.default(false).describe('Afficher uniquement les votes dissidents (différents du groupe)'),
   chambre: chambreEnum.optional().describe('Chambre des scrutins, pour un parlementaire passé par les deux'),
 });
 

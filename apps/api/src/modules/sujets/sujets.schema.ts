@@ -3,6 +3,7 @@
 // =============================================================================
 
 import { z } from 'zod';
+import { booleenDeRequete } from '../../utils/requete';
 
 // =============================================================================
 // QUERY SCHEMAS
@@ -13,7 +14,7 @@ export const sujetsListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   category: z.string().optional(),
   search: z.string().optional(),
-  featured: z.coerce.boolean().optional(),
+  featured: booleenDeRequete.optional(),
 });
 
 export type SujetsListQuery = z.infer<typeof sujetsListQuerySchema>;
