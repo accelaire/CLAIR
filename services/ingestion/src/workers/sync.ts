@@ -3671,6 +3671,9 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
 
   // Cache AMELI texte mapping across sync steps to avoid double download
   let cachedTexteMapping: Map<number, { num: string; session: string }> | undefined;
+  // Séances AN écrites ou réécrites par les lectures syceron de la nuit : le
+  // rattachement des débats aux scrutins réaligne leurs liens par différence.
+  const seancesANEcrites = new Set<string>();
 
   // Déterminer quelles sources vérifier (ordre important pour les relations)
   let sourcesToCheck: string[];
@@ -3893,6 +3896,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
               legislature: LEGISLATURE_AN_COURANTE,
               maxSeances: options.interventionsLimit,
             });
+            for (const uid of syceronResult.seancesEcrites) seancesANEcrites.add(uid);
             syncResult = { created: syceronResult.interventions, updated: 0 };
             break;
           }
@@ -4137,7 +4141,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       try {
         const { syncInterventionsSyceron } = await import('./interventions-syceron.js');
         const relecture = await syncInterventionsSyceron({ legislature: LEGISLATURE_AN_COURANTE });
-        logger.info(relecture, 'Seconde lecture des débats AN terminée');
+        for (const uid of relecture.seancesEcrites) seancesANEcrites.add(uid);
+        logger.info({ ...relecture, seancesEcrites: relecture.seancesEcrites.length }, 'Seconde lecture des débats AN terminée');
       } catch (error) {
         logger.error({ error: errorMessage(error) }, 'Seconde lecture des débats AN échouée (non bloquante)');
       }
@@ -4146,7 +4151,10 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     try {
       logger.info('Rattachement fin des débats AN aux scrutins...');
       const { linkDebatsScrutins } = await import('./link-debats-scrutins.js');
-      const finResult = await linkDebatsScrutins({ legislature: LEGISLATURE_AN_COURANTE });
+      const finResult = await linkDebatsScrutins({
+        legislature: LEGISLATURE_AN_COURANTE,
+        aRealigner: seancesANEcrites,
+      });
       logger.info(finResult, 'Rattachement fin des débats terminé');
     } catch (error) {
       logger.error(

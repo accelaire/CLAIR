@@ -1502,6 +1502,17 @@ program
       console.log(`Comptes rendus provisoires : ${result.provisoires}`);
       console.log(`Interventions écrites : ${result.interventions}`);
       console.log(`Orateurs non résolus  : ${result.sansParlementaire}`);
+      // Les liens vers les scrutins des séances écrites se réalignent ici :
+      // la relecture ne les efface plus pour que le batch les repose.
+      if (result.seancesEcrites.length > 0) {
+        const { linkDebatsScrutins } = await import('./workers/link-debats-scrutins.js');
+        const liens = await linkDebatsScrutins({
+          legislature: options.legislature,
+          repertoireLocal: options.repertoire,
+          aRealigner: result.seancesEcrites,
+        });
+        console.log(`Liens débat → scrutin : ${liens.liens} (séances réalignées : ${result.seancesEcrites.length})`);
+      }
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'sync-debats-an failed');

@@ -3,6 +3,7 @@ import {
   scrutinDeLaMiseAuxVoix,
   fenetresDeDebat,
   interventionsDuVote,
+  differenceDeLiens,
   type ScrutinAApparier,
   type InterventionARattacher,
 } from './link-debats-scrutins';
@@ -292,5 +293,23 @@ describe('fenetresDeDebat — les votes enchaînés partagent leur débat', () =
       [0, 100],
       [100, 200],
     ]);
+  });
+});
+
+describe('differenceDeLiens', () => {
+  const l = (interventionId: string, scrutinId: string, via: string) => ({ interventionId, scrutinId, via });
+
+  it('ne touche à rien quand la séance relue donne les mêmes liens', () => {
+    const d = differenceDeLiens([l('i1', 's1', 'fenetre'), l('i2', 's1', 'amendement')],
+      [l('i2', 's1', 'amendement'), l('i1', 's1', 'fenetre')]);
+    expect(d).toMatchObject({ aCreer: [], aModifier: [], aSupprimer: [], inchanges: 2 });
+  });
+
+  it('retire les liens disparus, ajoute les nouveaux et corrige le via', () => {
+    const d = differenceDeLiens([l('i1', 's1', 'fenetre'), l('i2', 's1', 'fenetre')],
+      [l('i1', 's1', 'amendement'), l('i3', 's1', 'fenetre')]);
+    expect(d.aSupprimer).toEqual([l('i2', 's1', 'fenetre')]);
+    expect(d.aCreer).toEqual([l('i3', 's1', 'fenetre')]);
+    expect(d.aModifier.map((m) => m.voulu)).toEqual([l('i1', 's1', 'amendement')]);
   });
 });
