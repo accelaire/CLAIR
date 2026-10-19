@@ -3,11 +3,13 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ChevronDown, Landmark, MessageSquare, Users } from 'lucide-react';
+import { ArrowRight, ChevronDown, Landmark, MessageSquare, Users } from 'lucide-react';
 import { ExpandableText } from '@/components/ui/expandable-text';
+import { DiscussionsEtSousAmendements, SousAmendementDe } from '@/components/AmendementSeance';
+import { amendementHref, libelleAlinea, type MetadonneesAmendement } from '@/lib/amendements';
 import type { InterventionScrutin } from './scrutin-debats-tab';
 
-export interface AmendementDetail {
+export interface AmendementDetail extends MetadonneesAmendement {
   id: string;
   uid: string;
   numero: string;
@@ -17,6 +19,7 @@ export interface AmendementDetail {
   auteurLibelle: string | null;
   sort: string | null;
   dateDepot: string | null;
+  dossier?: { uid: string } | null;
   /** La prise de parole où l'amendement a été défendu en séance, si on la connaît. */
   defense?: InterventionScrutin | null;
 }
@@ -69,6 +72,7 @@ export function ScrutinAmendementsTab({
       {amendements.map((a) => {
         const isOpen = openIds.has(a.id);
         const auteurs = a.auteurLibelle ? auteurEtCosignataires(a.auteurLibelle) : null;
+        const visee = [a.articleVise, libelleAlinea(a)].filter(Boolean).join(', ');
         return (
           <div key={a.id} className="pb-4">
             <button
@@ -81,6 +85,7 @@ export function ScrutinAmendementsTab({
                 <span className="font-semibold text-base">
                   Amendement n°{a.numero}
                 </span>
+                {visee && <span className="ml-2 text-sm text-muted-foreground">{visee}</span>}
                 {auteurs && (
                   <p className="text-sm text-muted-foreground mt-0.5">
                     par {auteurs.court}
@@ -96,6 +101,16 @@ export function ScrutinAmendementsTab({
               </span>
             </button>
 
+            <DiscussionsEtSousAmendements
+              amendement={a}
+              dossierUid={a.dossier?.uid}
+              enTete={
+                a.amendementParent && (
+                  <SousAmendementDe amendement={a} dossierUid={a.dossier?.uid} className="mr-1" />
+                )
+              }
+            />
+
             {/* La défense en séance, visible sans rien déplier : c'est la
                 parole de l'auteur sur ce qu'il demande, et la raison la plus
                 directe de venir sur la page d'un vote d'amendement. */}
@@ -110,6 +125,17 @@ export function ScrutinAmendementsTab({
 
             {isOpen && (
               <div className="pt-4 space-y-4">
+                {/* L'amendement parmi les autres de son texte : ceux qui
+                    l'entourent, et leurs votes. */}
+                {a.dossier && (
+                  <Link
+                    href={amendementHref(a.dossier.uid, a.uid)}
+                    className="group inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                  >
+                    Voir l&apos;amendement dans son dossier
+                    <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+                  </Link>
+                )}
                 {a.dispositif && (
                   <div>
                     <h4 className="text-sm font-semibold mb-2">Texte de l&apos;amendement</h4>
