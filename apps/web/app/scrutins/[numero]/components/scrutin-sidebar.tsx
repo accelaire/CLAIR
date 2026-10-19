@@ -103,7 +103,9 @@ export function ScrutinSidebar({
       {demandeurTexte && (
         <div>
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Vote demandé par</h3>
-          <p className="text-sm">{formatDemandeurs(demandeurTexte)}</p>
+          {/* Un div et non un p : plusieurs demandeurs donnent une liste de
+              blocs, qu'un paragraphe ne peut pas contenir (erreur d'hydratation). */}
+          <div className="text-sm">{formatDemandeurs(demandeurTexte)}</div>
         </div>
       )}
 
