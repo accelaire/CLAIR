@@ -14,16 +14,33 @@ import { downloadWithRetry } from '../../utils/download';
 // TYPES
 // =============================================================================
 
+// Valeur absente : l'archive écrit `{ "@xsi:nil": "true" }` plutôt que null.
+type Nil = { '@xsi:nil'?: string };
+
+// Discussion commune ou identique : les amendements appelés ensemble en séance.
+interface ANDiscussion {
+  idDiscussion?: string | Nil;
+  typePosition?: string | Nil;
+}
+
 // Structure d'un fichier JSON d'amendement AN
 export interface ANAmendementFile {
   amendement: {
     uid: string;
     legislature: string;
+    // Date de la dernière modification, en millisecondes depuis l'epoch.
+    chronotag?: string;
     identification: {
       numeroLong: string;
       numeroOrdreDepot: string;
     };
     texteLegislatifRef: string;
+    // Clé de l'ordre d'appel en séance, à comparer en ordre lexicographique.
+    triAmendement?: string | Nil;
+    amendementParentRef?: string | Nil;
+    seanceDiscussionRef?: string | Nil;
+    discussionCommune?: ANDiscussion | Nil;
+    discussionIdentique?: ANDiscussion | Nil;
     signataires?: {
       auteur?: {
         acteurRef?: string;
@@ -41,6 +58,13 @@ export interface ANAmendementFile {
         articleDesignationCourte?: string;
         articleDesignation?: string;
         type?: string;
+      };
+      amendementStandard?: {
+        alinea?: {
+          numero?: string | Nil;
+          avant_A_Apres?: string | Nil;
+          alineaDesignation?: string | Nil;
+        } | Nil;
       };
     };
     corps?: {
@@ -143,10 +167,25 @@ export class AssembleeNationaleClient {
     return files;
   }
 
-  async getAmendements(limit?: number): Promise<ANAmendementFile['amendement'][]> {
-    const zipUrl = `${this.baseUrl}/${this.legislature}/loi/amendements_div_legis/Amendements.json.zip`;
+  /**
+   * L'archive des amendements d'une législature. La 15e est rangée ailleurs et
+   * porte le suffixe en chiffres romains, comme ses dossiers et ses scrutins.
+   */
+  static urlArchiveAmendements(legislature: number, baseUrl = 'https://data.assemblee-nationale.fr/static/openData/repository'): string {
+    return legislature === 15
+      ? `${baseUrl}/15/loi/amendements_legis/Amendements_XV.json.zip`
+      : `${baseUrl}/${legislature}/loi/amendements_div_legis/Amendements.json.zip`;
+  }
+
+  /**
+   * `archiveLocale` : une archive déjà téléchargée, lue telle quelle. Pour les
+   * rattrapages de législatures passées, que le CDN de l'AN coupe et bride
+   * quand on les tire plusieurs fois (cf. utils/download.ts).
+   */
+  async getAmendements(limit?: number, archiveLocale?: string): Promise<ANAmendementFile['amendement'][]> {
+    const zipUrl = AssembleeNationaleClient.urlArchiveAmendements(this.legislature, this.baseUrl);
     const tempDir = path.join(os.tmpdir(), 'clair-amendements');
-    const zipPath = path.join(tempDir, 'Amendements.json.zip');
+    const zipPath = archiveLocale ?? path.join(tempDir, 'Amendements.json.zip');
     const extractDir = path.join(tempDir, 'extracted');
 
     try {
@@ -154,9 +193,12 @@ export class AssembleeNationaleClient {
       await fs.promises.rm(tempDir, { recursive: true, force: true });
       await fs.promises.mkdir(tempDir, { recursive: true });
 
-      // Download
-      logger.info({ url: zipUrl }, 'Downloading amendements archive...');
-      await this.downloadFile(zipUrl, zipPath);
+      if (archiveLocale) {
+        logger.info({ archive: archiveLocale }, 'Archive des amendements lue en local');
+      } else {
+        logger.info({ url: zipUrl }, 'Downloading amendements archive...');
+        await this.downloadFile(zipUrl, zipPath);
+      }
 
       // Check file size
       const stats = await fs.promises.stat(zipPath);
@@ -228,6 +270,16 @@ export class AssembleeNationaleClient {
     dateDepot: Date | null;
     dateSort: Date | null;
     cosignatairesRefs: string[];
+    alinea: string | null;
+    alineaNumero: number | null;
+    idDiscussionCommune: string | null;
+    positionDiscussionCommune: string | null;
+    idDiscussionIdentique: string | null;
+    positionDiscussionIdentique: string | null;
+    chronotag: Date | null;
+    triAmendement: string | null;
+    seanceDiscussionRef: string | null;
+    amendementParentRef: string | null;
   } {
     // Decode HTML entities helper
     const decodeHtmlEntities = (text: string): string => {
@@ -297,6 +349,21 @@ export class AssembleeNationaleClient {
       return isNaN(d.getTime()) ? null : d;
     };
 
+    const alinea = (() => {
+      const a = raw.pointeurFragmentTexte?.amendementStandard?.alinea;
+      return a && typeof a === 'object' && !('@xsi:nil' in a)
+        ? a as { numero?: string | Nil; alineaDesignation?: string | Nil }
+        : null;
+    })();
+    const numeroAlinea = safeString(alinea?.numero)?.trim() ?? null;
+    const discussion = (d: ANDiscussion | Nil | undefined) => {
+      const v = d && !('@xsi:nil' in d) ? d as ANDiscussion : null;
+      return { id: safeString(v?.idDiscussion), position: safeString(v?.typePosition) };
+    };
+    const commune = discussion(raw.discussionCommune);
+    const identique = discussion(raw.discussionIdentique);
+    const chronotag = /^\d+$/.test(raw.chronotag ?? '') ? new Date(Number(raw.chronotag)) : null;
+
     return {
       uid: raw.uid,
       legislature: parseInt(raw.legislature || String(this.legislature), 10),
@@ -319,6 +386,16 @@ export class AssembleeNationaleClient {
         if (!refs) return [];
         return Array.isArray(refs) ? refs.filter((r): r is string => typeof r === 'string') : typeof refs === 'string' ? [refs] : [];
       })(),
+      alinea: safeString(alinea?.alineaDesignation)?.trim() || null,
+      alineaNumero: numeroAlinea && /^\d+$/.test(numeroAlinea) ? parseInt(numeroAlinea, 10) : null,
+      idDiscussionCommune: commune.id,
+      positionDiscussionCommune: commune.position,
+      idDiscussionIdentique: identique.id,
+      positionDiscussionIdentique: identique.position,
+      chronotag: chronotag && !isNaN(chronotag.getTime()) ? chronotag : null,
+      triAmendement: safeString(raw.triAmendement),
+      seanceDiscussionRef: safeString(raw.seanceDiscussionRef),
+      amendementParentRef: safeString(raw.amendementParentRef),
     };
   }
 }

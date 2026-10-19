@@ -20,7 +20,7 @@
 // legacy —, ou personne sans mandat), on retombe sur le groupe courant. La
 // dégradation est donc gracieuse : jamais pire que le comportement précédent.
 
-import type { PrismaClient, Prisma } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 
 /** Ce qu'il faut connaître d'un scrutin pour situer un mandat dans le temps. */
 export interface ScrutinPeriode {
@@ -257,3 +257,31 @@ export function joinMandatEpoque(
        )
 `;
 }
+
+/**
+ * Groupe d'époque de l'auteur d'un amendement, à son dépôt. Attend les alias
+ * `a` (amendements) et `p` (parlementaires, l'auteur), expose `gp`.
+ *
+ * Même règle que les votes : le mandat de la même législature à l'Assemblée,
+ * celui qui couvre la date de dépôt au Sénat ; à défaut, le groupe courant.
+ * Avec les amendements des 15e et 16e législatures, le groupe courant aurait
+ * rangé un amendement de 2018 sous le groupe que son auteur occupe en 2026.
+ * Même jointure que l'ingestion (workers/ia-enrichment.ts).
+ */
+export const GROUPE_DE_L_AMENDEMENT = Prisma.sql`
+  LEFT JOIN LATERAL (
+    SELECT m.groupe_id
+    FROM mandats_parlementaires m
+    WHERE m.personne_id = a.parlementaire_id
+      AND m.chambre = a.chambre
+      AND m.groupe_id IS NOT NULL
+      AND (
+        (a.chambre = 'assemblee' AND a.legislature IS NOT NULL AND m.legislature = a.legislature)
+        OR (a.chambre = 'senat' AND a.date_depot IS NOT NULL
+            AND m.date_debut <= a.date_depot AND (m.date_fin IS NULL OR m.date_fin >= a.date_depot))
+      )
+    ORDER BY m.date_debut DESC, m.id
+    LIMIT 1
+  ) groupe_epoque ON TRUE
+  JOIN groupes_politiques gp ON gp.id = COALESCE(groupe_epoque.groupe_id, p.groupe_id)
+`;

@@ -164,6 +164,7 @@ Modélise le vote en séance publique et les positions individuelles nominatives
     parlementaires ||--o{ amendements : "auteur"
     amendements ||--o{ avis_commission : "oriente"
     amendements }o--o{ scrutins : "soumis a"
+    amendements |o--o{ amendements : "sous-amendement"
 
     scrutins {
         uuid id PK
@@ -191,6 +192,7 @@ Modélise le vote en séance publique et les positions individuelles nominatives
         string sort
         uuid dossier_id FK
         uuid parlementaire_id FK
+        uuid amendement_parent_id FK
     }
 
     avis_commission {

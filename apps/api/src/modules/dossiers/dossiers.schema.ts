@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { booleenDeRequete } from '../../utils/requete';
 
 export const dossiersListQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -35,9 +36,19 @@ export const scrutinsQuerySchema = paginationQuerySchema.extend({
 });
 
 export const amendementsQuerySchema = paginationQuerySchema.extend({
-  voted: z.coerce.boolean().optional(),
+  voted: booleenDeRequete.optional(),
   groupe: z.string().optional(), // slug du groupe politique pour filtrer par auteur
   sort: z.string().optional(), // valeur exacte du sort (ex: "adopté", "rejeté", "retiré")
+  // Sans les sous-amendements, qui se chargent sous leur parent (`parentId`).
+  racines: booleenDeRequete.optional(),
+  parentId: z.string().optional(), // les sous-amendements d'un amendement
+  // Les amendements d'une même discussion commune ou d'un même groupe
+  // d'identiques. L'identifiant n'est unique qu'au sein d'une chambre.
+  discussionCommune: z.string().optional(),
+  discussionIdentique: z.string().optional(),
+  chambre: z.enum(['assemblee', 'senat']).optional(),
+  // Un seul amendement, par son uid : la cible d'un lien vers le dossier.
+  amendement: z.string().optional(),
 });
 
 export const trendingQuerySchema = z.object({

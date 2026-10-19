@@ -48,6 +48,7 @@ import * as fs from 'fs';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { errorMessage } from '../utils/errors';
+import { differencier } from '../utils/synchro-differentielle';
 import { SyceronClient } from '../sources/assemblee-nationale/syceron-client';
 import type { SeanceSyceron, VoteAnnonceSyceron } from '../sources/assemblee-nationale/syceron-parser';
 
@@ -69,6 +70,12 @@ export interface OptionsLinkDebats {
    * puisqu'un compte rendu publié ne bouge plus.
    */
   refaireTout?: boolean;
+  /**
+   * Séances à recalculer même déjà rattachées : celles dont la relecture vient
+   * de changer le compte rendu (`ResultatSyceron.seancesEcrites`). Leurs liens
+   * sont alignés par différence, comme avec `refaireTout`.
+   */
+  aRealigner?: Iterable<string>;
   /**
    * Écrire les liens dans ce fichier plutôt qu'en base.
    *
@@ -277,6 +284,8 @@ export async function linkDebatsScrutins(
   const dejaFaites = options.refaireTout
     ? new Set<string>()
     : await seancesDejaRattachees(legislature);
+  const aRealigner = new Set(options.aRealigner ?? []);
+  for (const uid of aRealigner) dejaFaites.delete(uid);
   logger.info({ dejaRattachees: dejaFaites.size }, 'Séances déjà rattachées');
 
   const client = new SyceronClient(legislature);
@@ -298,7 +307,8 @@ export async function linkDebatsScrutins(
     repertoireLocal: options.repertoireLocal,
   })) {
     try {
-      await traiterSeance(seance, dryRun, resultat, fichier);
+      const realigner = !!options.refaireTout || aRealigner.has(seance.uid);
+      await traiterSeance(seance, dryRun, resultat, fichier, realigner);
       resultat.seances++;
     } catch (error) {
       logger.warn({ seance: seance.uid, error: errorMessage(error) }, 'Séance non rattachée');
@@ -319,6 +329,7 @@ async function traiterSeance(
   dryRun: boolean,
   resultat: ResultatLinkDebats,
   fichier: fs.WriteStream | null,
+  realigner = false,
 ): Promise<void> {
   if (seance.votes.length === 0) return;
   resultat.misesAuxVoix += seance.votes.length;
@@ -361,17 +372,58 @@ async function traiterSeance(
 
   resultat.liens += liens.length;
   resultat.liensParFenetre += liens.filter((l) => l.via === 'fenetre').length;
-  if (dryRun || liens.length === 0) return;
+  if (dryRun) return;
 
   if (fichier) {
     for (const l of liens) fichier.write(`${l.interventionId}\t${l.scrutinId}\t${l.via}\n`);
     return;
   }
 
+  // Séance déjà rattachée dont le compte rendu a changé : on n'écrit que la
+  // différence. Effacer les liens de la séance pour les reposer en recréait
+  // chaque nuit ~1 000 à l'identique, nouvelles dates comprises.
+  if (realigner) {
+    await realignerLiens(interventions.map((i) => i.id), liens);
+    return;
+  }
+  if (liens.length === 0) return;
+
   // Une intervention peut nourrir plusieurs scrutins — un amendement puis
   // l'article qui le porte — d'où la table de liaison plutôt qu'une colonne.
   // `skipDuplicates` rend la commande rejouable telle quelle.
   await prisma.interventionScrutin.createMany({ data: liens, skipDuplicates: true });
+}
+
+/** Aligne les liens des interventions d'une séance sur ceux qu'on vient de calculer. */
+async function realignerLiens(
+  interventionIds: string[],
+  voulus: { interventionId: string; scrutinId: string; via: string }[],
+): Promise<void> {
+  const existants = await prisma.interventionScrutin.findMany({
+    where: { interventionId: { in: interventionIds } },
+    select: { interventionId: true, scrutinId: true, via: true },
+  });
+  const d = differenceDeLiens(existants, voulus);
+  await prisma.$transaction([
+    ...(d.aSupprimer.length > 0
+      ? [prisma.interventionScrutin.deleteMany({
+          where: { OR: d.aSupprimer.map((l) => ({ interventionId: l.interventionId, scrutinId: l.scrutinId })) },
+        })]
+      : []),
+    ...d.aModifier.map(({ voulu }) => prisma.interventionScrutin.update({
+      where: { interventionId_scrutinId: { interventionId: voulu.interventionId, scrutinId: voulu.scrutinId } },
+      data: { via: voulu.via },
+    })),
+    ...(d.aCreer.length > 0 ? [prisma.interventionScrutin.createMany({ data: d.aCreer, skipDuplicates: true })] : []),
+  ]);
+}
+
+type Lien = { interventionId: string; scrutinId: string; via: string };
+
+/** Ce qu'il faut créer, modifier (`via`) et supprimer pour passer des liens existants aux voulus. */
+export function differenceDeLiens(existants: Lien[], voulus: Lien[]) {
+  const cle = (l: Lien) => `${l.interventionId}:${l.scrutinId}`;
+  return differencier(existants, voulus, { existant: cle, voulu: cle }, ['via']);
 }
 
 /**

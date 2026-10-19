@@ -33,7 +33,19 @@ Il n'existe pas de table séparée « députés » ou « sénateurs ».
 Lorsqu'un député est élu sénateur, sa fiche est conservée et bascule au Sénat. Son ancien identifiant `PA...` de l'Assemblée est historisé dans `parlementaires_identifiants`, garantissant que les votes ou amendements passés restent parfaitement rattachés.
 
 ### 3. Le groupe politique appartient au mandat
-Le groupe politique, la circonscription et la commission permanente sont attachés à `mandats_parlementaires`. La colonne `parlementaires.groupe_id` n'indique que le groupe **actuel**.
+Le groupe politique, la circonscription et la commission permanente sont attachés à `mandats_parlementaires`. La colonne `parlementaires.groupe_id` n'indique que le groupe **actuel**. Le groupe d'un vote ou d'un amendement est celui du mandat de l'époque.
+
+### 4. Sous-amendements et discussions
+Un sous-amendement modifie un amendement, pas le texte : `amendements.amendement_parent_id` pointe vers l'amendement qu'il modifie, et `amendement_parent_ref` garde la référence lue à la source. Les amendements discutés ensemble en séance partagent un `id_discussion_commune`, les amendements identiques un `id_discussion_identique`, chacun unique au sein d'une chambre seulement.
+
+| Champ | Assemblée | Sénat |
+| :--- | :--- | :--- |
+| Parent d'un sous-amendement | `amendementParentRef` de l'archive | `amdperid` du dump AMELI |
+| Discussions communes et identiques | `discussionCommune`, `discussionIdentique`, avec la place (`Premier`, `Milieu`, `Dernier`) | `discomid` et `ideid` d'AMELI, sans place |
+| Alinéa | libellé et numéro de l'archive | libellé : colonne « Alinéa » du CSV ; numéro : AMELI |
+| `chronotag`, `tri_amendement`, `seance_discussion_ref` | archive | non publiés |
+
+Au Sénat, chaque colonne n'a qu'un écrivain (le CSV pour le libellé de l'alinéa, la passe AMELI pour le reste) : deux sources qui se disputeraient une colonne la réécriraient chaque nuit, et `updated_at` bougerait sans changement.
 
 ---
 

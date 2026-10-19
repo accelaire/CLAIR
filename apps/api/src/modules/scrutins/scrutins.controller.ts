@@ -9,6 +9,7 @@ import { ApiError } from '../../utils/errors';
 import { buildTextSearchCondition } from '../../utils/search';
 import { INTERVENTIONS_DE_FOND, jourDeSeanceSenat, journeeDeSeance } from '../../utils/interventions';
 import { defensesDesAmendements, numeroCite } from './defense-amendement';
+import { METADONNEES_AMENDEMENT_SELECT, avecNombreDeSousAmendements } from '../../utils/amendements';
 import {
   joinMandatEpoque,
   chargerGroupesEpoque,
@@ -575,6 +576,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           },
           amendements: {
             select: {
+              ...METADONNEES_AMENDEMENT_SELECT,
               id: true,
               uid: true,
               numero: true,
@@ -584,6 +586,9 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
               auteurLibelle: true,
               sort: true,
               dateDepot: true,
+              // Les sous-amendements et les discussions se lisent dans le
+              // dossier de l'amendement, qui n'est pas toujours celui du scrutin.
+              dossier: { select: { uid: true } },
             },
           },
         },
@@ -767,7 +772,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           ...scrutin,
           // Chaque amendement porte la prise où il a été défendu, quand le
           // compte rendu permet de la reconnaître.
-          amendements: scrutin.amendements.map((a) => {
+          amendements: (await avecNombreDeSousAmendements(fastify.prisma, scrutin.amendements)).map((a) => {
             const defense = defenses.get(a.id);
             return { ...a, defense: defense ? truncateContenu(defense) : null };
           }),

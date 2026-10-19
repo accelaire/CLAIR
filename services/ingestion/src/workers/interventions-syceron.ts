@@ -71,6 +71,12 @@ export interface ResultatSyceron {
   /** Comptes rendus encore provisoires dans l'archive : ils seront relus. */
   provisoires: number;
   sansParlementaire: number;
+  /**
+   * Les séances écrites (nouvelles, ou relues avec un compte rendu changé) :
+   * le rattachement des débats aux scrutins les recalcule
+   * (`linkDebatsScrutins({ aRealigner })`).
+   */
+  seancesEcrites: string[];
 }
 
 /**
@@ -312,6 +318,7 @@ export async function syncInterventionsSyceron(options: OptionsSyceron): Promise
     remplacees: 0,
     provisoires: 0,
     sansParlementaire: 0,
+    seancesEcrites: [],
   };
 
   for await (const seance of client.seances({
@@ -334,6 +341,7 @@ export async function syncInterventionsSyceron(options: OptionsSyceron): Promise
         );
       }
       resultat.seances++;
+      if (ecrites.ecrite) resultat.seancesEcrites.push(seance.uid);
       resultat.interventions += ecrites.ecrites;
       resultat.sansParlementaire += ecrites.sansParlementaire;
     } catch (error) {
@@ -341,7 +349,7 @@ export async function syncInterventionsSyceron(options: OptionsSyceron): Promise
     }
   }
 
-  logger.info(resultat, 'Ingestion des débats AN terminée');
+  logger.info({ ...resultat, seancesEcrites: resultat.seancesEcrites.length }, 'Ingestion des débats AN terminée');
   return resultat;
 }
 
@@ -447,9 +455,7 @@ async function ecrireSeance(
     return { ecrites: count, sansParlementaire, ecrite: true };
   }
 
-  // Séance relue à l'identique : rien à faire, et surtout rien à défaire. Le
-  // remplacement supprime ses liens vers les scrutins (cascade), que le
-  // rattachement des débats repose ensuite.
+  // Séance relue à l'identique : rien à faire, et surtout rien à défaire.
   if (mode === 'siChangee' && empreinteDesLignes(lignes) === (await empreinteEnBase(seance.uid))) {
     return { ecrites: 0, sansParlementaire, ecrite: false };
   }
@@ -467,9 +473,11 @@ async function ecrireSeance(
   // donc son identifiant ; seules les colonnes que la lecture écrit sont
   // comparées, et celles que posent les étapes suivantes (dossier) restent.
   //
-  // Les liens vers les scrutins de la séance sont effacés comme le faisait la
-  // cascade : le rattachement des débats (link-debats-scrutins), qui ne fait
-  // qu'ajouter, reprend ainsi la séance entière à son prochain passage.
+  // Les liens vers les scrutins ne sont pas touchés ici : ceux d'une
+  // intervention supprimée partent avec elle (cascade), et le rattachement des
+  // débats réaligne ensuite la séance par différence (`seancesEcrites`). Les
+  // effacer pour que le rattachement les repose recréait chaque nuit ~1 000
+  // liens identiques (mesuré le 19/10/2026).
   const count = await prisma.$transaction(
     async (tx) => {
       const existantes = await tx.intervention.findMany({
@@ -482,10 +490,6 @@ async function ecrireSeance(
         { existant: (i) => i.sourceUid ?? `id:${i.id}`, voulu: (l) => l.sourceUid },
         CHAMPS_SEANCE,
       );
-      await tx.$executeRaw`
-        DELETE FROM intervention_scrutin
-        WHERE intervention_id IN (SELECT id FROM interventions WHERE seance_uid = ${seance.uid})
-      `;
       if (d.aSupprimer.length > 0) {
         await tx.intervention.deleteMany({ where: { id: { in: d.aSupprimer.map((i) => i.id) } } });
       }

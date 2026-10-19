@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { AmendementSortBadge } from '@/components/AmendementSortBadge';
+import { DiscussionsEtSousAmendements, SousAmendementDe } from '@/components/AmendementSeance';
+import { amendementHref, libelleAlinea, type MetadonneesAmendement } from '@/lib/amendements';
 import { FicheCompareCallout } from '@/components/FicheCompareCallout';
 import { bilanMandats, fonctionParlementaire } from '@/lib/meta-parlementaire';
 import { StatsParlementaire } from '@/components/parlementaire/stats-parlementaire';
@@ -164,7 +166,7 @@ function VotePositionBadge({ position }: { position: string }) {
   );
 }
 
-interface AmendementItem {
+interface AmendementItem extends MetadonneesAmendement {
   id: string;
   uid: string;
   numero: string;
@@ -222,12 +224,13 @@ function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }
             <span className="font-mono text-sm font-medium">
               {amendement.numero}
             </span>
-            {amendement.articleVise && (
+            {(amendement.articleVise || libelleAlinea(amendement)) && (
               <span className="text-sm text-muted-foreground">
-                • {amendement.articleVise}
+                • {[amendement.articleVise, libelleAlinea(amendement)].filter(Boolean).join(', ')}
               </span>
             )}
           </div>
+          <SousAmendementDe amendement={amendement} dossierUid={amendement.dossier?.uid} />
 
           {/* Exposé sommaire */}
           {amendement.exposeSommaire && (
@@ -244,6 +247,28 @@ function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }
               <p className="text-xs font-medium text-muted-foreground mb-1">Dispositif :</p>
               <p className="text-sm leading-relaxed">{amendement.dispositif}</p>
             </div>
+          )}
+
+          {/* Sous le texte qu'il déplie, comme sur les cartes des dossiers. */}
+          {hasLongContent && (
+            <button
+              type="button"
+              onClick={() => setIsExpanded(!isExpanded)}
+              aria-expanded={isExpanded}
+              className="mt-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              {isExpanded ? (
+                <>
+                  <ChevronUp className="h-3 w-3" />
+                  Réduire
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-3 w-3" />
+                  Voir plus
+                </>
+              )}
+            </button>
           )}
 
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mt-2">
@@ -263,49 +288,34 @@ function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }
               </>
             )}
           </div>
+          <DiscussionsEtSousAmendements amendement={amendement} dossierUid={amendement.dossier?.uid} />
         </div>
         <AmendementSortBadge sort={amendement.sort} />
       </div>
 
-      {/* Liens dossier / scrutin et bouton expand/collapse */}
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        {amendement.dossier && (
-          <Link
-            href={`/dossiers/${amendement.dossier.uid}`}
-            className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 hover:underline bg-blue-50 px-2.5 py-1 rounded-md transition-colors"
-          >
-            <FileText className="h-3 w-3" />
-            <span className="line-clamp-1">{formatDossierLabel(amendement.dossier)}</span>
-          </Link>
-        )}
-        {amendement.scrutins && amendement.scrutins.length > 0 && (
-          <Link
-            href={scrutinHref(amendement.scrutins[0])}
-            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-          >
-            <Vote className="h-3 w-3" />
-            Voir le scrutin n°{amendement.scrutins[0].numero} →
-          </Link>
-        )}
-        {hasLongContent && (
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            {isExpanded ? (
-              <>
-                <ChevronUp className="h-3 w-3" />
-                Réduire
-              </>
-            ) : (
-              <>
-                <ChevronDown className="h-3 w-3" />
-                Voir plus
-              </>
-            )}
-          </button>
-        )}
-      </div>
+      {/* Liens dossier / scrutin */}
+      {(amendement.dossier || amendement.scrutins.length > 0) && (
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          {amendement.dossier && (
+            <Link
+              href={amendementHref(amendement.dossier.uid, amendement.uid)}
+              className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 hover:underline bg-blue-50 px-2.5 py-1 rounded-md transition-colors"
+            >
+              <FileText className="h-3 w-3" />
+              <span className="line-clamp-1">{formatDossierLabel(amendement.dossier)}</span>
+            </Link>
+          )}
+          {amendement.scrutins && amendement.scrutins.length > 0 && (
+            <Link
+              href={scrutinHref(amendement.scrutins[0])}
+              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              <Vote className="h-3 w-3" />
+              Voir le scrutin n°{amendement.scrutins[0].numero} →
+            </Link>
+          )}
+        </div>
+      )}
     </div>
   );
 }

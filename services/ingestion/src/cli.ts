@@ -103,7 +103,8 @@ program
   .option('--texte-ids <ids>', 'IDs texte AMELI à cibler (séparés par des virgules, avec --se -a)')
   .option('--no-actions', 'Ne pas synchroniser les actions de lobbying (avec --lo)')
   .option('-l, --limit <number>', 'Limiter le nombre d\'éléments à synchroniser', parseInt)
-  .option('--legislature <number>', 'Législature AN à ingérer (15,16,17 — défaut: courante). Avec -p --an, -s --an ou -d --an', parseInt)
+  .option('--archive <chemin>', 'Archive des amendements AN déjà téléchargée, lue au lieu de la retélécharger (avec --am --an)')
+  .option('--legislature <number>', 'Législature AN à ingérer (15,16,17 — défaut: courante). Avec -p --an, -s --an, -d --an ou --am --an', parseInt)
   .option('--sessions <annees>', `Sessions Sénat à ingérer, séparées par des virgules (ex: 2006,2007). Défaut: ${SENAT_SESSION_MIN} → courante. Avec -s --se, permet un backfill par tranches (mémoire).`)
   .option('--depuis-annee <n>', 'Année la plus ancienne à lire (avec -i --se). Défaut: les deux dernières années — la base des comptes rendus du Sénat remonte à 2003.', (v: string) => parseInt(v, 10))
   .option('--rattrapage', 'Avec -i --se --depuis-annee : sauter les journées déjà lues et écrire les autres en lots, au lieu de vérifier chaque prise de parole une à une.')
@@ -240,7 +241,7 @@ program
             await syncAmendementsSenatCsv({ texteIds });
           }
         } else if (chambre === 'an') {
-          await syncAmendements({ limit: options.limit });
+          await syncAmendements({ limit: options.limit, legislature: options.legislature, archive: options.archive });
         } else {
           await syncAmendements({ limit: options.limit });
           await syncAmendementsSenatCsv({});
@@ -1502,6 +1503,17 @@ program
       console.log(`Comptes rendus provisoires : ${result.provisoires}`);
       console.log(`Interventions écrites : ${result.interventions}`);
       console.log(`Orateurs non résolus  : ${result.sansParlementaire}`);
+      // Les liens vers les scrutins des séances écrites se réalignent ici :
+      // la relecture ne les efface plus pour que le batch les repose.
+      if (result.seancesEcrites.length > 0) {
+        const { linkDebatsScrutins } = await import('./workers/link-debats-scrutins.js');
+        const liens = await linkDebatsScrutins({
+          legislature: options.legislature,
+          repertoireLocal: options.repertoire,
+          aRealigner: result.seancesEcrites,
+        });
+        console.log(`Liens débat → scrutin : ${liens.liens} (séances réalignées : ${result.seancesEcrites.length})`);
+      }
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'sync-debats-an failed');
@@ -1752,6 +1764,33 @@ program
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'fill-article-vise-senat failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: fill-metadonnees-senat
+// =============================================================================
+program
+  .command('fill-metadonnees-senat')
+  .description("Aligner discussions, numéro d'alinéa et sous-amendement parent des amendements du Sénat sur le dump AMELI (tout l'historique)")
+  .option('--dry-run', 'Compter sans rien écrire')
+  .action(async (options: { dryRun?: boolean }) => {
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const { SenatAmendementsClient } = await import('./sources/senat/amendements-client.js');
+      const { alignerMetadonneesSenat } = await import('./workers/metadonnees-amendements-senat.js');
+      const prisma = new PrismaClient();
+      const ameli = await new SenatAmendementsClient().getAmeliMappings();
+      const r = await alignerMetadonneesSenat(prisma, ameli, { dryRun: options.dryRun });
+      console.log(`\nAmendements Sénat                : ${r.lignes}`);
+      console.log(`Connus d'AMELI                   : ${r.connuesAmeli}`);
+      console.log(`Sous-amendements / parent trouvé : ${r.sousAmendements} / ${r.parentsResolus}`);
+      console.log(`Lignes écrites                   : ${r.ecrites}${options.dryRun ? ' (dry-run)' : ''}`);
+      await prisma.$disconnect();
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'fill-metadonnees-senat failed');
       process.exit(1);
     }
   });

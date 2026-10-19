@@ -20,6 +20,7 @@ import {
 } from '../../utils/groupe-epoque';
 import { fuzzySearchCandidates, FuzzyCandidate } from '../../utils/fuzzy-search';
 import { INTERVENTIONS_DE_FOND } from '../../utils/interventions';
+import { METADONNEES_AMENDEMENT_SELECT, avecNombreDeSousAmendements } from '../../utils/amendements';
 
 // =============================================================================
 // SESSIONS SÉNAT — l'axe temporel de la chambre haute
@@ -86,6 +87,7 @@ function buildPeriodMandatWhere(
 
 /** Champs d'un amendement renvoyés par la liste d'un parlementaire. */
 const AMENDEMENT_SELECT = {
+  ...METADONNEES_AMENDEMENT_SELECT,
   id: true,
   uid: true,
   numero: true,
@@ -1225,7 +1227,7 @@ export class ParlementairesService {
         select: AMENDEMENT_SELECT,
       });
       // `IN` ne garantit aucun ordre : on rétablit celui décidé par le tri SQL.
-      const parId = new Map(charges.map((a) => [a.id, a]));
+      const parId = new Map((await avecNombreDeSousAmendements(this.prisma, charges)).map((a) => [a.id, a]));
       amendements = ids.map((id) => parId.get(id)).filter(Boolean);
     }
 

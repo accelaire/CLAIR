@@ -3671,6 +3671,9 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
 
   // Cache AMELI texte mapping across sync steps to avoid double download
   let cachedTexteMapping: Map<number, { num: string; session: string }> | undefined;
+  // Séances AN écrites ou réécrites par les lectures syceron de la nuit : le
+  // rattachement des débats aux scrutins réaligne leurs liens par différence.
+  const seancesANEcrites = new Set<string>();
 
   // Déterminer quelles sources vérifier (ordre important pour les relations)
   let sourcesToCheck: string[];
@@ -3893,6 +3896,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
               legislature: LEGISLATURE_AN_COURANTE,
               maxSeances: options.interventionsLimit,
             });
+            for (const uid of syceronResult.seancesEcrites) seancesANEcrites.add(uid);
             syncResult = { created: syceronResult.interventions, updated: 0 };
             break;
           }
@@ -4137,7 +4141,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       try {
         const { syncInterventionsSyceron } = await import('./interventions-syceron.js');
         const relecture = await syncInterventionsSyceron({ legislature: LEGISLATURE_AN_COURANTE });
-        logger.info(relecture, 'Seconde lecture des débats AN terminée');
+        for (const uid of relecture.seancesEcrites) seancesANEcrites.add(uid);
+        logger.info({ ...relecture, seancesEcrites: relecture.seancesEcrites.length }, 'Seconde lecture des débats AN terminée');
       } catch (error) {
         logger.error({ error: errorMessage(error) }, 'Seconde lecture des débats AN échouée (non bloquante)');
       }
@@ -4146,7 +4151,10 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     try {
       logger.info('Rattachement fin des débats AN aux scrutins...');
       const { linkDebatsScrutins } = await import('./link-debats-scrutins.js');
-      const finResult = await linkDebatsScrutins({ legislature: LEGISLATURE_AN_COURANTE });
+      const finResult = await linkDebatsScrutins({
+        legislature: LEGISLATURE_AN_COURANTE,
+        aRealigner: seancesANEcrites,
+      });
       logger.info(finResult, 'Rattachement fin des débats terminé');
     } catch (error) {
       logger.error(
@@ -4807,7 +4815,7 @@ export async function checkSourcesStatus(): Promise<void> {
 // =============================================================================
 
 export async function syncAmendements(
-  options: { limit?: number; legislature?: number } = {}
+  options: { limit?: number; legislature?: number; archive?: string } = {}
 ): Promise<{ created: number; updated: number; linked: number }> {
   const { AssembleeNationaleClient } = await import('../sources/assemblee-nationale/client.js');
 
@@ -4818,7 +4826,7 @@ export async function syncAmendements(
   // Deux émissions d'un même amendement se disputeraient sa ligne chaque nuit
   // (cf. uneEmissionParAmendement).
   const rawAmendements = uneEmissionParAmendement(
-    await amendementClient.getAmendements(options.limit),
+    await amendementClient.getAmendements(options.limit, options.archive),
   );
 
   let created = 0;
@@ -4882,6 +4890,47 @@ export async function syncAmendements(
 
   let inchanges = 0;
 
+  // Les créations partent par lots : une à une, les 312 000 amendements de la
+  // 15e législature demandaient plus de 600 000 allers-retours vers la base.
+  // Amendements et cosignataires d'un lot s'écrivent dans la même transaction,
+  // pour que l'empreinte ne soit jamais posée sur une ligne dont les
+  // cosignataires n'auraient pas suivi.
+  const LOT_CREATION = 1000;
+  const aCreer: Array<{ data: Prisma.AmendementCreateManyInput & { uidCanonique: string }; cosignataireIds: string[] }> = [];
+  const creerLeLot = async () => {
+    if (aCreer.length === 0) return;
+    const lot = aCreer.splice(0);
+    try {
+      const crees = await prisma.$transaction(async (tx) => {
+        const lignes = await tx.amendement.createManyAndReturn({
+          data: lot.map((l) => l.data),
+          select: { id: true, uidCanonique: true },
+          skipDuplicates: true,
+        });
+        const idParCle = new Map(lignes.map((l) => [l.uidCanonique, l.id]));
+        const paires = lot.flatMap((l) => {
+          const id = idParCle.get(l.data.uidCanonique);
+          return id ? [...new Set(l.cosignataireIds)].map((B) => ({ A: id, B })) : [];
+        });
+        for (const chunk of tranches(paires, 5000)) {
+          await tx.$executeRaw`
+            INSERT INTO "_AmendementCosignataires" ("A", "B")
+            SELECT * FROM unnest(${chunk.map((p) => p.A)}::text[], ${chunk.map((p) => p.B)}::text[])
+            ON CONFLICT DO NOTHING
+          `;
+        }
+        return idParCle;
+      }, { timeout: 120_000 });
+      for (const l of lot) {
+        if (crees.has(l.data.uidCanonique)) connus.set(l.data.uidCanonique, l.data.sourceHash ?? null);
+      }
+      created += crees.size;
+    } catch (error) {
+      // Le lot sera repris à la prochaine synchro : rien n'en a été écrit.
+      logger.warn({ lot: lot.length, error: errorMessage(error) }, 'Amendements AN : échec d\'un lot de créations');
+    }
+  };
+
   for (const raw of rawAmendements) {
     try {
       const transformed = amendementClient.transformAmendement(raw);
@@ -4932,6 +4981,18 @@ export async function syncAmendements(
         dateDepot: transformed.dateDepot,
         dateSort: transformed.dateSort,
         numeroOrdre,
+        alinea: transformed.alinea,
+        alineaNumero: transformed.alineaNumero,
+        idDiscussionCommune: transformed.idDiscussionCommune,
+        positionDiscussionCommune: transformed.positionDiscussionCommune,
+        idDiscussionIdentique: transformed.idDiscussionIdentique,
+        positionDiscussionIdentique: transformed.positionDiscussionIdentique,
+        chronotag: transformed.chronotag,
+        triAmendement: transformed.triAmendement,
+        seanceDiscussionRef: transformed.seanceDiscussionRef,
+        // La référence seule : l'id du parent est résolu après coup, une fois
+        // tous les amendements écrits (cf. resoudreParentsAmendementsAN).
+        amendementParentRef: transformed.amendementParentRef,
       };
       const cosignataireIds = transformed.cosignatairesRefs
         .map(ref => parlementaireByRef.get(ref))
@@ -4971,29 +5032,31 @@ export async function syncAmendements(
         connus.set(uidCanonique, sourceHash);
         updated++;
       } else {
-        await prisma.amendement.create({
-          data: {
-            ...data,
-            sourceHash,
-            ...(cosignataireIds.length > 0
-              ? { cosignataires: { connect: cosignataireIds.map(id => ({ id })) } }
-              : {}),
-          },
-        });
-        connus.set(uidCanonique, sourceHash);
-        created++;
+        aCreer.push({ data: { ...data, sourceHash }, cosignataireIds });
       }
 
       if (parlementaireId) linked++;
     } catch (error) {
       logger.warn({ uid: raw.uid, error: errorMessage(error) }, 'Error syncing amendement');
     }
+    if (aCreer.length >= LOT_CREATION) await creerLeLot();
   }
+  await creerLeLot();
 
   logger.info(
     { created, updated, inchanges, linked, total: rawAmendements.length },
     'Amendements AN sync completed',
   );
+
+  // Les parents se résolvent quand tous les amendements sont écrits : dans
+  // l'archive, un sous-amendement peut précéder l'amendement qu'il modifie.
+  try {
+    const { resoudreParentsAmendementsAN } = await import('./parents-amendements.js');
+    await resoudreParentsAmendementsAN(prisma);
+  } catch (error) {
+    logger.warn({ error: errorMessage(error) }, 'Sous-amendements AN : échec de la résolution des parents');
+  }
+
   return { created, updated, linked };
 }
 
@@ -5167,7 +5230,9 @@ export async function syncAmendementsSenatCsv(
   // 1. Get AMELI mappings: texteId → { num, session } + cosignataires par amendement
   // (un seul téléchargement du dump pour les deux)
   logger.info('Fetching AMELI mappings...');
-  const { texteMapping, cosignatairesByKey, articlesVisesByKey, articlesVisesByAmdId } = await client.getAmeliMappings();
+  const {
+    texteMapping, cosignatairesByKey, articlesVisesByKey, articlesVisesByAmdId, metadonneesByAmdId, metadonneesByKey,
+  } = await client.getAmeliMappings();
   logger.info({
     textes: texteMapping.size,
     clesCosignataires: cosignatairesByKey.size,
@@ -5310,7 +5375,7 @@ export async function syncAmendementsSenatCsv(
         auteurLibelle: string | null; texteRef: string; articleVise: string | null;
         dispositif: string | null; exposeSommaire: string | null; sort: string | null;
         dateDepot: Date | null; dateSort: Date | null; sourceUrl: string | null;
-        numeroOrdre: number | null;
+        numeroOrdre: number | null; alinea: string | null;
       }> = [];
       const toUpdate: Array<{ id: string; data: Record<string, unknown> }> = [];
 
@@ -5342,6 +5407,9 @@ export async function syncAmendementsSenatCsv(
           dateSort: null as Date | null,
           sourceUrl: amd.sourceUrl,
           numeroOrdre,
+          // Le libellé du CSV ; le numéro, les discussions et le parent
+          // viennent d'AMELI, chacun n'ayant qu'un écrivain (cf. plus bas).
+          alinea: amd.alinea ?? null,
         };
 
         const uidCanonique = uidCanoniqueAmendement(amd.uid);
@@ -5458,6 +5526,15 @@ export async function syncAmendementsSenatCsv(
     await remplirArticlesVisesSenat(prisma, { texteMapping, articlesVisesByKey, articlesVisesByAmdId });
   } catch (error) {
     logger.warn({ error: errorMessage(error) }, 'Article visé Sénat depuis AMELI : échec du comblement');
+  }
+
+  // Discussions, numéro d'alinéa et parent de TOUS les amendements du Sénat,
+  // historique compris, depuis le même dump.
+  try {
+    const { alignerMetadonneesSenat } = await import('./metadonnees-amendements-senat.js');
+    await alignerMetadonneesSenat(prisma, { texteMapping, metadonneesByAmdId, metadonneesByKey });
+  } catch (error) {
+    logger.warn({ error: errorMessage(error) }, 'Métadonnées Sénat depuis AMELI : échec de l\'alignement');
   }
 
   logger.info({ created, updated, linked, cosignatairesLinked, totalAmendements }, 'Amendements Sénat CSV sync completed');

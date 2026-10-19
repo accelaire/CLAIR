@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -17,6 +17,7 @@ import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { LoiPromulgueeCard } from '@/components/LoiPromulgueeCard';
 import { ParcoursParlementaire, type EtapeDuParcours } from '@/components/parcours/ParcoursParlementaire';
 import { ExpandableAmendementCard } from '@/components/ExpandableAmendementCard';
+import { ancreAmendement, type MetadonneesAmendement } from '@/lib/amendements';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,7 +32,7 @@ interface AmendementScrutin {
   date: string;
 }
 
-interface DossierAmendement {
+interface DossierAmendement extends MetadonneesAmendement {
   id: string;
   uid: string;
   numero: string;
@@ -220,13 +221,16 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
   const activeFilterCount = (groupeFilter ? 1 : 0) + (sortFilter ? 1 : 0);
 
   const tabParam = searchParams.get('tab');
+  // L'amendement visé par un lien (`?amendement=<uid>`, cf. amendementHref).
+  const cible = searchParams.get('amendement');
   useEffect(() => {
-    if (!tabParam) return;
+    // Un amendement visé : la page défile jusqu'à lui (plus bas), pas à l'onglet.
+    if (!tabParam || cible) return;
     const el = document.getElementById('tabs-section');
     if (el) {
       requestAnimationFrame(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     }
-  }, [tabParam]);
+  }, [tabParam, cible]);
 
   const { data: dossier, isLoading, error } = useQuery<DossierDetail>({
     queryKey: ['dossier', uid],
@@ -336,6 +340,71 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
     fetchNextPage: fetchNextFiltered,
   });
 
+  // Amendements: filtered → use filtered query; unfiltered → detail batch + extras
+  const displayedAmendements = hasAmendementFilter
+    ? (filteredAmendementsData?.pages.flatMap((p) => p.data) ?? [])
+    : [
+        ...(dossier?.amendements || []),
+        ...(moreAmendements?.pages.flatMap((p) => p.data) ?? []),
+      ];
+  const filteredTotal = filteredAmendementsData?.pages[0]?.meta.total;
+  // Un sous-amendement dont le parent est chargé se lit sous lui, dépliable
+  // (« N sous-amendements ») ; les autres restent dans la liste, avec la
+  // mention de leur parent. Aucun amendement chargé ne disparaît.
+  const idsCharges = new Set(displayedAmendements.map((a) => a.id));
+  const amendementsAffiches = displayedAmendements.filter(
+    (a) => !a.amendementParentId || !idsCharges.has(a.amendementParentId),
+  );
+
+  // L'amendement visé. Déjà affiché dans la liste, la page défile jusqu'à lui ;
+  // sinon (pas encore chargé, ou rangé sous son parent), il est chargé seul et
+  // épinglé en tête de l'onglet. Le choix se fait une fois par cible : la liste
+  // qui s'allonge au défilement ne le fait pas changer de place sous les yeux.
+  const [cibleTraitee, setCibleTraitee] = useState<string | null>(null);
+  const [cibleEpinglee, setCibleEpinglee] = useState<string | null>(null);
+  const cibleAffichee = !!cible && amendementsAffiches.some((a) => a.uid === cible);
+  useEffect(() => {
+    if (!cible) {
+      setCibleTraitee(null);
+      setCibleEpinglee(null);
+      return;
+    }
+    if (cible === cibleTraitee || !dossier) return;
+    setCibleTraitee(cible);
+    setActiveTab('amendements');
+    setCibleEpinglee(cibleAffichee ? null : cible);
+  }, [cible, cibleTraitee, cibleAffichee, dossier]);
+
+  const { data: amendementEpingle, isFetched: epingleCherche } = useQuery<DossierAmendement | null>({
+    queryKey: ['dossier-amendement-cible', uid, cibleEpinglee],
+    queryFn: () =>
+      api.get(`/dossiers/${uid}/amendements`, { params: { amendement: cibleEpinglee, limit: 1 } })
+        .then((res) => res.data.data[0] ?? null),
+    enabled: !!cibleEpinglee,
+  });
+
+  // Défiler une fois par cible, quand sa carte est à l'écran. Introuvable dans
+  // ce dossier, la page défile jusqu'à l'onglet, où un message le dit.
+  const cibleDefilee = useRef<string | null>(null);
+  useEffect(() => {
+    if (!cible || cible !== cibleTraitee || cibleDefilee.current === cible) return;
+    if (cibleEpinglee === cible && !epingleCherche) return;
+    cibleDefilee.current = cible;
+    const el = cibleEpinglee === cible
+      ? document.getElementById('amendement-epingle')
+      : document.getElementById(ancreAmendement(cible)) ?? document.getElementById('tabs-section');
+    if (el) requestAnimationFrame(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }, [cible, cibleTraitee, cibleEpinglee, epingleCherche, activeTab]);
+
+  const oublierCible = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('amendement');
+    router.replace(`/dossiers/${uid}?${params.toString()}`, { scroll: false });
+  };
+  const amendementsListes = cibleEpinglee
+    ? amendementsAffiches.filter((a) => a.uid !== cibleEpinglee)
+    : amendementsAffiches;
+
   // Loading
   if (isLoading) {
     return (
@@ -373,14 +442,6 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
     : [...dossier.scrutins, ...scrutinsPagines];
   const totalVotes = dossier.stats.totalAdopte + dossier.stats.totalRejete;
 
-  // Amendements: filtered → use filtered query; unfiltered → detail batch + extras
-  const displayedAmendements = hasAmendementFilter
-    ? (filteredAmendementsData?.pages.flatMap((p) => p.data) ?? [])
-    : [
-        ...(dossier.amendements || []),
-        ...(moreAmendements?.pages.flatMap((p) => p.data) ?? []),
-      ];
-  const filteredTotal = filteredAmendementsData?.pages[0]?.meta.total;
 
   // Auto-switch to scrutins tab if no amendements
   const hasAmendements = dossier.amendementsCount > 0;
@@ -799,6 +860,31 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
             </div>
           </FilterBar>
 
+          {/* L'amendement visé par le lien, quand la liste ne le montrait pas */}
+          {cibleEpinglee && (
+            <div id="amendement-epingle" className="mb-6 scroll-mt-20">
+              <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <p className="text-sm font-medium">L&apos;amendement demandé</p>
+                <button
+                  type="button"
+                  onClick={oublierCible}
+                  className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+                >
+                  Revenir à la liste seule
+                </button>
+              </div>
+              {amendementEpingle ? (
+                <ExpandableAmendementCard amendement={amendementEpingle} showAuteur dossierUid={uid} surligne />
+              ) : epingleCherche ? (
+                <p className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
+                  Cet amendement n&apos;est pas rangé dans ce dossier.
+                </p>
+              ) : (
+                <div className="h-24 animate-pulse rounded-lg bg-muted" />
+              )}
+            </div>
+          )}
+
           {/* Loading state for filtered query */}
           {hasAmendementFilter && isLoadingFiltered && (
             <div className="flex justify-center py-8">
@@ -809,8 +895,14 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
           {displayedAmendements.length > 0 ? (
             <>
               <div className="space-y-4">
-                {displayedAmendements.map((a) => (
-                  <ExpandableAmendementCard key={a.id} amendement={a} showAuteur />
+                {amendementsListes.map((a) => (
+                  <ExpandableAmendementCard
+                    key={a.id}
+                    amendement={a}
+                    showAuteur
+                    dossierUid={uid}
+                    surligne={a.uid === cible}
+                  />
                 ))}
               </div>
 

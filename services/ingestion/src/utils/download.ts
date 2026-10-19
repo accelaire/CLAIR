@@ -28,7 +28,7 @@ import axios from 'axios';
 
 import { logger } from './logger.js';
 import { errorMessage, httpStatus } from './errors.js';
-import { fraicheur, urlAJourAN, urlSansCacheAN, versionContredite } from './cdn-an.js';
+import { fraicheur, urlAJourAN, urlSansCacheAN, versionContredite, type EnTetesFraicheur } from './cdn-an.js';
 
 export interface DownloadOptions {
   /**
@@ -67,6 +67,28 @@ export interface DownloadResult {
  */
 const TIMEOUT_ORIGINE_AN_MS = 1_800_000;
 
+/**
+ * Reprises d'un téléchargement coupé en cours de route, au-delà des
+ * tentatives : tant qu'une partie de l'archive est reçue, une coupure ne compte
+ * pas comme un échec.
+ *
+ * Le 19 octobre 2026, le CDN de l'AN coupait l'archive des amendements
+ * (344 Mo) tous les 5 à 30 Mo : repartir de zéro à chaque tentative ne pouvait
+ * pas aboutir. Il sert le début d'un fichier tout de suite, mais une plage au
+ * milieu ne reçoit rien tant que son cache n'a pas rattrapé l'origine : la
+ * requête reste muette puis se coupe. Il faut donc reprendre patiemment, même
+ * sans progrès, pendant une quinzaine de minutes au plus.
+ */
+const REPRISES_MAX = 60;
+const ATTENTE_REPRISE_MS = 10_000;
+
+/** Début et taille totale d'une réponse 206 (`Content-Range: bytes 100-199/1000`). */
+export function lireContentRange(valeur: unknown): { debut: number; total: number | null } | null {
+  const m = typeof valeur === 'string' ? /^bytes (\d+)-\d+\/(\d+|\*)$/.exec(valeur.trim()) : null;
+  if (!m) return null;
+  return { debut: Number(m[1]), total: m[2] === '*' ? null : Number(m[2]) };
+}
+
 const DEFAULTS = {
   timeoutMs: 600_000,
   maxAttempts: 3,
@@ -100,6 +122,14 @@ function causeChain(error: unknown): string[] {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function tailleDe(p: string): Promise<number> {
+  try {
+    return (await fs.promises.stat(p)).size;
+  } catch {
+    return 0;
+  }
+}
 
 /**
  * Une reprise n'a de sens que si l'échec peut se résoudre tout seul.
@@ -135,11 +165,18 @@ export async function downloadWithRetry(
   let cible = await urlAJourAN(url);
   let timeoutMs = cible.origine ? Math.max(opts.timeoutMs, TIMEOUT_ORIGINE_AN_MS) : opts.timeoutMs;
   let lastDiagnostic = '';
+  // Version de la partie déjà reçue : une reprise ne colle jamais deux
+  // versions de l'archive bout à bout (`If-Range` sur son ETag).
+  let versionPartielle: EnTetesFraicheur | null = null;
+  let reprises = 0;
 
   for (let attempt = 1; attempt <= opts.maxAttempts; attempt++) {
     const attemptStart = Date.now();
     let expected: number | null = null;
     let received = 0;
+
+    const dejaRecus = versionPartielle?.etag ? await tailleDe(destPath) : 0;
+    const reprise = dejaRecus > 0 && !(cible.version && versionContredite(versionPartielle!, cible.version));
 
     try {
       const response = await axios({
@@ -147,7 +184,11 @@ export async function downloadWithRetry(
         url: cible.url,
         responseType: 'stream',
         timeout: timeoutMs,
-        headers: { 'User-Agent': opts.userAgent, Accept: opts.accept },
+        headers: {
+          'User-Agent': opts.userAgent,
+          Accept: opts.accept,
+          ...(reprise ? { Range: `bytes=${dejaRecus}-`, 'If-Range': versionPartielle!.etag! } : {}),
+        },
       });
 
       // Le cache n'est pas UN serveur : le 10 octobre 2026, la vérification
@@ -170,12 +211,26 @@ export async function downloadWithRetry(
         continue;
       }
 
+      // 206 : la suite de la même version, à ajouter. 200 : l'archive entière
+      // (version changée, ou serveur sans reprise), à réécrire.
+      const plage = response.status === 206 ? lireContentRange(response.headers['content-range']) : null;
+      const ajout = reprise && plage !== null && plage.debut === dejaRecus;
+      if (response.status === 206 && !ajout) {
+        // Plage incohérente : on repart de zéro plutôt que de reprendre en boucle.
+        response.data.destroy();
+        versionPartielle = null;
+        await fs.promises.rm(destPath, { force: true });
+        throw new Error(`reprise refusée : Content-Range ${String(response.headers['content-range'])} pour ${dejaRecus} octets reçus`);
+      }
       const declared = Number(response.headers['content-length']);
-      expected = Number.isFinite(declared) && declared > 0 ? declared : null;
+      expected = ajout
+        ? plage!.total
+        : Number.isFinite(declared) && declared > 0 ? declared : null;
+      versionPartielle = fraicheur(response.headers);
 
-      const writer = createWriteStream(destPath);
+      const writer = createWriteStream(destPath, { flags: ajout ? 'a' : 'w' });
       await pipeline(response.data, writer);
-      received = writer.bytesWritten;
+      received = await tailleDe(destPath);
 
       // Une archive tronquée ne lève pas toujours d'erreur : on le détecte ici
       // plutôt que de laisser l'extraction échouer sur un ZIP corrompu.
@@ -184,7 +239,7 @@ export async function downloadWithRetry(
       }
 
       logger.info(
-        { url, origine: cible.origine, bytes: received, attempt, durationMs: Date.now() - attemptStart },
+        { url, origine: cible.origine, bytes: received, attempt, reprises, durationMs: Date.now() - attemptStart },
         'Archive downloaded',
       );
 
@@ -219,6 +274,17 @@ export async function downloadWithRetry(
       if (!isRetryable(error)) {
         logger.error(diagnostic, 'Download failed, not retryable');
         throw error;
+      }
+
+      // Une partie de l'archive est reçue, sur une version identifiée : on
+      // reprend là où on s'est arrêté, sans consommer de tentative.
+      const enReprise = received > 0 && !!versionPartielle?.etag;
+      if (enReprise && reprises < REPRISES_MAX) {
+        reprises++;
+        logger.warn({ ...diagnostic, reprise: reprises }, 'Download cut, resuming');
+        attempt--;
+        await sleep(Math.min(ATTENTE_REPRISE_MS, opts.backoffMs));
+        continue;
       }
 
       if (attempt === opts.maxAttempts) {

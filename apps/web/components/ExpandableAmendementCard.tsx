@@ -4,10 +4,13 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import { AmendementSortBadge } from '@/components/AmendementSortBadge';
+import { DiscussionsEtSousAmendements, SousAmendementDe } from '@/components/AmendementSeance';
+import { amendementHref, ancreAmendement, libelleAlinea, type MetadonneesAmendement } from '@/lib/amendements';
 import { scrutinHref } from '@/lib/scrutin-url';
 
-interface AmendementData {
+interface AmendementData extends MetadonneesAmendement {
   id: string;
+  uid?: string;
   numero: string;
   articleVise?: string | null;
   auteurLibelle?: string | null;
@@ -23,6 +26,10 @@ interface AmendementData {
 interface ExpandableAmendementCardProps {
   amendement: AmendementData;
   showAuteur?: boolean;
+  /** Le dossier de la page, pour déplier sous-amendements et discussions. */
+  dossierUid?: string;
+  /** L'amendement visé par le lien qui a ouvert la page : mis en évidence. */
+  surligne?: boolean;
 }
 
 const stripHtml = (html: string) =>
@@ -32,8 +39,10 @@ const stripHtml = (html: string) =>
     .replace(/\r\n/g, '\n')
     .trim();
 
-export function ExpandableAmendementCard({ amendement, showAuteur }: ExpandableAmendementCardProps) {
+export function ExpandableAmendementCard({ amendement, showAuteur, dossierUid, surligne }: ExpandableAmendementCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const alinea = libelleAlinea(amendement);
+  const dossierDeLAmendement = dossierUid ?? amendement.dossier?.uid;
 
   const exposeSommaireText = amendement.exposeSommaire ? stripHtml(amendement.exposeSommaire) : null;
   const dispositifText = amendement.dispositif ? stripHtml(amendement.dispositif) : null;
@@ -45,15 +54,23 @@ export function ExpandableAmendementCard({ amendement, showAuteur }: ExpandableA
   };
 
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <div
+      id={amendement.uid ? ancreAmendement(amendement.uid) : undefined}
+      className={`scroll-mt-20 rounded-lg border p-4 transition-colors ${
+        surligne ? 'border-primary/20 bg-primary/5' : 'bg-card'
+      }`}
+    >
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
             <span className="font-mono text-sm font-medium">n&deg;{amendement.numero}</span>
-            {amendement.articleVise && (
-              <span className="text-sm text-muted-foreground">&bull; {amendement.articleVise}</span>
+            {(amendement.articleVise || alinea) && (
+              <span className="text-sm text-muted-foreground">
+                &bull; {[amendement.articleVise, alinea].filter(Boolean).join(', ')}
+              </span>
             )}
           </div>
+          <SousAmendementDe amendement={amendement} dossierUid={dossierDeLAmendement} />
           {showAuteur && amendement.auteurLibelle && (
             <p className="text-sm text-muted-foreground line-clamp-1 mb-2">{amendement.auteurLibelle}</p>
           )}
@@ -70,6 +87,28 @@ export function ExpandableAmendementCard({ amendement, showAuteur }: ExpandableA
               <p className="text-sm leading-relaxed whitespace-pre-line">{dispositifText}</p>
             </div>
           )}
+          {/* Sous le texte qu'il déplie, et non en pied de carte, après les
+              listes de séance. */}
+          {hasLongContent && (
+            <button
+              type="button"
+              onClick={() => setExpanded(!expanded)}
+              aria-expanded={expanded}
+              className="mt-1 flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              {expanded ? (
+                <>
+                  <ChevronUp className="h-3 w-3" />
+                  Réduire
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-3 w-3" />
+                  Voir plus
+                </>
+              )}
+            </button>
+          )}
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mt-2">
             {amendement.dateDepot && (
               <span>Déposé le {formatDate(amendement.dateDepot)}</span>
@@ -81,6 +120,7 @@ export function ExpandableAmendementCard({ amendement, showAuteur }: ExpandableA
               </>
             )}
           </div>
+          <DiscussionsEtSousAmendements amendement={amendement} dossierUid={dossierDeLAmendement} />
         </div>
 
         <div className="flex flex-col items-end gap-2 flex-shrink-0">
@@ -115,7 +155,11 @@ export function ExpandableAmendementCard({ amendement, showAuteur }: ExpandableA
           )}
           {amendement.dossier && (
             <Link
-              href={`/dossiers/${amendement.dossier.uid}`}
+              href={
+                amendement.uid
+                  ? amendementHref(amendement.dossier.uid, amendement.uid)
+                  : `/dossiers/${amendement.dossier.uid}`
+              }
               className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 hover:underline w-fit max-w-[200px]"
             >
               <FileText className="h-3 w-3 flex-shrink-0" />
@@ -127,24 +171,6 @@ export function ExpandableAmendementCard({ amendement, showAuteur }: ExpandableA
         </div>
       </div>
 
-      {hasLongContent && (
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="mt-3 flex items-center gap-1 text-xs text-primary hover:underline"
-        >
-          {expanded ? (
-            <>
-              <ChevronUp className="h-3 w-3" />
-              Réduire
-            </>
-          ) : (
-            <>
-              <ChevronDown className="h-3 w-3" />
-              Voir plus
-            </>
-          )}
-        </button>
-      )}
     </div>
   );
 }

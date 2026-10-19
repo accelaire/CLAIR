@@ -116,3 +116,63 @@ export function getAmendementSortClasses(sort: string): string {
   // Gris : non soutenu, satisfait, doublon, sous-amendement, autre
   return 'bg-gray-100 text-gray-800 dark:bg-gray-800/30 dark:text-gray-400';
 }
+
+// =============================================================================
+// Métadonnées de séance (alinéa, discussions, sous-amendements)
+// =============================================================================
+
+/** Champs de séance qu'expose l'API sur un amendement. Tous facultatifs. */
+export interface MetadonneesAmendement {
+  chambre?: string | null;
+  alinea?: string | null;
+  alineaNumero?: number | null;
+  idDiscussionCommune?: string | null;
+  positionDiscussionCommune?: string | null;
+  idDiscussionIdentique?: string | null;
+  positionDiscussionIdentique?: string | null;
+  amendementParentId?: string | null;
+  amendementParent?: { id: string; uid: string; numero: string; auteurLibelle: string | null } | null;
+  sousAmendementsCount?: number;
+}
+
+/**
+ * L'alinéa visé, à afficher après l'article : « après l'alinéa 9 »,
+ * « alinéa 2 », « rédaction complète ».
+ *
+ * L'AN publie un libellé (« Après l'alinéa 9 ») ; le CSV du Sénat un numéro
+ * seul ou une mention (« Rédaction complète ») ; AMELI le numéro seul.
+ */
+export function libelleAlinea(a: Pick<MetadonneesAmendement, 'alinea' | 'alineaNumero'>): string | null {
+  const libelle = a.alinea?.trim();
+  if (libelle) {
+    if (/^\d+$/.test(libelle)) return `alinéa ${libelle}`;
+    return libelle.charAt(0).toLowerCase() + libelle.slice(1);
+  }
+  return a.alineaNumero != null ? `alinéa ${a.alineaNumero}` : null;
+}
+
+/** La place dans la discussion, telle que l'AN la publie, en clair. */
+export function libellePositionDiscussion(position: string | null | undefined): string | null {
+  switch (position) {
+    case 'Premier': return 'appelé en premier';
+    case 'Dernier': return 'appelé en dernier';
+    case 'Milieu': return 'appelé au milieu de la série';
+    default: return null;
+  }
+}
+
+// =============================================================================
+// Liens vers un amendement
+// =============================================================================
+
+/** L'id HTML de la carte d'un amendement, cible des liens qui y mènent. */
+export const ancreAmendement = (uid: string) => `amendement-${uid}`;
+
+/**
+ * La page du dossier, ouverte sur un amendement : l'onglet des amendements le
+ * montre et y défile, qu'il soit déjà chargé dans la liste ou non.
+ */
+export function amendementHref(dossierUid: string, amendementUid: string): string {
+  const params = new URLSearchParams({ tab: 'amendements', amendement: amendementUid });
+  return `/dossiers/${encodeURIComponent(dossierUid)}?${params.toString()}`;
+}
