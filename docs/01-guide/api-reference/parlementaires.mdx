@@ -2,75 +2,48 @@
 title: "API Parlementaires, Députés & Sénateurs"
 sidebar_label: "Parlementaires"
 sidebar_icon: "users"
-description: Documentation des routes /api/v1/parlementaires, /api/v1/deputes et /api/v1/senateurs (fiches, statistiques d'activité, historique de votes et interventions).
+description: Routes /api/v1/parlementaires, /api/v1/deputes et /api/v1/senateurs (listes, filtres, fiches, statistiques, votes, amendements et prises de parole).
 ---
 
-## 👥 Endpoints Principaux
+Les trois préfixes servent les mêmes routes sur la même table : `/parlementaires` couvre les deux chambres, `/deputes` et `/senateurs` sont restreints à l'une d'elles. Une personne passée par les deux chambres n'a qu'une fiche (voir [Modèle Prisma](/donnees/modele-prisma)).
+
+---
+
+## 👥 Routes principales
 
 | Méthode | Route | Description |
 | :--- | :--- | :--- |
-| `GET` | `/api/v1/parlementaires` | Liste paginée de tous les parlementaires (Assemblée + Sénat) |
-| `GET` | `/api/v1/deputes` | Liste filtrée sur les députés de l'Assemblée nationale |
-| `GET` | `/api/v1/senateurs` | Liste filtrée sur les sénateurs |
-| `GET` | `/api/v1/parlementaires/:slug` | Fiche détaillée d'un élu (biographie, mandats, stats, résumé IA) |
-| `GET` | `/api/v1/parlementaires/:slug/votes` | Historique de vote d'un parlementaire avec filtres |
-| `GET` | `/api/v1/parlementaires/:slug/amendements` | Amendements déposés et cosignés par l'élu |
+| `GET` | `/api/v1/parlementaires` | Liste paginée des parlementaires (Assemblée et Sénat) |
+| `GET` | `/api/v1/deputes` | Même liste, restreinte aux députés |
+| `GET` | `/api/v1/senateurs` | Même liste, restreinte aux sénateurs |
+| `GET` | `/api/v1/parlementaires/:slug` | Fiche d'un parlementaire : identité, mandats, statistiques, fiche IA |
+| `GET` | `/api/v1/parlementaires/:slug/votes` | Votes du parlementaire, filtrables |
+| `GET` | `/api/v1/parlementaires/:slug/amendements` | Amendements déposés et cosignés |
 | `GET` | `/api/v1/parlementaires/:slug/interventions` | Prises de parole en séance et en commission |
-| `GET` | `/api/v1/parlementaires/compare` | Comparateur d'activité entre deux parlementaires |
+| `GET` | `/api/v1/parlementaires/compare?slugs=a,b` | Comparaison de 2 à 4 parlementaires par leurs statistiques |
+
+Toutes les routes, avec leurs schémas de réponse : [explorateur de l'API](/api).
 
 ---
 
-## 🏛️ Filtres Supportés
+## 🏛️ Filtres de la liste
 
-- `chambre` : `assemblee` ou `senat`
-- `groupe` : Slug du groupe politique (ex: `ensemble-pour-la-republique` ou `rassemblement-national`)
-- `departement` : Numéro de département (ex: `78`, `75`, `2A`, `974`)
-- `actif` : `true` (en exercice, défaut) ou `false` (anciens élus)
-- `search` : Recherche textuelle sur le nom / prénom
-- `sort` : Tri par `nom`, `prenom`, `presence`, `loyaute`, `activite`, `amendements`, `interventions`
-- `order` : Ordre `asc` ou `desc` (défaut : `asc`)
-- `periode` : `mandat` (défaut) ou `carriere`
+| Paramètre | Effet |
+| :--- | :--- |
+| `page`, `limit` | Pagination (`limit` jusqu'à 200, 20 par défaut) |
+| `chambre` | `assemblee` ou `senat` |
+| `groupe` | Slug du groupe politique |
+| `departement` | Numéro de département (`78`, `2A`, `974`…) |
+| `search` | Recherche sur le nom et le prénom |
+| `actif` | `true` (en exercice, par défaut) ou `false` |
+| `legislature` | Députés ayant siégé sous cette législature (15, 16 ou 17) ; renvoie le groupe et la circonscription de cette période |
+| `session` | Sénateurs ayant siégé pendant cette session (`2024-2025`) ; renvoie le groupe et la circonscription de la période |
+| `sort` | `nom` (par défaut), `prenom`, `presence`, `loyaute`, `activite`, `amendements`, `interventions` |
+| `order` | `asc` (par défaut) ou `desc` |
+| `periode` | Statistiques servant au tri : `mandat` (mandat en cours, par défaut) ou `carriere` (tous mandats cumulés, ce qui avantage mécaniquement les réélus) |
 
 ---
 
-## 📋 Exemple de Réponse JSON (`GET /api/v1/parlementaires/yael-braun-pivet`)
+## 🗳️ Votes d'un parlementaire
 
-```json
-{
-  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "slug": "yael-braun-pivet",
-  "nom": "Braun-Pivet",
-  "prenom": "Yaël",
-  "sexe": "F",
-  "chambre": "assemblee",
-  "actif": true,
-  "groupe": {
-    "id": "e5f6a7b8-c9d0-1234-ef56-7890abcdef12",
-    "slug": "ensemble-pour-la-republique",
-    "chambre": "assemblee",
-    "nom": "EPR",
-    "nomComplet": "Ensemble pour la République",
-    "couleur": "#FFB300",
-    "position": "centre"
-  },
-  "circonscription": {
-    "id": "f0e1d2c3-b4a5-6789-0123-456789abcdef",
-    "departement": "78",
-    "numero": 5,
-    "nom": "Yvelines",
-    "type": "circonscription"
-  },
-  "stats": {
-    "presence": 92,
-    "presenceSolennel": 95,
-    "loyaute": 98,
-    "participation": 342,
-    "interventions": 1420,
-    "amendements": {
-      "proposes": 12,
-      "adoptes": 4
-    },
-    "questions": 8
-  }
-}
-```
+`GET /api/v1/parlementaires/:slug/votes` accepte `page`, `limit` (jusqu'à 100), `position` (`pour`, `contre`, `abstention`, `absent`), `tag`, `dateFrom`, `dateTo`, `dissidentOnly` (seulement les votes différents de la position majoritaire du groupe) et, pour une personne passée par les deux chambres, `chambre`. Le groupe d'un vote est celui du mandat à la date du scrutin, pas le groupe actuel.

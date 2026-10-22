@@ -2,61 +2,93 @@
 title: "Plateforme, Guide & API"
 sidebar_label: "Vue d'ensemble"
 sidebar_icon: "sparkles"
-description: Présentation de la mission de CLAIR, principes fondateurs, stack technique, guide développeur et référence API.
+description: Présentation de CLAIR, organisation du monorepo, pages du site, stack technique, guide développeur et référence de l'API.
 ---
 
-**CLAIR** (*Citoyen Libre, Analyse, Information, République*) a été conçu pour rapprocher les citoyens du travail parlementaire français à travers des visualisations intuitives, des synthèses objectives et une API ouverte.
+**CLAIR** (*Citoyen Libre, Analyse, Information, République*) rapproche les citoyens du travail parlementaire français : parlementaires, scrutins, dossiers législatifs, débats, commissions, lobbying, avec des visualisations, des synthèses et une API ouverte.
 
 ---
 
-## 📑 Sommaire de la Section
+## 📑 Sommaire de la section
 
 <FeatureGrid cols={2}>
   <FeatureCard
     icon="⚖️"
-    title="Vision et Valeurs"
-    description="Principes de neutralité stricte, indépendance, licence AGPL-3.0 et politique sans comptes utilisateurs."
-    href="/01-guide/vision-et-valeurs"
+    title="Vision et valeurs"
+    description="Neutralité, licence AGPL-3.0, aucun compte utilisateur, traçabilité des données."
+    href="/guide/vision-et-valeurs"
   />
   <FeatureCard
     icon="💻"
-    title="Stack Technique"
-    description="Détail des technologies utilisées : Next.js 14, Fastify 4, Prisma 5, PostgreSQL 17, Redis 8 et Mistral AI."
-    href="/01-guide/stack-technique"
+    title="Stack technique"
+    description="Next.js 14, Fastify 4, Prisma 5, PostgreSQL 17, Redis 8 et Mistral."
+    href="/guide/stack-technique"
   />
   <FeatureCard
     icon="🛠️"
-    title="Guide Développeur"
-    description="Installation locale pas à pas, configuration Docker, tests et déploiement en production."
-    href="/01-guide/guide-developpeur"
+    title="Guide développeur"
+    description="Installation locale, contribution et déploiement en production."
+    href="/guide/guide-developpeur"
   />
   <FeatureCard
     icon="⚡"
     title="Référence API"
-    description="Documentation des endpoints REST, quotas de requêtes, simulateur d'appels et exemples de code."
-    href="/01-guide/api-reference"
+    description="Routes, limites de débit, cache et exemples de code."
+    href="/guide/api-reference"
   />
 </FeatureGrid>
 
 ---
 
-## 🏢 Organisation du Monorepo
+## 🏢 Organisation du monorepo
 
-Le projet est structuré sous forme de monorepo géré avec `pnpm workspaces` et `Turborepo` :
+Monorepo pnpm géré par [Turborepo](https://turbo.build/repo). Quatre workspaces portent le code ; les deux paquets de `packages/` sont aujourd'hui des coquilles vides.
 
 ```text
 CLAIR/
 ├── apps/
-│   ├── web/              # Application Frontend Next.js 14 (App Router) — clair.vote
-│   └── api/              # API REST Fastify 4 + Prisma — api.clair.vote
-│       └── prisma/       # schema.prisma, migrations et seed
+│   ├── web/              # Frontend Next.js 14 (App Router), clair.vote, hébergé sur Vercel
+│   └── api/              # API Fastify + Prisma, lecture seule, api.clair.vote, hébergée sur Railway
+│       └── prisma/       # schema.prisma (source de vérité du modèle), migrations, triggers, seed
 ├── services/
-│   └── ingestion/        # Worker & CLI d'ingestion : sources publiques → PostgreSQL
-├── docs/                 # Documentation Zudoku — docs.clair.vote
+│   └── ingestion/        # CLI d'ingestion : sources publiques → PostgreSQL,
+│                         # rattachements, statistiques, enrichissement IA
+├── docs/                 # Cette documentation (Zudoku), docs.clair.vote
 ├── packages/
-│   ├── config/           # Configurations partagées
-│   └── shared/           # Types et utilitaires partagés
-├── scripts/              # Scripts ponctuels (audits, géographie, logos)
-├── Dockerfile            # Image de production de l'API
-└── docker-compose.yml    # Environnement PostgreSQL + Redis de développement
+│   ├── config/           # Vide (module.exports = {})
+│   └── shared/           # Vide (export {})
+├── scripts/              # Scripts ponctuels (audits, logos de groupes, géographie)
+├── Dockerfile            # Image de l'API
+├── docker-compose.yml    # PostgreSQL + Redis pour le développement local
+└── .github/workflows/    # CI (lint, tests, build)
 ```
+
+La plateforme n'a **ni comptes utilisateurs, ni authentification** : l'API est publique et en lecture seule. La seule écriture publique est l'envoi d'un retour anonyme (`POST /api/v1/feedback`).
+
+---
+
+## 🗺️ Pages du site
+
+| Route | Contenu |
+| :--- | :--- |
+| `/` | Accueil |
+| `/deputes`, `/deputes/[slug]`, `/deputes/comparer` | Députés : liste, fiche, comparateur |
+| `/senateurs`, `/senateurs/[slug]`, `/senateurs/comparer` | Sénateurs : liste, fiche, comparateur |
+| `/groupes`, `/groupes/[chambre]/[slug]` | Groupes politiques de l'Assemblée et du Sénat |
+| `/scrutins`, `/scrutins/[numero]` | Scrutins publics des deux chambres |
+| `/votes`, `/votes/[year]`, `/votes/[year]/[month]` | Archives des scrutins, par année et par mois |
+| `/dossiers`, `/dossiers/[uid]` | Dossiers législatifs |
+| `/sujets`, `/sujets/[slug]` | Sujets : regroupement des dossiers AN et Sénat portant sur le même texte |
+| `/commissions`, `/commissions/[slug]` | Commissions et organes |
+| `/agenda`, `/reunions/[uid]` | Agenda parlementaire, réunions et séances |
+| `/lobbying`, `/lobbying/[id]`, `/lobbying/actions` | Représentants d'intérêts et actions déclarées (HATVP) |
+| `/senatoriales-2026`, `/senatoriales-2026/[departement]`, `/senatoriales-2026/graphiques/[slug]` | Élections sénatoriales 2026 : bilan des sortants, candidats, résultats |
+| `/classements` | Classements des parlementaires |
+| `/explorateur` | Explorateur de données |
+| `/recherche` | Recherche globale |
+| `/api` | Présentation de l'API publique |
+| `/comprendre/*` | Pages pédagogiques (Parlement, parlementaire, scrutin, dossier législatif, commissions, groupes, lobbying) |
+| `/guide/*` | Guides d'usage |
+| `/methodologie` | Méthodologie des statistiques et de l'IA |
+| `/soutenir` | Dons (formulaire HelloAsso intégré) |
+| `/a-propos`, `/contact`, `/cgu`, `/confidentialite`, `/mentions-legales` | Pages institutionnelles |

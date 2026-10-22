@@ -2,58 +2,58 @@
 title: "Stack Technique & Dépendances"
 sidebar_label: "Stack Technique"
 sidebar_icon: "layers"
-description: Technologies, frameworks et versions utilisés dans le monorepo CLAIR (Next.js 14, Fastify 4, Prisma 5, PostgreSQL 17, Redis 8, Mistral AI).
+description: Technologies et versions utilisées dans le monorepo CLAIR (Next.js 14, Fastify 4, Prisma 5, PostgreSQL 17, Redis 8, Mistral), en local et en production.
 ---
 
-## 🧱 Socle Commun
+Versions : plage déclarée dans les `package.json`, et entre parenthèses la version résolue dans `pnpm-lock.yaml` lorsqu'elle diffère utilement.
 
-- **Runtime** : Node.js ≥ 20 (CI et conteneurs Docker basés sur Node 20 LTS).
-- **Langage** : TypeScript 5.
-- **Gestionnaire de paquets** : `pnpm 8 / 9` (`pnpm-lock.yaml`).
-- **Monorepo** : Turborepo 2 + pnpm workspaces.
-- **Tests** : Vitest 1 (pour l'API et le moteur d'ingestion).
-- **Logs** : Pino 8 avec formatage couleur en développement (`pino-pretty`).
+## 🧱 Commun
 
----
+- **Runtime** : Node.js ≥ 20.19 (`engines` du `package.json` racine). La CI et les images Docker utilisent Node 20. Node 18 ne suffit pas : la CLI d'ingestion plante au chargement de `undici`.
+- **Langage** : TypeScript 5 (5.9.3).
+- **Gestionnaire de paquets** : pnpm 8 (`packageManager: pnpm@8.15.0`) ; la CI utilise pnpm 9.
+- **Monorepo** : pnpm workspaces + Turborepo 2.
+- **Tests** : Vitest 1 (API et ingestion ; le frontend n'a pas de tests).
+- **Logs** : pino 8.
 
-## ⚡ API Backend (`apps/api`)
+## ⚡ API (`apps/api`)
 
-- **Framework Web** : Fastify 4 (avec `@fastify/compress`, `@fastify/cors`, `@fastify/helmet`, `@fastify/rate-limit`, `@fastify/swagger` et `@fastify/swagger-ui`).
-- **ORM** : Prisma 5 avec client typé.
-- **Validation des schémas** : Zod 3.
-- **Cache et Limitation de Débit** : Redis via `ioredis`.
-- **Recherche plein texte** : Requêtes PostgreSQL `ILIKE / contains` optimisées, combinées à un reclassement applicatif par distance de similarité Jaro-Winkler.
+- **Framework** : Fastify 4 (4.29.1), avec `@fastify/compress`, `@fastify/cors`, `@fastify/helmet`, `@fastify/rate-limit`, `@fastify/swagger` et `@fastify/swagger-ui`.
+- **ORM** : Prisma 5 (5.22.0).
+- **Validation** : Zod 3.
+- **Cache et limitation de débit** : Redis, via ioredis.
+- **Recherche** : requêtes PostgreSQL par Prisma (`contains`, insensible à la casse), puis classement applicatif par similarité Jaro-Winkler (`apps/api/src/utils/fuzzy-search.ts`). Aucun moteur de recherche dédié.
 
----
+## 💻 Frontend (`apps/web`)
 
-## 💻 Frontend Web (`apps/web`)
-
-- **Framework** : Next.js 14 (App Router), React 18.
-- **Styling** : Tailwind CSS 3, `class-variance-authority`, `tailwind-merge`, `tailwindcss-animate`.
-- **Gestion des thèmes** : `next-themes` (thème sombre signature Figma `#0c0e12`).
-- **Requêtage Client** : TanStack Query 5 via proxy interne Next (`/api/v1/[...path]`).
+- **Framework** : Next.js 14.0.4 (App Router), React 18.
+- **Styles** : Tailwind CSS 3, `class-variance-authority`, `tailwind-merge`, `tailwindcss-animate`, thème clair et sombre avec `next-themes`.
+- **Données** : TanStack Query 5 ; les appels du navigateur passent par un proxy Next (`app/api/v1/[...path]/route.ts`) qui relaie vers l'API.
 - **Graphiques** : Recharts 2.
-- **Icônes et UI** : `lucide-react`, Radix UI primitives.
-- **Analytics** : Plausible (respectueux de la vie privée, sans cookie).
+- **Icônes et animations** : lucide-react, framer-motion.
+- **Mesure d'audience** : Plausible (sans cookie).
 
----
+## 📥 Ingestion (`services/ingestion`)
 
-## 📥 Moteur d'Ingestion (`services/ingestion`)
+- **CLI** : commander 11.
+- **Téléchargement et lecture** : axios, cheerio (HTML), xml2js (XML), csv-parse (CSV), lecteur XLSX maison (`src/utils/xlsx.ts`), `pdftotext` de poppler-utils pour les comptes rendus de commission publiés en PDF.
+- **Concurrence** : p-limit, limiter.
+- **Build** : tsup (CJS + ESM) ; exécution en développement avec tsx.
+- **IA** : API Mistral (`mistral-small-latest` pour la génération, `mistral-embed` pour le classement des liens de contexte), Tavily (recherche ciblée sur vie-publique.fr).
 
-- **CLI** : Commander 11.
-- **Extracteurs et Parsers** : `axios`, `cheerio` (HTML), `xml2js` (XML), `csv-parse` (CSV), extracteur XLSX sur-mesure, `pdftotext` (`poppler-utils`).
-- **Régulation de débit et Concurrence** : `p-limit`, `limiter`.
-- **IA Souveraine** : API Mistral (`mistral-small-latest` pour les synthèses textuelles, `mistral-embed` pour les embeddings contextuels).
+## 📚 Documentation (`docs`)
 
----
+- **Portail** : Zudoku 0.86 ; recherche plein texte par Pagefind.
+- **Référence de l'API** : la spécification OpenAPI générée par l'API de production (`https://api.clair.vote/docs/json`), téléchargée à chaque build dans `docs/public/openapi.json` (fichier ignoré par git).
 
-## 🌐 Infrastructure et Environnements
+## 🌐 Infrastructure
 
-| Composant | Environnement Local (Dev) | Environnement Production |
+| Élément | Développement local | Production |
 | :--- | :--- | :--- |
-| **PostgreSQL** | 16 (`postgres:16-alpine` via Docker) | 17 (Railway managé avec SSL) |
-| **Redis** | 7 (`redis:7-alpine` via Docker) | 8.2.1 (Railway managé) |
-| **Frontend Web** | `next dev` (port 3000) | Vercel (Région `cdg1` Paris) |
-| **API REST** | `tsx watch` (port 3001) | Railway (Conteneur Docker) |
-| **Documentation** | `zudoku dev` (port 3002) | Vercel (`docs.clair.vote`) |
-| **Ingestion Worker** | CLI manuelle | Railway (Tâches planifiées nocturne et intraday) |
+| PostgreSQL | 16 (`postgres:16-alpine`, `docker-compose.yml`) | 17 (image Railway `postgres-ssl:17`) |
+| Redis | 7 (`redis:7-alpine`) | 8.2.1 |
+| Frontend | `next dev` sur le port 3000 | Vercel, région `cdg1` (Paris) |
+| API | `tsx watch` sur le port 3001 | Railway, image construite depuis le `Dockerfile` racine |
+| Documentation | `zudoku dev` sur le port 3002 | Vercel (`docs.clair.vote`) |
+| Ingestion | CLI lancée à la main | Railway, deux services planifiés (voir [Déploiement](/guide/guide-developpeur/deploiement-production)) |
+| CI | | GitHub Actions : lint, tests, build (le `type-check` est désactivé en CI) |

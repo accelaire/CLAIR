@@ -2,17 +2,17 @@
 title: "API Dossiers Législatifs & Amendements"
 sidebar_label: "Dossiers & Amendements"
 sidebar_icon: "file-text"
-description: Suivi du parcours législatif des textes de loi, navette parlementaire, amendements, chronologie et regroupements par sujet.
+description: Dossiers législatifs de l'Assemblée et du Sénat, leur chronologie, leurs scrutins et amendements, et les sujets qui regroupent les deux chambres.
 ---
 
-## 📜 Endpoints Dossiers Législatifs
+## 📜 Routes des dossiers législatifs
 
 | Méthode | Route | Description |
 | :--- | :--- | :--- |
 | `GET` | `/api/v1/dossiers` | Liste paginée des dossiers législatifs déposés à l'AN et au Sénat |
-| `GET` | `/api/v1/dossiers/trending` | Textes de loi actuellement au cœur de l'actualité parlementaire |
+| `GET` | `/api/v1/dossiers/trending` | Dossiers ayant le plus de scrutins sur les 3 derniers mois |
 | `GET` | `/api/v1/dossiers/:uid` | Fiche complète d'un dossier (titre, statut, procédure, résumé IA) |
-| `GET` | `/api/v1/dossiers/:uid/chronologie` | Historique des étapes de la navette parlementaire |
+| `GET` | `/api/v1/dossiers/:uid/chronologie` | Étapes du parcours du texte, d'une chambre à l'autre |
 | `GET` | `/api/v1/dossiers/:uid/scrutins` | Tous les scrutins publics rattachés à ce texte |
 | `GET` | `/api/v1/dossiers/:uid/amendements` | Amendements déposés sur le dossier |
 
@@ -55,13 +55,15 @@ Chaque amendement renvoyé par l'API (liste d'un dossier, détail d'un scrutin, 
 
 ---
 
-## 🗂️ Endpoints Sujets Transverses
+## 🗂️ Routes des sujets
 
-Les sujets regroupent automatiquement les dossiers de l'Assemblée nationale et du Sénat traitant d'un même projet de loi :
+Un sujet regroupe les dossiers de l'Assemblée nationale et du Sénat qui portent sur le même texte :
 
 | Méthode | Route | Description |
 | :--- | :--- | :--- |
 | `GET` | `/api/v1/sujets` | Liste des sujets avec pagination et filtres thématiques |
 | `GET` | `/api/v1/sujets/featured` | Sujets majeurs mis en avant |
 | `GET` | `/api/v1/sujets/:slug` | Synthèse complète du sujet (enjeux, résumés, positions comparées) |
-| `GET` | `/api/v1/sujets/:slug/presse` | Articles d'actualité récents rattachés au texte |
+| `GET` | `/api/v1/sujets/:slug/presse` | Articles de presse récents, lus en direct sur Google Actualités (liens seulement, cache de 3 h) |
+
+Toutes les routes des sujets (`/categories`, `/:slug/archive`, `/:slug/documents-lies`, `/:slug/dossiers`, `/:slug/chronologie`, `/:slug/scrutins`, `/:slug/stats`) et leurs schémas de réponse : [explorateur de l'API](/api).

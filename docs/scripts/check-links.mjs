@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { routeFromRelPath } from "./routes.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,8 +43,7 @@ validRoutes.add("/api-reference"); // Alias route for OpenAPI explorer
 
 for (const p of allPages) {
   const rel = path.relative(ROOT_DIR, p).replace(/\\/g, "/");
-  const route = "/" + rel.replace(/\.(mdx|md)$/, "").replace(/\/index$/, "");
-  validRoutes.add(route === "" ? "/" : route);
+  validRoutes.add(routeFromRelPath(rel));
 }
 
 const mdLinkRegex = /\[([^\]]*)\]\(([^)#\s?]+)(?:#[^\s)]*)?\)/g;

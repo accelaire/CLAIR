@@ -2,352 +2,868 @@
 title: "Schémas Entité-Relation (ERD)"
 sidebar_label: "Schémas ERD"
 sidebar_icon: "git-fork"
-description: Architecture relationnelle simplifiée et schémas ERD des 6 domaines clés de la base de données de CLAIR.
+description: Diagrammes entité-relation complets de la base de CLAIR, générés depuis le schéma Prisma, et liens logiques sans clé étrangère.
 ---
 
-La base de données relationnelle de CLAIR (PostgreSQL 17) est structurée autour de **6 domaines métiers**. 
+Diagrammes entité-relation de la base, générés depuis [`apps/api/prisma/schema.prisma`](https://github.com/accelaire/CLAIR/blob/master/apps/api/prisma/schema.prisma) par `pnpm docs:erd`. Ils utilisent les **noms SQL** des tables et colonnes, ceux qu'on écrit dans une requête. Le catalogue commenté des tables est sur la page [Modèle Prisma](/donnees/modele-prisma).
 
-Pour faciliter la compréhension, chaque domaine dispose d'un schéma épuré mettant en valeur les clés de jointure (`PK`, `FK`) et la logique de rattachement.
-
-Toutes les tables portent en plus `created_at` et `updated_at`, non représentées ici : `updated_at` est tenu par la base et ne bouge que si le contenu de la ligne change (voir [Suivi des modifications](/02-donnees/suivi-des-modifications)).
+**Lecture** : `PK` clé primaire, `FK` clé étrangère, `UK` valeur unique, `nullable` colonne facultative. `||--o{` : un parent, zéro ou plusieurs enfants ; `|o--o{` : le parent est facultatif (clé étrangère nullable) ; `--o|` : au plus un enfant par parent. L'étiquette d'une relation est la colonne qui porte la clé étrangère. Les types sont ceux de PostgreSQL (`text`, `int`, `bool`, `timestamp`, `jsonb`, `float`, `text[]`). Une table sans colonnes dans un diagramme est détaillée dans un autre.
 
 ---
 
-## 🗺️ Flux et Relations entre les Domaines
-
-Ce schéma résume les flux d'information principaux entre les grands domaines de la plateforme :
+## 🧭 Les domaines
 
 <Mermaid
-  title="Flux de Données et Liaisons Inter-Domaines"
+  title="Liaisons entre les domaines"
   chart={`graph LR
-    Elus["🏛️ <b>Élus & Groupes</b><br/>(parlementaires, mandats)"]
-    Lois["📜 <b>Textes & Dossiers</b><br/>(dossiers, textes, amendements)"]
-    Votes["🗳️ <b>Scrutins & Votes</b><br/>(scrutins, votes nominatifs)"]
-    Debats["🗣️ <b>Débats & Commissions</b><br/>(réunions, interventions)"]
-    Lobby["🏢 <b>Transparence HATVP</b><br/>(lobbyistes, déclarations)"]
-    Elec["🗳️ <b>Élections</b><br/>(candidatures, résultats)"]
+    Elus["<b>Élus et groupes</b><br/>(parlementaires, mandats)"]
+    Lois["<b>Textes et dossiers</b><br/>(dossiers, articles, amendements)"]
+    Votes["<b>Scrutins et votes</b><br/>(scrutins, votes nominatifs)"]
+    Debats["<b>Débats et commissions</b><br/>(réunions, interventions)"]
+    Lobby["<b>Lobbying HATVP</b><br/>(lobbyistes, actions)"]
+    Elec["<b>Élections</b><br/>(candidatures, résultats)"]
 
-    Elus -->|dépose / cosigne| Lois
-    Elus -->|exprime| Votes
+    Elus -->|dépose, cosigne| Lois
+    Elus -->|vote| Votes
     Elus -->|prend la parole| Debats
-    Lois -->|soumis au vote| Votes
-    Debats -->|rattaché au| Votes
-    Lobby -->|déclare influence sur| Elus
-    Elec -.->|rattachement sortant| Elus
+    Lois -->|mis aux voix| Votes
+    Debats -->|précède| Votes
+    Lobby -->|cible| Elus
+    Elec -.->|candidat déjà connu| Elus
 `}
 />
 
+À retenir avant de lire les diagrammes :
+
+- `parlementaires` contient la personne, `mandats_parlementaires` chaque siège (législature, circonscription, groupe d'époque) ; `parlementaires_identifiants` garde l'identifiant de la chambre quittée.
+- `textes_articles` stocke les articles de chaque version de texte AN (initial, texte de commission…), une ligne par (`texte_ref`, `numero`). Les versions ne sont pas chaînées entre elles : un article renuméroté d'une version à l'autre n'est pas suivi. Un amendement retrouve son article par `texte_ref` et `article_vise` (« ART. PREMIER » ↔ « PREMIER »), sans clé étrangère. Le Sénat n'est pas couvert.
+- `avis_commission` enregistre ce qu'une commission de l'Assemblée recommande de chaque amendement avant la séance (réunions tenues au titre des articles 86, 88 ou 91 du Règlement), là où `amendements.sort` dit ce que l'hémicycle a décidé.
+- `intervention_scrutin` relie une prise de parole au scrutin qu'elle précède ; `via` dit comment (voir [Modèle Prisma](/donnees/modele-prisma)).
+- Toutes les tables portent `created_at` et `updated_at`, sauf les deux tables de jointure implicites : `updated_at` est tenu par la base et ne bouge que si le contenu de la ligne change (voir [Suivi des modifications](/donnees/suivi-des-modifications)).
+
 ---
 
-## 🏛️ 1. Élus, Mandats & Groupes Politiques
+{/* ERD:DEBUT, généré par docs/scripts/generate-erd.mjs : ne pas modifier à la main */}
 
-Modélise l'identité pérenne d'un parlementaire et son historique de sièges au fil des législatures (AN) ou mandatures (Sénat).
+## 🗺️ Vue d'ensemble des relations
+
+Les 50 relations entre tables, sans les colonnes. Les 5 tables sans clé étrangère (`evenements_institutionnels`, `candidats_mandats_locaux`, `sync_logs`, `source_states`, `feedbacks`) n'y figurent pas ; elles sont détaillées plus bas.
 
 <Mermaid
-  title="ERD : Parlementaires, Mandats et Groupes"
+  title="Toutes les relations"
   chart={`erDiagram
-    parlementaires ||--o{ mandats_parlementaires : "a pour sieges"
-    parlementaires ||--o{ mandats : "occupe fonction"
-    parlementaires ||--o{ parlementaires_identifiants : "anciennes chambres"
-    groupes_politiques ||--o{ mandats_parlementaires : "affiliation"
-    circonscriptions ||--o{ mandats_parlementaires : "territoire"
+    groupes_politiques |o--o{ parlementaires : "groupe_id"
+    circonscriptions |o--o{ parlementaires : "circonscription_id"
+    parlementaires ||--o{ parlementaires_identifiants : "personne_id"
+    parlementaires ||--o{ mandats_parlementaires : "personne_id"
+    groupes_politiques |o--o{ mandats_parlementaires : "groupe_id"
+    circonscriptions |o--o{ mandats_parlementaires : "circonscription_id"
+    parlementaires ||--o{ mandats : "parlementaire_id"
+    commissions |o--o{ mandats : "commission_id"
+    commissions |o--o{ reunions : "commission_id"
+    reunions ||--o{ reunion_participants : "reunion_id"
+    parlementaires ||--o{ reunion_participants : "parlementaire_id"
+    parlementaires ||--o{ declarations_hatvp : "parlementaire_id"
+    groupes_politiques ||--o{ groupes_alliances : "groupe_from_id"
+    groupes_politiques ||--o{ groupes_alliances : "groupe_to_id"
+    groupes_politiques ||--o{ groupes_thematiques : "groupe_id"
+    circonscriptions ||--o{ candidatures_listes : "circonscription_id"
+    candidatures_listes ||--o{ candidatures : "liste_id"
+    parlementaires |o--o{ candidatures : "personne_id"
+    circonscriptions ||--o{ resultats_tours : "circonscription_id"
+    circonscriptions ||--o{ resultats_listes : "circonscription_id"
+    sujets |o--o{ dossiers_legislatifs : "sujet_id"
+    dossiers_legislatifs ||--o{ dossier_commissions : "dossier_id"
+    commissions ||--o{ dossier_commissions : "commission_id"
+    sujets ||--o{ sujet_liens : "sujet_id"
+    dossiers_legislatifs |o--o{ scrutins : "dossier_id"
+    parlementaires ||--o{ votes : "parlementaire_id"
+    scrutins ||--o{ votes : "scrutin_id"
+    parlementaires |o--o{ interventions : "parlementaire_id"
+    reunions |o--o{ interventions : "reunion_id"
+    dossiers_legislatifs |o--o{ interventions : "dossier_id"
+    parlementaires |o--o{ amendements : "parlementaire_id"
+    dossiers_legislatifs |o--o{ amendements : "dossier_id"
+    amendements |o--o{ amendements : "amendement_parent_id"
+    reunions ||--o{ avis_commission : "reunion_id"
+    amendements |o--o{ avis_commission : "amendement_id"
+    dossiers_legislatifs |o--o{ textes_articles : "dossier_id"
+    lobbyistes ||--o{ actions_lobby : "lobbyiste_id"
+    parlementaires |o--o{ actions_lobby : "parlementaire_id"
+    cible_types |o--o{ actions_lobby : "cible_type_id"
+    action_descriptions ||--o{ actions_lobby : "description_id"
+    lobbyistes ||--o{ lobbyistes_secteurs : "lobbyiste_id"
+    secteurs ||--o{ lobbyistes_secteurs : "secteur_id"
+    actions_lobby ||--o{ actions_secteurs : "action_id"
+    secteurs ||--o{ actions_secteurs : "secteur_id"
+    interventions ||--o{ intervention_scrutin : "intervention_id"
+    scrutins ||--o{ intervention_scrutin : "scrutin_id"
+    amendements ||--o{ "_AmendementCosignataires" : "A"
+    parlementaires ||--o{ "_AmendementCosignataires" : "B"
+    amendements ||--o{ "_AmendementToScrutin" : "A"
+    scrutins ||--o{ "_AmendementToScrutin" : "B"
+`}
+/>
 
+## Parlementaires, mandats et groupes
+
+<Mermaid
+  title="Parlementaires, mandats et groupes"
+  chart={`erDiagram
     parlementaires {
-        uuid id PK
-        string slug UK
-        string nom
-        string prenom
-        string chambre
-        boolean actif
-        uuid groupe_id FK
+        text id PK
+        text slug UK
+        text chambre
+        text nom
+        text prenom
+        text sexe  "nullable"
+        timestamp date_naissance  "nullable"
+        text lieu_naissance  "nullable"
+        text profession  "nullable"
+        text photo_url  "nullable"
+        text twitter  "nullable"
+        text facebook  "nullable"
+        text email  "nullable"
+        text site_web  "nullable"
+        bool actif
+        text groupe_id FK  "nullable"
+        text circonscription_id FK  "nullable"
+        text serie  "nullable"
+        text commission_permanente  "nullable"
+        int stats_presence  "nullable"
+        int stats_presence_solennel  "nullable"
+        int stats_loyaute  "nullable"
+        int stats_participation  "nullable"
+        int stats_interventions  "nullable"
+        int stats_amendements  "nullable"
+        int stats_amendements_adoptes  "nullable"
+        int stats_questions  "nullable"
+        timestamp stats_calculated_at  "nullable"
+        int stats_carriere_presence  "nullable"
+        int stats_carriere_loyaute  "nullable"
+        int stats_carriere_participation  "nullable"
+        int stats_carriere_interventions  "nullable"
+        int stats_carriere_amendements  "nullable"
+        text resume_ia  "nullable"
+        text parcours_ia  "nullable"
+        text positions_cles_ia  "nullable"
+        text faits_notables_ia  "nullable"
+        text ia_content_hash  "nullable"
+        timestamp ia_generated_at  "nullable"
+        jsonb ia_sources  "nullable"
+        text source_id  "nullable"
+        jsonb source_data  "nullable"
+        timestamp created_at
+        timestamp updated_at
     }
-
+    parlementaires_identifiants {
+        text id PK
+        text personne_id FK
+        text chambre
+        text source_id
+        timestamp created_at
+        timestamp updated_at
+    }
     mandats_parlementaires {
-        uuid id PK
-        uuid personne_id FK
-        uuid groupe_id FK
-        uuid circonscription_id FK
-        int legislature
-        int mandature
-        date date_debut
-        date date_fin
+        text id PK
+        text personne_id FK
+        text chambre
+        int legislature  "nullable"
+        int mandature  "nullable"
+        text serie  "nullable"
+        timestamp date_debut
+        timestamp date_fin  "nullable"
+        text groupe_id FK  "nullable"
+        text circonscription_id FK  "nullable"
+        text commission_permanente  "nullable"
+        int stats_presence  "nullable"
+        int stats_presence_solennel  "nullable"
+        int stats_loyaute  "nullable"
+        int stats_participation  "nullable"
+        int stats_interventions  "nullable"
+        int stats_amendements  "nullable"
+        int stats_amendements_adoptes  "nullable"
+        int stats_questions  "nullable"
+        timestamp stats_calculated_at  "nullable"
+        text mandat_uid UK  "nullable"
+        jsonb source_data  "nullable"
+        timestamp created_at
+        timestamp updated_at
     }
-
     groupes_politiques {
-        uuid id PK
-        string slug
-        string nom
-        string nom_court
-        string chambre
-        int legislature
+        text id PK
+        text slug
+        text nom
+        text nom_court  "nullable"
+        text nom_complet  "nullable"
+        text couleur  "nullable"
+        text logo_url  "nullable"
+        text position  "nullable"
+        int ordre
+        bool actif
+        text chambre
+        int legislature  "nullable"
+        int stats_membres_actifs  "nullable"
+        int stats_presence_moyenne  "nullable"
+        int stats_presence_solennel_moyenne  "nullable"
+        int stats_loyaute_moyenne  "nullable"
+        int stats_cohesion  "nullable"
+        int stats_participation  "nullable"
+        timestamp stats_calculated_at  "nullable"
+        int stats_votes_pour  "nullable"
+        int stats_votes_contre  "nullable"
+        int stats_votes_abstention  "nullable"
+        int stats_votes_absent  "nullable"
+        text source_id  "nullable"
+        timestamp created_at
+        timestamp updated_at
     }
-
-    mandats {
-        uuid id PK
-        uuid parlementaire_id FK
-        uuid commission_id FK
-        string type_organe
-        string qualite
-    }
-`}
-/>
-
-- **Séparation Personne / Mandat** : `parlementaires` contient la personne physique stable ; `mandats_parlementaires` isole chaque mandat (législature, circonscription, groupe d'époque).
-- **Continuité inter-chambre** : `parlementaires_identifiants` conserve les anciens matricules (ex. `PA...` lors du passage de l'AN au Sénat).
-
----
-
-## 📜 2. Dossiers Législatifs & Textes de Loi
-
-Fédère le travail parlementaire des deux assemblées sous une même bannière thématique (`sujets`).
-
-<Mermaid
-  title="ERD : Sujets Transverses et Dossiers Législatifs"
-  chart={`erDiagram
-    sujets ||--o{ dossiers_legislatifs : "regroupe"
-    sujets ||--o{ sujet_liens : "sources web"
-    dossiers_legislatifs ||--o{ textes_articles : "compose"
-    dossiers_legislatifs ||--o{ dossier_commissions : "examine par"
-    commissions ||--o{ dossier_commissions : "saisie"
-
-    sujets {
-        uuid id PK
-        string slug UK
-        string label
-        string status
-        int dossier_count
-    }
-
-    dossiers_legislatifs {
-        uuid id PK
-        string uid UK
-        uuid sujet_id FK
-        string titre
-        string etat
-        int legislature
-    }
-
-    textes_articles {
-        uuid id PK
-        uuid dossier_id FK
-        string texte_ref
-        string numero
-        string libelle
-    }
-
-    commissions {
-        uuid id PK
-        string uid UK
-        string nom
-        string type
-        string chambre
-    }
-`}
-/>
-
-- **Sujets Transverses** : Un `sujet` associe le dossier de l'Assemblée et celui du Sénat portant sur la même loi pour donner une vision unifiée.
-- **Articles & Versions** : `textes_articles` stocke les articles de chaque version de texte AN amendée (initial, texte de commission…), une ligne par (`texte_ref`, `numero`). Les versions ne sont pas chaînées entre elles : un article renuméroté d'une version à l'autre n'est pas suivi. Un amendement retrouve son article par `texte_ref` et `article_vise` (« ART. PREMIER » ↔ « PREMIER »), sans clé étrangère. Le Sénat n'est pas couvert.
-
----
-
-## 🗳️ 3. Scrutins, Votes & Amendements
-
-Modélise le vote en séance publique et les positions individuelles nominatives de chaque élu.
-
-<Mermaid
-  title="ERD : Scrutins Publics, Votes et Amendements"
-  chart={`erDiagram
-    dossiers_legislatifs ||--o{ scrutins : "donne lieu a"
-    dossiers_legislatifs ||--o{ amendements : "contient"
-    scrutins ||--o{ votes : "enregistre"
-    parlementaires ||--o{ votes : "exprime"
-    parlementaires ||--o{ amendements : "auteur"
-    amendements ||--o{ avis_commission : "oriente"
-    amendements }o--o{ scrutins : "soumis a"
-    amendements |o--o{ amendements : "sous-amendement"
-
-    scrutins {
-        uuid id PK
+    circonscriptions {
+        text id PK
+        text departement
         int numero
-        string chambre
-        string type_vote
-        string sort
+        text nom
+        int population  "nullable"
+        text type
+        timestamp created_at
+        timestamp updated_at
+    }
+    mandats {
+        text id PK
+        text parlementaire_id FK
+        text type_organe
+        text institution  "nullable"
+        text qualite  "nullable"
+        timestamp date_debut
+        timestamp date_fin  "nullable"
+        text commission_id FK  "nullable"
+        text source_uid UK  "nullable"
+        text organe_ref  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    groupes_alliances {
+        text id PK
+        text groupe_from_id FK
+        text groupe_to_id FK
+        int votes_communs
+        int votes_totaux
+        int taux_accord
+        timestamp calculated_at
+        timestamp created_at
+        timestamp updated_at
+    }
+    groupes_thematiques {
+        text id PK
+        text groupe_id FK
+        text thematique
+        int votes_totaux
+        int votes_pour
+        int votes_contre
+        int votes_abstention
+        float position_moyenne
+        int cohesion_moyenne
+        timestamp calculated_at
+        timestamp created_at
+        timestamp updated_at
+    }
+    declarations_hatvp {
+        text id PK
+        text parlementaire_id FK
+        text type_document
+        timestamp date_publication  "nullable"
+        timestamp date_depot  "nullable"
+        text url_dossier  "nullable"
+        text nom_fichier  "nullable"
+        text xml_fichier  "nullable"
+        text statut  "nullable"
+        text departement  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    groupes_politiques |o--o{ parlementaires : "groupe_id"
+    circonscriptions |o--o{ parlementaires : "circonscription_id"
+    parlementaires ||--o{ parlementaires_identifiants : "personne_id"
+    parlementaires ||--o{ mandats_parlementaires : "personne_id"
+    groupes_politiques |o--o{ mandats_parlementaires : "groupe_id"
+    circonscriptions |o--o{ mandats_parlementaires : "circonscription_id"
+    parlementaires ||--o{ mandats : "parlementaire_id"
+    commissions |o--o{ mandats : "commission_id"
+    parlementaires ||--o{ declarations_hatvp : "parlementaire_id"
+    groupes_politiques ||--o{ groupes_alliances : "groupe_from_id"
+    groupes_politiques ||--o{ groupes_alliances : "groupe_to_id"
+    groupes_politiques ||--o{ groupes_thematiques : "groupe_id"
+`}
+/>
+
+## Travail législatif : dossiers, scrutins, amendements, débats, sujets
+
+<Mermaid
+  title="Travail législatif : dossiers, scrutins, amendements, débats, sujets"
+  chart={`erDiagram
+    dossiers_legislatifs {
+        text id PK
+        text uid UK
+        int legislature
+        text titre
+        text titre_court  "nullable"
+        text procedure_code  "nullable"
+        text procedure_libelle  "nullable"
+        text url_an  "nullable"
+        text url_senat  "nullable"
+        text etat  "nullable"
+        timestamp date_depot  "nullable"
+        timestamp date_adoption  "nullable"
+        text loi_numero  "nullable"
+        text loi_titre  "nullable"
+        timestamp loi_date_jo  "nullable"
+        text url_legifrance  "nullable"
+        text sujet_id FK  "nullable"
+        text resume_ia  "nullable"
+        text ia_content_hash  "nullable"
+        timestamp ia_generated_at  "nullable"
+        jsonb source_data  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    scrutins {
+        text id PK
+        int numero
+        text chambre
+        text session
+        int legislature  "nullable"
+        timestamp date
+        text titre
+        text type_vote
+        text nature_vote  "nullable"
+        text sort
+        int nombre_votants
         int nombre_pour
         int nombre_contre
-        uuid dossier_id FK
+        int nombre_abstention
+        text[] tags
+        int importance
+        text texte_id  "nullable"
+        text texte_numero  "nullable"
+        text texte_titre  "nullable"
+        text objet_libelle  "nullable"
+        text demandeur_texte  "nullable"
+        text seance_ref  "nullable"
+        text dossier_id FK  "nullable"
+        text resume_ia  "nullable"
+        text ia_content_hash  "nullable"
+        timestamp ia_generated_at  "nullable"
+        text source_url  "nullable"
+        jsonb source_data  "nullable"
+        text source_hash  "nullable"
+        timestamp created_at
+        timestamp updated_at
     }
-
     votes {
-        uuid id PK
-        uuid scrutin_id FK
-        uuid parlementaire_id FK
-        string position
-        boolean par_delegation
+        text id PK
+        text parlementaire_id FK
+        text scrutin_id FK
+        text position
+        text mise_au_point  "nullable"
+        bool par_delegation
+        timestamp created_at
+        timestamp updated_at
     }
-
     amendements {
-        uuid id PK
-        string uid UK
-        string numero
-        string sort
-        uuid dossier_id FK
-        uuid parlementaire_id FK
-        uuid amendement_parent_id FK
+        text id PK
+        text uid UK
+        text uid_canonique UK
+        text numero
+        int legislature
+        text chambre
+        text parlementaire_id FK  "nullable"
+        text auteur_ref  "nullable"
+        text groupe_ref  "nullable"
+        text auteur_libelle  "nullable"
+        text texte_ref  "nullable"
+        text article_vise  "nullable"
+        text dossier_id FK  "nullable"
+        text dispositif  "nullable"
+        text expose_sommaire  "nullable"
+        text sort  "nullable"
+        timestamp date_depot  "nullable"
+        timestamp date_sort  "nullable"
+        text source_url  "nullable"
+        int numero_ordre  "nullable"
+        text alinea  "nullable"
+        int alinea_numero  "nullable"
+        text id_discussion_commune  "nullable"
+        text position_discussion_commune  "nullable"
+        text id_discussion_identique  "nullable"
+        text position_discussion_identique  "nullable"
+        timestamp chronotag  "nullable"
+        text tri_amendement  "nullable"
+        text seance_discussion_ref  "nullable"
+        text amendement_parent_ref  "nullable"
+        text amendement_parent_id FK  "nullable"
+        text source_hash  "nullable"
+        timestamp created_at
+        timestamp updated_at
     }
-
-    avis_commission {
-        uuid id PK
-        uuid reunion_id FK
-        uuid amendement_id FK
-        string sens
+    "_AmendementToScrutin" {
+        text A PK, FK "amendements.id"
+        text B PK, FK "scrutins.id"
     }
-`}
-/>
-
-- **Positions nominatives** : La table `votes` stocke chaque vote individuel (`pour`, `contre`, `abstention`, `absent`).
-- **Avis de commission** : `avis_commission` enregistre les recommandations préliminaires (art. 88 du Règlement) avant le vote en séance.
-
----
-
-## 🗣️ 4. Débats & Rapprochement Temporel
-
-Capture les interventions orales et les relie aux scrutins correspondants.
-
-<Mermaid
-  title="ERD : Débats, Interventions et Rapprochement Scrutins"
-  chart={`erDiagram
-    commissions ||--o{ reunions : "organise"
-    reunions ||--o{ interventions : "debats en commission"
-    parlementaires ||--o{ interventions : "orateur"
-    dossiers_legislatifs ||--o{ interventions : "texte discute"
-    interventions ||--o{ intervention_scrutin : "precede"
-    scrutins ||--o{ intervention_scrutin : "vote resultant"
-
-    reunions {
-        uuid id PK
-        string uid UK
-        string type
-        datetime date_debut
-        uuid commission_id FK
+    "_AmendementCosignataires" {
+        text A PK, FK "amendements.id"
+        text B PK, FK "parlementaires.id"
     }
-
     interventions {
-        uuid id PK
-        string source_uid UK
-        uuid parlementaire_id FK
-        uuid dossier_id FK
-        uuid reunion_id FK
-        int ordre_absolu
-        string contenu
+        text id PK
+        text parlementaire_id FK  "nullable"
+        text orateur_nom  "nullable"
+        text orateur_prenom  "nullable"
+        text orateur_qualite  "nullable"
+        text chambre
+        text seance_id  "nullable"
+        timestamp date
+        int ordre  "nullable"
+        text type
+        text contenu
+        text[] mots_cles
+        text source_uid UK  "nullable"
+        text seance_uid  "nullable"
+        int ordre_absolu  "nullable"
+        text code_grammaire  "nullable"
+        text article_vise  "nullable"
+        text texte_numero  "nullable"
+        text[] amendements_vises
+        bool est_presidence
+        text reunion_id FK  "nullable"
+        text dossier_id FK  "nullable"
+        text orateur_groupe  "nullable"
+        text source_url  "nullable"
+        timestamp created_at
+        timestamp updated_at
     }
-
     intervention_scrutin {
-        uuid intervention_id PK
-        uuid scrutin_id PK
-        string via
+        text intervention_id PK, FK
+        text scrutin_id PK, FK
+        text via
+        timestamp created_at
+        timestamp updated_at
     }
-`}
-/>
-
-- **Liaison Débat ↔ Vote** : La table `intervention_scrutin` établit le pont chronologique entre une prise de parole au perchoir et le scrutin intervenu dans la foulée (par `amendement`, `article` ou `fenetre`).
-
----
-
-## 🏢 5. Transparence & Lobbying (HATVP)
-
-Enregistre les données déclaratives des représentants d'intérêts et le patrimoine des parlementaires.
-
-<Mermaid
-  title="ERD : Répertoire HATVP et Actions de Lobbying"
-  chart={`erDiagram
-    lobbyistes ||--o{ actions_lobby : "declare"
-    parlementaires ||--o{ actions_lobby : "cible"
-    parlementaires ||--o{ declarations_hatvp : "depose"
-    secteurs ||--o{ lobbyistes_secteurs : "categorise"
-    lobbyistes ||--o{ lobbyistes_secteurs : "appartient"
-
-    lobbyistes {
-        uuid id PK
-        string identifiant_national UK
-        string nom
-        string type
-        float budget_annuel
-    }
-
-    actions_lobby {
-        uuid id PK
-        uuid lobbyiste_id FK
-        uuid parlementaire_id FK
-        string cible
-        datetime date_debut
-        float budget
-    }
-
-    declarations_hatvp {
-        uuid id PK
-        uuid parlementaire_id FK
-        string type_document
-        datetime date_depot
-        string statut
-    }
-
-    secteurs {
-        string id PK
-        string label
-    }
-`}
-/>
-
----
-
-## 🗳️ 6. Élections & Candidatures
-
-Gestion des candidatures électorales (Sénatoriales 2026), des listes et des résultats par tour.
-
-<Mermaid
-  title="ERD : Candidatures et Résultats Électoraux"
-  chart={`erDiagram
-    circonscriptions ||--o{ candidatures_listes : "circonscription"
-    circonscriptions ||--o{ resultats_tours : "participation"
-    circonscriptions ||--o{ resultats_listes : "voix"
-    candidatures_listes ||--o{ candidatures : "candidats"
-    parlementaires |o--o{ candidatures : "reconciliation sortant"
-
-    candidatures_listes {
-        uuid id PK
-        string source_uid UK
-        string scrutin
-        uuid circonscription_id FK
-        string mode_scrutin
-        string libelle
-    }
-
-    candidatures {
-        uuid id PK
-        uuid liste_id FK
-        uuid personne_id FK
+    textes_articles {
+        text id PK
+        text texte_ref
+        text numero
+        text libelle
         int ordre
-        string nom
-        string prenom
-        boolean elu
+        text contenu
+        text chambre
+        int legislature
+        text dossier_id FK  "nullable"
+        text source_url  "nullable"
+        timestamp created_at
+        timestamp updated_at
     }
+    sujets {
+        text id PK
+        text slug UK
+        text label
+        text description  "nullable"
+        text category  "nullable"
+        int dossier_count
+        int scrutin_count
+        timestamp date_debut  "nullable"
+        timestamp date_fin  "nullable"
+        timestamp date_dernier_vote  "nullable"
+        bool actif
+        bool featured
+        int featured_order
+        text match_method  "nullable"
+        text status
+        text resume  "nullable"
+        text enjeux  "nullable"
+        text ia_content_hash  "nullable"
+        timestamp ia_generated_at  "nullable"
+        jsonb groupe_amendement_descriptions  "nullable"
+        text ia_groupe_amendement_hash  "nullable"
+        timestamp context_resolved_at  "nullable"
+        text context_input_hash  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    sujet_liens {
+        text id PK
+        text sujet_id FK
+        text famille
+        text titre
+        text url
+        text source
+        text source_label  "nullable"
+        timestamp date_publication  "nullable"
+        text provenance
+        int ordre
+        timestamp created_at
+        timestamp updated_at
+    }
+    sujets |o--o{ dossiers_legislatifs : "sujet_id"
+    sujets ||--o{ sujet_liens : "sujet_id"
+    dossiers_legislatifs |o--o{ scrutins : "dossier_id"
+    parlementaires ||--o{ votes : "parlementaire_id"
+    scrutins ||--o{ votes : "scrutin_id"
+    parlementaires |o--o{ interventions : "parlementaire_id"
+    reunions |o--o{ interventions : "reunion_id"
+    dossiers_legislatifs |o--o{ interventions : "dossier_id"
+    parlementaires |o--o{ amendements : "parlementaire_id"
+    dossiers_legislatifs |o--o{ amendements : "dossier_id"
+    amendements |o--o{ amendements : "amendement_parent_id"
+    dossiers_legislatifs |o--o{ textes_articles : "dossier_id"
+    interventions ||--o{ intervention_scrutin : "intervention_id"
+    scrutins ||--o{ intervention_scrutin : "scrutin_id"
+    amendements ||--o{ "_AmendementCosignataires" : "A"
+    parlementaires ||--o{ "_AmendementCosignataires" : "B"
+    amendements ||--o{ "_AmendementToScrutin" : "A"
+    scrutins ||--o{ "_AmendementToScrutin" : "B"
+`}
+/>
 
+## Commissions, réunions et agenda
+
+<Mermaid
+  title="Commissions, réunions et agenda"
+  chart={`erDiagram
+    commissions {
+        text id PK
+        text uid UK
+        text organe_ref  "nullable"
+        text slug UK
+        text chambre
+        text type
+        text nom
+        text nom_court  "nullable"
+        timestamp date_debut
+        timestamp date_fin  "nullable"
+        bool actif
+        timestamp created_at
+        timestamp updated_at
+    }
+    reunions {
+        text id PK
+        text uid UK
+        text type
+        timestamp date_debut
+        timestamp date_fin  "nullable"
+        text lieu  "nullable"
+        text etat
+        text odj_resume  "nullable"
+        text odj_complet  "nullable"
+        bool captation_video
+        bool ouverte_presse
+        text compte_rendu_ref  "nullable"
+        text url_video  "nullable"
+        text commission_id FK  "nullable"
+        text organe_ref  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    reunion_participants {
+        text id PK
+        text reunion_id FK
+        text parlementaire_id FK
+        text presence
+        timestamp created_at
+        timestamp updated_at
+    }
+    avis_commission {
+        text id PK
+        text reunion_id FK
+        text numero
+        text amendement_id FK  "nullable"
+        text position
+        text sens
+        text place  "nullable"
+        text auteur  "nullable"
+        text groupe  "nullable"
+        int ordre
+        timestamp created_at
+        timestamp updated_at
+    }
+    dossier_commissions {
+        text id PK
+        text dossier_id FK
+        text commission_id FK
+        text role
+        timestamp created_at
+        timestamp updated_at
+    }
+    evenements_institutionnels {
+        text id PK
+        text slug UK
+        text type
+        text titre
+        text description  "nullable"
+        timestamp date_debut
+        timestamp date_fin  "nullable"
+        bool date_precise
+        text chambre  "nullable"
+        jsonb sources  "nullable"
+        bool important
+        timestamp created_at
+        timestamp updated_at
+    }
+    commissions |o--o{ reunions : "commission_id"
+    reunions ||--o{ reunion_participants : "reunion_id"
+    parlementaires ||--o{ reunion_participants : "parlementaire_id"
+    dossiers_legislatifs ||--o{ dossier_commissions : "dossier_id"
+    commissions ||--o{ dossier_commissions : "commission_id"
+    reunions ||--o{ avis_commission : "reunion_id"
+    amendements |o--o{ avis_commission : "amendement_id"
+`}
+/>
+
+## Lobbying (HATVP)
+
+<Mermaid
+  title="Lobbying (HATVP)"
+  chart={`erDiagram
+    lobbyistes {
+        text id PK
+        text siren  "nullable"
+        text nom
+        text type
+        text secteur  "nullable"
+        text adresse  "nullable"
+        text code_postal  "nullable"
+        text ville  "nullable"
+        float budget_annuel  "nullable"
+        int nb_lobbyistes  "nullable"
+        text site_web  "nullable"
+        text identifiant_national UK  "nullable"
+        jsonb source_data  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    actions_lobby {
+        text id PK
+        text lobbyiste_id FK
+        text parlementaire_id FK  "nullable"
+        text cible  "nullable"
+        int cible_type_id FK  "nullable"
+        int description_id FK
+        timestamp date_debut
+        timestamp date_fin  "nullable"
+        float budget  "nullable"
+        text resultat  "nullable"
+        text texte_vise  "nullable"
+        text texte_vise_nom  "nullable"
+        text source_url  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    secteurs {
+        text id PK
+        text label UK
+        timestamp created_at
+        timestamp updated_at
+    }
+    lobbyistes_secteurs {
+        text id PK
+        text lobbyiste_id FK
+        text secteur_id FK
+        timestamp created_at
+        timestamp updated_at
+    }
+    actions_secteurs {
+        text id PK
+        text action_id FK
+        text secteur_id FK
+        timestamp created_at
+        timestamp updated_at
+    }
+    cible_types {
+        int id PK
+        text label UK
+        timestamp created_at
+        timestamp updated_at
+    }
+    action_descriptions {
+        int id PK
+        text texte UK
+        timestamp created_at
+        timestamp updated_at
+    }
+    lobbyistes ||--o{ actions_lobby : "lobbyiste_id"
+    parlementaires |o--o{ actions_lobby : "parlementaire_id"
+    cible_types |o--o{ actions_lobby : "cible_type_id"
+    action_descriptions ||--o{ actions_lobby : "description_id"
+    lobbyistes ||--o{ lobbyistes_secteurs : "lobbyiste_id"
+    secteurs ||--o{ lobbyistes_secteurs : "secteur_id"
+    actions_lobby ||--o{ actions_secteurs : "action_id"
+    secteurs ||--o{ actions_secteurs : "secteur_id"
+`}
+/>
+
+## Élections sénatoriales : candidatures et résultats
+
+<Mermaid
+  title="Élections sénatoriales : candidatures et résultats"
+  chart={`erDiagram
+    candidatures_listes {
+        text id PK
+        text scrutin
+        text circonscription_id FK
+        text mode_scrutin
+        int numero_depot  "nullable"
+        text libelle  "nullable"
+        text nuance  "nullable"
+        text nuance_libelle  "nullable"
+        text famille  "nullable"
+        text source_uid UK
+        timestamp created_at
+        timestamp updated_at
+    }
+    candidatures {
+        text id PK
+        text liste_id FK
+        int ordre
+        text role
+        text nom
+        text prenom
+        text sexe  "nullable"
+        int annee_naissance  "nullable"
+        timestamp date_naissance  "nullable"
+        text profession_code  "nullable"
+        text profession_label  "nullable"
+        bool sortant_declare
+        text personne_id FK  "nullable"
+        text match_confiance  "nullable"
+        bool elu
+        int tour_election  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
     resultats_tours {
-        uuid id PK
-        uuid circonscription_id FK
+        text id PK
+        text scrutin
+        text circonscription_id FK
         int tour
+        int inscrits
         int votants
+        int abstentions
+        int blancs
+        int nuls
         int exprimes
+        text source_url
+        timestamp publie_a
+        timestamp verifie_a
+        timestamp created_at
+        timestamp updated_at
     }
-
     resultats_listes {
-        uuid id PK
-        uuid circonscription_id FK
-        string liste_source_uid
+        text id PK
+        text scrutin
+        text circonscription_id FK
+        int tour
+        text liste_source_uid
         int voix
-        int sieges
+        float pct_inscrits  "nullable"
+        float pct_exprimes  "nullable"
+        int sieges  "nullable"
+        bool elu  "nullable"
+        text libelle_source
+        text nuance_source  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    candidats_mandats_locaux {
+        text id PK
+        text scrutin
+        text nom
+        text prenom
+        timestamp date_naissance
+        jsonb mandats
+        text confiance
+        timestamp source_date
+        timestamp created_at
+        timestamp updated_at
+    }
+    circonscriptions ||--o{ candidatures_listes : "circonscription_id"
+    candidatures_listes ||--o{ candidatures : "liste_id"
+    parlementaires |o--o{ candidatures : "personne_id"
+    circonscriptions ||--o{ resultats_tours : "circonscription_id"
+    circonscriptions ||--o{ resultats_listes : "circonscription_id"
+`}
+/>
+
+## Tables techniques
+
+Sans relation avec les autres tables.
+
+<Mermaid
+  title="Tables techniques"
+  chart={`erDiagram
+    source_states {
+        text id PK
+        text source
+        text data_type
+        text resource_url
+        text last_etag  "nullable"
+        timestamp last_modified  "nullable"
+        timestamp last_sync_at
+        timestamp last_check_at
+        jsonb metadata  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    sync_logs {
+        text id PK
+        text source
+        text data_type
+        text type
+        text statut
+        int items_processed
+        int items_created
+        int items_updated
+        int error_count
+        jsonb metadata  "nullable"
+        text error  "nullable"
+        timestamp started_at
+        timestamp completed_at  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    feedbacks {
+        text id PK
+        text sentiment  "nullable"
+        text type
+        text message  "nullable"
+        text email  "nullable"
+        text page  "nullable"
+        text trigger  "nullable"
+        text user_agent  "nullable"
+        timestamp created_at
+        timestamp updated_at
     }
 `}
 />
 
+{/* ERD:FIN */}
 
+---
+
+## 🔗 Liens logiques sans clé étrangère
+
+Plusieurs rapprochements se font par des identifiants de la source, sans contrainte en base. Ils ne figurent donc pas dans les diagrammes.
+
+| Colonne | Correspond à | Remarque |
+| :--- | :--- | :--- |
+| `amendements.auteur_ref` | `parlementaires.source_id`, ou `parlementaires_identifiants.source_id` pour un député devenu sénateur | Identifiant d'acteur AN (`PA…`) ; `parlementaire_id` en est la résolution |
+| `amendements.amendement_parent_ref` | `amendements.uid` | Référence du parent publiée par la source ; `amendement_parent_id` en est la résolution |
+| `amendements.texte_ref` + `amendements.article_vise` | `textes_articles.texte_ref` + `textes_articles.numero` | Version du texte et article visé (clé unique de `textes_articles`) |
+| `amendements.seance_discussion_ref` | `reunions.uid` | Séance de discussion (AN), quand elle figure à l'agenda |
+| `mandats.organe_ref` | `commissions.uid` | Organe AN (`PO…`) ; `commission_id` en est la résolution |
+| `reunions.organe_ref` | `commissions.organe_ref` | Conservé même quand la commission n'est pas résolue |
+| `scrutins.seance_ref` | séance du compte rendu | Sert au rattachement des débats |
+| `interventions.seance_uid` | compte rendu AN (`CRSANR5L17…`) | Avec `ordre_absolu`, situe la prise de parole dans la séance |
+| `interventions.amendements_vises` | `amendements.numero` | Numéros d'amendement nommés dans le paragraphe |
+| `interventions.texte_numero`, `scrutins.texte_numero` | numéro de dépôt du texte | `interventions.dossier_id` en est la résolution |
+| `avis_commission.numero` | `amendements.numero` | `amendement_id` en est la résolution, quand elle réussit |
+| `resultats_listes.liste_source_uid` | `candidatures_listes.source_uid` | Volontairement sans clé étrangère : les résultats ne dépendent pas de la vie des lignes de candidature (une liste retirée du fichier ne doit pas emporter ses voix) |
+| `candidats_mandats_locaux` (`scrutin`, `nom`, `prenom`, `date_naissance`) | `candidatures` (même identité) | Clé d'identité du candidat, indépendante des lignes de candidature |

@@ -20,6 +20,7 @@
     "build:docs": "turbo run build --filter=@clair/docs",
     "docs:nav": "pnpm --filter @clair/docs docs:nav",
     "docs:validate": "pnpm --filter @clair/docs validate",
+    "docs:erd": "pnpm --filter @clair/api exec node ../../docs/scripts/generate-erd.mjs",
     "lint": "turbo run lint && pnpm lint:scripts",
     "lint:fix": "turbo run lint:fix",
     "lint:scripts": "eslint scripts apps/api/prisma --ext .ts",

@@ -2,62 +2,104 @@
 title: "Sources de Données Publiques"
 sidebar_label: "Sources Open Data"
 sidebar_icon: "cloud-download"
-description: Inventaire exhaustif des 22 flux Open Data parlementaires et gouvernementaux ingérés par CLAIR (formats, fréquences, clés de fraîcheur ETag).
+description: Inventaire des sources publiques ingérées par CLAIR (Assemblée nationale, Sénat, HATVP, ministère de l'Intérieur), leur format, leur suivi de fraîcheur et les identifiants conservés.
 ---
 
-Toutes les données présentées sur CLAIR proviennent exclusivement de sources publiques officielles françaises. Aucune n'exige de clé d'API, à l'exception des services d'enrichissement d'IA (Mistral, Tavily).
-
-Chaque source dispose d'un extracteur dédié dans le répertoire `services/ingestion/src/sources/`.
+Toutes les données de CLAIR viennent de sources publiques. Aucune n'exige de clé d'API, à l'exception des deux services d'IA (Mistral, Tavily). Chaque source a un client dédié dans `services/ingestion/src/sources/`.
 
 ---
 
-## 📊 Tableau des 22 Sources Suivies (`source_states`)
+## 📊 Sources suivies (`source_states`)
 
-Chaque source est identifiée par une clé canonique `organisme:type` enregistrée dans `source_freshness.ts`. Le batch nocturne les traite séquentiellement :
+Chaque source est identifiée par une clé `organisme:type`, définie dans `services/ingestion/src/utils/source-freshness.ts` et reprise comme clé dans la table `source_states`. Les 22 premières lignes du tableau sont lues par le batch nocturne, dans l'ordre donné sur la page [Orchestrateur d'ingestion](/donnees/orchestrateur-ingestion).
 
-| Clé Source | Organisme et Ressource Source | Format | Données Ingérées |
+« Toujours » signifie que la source n'expose aucun en-tête exploitable (`ETag`, `Last-Modified`) : elle est relue à chaque passage.
+
+| Clé | Ressource | Format | Ce qui est ingéré |
 | :--- | :--- | :--- | :--- |
-| `assemblee_nationale:commissions` | [data.assemblee-nationale.fr](https://data.assemblee-nationale.fr), archive `AMO10` | ZIP / JSON | Organes : commissions permanentes, délégations, offices, missions, groupes d'amitié |
-| `assemblee_nationale:deputes` | Archive `AMO10_deputes_actifs...` | ZIP / JSON | Députés, mandats, appartenances politiques, circonscriptions |
-| `assemblee_nationale:scrutins` | `Scrutins.json.zip` | ZIP / JSON | Scrutins publics et votes nominatifs (17e législature) |
-| `assemblee_nationale:amendements` | `Amendements.json.zip` | ZIP / JSON | Amendements déposés, auteurs, cosignataires, sort |
-| `assemblee_nationale:dossiers` | `Dossiers_Legislatifs.json.zip` | ZIP / JSON | Dossiers législatifs, étapes, saisines de commissions |
-| `assemblee_nationale:interventions` | `syseron.xml.zip` | ZIP / XML | Prises de parole en séance publique avec contexte |
-| `assemblee_nationale:reunions` | `Agenda.json.zip` | ZIP / JSON | Agenda parlementaire : réunions de commissions et séances |
-| `assemblee_nationale:seances_odj` | `seances_publique_excel.csv` | CSV | Ordre du jour prévisionnel des séances publiques |
-| `assemblee_nationale:videos` | [videos.assemblee-nationale.fr](https://videos.assemblee-nationale.fr) | HTML | Liens vers les flux et replays vidéo officiels |
+| `assemblee_nationale:commissions` | [data.assemblee-nationale.fr](https://data.assemblee-nationale.fr), `AMO10_deputes_actifs_mandats_actifs_organes.json.zip` | ZIP / JSON | Organes : commissions, délégations, offices, missions, groupes d'études et d'amitié… |
+| `assemblee_nationale:deputes` | même archive AMO10 | ZIP / JSON | Députés, mandats, groupes politiques, circonscriptions |
+| `assemblee_nationale:scrutins` | `Scrutins.json.zip` | ZIP / JSON | Scrutins publics et votes nominatifs |
+| `assemblee_nationale:amendements` | `Amendements.json.zip` | ZIP / JSON | Amendements, auteurs, cosignataires, métadonnées de séance |
+| `assemblee_nationale:dossiers` | `Dossiers_Legislatifs.json.zip` | ZIP / JSON | Dossiers législatifs, actes, saisines de commissions |
+| `assemblee_nationale:interventions` | `syseron.xml.zip` (comptes rendus de séance) | ZIP / XML | Prises de parole en séance, situées dans le débat (article, amendements nommés, orateur) |
+| `assemblee_nationale:reunions` | `Agenda.json.zip` | ZIP / JSON | Agenda : réunions de commission et séances |
+| `assemblee_nationale:seances_odj` | `seances_publique_excel.csv` | CSV | Ordre du jour des séances publiques |
+| `assemblee_nationale:videos` | [videos.assemblee-nationale.fr](https://videos.assemblee-nationale.fr) | HTML | Liens vers les vidéos des séances et réunions |
 | `senat:senateurs` | [senat.fr/api-senat/senateurs.json](https://www.senat.fr/api-senat/senateurs.json) | JSON | Sénateurs en exercice, groupes, commissions |
-| `senat:senateurs_histo` | [data.senat.fr](https://data.senat.fr) (`ODSEN_ELUSEN.csv`) | CSV | Anciens sénateurs, mandats expirés, groupes historiques |
-| `senat:bureaux` | Pages commissions sur `senat.fr` | HTML | Rôles au bureau des commissions (présidents, secrétaires) |
-| `senat:scrutins` | Pages `scrutin-public` et `dosleg.zip` | HTML + Dump SQL | Scrutins publics solennels et votes individuels |
-| `senat:amendements` | `ameli.zip` et CSV par texte sur `senat.fr` | ZIP + CSV | Amendements sénatoriaux, cosignatures et article visé (colonne « Subdivision » du CSV, sinon `amd.subid` → `sub` d'AMELI) |
-| `senat:dossiers` | `dosleg.zip` de data.senat.fr | ZIP / SQL | Dossiers législatifs et navette parlementaire |
-| `senat:interventions` | `cri.zip` et comptes rendus HTML | ZIP + HTML | Débats et prises de parole au Palais du Luxembourg |
-| `senat:agenda` | API agenda senat.fr (`/api/v1/agenda/events`) | JSON | Réunions de commission et séances publiques |
-| `senat:reunions` | Comptes rendus de commission senat.fr | HTML | Comptes rendus de réunions, commissaires cités |
-| `senat:dossier_commissions` | Pages dossiers législatifs senat.fr | HTML | Commissions saisies au fond ou pour avis |
-| `senat:videos` | [videos.senat.fr](https://videos.senat.fr) | HTML | Liens directs vers les séances et auditions sénatoriales |
-| `hatvp:lobbyistes` | [hatvp.fr](https://www.hatvp.fr) Répertoire Agora | ZIP / CSV | Représentants d'intérêts, clients, domaines, budgets |
-| `interieur:candidatures` | [data.gouv.fr](https://data.gouv.fr) | XLSX | Candidats et listes aux élections sénatoriales |
+| `senat:senateurs_histo` | [data.senat.fr](https://data.senat.fr) ODSEN (`ODSEN_ELUSEN.csv` et fichiers associés) | CSV | Anciens sénateurs, mandats clos, groupe d'époque |
+| `senat:bureaux` | pages commissions de senat.fr | HTML (toujours) | Fonctions au bureau des commissions (président, vice-président…) |
+| `senat:scrutins` | pages `scrutin-public` de senat.fr, `dosleg.zip` de data.senat.fr | HTML + dump SQL | Scrutins publics et votes nominatifs |
+| `senat:amendements` | `ameli.zip` de data.senat.fr, puis un CSV par texte sur senat.fr | ZIP + CSV | Amendements, cosignataires et article visé (colonne « Subdivision » du CSV, sinon `amd.subid` → `sub` d'AMELI) |
+| `senat:dossiers` | `dosleg.zip` de data.senat.fr | ZIP (dump SQL) | Dossiers législatifs |
+| `senat:interventions` | `cri.zip` de data.senat.fr et comptes rendus HTML de senat.fr | ZIP + HTML | Prises de parole en séance |
+| `senat:agenda` | API agenda de senat.fr (`/api/v1/agenda/events`) | JSON | Séances publiques et réunions de commission |
+| `senat:reunions` | comptes rendus de commission sur senat.fr | HTML (toujours) | Comptes rendus rattachés aux réunions, sénateurs cités |
+| `senat:dossier_commissions` | pages dossier législatif de senat.fr | HTML (toujours) | Commissions saisies des dossiers du Sénat |
+| `senat:videos` | [videos.senat.fr](https://videos.senat.fr) | HTML (toujours) | Liens vers les vidéos des séances et réunions |
+| `hatvp:lobbyistes` | [hatvp.fr](https://www.hatvp.fr/agora/opendata/csv/Vues_Separees_CSV.zip), répertoire des représentants d'intérêts | ZIP / CSV | Représentants d'intérêts, actions déclarées, secteurs |
+| `interieur:candidatures` | [data.gouv.fr](https://www.data.gouv.fr), jeu « élections sénatoriales 2026, candidatures » publié par le ministère de l'Intérieur | CSV (toujours) | Listes et candidats aux sénatoriales 2026 |
+| `dila:interventions` | [echanges.dila.gouv.fr](https://echanges.dila.gouv.fr/OPENDATA/Debats/AN/) | TAR / XML | Ancienne source des débats de l'Assemblée. **Plus rien n'y est publié depuis janvier 2026** : elle est sortie du batch nocturne et n'est plus lue que par la commande manuelle `sync --in` |
+
+Le batch nocturne ne lit que la **législature courante** de l'Assemblée (17e) et une **fenêtre récente** des sessions du Sénat. L'historique (15e et 16e législatures, Sénat depuis la session 2006) a été chargé par des commandes ponctuelles et ne bouge plus : voir [Commandes CLI](/donnees/commandes-cli).
 
 ---
 
-## 🔍 Sources Spécialisées et Enrichissement
+## 🔍 Sources lues par le batch sans suivi de fraîcheur
 
-1. **Déclarations d'intérêts et patrimoine (HATVP)** : Fichier `hatvp.fr/livraison/opendata/liste.csv` synchronisé à chaque passage où des données évoluent.
-2. **Comptes rendus de commission (PDF)** : Notices HTML de l'Assemblée avec extraction texte via `pdftotext` (poppler-utils) pour extraire les avis de commission sur les amendements.
-3. **Wikidata et Wikipedia FR** : API MediaWiki pour compléter les biographies factuelles (date de naissance, profession d'origine).
-4. **Mistral AI** : Modèle `mistral-small-latest` pour générer les résumés neutres de dossiers et scrutins, et `mistral-embed` pour la contextualisation sémantique.
-5. **Tavily Search** : Recherche restreinte au domaine `vie-publique.fr` pour associer des fiches thématiques neutres aux dossiers législatifs. Le plan donne 1 000 recherches par mois : chaque nuit n'en dépense qu'une part, au prorata des jours restants, et les sujets en attente passent à la nuit suivante.
+| Source | Ressource | Usage |
+| :--- | :--- | :--- |
+| HATVP, déclarations | [hatvp.fr/livraison/opendata/liste.csv](https://www.hatvp.fr/livraison/opendata/liste.csv) | Déclarations d'intérêts et de patrimoine des parlementaires. Relue à chaque batch où au moins une source a changé |
+| Assemblée, pages de scrutin | `assemblee-nationale.fr/dyn/<législature>/scrutins/<uid>` | Scrutins des 30 derniers jours encore sans amendement rattaché, pour relier scrutin et amendements |
+| Sénat, pages de scrutin | `senat.fr/scrutin-public/...` | Même rôle, pour les nouveaux scrutins du Sénat |
+| Assemblée, comptes rendus de commission | page de notice `assemblee-nationale.fr/dyn/docs/<ref>.html`, puis le PDF qu'elle référence (lu avec `pdftotext`) | Débats de commission et avis de commission sur les amendements, pour les réunions des 60 derniers jours |
+| Assemblée, textes législatifs | `assemblee-nationale.fr/dyn/opendata/<texteRef>.html` | Texte des articles de chaque nouvelle version de texte, fourni au modèle pour les résumés de scrutins. Une version déjà ingérée n'est pas relue |
+| Wikipedia FR et Wikidata | API MediaWiki de fr.wikipedia.org et wikidata.org | Biographie et faits datés, en entrée des fiches parlementaires générées par IA |
+| Tavily | api.tavily.com, recherche restreinte au domaine vie-publique.fr | Trouver la page vie-publique.fr d'un **sujet** (liens « contexte »). Chaque nuit ne dépense qu'une part du crédit restant du mois, au prorata des jours restants ; les sujets en attente passent à la nuit suivante |
+| Mistral | api.mistral.ai | Génération des résumés (`mistral-small-latest`) et embeddings (`mistral-embed`). Voir [Enrichissement IA](/donnees/enrichissement-ia) |
 
 ---
 
-## 🆔 Clés et Identifiants Conservés
+## 🗳️ Élections sénatoriales 2026
 
-Pour garantir une auditabilité parfaite, les identifiants officiels sont conservés en base :
+| Source | Ressource | Commande | Usage |
+| :--- | :--- | :--- | :--- |
+| Ministère de l'Intérieur, candidatures | data.gouv.fr (CSV ; XLSX pour les éditions 2020 et 2023) | batch nocturne (`interieur:candidatures`) ou `sync-candidatures` | Listes et candidats |
+| Ministère de l'Intérieur, résultats | [resultats-elections.interieur.gouv.fr/Senatoriales2026/](https://www.resultats-elections.interieur.gouv.fr/Senatoriales2026/) (HTML ; l'adresse distingue la casse) | `sync-resultats-senatoriales`, lancée à la main le soir du scrutin, en boucle | Participation par tour, voix, sièges, élus |
+| Répertoire national des élus | [data.gouv.fr](https://www.data.gouv.fr/datasets/5c34c4d1634f4173183a64f1/), republié chaque trimestre (CSV) | `sync-mandats-locaux` | Mandats locaux des candidats titulaires |
+| Résultats des sénatoriales 2020 et 2023 | data.gouv.fr | `generer-reference-hemicycle` | Composition du Sénat par nuance avant le scrutin, figée dans `apps/api/src/modules/senatoriales/hemicycle-reference.json` |
 
-- **Députés** : `parlementaires.source_id` (ex: `PA795828`)
-- **Sénateurs** : `parlementaires.source_id` (matricule, ex: `14133K`)
-- **Dossiers législatifs** : `dossiers_legislatifs.uid` (ex: `DLR5L17N50168`)
-- **Commissions** : `commissions.uid` (ex: `PO59048`)
-- **Lobbyistes** : `lobbyistes.identifiant_national` (numéro SIREN ou RNA)
+Les résultats et les mandats locaux ne font partie d'aucun batch planifié.
+
+---
+
+## 🛠️ Sources lues seulement par des commandes manuelles
+
+| Source | Commande | Usage |
+| :--- | :--- | :--- |
+| Sénat, index des débats (`debats.zip` de data.senat.fr) | `segmenter-debats-senat` | Situer les prises de parole du Sénat dans la structure du débat |
+| DILA, comptes rendus de l'Assemblée | `sync --in` | Source morte depuis janvier 2026 (voir plus haut) |
+
+---
+
+## 📰 Source lue à la demande par l'API
+
+L'onglet presse d'un sujet (`GET /api/v1/sujets/:slug/presse`) interroge le flux RSS de Google Actualités au moment de la requête ; le résultat est mis en cache 3 h (15 min s'il est vide). Rien n'est stocké en base.
+
+---
+
+## 🆔 Identifiants de la source
+
+Les identifiants des sources sont conservés pour permettre de remonter à l'original :
+
+| Donnée | Colonne | Exemple |
+| :--- | :--- | :--- |
+| Député | `parlementaires.source_id` | `PA795828` |
+| Sénateur | `parlementaires.source_id` (matricule) | `14133K` |
+| Dossier législatif | `dossiers_legislatifs.uid` | `DLR5L17N50168` |
+| Amendement | `amendements.uid` (tel que publié) et `uid_canonique` (clé de dédoublonnage) | |
+| Organe AN | `commissions.uid` | `PO59048` |
+| Intervention AN | `interventions.source_uid` (`id_syceron` du paragraphe) | |
+| Lobbyiste | `lobbyistes.identifiant_national` (SIREN, RNA…) | |
+
+Le contenu brut reçu de la source est conservé dans les colonnes `source_data` (JSON) de `parlementaires`, `mandats_parlementaires`, `dossiers_legislatifs`, `scrutins` et `lobbyistes`.

@@ -18,16 +18,16 @@ CLAIR transforme ces flux bruts en une expérience accessible, transparente et p
 ### 1. Neutralité Stricte et Objectivité
 - Aucun commentaire partisan ou jugement politique.
 - Les données et statistiques sont calculées selon des règles mathématiques publiques et auditables.
-- Les synthèses de textes par IA souveraine (Mistral AI) sont strictement descriptives, dénuées de qualificatifs orientés et rattachées aux sources officielles.
+- Les synthèses rédigées par IA (Mistral) sont descriptives, signalées comme telles sur le site, et contrôlées contre les votes réels (voir [Enrichissement IA](/donnees/enrichissement-ia)).
 
 ### 2. Transparence Intégrale et Open Source
 - **Code Libre** : L'ensemble du code est diffusé sous licence **AGPL-3.0**.
-- **Données Publiques** : Toutes les données agrégées sont consultables via l'interface web ou via l'API REST publique sans barrière financière.
+- **Données Publiques** : Les données agrégées sont consultables sur le site et par l'API publique, gratuitement et sans clé. Ce que l'API ne sert pas est listé sur la page [Modèle Prisma](/donnees/modele-prisma).
 
 ### 3. Respect de la Vie Privée et Absence de Comptes
 - **Zéro Compte Utilisateur** : Aucun profil, mot de passe ou email requis.
-- **Zéro Cookie Publicitaire** : Seul un outil de mesure anonyme conforme CNIL (Plausible) est utilisé sur le web.
+- **Aucun cookie** : la mesure d'audience du site et la mesure d'usage de l'API passent par Plausible, qui ne dépose pas de cookie. Ce que l'API transmet à Plausible est décrit sur la page [Vue d'ensemble de l'API](/guide/api-reference).
 - **Lecture Seule** : L'API est en lecture seule (la seule écriture publique étant le formulaire anonyme de signalement d'anomalie `POST /api/v1/feedback`).
 
 ### 4. Traçabilité des Données
-- Chaque vote, amendement, scrutin ou fiche d'élu comporte son identifiant officiel (ex: `PA795828` pour Yaël Braun-Pivet) et des liens directs vers les comptes rendus officiels de l'Assemblée nationale ou du Sénat.
+- Chaque parlementaire, scrutin, dossier ou amendement conserve l'identifiant que lui donne sa source (par exemple `PA721908` pour Yaël Braun-Pivet à l'Assemblée), de quoi remonter au document officiel. Voir [Sources de données](/donnees/sources-de-donnees).

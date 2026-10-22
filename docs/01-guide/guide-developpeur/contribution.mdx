@@ -2,29 +2,83 @@
 title: "Guide de Contribution & Bonnes Pratiques"
 sidebar_label: "Contribution & Normes"
 sidebar_icon: "git-pull-request"
-description: Workflow Git, conventions de commits, licences libres AGPL-3.0, validation avant PR et tests unitaires.
+description: Signaler un bug, proposer une fonctionnalité, soumettre du code (branches, commits, vérifications avant PR) et licence AGPL-3.0.
 ---
 
-## 🤝 Comment Contribuer ?
+## 🤝 Principes
 
-Le projet CLAIR est ouvert aux contributions citoyennes, techniques et juridiques.
+CLAIR est un outil citoyen et apartisan. Les contributions restent factuelles et objectives : aucune opinion politique ne doit transparaître dans le code, les données ou la documentation.
 
-### 1. Cycle de Développement et Branches
-- Clonez le dépôt et créez une branche thématique explicite (`feat/nom-fonctionnalite`, `fix/nom-du-bug`, `docs/nom-sujet`).
-- Respectez les standards TypeScript et assurez-vous que les types sont stricts.
+---
 
-### 2. Validation Avant Soumission
-Avant d'ouvrir une Pull Request, exécutez impérativement :
+## 🐞 Signaler un bug
+
+1. Vérifier que le bug n'a pas déjà été signalé dans les [issues](https://github.com/accelaire/CLAIR/issues).
+2. Ouvrir une issue avec un titre clair, les étapes pour reproduire, le comportement attendu et observé, et l'environnement (OS, Node.js, navigateur).
+
+## 💡 Proposer une fonctionnalité
+
+Ouvrir une issue qui décrit la fonctionnalité et son utilité, et attendre une validation avant de commencer le développement. La feuille de route est discutée publiquement dans les [discussions GitHub](https://github.com/accelaire/CLAIR/discussions).
+
+---
+
+## 🛠️ Soumettre du code
+
+1. Forker le dépôt, puis créer une branche depuis `master` : `feat/…`, `fix/…`, `docs/…`.
+2. Installer l'environnement : voir [Démarrage local](/guide/guide-developpeur/demarrage-local).
+3. Avant d'ouvrir la pull request vers `master`, lancer :
 
 ```bash
-# Vérifier la qualité du code
 pnpm lint
 pnpm type-check
 pnpm test
 
-# Valider la documentation
+# Si la documentation est touchée
 pnpm docs:validate
 ```
 
-### 3. Licence Libre AGPL-3.0
-Toute contribution soumise au projet est automatiquement placée sous les termes de la licence **GNU Affero General Public License v3.0**.
+4. **Si l'ingestion, un rattachement ou l'enrichissement IA est touché**, lancer aussi les contrôles de la donnée, sur une base remplie (voir [Qualité des données](/donnees/qualite-des-donnees)) :
+
+```bash
+pnpm --filter @clair/ingestion test
+pnpm --filter @clair/ingestion check-quality
+pnpm --filter @clair/ingestion exec tsx src/cli.ts check-ia-quality   # si l'IA est touchée
+```
+
+5. **Si le schéma Prisma change**, joindre à la PR le fichier de migration, écrit à partir d'un `prisma migrate diff` relu : `pnpm db:migrate` ne fonctionne pas sur ce dépôt (voir [Modèle Prisma](/donnees/modele-prisma#migrations)). Une nouvelle table reçoit aussi son trigger `updated_at`.
+
+6. **Si une route de l'API change**, modifier son schéma dans `apps/api` : la référence de l'API de cette documentation est générée depuis lui, jamais écrite à la main.
+
+---
+
+## ✍️ Conventions
+
+### Commits
+
+Messages clairs, en français :
+
+```text
+type(portée): description courte
+
+corps facultatif, qui explique le pourquoi
+```
+
+Types : `feat` (fonctionnalité), `fix` (correction), `docs` (documentation), `style` (formatage), `refactor`, `test`, `chore` (maintenance, dépendances, configuration).
+
+### Code
+
+- **TypeScript** strict, sans `any`.
+- **ESLint** (`pnpm lint`) et **Prettier** (`pnpm format`).
+- **Nommage** : `camelCase` pour les variables et fonctions, `PascalCase` pour les types, `kebab-case` pour les fichiers.
+- **API** : un module par domaine dans `apps/api/src/modules/<domaine>/` (`.controller.ts`, `.service.ts`, `.schema.ts` en Zod, tests à côté).
+- **Ingestion** : un client par source dans `services/ingestion/src/sources/`, des tests pour chaque parser, et le respect des limites de débit des sources.
+
+### Documentation
+
+Une page par fichier `.mdx` dans `docs/`. Après l'ajout, le renommage ou la suppression d'une page, lancer `pnpm docs:nav` ; les préfixes numériques des dossiers (`01-guide`) ordonnent la navigation mais n'apparaissent pas dans les URLs. Les diagrammes de la base se régénèrent avec `pnpm docs:erd`.
+
+---
+
+## ⚖️ Licence AGPL-3.0
+
+Toute contribution est placée sous la licence **GNU Affero General Public License v3.0**, celle du projet.
