@@ -834,13 +834,13 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
 
           const dossierIds = dossiers.map(d => d.id);
 
-          type SujetGroupeRow = { nom: string; nom_complet: string | null; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
-          type SujetArticleRow = { scrutin_id: string; article: string; sort: string; nom: string; nom_complet: string | null; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
+          type SujetGroupeRow = { nom: string; nom_complet: string | null; slug: string; chambre: 'assemblee' | 'senat'; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
+          type SujetArticleRow = { scrutin_id: string; article: string; sort: string; chambre: 'assemblee' | 'senat'; nom: string; nom_complet: string | null; slug: string; pour: bigint; contre: bigint; abstention: bigint; orientation: string | null };
 
           // Votes sur l'ensemble du texte (solennel OU ordinaire avec "ensemble" dans le titre)
           const positionsEnsemble = dossierIds.length > 0
             ? await prisma.$queryRaw<SujetGroupeRow[]>`
-                SELECT gp.nom, gp.nom_complet, gp.slug, gp.position as orientation,
+                SELECT gp.nom, gp.nom_complet, gp.slug, s.chambre, gp.position as orientation,
                   SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END)::bigint AS pour,
                   SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
                   SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
@@ -850,7 +850,7 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
                 WHERE s.dossier_id = ANY(${dossierIds})
                   AND ${voteSurLEnsemble('s')}
                   AND v.position != 'absent'
-                GROUP BY gp.nom, gp.nom_complet, gp.slug, gp.position
+                GROUP BY gp.nom, gp.nom_complet, gp.slug, s.chambre, gp.position
                 ORDER BY (SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                           SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
                           SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)) DESC,
@@ -878,7 +878,7 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
           // invente une position.
           const votesArticlesRaw = dossierIds.length > 0
             ? await prisma.$queryRaw<SujetArticleRow[]>`
-                SELECT s.id as scrutin_id, s.titre as article, s.sort,
+                SELECT s.id as scrutin_id, s.titre as article, s.sort, s.chambre,
                   gp.nom, gp.nom_complet, gp.slug, gp.position as orientation,
                   SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END)::bigint AS pour,
                   SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
@@ -893,7 +893,7 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
                   AND s.titre NOT ILIKE '%amendement%'
                   AND s.titre NOT ILIKE '%ensemble%'
                   AND v.position != 'absent'
-                GROUP BY s.id, s.titre, s.sort, gp.nom, gp.nom_complet, gp.slug, gp.position
+                GROUP BY s.id, s.titre, s.sort, s.chambre, gp.nom, gp.nom_complet, gp.slug, gp.position
                 HAVING SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                        SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
                        SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) > 1
@@ -905,16 +905,23 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
               `
             : [];
 
-          const articlesMap = new Map<string, { article: string; sort: string; groupes: SujetGroupeRow[] }>();
+          const articlesMap = new Map<string, { article: string; sort: string; chambre: 'assemblee' | 'senat'; groupes: SujetGroupeRow[] }>();
           for (const row of votesArticlesRaw) {
             if (!articlesMap.has(row.scrutin_id)) {
-              articlesMap.set(row.scrutin_id, { article: row.article, sort: row.sort, groupes: [] });
+              articlesMap.set(row.scrutin_id, { article: row.article, sort: row.sort, chambre: row.chambre, groupes: [] });
             }
             articlesMap.get(row.scrutin_id)!.groupes.push(row);
           }
           const votesArticles = [...articlesMap.values()]
             .sort((a, b) => scoreClivage(b.groupes) - scoreClivage(a.groupes) || a.article.localeCompare(b.article))
             .slice(0, MAX_ARTICLES_PROMPT);
+
+          // Des groupes des deux chambres dans le prompt : un même sigle (SOC)
+          // y désigne alors deux groupes qui votent souvent différemment.
+          const positionsDesDeuxChambres = new Set([
+            ...positionsEnsemble.map(g => g.chambre),
+            ...votesArticles.map(va => va.chambre),
+          ]).size === 2;
 
           const ensembleForHash = positionsEnsemble.map(g => `ens:${g.slug}:${g.pour}:${g.contre}:${g.abstention}`).join('|');
           const articlesForHash = votesArticles
@@ -945,6 +952,9 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
             articlesForHash,
             // Change la consigne envoyée au modèle, donc le résumé attendu.
             chambresAvecVotes.join(','),
+            // Positions présentées chambre par chambre (cf. buildSujetResumePrompt).
+            // Ajouté aux seuls sujets concernés, pour ne pas régénérer les autres.
+            ...(positionsDesDeuxChambres ? ['positions-par-chambre'] : []),
           ];
           const contentHash = computeContentHash(...hashParts);
 
@@ -975,7 +985,7 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
           }
 
           const toGroupeArray = (rows: SujetGroupeRow[]) => rows.map(g => ({
-            nom: g.nom, nomComplet: g.nom_complet, slug: g.slug,
+            nom: g.nom, nomComplet: g.nom_complet, slug: g.slug, chambre: g.chambre,
             pour: Number(g.pour), contre: Number(g.contre), abstention: Number(g.abstention),
             orientation: g.orientation,
           }));
@@ -995,6 +1005,7 @@ export async function enrichSujetsIA(options: EnrichmentOptions = {}): Promise<E
             votesArticles: votesArticles.map(va => ({
               article: va.article,
               sort: va.sort,
+              chambre: va.chambre,
               groupes: toGroupeArray(va.groupes),
             })),
             chambresAvecVotes,

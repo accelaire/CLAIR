@@ -257,13 +257,22 @@ interface GroupePosition {
   contre: number;
   abstention: number;
   orientation?: string | null;
+  /**
+   * Chambre des votes, renseignée pour un sujet qui réunit des votes des deux
+   * chambres : « SOC » y désigne alors deux groupes distincts, celui de
+   * l'Assemblée et celui du Sénat.
+   */
+  chambre?: 'assemblee' | 'senat' | null;
 }
 
 interface VoteArticle {
   article: string;
   sort: string;
+  chambre?: 'assemblee' | 'senat' | null;
   groupes: GroupePosition[];
 }
+
+const NOM_CHAMBRE = { assemblee: 'Assemblée nationale', senat: 'Sénat' } as const;
 
 interface DossierPromptData {
   titre: string;
@@ -347,15 +356,19 @@ function articleCourt(titre: string): string {
 function formatDivergences(positionsEnsemble: GroupePosition[], votesArticles: VoteArticle[]): string[] {
   if (positionsEnsemble.length === 0 || votesArticles.length === 0) return [];
 
-  const ensembleParGroupe = new Map(positionsEnsemble.map(g => [g.nom, positionDominante(g)]));
+  // Un groupe se repère par son sigle ET sa chambre : indexé sur le seul sigle,
+  // le SOC du Sénat écrasait celui de l'Assemblée, et les votes par article de
+  // l'un étaient comparés au vote sur l'ensemble de l'autre.
+  const cle = (g: { nom: string; chambre?: string | null }) => `${g.nom}|${g.chambre ?? ''}`;
+  const ensembleParGroupe = new Map(positionsEnsemble.map(g => [cle(g), { g, pos: positionDominante(g) }]));
   const lignes: string[] = [];
 
-  for (const [nom, posEnsemble] of ensembleParGroupe) {
+  for (const [k, { g: groupe, pos: posEnsemble }] of ensembleParGroupe) {
     if (!posEnsemble) continue;
     const ecarts: string[] = [];
 
     for (const va of votesArticles) {
-      const g = va.groupes.find(x => x.nom === nom);
+      const g = va.groupes.find(x => cle({ nom: x.nom, chambre: x.chambre ?? va.chambre }) === k);
       if (!g) continue;
       const posArticle = positionDominante(g);
       if (posArticle && posArticle !== posEnsemble) {
@@ -364,6 +377,7 @@ function formatDivergences(positionsEnsemble: GroupePosition[], votesArticles: V
     }
 
     if (ecarts.length > 0) {
+      const nom = groupe.chambre ? `${groupe.nom} (${NOM_CHAMBRE[groupe.chambre]})` : groupe.nom;
       lignes.push(`${nom} : ${posEnsemble} sur l'ensemble, MAIS ${ecarts.join(' ; ')}`);
     }
   }
@@ -551,8 +565,19 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
         : 'sur ce sujet';
   // Nommer la chambre absente vaut mieux que se taire : sans interdiction
   // explicite, le modèle comble le silence.
+  // Des groupes des deux chambres dans les positions : un même sigle (SOC) ou un
+  // même nom (« Les Républicains », LR à l'Assemblée et UMP au Sénat) y désigne
+  // deux groupes qui votent souvent différemment. Sans la chambre, le modèle
+  // écrivait « les socialistes ont voté pour » du PLFSS 2026, vrai à
+  // l'Assemblée (125 pour) et faux au Sénat (127 contre).
+  const positionsParChambre = new Set([
+    ...data.positionsEnsemble.map(g => g.chambre),
+    ...data.votesArticles.map(va => va.chambre),
+  ].filter(Boolean)).size === 2;
   const contrainteChambres =
-    aAN && auSenat
+    positionsParChambre
+      ? '- Les votes fournis couvrent les deux chambres, et un même sigle ou un même nom (SOC, ou « Les Républicains » : LR à l\'Assemblée, UMP au Sénat) y désigne DEUX groupes distincts qui ont pu voter différemment. Chaque fois que tu décris la position d\'un groupe, précise la chambre (« à l\'Assemblée », « au Sénat ») et ne reprends que les chiffres de cette chambre. N\'additionne et ne fusionne jamais les votes des deux chambres.'
+    : aAN && auSenat
       ? '- Les votes fournis couvrent les deux chambres : ne confonds pas ceux de l\'Assemblée avec ceux du Sénat.'
       : aAN
         ? '- Les votes fournis ne concernent QUE l\'Assemblée nationale. N\'écris rien sur un vote, une position ou un groupe du Sénat : il n\'y en a aucun ici.'
@@ -600,11 +625,21 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
     }
   }
 
-  // Positions des groupes — votes sur l'ensemble du texte
+  // Positions des groupes — votes sur l'ensemble du texte, une section par
+  // chambre quand le sujet réunit les deux.
   if (data.positionsEnsemble.length > 0) {
-    parts.push('\n--- Positions des groupes sur l\'ensemble du texte (données fiables) ---');
-    for (const g of data.positionsEnsemble) {
-      parts.push(formatGroupePosition(g));
+    const sections = positionsParChambre
+      ? (['assemblee', 'senat'] as const).map(c => ({
+        titre: `\n--- ${NOM_CHAMBRE[c]} : positions des groupes sur l'ensemble du texte (données fiables) ---`,
+        groupes: data.positionsEnsemble.filter(g => g.chambre === c),
+      }))
+      : [{ titre: '\n--- Positions des groupes sur l\'ensemble du texte (données fiables) ---', groupes: data.positionsEnsemble }];
+    for (const { titre, groupes } of sections) {
+      if (groupes.length === 0) continue;
+      parts.push(titre);
+      for (const g of groupes) {
+        parts.push(formatGroupePosition(g));
+      }
     }
   }
 
@@ -614,7 +649,8 @@ export function buildSujetResumePrompt(data: SujetPromptData): string {
     // Aucune troncature : voir buildDossierResumePrompt.
     for (const va of data.votesArticles) {
       const résultat = va.sort === 'adopte' ? 'Adopté' : 'Rejeté';
-      parts.push(`${va.article} (${résultat}) :`);
+      const chambre = positionsParChambre && va.chambre ? `, ${NOM_CHAMBRE[va.chambre]}` : '';
+      parts.push(`${va.article} (${résultat}${chambre}) :`);
       for (const g of va.groupes) {
         parts.push(`  ${formatGroupePosition(g)}`);
       }
