@@ -107,8 +107,8 @@ Code : `services/ingestion/src/checks/ia-quality.ts`. Il relit le champ `enjeux`
 
 | Défaut détecté | Seuil maximal |
 | :--- | ---: |
-| Inversion pour/contre : un groupe décrit comme favorable alors qu'il a voté contre, ou l'inverse | 70 |
-| Abstention décrite comme un vote pour ou contre | 90 |
+| Inversion pour/contre : un groupe décrit comme favorable alors qu'il a voté contre, ou l'inverse | 35 |
+| Abstention décrite comme un vote pour ou contre | 45 |
 | Position prêtée à un groupe qui n'a aucun vote sur l'entité | 20 |
 
 Le signal « groupe pesant dans les votes mais jamais mentionné » est calculé et affiché, sans effet sur le résultat.
@@ -116,6 +116,13 @@ Le signal « groupe pesant dans les votes mais jamais mentionné » est calculé
 Les votes sont comptés sous le groupe du **mandat** à la date du scrutin, comme dans les prompts : à l'Assemblée, le mandat de la législature du scrutin ; au Sénat, le mandat en cours à sa date. Le générateur et le contrôle partagent le même fragment SQL (`services/ingestion/src/utils/groupe-epoque.ts`) : un résumé de 2018 qui cite LAREM ou LR est jugé sur les groupes de 2018, pas sur ceux d'aujourd'hui.
 
 Les sigles successifs d'une même famille politique (FI, LFI-NUPES et LFI-NFP ; LR, UMP et DR…) sont rapprochés par leurs alias communs. LREM, le groupe du Sénat devenu RDPI, est rattaché à LAREM, car le modèle écrit « LREM » pour le groupe de l'Assemblée.
+
+Les votes sont aussi comptés **chambre par chambre**, car un même sigle ou un même nom désigne deux groupes distincts : « SOC » est le groupe socialiste de l'Assemblée et celui du Sénat, « Les Républicains » le groupe LR de l'Assemblée et le groupe UMP du Sénat. Une phrase qui nomme une chambre est comparée aux votes de cette chambre, et une phrase qui nomme les deux est contrôlée dans les deux. Une phrase qui n'en nomme aucune, alors que le groupe désigné a voté dans le sens décrit dans l'une des deux, est ambiguë mais pas fausse : elle n'est pas comptée. L'intitulé d'un seul des deux groupes (« Socialistes et apparentés ») ou un sigle cité tel quel (« SOC-A ») n'est pas ambigu.
+
+Les règles du contrôle suivent celles du prompt :
+- un groupe ne s'abstient majoritairement que si ses abstentions **dépassent** ses voix exprimées. À égalité, le prompt l'annonce favorable ou opposé, et le contrôle ne reproche pas au modèle de l'avoir écrit ;
+- un groupe cité comme l'exception d'une phrase (« tous les groupes, à l'exception du CRC, ont voté pour ») ne se voit pas prêter la position des autres ;
+- le passif décrit le sort d'un objet, pas le vote d'un groupe : « un amendement du groupe SOC a été rejeté » n'est pas une opposition du groupe.
 
 La détection des inversions repose sur des expressions régulières appliquées au voisinage de chaque nom de groupe. Elle produit des faux positifs, et ses seuils sont documentés dans le code comme des dettes à ramener vers zéro plutôt que comme des tolérances.
 

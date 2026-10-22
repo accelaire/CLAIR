@@ -95,8 +95,15 @@ export const IA_QUALITY_THRESHOLDS = {
   // résumés fautifs. Bornage du contexte aux charnières, aux fins de phrase et
   // neutralisation des négations : 300 signalements → 62, dont plus aucun
   // n'est une inversion démontrable (cf. commentaire de checkInversions).
-  maxInversions: 70,
-  maxAbstentionDescribedAsVote: 90,
+  //
+  // 70 → 35 et 90 → 45 le 2026-10-22 : votes comparés chambre par chambre,
+  // égalité alignée sur le prompt, exceptions (« sauf X ») et passif neutralisés.
+  // Mesuré sur la prod avant toute régénération : 49 → 27 inversions, 95 → 40
+  // abstentions. Sur 78 signalements retirés, relus un par un, aucun n'était une
+  // erreur du résumé : la phrase était vraie dans la chambre qu'elle nommait, ou
+  // dans l'une des deux quand elle n'en nommait aucune.
+  maxInversions: 35,
+  maxAbstentionDescribedAsVote: 45,
   maxGroupNotInData: 20,
 };
 
@@ -269,7 +276,13 @@ export function computeTendency(pour: number, contre: number, abstention: number
   if (expr === 0) return 'ABSTENTION';
   // L'abstention majoritaire prime sur le ratio des rares voix exprimées :
   // 0 pour / 1 contre / 12 abstentions n'est pas un groupe « opposé ».
-  if (abstention >= expr) return 'ABSTENTION_MAJ';
+  //
+  // Strictement supérieur, comme `formatGroupePosition` dans le prompt : à
+  // égalité (31 pour / 0 contre / 31 abstentions), le modèle reçoit « Très
+  // favorable » et écrit « a voté pour ». Avec `>=`, le contrôle lui reprochait
+  // la consigne qu'on lui donne : 23 des 95 « abstentions décrites comme un
+  // vote » relevées le 22 octobre 2026.
+  if (abstention > expr) return 'ABSTENTION_MAJ';
   const pct = (pour / expr) * 100;
   if (pct >= 70) return 'FAV';
   if (pct >= 55) return 'PFAV';
@@ -277,6 +290,8 @@ export function computeTendency(pour: number, contre: number, abstention: number
   if (pct <= 45) return 'POPP';
   return 'DIV';
 }
+
+export type Chambre = 'assemblee' | 'senat';
 
 export interface GroupeVote {
   groupe: string;
@@ -286,6 +301,13 @@ export interface GroupeVote {
   contre: number;
   abstention: number;
   matcher: GroupMatcher;
+  /**
+   * Chambre des votes. Un sigle n'identifie pas un groupe : « SOC » est à la
+   * fois le groupe socialiste de l'Assemblée et celui du Sénat, qui votent
+   * souvent différemment sur un même sujet. Les votes sont donc agrégés par
+   * chambre, jamais additionnés d'une chambre à l'autre.
+   */
+  chambre?: Chambre | null;
 }
 
 /**
@@ -314,6 +336,13 @@ const CHARNIERES = /(?<![\p{L}\p{N}])(?:[àa]\s+l['’]inverse|[àa]\s+l['’]op
  * précision, et le bon arbitrage ici — un signalement faux use la confiance dans
  * le garde-fou jusqu'à ce qu'on cesse de le lire.
  */
+// Une fin de phrase sépare aussi sûrement que « à l'inverse » : « Le groupe
+// UMP s'est montré très opposé au texte. Le groupe SOC et le groupe CRC
+// ont… » faisait décrire SOC comme opposé. On ne coupe que sur une
+// ponctuation forte suivie d'une espace et d'une majuscule, pour ne pas
+// trébucher sur « M. Dupont » ou « art. 3 ».
+const FIN_DE_PHRASE = /[.;!?]\s+(?=[A-ZÀÂÉÈÊÎÔÙÜÇ])/g;
+
 function contextAround(text: string, idx: number): string {
   const debut = Math.max(0, idx - 120);
   const fin = Math.min(text.length, idx + 150);
@@ -321,16 +350,120 @@ function contextAround(text: string, idx: number): string {
   let gauche = bornerAGauche(text, debut, idx, CHARNIERES);
   let droite = bornerADroite(text, idx, fin, CHARNIERES);
 
-  // Une fin de phrase sépare aussi sûrement que « à l'inverse » : « Le groupe
-  // UMP s'est montré très opposé au texte. Le groupe SOC et le groupe CRC
-  // ont… » faisait décrire SOC comme opposé. On ne coupe que sur une
-  // ponctuation forte suivie d'une espace et d'une majuscule, pour ne pas
-  // trébucher sur « M. Dupont » ou « art. 3 ».
-  const FIN_DE_PHRASE = /[.;!?]\s+(?=[A-ZÀÂÉÈÊÎÔÙÜÇ])/g;
   gauche = bornerAGauche(text, gauche, idx, FIN_DE_PHRASE);
   droite = bornerADroite(text, idx, droite, FIN_DE_PHRASE);
 
   return text.slice(gauche, Math.max(gauche, droite)).replace(/\n/g, ' ').trim();
+}
+
+/** La phrase qui contient la mention, sans le bornage aux charnières. */
+function phraseAutour(text: string, idx: number): string {
+  const gauche = bornerAGauche(text, Math.max(0, idx - 400), idx, FIN_DE_PHRASE);
+  const droite = bornerADroite(text, idx, Math.min(text.length, idx + 400), FIN_DE_PHRASE);
+  return text.slice(gauche, Math.max(gauche, droite));
+}
+
+// « la haute assemblée » désigne le Sénat : le motif de l'Assemblée exige donc
+// « Assemblée nationale » ou un article élidé (« à l'Assemblée »).
+const MENTION_SENAT = /(?<![\p{L}\d])(?:sénat|sénateurs?|sénatrices?|haute\s+assemblée|chambre\s+haute)(?![\p{L}\d])/iu;
+const MENTION_AN = /(?<![\p{L}\d])(?:assemblée\s+nationale|l['’]assemblée|députés?|députées?|palais\s+bourbon|chambre\s+basse)(?![\p{L}\d])/iu;
+
+function chambresCitees(s: string): Set<Chambre> {
+  const chambres = new Set<Chambre>();
+  if (MENTION_SENAT.test(s)) chambres.add('senat');
+  if (MENTION_AN.test(s)) chambres.add('assemblee');
+  return chambres;
+}
+
+/**
+ * Chambre dont parle le texte autour d'une mention : celle de la proposition
+ * d'abord, sinon celle de la phrase (« Au Sénat, LR et UC ont voté pour,
+ * tandis que SOC… » : la charnière coupe la proposition de SOC de « Au Sénat »).
+ * `null` si aucune chambre, ou les deux, sont nommées.
+ */
+function chambreVisee(text: string, idx: number, contexte: string): Chambre | 'les deux' | null {
+  const dansLaProposition = chambresCitees(contexte);
+  // « Les Républicains (UMP au Sénat, LR à l'Assemblée) ont soutenu la loi » :
+  // la proposition affirme la même chose des deux chambres.
+  if (dansLaProposition.size === 2) return 'les deux';
+  if (dansLaProposition.size === 1) return [...dansLaProposition][0]!;
+  const dansLaPhrase = chambresCitees(phraseAutour(text, idx));
+  return dansLaPhrase.size === 1 ? [...dansLaPhrase][0]! : null;
+}
+
+const SENS_FAVORABLE = new Set(['FAV', 'PFAV']);
+const SENS_OPPOSE = new Set(['OPP', 'POPP']);
+const SENS_ABSTENTION = new Set(['ABSTENTION', 'ABSTENTION_MAJ']);
+
+/**
+ * Le texte parle-t-il d'une autre chambre que celle des votes `v` ?
+ *
+ * Soit il nomme l'autre chambre, soit il n'en nomme aucune alors que le même
+ * groupe y a voté dans le sens décrit : « les socialistes ont voté pour » sur le
+ * PLFSS 2026 est vrai à l'Assemblée (125 pour) et faux au Sénat (127 contre).
+ * Comparée aux votes du Sénat, la phrase passait pour une inversion. Elle est
+ * ambiguë pour le lecteur, ce que le prompt corrige en exigeant la chambre ;
+ * elle n'est pas fausse, et le contrôle ne doit pas la compter comme telle.
+ */
+function parleDeLAutreChambre(
+  text: string,
+  idx: number,
+  contexte: string,
+  v: GroupeVote,
+  votes: GroupeVote[],
+  sensDecrit: (tendance: string) => boolean,
+): boolean {
+  if (!v.chambre) return false;
+  const visee = chambreVisee(text, idx, contexte);
+  if (visee === 'les deux') return false;
+  if (visee) return visee !== v.chambre;
+
+  const mention = matchGroup(text.slice(idx), v.matcher)?.mention ?? '';
+  return votes.some(o =>
+    o.chambre && o.chambre !== v.chambre
+    && familyOf(o.groupe) === familyOf(v.groupe)
+    && designeAussi(mention, o, v)
+    && sensDecrit(computeTendency(o.pour, o.contre, o.abstention)));
+}
+
+/**
+ * Intitulé officiel du groupe, sans le « Groupe » initial des intitulés du Sénat
+ * (« Groupe Les Républicains ») : le modèle l'omet, et le site aussi.
+ */
+function intituleCite(g: GroupeVote, mention: string): boolean {
+  const intitule = g.nomComplet?.replace(/^groupe\s+/iu, '');
+  if (!intitule) return false;
+  return new RegExp(`(?<![\\p{L}\\d])${escapeRegex(intitule)}(?![\\p{L}\\d])`, 'iu').test(mention);
+}
+
+/**
+ * La mention peut-elle désigner `autre` aussi bien que `v` ? « les socialistes »
+ * désigne les deux groupes SOC, « Les Républicains » le groupe LR de
+ * l'Assemblée comme celui du Sénat. « Socialistes et apparentés », intitulé du
+ * seul groupe de l'Assemblée, ne désigne que lui.
+ */
+function designeAussi(mention: string, autre: GroupeVote, v: GroupeVote): boolean {
+  // Un sigle cité tel quel ne désigne que les groupes qui le portent : le sigle
+  // « SOC » se trouve dans « SOC-A », qui n'est pourtant pas le groupe du Sénat.
+  if (mention === v.groupe) return mention === autre.groupe;
+  if (!matcherHits(autre.matcher, mention) && !intituleCite(autre, mention)) return false;
+  return !(intituleCite(v, mention) && !intituleCite(autre, mention));
+}
+
+/**
+ * Groupe cité comme l'exception d'une phrase : « tous les groupes, à
+ * l'exception de LFI-NFP, ont voté pour ». La polarité de la phrase porte sur
+ * les autres groupes, pas sur lui.
+ */
+const ARTICLE = String.raw`(?:(?:la|le|les|de|du|des)(?![\p{L}])|[ld]['’])`;
+const EXCEPTION_AVANT = new RegExp(
+  String.raw`(?<![\p{L}])(?:sauf|hormis|excepté|[àa]\s+l['’]exception(?:\s+notable)?\s+${ARTICLE})` +
+  String.raw`(?:\s*${ARTICLE})?(?:\s*(?:groupes?|sénateurs?|députés?)(?![\p{L}]))?(?:\s*${ARTICLE})?\s*$`,
+  'iu',
+);
+
+function citeCommeException(text: string, idx: number): boolean {
+  return EXCEPTION_AVANT.test(text.slice(Math.max(0, idx - 60), idx));
 }
 
 /** Dernière occurrence de `motif` entre `depuis` et `idx`, bord droit compris. */
@@ -358,7 +491,15 @@ function bornerADroite(text: string, idx: number, jusqu: number, motif: RegExp):
  * étaient signalés comme opposés.
  */
 function sansNegations(contexte: string): string {
-  return contexte.replace(/\baucun[e]?\b[^.;!?]*/giu, ' ');
+  return contexte
+    .replace(/\baucun[e]?\b[^.;!?]*/giu, ' ')
+    // Le passif décrit le sort d'un objet, pas le vote d'un groupe : « un
+    // amendement du groupe SOC a été rejeté », « une tentative du RN de limiter
+    // le montant, qui a été rejetée ». Lus comme une opposition du groupe, ils
+    // faisaient signaler des inversions sur des groupes qui avaient voté pour.
+    // Passif seulement : « ont rejeté le texte » est le vote d'un groupe.
+    .replace(/(?<![\p{L}])(?:(?:a|ont|avait|avaient|ayant)\s+été|est|sont|fut|furent)\s+(?:rejet|approuv|adopt)\p{L}*/giu, ' ')
+    .replace(/(?<![\p{L}])amendements?(?![\p{L}])[^.;!?]{0,60}?(?<![\p{L}])rejet\p{L}*/giu, ' ');
 }
 
 /**
@@ -375,20 +516,17 @@ function findGroup(text: string, v: GroupeVote, strict = false): number {
 // Check 1 — inversions pour/contre (garde-fou historique, bruité)
 // =============================================================================
 //
-// Ce qu'il reste de bruit après le bornage du contexte tient à l'agrégat, pas au
-// texte : `votes` additionne les deux chambres, les législatures successives et
-// toutes les lectures d'un même sujet, sous un sigle unique. « SOC » couvre
-// ainsi le groupe socialiste de l'Assemblée ET celui du Sénat — sur
-// `election-des-representants-au-parlement-europeen`, 3P/20C à l'Assemblée en
-// février 2018 et 68P/4C au Sénat en avril additionnés en un seul « FAV »,
-// opposé à une phrase qui décrivait correctement la lecture de l'Assemblée.
+// Les votes sont agrégés par chambre : « SOC » est à la fois le groupe
+// socialiste de l'Assemblée et celui du Sénat. Additionnés, 3P/20C à
+// l'Assemblée et 68P/4C au Sénat sur `election-des-representants-au-parlement-
+// europeen` donnaient un seul « FAV », opposé à une phrase qui décrivait
+// correctement la lecture de l'Assemblée. Une phrase qui parle de l'autre
+// chambre n'est pas comparée (cf. parleDeLAutreChambre).
 //
-// S'y ajoutent les résumés qui parlent d'un vote sur article ou d'une motion,
-// quand l'agrégat ne compte que les votes sur l'ensemble.
-//
-// Tant que la comparaison reste globale, ce détecteur signale des écarts de
-// périmètre autant que des erreurs. Le lire comme une alarme absolue conduit à
-// « corriger » des résumés justes.
+// Ce qu'il reste de bruit tient aux législatures et lectures successives d'un
+// même sujet, et aux résumés qui parlent d'un vote sur article ou d'une
+// motion, quand l'agrégat ne compte que les votes sur l'ensemble. Le lire
+// comme une alarme absolue conduit à « corriger » des résumés justes.
 // =============================================================================
 
 export function checkInversions(text: string, votes: GroupeVote[]) {
@@ -408,16 +546,18 @@ export function checkInversions(text: string, votes: GroupeVote[]) {
     if (tendency === 'DIV' || tendency === 'ABSTENTION' || tendency === 'ABSTENTION_MAJ') continue;
 
     const idx = findGroup(text, v, true);
-    if (idx < 0) continue;
+    if (idx < 0 || citeCommeException(text, idx)) continue;
 
     const context = contextAround(text, idx);
     const polarite = sansNegations(context);
     const isFav = FAV_PATTERN.test(polarite);
     const isOpp = OPP_PATTERN.test(polarite);
 
-    if ((tendency === 'FAV' || tendency === 'PFAV') && isOpp && !isFav) {
+    if (SENS_FAVORABLE.has(tendency) && isOpp && !isFav) {
+      if (parleDeLAutreChambre(text, idx, context, v, votes, t => SENS_OPPOSE.has(t))) continue;
       issues.push({ groupe: v.groupe, orientation: v.orientation, describedAs: 'OPPOSED', pour: v.pour, contre: v.contre, tendency, context });
-    } else if ((tendency === 'OPP' || tendency === 'POPP') && isFav && !isOpp) {
+    } else if (SENS_OPPOSE.has(tendency) && isFav && !isOpp) {
+      if (parleDeLAutreChambre(text, idx, context, v, votes, t => SENS_FAVORABLE.has(t))) continue;
       issues.push({ groupe: v.groupe, orientation: v.orientation, describedAs: 'FAVORABLE', pour: v.pour, contre: v.contre, tendency, context });
     }
   }
@@ -454,13 +594,15 @@ export function checkGrounding(
 
     // (a) Abstention décrite comme un vote
     const tendency = computeTendency(v.pour, v.contre, v.abstention);
-    const abstientEnBloc =
-      (tendency === 'ABSTENTION' || tendency === 'ABSTENTION_MAJ') && v.abstention >= MIN_ABSTENTION_BLOC;
+    const abstientEnBloc = SENS_ABSTENTION.has(tendency) && v.abstention >= MIN_ABSTENTION_BLOC;
 
-    if (abstientEnBloc && idx >= 0) {
+    if (abstientEnBloc && idx >= 0 && !citeCommeException(text, idx)) {
       const context = contextAround(text, idx);
       const claimsVote = FAV_PATTERN.test(context) || OPP_PATTERN.test(context);
-      if (claimsVote && !ABST_PATTERN.test(context)) {
+      if (
+        claimsVote && !ABST_PATTERN.test(context)
+        && !parleDeLAutreChambre(text, idx, context, v, votes, t => !SENS_ABSTENTION.has(t))
+      ) {
         issues.push({
           kind: 'abstention_described_as_vote',
           groupe: v.groupe,
@@ -526,6 +668,7 @@ export function checkGrounding(
 
 type VoteRow = {
   entity_id: string;
+  chambre: Chambre;
   groupe: string;
   nom_complet: string | null;
   orientation: string | null;
@@ -543,6 +686,7 @@ function toGroupeVote(v: VoteRow): GroupeVote {
     contre: Number(v.contre),
     abstention: Number(v.abstention),
     matcher: buildGroupMatcher(v.groupe, v.nom_complet),
+    chambre: v.chambre,
   };
 }
 
@@ -593,7 +737,7 @@ export async function runIAQualityChecks(prisma: PrismaClient): Promise<IAQualit
   const sujetIds = sujets.map(s => s.id);
   const sujetVotes = sujetIds.length > 0
     ? await prisma.$queryRaw<VoteRow[]>`
-        SELECT s.slug as entity_id, gp.nom as groupe, gp.nom_complet, gp.position as orientation,
+        SELECT s.slug as entity_id, sc.chambre, gp.nom as groupe, gp.nom_complet, gp.position as orientation,
           SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END)::bigint AS pour,
           SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
           SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END)::bigint AS abstention
@@ -605,7 +749,7 @@ export async function runIAQualityChecks(prisma: PrismaClient): Promise<IAQualit
         WHERE s.id = ANY(${sujetIds})
           AND ${voteSurLEnsemble('sc')}
           AND v.position != 'absent'
-        GROUP BY s.slug, gp.nom, gp.nom_complet, gp.position
+        GROUP BY s.slug, sc.chambre, gp.nom, gp.nom_complet, gp.position
         HAVING SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
                SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
                SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) > 3
@@ -650,7 +794,7 @@ export async function runIAQualityChecks(prisma: PrismaClient): Promise<IAQualit
 
   // 2. Dossiers avec resume_ia
   const dossierVotes = await prisma.$queryRaw<(VoteRow & { resume_ia: string; titre: string })[]>`
-    SELECT d.uid as entity_id, d.titre, d.resume_ia,
+    SELECT d.uid as entity_id, d.titre, d.resume_ia, sc.chambre,
       gp.nom as groupe, gp.nom_complet, gp.position as orientation,
       SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END)::bigint AS pour,
       SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END)::bigint AS contre,
@@ -662,7 +806,7 @@ export async function runIAQualityChecks(prisma: PrismaClient): Promise<IAQualit
     WHERE d.resume_ia IS NOT NULL
       AND ${voteSurLEnsemble('sc')}
       AND v.position != 'absent'
-    GROUP BY d.uid, d.titre, d.resume_ia, gp.nom, gp.nom_complet, gp.position
+    GROUP BY d.uid, d.titre, d.resume_ia, sc.chambre, gp.nom, gp.nom_complet, gp.position
     HAVING SUM(CASE WHEN v.position = 'pour' THEN 1 ELSE 0 END) +
            SUM(CASE WHEN v.position = 'contre' THEN 1 ELSE 0 END) +
            SUM(CASE WHEN v.position = 'abstention' THEN 1 ELSE 0 END) > 3
@@ -750,14 +894,17 @@ export function printIAQualityReport(report: IAQualityReport): void {
   console.log(`   Sujets audités: ${report.totalSujets} (${report.sujetsWithEnsemble} avec données ensemble)`);
   console.log(`   Dossiers audités: ${report.totalDossiers} avec données ensemble`);
 
-  console.log(`\n   🔴 Abstention décrite comme un vote: ${abstention.length} (seuil ${IA_QUALITY_THRESHOLDS.maxAbstentionDescribedAsVote})`);
+  // Pastille selon le seuil : en rouge dès le premier cas, le rapport faisait
+  // lire comme un échec une famille sous son seuil.
+  const pastille = (n: number, seuil: number) => (n > seuil ? '🔴' : '✅');
+  console.log(`\n   ${pastille(abstention.length, IA_QUALITY_THRESHOLDS.maxAbstentionDescribedAsVote)} Abstention décrite comme un vote: ${abstention.length} (seuil ${IA_QUALITY_THRESHOLDS.maxAbstentionDescribedAsVote})`);
   for (const g of abstention.slice(0, 15)) {
     console.log(`      ${g.entityType}:${g.entityId} — ${g.groupe} [${g.orientation}] ${g.detail}`);
     console.log(`         « ...${g.context.trim()}... »`);
   }
   if (abstention.length > 15) console.log(`      ... et ${abstention.length - 15} autres`);
 
-  console.log(`\n   🔴 Position prêtée à un groupe absent des données: ${notInData.length} (seuil ${IA_QUALITY_THRESHOLDS.maxGroupNotInData})`);
+  console.log(`\n   ${pastille(notInData.length, IA_QUALITY_THRESHOLDS.maxGroupNotInData)} Position prêtée à un groupe absent des données: ${notInData.length} (seuil ${IA_QUALITY_THRESHOLDS.maxGroupNotInData})`);
   for (const g of notInData.slice(0, 15)) {
     console.log(`      ${g.entityType}:${g.entityId} — ${g.groupe} [${g.orientation}]`);
     console.log(`         « ...${g.context.trim()}... »`);
@@ -767,10 +914,10 @@ export function printIAQualityReport(report: IAQualityReport): void {
   const missingEntities = new Set(missing.map(g => `${g.entityType}:${g.entityId}`));
   console.log(`\n   ℹ️  Groupes pesants non mentionnés: ${missing.length} sur ${missingEntities.size} entités (informatif)`);
 
-  console.log(`\n   Inversions pour/contre (regex): ${report.inversions.length} (seuil ${IA_QUALITY_THRESHOLDS.maxInversions})`);
+  console.log(`\n   ${pastille(report.inversions.length, IA_QUALITY_THRESHOLDS.maxInversions)} Inversions pour/contre (regex): ${report.inversions.length} (seuil ${IA_QUALITY_THRESHOLDS.maxInversions})`);
   const highConfidence = report.inversions.filter(i => i.actualPour + i.actualContre > 50);
   if (highConfidence.length > 0) {
-    console.log(`   🔴 Haute confiance (>50 votes exprimés): ${highConfidence.length}`);
+    console.log(`   🔎 Haute confiance (>50 votes exprimés), à relire à la main : ${highConfidence.length}`);
     for (const inv of highConfidence.slice(0, 15)) {
       console.log(`      ${inv.entityType}:${inv.entityId} — ${inv.groupe} [${inv.orientation}] décrit ${inv.describedAs} mais ${inv.actualPour}P/${inv.actualContre}C (${inv.actualTendency})`);
     }

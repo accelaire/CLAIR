@@ -236,6 +236,60 @@ describe('buildSujetResumePrompt — chambres réellement pourvues en votes', ()
   });
 });
 
+describe('buildSujetResumePrompt — mêmes sigles dans les deux chambres', () => {
+  // PLFSS 2026 : les socialistes de l'Assemblée ont voté pour, ceux du Sénat contre.
+  const socAN = { nom: 'SOC', nomComplet: 'Socialistes et apparentés', slug: 'soc-an', chambre: 'assemblee' as const, pour: 125, contre: 0, abstention: 11, orientation: 'centre_gauche' };
+  const socSenat = { nom: 'SOC', nomComplet: 'Groupe Socialiste, Écologiste et Républicain', slug: 'soc-senat', chambre: 'senat' as const, pour: 0, contre: 127, abstention: 0, orientation: 'centre_gauche' };
+  const base = {
+    label: 'Financement de la sécurité sociale pour 2026',
+    description: null,
+    category: null,
+    status: 'promulgue',
+    dossiersResumes: [],
+    positionsEnsemble: [socAN, socSenat],
+    votesArticles: [],
+    chambresAvecVotes: ['assemblee', 'senat'] as ('assemblee' | 'senat')[],
+  };
+
+  it('présente les positions chambre par chambre et exige la chambre dans le texte', () => {
+    const prompt = buildSujetResumePrompt(base);
+    const an = prompt.indexOf("Assemblée nationale : positions des groupes sur l'ensemble du texte");
+    const senat = prompt.indexOf("Sénat : positions des groupes sur l'ensemble du texte");
+    expect(an).toBeGreaterThan(-1);
+    expect(senat).toBeGreaterThan(an);
+    expect(prompt.indexOf('125 pour')).toBeGreaterThan(an);
+    expect(prompt.indexOf('125 pour')).toBeLessThan(senat);
+    expect(prompt.indexOf('127 contre')).toBeGreaterThan(senat);
+    expect(prompt).toContain('DEUX groupes distincts');
+    expect(prompt).toContain('précise la chambre');
+  });
+
+  it('situe chaque vote par article dans sa chambre', () => {
+    const prompt = buildSujetResumePrompt({
+      ...base,
+      votesArticles: [{ article: "l'article 45", sort: 'adopte', chambre: 'senat', groupes: [{ ...socSenat, pour: 60, contre: 0 }] }],
+    });
+    expect(prompt).toContain("l'article 45 (Adopté, Sénat) :");
+  });
+
+  it('calcule les divergences de chaque groupe dans sa chambre', () => {
+    // Indexés sur le seul sigle, le SOC du Sénat écrasait celui de l'Assemblée :
+    // le vote par article de l'Assemblée était comparé au vote d'ensemble du Sénat.
+    const prompt = buildSujetResumePrompt({
+      ...base,
+      votesArticles: [{ article: "l'article 1er", sort: 'adopte', chambre: 'assemblee', groupes: [{ ...socAN, pour: 120, contre: 0, abstention: 0 }] }],
+    });
+    expect(prompt).not.toContain('SOC (Sénat) : CONTRE sur l\'ensemble, MAIS');
+    expect(prompt).toContain("Aucune : chaque groupe a tenu la même position");
+  });
+
+  it('garde la présentation d’une seule chambre quand une seule a des positions', () => {
+    const prompt = buildSujetResumePrompt({ ...base, positionsEnsemble: [socSenat] });
+    expect(prompt).toContain("--- Positions des groupes sur l'ensemble du texte (données fiables) ---");
+    expect(prompt).not.toContain('DEUX groupes distincts');
+  });
+});
+
 describe('buildSujetResumePrompt — procédure close', () => {
   const base = {
     label: 'Aide à mourir',
