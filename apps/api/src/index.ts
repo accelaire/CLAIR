@@ -32,6 +32,7 @@ import { sujetsRoutes } from './modules/sujets/sujets.controller';
 import { feedbackRoutes } from './modules/feedback/feedback.controller';
 import { sitemapRoutes } from './modules/sitemap/sitemap.controller';
 
+import { openapiDocument } from './openapi';
 import { errorHandler } from './utils/errors';
 import { INTERNAL_HEADER } from './utils/internal-auth';
 import { logger } from './utils/logger';
@@ -57,9 +58,6 @@ async function buildApp() {
   });
 
   const isProduction = process.env.NODE_ENV === 'production';
-  const serverUrl = isProduction
-    ? process.env.API_URL || 'https://api.clair.vote'
-    : process.env.API_URL || 'http://localhost:3001';
 
   // ==========================================================================
   // PLUGINS GLOBAUX
@@ -110,31 +108,7 @@ async function buildApp() {
 
   // Documentation API
   await app.register(swagger, {
-    openapi: {
-      info: {
-        title: 'CLAIR API',
-        description: 'API de la plateforme de transparence politique CLAIR',
-        version: '0.1.0',
-      },
-      servers: [
-        {
-          url: serverUrl,
-          description: isProduction ? 'Production' : 'Development',
-        },
-      ],
-      tags: [
-        { name: 'Health', description: 'Endpoints de santé' },
-        { name: 'Parlementaires', description: 'Données sur tous les parlementaires (députés + sénateurs)' },
-        { name: 'Députés', description: 'Données sur les députés de l\'Assemblée nationale' },
-        { name: 'Sénateurs', description: 'Données sur les sénateurs' },
-        { name: 'Groupes politiques', description: 'Groupes parlementaires de l\'AN et du Sénat' },
-        { name: 'Scrutins', description: 'Votes à l\'Assemblée nationale et au Sénat' },
-        { name: 'Lobbying', description: 'Données HATVP sur le lobbying' },
-        { name: 'Search', description: 'Recherche globale' },
-        { name: 'Analytics', description: 'Statistiques et analyses pour l\'explorateur' },
-        { name: 'Dossiers', description: 'Dossiers législatifs' },
-      ],
-    },
+    openapi: openapiDocument(isProduction, process.env.API_URL),
   });
 
   await app.register(swaggerUi, {
