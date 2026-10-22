@@ -1,41 +1,94 @@
 ---
-title: "Enrichissement par IA Souveraine"
+title: "Enrichissement par IA"
 sidebar_label: "Enrichissement IA"
 sidebar_icon: "bot"
-description: Modèles Mistral AI souverains (mistral-small, mistral-embed), prompts structurés, résumés de scrutins et dossiers, et garde-fous anti-hallucination.
+description: Ce que Mistral rédige (résumés de scrutins, de dossiers et de sujets, fiches de parlementaires), à partir de quelles données, quand un texte est régénéré et comment il est contrôlé.
 ---
 
-CLAIR exploite l'API **Mistral AI** (modèles souverains européens) pour transformer le jargon technique et juridique des projets de loi, amendements et scrutins en synthèses limpides, neutres et accessibles à tous les citoyens.
+CLAIR utilise l'API **Mistral** pour rédiger, à partir des données parlementaires brutes, des textes lisibles par un public non spécialiste : résumés de scrutins, de dossiers et de sujets, fiches de parlementaires. Tout texte généré est signalé sur le site (« Résumé généré par IA »), avec un lien vers la [page de méthodologie](https://clair.vote/methodologie#enrichissement-ia).
 
-Chaque texte généré porte la mention transparente **« Résumé généré par IA »** avec un lien direct vers la méthodologie.
+Code : `services/ingestion/src/workers/ia-enrichment.ts`, `workers/parlementaire-enrichment.ts`, `llm/prompts.ts`, `llm/mistral-client.ts`.
 
 ---
 
-## 🧩 Entités Enrichies & Modèles
+## 🧩 Entités enrichies
 
-| Entité | Colonnes Écrites | Contenu Produit | Données Fournies au LLM |
+| Entité | Colonnes écrites | Contenu | Données fournies au modèle |
 | :--- | :--- | :--- | :--- |
-| **Scrutin** | `scrutins.resume_ia` | 1 à 3 phrases : objet exact du vote et conséquences juridiques | Titre, objet, tags, dossier rattaché, jusqu'à 3 amendements (exposé sommaire et dispositif), texte de l'article visé |
-| **Dossier législatif** | `dossiers_legislatifs.resume_ia` | Résumé en 3 à 5 phrases, puis analyse des positions de chaque groupe | Titre, procédure d'urgence, étapes, scrutins clés, votes des groupes sur l'ensemble et article par article |
-| **Sujet** | `sujets.label`, `resume`, `enjeux` | Titre court sans sigle, résumé global et cartographie des enjeux | Synthèse des dossiers AN et Sénat, votes comparés des groupes politiques |
-| **Sujet par groupe** | `sujets.groupe_amendement_descriptions` | 1 à 2 phrases par groupe sur leurs propositions phares | Amendements rédigés et défendus par chaque groupe parlementaire |
-| **Fiche Parlementaire** | `parlementaires.resume_ia`, `parcours_ia`, `positions_cles_ia` | Synthèse biographique, parcours, engagements marquants | Circonscription, groupe, statistiques d'activité, mandats, déclarations HATVP, données Wikipédia/Wikidata |
+| Scrutin | `scrutins.resume_ia` | 1 à 3 phrases : ce qui a été voté et ce que cela implique | Titre, résultat, type de vote, objet, tags, titre du dossier, jusqu'à 3 amendements (exposé sommaire et dispositif), texte de l'article visé lorsqu'il est connu |
+| Dossier législatif | `dossiers_legislatifs.resume_ia` | Résumé (3 à 5 phrases) puis positions des groupes | Titre, procédure, état, scrutins clés, votes des groupes sur l'ensemble et article par article, amendements clés |
+| Sujet | `sujets.label`, `sujets.resume`, `sujets.enjeux` | Titre court sans sigle, résumé (3 à 5 phrases), enjeux et positions des groupes | Dossiers AN et Sénat du sujet avec leur état, votes des groupes sur l'ensemble et par article, divergences entre les deux chambres |
+| Sujet, par groupe | `sujets.groupe_amendement_descriptions` (JSON) | 1 à 2 phrases par groupe sur ce qu'il propose par ses amendements | Amendements déposés par chaque groupe |
+| Parlementaire | `parlementaires.resume_ia`, `parcours_ia`, `positions_cles_ia`, `faits_notables_ia` | Résumé, parcours, positions clés, faits notables | Identité, groupe, circonscription, statistiques d'activité, mandats et fonctions, actions de lobbying le ciblant, déclarations HATVP, biographie Wikipedia, faits datés Wikidata |
+
+Chaque entité porte aussi `ia_content_hash` (empreinte des données d'entrée) et `ia_generated_at` (date de génération). Les fiches parlementaires enregistrent en plus la provenance de leurs sources web dans `ia_sources` (URL et date de lecture de Wikipedia et Wikidata).
+
+**Positions des groupes.** Lorsque les seuls votes disponibles portent sur des amendements, les prompts des dossiers et des sujets interdisent au modèle de décrire une position de groupe : un vote sur un amendement ne dit pas ce qu'un groupe pense du texte.
 
 ---
 
-## ⚙️ Paramètres d'Inférence Mistral
+## ⚙️ Paramètres
 
-- **Modèle de génération** : `mistral-small-latest`
-- **Température** : 0.3 (très faible pour garantir une factualité stricte et éliminer l'invention créative)
-- **Tokens de sortie** : 512 (scrutins), 1 024 (dossiers et sujets), 1 500 (fiches parlementaires)
-- **Empreinte SHA-256 (`ia_content_hash`)** : Chaque entité calcule une empreinte stricte de ses données d'entrée brutes. Mistral n'est réinterrogé que si l'empreinte change, évitant les surcoûts et les régénérations inutiles.
-- **Embeddings sémantiques** : `mistral-embed` pour sélectionner et classer les fiches de contexte officielles issues de `vie-publique.fr`.
+| Paramètre | Valeur |
+| :--- | :--- |
+| Modèle de génération | `mistral-small-latest` |
+| Température | 0,3 |
+| Tokens de sortie maximum | 512 (scrutins), 1 024 (dossiers, sujets), 1 500 (descriptions par groupe, parlementaires) |
+| Nouvelles tentatives | 3, sur les erreurs 429 et 5xx, avec un délai de 2 s doublé à chaque essai |
+| Concurrence dans le batch nocturne | 3 (scrutins), 2 (dossiers, sujets, descriptions par groupe, parlementaires) |
+| Modèle d'embeddings | `mistral-embed`, pour classer les pages vie-publique.fr candidates d'un sujet |
+
+Sans `MISTRAL_API_KEY`, chaque étape d'enrichissement est sautée avec un avertissement ; le reste de la synchronisation fonctionne.
 
 ---
 
-## 🛡️ Règles Déontologiques Impératives des Prompts
+## 🛡️ Règles communes des prompts
 
-1. **Objectivité Absolue** : Aucun adjectif subjectif ou jugement de valeur.
-2. **Texte Brut** : Formatage en paragraphes fluides sans listes à puces.
-3. **Interdiction d'Extrapolation** : Si une information est absente des pièces officielles, le modèle ne doit sous aucun prétexte chercher à deviner ou déduire.
-4. **Prudence sur les Amendements** : Un vote sur un amendement ne permet jamais d'affirmer la position globale d'un groupe sur l'ensemble d'un texte de loi.
+- Factuel et neutre, sans opinion.
+- Texte brut, sans markdown ni listes.
+- S'appuyer sur les données fournies, sans extrapoler ; si une information manque, ne rien inventer.
+- Dossiers et sujets : classer les groupes d'après l'orientation politique fournie entre crochets, jamais d'après une connaissance propre du modèle.
+- Les votes d'un groupe sont comptés sous le groupe du **mandat** à la date du scrutin, jamais sous le groupe actuel de la personne.
+
+---
+
+## 🔁 Quand un texte est régénéré
+
+**Scrutins, dossiers et sujets.** Chaque entité reçoit une empreinte SHA-256 de ses données d'entrée (`llm/content-hash.ts`). À chaque passage, le batch balaie **tout** le corpus et ne rappelle Mistral que pour les entités dont l'empreinte a changé. L'empreinte ne contient que des données source : un texte produit par le modèle (le libellé d'un sujet, le résumé d'un scrutin cité par un dossier) n'y entre jamais, sans quoi chaque génération invaliderait la suivante. Les dossiers et les sujets intègrent donc l'empreinte de leurs scrutins et dossiers, pas leur texte.
+
+L'empreinte de ces entités ne couvre pas le prompt : modifier un prompt de scrutin, de dossier ou de sujet ne déclenche aucune régénération. Il faut alors relancer avec `--force` (tout) ou `--only` (entités ciblées).
+
+**Fiches parlementaires.** Leur empreinte porte sur ce que la fiche affirme de la personne (statut, chambre, groupe, commission, circonscription, mandats en années) et sur la version du prompt (`PROMPT_PARLEMENTAIRE_VERSION`) : un mandat terminé ou une consigne corrigée rend la fiche périmée. Chaque nuit, le batch génère les fiches encore absentes des parlementaires en exercice, régénère jusqu'à 200 fiches périmées (les plus anciennes d'abord), puis 25 fiches tirées au hasard parmi celles non rafraîchies depuis 25 jours, anciens parlementaires compris.
+
+---
+
+## 🔗 Liens « contexte » des sujets (Tavily)
+
+Tavily n'intervient dans aucun texte généré. Il sert uniquement à trouver, pour chaque sujet, la page vie-publique.fr correspondante : recherche restreinte à ce domaine, puis classement des candidates par embeddings Mistral. Le résultat est stocké dans `sujet_liens` (famille `contexte`).
+
+La résolution est incrémentale : un sujet n'est réinterrogé que si son slug ou son statut change, ou s'il est resté sans lien plus de 30 jours. Le libellé n'en fait pas partie, puisque l'IA le réécrit. Chaque nuit ne dépense qu'une part du crédit Tavily restant du mois, au prorata des jours restants ; les sujets en attente passent à la nuit suivante.
+
+---
+
+## 💻 Commandes
+
+```bash
+pnpm --filter @clair/ingestion exec tsx src/cli.ts enrich-ia                     # cascade complète
+pnpm --filter @clair/ingestion exec tsx src/cli.ts enrich-ia --scrutins
+pnpm --filter @clair/ingestion exec tsx src/cli.ts enrich-ia --dossiers
+pnpm --filter @clair/ingestion exec tsx src/cli.ts enrich-ia --sujets
+pnpm --filter @clair/ingestion exec tsx src/cli.ts enrich-ia --groupe-amendements
+pnpm --filter @clair/ingestion exec tsx src/cli.ts enrich-ia --parlementaires
+pnpm --filter @clair/ingestion exec tsx src/cli.ts enrich-ia --parlementaires --only <slug>
+pnpm --filter @clair/ingestion exec tsx src/cli.ts enrich-ia --sujets --force
+```
+
+Toutes les options sont décrites sur la page [Commandes CLI](/donnees/commandes-cli).
+
+---
+
+## ✅ Contrôle qualité
+
+`check-ia-quality` confronte les textes des dossiers et des sujets aux votes réels : inversions pour/contre, abstentions décrites comme des votes, positions prêtées à des groupes absents des données. Seuils et détails : [Qualité des données](/donnees/qualite-des-donnees).
+
+> Après toute modification d'un prompt ou du code d'enrichissement, relancer `check-ia-quality` avant de fusionner. Si la modification change les empreintes, le batch de la nuit qui suit le déploiement régénère les entités concernées en production : le contrôle doit donc avoir lieu avant le déploiement, pas après.

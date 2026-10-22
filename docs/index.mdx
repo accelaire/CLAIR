@@ -44,8 +44,8 @@ L'écosystème CLAIR s'articule autour d'une base de données relationnelle cent
   end
 
   AN -->|JSON / XML / ZIP| Worker
-  SEN -->|XML / CSV| Worker
-  HATVP -->|XML / JSON| Worker
+  SEN -->|JSON / CSV / HTML / SQL| Worker
+  HATVP -->|CSV| Worker
   GOUV -->|XLSX / CSV| Worker
 
   Worker -->|Upsert et Sync| PG
@@ -55,7 +55,7 @@ L'écosystème CLAIR s'articule autour d'une base de données relationnelle cent
   Redis <--> FastifyAPI
 
   FastifyAPI --> Web
-  FastifyAPI --> Docs
+  FastifyAPI -->|spécification OpenAPI| Docs
   FastifyAPI --> External
 `}
 />
@@ -70,35 +70,35 @@ L'écosystème CLAIR s'articule autour d'une base de données relationnelle cent
     title="Plateforme & Guide"
     description="Vision citoyenne, stack technique, guide de contribution développeur et référence de l'API REST."
     badge="01"
-    href="/01-guide"
+    href="/guide"
   />
   <FeatureCard
     icon="🗄️"
     title="Données & Modélisation"
     description="Sources Open Data, orchestrateur d'ingestion nocturne/intraday, enrichissement IA, modèle Prisma et diagrammes ERD."
     badge="02"
-    href="/02-donnees"
+    href="/donnees"
   />
   <FeatureCard
     icon="🛠️"
     title="Guide Développeur"
     description="Installation locale pas à pas avec Docker Compose, exécution Turbo et stratégie de déploiement."
     badge="Dev"
-    href="/01-guide/guide-developpeur"
+    href="/guide/guide-developpeur"
   />
   <FeatureCard
     icon="⚡"
     title="Référence API"
     description="Documentation des endpoints REST, limitation de débit, en-têtes et exemples multi-langages."
     badge="API"
-    href="/01-guide/api-reference"
+    href="/guide/api-reference"
   />
   <FeatureCard
     icon="📊"
     title="Schémas ERD"
     description="Diagrammes Entité-Relation interactifs de la base de données PostgreSQL (Prisma ORM)."
     badge="BDD"
-    href="/02-donnees/schemas-erd"
+    href="/donnees/schemas-erd"
   />
   <FeatureCard
     icon="🎯"
@@ -115,4 +115,4 @@ L'écosystème CLAIR s'articule autour d'une base de données relationnelle cent
 
 - **Lecture Seule et Zéro Compte** : La plateforme ne comporte aucun système de compte utilisateur, ni cookie traceur. L'API est publique et consultable librement.
 - **Licence Libre AGPL-3.0** : Le code source de l'ensemble des modules (Web, API, Ingestion, Docs) est public.
-- **Traçabilité Intégrale** : Chaque donnée affichée est directement rattachable à son document légal source ou son identifiant officiel (UID AN/Sénat, déclaration HATVP).
+- **Traçabilité** : Chaque parlementaire, scrutin, dossier ou amendement conserve l'identifiant que lui donne sa source (uid AN ou Sénat, identifiant HATVP), de quoi remonter au document officiel.

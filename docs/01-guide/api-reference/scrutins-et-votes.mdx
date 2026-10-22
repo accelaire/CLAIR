@@ -2,49 +2,51 @@
 title: "API Scrutins & Votes Publics"
 sidebar_label: "Scrutins & Votes"
 sidebar_icon: "check-square"
-description: Consultation des scrutins publics, positions de vote individuelles nominatives (pour, contre, abstention, non-votant) et débats rattachés.
+description: Scrutins publics de l'Assemblée et du Sénat, votes nominatifs (pour, contre, abstention, absent) et débats rattachés.
 ---
 
-## 🗳️ Endpoints Disponibles
+## 🗳️ Routes
 
 | Méthode | Route | Description |
 | :--- | :--- | :--- |
-| `GET` | `/api/v1/scrutins` | Liste paginée des scrutins publics avec filtres temporels et thématiques |
-| `GET` | `/api/v1/scrutins/importants` | Scrutins majeurs ou solennels mis en avant |
-| `GET` | `/api/v1/scrutins/tags` | Liste des mots-clés et tags de classification |
-| `GET` | `/api/v1/scrutins/:numero` | Détail d'un scrutin (objet, synthèse IA, sort, décompte) |
-| `GET` | `/api/v1/scrutins/:numero/votes` | Liste complète de tous les votes nominatifs des élus |
-| `GET` | `/api/v1/scrutins/:numero/interventions` | Débats et prises de parole ayant précédé le vote |
+| `GET` | `/api/v1/scrutins` | Liste paginée des scrutins des deux chambres, filtrable |
+| `GET` | `/api/v1/scrutins/importants` | Scrutins récents les plus importants |
+| `GET` | `/api/v1/scrutins/tags` | Tags thématiques des scrutins |
+| `GET` | `/api/v1/scrutins/annees`, `/periodes` | Années et périodes couvertes |
+| `GET` | `/api/v1/scrutins/:numero` | Détail d'un scrutin, avec ses votes |
+| `GET` | `/api/v1/scrutins/:numero/votes` | Votes nominatifs, filtrables par `position` et `groupe` |
+| `GET` | `/api/v1/scrutins/:numero/interventions` | Prises de parole qui ont précédé le vote |
+
+Toutes les routes, avec leurs schémas de réponse : [explorateur de l'API](/api).
 
 ---
 
-## 🏷️ Positions de Vote Prises en Charge
+## 🔎 Identifier un scrutin
 
-Chaque vote nominatif d'un élu est classé selon l'une des positions officielles :
-
-- **POUR** : `pour`
-- **CONTRE** : `contre`
-- **ABSTENTION** : `abstention`
-- **NON_VOTANT / ABSENT** : `non_votant` ou `absent`
+`numero` n'identifie un scrutin qu'avec sa chambre et sa session : au Sénat, la numérotation repart à chaque session. Les routes `/:numero` acceptent donc `chambre` (`assemblee` par défaut, ou `senat`) et `session` (la législature à l'Assemblée, par exemple `17` ; l'année de session au Sénat, par exemple `2024`). Sans `session`, c'est le scrutin le plus récent portant ce numéro qui est renvoyé.
 
 ---
 
-## 📋 Exemple de Réponse JSON (`GET /api/v1/scrutins/120`)
+## 🏷️ Filtres de la liste
 
-```json
-{
-  "id": "VTANR5L17V120",
-  "numero": 120,
-  "chambre": "assemblee",
-  "titre": "Projet de loi de finances pour 2025 - Article 1er",
-  "sort": "ADOPTE",
-  "dateScrutin": "2024-10-25T16:30:00.000Z",
-  "resumeIa": "Vote sur l'évaluation des recettes de l'État pour l'année 2025.",
-  "decompte": {
-    "votants": 540,
-    "pour": 290,
-    "contre": 240,
-    "abstentions": 10
-  }
-}
-```
+| Paramètre | Valeurs |
+| :--- | :--- |
+| `page`, `limit` | Pagination (`limit` jusqu'à 100, 20 par défaut) |
+| `chambre` | `assemblee` ou `senat` |
+| `type` | Mode de scrutin : `solennel`, `ordinaire`, `motion` |
+| `nature` | Ce sur quoi porte le vote : `ensemble`, `article`, `amendement`, `credits`, `motion`, `declaration`, `autre` |
+| `sort` | Résultat : `adopte` ou `rejete` |
+| `tag` | Tag thématique |
+| `importance` | De 1 à 5 |
+| `dateFrom`, `dateTo` | Bornes de date |
+| `search` | Recherche dans le titre |
+
+---
+
+## ✅ Positions de vote
+
+Un vote nominatif (`votes.position`) vaut `pour`, `contre`, `abstention` ou `absent`. Le Congrès (députés et sénateurs réunis à Versailles) ne publie que des totaux, sans vote nominatif.
+
+## 🗣️ Débats d'un scrutin
+
+`/scrutins/:numero/interventions` renvoie le débat rattaché au vote quand il existe (`rattachement: "scrutin"`), avec la finesse du rattachement dans `precision` (`amendement`, `article`, `ensemble`, `motion`, `fenetre` ou `finances`) ; à défaut, le débat de la journée (`rattachement: "journee"`), qui peut porter sur d'autres textes.

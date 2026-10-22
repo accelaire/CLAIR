@@ -2,64 +2,143 @@
 title: "L'Orchestrateur d'Ingestion"
 sidebar_label: "Orchestrateur d'Ingestion"
 sidebar_icon: "cpu"
-description: Architecture et séquencement de l'ingestion Node.js (batch nocturne smart-sync, batch intraday, rattachements cross-entités et réconciliation).
+description: Déroulé exact du batch nocturne (smart-sync) et du batch intraday, suivi de fraîcheur des sources, rattachements entre entités, statistiques, enrichissement IA et traçabilité.
 ---
 
-L'ingestion de CLAIR est une application Node.js / TypeScript pilotée par CLI (`services/ingestion/src/cli.ts` basée sur Commander). Elle télécharge les données publiques, effectue les transformations, alimente PostgreSQL, établit les liaisons cross-chambres et déclenche l'enrichissement par IA.
+L'ingestion est une CLI Node.js (`services/ingestion/src/cli.ts`, bâtie sur commander) qui télécharge les sources publiques, les transforme et les écrit dans PostgreSQL, puis relie les entités entre elles, calcule les statistiques et génère les résumés IA. Il n'y a ni file de messages ni worker permanent : chaque commande s'exécute puis rend la main, avec une concurrence bornée par `p-limit`.
 
 ---
 
-## ⏱️ Les Deux Passages Planifiés (Railway)
+## ⏱️ Deux passages planifiés en production
 
-| Passage | Planification (UTC) | Heure de Paris | Commande Exécutée |
+| Service Railway | Planification (UTC) | Heure de Paris | Commande |
 | :--- | :--- | :--- | :--- |
-| **Ingestion Nightly** | `0 3 * * *` | 5h (été) / 4h (hiver) | `node --max-old-space-size=6144 services/ingestion/dist/cli.js smart-sync --all` |
-| **Ingestion Intraday** | `0 6-21/2 * * *` | Toutes les 2h (8h à 22h) | `node services/ingestion/dist/cli.js sync-intraday` |
+| Ingestion nightly | `0 3 * * *` | 5 h en heure d'été, 4 h en heure d'hiver | `node --max-old-space-size=6144 services/ingestion/dist/cli.js smart-sync --all` |
+| Ingestion intraday | `0 6-21/2 * * *` | toutes les deux heures, de 8 h à 22 h en été (de 7 h à 21 h en hiver) | `node services/ingestion/dist/cli.js sync-intraday` |
 
-- Le passage **intraday** ne rafraîchit que les éléments volatils du jour : agenda Sénat (J-2 à J+2), vidéos et replays de l'Assemblée et du Sénat. Il ne touche pas aux scrutins ou aux statistiques.
-- Le passage **nightly** effectue le rafraîchissement complet, la réconciliation de graphe et les calculs de statistiques.
+Railway exprime ses crons en UTC : l'heure locale glisse donc d'une heure au changement d'heure. Les deux services sont construits depuis `services/ingestion/Dockerfile`, seul à installer `pdftotext`.
+
+Le passage **intraday** ne rafraîchit que ce qui change dans la journée : l'agenda du Sénat (de J-2 à J+2), les vidéos du Sénat (séances et commissions) et celles de l'Assemblée. Il ne touche ni aux scrutins, ni aux amendements, ni aux dossiers, ni aux statistiques.
 
 ---
 
-## 🔄 Déroulement du Batch Nocturne (`smart-sync --all`)
+## 🔄 Le batch nocturne : `smart-sync --all`
 
 <Mermaid
-  title="Cycle d'Exécution du Batch Nocturne"
+  title="Déroulé du batch nocturne"
   chart={`flowchart TD
-    A[Cron Railway 03:00 UTC] --> B[Événements Institutionnels<br/>Upsert idempotent sur slug]
-    B --> C{Itération sur les 22 sources}
-    C -->|ETag / Last-Modified identiques| D[Ignorée<br/>sync_logs : skipped]
-    C -->|Ressource modifiée ou 'toujours'| E[Téléchargement et Parsing<br/>sync_logs : started vers completed]
+    A[Cron Railway] --> B[Événements institutionnels<br/>liste curée dans le code]
+    B --> C{Pour chacune des 22 sources,<br/>dans l'ordre}
+    C -->|ETag / Last-Modified inchangés| D[Ignorée<br/>sync_logs : skipped]
+    C -->|changée, ou source « toujours »| E[Synchronisée<br/>sync_logs : started puis completed / failed]
     D --> C
     E --> C
-    C -->|Toutes les sources traitées| F[Rattachements Cross-Entités]
-    F --> G[Calcul des Statistiques]
-    G --> H[Génération des Sujets et Compteurs]
-    H --> I[VACUUM ANALYZE PostgreSQL]
-    I --> J[Déclarations HATVP]
-    J --> K[Enrichissement IA Mistral]
-    K --> L[Pause de 120s et Préchauffe Cache API]
+    C -->|fin de la boucle| F[Rattachements entre entités]
+    F --> G[Statistiques]
+    G --> H[Sujets, liens, compteurs, VACUUM ANALYZE]
+    H --> I[Déclarations HATVP, statut des sujets]
+    I --> J[Enrichissement IA]
+    J --> K[Pause de 120 s, puis reconstruction<br/>du cache de la page d'accueil]
 `}
 />
 
+### 1. Événements institutionnels
+
+La liste des repères de l'agenda (élections, bornes de session, suspensions, échéances budgétaires) est écrite en dur dans `workers/evenements.ts` et poussée par un upsert idempotent sur son `slug`. Aucun appel réseau.
+
+### 2. Les sources, dans cet ordre
+
+L'ordre suit les dépendances : les commissions avant les députés (dont les mandats pointent vers les commissions), les parlementaires avant les votes, les anciens sénateurs avant les scrutins (les votes historiques ont besoin de l'annuaire), les candidatures en dernier (le rattachement d'un candidat à sa fiche lit le corpus).
+
+1. `assemblee_nationale:commissions`
+2. `assemblee_nationale:deputes`
+3. `senat:senateurs`
+4. `senat:senateurs_histo`
+5. `senat:bureaux`
+6. `assemblee_nationale:scrutins`
+7. `senat:scrutins`
+8. `assemblee_nationale:amendements`
+9. `senat:amendements`
+10. `assemblee_nationale:dossiers`
+11. `senat:dossiers`
+12. `assemblee_nationale:interventions`
+13. `senat:interventions`
+14. `hatvp:lobbyistes`
+15. `assemblee_nationale:reunions`
+16. `assemblee_nationale:seances_odj`
+17. `senat:agenda`
+18. `senat:reunions`
+19. `senat:dossier_commissions`
+20. `senat:videos`
+21. `assemblee_nationale:videos`
+22. `interieur:candidatures`
+
+Le détail de chaque source est sur la page [Sources de données](/donnees/sources-de-donnees). Les résultats des élections et les mandats locaux des candidats ne sont dans aucun des deux batchs : ils se lancent à la main (voir [Commandes CLI](/donnees/commandes-cli)).
+
+**Fraîcheur.** Avant de télécharger, le batch compare l'`ETag` et le `Last-Modified` de la ressource à ceux enregistrés dans `source_states`. S'ils sont identiques, la source est ignorée (sauf avec `--force`). Les sources sans en-tête exploitable sont marquées « toujours » et relues à chaque passage.
+
+**Échecs.** Une source en échec est journalisée (`sync_logs.statut = 'failed'`) et n'arrête pas le batch : elle est retirée des sources « changées », ce qui empêche les étapes qui en dépendent de tourner sur une lecture ratée. Le processus ne sort en erreur que si au moins une source a échoué **et** qu'aucune n'a été synchronisée avec succès. Un échec partiel se lit dans le récapitulatif et dans les logs d'erreur ; rejouer un batch entier pour une seule source resolliciterait toutes les autres.
+
+### 3. Rattachements
+
+Chaque étape ne tourne que si une source concernée a changé, et son échec n'est pas bloquant.
+
+| Condition | Étape |
+| :--- | :--- |
+| interventions ou scrutins | Seconde lecture des comptes rendus de l'Assemblée (sans effet si rien n'a bougé), puis rattachement des débats de l'Assemblée aux scrutins qu'ils précèdent (table `intervention_scrutin`), puis de ceux du Sénat |
+| interventions ou amendements | Rattachement des prises de parole à leur dossier, par le numéro de texte en discussion |
+| réunions | Débats de commission de l'Assemblée et avis de commission sur les amendements, pour les réunions des 60 derniers jours |
+| amendements ou scrutins | Retrait des liens vers un amendement déposé après le vote, puis lecture des pages des scrutins encore sans amendement (Assemblée : 30 derniers jours ; Sénat : nouveaux scrutins) |
+| dossiers ou scrutins | Scrutins → dossiers : retrait des liens vers un dossier d'une autre législature (AN) ou d'une procédure sans vote (rapport, mission d'information, 49.3 hors motion de censure), rattachement au dossier que la source désigne (`voteRefs`), puis, pour les scrutins restés sans dossier : rattachement Sénat, TF-IDF sur les titres, titre (Assemblée), numéro de texte, titre de la loi promulguée |
+| amendements, scrutins ou dossiers | Scrutins ↔ amendements (table de jointure), puis dossier des amendements : retrait des dossiers d'une autre législature, dossier du texte (`texte_ref`), propagation par leurs scrutins et entre amendements d'un même texte ; correction des liens dont l'article contredit le libellé du scrutin ; alignement du dossier des scrutins sur celui de leurs amendements |
+| amendements | Texte des articles des nouvelles versions de textes de l'Assemblée (`textes_articles`). Une version déjà ingérée n'est pas retéléchargée ; seuls les textes que la source ne sert pas, ou dont le gabarit n'est pas couvert (budgets), sont retentés |
+| scrutins | Classement de la nature des scrutins encore non classés (`nature_vote`) |
+
+L'ordre compte : le rattachement scrutin → dossier précède le rattachement scrutin → amendement, qui s'appuie sur le dossier pour éviter les faux positifs. Le texte des articles vient après le rattachement aux dossiers, dont il recopie le `dossier_id`, et avant l'IA, qui met l'article dans le prompt des scrutins.
+
+### 4. Étapes exécutées dès qu'au moins une source a changé
+
+Avec `--all`, les événements institutionnels et les sources « toujours » comptent comme changés : **ces étapes tournent donc chaque nuit.**
+
+1. **Statistiques** (sauf `--skip-stats`) : réalignement de `parlementaires.actif` sur « a un mandat en cours », statistiques des parlementaires, des groupes, alliances entre groupes, positions par thématique.
+2. **Sujets** : génération incrémentale (regroupement des dossiers AN et Sénat), liens « construction » (documents officiels), liens « contexte » (vie-publique.fr et Wikipédia, en incrémental).
+3. **Compteurs dénormalisés** des sujets (`dossier_count`, `scrutin_count`, `date_dernier_vote`).
+4. **`VACUUM ANALYZE`** sur `scrutins`, `amendements`, `dossiers_legislatifs`, `parlementaires`, `votes`, `interventions`.
+5. **Déclarations HATVP** des parlementaires.
+6. **Statut des sujets**, recalculé à partir de l'état de leurs dossiers.
+7. **Enrichissement IA**, en cascade : scrutins, dossiers, sujets, descriptions d'amendements par groupe, puis les fiches parlementaires en trois temps : les fiches encore absentes des parlementaires en exercice, jusqu'à 200 fiches devenues périmées (un fait qu'elles affirment a changé, ou le prompt a changé de version), et 25 fiches tirées au hasard parmi celles non rafraîchies depuis 25 jours, anciens parlementaires compris (ce que nos données ignorent, un ancien député devenu maire par exemple, ne périme aucune empreinte). Voir [Enrichissement IA](/donnees/enrichissement-ia).
+
+### 5. Cache de la page d'accueil
+
+En fin de batch, la CLI attend 120 s, puis appelle `POST /api/v1/homepage/warm` (invalidation) et `GET /api/v1/homepage` (reconstruction), authentifiée par `CLAIR_INTERNAL_SECRET` ; chaque appel est borné à 120 s. Sans ce secret, l'étape est sautée. Les autres entrées du cache Redis de l'API ne sont pas invalidées : elles expirent selon leur durée de vie (voir [Limites & Cache](/guide/api-reference/authentification-et-limites)).
+
 ---
 
-## 🔗 Algorithme des Rattachements d'Entités
+## 🧾 Traçabilité
 
-L'ordre des rattachements est strictement séquentiel pour éviter les faux positifs :
-
-1. **Débats et Scrutins** : Rattachement des prises de parole antérieures aux votes en séance.
-2. **Interventions et Dossiers** : Liaison par numéro de texte législatif.
-3. **Commissions et Avis** : Parsing des comptes rendus PDF (via `pdftotext`) pour extraire les positions de commission sur les amendements.
-4. **Scrutins et Dossiers** : Suppression des liaisons obsolètes, rattachement Sénat, analyse TF-IDF sur les titres de lois et numéros de texte.
-5. **Amendements et Scrutins** : Rapprochement dans la table de jointure `scrutin_amendement`, puis propagation du dossier vers les amendements.
-6. **Texte des Articles** : Récupération des articles de chaque nouvelle version de texte AN amendée (`textes_articles`). Une version déjà ingérée n'est jamais retéléchargée ; seuls les textes non servis par la source ou au gabarit non couvert (budgets) sont retentés.
-7. **Nature des Scrutins** : Classification automatique de la nature du vote (texte entier, amendement, motion, etc.).
+- `source_states` : une ligne par source, avec l'URL de la ressource, le dernier `ETag`, le dernier `Last-Modified`, la date de dernière synchronisation réussie et celle de dernière vérification.
+- `sync_logs` : une ligne par source et par passage, avec le statut (`started`, `completed`, `failed`, `skipped`), les compteurs (traités, créés, mis à jour, erreurs) et l'erreur éventuelle.
+- `pnpm ingestion:status` affiche la fraîcheur de toutes les sources.
 
 ---
 
-## 🛡️ Résilience et Gestion des Échecs
+## 🧩 Modules principaux (`services/ingestion/src/workers/`)
 
-- **Non-blocage** : L'échec de téléchargement ou de parsing d'une source isole l'erreur dans `sync_logs.statut = 'failed'` et continue le traitement des sources suivantes.
-- **Idempotence** : Toutes les écritures en base utilisent des clauses `upsert` Prisma basées sur les identifiants uniques officiels.
-- **Traçabilité** : Consultation instantanée de la santé des flux via `pnpm ingestion:status`.
+| Fichier | Rôle |
+| :--- | :--- |
+| `sync.ts` | Synchronisation de chaque source, rattachements, orchestration `smartSync` et `syncIntraday` |
+| `stats-calculator.ts` | Présence, loyauté, participation, alliances, thématiques |
+| `mandats.ts`, `backfill-mandats.ts`, `senat-histo.ts`, `mandats-an-sortants.ts` | Mandats parlementaires multi-législatures, anciens sénateurs, clôture des mandats des députés sortants et de leurs mandats d'organe |
+| `changement-chambre.ts` | Un député élu sénateur garde sa fiche, qui passe au Sénat ; son identifiant de l'Assemblée est conservé dans `parlementaires_identifiants` |
+| `interventions-syceron.ts`, `interventions-commission.ts`, `avis-commission.ts` | Débats de séance et de commission de l'Assemblée, avis de commission |
+| `link-debats-scrutins.ts`, `link-debats-scrutins-senat.ts`, `link-interventions-dossiers.ts`, `link-interventions-ordre-du-jour.ts`, `segmenter-debats-senat.ts` | Rattachement des débats aux scrutins et aux dossiers |
+| `liens-amendements-discordants.ts` | Correction des liens scrutin ↔ amendement dont l'article contredit le libellé du scrutin |
+| `parents-amendements.ts`, `metadonnees-amendements-senat.ts`, `article-vise-senat.ts` | Sous-amendements, discussions et article visé des amendements |
+| `sujet-generator.ts`, `sujet-links-generator.ts` | Sujets et leurs liens sortants |
+| `ia-enrichment.ts`, `parlementaire-enrichment.ts` | Enrichissement IA |
+| `declarations-sync.ts` | Déclarations HATVP |
+| `senat-bureaux.ts`, `senat-dossier-commissions.ts` | Bureaux et saisines des commissions du Sénat |
+| `textes-articles.ts` | Texte des articles des textes de l'Assemblée |
+| `evenements.ts` | Liste curée des événements institutionnels |
+
+La commande `schedule` (fichier `src/scheduler.ts`) lance un planificateur `node-cron` dans le processus. Elle n'est **pas** utilisée en production, où la planification est confiée à Railway.

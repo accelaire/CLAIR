@@ -1,7 +1,7 @@
-# CLAIR — Citoyen Libre, Analyse, Information, République
+# CLAIR : Citoyen Libre, Analyse, Information, République
 
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
-![Node](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)
+![Node](https://img.shields.io/badge/node-%3E%3D20.19.0-brightgreen)
 ![TypeScript](https://img.shields.io/badge/typescript-5-blue)
 ![pnpm](https://img.shields.io/badge/pnpm-8.15-orange)
 
@@ -23,11 +23,11 @@ La DILA, ancienne source des débats de l'Assemblée, ne publie plus rien depuis
 
 En production, deux services planifiés sur Railway alimentent la base : un smart-sync complet chaque nuit à 3 h UTC (5 h à Paris en heure d'été, 4 h en hiver), qui ne retraite que les sources modifiées, et un rafraîchissement de l'agenda et des vidéos toutes les deux heures en journée. Un enrichissement IA (Mistral) rédige des résumés accessibles des scrutins, des dossiers et des sujets, ainsi que des fiches de parlementaires. Un générateur de sujets regroupe les dossiers de l'Assemblée et du Sénat qui portent sur le même texte. Chaque synchronisation est tracée dans les tables `source_states` et `sync_logs`.
 
-Le détail (sources, orchestration, modèle de données et ERD, API, déploiement) est dans le [wiki](https://github.com/accelaire/CLAIR/wiki).
+Le détail (sources, orchestration, modèle de données et ERD, API, déploiement) est dans la documentation : [docs.clair.vote](https://docs.clair.vote).
 
 ## Démarrage rapide
 
-Prérequis : Node.js 20 (Node 18 ne suffit pas), pnpm 8, Docker et Docker Compose
+Prérequis : Node.js 20.19 ou plus (Node 18 ne suffit pas), pnpm 8, Docker et Docker Compose. Le guide complet est sur [docs.clair.vote](https://docs.clair.vote/guide/guide-developpeur/demarrage-local).
 
 ```bash
 pnpm install
@@ -39,7 +39,7 @@ ln -s ../../.env services/ingestion/.env
 
 pnpm docker:up
 pnpm db:generate
-pnpm db:push          # initialise le schéma localement (voir note migrations ci-dessous)
+pnpm db:push          # initialise le schéma localement, puis ses triggers (voir note migrations ci-dessous)
 pnpm dev
 ```
 
@@ -61,7 +61,7 @@ pnpm ingestion:smart-sync -a     # tout, dans l'ordre de production (long)
 pnpm ingestion:calculate-stats   # recalcul des stats (présence, loyauté…)
 ```
 
-L'API REST est documentée via Swagger à `http://localhost:3001/docs` une fois le serveur lancé (en production : [api.clair.vote/docs](https://api.clair.vote/docs)).
+L'API REST est documentée sur [docs.clair.vote/api](https://docs.clair.vote/api) ; le Swagger UI reste servi par l'API elle-même, sur `http://localhost:3001/docs` une fois le serveur lancé (en production : [api.clair.vote/docs](https://api.clair.vote/docs)).
 
 ## Documentation (`docs/`)
 
@@ -71,7 +71,7 @@ Le portail de documentation technique et de référence de l'API est propulsé p
 # Lancer le portail de documentation en local sur http://localhost:3002 (rechargement à chaud)
 pnpm dev:docs
 
-# Construire le site statique (sortie dans docs/dist, c'est ce que déploie Vercel)
+# Construire le site statique (sortie dans docs/dist ; sur Vercel, dans docs/.vercel/output/static)
 pnpm build:docs
 
 # Régénérer la navigation après ajout, renommage ou suppression d'un fichier .mdx
@@ -79,6 +79,9 @@ pnpm docs:nav
 
 # Valider la syntaxe MDX et l'intégrité des liens internes
 pnpm docs:validate
+
+# Régénérer les diagrammes de la base depuis le schéma Prisma (après pnpm db:generate)
+pnpm docs:erd
 ```
 
 La référence API de la doc n'est pas écrite à la main : `dev:docs` et `build:docs` téléchargent la spécification OpenAPI générée par l'API de production (`https://api.clair.vote/docs/json`) dans `docs/public/openapi.json`, fichier ignoré par git. Sans accès à l'API, les deux commandes échouent. Pour documenter une route, on modifie donc son schéma dans `apps/api`, pas la doc.
@@ -91,4 +94,4 @@ La référence API de la doc n'est pas écrite à la main : `dev:docs` et `build
 - **Email** : contact@clair.vote
 - **GitHub** : [github.com/accelaire/CLAIR](https://github.com/accelaire/CLAIR)
 - **Issues** : [github.com/accelaire/CLAIR/issues](https://github.com/accelaire/CLAIR/issues)
-- **Wiki** : [github.com/accelaire/CLAIR/wiki](https://github.com/accelaire/CLAIR/wiki)
+- **Documentation** : [docs.clair.vote](https://docs.clair.vote)

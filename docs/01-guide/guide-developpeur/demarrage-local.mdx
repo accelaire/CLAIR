@@ -2,84 +2,71 @@
 title: "Installation & Démarrage Local"
 sidebar_label: "Démarrage Local"
 sidebar_icon: "laptop"
-description: Configuration pas à pas de l'environnement de développement local (Node 20, pnpm 8, Docker PostgreSQL & Redis, seed Prisma).
+description: Installer et faire tourner CLAIR sur sa machine (Node 20, pnpm, Docker PostgreSQL et Redis), remplir la base et vérifier.
 ---
 
 ## 📋 Prérequis
 
-- **Node.js ≥ 20** (version LTS recommandée).
-- **pnpm 8 / 9** (`corepack enable pnpm`).
-- **Docker & Docker Compose** (pour démarrer PostgreSQL 16 et Redis 7).
-- *(Facultatif)* **poppler-utils** (commande `pdftotext`) pour extraire les comptes rendus PDF de l'Assemblée nationale.
+- **Node.js ≥ 20.19** (minimum imposé par le `package.json` racine). Node 18 ne suffit pas : la CLI d'ingestion plante au chargement de `undici`.
+- **pnpm 8** (`packageManager: pnpm@8.15.0`).
+- **Docker** et Docker Compose, pour PostgreSQL et Redis.
+- *(Facultatif)* **poppler-utils** (commande `pdftotext`), seulement pour ingérer les comptes rendus de réunion de commission de l'Assemblée, publiés en PDF.
 
 ---
 
-## ⚡ Installation Pas à Pas
-
-### 1. Cloner & Installer
+## ⚡ Installation
 
 ```bash
 git clone https://github.com/accelaire/CLAIR.git
 cd CLAIR
 pnpm install
-```
 
-### 2. Variables d'Environnement
-
-```bash
+# Variables d'environnement : un seul fichier à la racine...
 cp .env.example .env
-
-# Créer les liens symboliques vers les paquets concernés
+# ...rendu visible depuis les deux paquets qui le lisent. L'API et la CLI
+# chargent `.env` depuis leur propre dossier (dotenv), et Prisma lit apps/api/.env.
 ln -s ../../.env apps/api/.env
 ln -s ../../.env services/ingestion/.env
+
+pnpm docker:up        # PostgreSQL 16 (port 5432) + Redis 7 (port 6379)
+pnpm db:generate      # client Prisma
+pnpm db:push          # crée le schéma dans la base locale, puis ses triggers
+pnpm dev              # web sur :3000, API sur :3001, documentation sur :3002
 ```
 
-### 3. Démarrer les Services & Base de Données
+Les valeurs par défaut de `.env.example` pointent déjà vers les conteneurs locaux (`postgresql://clair:clair_dev@localhost:5432/clair`, `redis://localhost:6379`). Le frontend n'a besoin d'aucune variable en local : `NEXT_PUBLIC_API_URL` vaut `http://localhost:3001` par défaut.
 
-```bash
-# Lancer PostgreSQL 16 et Redis 7
-pnpm docker:up
+> **`db push` et non `migrate`** : l'historique de migrations du dépôt n'est pas rejouable sur une base vierge (la migration `20260313_add_sujets` référence une table créée par une migration ultérieure). Pour toute base neuve, locale ou de CI, le schéma s'applique avec `db push`. Voir [Modèle Prisma](/donnees/modele-prisma#migrations).
+>
+> **Les triggers ne passent pas par `prisma db push`**, qui ne les connaît pas. `pnpm db:push` enchaîne donc `prisma db push` et `pnpm db:triggers`, qui joue `apps/api/prisma/triggers.sql` (sans psql, idempotent). Après un `prisma db push` lancé à la main, rejouer `pnpm db:triggers` : sans ses triggers, la base ne tient pas `updated_at` comme la production (voir [Suivi des modifications](/donnees/suivi-des-modifications)), et `check-quality` le signale.
 
-# Générer le client Prisma
-pnpm db:generate
-
-# Pousser le schéma dans la base locale, puis ses triggers
-pnpm db:push
-```
-
-`prisma db push` ne connaît pas les triggers qui tiennent `updated_at` : `pnpm db:push` joue donc aussi `apps/api/prisma/triggers.sql`. Après un `prisma db push` lancé à la main, rejouer `pnpm db:triggers`.
-
-### 4. Lancer l'Application
-
-```bash
-# Lancer le Web (:3000), l'API (:3001) et la Docs (:3002)
-pnpm dev
-
-# Ou lancer uniquement la documentation sur le port 3002
-pnpm dev:docs
-```
+Pour ne lancer que la documentation : `pnpm dev:docs` (port 3002). Elle télécharge la spécification OpenAPI de l'API de production ; sans accès réseau, elle garde la dernière copie téléchargée.
 
 ---
 
-## 🗃️ Peupler la Base de Données
+## 🗃️ Remplir la base
 
-Une fois le schéma appliqué, votre base PostgreSQL locale est initialement vierge :
+La base est vide après `db push`. Deux possibilités :
 
 ```bash
-# Option A : Insérer un jeu d'échantillons minimal pour tester l'UI
+# 1. Jeu de données de test minimal (apps/api/prisma/seed.ts)
 pnpm db:seed
 
-# Option B : Synchroniser un échantillon réel depuis les sources Open Data
-pnpm --filter @clair/ingestion build
-pnpm ingestion:sync -p                  # Télécharge les députés et sénateurs
-pnpm ingestion:sync -s -l 50            # Télécharge 50 scrutins récents
+# 2. Données réelles, depuis les sources publiques
+pnpm --filter @clair/ingestion build     # à faire avant toute synchronisation
+pnpm ingestion:smart-sync -a             # tout, dans l'ordre de production
 ```
+
+La synchronisation complète écrit des millions de lignes (voir la volumétrie sur la page [Modèle Prisma](/donnees/modele-prisma)) ; en production, son processus Node tourne avec 6 Go de tas (`--max-old-space-size=6144`). Pour démarrer plus petit, les commandes `sync` ciblées acceptent une limite, par exemple `pnpm ingestion:sync -p` (parlementaires) puis `pnpm ingestion:sync -s -l 50` (50 scrutins). Voir [Commandes CLI](/donnees/commandes-cli).
+
+Sans `MISTRAL_API_KEY`, l'enrichissement IA est sauté avec un avertissement ; le reste de la synchronisation fonctionne.
 
 ---
 
-## 🔍 Points de Contrôle
+## 🔍 Vérifier
 
-- **Frontend Web** : [http://localhost:3000](http://localhost:3000)
-- **API REST & Swagger** : [http://localhost:3001/docs](http://localhost:3001/docs)
-- **Santé de l'API** : [http://localhost:3001/health](http://localhost:3001/health)
-- **Portail de Documentation (Zudoku)** : [http://localhost:3002](http://localhost:3002)
+- Site : [http://localhost:3000](http://localhost:3000)
+- API : [http://localhost:3001/health](http://localhost:3001/health)
+- Swagger UI de l'API : [http://localhost:3001/docs](http://localhost:3001/docs)
+- Documentation : [http://localhost:3002](http://localhost:3002)
+- Qualité des données : `pnpm --filter @clair/ingestion check-quality` (voir [Qualité des données](/donnees/qualite-des-donnees))

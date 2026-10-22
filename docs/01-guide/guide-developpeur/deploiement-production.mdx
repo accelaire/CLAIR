@@ -2,39 +2,122 @@
 title: "Topologie de Déploiement en Production"
 sidebar_label: "Déploiement Production"
 sidebar_icon: "cloud"
-description: Architecture de production sur Vercel (clair.vote, docs.clair.vote) et Railway (API REST, workers d'ingestion, PostgreSQL 17, Redis 8).
+description: Hébergement de production de CLAIR (Vercel pour le site et la documentation, Railway pour l'API, l'ingestion, PostgreSQL et Redis), configuration, variables et CI.
 ---
 
-## 🌐 Vue d'Ensemble de l'Infrastructure
+## 🌐 Vue d'ensemble
 
-| Composant | Hébergeur | Déclenchement et Planification | URL Publique |
+| Composant | Hébergeur | Déclenchement | Adresse publique |
 | :--- | :--- | :--- | :--- |
-| **Frontend Web (`apps/web`)** | Vercel (Région `cdg1` Paris) | Déploiement continu sur `master` | [`clair.vote`](https://clair.vote) |
-| **Documentation (`docs/`)** | Vercel (Région `cdg1` Paris) | Déploiement continu sur `master` | [`docs.clair.vote`](https://docs.clair.vote) |
-| **API REST (`apps/api`)** | Railway (Conteneur Docker) | Déploiement continu sur `master` | [`api.clair.vote`](https://api.clair.vote) |
-| **Batch Nocturne** | Railway Worker | Cron `0 3 * * *` (UTC) | *(Service interne)* |
-| **Batch Intraday** | Railway Worker | Cron `0 6-21/2 * * *` (UTC) | *(Service interne)* |
-| **Base PostgreSQL 17** | Railway Managé avec SSL | Permanent avec sauvegardes | *(Réseau privé Railway)* |
-| **Cluster Redis 8** | Railway Managé | Permanent | *(Réseau privé Railway)* |
+| Site (`apps/web`) | Vercel, région `cdg1` (Paris) | Projet Vercel | [clair.vote](https://clair.vote) |
+| Documentation (`docs`) | Vercel (configuration dans `docs/vercel.json`) | Projet Vercel | [docs.clair.vote](https://docs.clair.vote) |
+| API (`apps/api`) | Railway, service « CLAIR » | Déploiement depuis la branche `master` de `accelaire/CLAIR` | [api.clair.vote](https://api.clair.vote) |
+| Batch nocturne | Railway, service « Ingestion nightly » | Cron `0 3 * * *` (UTC), depuis `master` | |
+| Batch intraday | Railway, service « Ingestion intraday » | Cron `0 6-21/2 * * *` (UTC), depuis `master` | |
+| PostgreSQL 17 | Railway, service « Postgres » (image `postgres-ssl:17`) | | |
+| Redis 8.2 | Railway, service « Redis » (image `redis:8.2.1`) | | |
+| DNS | Dynadot | | |
+
+L'API et les deux services d'ingestion joignent PostgreSQL par le réseau privé de Railway (`*.railway.internal`), comme l'API pour Redis. L'ingestion n'utilise pas Redis.
+
+Une fusion sur `master` redéploie donc l'API et les deux services d'ingestion. Les migrations de base, elles, ne suivent pas (voir plus bas).
 
 ---
 
-## 🌍 Configuration DNS (Dynadot)
+## 🖥️ Site : Vercel
+
+La configuration versionnée est dans `apps/web/vercel.json` :
+
+- région `cdg1` ;
+- en-têtes de sécurité sur toutes les pages (`X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`) ;
+- cache au CDN de Vercel (`Vercel-CDN-Cache-Control`) : 10 min sur les pages de liste (`/deputes`, `/scrutins`, `/sujets`…), 1 h sur les pages de détail, avec `stale-while-revalidate` de 24 h ; 1 min sur `/senatoriales-2026` (10 min de `stale-while-revalidate`), pour les résultats. Le navigateur, lui, revalide à chaque visite (`max-age=0`).
+
+Variables lues par le code du site :
+
+| Variable | Rôle |
+| :--- | :--- |
+| `NEXT_PUBLIC_API_URL` | Adresse de l'API (défaut `http://localhost:3001`) |
+| `NEXT_PUBLIC_APP_URL` | Adresse publique du site (défaut `https://clair.vote`), pour les liens absolus et le SEO |
+| `NEXT_PUBLIC_PLAUSIBLE_DOMAIN` | Domaine déclaré à Plausible ; sans lui, aucune mesure d'audience n'est chargée |
+| `NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URLS` | Scripts Plausible à charger, séparés par des virgules |
+| `CLAIR_INTERNAL_SECRET` | Secret partagé avec l'API, utilisé côté serveur uniquement (rendu serveur, sitemap, proxy `/api/v1`). Ne jamais le préfixer par `NEXT_PUBLIC_` |
+
+`API_URL` et `CLAIR_INTERNAL_SECRET` sont déclarées dans `globalEnv` de `turbo.json` : sans cela, Turborepo ne les transmettrait pas au build sur Vercel. Le formulaire de don HelloAsso est intégré par une adresse écrite dans le code (`app/soutenir/page.tsx`) : aucune variable n'est nécessaire.
+
+## 📚 Documentation : Vercel
+
+`docs/vercel.json` déclare le framework (`vite`) et la commande de build (`pnpm build`). Le build télécharge la spécification OpenAPI de l'API de production, régénère la navigation, construit le site statique, puis y injecte les balises Open Graph. La référence de l'API affichée par la doc est donc celle de l'API en production au moment du build : une route modifiée n'y apparaît qu'après le déploiement de l'API puis un nouveau build de la doc.
+
+## 🌍 DNS
+
+Zone gérée chez Dynadot :
 
 ```text
-Type      Nom        Valeur / Cible
-A         @          76.76.21.21          (Vercel - clair.vote)
-CNAME     www        cname.vercel-dns.com (Vercel)
-CNAME     docs       cname.vercel-dns.com (Vercel - docs.clair.vote)
-CNAME     api        <domaine-railway-api> (Railway - api.clair.vote)
+Type    Nom     Valeur
+A       @       76.76.21.21              (Vercel)
+CNAME   www     cname.vercel-dns.com     (Vercel, redirige vers clair.vote)
+CNAME   docs    cname.vercel-dns.com     (Vercel)
+CNAME   api     <domaine Railway du service API>
 ```
 
 ---
 
-## ⚙️ Déploiement du Portail Zudoku (`docs.clair.vote`)
+## ⚡ API : Railway
 
-Le portail de documentation est configuré dans `docs/vercel.json` :
-- **Framework** : `vite`
-- **Build Command** : `pnpm build`
-- **Output Directory** : `dist`
-- **Domaine rattaché** : `docs.clair.vote`
+- Image construite depuis le **`Dockerfile` à la racine** du dépôt (Node 20 Alpine, build pnpm, génération du client Prisma).
+- Démarrage : `node --max-old-space-size=4096 dist/index.js`, port 3001.
+- Healthcheck Railway : `/health`. Redémarrage en cas d'échec (`ON_FAILURE`).
+- Au démarrage en production, l'API préchauffe son cache Redis (voir [Limites & Cache](/guide/api-reference/authentification-et-limites)).
+
+Variables lues par le code de l'API :
+
+| Variable | Rôle |
+| :--- | :--- |
+| `DATABASE_URL`, `REDIS_URL` | Base et cache |
+| `NODE_ENV` | `production` en prod |
+| `PORT`, `HOST` | Écoute (défauts `3001` et `0.0.0.0`) |
+| `LOG_LEVEL` | Niveau de log |
+| `CORS_ORIGIN` | Origines autorisées en production, séparées par des virgules |
+| `CLAIR_INTERNAL_SECRET` | Secret partagé avec le site et l'ingestion (voir [Limites & Cache](/guide/api-reference/authentification-et-limites)) |
+| `FEEDBACK_DISCORD_WEBHOOK_URL` | Notification des retours anonymes |
+| `PUBLIC_APP_URL` | Lien vers le site dans la notification de retour (défaut `https://clair.vote`) |
+| `PLAUSIBLE_EVENTS_URL`, `PLAUSIBLE_API_DOMAIN` | Mesure d'usage de l'API (voir [Vue d'ensemble de l'API](/guide/api-reference)) ; inactive sans `PLAUSIBLE_EVENTS_URL` |
+| `API_URL` | Hors production seulement : adresse annoncée par la spécification OpenAPI (défaut `http://localhost:3001`). En production, elle annonce toujours `https://api.clair.vote` |
+| `SENATORIALES_HORLOGE` | Rejouer une soirée électorale à une heure simulée ; ignorée en production |
+
+`apps/api/railway.toml` décrit ce déploiement mais n'est pas lu par Railway : la configuration fait foi dans le tableau de bord.
+
+---
+
+## 📥 Ingestion : Railway
+
+Les deux services sont construits depuis `services/ingestion/Dockerfile`, seul à installer `poppler-utils` (`pdftotext`), indispensable pour lire les comptes rendus de commission de l'Assemblée. Le conteneur tourne avec `TZ=Europe/Paris`, mais les crons Railway s'expriment en UTC.
+
+| Service | Cron (UTC) | Commande |
+| :--- | :--- | :--- |
+| Ingestion nightly | `0 3 * * *` : 5 h à Paris en heure d'été, 4 h en heure d'hiver | `node --max-old-space-size=6144 services/ingestion/dist/cli.js smart-sync --all` (le `CMD` du Dockerfile) |
+| Ingestion intraday | `0 6-21/2 * * *` : de 8 h à 22 h à Paris en heure d'été | `node services/ingestion/dist/cli.js sync-intraday` |
+
+Ni l'un ni l'autre n'est relancé en cas d'échec (politique de redémarrage `NEVER`) : un passage raté attend le suivant. Le batch nocturne ne sort d'ailleurs en erreur que si aucune source n'a pu être synchronisée (voir [Orchestrateur d'ingestion](/donnees/orchestrateur-ingestion)).
+
+Variables lues par le code de l'ingestion : `DATABASE_URL`, `LOG_LEVEL`, `NODE_ENV`, `MISTRAL_API_KEY`, `TAVILY_API_KEY`, `API_URL` et `CLAIR_INTERNAL_SECRET` (pour reconstruire le cache de la page d'accueil en fin de batch). Le service intraday n'utilise que `DATABASE_URL`, `LOG_LEVEL` et `NODE_ENV`.
+
+`services/ingestion/railway.toml` et `railway.intraday.toml` recopient la configuration du tableau de bord pour la documenter ; Railway ne les lit pas.
+
+---
+
+## 🗄️ Base de données
+
+- Les migrations ne sont **pas** appliquées automatiquement au déploiement. Elles s'appliquent avec `prisma migrate deploy`, lancé depuis `apps/api` avec le `DATABASE_URL` de production (voir [Modèle Prisma](/donnees/modele-prisma#migrations)). Une migration dont dépend le code doit donc être appliquée avant la fusion sur `master`.
+- La base est mise à jour chaque nuit par le batch nocturne, et dans la journée par le batch intraday.
+
+---
+
+## 🔁 CI : GitHub Actions
+
+`.github/workflows/ci.yml`, sur chaque push et pull request vers `master` (ou `main`) :
+
+1. **lint-and-test** : installation, génération du client Prisma, `pnpm lint`, `pnpm test`, couverture de l'API envoyée à Codecov sur les pull requests. Le `type-check` est désactivé (erreurs préexistantes dans l'ingestion et le site).
+2. **build** : démarre PostgreSQL 16 et Redis 7, applique le schéma par `prisma db push` puis les triggers (`db:triggers`), construit et lance l'API, puis construit tout le monorepo. Le build du site prérend `/sitemap.xml`, qui interroge l'API : c'est ce qui impose une API réelle pendant la CI.
+
+La CI ne déploie rien.

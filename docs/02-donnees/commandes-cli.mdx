@@ -2,94 +2,274 @@
 title: "Commandes CLI & Scripts d'Ingestion"
 sidebar_label: "Commandes CLI"
 sidebar_icon: "terminal"
-description: Répertoire complet des commandes CLI (@clair/ingestion, smart-sync, sync ciblé, calcul de stats, recalculs et backfills).
+description: Scripts pnpm du monorepo et commandes de la CLI d'ingestion (smart-sync, sync ciblé, rattrapage de l'historique, statistiques, IA, qualité, rattachements).
 ---
 
-## 🛠️ Scripts Principaux du Monorepo
+## 🛠️ Scripts du monorepo
 
 ```bash
-# Lancer tous les modules (Web :3000, API :3001, Docs :3002)
-pnpm dev
+# Développement
+pnpm dev                  # tous les workspaces en mode dev (web :3000, API :3001, docs :3002)
+pnpm dev:web              # frontend seul
+pnpm dev:api              # API seule
+pnpm dev:docs             # documentation seule
 
-# Lancer des modules spécifiques
-pnpm dev:web
-pnpm dev:api
-pnpm dev:docs
+# Build
+pnpm build                # tous les workspaces
+pnpm build:web
+pnpm build:api
+pnpm build:docs
+pnpm --filter @clair/ingestion build   # CLI d'ingestion (tsup → services/ingestion/dist)
 
-# Base de données
-pnpm db:generate
-pnpm db:push
-pnpm db:seed
-pnpm db:studio
+# Base de données (Prisma, exécuté dans apps/api)
+pnpm db:generate          # prisma generate
+pnpm db:push              # prisma db push (schéma sans migration), puis les triggers
+pnpm db:triggers          # rejoue seulement apps/api/prisma/triggers.sql
+pnpm db:migrate           # prisma migrate dev : échoue, voir plus bas
+pnpm db:seed              # données de test (apps/api/prisma/seed.ts)
+pnpm db:studio            # Prisma Studio
 
-# Docker
+# Docker (PostgreSQL + Redis locaux)
 pnpm docker:up
 pnpm docker:down
 pnpm docker:logs
+
+# Qualité du code
+pnpm lint                 # ESLint sur tous les workspaces, plus scripts/ et apps/api/prisma
+pnpm lint:fix
+pnpm type-check           # tsc --noEmit
+pnpm test                 # Vitest (API et ingestion)
+pnpm format               # Prettier
+
+# Documentation
+pnpm docs:nav             # régénère la navigation après ajout, renommage ou suppression d'une page
+pnpm docs:validate        # syntaxe MDX et liens internes
+pnpm docs:erd             # régénère les diagrammes de la base depuis le schéma Prisma
 ```
+
+`pnpm test:e2e` est déclaré dans `turbo.json`, mais aucun workspace ne définit de script `test:e2e` : la commande ne lance rien.
+
+`pnpm db:migrate` lance `prisma migrate dev`, qui rejoue l'historique des migrations dans une base fantôme : il échoue (erreur P3006 sur `20260313_add_sujets`), car cet historique ne se rejoue pas depuis une base vide. Pour créer ou appliquer une migration, voir [Modèle Prisma](/donnees/modele-prisma#migrations).
 
 ---
 
-## ⚙️ La CLI d'Ingestion (`@clair/ingestion`)
+## ⚙️ La CLI d'ingestion
 
-Point d'entrée : `services/ingestion/src/cli.ts`. Raccourcis disponibles depuis la racine du dépôt :
+Point d'entrée : `services/ingestion/src/cli.ts`. Six commandes ont un raccourci à la racine ; toutes les autres se lancent par `exec` :
 
 ```bash
-pnpm ingestion:sync ...              # Synchronisation manuelle ciblée
-pnpm ingestion:smart-sync ...        # Synchronisation avec suivi de fraîcheur (ETag)
-pnpm ingestion:status                # Affichage de l'état et de la fraîcheur des 22 sources
-pnpm ingestion:calculate-stats       # Recalcul des statistiques des parlementaires et groupes
-pnpm ingestion:backfill              # Rapprochements rétroactifs
-pnpm ingestion:schedule              # Planificateur de tâches local
+pnpm ingestion:sync ...              # = sync
+pnpm ingestion:smart-sync ...        # = smart-sync
+pnpm ingestion:backfill              # = backfill
+pnpm ingestion:status                # = status
+pnpm ingestion:calculate-stats ...   # = calculate-stats
+pnpm ingestion:schedule              # = schedule
+
+pnpm --filter @clair/ingestion check-quality
+pnpm --filter @clair/ingestion exec tsx src/cli.ts <commande> [options]
 ```
+
+Les options se passent directement (`pnpm ingestion:sync -p`) ou après `--` (`pnpm ingestion:sync -- -p`) : la CLI retire elle-même le `--` que pnpm transmet.
+
+En production, la CLI tourne depuis le build : `node services/ingestion/dist/cli.js <commande>`. En local, lancer `pnpm --filter @clair/ingestion build` avant toute synchronisation.
 
 ---
 
-## 🚀 Options de `smart-sync` (Batch Nocturne)
+## 🚀 `smart-sync` : synchronisation par fraîcheur
+
+C'est la commande du batch nocturne. Son déroulé complet est sur la page [Orchestrateur d'ingestion](/donnees/orchestrateur-ingestion).
 
 ```bash
-# Exécution complète dans l'ordre de production
-pnpm ingestion:smart-sync -a
-
-# Forcer le re-téléchargement sans tenir compte des ETags
-pnpm ingestion:smart-sync -a --force
-
-# Exécution sans recalculer les statistiques globales
-pnpm ingestion:smart-sync -a --skip-stats
-
-# Limiter le nombre d'éléments par ressource (mode test rapide)
-pnpm ingestion:smart-sync -a -l 50
-
-# Synchroniser uniquement des clés spécifiques
-pnpm ingestion:smart-sync --sources senat:agenda,senat:videos
+pnpm ingestion:smart-sync -a                 # tout, dans l'ordre de production
+pnpm ingestion:smart-sync -a --force         # sans tenir compte des ETag / Last-Modified
+pnpm ingestion:smart-sync -a --skip-stats    # sans recalcul des statistiques
+pnpm ingestion:smart-sync -a -l 100          # limite appliquée à chaque type de données
+pnpm ingestion:smart-sync --sources senat:agenda,senat:videos   # clés de sources explicites
 ```
+
+Sans `-a` ni `--sources`, la commande traite `assemblee_nationale:deputes` et `senat:senateurs`, plus les familles demandées : `-s` (scrutins), `--am` (amendements), `--do` (dossiers), `--in` (interventions), `--lo` (lobbying), `--co` (commissions), `--re` (réunions AN), `--seances-odj`, `--senat-histo`, `--senat-agenda`, `--senat-reunions`, `--senat-bureaux`, `--senat-dossier-commissions`, `--senat-videos`, `--an-videos`, `--candidatures`.
 
 ---
 
-## 🎯 Options de `sync` (Synchronisation Manuelle Ciblée)
+## 🎯 `sync` : synchronisation manuelle d'un type de données
 
-Filtres de chambre : `--an` (Assemblée nationale), `--se` (Sénat).
+Filtre de chambre : `--an` (Assemblée), `--se` (Sénat), rien pour les deux. Un seul type de données est traité par appel.
 
 ```bash
-# Parlementaires
-pnpm ingestion:sync -p                      # Députés + sénateurs actifs
-pnpm ingestion:sync -p --an --legislature 16 # Députés d'une législature passée
-
-# Scrutins & Votes
-pnpm ingestion:sync -s                      # Scrutins récents
+pnpm ingestion:sync                         # sans option : députés + sénateurs
+pnpm ingestion:sync -p                      # parlementaires
+pnpm ingestion:sync -p --an --legislature 16   # députés d'une législature passée (15, 16 ou 17)
+pnpm ingestion:sync -g                      # groupes politiques
+pnpm ingestion:sync -s                      # scrutins et votes
 pnpm ingestion:sync -s --an --legislature 16
-pnpm ingestion:sync -s --se --sessions 2024,2025
+pnpm ingestion:sync -s --se --sessions 2006,2007   # scrutins du Sénat par sessions
+pnpm ingestion:sync --am                    # amendements
+pnpm ingestion:sync --am --an --legislature 15 --archive <chemin>   # amendements AN d'une législature passée
+pnpm ingestion:sync --do                    # dossiers législatifs (--do --an --legislature 16 pour le passé)
+pnpm ingestion:sync --in --se               # interventions du Sénat (deux dernières années par défaut)
+pnpm ingestion:sync --in --se --depuis-annee 2017 --rattrapage
+pnpm ingestion:sync --lo                    # lobbyistes et actions (HATVP)
+pnpm ingestion:sync --lo --no-actions       # lobbyistes sans les actions
+pnpm ingestion:sync --de                    # déclarations HATVP des parlementaires
+pnpm ingestion:sync --co                    # commissions et organes
+pnpm ingestion:sync --re                    # réunions et agenda
+pnpm ingestion:sync --seances-odj           # ordre du jour des séances publiques (AN)
+pnpm ingestion:sync -s -l 50                # limiter le nombre d'éléments
+pnpm ingestion:sync -f                      # synchronisation complète des députés et sénateurs
 
-# Amendements & Dossiers
-pnpm ingestion:sync --am                    # Amendements
-pnpm ingestion:sync --am --an --legislature 15 # Amendements AN d'une législature passée (15, 16)
-pnpm ingestion:sync --do                    # Dossiers législatifs
-
-# Rapprochement Scrutins vers Amendements
-pnpm ingestion:sync --am --enrich           # Scraping des scrutins sans amendement
-pnpm ingestion:sync --am --link             # Rapprochement par numéro avec contrainte dossier
-
-# Lobbying HATVP
-pnpm ingestion:sync --lo                    # Répertoire complet des représentants d'intérêts
-pnpm ingestion:sync --de                    # Déclarations d'intérêts et de patrimoine des élus
+# Rattachement scrutins ↔ amendements
+pnpm ingestion:sync --am --enrich           # lecture des pages de scrutin sans lien (--an / --se)
+pnpm ingestion:sync --am --enrich --an --only <idScrutin...>
+pnpm ingestion:sync --am --link             # rapprochement par numéro, contraint par le dossier
+pnpm ingestion:sync --am --link --reset     # efface les liens avant de les recréer
 ```
+
+> `sync --in` sans `--se` lit la source **DILA**, où plus rien n'est publié depuis janvier 2026. Les débats de l'Assemblée s'ingèrent désormais avec `sync-debats-an` (ou le `smart-sync`).
+>
+> L'aide de `--link` mentionne les interventions, mais seul `--am --link` est implémenté : `sync --in --link` relance une synchronisation des interventions. Le rattachement des débats aux scrutins se fait avec `link-debats-scrutins` et `link-debats-scrutins-senat`.
+
+Autres options de `sync` : `--dry-run`, `--reset`, `-c` (circonscriptions, avec `-p --an`), `--ameli` et `--texte-ids` (mode AMELI des amendements du Sénat), `--archive` (archive des amendements AN déjà téléchargée).
+
+---
+
+## 🔁 `backfill`
+
+```bash
+pnpm ingestion:backfill
+```
+
+Synchronisation complète des **députés et sénateurs** uniquement (la même chose que `sync -f`). Ce n'est pas un rechargement de l'historique : pour cela, voir la section suivante.
+
+---
+
+## 🕰️ Rattrapage de l'historique
+
+Le batch nocturne ne lit que la législature courante de l'Assemblée et une fenêtre récente du Sénat. L'historique se rattrape par des commandes ponctuelles :
+
+```bash
+# Assemblée, législatures 15 et 16
+pnpm ingestion:sync -p --an --legislature 16
+pnpm ingestion:sync -s --an --legislature 16
+pnpm ingestion:sync --do --an --legislature 16
+pnpm ingestion:sync --am --an --legislature 16
+
+# Sénat : annuaire des anciens sénateurs AVANT les scrutins (les votes ont besoin du roster)
+pnpm --filter @clair/ingestion exec tsx src/cli.ts sync-senateurs-histo --depuis 2006-10-01
+pnpm ingestion:sync -s --se --sessions 2006,2007   # puis tranche par tranche
+
+# Relancer ensuite la synchronisation courante des parlementaires, puis les stats des législatures figées
+pnpm ingestion:sync -p
+pnpm ingestion:calculate-stats --include-frozen
+```
+
+Le chargement d'une législature passée met à jour la `chambre` des personnes ayant siégé dans les deux assemblées ; la synchronisation courante `sync -p`, relancée en dernier, la rétablit.
+
+Le rapprochement scrutins ↔ amendements (`sync --am --link`) s'appuie sur le dossier des amendements : après le chargement d'amendements anciens, lancer `link-amendements-dossiers` avant lui.
+
+---
+
+## 📊 Statistiques
+
+```bash
+pnpm ingestion:calculate-stats                       # parlementaires puis groupes
+pnpm ingestion:calculate-stats --parlementaires-only
+pnpm ingestion:calculate-stats --groupes-only
+pnpm ingestion:calculate-stats -c assemblee          # ou senat
+pnpm ingestion:calculate-stats --include-frozen      # recalcule aussi les législatures passées
+```
+
+Calcule la présence, la présence aux scrutins solennels, la loyauté au groupe, la participation, les compteurs d'interventions et d'amendements, les stats de carrière, les stats par mandat, puis les stats de groupes, les alliances entre groupes et les positions par thématique. `reconcile-actif` réaligne `parlementaires.actif` sur l'existence d'un mandat en cours.
+
+---
+
+## 🤖 Enrichissement IA
+
+Voir [Enrichissement IA](/donnees/enrichissement-ia).
+
+```bash
+pnpm --filter @clair/ingestion exec tsx src/cli.ts enrich-ia                 # tout, en cascade
+pnpm --filter @clair/ingestion exec tsx src/cli.ts enrich-ia --scrutins      # ou --dossiers, --sujets,
+                                                                             # --groupe-amendements, --parlementaires
+```
+
+| Option | Effet |
+| :--- | :--- |
+| `-l, --limit <n>` | Nombre maximum d'entités **régénérées** (les entités inchangées ne comptent pas) |
+| `--dry-run` | Calcule sans écrire |
+| `--preview` | Génère et affiche les textes sans rien écrire, pour valider un prompt (avec `--only` et `--force`) |
+| `--force` | Ignore l'empreinte et régénère |
+| `--only <ids...>` | Cible des entités précises : id de scrutin, uid de dossier, slug de sujet ou de parlementaire |
+| `--rehash` | Recalcule et stocke l'empreinte sans appeler le LLM (après un changement de formule d'empreinte) |
+| `--random <n>` | Parlementaires : régénère un échantillon aléatoire de N fiches |
+| `--skip-recent-days <n>` | Avec `--random` : exclut les fiches rafraîchies depuis moins de N jours (défaut 3) |
+| `--perimees <n>` | Parlementaires : régénère au plus N fiches devenues périmées, les plus anciennes d'abord |
+| `-c, --concurrency <n>` | Appels LLM en parallèle (défaut 3) |
+
+---
+
+## ✅ Qualité
+
+```bash
+pnpm --filter @clair/ingestion test                                        # tests unitaires
+pnpm --filter @clair/ingestion check-quality                               # contrôles de la base, code de sortie 1 si échec
+pnpm --filter @clair/ingestion exec tsx src/cli.ts check-ia-quality        # contrôles des résumés IA
+pnpm ingestion:status                                                      # fraîcheur des sources
+```
+
+Détail des contrôles : [Qualité des données](/donnees/qualite-des-donnees).
+
+---
+
+## 📚 Toutes les commandes
+
+| Commande | Rôle |
+| :--- | :--- |
+| `sync` | Synchronisation manuelle d'un type de données (voir plus haut) |
+| `smart-sync` | Synchronisation par fraîcheur, utilisée par le batch nocturne |
+| `sync-intraday` | Agenda du Sénat du jour et vidéos AN + Sénat (batch intraday) |
+| `backfill` | Synchronisation complète des députés et sénateurs |
+| `status` | Fraîcheur de chaque source |
+| `test` | Teste la connexion aux sources |
+| `schedule` | Planificateur `node-cron` dans le processus (`-d` pour afficher les horaires sans exécuter). Non utilisé en production |
+| `calculate-stats` | Statistiques des parlementaires et des groupes |
+| `reconcile-actif` | Réaligne `parlementaires.actif` sur « a un mandat en cours » |
+| `backfill-mandats` | Initialisation des mandats parlementaires multi-législatures (idempotent) |
+| `backfill-nature-vote` | Classe la nature des scrutins (`--force` pour tout reclasser) |
+| `sync-senateurs-histo` | Anciens sénateurs depuis l'open data ODSEN (`--depuis <date>`) |
+| `clore-mandats-an` | Clôt les mandats de député des sortants (élus sénateurs compris) et les mandats d'organe AN qui survivent au mandat de député (`--dry-run`) |
+| `sync-debats-an` | Comptes rendus de séance de l'Assemblée (source syceron). Options : `--legislature` (défaut 17), `--max-seances`, `--repertoire`, `--reingerer` |
+| `sync-debats-commission` | Comptes rendus de commission de l'Assemblée (PDF). Options : `--depuis`, `--max-reunions`, `--seulement`, `--reingerer`, `--dry-run` |
+| `sync-avis-commission` | Avis de commission sur les amendements. Mêmes options que ci-dessus |
+| `sync-textes-articles` | Texte des articles des textes de l'Assemblée. Options : `--texte`, `--limit`, `--force`, `--dry-run` |
+| `fill-article-vise-senat` | Comble l'article visé des amendements du Sénat depuis le dump AMELI, sans écraser une valeur existante (`--depuis-annee`, `--dry-run`) |
+| `fill-metadonnees-senat` | Aligne discussions, numéro d'alinéa et parent des sous-amendements du Sénat sur le dump AMELI, sur tout l'historique (`--dry-run`) |
+| `sync-agenda-senat` | Agenda du Sénat sur une fenêtre (`--jours-avant`, défaut 45 ; `--jours-apres`, défaut 30) |
+| `sync-videos-an` | Vidéos de l'Assemblée (`--jours-avant <n>` pour remonter l'historique) |
+| `sync-videos-commission-senat` | Vidéos des réunions de commission du Sénat |
+| `sync-evenements` | Liste curée des événements institutionnels |
+| `sync-candidatures` | Candidatures depuis les fichiers du ministère (`--fichier` obligatoire, répétable ; `--scrutin`, `--simulation`, `--forcer-chute`) |
+| `sync-resultats-senatoriales` | Résultats lus sur le site du ministère (`--departement`, `--a-blanc` pour lire sans écrire, `--boucle <secondes>` pour relancer en continu, `--dossier-local` pour un site simulé, `--base-url`). Sort en erreur sur une page 404 |
+| `sync-mandats-locaux` | Mandats locaux des candidats depuis le Répertoire national des élus (`--simulation`, `--dossier-local`) |
+| `generer-reference-hemicycle` | Composition du Sénat par nuance à l'élection précédente de chaque série (`--sortie <fichier>` obligatoire) |
+| `simuler-soiree-senatoriales` | Fabrique un faux site de résultats, aux chiffres **fictifs**, pour tester la chaîne en local (`--etape matin\|midi\|soir\|complet`, `--dossier`) |
+| `link-debats-scrutins` | Rattache les débats de l'Assemblée aux scrutins (`--legislature`, `--refaire-tout`, `--dry-run`, `--sortie`) |
+| `link-debats-scrutins-senat` | Rattache les débats du Sénat aux scrutins (`--depuis-annee`, défaut 2024 ; `--remplacer-journees`, `--refaire-tout`, `--dry-run`) |
+| `segmenter-debats-senat` | Situe les interventions du Sénat dans la structure du débat (`--depuis-annee`, défaut 2024) |
+| `link-interventions-dossiers` | Rattache les prises de parole à leur dossier |
+| `link-scrutins-dossiers` | Scrutins AN orphelins → dossiers, par le titre |
+| `link-scrutins-tfidf` | Scrutins orphelins → dossiers, par similarité TF-IDF des titres |
+| `link-by-texte-numero` | Scrutins orphelins → dossiers, par numéro de texte partagé |
+| `link-by-loi-titre` | Scrutins orphelins → dossiers, par titre de la loi promulguée |
+| `link-amendements-dossiers` | Rattache les amendements à leur dossier : texte de la source d'abord, puis scrutins et amendements voisins |
+| `unlink-wrong-legislature` | Supprime les liens scrutin AN → dossier d'une autre législature |
+| `unlink-procedure-incompatible` | Supprime les liens scrutin → dossier incompatibles avec la procédure du dossier : rapport ou mission d'information, 49.3 hors motion de censure |
+| `relink-voterefs` | Rattache chaque scrutin AN au dossier qui le référence (`voteRefs` de la source), en corrigeant les liens contraires |
+| `verifier-amendements-scrutins-an` | Fiabilise les liens scrutin AN → amendement : efface les impossibles, revérifie les douteux sur la page de l'Assemblée, puis aligne leur dossier (`--dry-run`, `--concurrence`, `--articles`) |
+| `generate-sujets` | Génère les sujets (`--reset`, `--dry-run`) |
+| `relabel-sujets` | Recalcule le libellé des sujets restés sur un identifiant technique |
+| `reslug-sujets` | Recalcule leur slug. **Change les URLs publiques** : purger ensuite le cache Redis (`sujets:*`, `sitemap:*`) |
+| `generate-sujet-links` | Liens « construction » des sujets (`--no-validate`, `--dry-run`) |
+| `generate-sujet-context` | Liens « contexte » des sujets (`--incremental`, `-l`, `-c`, `--dry-run`) |
+| `enrich-ia` | Enrichissement IA |
+| `check-quality` | Contrôles de qualité de la base |
+| `check-ia-quality` | Contrôles des résumés IA |

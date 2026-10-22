@@ -151,7 +151,7 @@ const config: ZudokuConfig = {
     llms: {
       llmsTxt: true,
       llmsTxtFull: true,
-      title: "CLAIR — Documentation Technique",
+      title: "CLAIR : documentation technique",
       description: "Documentation technique, modèles de données et référence OpenAPI de CLAIR.",
     },
   },

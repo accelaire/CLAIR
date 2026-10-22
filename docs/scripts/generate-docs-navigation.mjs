@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
+import { legacyRouteFromRelPath, routeFromRelPath } from "./routes.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -220,7 +221,7 @@ function scanDir(dir, baseDir, depth = 0) {
           items.push({
             type: "doc",
             file: relPath,
-            path: `/${path.dirname(relPath)}`,
+            path: routeFromRelPath(relPath),
             label,
             icon,
           });
@@ -229,7 +230,7 @@ function scanDir(dir, baseDir, depth = 0) {
         items.push({
           type: "doc",
           file: relPath,
-          path: "/" + relPath.replace(/\.mdx?$/, ""),
+          path: routeFromRelPath(relPath),
           label,
           icon,
         });
@@ -238,6 +239,16 @@ function scanDir(dir, baseDir, depth = 0) {
   }
 
   return items;
+}
+
+/** Une redirection de l'ancienne URL préfixée vers l'URL actuelle, pour chaque page qui a changé. */
+function legacyRedirects(items) {
+  return items.flatMap((item) => {
+    if (item.type === "category") return legacyRedirects(item.items);
+    if (item.type !== "doc") return [];
+    const from = legacyRouteFromRelPath(item.file);
+    return from === item.path ? [] : [{ from, to: item.path }];
+  });
 }
 
 function generateNavigation() {
@@ -296,7 +307,12 @@ function generateNavigation() {
     { from: "/05-guide-developpeur/contribution", to: "/01-guide/guide-developpeur/contribution" },
     { from: "/deploiement", to: "/01-guide/guide-developpeur/deploiement-production" },
     { from: "/demarrage", to: "/01-guide/guide-developpeur/demarrage-local" },
-  ];
+  ]
+    // Ces alias datent des URLs préfixées : leur cible suit la page là où elle est servie.
+    .map(({ from, to }) => ({ from, to: routeFromRelPath(to.replace(/^\//, "")) }))
+    // Chaque page reste joignable à son ancienne URL (`/01-guide/…`), servie du 5 au
+    // 21 octobre 2026 et déjà liée depuis clair.vote et les moteurs de recherche.
+    .concat(legacyRedirects(navItems));
 
   const content = `import type { ZudokuConfig } from "zudoku";
 

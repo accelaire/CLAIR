@@ -2,56 +2,118 @@
 title: "Référence & Guides de l'API REST"
 sidebar_label: "Vue d'ensemble"
 sidebar_icon: "code"
-description: Vue d'ensemble de l'API REST Fastify de CLAIR, préfixes /api/v1, politique publique en lecture seule et simulateur d'appels.
+description: L'API publique de CLAIR (api.clair.vote) - adresses, toutes les routes, écriture publique, comportements et mesure d'usage.
 ---
 
-L'API de CLAIR (`https://api.clair.vote`) est un service HTTP/REST haute performance basé sur Fastify 4. Elle est **publique, gratuite, en lecture seule et accessible sans clé d'authentification**.
-
----
-
-## 🚀 Tester l'API en Direct
-
-Vous pouvez tester l'ensemble des endpoints directement via notre [Explorateur interactif](/api) ou depuis l'interface Swagger native sur [api.clair.vote/docs](https://api.clair.vote/docs).
+L'API de CLAIR est un serveur Fastify (`apps/api`) qui lit la base PostgreSQL par Prisma et met ses réponses en cache dans Redis. Elle est **publique, gratuite, sans authentification et en lecture seule** : l'ingestion écrit dans la base directement, pas par l'API.
 
 ---
 
-## 📑 Sommaire des Guides API
+## 🌐 Adresses
+
+| | Production | Local |
+| :--- | :--- | :--- |
+| Base | `https://api.clair.vote` | `http://localhost:3001` |
+| Explorateur (Zudoku) | [docs.clair.vote/api](/api) | `http://localhost:3002/api` |
+| Swagger UI | [api.clair.vote/docs](https://api.clair.vote/docs) | `http://localhost:3001/docs` |
+| Spécification OpenAPI | [api.clair.vote/docs/json](https://api.clair.vote/docs/json) | `http://localhost:3001/docs/json` |
+
+Toutes les routes métier sont sous le préfixe `/api/v1`. La spécification OpenAPI est générée par l'API à partir des schémas de ses routes : c'est elle qui détaille les paramètres et les réponses de chaque route, et l'explorateur de cette documentation la lit telle quelle. L'API est aussi référencée sur data.gouv.fr : [API CLAIR, transparence politique](https://www.data.gouv.fr/dataservices/api-clair-transparence-politique).
+
+---
+
+## 📑 Guides
 
 <FeatureGrid cols={3}>
   <FeatureCard
     icon="🛡️"
-    title="Authentification et Limites"
-    description="Politique de rate limiting (10 req/min anonyme, 60 req/min web), politique User-Agent et cache Redis."
-    href="/01-guide/api-reference/authentification-et-limites"
+    title="Limites et cache"
+    description="Niveaux d'accès (10 requêtes par minute en direct), règle de User-Agent, blocage temporaire et durées de cache."
+    href="/guide/api-reference/authentification-et-limites"
   />
   <FeatureCard
     icon="👥"
-    title="Parlementaires et Groupes"
-    description="Requêtage des députés et sénateurs, statistiques de loyauté, présence et fiches IA."
-    href="/01-guide/api-reference/parlementaires"
+    title="Parlementaires"
+    description="Députés et sénateurs : listes, filtres, fiches, votes, amendements et prises de parole."
+    href="/guide/api-reference/parlementaires"
   />
   <FeatureCard
     icon="🗳️"
-    title="Scrutins et Votes"
-    description="Consultation des scrutins publics, positions de vote individuelles et ventilations par parti."
-    href="/01-guide/api-reference/scrutins-et-votes"
+    title="Scrutins et votes"
+    description="Scrutins publics des deux chambres, votes nominatifs et débats qui les ont précédés."
+    href="/guide/api-reference/scrutins-et-votes"
   />
   <FeatureCard
     icon="📜"
-    title="Dossiers et Amendements"
-    description="Suivi du parcours législatif, navette parlementaire, amendements et avis de commissions."
-    href="/01-guide/api-reference/dossiers-et-amendements"
+    title="Dossiers et amendements"
+    description="Dossiers législatifs, amendements et sous-amendements, sujets regroupant les deux chambres."
+    href="/guide/api-reference/dossiers-et-amendements"
   />
   <FeatureCard
     icon="🏢"
     title="Lobbying HATVP"
-    description="Données ouvertes sur les représentants d'intérêts, secteurs d'activité et actions d'influence."
-    href="/01-guide/api-reference/lobbying-hatvp"
+    description="Représentants d'intérêts, secteurs et actions déclarées."
+    href="/guide/api-reference/lobbying-hatvp"
   />
   <FeatureCard
     icon="💻"
-    title="Exemples d'Intégration"
-    description="Snippets de code prêts à l'emploi en TypeScript, Python, cURL et Go."
-    href="/01-guide/api-reference/exemples-integration"
+    title="Exemples d'intégration"
+    description="Appels prêts à l'emploi en cURL, TypeScript, Python et Go."
+    href="/guide/api-reference/exemples-integration"
   />
 </FeatureGrid>
+
+---
+
+## 🧭 Routes
+
+| Préfixe | Routes |
+| :--- | :--- |
+| `/parlementaires`, `/deputes`, `/senateurs` | `/`, `/groupes`, `/legislatures`, `/sessions`, `/historique-carriere`, `/compare`, `/:slug`, `/:slug/stats`, `/:slug/rank`, `/:slug/votes`, `/:slug/amendements`, `/:slug/interventions`. Mêmes routes sur les trois préfixes : `/deputes` et `/senateurs` sont restreints à une chambre. Pour une personne passée par les deux chambres, `/:slug/votes`, `/:slug/amendements` et `/:slug/interventions` acceptent `?chambre=assemblee` ou `senat` |
+| `/groupes` | `/`, `/:chambre/:slug`, `/:chambre/:slug/stats`, `/:chambre/:slug/votes`, `/:chambre/:slug/alliances`, `/:chambre/:slug/thematiques`, `/:chambre/matrice-alliances` |
+| `/scrutins` | `/`, `/tags`, `/annees`, `/periodes`, `/importants`, `/:numero`, `/:numero/votes`, `/:numero/interventions`, `/interventions/:id` |
+| `/dossiers` | `/`, `/filters`, `/trending`, `/:uid`, `/:uid/chronologie`, `/:uid/scrutins`, `/:uid/amendements` |
+| `/sujets` | `/`, `/featured`, `/categories`, `/:slug`, `/:slug/archive`, `/:slug/documents-lies`, `/:slug/dossiers`, `/:slug/chronologie`, `/:slug/scrutins`, `/:slug/presse`, `/:slug/stats` |
+| `/commissions` | `/`, `/:slug`, `/:slug/reunions`, `/:slug/dossiers` |
+| `/agenda` | `/`, `/evenements`, `/:uid`, `/:uid/debat` |
+| `/lobbying` | `/`, `/secteurs`, `/stats`, `/actions`, `/actions/recent`, `/:id`, `/:id/actions` |
+| `/senatoriales` | `/2026`, `/2026/sortants`, `/2026/candidats`, `/2026/resultats`, `/2026/resultats/:departement`, `/2026/elus`, `/2026/elus/:slug` |
+| `/search` | `/`, `/suggest` |
+| `/analytics` | `/stats`, `/groupes`, `/voting-trends`, `/top-deputes`, `/lobbying-sectors`, `/scrutins`, `/dissidents`, `/themes`, `/controverses`, `/lobbying-top` |
+| `/homepage` | `GET /` ; `POST /warm` (réservé au trafic interne de CLAIR, voir [Limites & Cache](/guide/api-reference/authentification-et-limites)) |
+| `/sitemap` | `/` (données du sitemap du site) |
+| `/feedback` | `POST /` : retour anonyme depuis le site |
+
+Hors préfixe : `/health`, `/health/ready`, `/health/live`, `/docs`, et `/robots.txt` (qui interdit l'indexation du domaine de l'API).
+
+La recherche (`/search`) passe par des requêtes PostgreSQL (`contains`, insensible à la casse), puis un classement par similarité Jaro-Winkler : il n'y a pas de moteur de recherche dédié.
+
+---
+
+## ✍️ La seule écriture publique
+
+`POST /api/v1/feedback` enregistre un retour anonyme envoyé depuis le site, dans la table `feedbacks`. Champs : `type` obligatoire (`bug`, `idee` ou `autre`) ; `sentiment` (`positif`, `neutre`, `negatif`), `message` (2 000 caractères au plus), `email` et `page`, facultatifs. Si `FEEDBACK_DISCORD_WEBHOOK_URL` est défini, le retour est aussi notifié à l'équipe sur Discord.
+
+---
+
+## ⚙️ Autres comportements
+
+- **Compression** gzip ou deflate des réponses de plus de 1 Ko (`@fastify/compress`).
+- **En-têtes de sécurité** avec `@fastify/helmet` (politique CSP en production).
+- **CORS** : en production, seules les origines listées dans `CORS_ORIGIN` sont autorisées ; en développement, toutes.
+- **Nom des groupes** : l'API renvoie dans `nom` le libellé d'usage (`nom_court`) quand il existe, plutôt que le sigle figé de la source (voir [Modèle Prisma](/donnees/modele-prisma)).
+- **Données non exposées** : quelques tables et colonnes ne sortent par aucune route (texte des articles, cosignataires d'un amendement, colonnes techniques, dates de naissance des candidats…). La liste exacte est sur la page [Modèle Prisma](/donnees/modele-prisma).
+
+---
+
+## 📈 Mesure d'usage
+
+En production, l'API mesure son usage avec l'instance Plausible de CLAIR, comme le site (Plausible ne dépose pas de cookie). Chaque réponse, sauf `/health` et les requêtes `OPTIONS` et `HEAD`, envoie un événement après coup, sans retarder la réponse. L'événement contient :
+
+- le **motif** de la route (`/api/v1/deputes/:slug`), jamais le chemin réel ni les paramètres de requête (recherches, filtres) ;
+- le canal : `direct` (appel à `api.clair.vote`), `site` (visiteur relayé par le site) ou `interne` (rendu serveur, ingestion) ;
+- le code de statut HTTP ;
+- le nom court du client tiré de son User-Agent (`curl/8.5.0` donne `curl/8.5.0`, tout navigateur donne `navigateur`) ;
+- le référent (`Referer`), quand la requête en porte un.
+
+L'adresse IP du client est transmise à Plausible, qui s'en sert pour compter les visiteurs uniques et situer leur pays. La mesure ne s'active que si `PLAUSIBLE_EVENTS_URL` est défini ; elle est inactive en local et dans les tests.

@@ -538,9 +538,10 @@ program
 
       // Code de sortie : non nul UNIQUEMENT si tout a échoué.
       //
-      // Le cron Railway est en ON_FAILURE avec restartPolicyMaxRetries=10. Sur
-      // un échec partiel, sortir en 1 relancerait jusqu'à dix syncs complets de
-      // ~70 min — qui rejoueraient dix-huit sources déjà réussies pour en
+      // Le cron Railway est aujourd'hui en politique NEVER (relevé le
+      // 21/10/2026), mais il a tourné en ON_FAILURE avec dix relances. Sur un
+      // échec partiel, sortir en 1 relancerait alors jusqu'à dix syncs complets
+      // de ~70 min — qui rejoueraient dix-huit sources déjà réussies pour en
       // retenter une seule, et qui marteleraient les serveurs sources (l'AN
       // nous renvoyait déjà 2 040 HTTP 503 sur un seul run). Le remède serait
       // pire que le mal.

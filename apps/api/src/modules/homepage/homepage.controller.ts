@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { FastifyPluginAsync } from 'fastify';
+import { INTERNAL_SECURITY_SCHEME } from '../../openapi';
 import { isStrictlyInternalRequest } from '../../utils/internal-auth';
 import { INTERVENTIONS_DE_FOND } from '../../utils/interventions';
 
@@ -313,7 +314,23 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       tags: ['Homepage'],
       summary: 'Invalider et recharger le cache homepage',
-      description: 'Appelé par le service d\'ingestion après la synchronisation quotidienne',
+      description:
+        'Appelé par le service d\'ingestion après la synchronisation quotidienne. Réservé au trafic ' +
+        'interne de CLAIR : exige le secret interne, sans IP de visiteur relayée (`x-clair-client-ip`). ' +
+        'Toute autre requête reçoit un 403.',
+      security: [{ [INTERNAL_SECURITY_SCHEME]: [] }],
+      response: {
+        200: {
+          description: 'Cache invalidé',
+          type: 'object',
+          properties: { ok: { type: 'boolean' }, message: { type: 'string' } },
+        },
+        403: {
+          description: 'Requête non interne',
+          type: 'object',
+          properties: { error: { type: 'string' } },
+        },
+      },
     },
     handler: async (request, reply) => {
       // Réservé au trafic service-à-service : le secret interne SEUL ne protège

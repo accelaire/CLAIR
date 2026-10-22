@@ -2,40 +2,65 @@
 title: "Modèle de Données Prisma"
 sidebar_label: "Modèle Prisma"
 sidebar_icon: "database"
-description: Spécification des 39 modèles Prisma, conventions de nommage, gestion des mandats multi-législatures et volumétrie en production.
+description: Les 39 modèles Prisma, leurs conventions, les points de modélisation à connaître, la volumétrie en production, ce que l'API n'expose pas, et les migrations.
 ---
 
-La base de données relationnelle est un cluster **PostgreSQL 17** décrit par le fichier unique `apps/api/prisma/schema.prisma`.
+La base est une base **PostgreSQL 17** décrite par un seul fichier : [`apps/api/prisma/schema.prisma`](https://github.com/accelaire/CLAIR/blob/master/apps/api/prisma/schema.prisma). C'est la source de vérité ; cette page en donne une lecture d'ensemble. Les diagrammes sont sur la page [Schémas ERD](/donnees/schemas-erd).
 
-Le schéma compte **39 modèles**, plus 2 tables de jointures implicites gérées par Prisma.
-
----
-
-## 📐 Conventions Fondamentales
-
-- **Nommage** : Modèles et propriétés Prisma en `camelCase` (`DossierLegislatif.dateDepot`) ; tables et colonnes SQL physiques en `snake_case` (`dossiers_legislatifs.date_depot`) via les attributs `@map` et `@@map`.
-- **Clés Primaires** : UUID stockés sous forme `text` (`@default(uuid())`).
-- **Pas d'Enum SQL natif** : Les champs énumérés (`chambre`, `position`, `sort`) sont stockés en `text` et validés par l'application TypeScript.
-- **Chambre** : Vaut toujours `'assemblee'` ou `'senat'`.
-- **Horodatage** : Toutes les tables portent `created_at` et `updated_at` (sauf les deux tables de jointure implicites). `updated_at` est tenu par la base, par un trigger, et ne bouge que si le contenu de la ligne change. Voir [Suivi des modifications](/02-donnees/suivi-des-modifications).
-- **Législature** : `15`, `16` ou `17` pour l'Assemblée. Pour le Sénat, qui ne connaît pas de dissolution, la colonne vaut `NULL` sur `scrutins` et `groupes_politiques` (période définie par `session` ou `mandature`).
+Le schéma compte **39 modèles**, soit 39 tables, plus 2 tables de jointure créées implicitement par Prisma. Il n'y a ni comptes utilisateurs, ni tables d'authentification. La base de production ne contient aucune autre table que celles-ci, hors la table `_prisma_migrations` de Prisma (vérifié le 21 octobre 2026).
 
 ---
 
-## 💡 Principes de Modélisation Métier
+## 📐 Conventions
+
+- **Noms** : les modèles et champs Prisma sont en `camelCase` (`DossierLegislatif.dateDepot`) ; tables et colonnes SQL en `snake_case` (`dossiers_legislatifs.date_depot`), par `@map` et `@@map`.
+- **Clés primaires** : UUID stocké en `text` (`@default(uuid())`), sauf `cible_types` et `action_descriptions` (entier auto-incrémenté), `secteurs` (slug) et `intervention_scrutin` (clé composée).
+- **Pas d'enum SQL** : les valeurs fermées (`chambre`, `position`, `sort`, `type`…) sont des `text` validés par le code ; les valeurs admises sont listées en commentaire dans le schéma.
+- **Chambre** : `chambre` vaut `'assemblee'` ou `'senat'` sur toutes les tables qui la portent.
+- **Législature** : 15, 16 ou 17 pour l'Assemblée. Pour le Sénat, qui n'a pas de législature, la colonne vaut `NULL` sur `scrutins`, `groupes_politiques` et `mandats_parlementaires` (la période est portée par `session` ou `mandature`), et `0` sur `dossiers_legislatifs` et `amendements`, où elle est obligatoire.
+- **Données brutes** : `source_data` (JSON) conserve l'enregistrement reçu de la source sur `parlementaires`, `mandats_parlementaires`, `dossiers_legislatifs`, `scrutins` et `lobbyistes`.
+- **Horodatage** : toutes les tables portent `created_at` et `updated_at` (sauf les deux tables de jointure implicites). `updated_at` est tenu par la base, par un trigger, et ne bouge que si le contenu de la ligne change : une réécriture à l'identique le laisse en place. Voir [Suivi des modifications](/donnees/suivi-des-modifications).
+- **Empreintes** : `scrutins.source_hash` et `amendements.source_hash` résument ce que la synchronisation écrit ; une ligne dont l'empreinte n'a pas changé n'est pas réécrite. `ia_content_hash` joue le même rôle pour l'IA (voir [Enrichissement IA](/donnees/enrichissement-ia)).
+
+---
+
+## 💡 Points de modélisation à connaître
 
 ### 1. Une personne, plusieurs mandats
-Il n'existe pas de table séparée « députés » ou « sénateurs ».
-- La table `parlementaires` contient des **personnes physiques**.
-- La table `mandats_parlementaires` enregistre leurs **sièges successifs** (une ligne par législature à l'Assemblée, par mandature au Sénat).
 
-### 2. Changement de chambre et continuité
-Lorsqu'un député est élu sénateur, sa fiche est conservée et bascule au Sénat. Son ancien identifiant `PA...` de l'Assemblée est historisé dans `parlementaires_identifiants`, garantissant que les votes ou amendements passés restent parfaitement rattachés.
+Il n'y a pas de table « députés » ni « sénateurs » : `parlementaires` contient des **personnes**, et `mandats_parlementaires` leurs **sièges** (une ligne par législature à l'Assemblée, par mandature au Sénat). Une personne peut avoir été députée puis sénatrice.
 
-### 3. Le groupe politique appartient au mandat
-Le groupe politique, la circonscription et la commission permanente sont attachés à `mandats_parlementaires`. La colonne `parlementaires.groupe_id` n'indique que le groupe **actuel**. Le groupe d'un vote ou d'un amendement est celui du mandat de l'époque.
+### 2. Changement de chambre
 
-### 4. Sous-amendements et discussions
+`parlementaires.chambre` et `parlementaires.source_id` désignent la chambre de la fiche et son identifiant dans cette chambre (`PA…` à l'Assemblée, matricule au Sénat). Quand un député est élu sénateur, sa fiche est conservée et passe au Sénat avec son matricule ; son identifiant de l'Assemblée est gardé dans `parlementaires_identifiants`, pour que les données de l'Assemblée publiées après son départ retrouvent leur auteur.
+
+### 3. Le groupe politique appartient au mandat, pas à la personne
+
+Le groupe, la circonscription, la commission permanente et la série sénatoriale d'une période sont sur `mandats_parlementaires`. `parlementaires.groupe_id` ne porte que le groupe **actuel** : l'utiliser pour un vote passé l'attribuerait au mauvais groupe. Pour situer un vote, prendre le mandat de la même législature que le scrutin (Assemblée) ou dont la période contient sa date (Sénat).
+
+### 4. Deux tables de mandats distinctes
+
+`mandats_parlementaires` est le siège de parlementaire. `mandats` contient les fonctions dans des organes (commission, délégation, groupe d'études, gouvernement…), avec la qualité (membre, président, rapporteur…).
+
+### 5. Groupes politiques
+
+À l'Assemblée, un groupe a une ligne par législature. Au Sénat, une ligne par sigle, valable dans le temps (`legislature` à `NULL`). `nom` contient le **sigle tel que la source le code**, figé à travers les renommages (`UMP` pour Les Républicains au Sénat) : c'est une clé de rapprochement, pas un libellé. Le libellé d'usage est `nom_court` ; l'API renvoie `nom_court` à la place de `nom` quand il existe.
+
+### 6. Statistiques pré-calculées
+
+Elles sont calculées par le batch nocturne, jamais par l'API. La position majoritaire d'un groupe sur un scrutin n'existe que si une seule position est en tête : en cas d'égalité, le scrutin ne compte ni pour la loyauté (il sort du dénominateur), ni pour les alliances, ni pour les thématiques.
+
+- `parlementaires.stats_*` : mandat en cours (sert aux listes et classements) ;
+- `parlementaires.stats_carriere_*` : tous mandats cumulés ;
+- `mandats_parlementaires.stats_*` : par mandat ;
+- `groupes_politiques.stats_*`, `groupes_alliances`, `groupes_thematiques` : par groupe.
+
+### 7. Scrutins, votes et amendements
+
+Un scrutin peut porter sur plusieurs amendements et un amendement sur plusieurs scrutins : table implicite `_AmendementToScrutin` (`A` = amendement, `B` = scrutin). Les cosignataires sont dans `_AmendementCosignataires` (`A` = amendement, `B` = parlementaire). `numero` n'identifie un scrutin qu'avec `chambre` et `session` (contrainte unique `numero, chambre, session`). Un vote (`votes.position`) vaut `pour`, `contre`, `abstention` ou `absent`.
+
+### 8. Sous-amendements et discussions
+
 Un sous-amendement modifie un amendement, pas le texte : `amendements.amendement_parent_id` pointe vers l'amendement qu'il modifie, et `amendement_parent_ref` garde la référence lue à la source. Les amendements discutés ensemble en séance partagent un `id_discussion_commune`, les amendements identiques un `id_discussion_identique`, chacun unique au sein d'une chambre seulement.
 
 | Champ | Assemblée | Sénat |
@@ -47,34 +72,171 @@ Un sous-amendement modifie un amendement, pas le texte : `amendements.amendement
 
 Au Sénat, chaque colonne n'a qu'un écrivain (le CSV pour le libellé de l'alinéa, la passe AMELI pour le reste) : deux sources qui se disputeraient une colonne la réécriraient chaque nuit, et `updated_at` bougerait sans changement.
 
+### 9. Interventions
+
+`interventions` contient les prises de parole en séance (`reunion_id` à `NULL`) et en commission (`reunion_id` renseigné). `parlementaire_id` est vide pour les orateurs non parlementaires (ministres…), dont le nom reste dans `orateur_nom`. `intervention_scrutin` relie une prise de parole au scrutin qu'elle précède, avec la méthode du rattachement dans `via` : `amendement` et `article` dans les deux chambres ; `ensemble` (explications de vote), `motion` et `finances` (fascicule budgétaire) au Sénat ; `fenetre` (ce qui a été dit entre deux votes) à l'Assemblée.
+
+### 10. Sujets
+
+Un sujet regroupe les dossiers de l'Assemblée et du Sénat qui portent sur le même texte (`dossiers_legislatifs.sujet_id`).
+
+### 11. Élections sénatoriales
+
+Chaque ingestion aligne les candidatures sur le fichier du ministère : une liste se reconnaît à son `source_uid`, une candidature à sa liste, son rôle et son rang, et toutes deux gardent leur `id` d'une ingestion à l'autre. Les tables de résultats ne s'y rattachent pourtant pas par clé étrangère, mais par des identifiants de la source, pour ne pas dépendre de la vie des lignes de candidature :
+
+- `resultats_listes` (voix, sièges, élu) par `liste_source_uid` = `candidatures_listes.source_uid` ;
+- `candidats_mandats_locaux` par l'identité du candidat (`scrutin`, `nom`, `prenom`, `date_naissance`).
+
+`resultats_tours` porte la participation par circonscription et par tour. L'absence de ligne signifie « pas encore publié », jamais « zéro ». Les colonnes `candidatures.elu` et `candidatures.tour_election` ne sont pas alimentées (elles valent `false` et `NULL` sur toutes les lignes) : les élus se lisent dans `resultats_listes.elu` (majoritaire) et `resultats_listes.sieges` (proportionnel).
+
 ---
 
-## 🕒 Triggers et Migrations
+## 📊 Catalogue des tables
 
-Les triggers qui tiennent `updated_at` sont dans `apps/api/prisma/triggers.sql`. Prisma ne les connaît pas : `prisma db push` ne les crée pas, et `prisma migrate diff` ne les voit pas, ni pour les créer ni pour les supprimer.
+Volumétrie mesurée en production le **21 octobre 2026**.
+
+### Parlementaires et groupes
+
+| Modèle | Table | Lignes | Contenu |
+| :--- | :--- | ---: | :--- |
+| `Parlementaire` | `parlementaires` | 2 194 | Personnes, rangées par la chambre de leur fiche : 1 164 à l'Assemblée (dont 574 en exercice), 1 030 au Sénat (dont 348 en exercice). Identité, stats pré-calculées, fiche IA |
+| `ParlementaireIdentifiant` | `parlementaires_identifiants` | 9 | Identifiant conservé dans la chambre quittée (9 députés devenus sénateurs) |
+| `MandatParlementaire` | `mandats_parlementaires` | 3 563 | Sièges : AN 15e (659), 16e (618), 17e (612) ; Sénat, mandatures 1998 à 2026 (178 sièges pour 2026) |
+| `GroupePolitique` | `groupes_politiques` | 47 | Groupes de l'Assemblée, une ligne par législature (13 en 15e, 11 en 16e, 12 en 17e), et du Sénat (11) |
+| `Circonscription` | `circonscriptions` | 686 | 577 circonscriptions législatives, 109 sénatoriales |
+| `Mandat` | `mandats` | 47 507 | Fonctions dans les organes |
+| `GroupeAlliance` | `groupes_alliances` | 506 | Taux d'accord entre deux groupes |
+| `GroupeThematique` | `groupes_thematiques` | 752 | Position moyenne d'un groupe par thème |
+| `DeclarationHATVP` | `declarations_hatvp` | 4 943 | Déclarations d'intérêts et de patrimoine (liens vers la HATVP) |
+
+### Travail législatif
+
+| Modèle | Table | Lignes | Contenu |
+| :--- | :--- | ---: | :--- |
+| `DossierLegislatif` | `dossiers_legislatifs` | 21 508 | Dossiers : AN 15e (4 982), 16e (2 794), 17e (3 149), législatures 8 à 14 (44), Sénat (10 539) |
+| `Scrutin` | `scrutins` | 22 215 | Scrutins publics, voir la couverture ci-dessous |
+| `Vote` | `votes` | 3 929 249 | Vote nominatif d'un parlementaire à un scrutin |
+| `Amendement` | `amendements` | 683 722 | Amendements : AN 15e (311 934), 16e (163 789), 17e (140 865), Sénat (67 134) |
+| (implicite) | `_AmendementToScrutin` | 14 607 | Liens scrutin ↔ amendement |
+| (implicite) | `_AmendementCosignataires` | 9 524 231 | Cosignatures |
+| `Intervention` | `interventions` | 1 435 955 | Prises de parole, voir la couverture ci-dessous |
+| `InterventionScrutin` | `intervention_scrutin` | 350 202 | Liens prise de parole → scrutin |
+| `TexteArticle` | `textes_articles` | 5 185 | Texte d'un article dans une version donnée d'un texte (AN) |
+| `Sujet` | `sujets` | 1 785 | Regroupements de dossiers AN + Sénat, résumés IA |
+| `SujetLien` | `sujet_liens` | 4 709 | Liens sortants d'un sujet : documents officiels, vie-publique.fr, Wikipédia |
+
+### Commissions et agenda
+
+| Modèle | Table | Lignes | Contenu |
+| :--- | :--- | ---: | :--- |
+| `Commission` | `commissions` | 3 020 | Commissions et autres organes, AN et Sénat |
+| `Reunion` | `reunions` | 9 027 | Réunions de commission et séances publiques |
+| `ReunionParticipant` | `reunion_participants` | 151 741 | Présence d'un parlementaire à une réunion |
+| `AvisCommission` | `avis_commission` | 3 529 | Avis rendu par une commission sur un amendement avant la séance (AN) |
+| `DossierCommission` | `dossier_commissions` | 13 263 | Commission saisie d'un dossier, au fond ou pour avis |
+| `EvenementInstitutionnel` | `evenements_institutionnels` | 18 | Repères de l'agenda saisis à la main (élections, sessions, suspensions, budget) |
+
+### Lobbying (HATVP)
+
+| Modèle | Table | Lignes | Contenu |
+| :--- | :--- | ---: | :--- |
+| `Lobbyiste` | `lobbyistes` | 4 107 | Représentants d'intérêts |
+| `ActionLobby` | `actions_lobby` | 102 244 | Actions déclarées |
+| `Secteur` | `secteurs` | 143 | Secteurs d'activité |
+| `LobbyisteSecteur` | `lobbyistes_secteurs` | 18 917 | Pivot lobbyiste ↔ secteur |
+| `ActionSecteur` | `actions_secteurs` | 184 038 | Pivot action ↔ secteur |
+| `CibleType` | `cible_types` | 2 028 | Libellés normalisés des cibles d'action |
+| `ActionDescription` | `action_descriptions` | 98 700 | Textes normalisés des descriptions d'action |
+
+### Élections sénatoriales 2026
+
+| Modèle | Table | Lignes | Contenu |
+| :--- | :--- | ---: | :--- |
+| `CandidatureListe` | `candidatures_listes` | 483 | Unité de vote : une liste (proportionnel) ou un binôme (majoritaire) |
+| `Candidature` | `candidatures` | 1 936 | Candidats, rattachés à une personne connue quand l'identification est sûre |
+| `ResultatTour` | `resultats_tours` | 78 | Participation par circonscription et par tour (64 au 1er tour, 14 au 2nd) |
+| `ResultatListe` | `resultats_listes` | 559 | Voix d'une liste ou d'un candidat à un tour, sièges (proportionnel) ou élection (majoritaire) : 119 sièges au proportionnel et 59 élus au majoritaire, soit les 178 sièges renouvelés |
+| `CandidatMandatsLocaux` | `candidats_mandats_locaux` | 1 091 | Mandats locaux des candidats, lus dans le Répertoire national des élus |
+
+### Technique
+
+| Modèle | Table | Contenu |
+| :--- | :--- | :--- |
+| `SourceState` | `source_states` | État de fraîcheur de chaque source (23 lignes, une par clé) |
+| `SyncLog` | `sync_logs` | Journal des synchronisations |
+| `Feedback` | `feedbacks` | Retours anonymes envoyés depuis le site |
+
+---
+
+## 🗺️ Couverture
+
+| Données | Périmètre en base au 21 octobre 2026 |
+| :--- | :--- |
+| Scrutins de l'Assemblée | 15e législature (4 417, du 4 juillet 2017 au 24 février 2022), 16e (4 105, du 11 juillet 2022 au 7 juin 2024), 17e (8 906, depuis le 8 octobre 2024) |
+| Scrutins du Sénat | 4 787, depuis le 4 octobre 2006 |
+| Interventions en séance | Assemblée : 1 015 970 depuis juin 2017 ; Sénat : 307 271 depuis janvier 2017 |
+| Interventions en commission | Assemblée : 112 714 depuis juillet 2024 |
+| Amendements | Assemblée : 15e, 16e et 17e législatures (déposés depuis juin 2017) ; Sénat : déposés depuis janvier 2023 |
+| Élections | Sénatoriales du 27 septembre 2026 (série 2, 64 circonscriptions) : candidatures et résultats |
+
+---
+
+## 🔒 Ce que l'API n'expose pas
+
+L'API renvoie l'essentiel de la base, souvent la ligne entière sur les routes de détail (`source_data` compris pour les parlementaires, mandats, scrutins et lobbyistes). Voici ce qu'elle ne renvoie pas, hors clés de jointure (les objets liés sont imbriqués à la place) et dates techniques `created_at` / `updated_at`.
+
+**Tables jamais renvoyées**
+
+| Table | Raison |
+| :--- | :--- |
+| `textes_articles` | Sert uniquement de matière aux résumés IA ; aucune route ne la sert pour l'instant |
+| `parlementaires_identifiants` | Interne au rattachement des données |
+| `source_states`, `sync_logs` | Suivi de l'ingestion ; la page d'accueil n'en lit que la date de la dernière synchronisation réussie |
+| `feedbacks` | Retours des visiteurs, données personnelles |
+
+**Tables exposées en partie**
+
+| Table | Ce qui manque |
+| :--- | :--- |
+| `_AmendementCosignataires` | `/parlementaires/:slug/amendements` inclut les amendements cosignés par la personne, mais aucune route ne donne les cosignataires d'un amendement |
+| `intervention_scrutin` | Le lien est renvoyé (`scrutinIds` d'une prise de parole). Sa méthode `via` ne l'est pas ligne par ligne : `/scrutins/:numero/interventions` n'en donne que la plus fine du scrutin (`precision`) |
+
+**Colonnes non renvoyées**
+
+| Table | Colonnes | Remarque |
+| :--- | :--- | :--- |
+| `amendements` | `parlementaire_id`, `source_url`, `numero_ordre`, `uid_canonique`, `auteur_ref`, `groupe_ref`, `source_hash`, `amendement_parent_ref` | L'auteur n'est donné que par `auteur_libelle` ; le parent d'un sous-amendement l'est par `amendementParent` |
+| `interventions` | `source_uid`, `seance_uid`, `ordre_absolu` | Repérage dans le compte rendu source |
+| `dossiers_legislatifs` | `source_data`, `ia_content_hash`, `ia_generated_at` | L'API extrait de `source_data` la chronologie et le lien vers le Journal officiel, sans le renvoyer brut |
+| `sujets` | `ia_content_hash`, `ia_generated_at`, `ia_groupe_amendement_hash`, `context_resolved_at`, `context_input_hash` | Suivi de l'enrichissement |
+| `sujet_liens` | `provenance` | |
+| `candidatures` | `date_naissance`, `profession_code`, `sortant_declare`, `match_confiance`, `tour_election` | La date de naissance des candidats est **volontairement** tenue hors de l'API : seule l'année est publiée |
+| `candidatures_listes` | `numero_depot` | |
+| `candidats_mandats_locaux` | `date_naissance`, `confiance` | Même règle pour la date de naissance |
+
+Méthode : liste relevée le 1er octobre 2026 en interrogeant toutes les routes GET documentées avec des paramètres réels (plus de 500 appels), puis revue dans le code le 21 octobre 2026, après l'ajout des métadonnées de séance des amendements. Les colonnes renvoyées sous un autre nom (par exemple `cible_types.label` en `cibleNom`, `groupes_thematiques.position_moyenne` en `position`) comptent comme exposées.
+
+---
+
+## Migrations
+
+- Les migrations sont dans `apps/api/prisma/migrations/`.
+- **Production** : les migrations s'appliquent avec `prisma migrate deploy` (depuis `apps/api`, avec le `DATABASE_URL` de production). Elles ne sont **pas** jouées automatiquement au déploiement : l'image de l'API démarre directement le serveur.
+- **Base neuve** (développement local, CI) : l'historique n'est pas rejouable depuis une base vide, la migration `20260313_add_sujets` référençant une table créée par une migration ultérieure. Le schéma s'applique avec `pnpm db:push` (en CI : `prisma db push --skip-generate`, puis `db:triggers`).
+- **Créer une migration** : `prisma migrate dev` échoue pour la même raison (sa base fantôme rejoue l'historique). Le SQL se génère sans base de données, en comparant l'ancienne version du schéma à la nouvelle, puis se relit et se range dans `apps/api/prisma/migrations/<AAAAMMJJHHMMSS>_<nom>/migration.sql` :
+
+  ```bash
+  cd apps/api
+  git show origin/master:apps/api/prisma/schema.prisma > /tmp/schema-avant.prisma
+  npx prisma migrate diff --from-schema-datamodel /tmp/schema-avant.prisma --to-schema-datamodel prisma/schema.prisma --script
+  ```
+- Toute modification du schéma destinée à la production doit être accompagnée de son fichier de migration.
+
+### Triggers
+
+Les triggers qui tiennent `updated_at` sont dans `apps/api/prisma/triggers.sql`. Prisma ne les connaît pas : `prisma db push` ne les crée pas, et `prisma migrate diff` ne les voit pas, ni pour les créer ni pour les supprimer. `pnpm db:push` joue donc `triggers.sql` juste après le schéma ; `pnpm db:triggers` le rejoue seul.
 
 - **Nouvelle table** : `createdAt` et `updatedAt` en `@default(now())`, jamais `@updatedAt`, et son trigger écrit à la main dans `triggers.sql` **et** dans le `migration.sql` qui crée la table. Le test `apps/api/src/test/triggers-horodatage.test.ts` et l'invariant `tables_sans_horodatage` de `check-quality` signalent un oubli.
 - **Nouvelle colonne** : elle compte comme du contenu. Si elle décrit le traitement plutôt que la donnée (date de calcul, empreinte), l'ajouter aux colonnes ignorées du trigger de sa table, dans `triggers.sql` et dans la migration.
 - **Liaison many-to-many** : ne pas écrire `{ set: [...] }`. Prisma le joue en effaçant puis réinsérant tous les liens, ce qui date le parent même quand la liste n'a pas changé. `alignerLiens()` (`services/ingestion/src/utils/synchro-differentielle.ts`) calcule les seuls `connect` et `disconnect` nécessaires.
 - **Échec de `prisma migrate deploy`** : une migration qui échoue (sur un `lock_timeout`, quand une requête longue retient un verrou) est annulée en entier, mais Prisma la garde marquée en échec et refuse d'aller plus loin. La débloquer avec `npx prisma migrate resolve --rolled-back <nom>`, puis relancer `migrate deploy`.
-
----
-
-## 📊 Catalogue et Volumétrie en Production
-
-| Domaine | Table SQL | Volumétrie | Rôle |
-| :--- | :--- | :--- | :--- |
-| **Parlementaires** | `parlementaires` | ~2 200 lignes | Identités, statistiques précalculées, résumés IA |
-| **Mandats Sièges** | `mandats_parlementaires` | ~3 600 lignes | Sièges par législature / mandature |
-| **Groupes** | `groupes_politiques` | ~46 lignes | Groupes politiques de l'AN et du Sénat |
-| **Scrutins** | `scrutins` | ~22 000 lignes | Scrutins publics solennels et ordinaires |
-| **Votes Individuels** | `votes` | ~3 900 000 lignes | Votes nominatifs (`pour`, `contre`, `abstention`, `absent`) |
-| **Amendements** | `amendements` | ~195 000 lignes | Amendements déposés, textes, sorts |
-| **Cosignatures** | `_AmendementCosignataires` | ~3 300 000 lignes | Jointure amendement vers cosignataire |
-| **Interventions** | `interventions` | ~1 420 000 lignes | Prises de parole en séance publique et commission |
-| **Liaisons Débats** | `intervention_scrutin` | ~350 000 lignes | Rapprochement chronologique débat vers vote |
-| **Dossiers Législatifs** | `dossiers_legislatifs` | ~21 500 lignes | Dossiers et textes de loi |
-| **Sujets Transverses** | `sujets` | ~1 750 lignes | Regroupements des textes AN + Sénat |
-| **Lobbyistes** | `lobbyistes` | ~4 100 lignes | Représentants d'intérêts déclarés HATVP |
-| **Actions Lobbying** | `actions_lobby` | ~102 000 lignes | Actions d'influence déclarées |
-| **Réunions & Séances** | `reunions` | ~8 800 lignes | Agenda et procès-verbaux |

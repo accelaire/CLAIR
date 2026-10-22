@@ -2,33 +2,21 @@
 title: "API Lobbying & Représentants d'Intérêts (HATVP)"
 sidebar_label: "Lobbying HATVP"
 sidebar_icon: "building-2"
-description: Consultation des données ouvertes HATVP (répertoire Agora, représentants d'intérêts, actions d'influence déclarées et secteurs).
+description: Données ouvertes de la HATVP sur les représentants d'intérêts, leurs secteurs et leurs actions déclarées.
 ---
 
-## 🏢 Endpoints Lobbying
+Les données viennent du répertoire des représentants d'intérêts de la HATVP (voir [Sources de données](/donnees/sources-de-donnees)). Les secteurs sont normalisés dans la table `secteurs` et rattachés aux lobbyistes comme aux actions.
+
+## 🏢 Routes
 
 | Méthode | Route | Description |
 | :--- | :--- | :--- |
-| `GET` | `/api/v1/lobbying` | Liste paginée des représentants d'intérêts enregistrés |
-| `GET` | `/api/v1/lobbying/secteurs` | Liste des secteurs économiques et d'intervention |
-| `GET` | `/api/v1/lobbying/stats` | Statistiques globales sur les dépenses déclarées et le volume d'actions |
-| `GET` | `/api/v1/lobbying/actions` | Liste chronologique des actions d'influence déclarées |
-| `GET` | `/api/v1/lobbying/actions/recent` | Dernières actions de lobbying signalées |
-| `GET` | `/api/v1/lobbying/:id` | Fiche détaillée d'un lobbyiste (identité, dirigeants, clients) |
-| `GET` | `/api/v1/lobbying/:id/actions` | Historique des actions d'influence menées par une organisation |
+| `GET` | `/api/v1/lobbying` | Liste paginée des représentants d'intérêts, filtrable par `secteurs` (slugs séparés par des virgules, tous requis) et `search` (nom) |
+| `GET` | `/api/v1/lobbying/secteurs` | Secteurs normalisés, avec le nombre de lobbyistes et d'actions de chacun |
+| `GET` | `/api/v1/lobbying/stats` | Statistiques d'ensemble : totaux, répartition par type, secteurs principaux |
+| `GET` | `/api/v1/lobbying/actions` | Actions déclarées, paginées, filtrables notamment par texte visé et par secteurs |
+| `GET` | `/api/v1/lobbying/actions/recent` | Dernières actions déclarées |
+| `GET` | `/api/v1/lobbying/:id` | Fiche d'un représentant d'intérêts |
+| `GET` | `/api/v1/lobbying/:id/actions` | Actions déclarées par un représentant d'intérêts |
 
----
-
-## 📋 Exemple de Réponse JSON (`GET /api/v1/lobbying/stats`)
-
-```json
-{
-  "totalLobbyistes": 4095,
-  "totalActions": 101978,
-  "topSecteurs": [
-    { "nom": "Énergie et environnement", "actions": 14500 },
-    { "nom": "Santé et affaires sociales", "actions": 12800 },
-    { "nom": "Numérique et télécommunications", "actions": 11200 }
-  ]
-}
-```
+Paramètres et schémas de réponse : [explorateur de l'API](/api). Les réponses de ce module sont mises en cache 12 h.
