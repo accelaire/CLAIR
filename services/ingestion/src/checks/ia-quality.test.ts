@@ -12,6 +12,7 @@ import {
   computeTendency,
   checkGrounding,
   checkInversions,
+  type Chambre,
   type GroupeVote,
 } from './ia-quality.js';
 
@@ -21,6 +22,7 @@ function groupeVote(
   pour: number,
   contre: number,
   abstention: number,
+  chambre?: Chambre,
 ): GroupeVote {
   return {
     groupe: nom,
@@ -30,6 +32,7 @@ function groupeVote(
     contre,
     abstention,
     matcher: buildGroupMatcher(nom, nomComplet),
+    chambre,
   };
 }
 
@@ -99,6 +102,14 @@ describe('computeTendency', () => {
     expect(computeTendency(35, 0, 0)).toBe('FAV');
     expect(computeTendency(0, 28, 0)).toBe('OPP');
     expect(computeTendency(10, 9, 1)).toBe('DIV');
+  });
+
+  it('ne compte pas l’égalité comme une abstention majoritaire, comme le prompt', () => {
+    // UC sur `enseignement-superieur-et-recherche` : 31 pour, 31 abstentions.
+    // Le prompt annonce « Très favorable », le modèle écrit « a voté pour ».
+    expect(computeTendency(31, 0, 31)).toBe('FAV');
+    expect(computeTendency(0, 9, 9)).toBe('OPP');
+    expect(computeTendency(31, 0, 32)).toBe('ABSTENTION_MAJ');
   });
 });
 
@@ -278,6 +289,104 @@ describe('checkInversions — bornage aux phrases et négations', () => {
       "Le débat a été vif. Le groupe Socialiste, Écologiste et Républicain s'est fermement opposé au texte. " +
       "La suite de l'examen est reportée.";
     const issues = checkInversions(texte, [soc]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.describedAs).toBe('OPPOSED');
+  });
+});
+
+describe('groupe cité comme exception', () => {
+  const knownGroups = ['CRC', 'LFI-NFP'].map(nom => ({
+    nom, nomComplet: null, orientation: null, matcher: buildGroupMatcher(nom, null),
+  }));
+
+  it('ne prête pas à l’exception la position des autres groupes', () => {
+    const crc = groupeVote('CRC', 'Communiste Républicain Citoyen et Écologiste - Kanaky', 0, 0, 18);
+    const issues = checkGrounding(
+      "Tous les groupes politiques représentés au Sénat, à l'exception du groupe CRC, ont voté en faveur de cette résolution.",
+      [crc], knownGroups, new Set([familyOf('CRC')]),
+    );
+    expect(issues.filter(i => i.kind === 'abstention_described_as_vote')).toHaveLength(0);
+  });
+
+  it('reconnaît « sauf » devant l’intitulé complet', () => {
+    const lfi = groupeVote('LFI-NFP', 'La France insoumise - Nouveau Front Populaire', 0, 128, 0);
+    const texte = "À l'Assemblée nationale, tous les groupes sauf La France insoumise - Nouveau Front Populaire [gauche] ont voté pour.";
+    expect(checkInversions(texte, [lfi])).toHaveLength(0);
+  });
+
+  it('signale toujours le groupe quand il n’est pas l’exception', () => {
+    const lfi = groupeVote('LFI-NFP', 'La France insoumise - Nouveau Front Populaire', 0, 128, 0);
+    expect(checkInversions('La France insoumise - Nouveau Front Populaire a voté pour le texte.', [lfi])).toHaveLength(1);
+  });
+});
+
+describe('votes comparés chambre par chambre', () => {
+  // PLFSS 2026 : les socialistes de l'Assemblée ont voté pour, ceux du Sénat contre.
+  const socAN = groupeVote('SOC', 'Socialistes et apparentés', 125, 0, 11, 'assemblee');
+  const socSenat = groupeVote('SOC', 'Groupe Socialiste, Écologiste et Républicain', 0, 127, 0, 'senat');
+
+  it('ne signale pas une phrase vraie dans une chambre et muette sur laquelle', () => {
+    expect(checkInversions('Les socialistes [SOC] ont voté pour le texte.', [socAN, socSenat])).toHaveLength(0);
+  });
+
+  it('compare à la chambre que la phrase nomme', () => {
+    const issues = checkInversions('Au Sénat, les socialistes [SOC] ont voté pour le texte.', [socAN, socSenat]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.contre).toBe(127);
+  });
+
+  it('trouve la chambre dans la phrase quand une charnière la coupe de la mention', () => {
+    const texte = "Au Sénat, l'Union centriste a voté pour, tandis que le groupe SOC a voté pour lui aussi.";
+    expect(checkInversions(texte, [socAN, socSenat])).toHaveLength(1);
+  });
+
+  it('ne tient pas pour ambigu l’intitulé d’un seul des deux groupes', () => {
+    // `batir-la-societe-du-bien-vieillir` à l'envers : l'intitulé « Socialistes
+    // et apparentés » ne désigne que le groupe de l'Assemblée.
+    const anAbstient = groupeVote('SOC', 'Socialistes et apparentés', 0, 0, 60, 'assemblee');
+    const senatPour = groupeVote('SOC', 'Groupe Socialiste, Écologiste et Républicain', 62, 0, 0, 'senat');
+    const issues = checkGrounding(
+      "Les Socialistes et apparentés ont voté pour l'ensemble du texte.",
+      [anAbstient, senatPour], [], new Set([familyOf('SOC')]),
+    );
+    expect(issues.filter(i => i.kind === 'abstention_described_as_vote')).toHaveLength(1);
+  });
+
+  it('tient pour ambigu « Les Républicains », nom des groupes LR et UMP', () => {
+    // `immigration-droit-d-asile-et-integration`.
+    const lr = groupeVote('LR', 'Les Républicains', 0, 82, 0, 'assemblee');
+    const ump = groupeVote('UMP', 'Groupe Les Républicains', 140, 2, 3, 'senat');
+    expect(checkInversions('Les Républicains [droite] ont voté pour le texte dans son ensemble.', [lr, ump])).toHaveLength(0);
+  });
+
+  it('contrôle les deux chambres quand la proposition les nomme toutes deux', () => {
+    const lr = groupeVote('LR', 'Les Républicains', 4, 0, 19, 'assemblee');
+    const ump = groupeVote('UMP', 'Groupe Les Républicains', 200, 0, 0, 'senat');
+    const issues = checkGrounding(
+      "Les Républicains (UMP au Sénat, LR à l'Assemblée) ont globalement soutenu la loi.",
+      [lr, ump], [], new Set([familyOf('LR')]),
+    );
+    expect(issues.filter(i => i.kind === 'abstention_described_as_vote').map(i => i.groupe)).toEqual(['LR']);
+  });
+
+  it('ne lit pas le sigle SOC-A comme le groupe SOC de l’autre chambre', () => {
+    const socA = groupeVote('SOC-A', 'Socialistes et apparentés', 0, 0, 24, 'assemblee');
+    const soc = groupeVote('SOC', 'Groupe Socialiste, Écologiste et Républicain', 62, 0, 0, 'senat');
+    const issues = checkGrounding('Le groupe SOC-A a voté pour le texte.', [socA, soc], [], new Set([familyOf('SOC')]));
+    expect(issues.filter(i => i.kind === 'abstention_described_as_vote')).toHaveLength(1);
+  });
+});
+
+describe('checkInversions — passif', () => {
+  const soc = groupeVote('SOC', 'Socialiste, Écologiste et Républicain', 94, 0, 0);
+
+  it('ne lit pas le rejet d’un amendement du groupe comme son vote', () => {
+    const texte = 'Un amendement du groupe Socialiste, Écologiste et Républicain a été rejeté en commission.';
+    expect(checkInversions(texte, [soc])).toHaveLength(0);
+  });
+
+  it('signale toujours le groupe qui a lui-même rejeté le texte', () => {
+    const issues = checkInversions('Le groupe Socialiste, Écologiste et Républicain a rejeté le texte.', [soc]);
     expect(issues).toHaveLength(1);
     expect(issues[0]!.describedAs).toBe('OPPOSED');
   });
