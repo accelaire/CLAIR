@@ -11,13 +11,61 @@ const OUTPUT_FILE = path.join(ROOT_DIR, "public", "openapi.json");
 // avec elle. Le build reste strict.
 const KEEP_STALE = process.argv.includes("--keep-stale");
 
+const USER_AGENT = "CLAIR-Docs-Exporter/1.0 (https://github.com/accelaire/CLAIR)";
+const ATTENTE_MAX_MS = 5 * 60 * 1000;
+const INTERVALLE_MS = 10 * 1000;
+
+/** Commit que sert l'API de production (`/health`), ou null s'il est inconnu. */
+async function commitDeLApi() {
+  try {
+    const res = await fetch("https://api.clair.vote/health", { headers: { "User-Agent": USER_AGENT } });
+    if (!res.ok) return null;
+    return (await res.json()).commit ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Une fusion sur master déploie en même temps la doc (Vercel, ~30 s) et l'API
+ * (Railway, ~1 min 30) : sans attendre, la doc embarquerait la spécification de
+ * l'API précédente. On attend donc que l'API ait changé de version, ou qu'elle
+ * serve déjà ce commit. Un autre commit que le nôtre suffit aussi : quand des
+ * pushes s'enchaînent, Railway peut sauter les intermédiaires.
+ *
+ * Seulement pour le build de production sur Vercel : une preview de PR n'a pas
+ * d'API à attendre. Si l'API n'annonce pas son commit, ou au bout de 5 min, on
+ * continue avec la spécification en ligne plutôt que de bloquer la doc.
+ */
+async function attendreLaNouvelleApi() {
+  const notreCommit = process.env.VERCEL_GIT_COMMIT_SHA;
+  if (process.env.VERCEL_ENV !== "production" || !notreCommit) return;
+
+  const auDepart = await commitDeLApi();
+  if (!auDepart) {
+    console.warn("⚠️ L'API n'annonce pas son commit : spécification prise sans attendre.");
+    return;
+  }
+  const debut = Date.now();
+  let actuel = auDepart;
+  while (actuel === auDepart && actuel !== notreCommit) {
+    if (Date.now() - debut > ATTENTE_MAX_MS) {
+      console.warn(`⚠️ L'API sert toujours ${auDepart.slice(0, 7)} après 5 min : spécification prise en l'état.`);
+      return;
+    }
+    console.log(`L'API sert ${actuel.slice(0, 7)}, on attend ${notreCommit.slice(0, 7)}...`);
+    await new Promise((r) => setTimeout(r, INTERVALLE_MS));
+    actuel = (await commitDeLApi()) ?? actuel;
+  }
+  console.log(`✓ L'API sert ${actuel.slice(0, 7)}.`);
+}
+
 async function exportOpenApi() {
+  await attendreLaNouvelleApi();
   console.log("Fetching full OpenAPI Swagger spec from https://api.clair.vote/docs/json...");
   try {
     const res = await fetch("https://api.clair.vote/docs/json", {
-      headers: {
-        "User-Agent": "CLAIR-Docs-Exporter/1.0 (https://github.com/accelaire/CLAIR)",
-      },
+      headers: { "User-Agent": USER_AGENT },
     });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status} ${res.statusText}`);

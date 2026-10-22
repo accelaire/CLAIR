@@ -18,6 +18,11 @@ export const healthRoutes: FastifyPluginAsync = async (fastify) => {
             status: { type: 'string' },
             timestamp: { type: 'string' },
             uptime: { type: 'number' },
+            commit: {
+              type: 'string',
+              nullable: true,
+              description: 'Commit déployé (fourni par Railway), null hors Railway',
+            },
           },
         },
       },
@@ -27,6 +32,10 @@ export const healthRoutes: FastifyPluginAsync = async (fastify) => {
         status: 'ok',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
+        // Le build de la documentation l'attend pour ne pas embarquer la
+        // spécification OpenAPI de la version précédente
+        // (docs/scripts/export-openapi-spec.mjs).
+        commit: process.env.RAILWAY_GIT_COMMIT_SHA || null,
       };
     },
   });

@@ -46,7 +46,7 @@ Variables lues par le code du site :
 
 ## 📚 Documentation : Vercel
 
-`docs/vercel.json` déclare le framework (`vite`) et la commande de build (`pnpm build`). Le build télécharge la spécification OpenAPI de l'API de production, régénère la navigation, construit le site statique, puis y injecte les balises Open Graph. La référence de l'API affichée par la doc est donc celle de l'API en production au moment du build : une route modifiée n'y apparaît qu'après le déploiement de l'API puis un nouveau build de la doc.
+`docs/vercel.json` déclare le framework (`vite`) et la commande de build (`pnpm build`). Le build télécharge la spécification OpenAPI de l'API de production, régénère la navigation, construit le site statique, puis y injecte les balises Open Graph. La référence de l'API affichée par la doc est donc celle de l'API en production au moment du build. Comme une fusion sur `master` déploie la doc (Vercel, environ 30 s) en même temps que l'API (Railway, environ 1 min 30), le build de production de la doc attend que l'API ait changé de version : il lit le commit qu'elle sert sur `/health` (fourni par Railway dans `RAILWAY_GIT_COMMIT_SHA`) et patiente tant que c'est le commit précédent, 5 minutes au plus. Si l'API n'annonce pas de commit ou ne change pas à temps, la doc se construit avec la spécification en ligne, et le log du build le signale ; un nouveau build de la doc rattrape alors l'écart. Les previews de pull request n'attendent pas.
 
 ## 🌍 DNS
 
