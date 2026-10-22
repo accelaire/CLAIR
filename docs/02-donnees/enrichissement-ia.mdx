@@ -17,7 +17,7 @@ Code : `services/ingestion/src/workers/ia-enrichment.ts`, `workers/parlementaire
 | :--- | :--- | :--- | :--- |
 | Scrutin | `scrutins.resume_ia` | 1 à 3 phrases : ce qui a été voté et ce que cela implique | Titre, résultat, type de vote, objet, tags, titre du dossier, jusqu'à 3 amendements (exposé sommaire et dispositif), texte de l'article visé lorsqu'il est connu |
 | Dossier législatif | `dossiers_legislatifs.resume_ia` | Résumé (3 à 5 phrases) puis positions des groupes | Titre, procédure, état, scrutins clés, votes des groupes sur l'ensemble et article par article, amendements clés |
-| Sujet | `sujets.label`, `sujets.resume`, `sujets.enjeux` | Titre court sans sigle, résumé (3 à 5 phrases), enjeux et positions des groupes | Dossiers AN et Sénat du sujet avec leur état, votes des groupes sur l'ensemble et par article, divergences entre les deux chambres |
+| Sujet | `sujets.label`, `sujets.resume`, `sujets.enjeux` | Titre court sans sigle, résumé (3 à 5 phrases), enjeux et positions des groupes | Dossiers AN et Sénat du sujet avec leur état, votes des groupes sur l'ensemble et par article, présentés chambre par chambre quand les deux chambres ont voté, divergences entre les deux chambres |
 | Sujet, par groupe | `sujets.groupe_amendement_descriptions` (JSON) | 1 à 2 phrases par groupe sur ce qu'il propose par ses amendements | Amendements déposés par chaque groupe |
 | Parlementaire | `parlementaires.resume_ia`, `parcours_ia`, `positions_cles_ia`, `faits_notables_ia` | Résumé, parcours, positions clés, faits notables | Identité, groupe, circonscription, statistiques d'activité, mandats et fonctions, actions de lobbying le ciblant, déclarations HATVP, biographie Wikipedia, faits datés Wikidata |
 
