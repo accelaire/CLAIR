@@ -11,7 +11,7 @@ export default function MentionsLegalesPage() {
       <div className="mx-auto max-w-3xl">
         <h1 className="text-4xl font-bold tracking-tight">Mentions légales</h1>
         <p className="mt-4 text-muted-foreground">
-          Dernière mise à jour : janvier 2026
+          Dernière mise à jour : octobre 2026
         </p>
 
         <div className="mt-12 space-y-12">
@@ -20,11 +20,19 @@ export default function MentionsLegalesPage() {
             <h2 className="text-2xl font-bold">Éditeur du site</h2>
             <div className="mt-4 space-y-2 text-muted-foreground">
               <p>
-                Le site CLAIR (clair.vote) est un projet associatif à but non lucratif.
+                Le site CLAIR (clair.vote) est édité par une association déclarée,
+                régie par la loi du 1er juillet 1901, à but non lucratif.
               </p>
               <p>
-                <strong className="text-foreground">Nom du projet :</strong> CLAIR
-                (Citoyen Libre, Analyse, Information, République)
+                <strong className="text-foreground">Dénomination :</strong> CLAIR - CITOYEN
+                LIBRE, ANALYSE, INFORMATION, RÉPUBLIQUE
+              </p>
+              <p>
+                <strong className="text-foreground">Numéro RNA :</strong> W751282503
+              </p>
+              <p>
+                <strong className="text-foreground">Siège social :</strong> Bâtiment A,
+                178 rue du Faubourg Saint-Denis, 75010 Paris
               </p>
               <p>
                 <strong className="text-foreground">Email :</strong>{' '}
@@ -79,6 +87,25 @@ export default function MentionsLegalesPage() {
                     className="text-primary hover:underline"
                   >
                     railway.app
+                  </a>
+                </p>
+              </div>
+              <div>
+                <p className="font-medium text-foreground">
+                  Mesure d&apos;audience (statistiques de visite et d&apos;usage de l&apos;API) :
+                </p>
+                <p className="mt-1">
+                  <strong className="text-foreground">OVH SAS</strong><br />
+                  2 rue Kellermann<br />
+                  59100 Roubaix, France<br />
+                  Serveur situé à Varsovie (Pologne, Union européenne)<br />
+                  <a
+                    href="https://www.ovhcloud.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    ovhcloud.com
                   </a>
                 </p>
               </div>
@@ -221,6 +248,35 @@ export default function MentionsLegalesPage() {
               <p>
                 <strong className="text-foreground">Police :</strong>{' '}
                 Inter (Google Fonts)
+              </p>
+              <p>
+                <strong className="text-foreground">Géolocalisation des visites :</strong>{' '}
+                <a
+                  href="https://db-ip.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  IP Geolocation by DB-IP
+                </a>{' '}
+                et{' '}
+                <a
+                  href="https://www.geonames.org"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  GeoNames
+                </a>
+                , sous licence{' '}
+                <a
+                  href="https://creativecommons.org/licenses/by/4.0/deed.fr"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  CC BY 4.0
+                </a>
               </p>
             </div>
           </section>
