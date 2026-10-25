@@ -1,6 +1,6 @@
 {
   "name": "clair",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
   "license": "AGPL-3.0",
   "workspaces": [
@@ -21,6 +21,9 @@
     "docs:nav": "pnpm --filter @clair/docs docs:nav",
     "docs:validate": "pnpm --filter @clair/docs validate",
     "docs:erd": "pnpm --filter @clair/api exec node ../../docs/scripts/generate-erd.mjs",
+    "changelog:check": "node scripts/changelog/check.mjs",
+    "changelog:prepare": "node scripts/changelog/prepare.mjs",
+    "changelog:test": "node --test scripts/changelog/lib.test.mjs",
     "lint": "turbo run lint && pnpm lint:scripts",
     "lint:fix": "turbo run lint:fix",
     "lint:scripts": "eslint scripts apps/api/prisma --ext .ts",
