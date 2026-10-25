@@ -1,5 +1,5 @@
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 # Install OpenSSL for Prisma client generation
 RUN apk add --no-cache openssl
@@ -26,7 +26,7 @@ RUN pnpm --filter @clair/api db:generate
 RUN pnpm --filter @clair/api build
 
 # Production stage
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 
 # Install OpenSSL for Prisma
 RUN apk add --no-cache openssl

@@ -39,7 +39,7 @@
   },
   "devDependencies": {
     "@clair/config": "workspace:*",
-    "@types/node": "^20.10.0",
+    "@types/node": "^24.11.0",
     "@types/node-cron": "^3.0.11",
     "domhandler": "5.0.3",
     "tsup": "^8.0.1",

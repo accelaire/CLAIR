@@ -2,12 +2,12 @@
 title: "Installation & Démarrage Local"
 sidebar_label: "Démarrage Local"
 sidebar_icon: "laptop"
-description: Installer et faire tourner CLAIR sur sa machine (Node 20, pnpm, Docker PostgreSQL et Redis), remplir la base et vérifier.
+description: Installer et faire tourner CLAIR sur sa machine (Node 24, pnpm, Docker PostgreSQL et Redis), remplir la base et vérifier.
 ---
 
 ## 📋 Prérequis
 
-- **Node.js ≥ 20.19** (minimum imposé par le `package.json` racine). Node 18 ne suffit pas : la CLI d'ingestion plante au chargement de `undici`.
+- **Node.js 24** : `nvm use` lit la version dans `.nvmrc`, et le `package.json` racine exige au moins 24.11, première LTS de la branche. Les versions antérieures ne sont pas prises en charge : sous Node 20, l'ingestion décode mal les exports windows-1252 de l'Assemblée, et sous Node 18 sa CLI plante au chargement de `undici`.
 - **pnpm 8** (`packageManager: pnpm@8.15.0`).
 - **Docker** et Docker Compose, pour PostgreSQL et Redis.
 - *(Facultatif)* **poppler-utils** (commande `pdftotext`), seulement pour ingérer les comptes rendus de réunion de commission de l'Assemblée, publiés en PDF.

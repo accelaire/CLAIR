@@ -38,7 +38,7 @@
   "devDependencies": {
     "@clair/config": "workspace:*",
     "@clair/shared": "workspace:*",
-    "@types/node": "^20.10.0",
+    "@types/node": "^24.11.0",
     "@vitest/coverage-v8": "^1.1.0",
     "fastify-plugin": "^5.0.0",
     "prisma": "^5.22.0",

@@ -32,6 +32,8 @@ La configuration versionnée est dans `apps/web/vercel.json` :
 - en-têtes de sécurité sur toutes les pages (`X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`) ;
 - cache au CDN de Vercel (`Vercel-CDN-Cache-Control`) : 10 min sur les pages de liste (`/deputes`, `/scrutins`, `/sujets`…), 1 h sur les pages de détail, avec `stale-while-revalidate` de 24 h ; 1 min sur `/senatoriales-2026` (10 min de `stale-while-revalidate`), pour les résultats. Le navigateur, lui, revalide à chaque visite (`max-age=0`).
 
+La version de Node vient du champ `engines` de `apps/web/package.json` (`24.x`), qui prime sur le réglage du projet Vercel : la preview d'une pull request se construit donc avec la version que déclare la branche.
+
 Variables lues par le code du site :
 
 | Variable | Rôle |
@@ -46,7 +48,7 @@ Variables lues par le code du site :
 
 ## 📚 Documentation : Vercel
 
-`docs/vercel.json` déclare le framework (`vite`) et la commande de build (`pnpm build`). Le build télécharge la spécification OpenAPI de l'API de production, régénère la navigation, construit le site statique, puis y injecte les balises Open Graph. La référence de l'API affichée par la doc est donc celle de l'API en production au moment du build. Comme une fusion sur `master` déploie la doc (Vercel, environ 30 s) en même temps que l'API (Railway, environ 1 min 30), le build de production de la doc attend que l'API ait changé de version : il lit le commit qu'elle sert sur `/health` (fourni par Railway dans `RAILWAY_GIT_COMMIT_SHA`) et patiente tant que c'est le commit précédent, 5 minutes au plus. Si l'API n'annonce pas de commit ou ne change pas à temps, la doc se construit avec la spécification en ligne, et le log du build le signale ; un nouveau build de la doc rattrape alors l'écart. Les previews de pull request n'attendent pas.
+`docs/vercel.json` déclare le framework (`vite`) et la commande de build (`pnpm build`) ; la version de Node vient, comme pour le site, des `engines` de `docs/package.json` (`24.x`). Le build télécharge la spécification OpenAPI de l'API de production, régénère la navigation, construit le site statique, puis y injecte les balises Open Graph. La référence de l'API affichée par la doc est donc celle de l'API en production au moment du build. Comme une fusion sur `master` déploie la doc (Vercel, environ 30 s) en même temps que l'API (Railway, environ 1 min 30), le build de production de la doc attend que l'API ait changé de version : il lit le commit qu'elle sert sur `/health` (fourni par Railway dans `RAILWAY_GIT_COMMIT_SHA`) et patiente tant que c'est le commit précédent, 5 minutes au plus. Si l'API n'annonce pas de commit ou ne change pas à temps, la doc se construit avec la spécification en ligne, et le log du build le signale ; un nouveau build de la doc rattrape alors l'écart. Les previews de pull request n'attendent pas.
 
 ## 🌍 DNS
 
@@ -64,7 +66,7 @@ CNAME   api     <domaine Railway du service API>
 
 ## ⚡ API : Railway
 
-- Image construite depuis le **`Dockerfile` à la racine** du dépôt (Node 20 Alpine, build pnpm, génération du client Prisma).
+- Image construite depuis le **`Dockerfile` à la racine** du dépôt (`node:24-alpine`, build pnpm, génération du client Prisma).
 - Démarrage : `node --max-old-space-size=4096 dist/index.js`, port 3001.
 - Healthcheck Railway : `/health`. Redémarrage en cas d'échec (`ON_FAILURE`).
 - Au démarrage en production, l'API préchauffe son cache Redis (voir [Limites & Cache](/guide/api-reference/authentification-et-limites)).
@@ -91,7 +93,7 @@ Variables lues par le code de l'API :
 
 ## 📥 Ingestion : Railway
 
-Les deux services sont construits depuis `services/ingestion/Dockerfile`, seul à installer `poppler-utils` (`pdftotext`), indispensable pour lire les comptes rendus de commission de l'Assemblée. Le conteneur tourne avec `TZ=Europe/Paris`, mais les crons Railway s'expriment en UTC.
+Les deux services sont construits depuis `services/ingestion/Dockerfile` (`node:24-alpine`), seul à installer `poppler-utils` (`pdftotext`), indispensable pour lire les comptes rendus de commission de l'Assemblée. Le conteneur tourne avec `TZ=Europe/Paris`, mais les crons Railway s'expriment en UTC.
 
 | Service | Cron (UTC) | Commande |
 | :--- | :--- | :--- |
@@ -115,7 +117,7 @@ Variables lues par le code de l'ingestion : `DATABASE_URL`, `LOG_LEVEL`, `NODE_E
 
 ## 🔁 CI : GitHub Actions
 
-`.github/workflows/ci.yml`, sur chaque push et pull request vers `master` (ou `main`) :
+`.github/workflows/ci.yml`, sur chaque push et pull request vers `master` (ou `main`), avec la version de Node lue dans `.nvmrc` :
 
 1. **lint-and-test** : installation, génération du client Prisma, `pnpm lint`, `pnpm test`, couverture de l'API envoyée à Codecov sur les pull requests. Le `type-check` est désactivé (erreurs préexistantes dans l'ingestion et le site).
 2. **build** : démarre PostgreSQL 16 et Redis 7, applique le schéma par `prisma db push` puis les triggers (`db:triggers`), construit et lance l'API, puis construit tout le monorepo. Le build du site prérend `/sitemap.xml`, qui interroge l'API : c'est ce qui impose une API réelle pendant la CI.
