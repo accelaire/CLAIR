@@ -1,6 +1,6 @@
 // =============================================================================
 // Client AN - Ordre du jour des séances publiques (CSV)
-// Source: seances_publique_excel.csv (encodage Latin-1, séparateur ';')
+// Source: seances_publique_excel.csv (encodage windows-1252, séparateur ';')
 // =============================================================================
 
 import { LEGISLATURE_AN_COURANTE } from '../../workers/mandats';
@@ -8,6 +8,7 @@ import axios from 'axios';
 import { logger } from '../../utils/logger';
 import { urlSansCacheAN } from '../../utils/cdn-an';
 import { errorMessage } from '../../utils/errors';
+import { decoderWindows1252 } from '../../utils/encodage';
 
 // =============================================================================
 // TYPES
@@ -50,9 +51,8 @@ export class SeancesODJClient {
       },
     });
 
-    // CSV est encodé en Latin-1 — Node's TextDecoder supporte 'latin1' / 'iso-8859-1'
-    const decoder = new TextDecoder('latin1');
-    return decoder.decode(response.data as ArrayBuffer);
+    // Annoncé en latin1, écrit en windows-1252 : l'apostrophe y est l'octet 0x92.
+    return decoderWindows1252(response.data as ArrayBuffer);
   }
 
   private parseCsv(raw: string): TransformedSeanceODJ[] {

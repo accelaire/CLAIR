@@ -13,6 +13,7 @@ import { createReadStream } from 'fs';
 import * as readline from 'readline';
 import { logger } from '../../utils/logger';
 import { errorMessage, errorProp } from '../../utils/errors';
+import { decoderWindows1252 } from '../../utils/encodage';
 
 // =============================================================================
 // TYPES
@@ -177,8 +178,9 @@ const TYPES_DANS_LEUR_ARTICLE = new Set([5, 6, 7]);
 
 // Le dump est lu en latin1 alors que ses libellés sont en windows-1252 :
 // l'apostrophe typographique y arrive en U+0092, un caractère de contrôle. On
-// la remet en « ’ ». Table explicite : sous Node 20, `TextDecoder('windows-1252')`
-// décode en réalité comme latin1 et laisse U+0092 tel quel.
+// la remet en « ’ ». Table explicite et non `decoderWindows1252` : le dump est
+// lu en flux (`createReadStream` en `latin1`, ISO-8859-1 strict sur toutes les
+// versions de Node), ligne à ligne, et seuls ces libellés sont redécodés.
 const CP1252: Record<number, string> = {
   0x80: '€', 0x82: '‚', 0x83: 'ƒ', 0x84: '„', 0x85: '…', 0x86: '†', 0x87: '‡',
   0x88: 'ˆ', 0x89: '‰', 0x8a: 'Š', 0x8b: '‹', 0x8c: 'Œ', 0x8e: 'Ž',
@@ -984,9 +986,7 @@ export class SenatAmendementsClient {
         return [];
       }
 
-      // Decode latin1
-      const decoder = new TextDecoder('latin1');
-      const raw = decoder.decode(response.data);
+      const raw = decoderWindows1252(response.data);
       const lines = raw.split(/\r?\n/);
 
       // Line 1: "sep=" directive → skip
