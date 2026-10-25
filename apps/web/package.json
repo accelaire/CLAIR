@@ -2,6 +2,9 @@
   "name": "@clair/web",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
@@ -30,7 +33,7 @@
   },
   "devDependencies": {
     "@clair/config": "workspace:*",
-    "@types/node": "^20.10.0",
+    "@types/node": "^24.11.0",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
     "autoprefixer": "^10.4.16",

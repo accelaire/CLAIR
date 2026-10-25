@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
   "description": "Documentation technique, architecture, modèles de données et référence API de CLAIR",
   "scripts": {
     "dev": "node scripts/export-openapi-spec.mjs --keep-stale && node scripts/generate-docs-navigation.mjs && ZUDOKU_DISABLE_UPDATE_CHECK=1 zudoku dev --port 3002",
@@ -20,7 +23,7 @@
     "zudoku": "^0.86.0"
   },
   "devDependencies": {
-    "@types/node": "^20.10.0",
+    "@types/node": "^24.11.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "pagefind": "1.5.2",

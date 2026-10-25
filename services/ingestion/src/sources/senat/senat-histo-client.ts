@@ -23,6 +23,7 @@
 import axios from 'axios';
 import { parse } from 'csv-parse/sync';
 import { logger } from '../../utils/logger';
+import { decoderWindows1252 } from '../../utils/encodage';
 
 const BASE_URL = 'https://data.senat.fr/data/senateurs';
 
@@ -68,7 +69,10 @@ export interface OdsenData {
 // HELPERS DE PARSING
 // =============================================================================
 
-/** Télécharge un CSV ODSEN, le décode en latin1 et retire les lignes de commentaire `%`. */
+/**
+ * Télécharge un CSV ODSEN, le décode (latin1, lu en windows-1252 : cf.
+ * utils/encodage.ts) et retire les lignes de commentaire `%`.
+ */
 async function fetchCsvRows(fichier: string): Promise<Record<string, string>[]> {
   const url = `${BASE_URL}/${fichier}`;
   logger.info({ url }, 'Fetching ODSEN CSV...');
@@ -80,7 +84,7 @@ async function fetchCsvRows(fichier: string): Promise<Record<string, string>[]> 
   });
 
   // Latin1 + CRLF ; on retire les lignes de commentaire `%` (requête SQL en tête).
-  const raw = new TextDecoder('latin1').decode(response.data as ArrayBuffer);
+  const raw = decoderWindows1252(response.data as ArrayBuffer);
   const sansCommentaires = raw
     .split(/\r?\n/)
     .filter((line) => !line.startsWith('%'))

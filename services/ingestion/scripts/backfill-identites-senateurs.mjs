@@ -45,8 +45,9 @@ function champs(ligne) {
 
 const reponse = await fetch(SOURCE);
 if (!reponse.ok) throw new Error(`ODSEN : HTTP ${reponse.status}`);
-// Le fichier est en latin1, comme tous les exports du Sénat.
-const texte = new TextDecoder('latin1').decode(await reponse.arrayBuffer());
+// Annoncé en latin1 comme tous les exports du Sénat ; on nomme l'encodage que
+// TextDecoder applique de toute façon (cf. src/utils/encodage.ts).
+const texte = new TextDecoder('windows-1252').decode(await reponse.arrayBuffer());
 const lignes = texte.split(/\r?\n/).filter((l) => l && !l.startsWith('%'));
 const entete = champs(lignes[0]);
 const iMat = entete.indexOf('Matricule');

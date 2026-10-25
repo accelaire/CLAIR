@@ -9,7 +9,7 @@ Versions : plage déclarée dans les `package.json`, et entre parenthèses la ve
 
 ## 🧱 Commun
 
-- **Runtime** : Node.js ≥ 20.19 (`engines` du `package.json` racine). La CI et les images Docker utilisent Node 20. Node 18 ne suffit pas : la CLI d'ingestion plante au chargement de `undici`.
+- **Runtime** : Node.js 24 (`.nvmrc` ; au moins 24.11 selon les `engines` du `package.json` racine). La CI lit `.nvmrc`, les images Docker partent de `node:24-alpine`, et le site comme la documentation déclarent `24.x` à Vercel.
 - **Langage** : TypeScript 5 (5.9.3).
 - **Gestionnaire de paquets** : pnpm 8 (`packageManager: pnpm@8.15.0`) ; la CI utilise pnpm 9.
 - **Monorepo** : pnpm workspaces + Turborepo 2.

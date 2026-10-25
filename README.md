@@ -1,7 +1,7 @@
 # CLAIR : Citoyen Libre, Analyse, Information, République
 
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
-![Node](https://img.shields.io/badge/node-%3E%3D20.19.0-brightgreen)
+![Node](https://img.shields.io/badge/node-24-brightgreen)
 ![TypeScript](https://img.shields.io/badge/typescript-5-blue)
 ![pnpm](https://img.shields.io/badge/pnpm-8.15-orange)
 
@@ -27,7 +27,7 @@ Le détail (sources, orchestration, modèle de données et ERD, API, déploiemen
 
 ## Démarrage rapide
 
-Prérequis : Node.js 20.19 ou plus (Node 18 ne suffit pas), pnpm 8, Docker et Docker Compose. Le guide complet est sur [docs.clair.vote](https://docs.clair.vote/guide/guide-developpeur/demarrage-local).
+Prérequis : Node.js 24 (voir `.nvmrc`), pnpm 8, Docker et Docker Compose. Le guide complet est sur [docs.clair.vote](https://docs.clair.vote/guide/guide-developpeur/demarrage-local).
 
 ```bash
 pnpm install
