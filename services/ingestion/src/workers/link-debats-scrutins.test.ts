@@ -296,6 +296,91 @@ describe('fenetresDeDebat — les votes enchaînés partagent leur débat', () =
   });
 });
 
+describe('fenetresDeDebat — les amendements votés à main levée closent leur débat', () => {
+  // La séquence du scrutin 9054 : après le scrutin public sur le 2224 (336),
+  // le 2206 puis le 831 sont défendus et rejetés à main levée (365, 372) avant
+  // que le 1536 soit appelé (374) et mis au scrutin public (400).
+  const prisesDuDebat = [
+    intervention({ id: 'runel-2206', ordreAbsolu: 345, articleVise: 'Après 8', amendementsVises: ['2206'] }),
+    intervention({ id: 'avis-2206', ordreAbsolu: 347, articleVise: 'Après 8' }),
+    intervention({ id: 'tavernier-831', ordreAbsolu: 367, articleVise: 'Après 8', amendementsVises: ['831'] }),
+    intervention({ id: 'avis-831', ordreAbsolu: 371, articleVise: 'Après 8' }),
+    intervention({ id: 'raux-1536', ordreAbsolu: 374, articleVise: 'Après 8', amendementsVises: ['1536'] }),
+    intervention({ id: 'avis-1536', ordreAbsolu: 380, articleVise: 'Après 8' }),
+    intervention({ id: 'lauzzana', ordreAbsolu: 396, articleVise: 'Après 8' }),
+  ];
+  const votes = [
+    vote({ ordreAbsolu: 336, numeros: ['2224'], articleVise: 'Après 8' }),
+    vote({ ordreAbsolu: 400, numeros: ['1536'], articleVise: 'Après 8' }),
+  ];
+
+  it('fait commencer le débat du vote après le sort du dernier amendement examiné avant lui', () => {
+    const fenetres = fenetresDeDebat(votes, prisesDuDebat, [342, 343, 365, 372]);
+    expect(fenetres.map((f) => [f.debut, f.fin])).toEqual([
+      [0, 336],
+      [372, 400],
+    ]);
+  });
+
+  it('ne rattache au vote que sa défense et ce qui l’a suivie', () => {
+    const fenetre = fenetresDeDebat(votes, prisesDuDebat, [342, 343, 365, 372])[1]!;
+    expect(interventionsDuVote(fenetre, prisesDuDebat).map((r) => r.intervention.id)).toEqual([
+      'raux-1536',
+      'avis-1536',
+      'lauzzana',
+    ]);
+  });
+
+  it('garde la discussion commune : un sort tombé après la défense ne borne rien', () => {
+    // Les 99, 100 et 101 sont défendus ensemble ; le 99 est rejeté à main levée
+    // (130) après l'avis commun, puis le 100 mis au scrutin public.
+    const fenetres = fenetresDeDebat(
+      [vote({ ordreAbsolu: 140, numeros: ['100'] })],
+      [
+        intervention({ id: 'd99', ordreAbsolu: 102, amendementsVises: ['99'] }),
+        intervention({ id: 'd100', ordreAbsolu: 104, amendementsVises: ['100'] }),
+        intervention({ id: 'd101', ordreAbsolu: 106, amendementsVises: ['101'] }),
+        intervention({ id: 'avis', ordreAbsolu: 110 }),
+      ],
+      [130],
+    );
+    expect(fenetres.map((f) => [f.debut, f.fin])).toEqual([[0, 140]]);
+  });
+
+  it('garde la fenêtre entière quand l’amendement mis aux voix n’y est jamais nommé', () => {
+    const fenetres = fenetresDeDebat(
+      [vote({ ordreAbsolu: 140, numeros: ['100'] })],
+      [intervention({ id: 'd99', ordreAbsolu: 102, amendementsVises: ['99'] }), intervention({ id: 'x', ordreAbsolu: 120 })],
+      [110],
+    );
+    expect(fenetres.map((f) => [f.debut, f.fin])).toEqual([[0, 140]]);
+  });
+
+  it('ne prête pas à l’article voté dans la foulée la fenêtre resserrée de l’amendement', () => {
+    const fenetres = fenetresDeDebat(
+      [vote({ ordreAbsolu: 140, numeros: ['100'] }), vote({ ordreAbsolu: 142, cible: 'article', numeros: ['15'] })],
+      [
+        intervention({ id: 'sur-article', ordreAbsolu: 102 }),
+        intervention({ id: 'd100', ordreAbsolu: 120, amendementsVises: ['100'] }),
+      ],
+      [110],
+    );
+    expect(fenetres.map((f) => [f.debut, f.fin])).toEqual([
+      [110, 140],
+      [0, 142],
+    ]);
+  });
+
+  it('ne resserre pas un vote sur un article', () => {
+    const fenetres = fenetresDeDebat(
+      [vote({ ordreAbsolu: 140, cible: 'article', numeros: ['15'] })],
+      [intervention({ id: 'a', ordreAbsolu: 102, amendementsVises: ['15'] })],
+      [110],
+    );
+    expect(fenetres.map((f) => [f.debut, f.fin])).toEqual([[0, 140]]);
+  });
+});
+
 describe('differenceDeLiens', () => {
   const l = (interventionId: string, scrutinId: string, via: string) => ({ interventionId, scrutinId, via });
 
