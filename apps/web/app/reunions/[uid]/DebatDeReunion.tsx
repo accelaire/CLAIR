@@ -162,6 +162,15 @@ export function DebatDeReunion({
 
   useEffect(() => {
     if (rangAAtteindre === null) return;
+    // Arrivé depuis un vote, la consigne est posée avant que la première page
+    // soit là : `hasNextPage` vaut alors faux, et la poursuite renonçait avant
+    // d'avoir commencé — la page restait en haut. On attend donc la première
+    // réponse ; seule une erreur fait renoncer d'emblée.
+    if (isError) {
+      setRangAAtteindre(null);
+      return;
+    }
+    if (!data) return;
     const cible = prises.find((p) => p.ordre !== null && p.ordre >= rangAAtteindre);
     if (!cible) {
       // Pas encore chargée : on avance d'une page. Attention au renoncement —
@@ -183,7 +192,7 @@ export function DebatDeReunion({
       block: 'start',
     });
     setRangAAtteindre(null);
-  }, [rangAAtteindre, prises, hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [rangAAtteindre, data, isError, prises, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   if (total === 0) return null;
 
