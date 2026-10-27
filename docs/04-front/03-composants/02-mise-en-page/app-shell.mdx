@@ -1,0 +1,35 @@
+---
+title: "AppShell"
+sidebar_label: "AppShell"
+sidebar_icon: "app-window"
+description: "Cadre de toutes les pages : lien d'évitement, en-tête, contenu principal main#contenu, pied de page."
+---
+
+import { AppShell, Footer, Header } from "@clair/ui";
+
+Cadre de toutes les pages du site : lien d'évitement, bandeau éventuel, en-tête, contenu principal (`main#contenu`, cible du lien d'évitement) et pied de page. `apps/site` l'utilise dans son layout. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-mise-en-page-appshell--docs)
+
+## Import
+
+```tsx
+import { AppShell } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview surface="page">
+  <AppShell
+    header={<Header navigation={[{ label: "Lobbying", href: "/lobbying" }]} />}
+    footer={<Footer columns={[{ title: "Légal", links: [{ label: "CGU", href: "/cgu" }] }]} year={2026} />}
+  >
+    <div style={{ padding: 24 }}>
+      <h1>Titre de la page</h1>
+    </div>
+  </AppShell>
+</Preview>
+
+```tsx
+<AppShell header={<Header navigation={navigation} />} footer={<Footer columns={colonnes} />}>
+  <h1>Titre de la page</h1>
+</AppShell>
+```

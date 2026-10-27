@@ -1,0 +1,67 @@
+---
+title: "Badge"
+sidebar_label: "Badge"
+sidebar_icon: "tag"
+description: "Étiquette courte de statut ou de catégorie (« Adopté », « En cours »), dont la couleur est toujours doublée d'un libellé."
+---
+
+import { Badge } from "@clair/ui";
+import { Check } from "lucide-react";
+
+Étiquette courte de statut ou de catégorie. La couleur n'est jamais seule : le libellé porte l'information. Remplace les classes `.badge-*` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-fondations-badge--docs)
+
+## Import
+
+```tsx
+import { Badge } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <Badge>Caduc</Badge>
+</Preview>
+
+```tsx
+<Badge>Caduc</Badge>
+```
+
+## Avec un ton
+
+<Preview>
+  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+    <Badge tone="neutre">Caduc</Badge>
+    <Badge tone="info">En cours</Badge>
+    <Badge tone="succes">Adopté</Badge>
+    <Badge tone="erreur">Rejeté</Badge>
+    <Badge tone="avertissement">Important</Badge>
+  </div>
+</Preview>
+
+```tsx
+<Badge tone="neutre">Caduc</Badge>
+<Badge tone="info">En cours</Badge>
+<Badge tone="succes">Adopté</Badge>
+<Badge tone="erreur">Rejeté</Badge>
+<Badge tone="avertissement">Important</Badge>
+```
+
+## Avec une icône
+
+<Preview>
+  <Badge tone="succes" icon={<Check />}>Promulgué</Badge>
+</Preview>
+
+```tsx
+<Badge tone="succes" icon={<Check />}>Promulgué</Badge>
+```
+
+## En petit
+
+<Preview>
+  <Badge tone="info" size="sm">Sénat</Badge>
+</Preview>
+
+```tsx
+<Badge tone="info" size="sm">Sénat</Badge>
+```

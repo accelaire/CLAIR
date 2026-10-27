@@ -1,0 +1,56 @@
+---
+title: "Pagination"
+sidebar_label: "Pagination"
+sidebar_icon: "chevrons-left-right"
+description: "Pagination en liens (référencement) ou en boutons, page courante signalée, version compacte sur mobile."
+---
+
+import { Pagination } from "@clair/ui";
+
+Pagination dans une `nav` nommée « Pagination ». Préférer les liens (`hrefFor`) : présents dans le HTML servi, ils permettent aux moteurs d'explorer toutes les pages d'une liste. La page courante porte `aria-current="page"` ; sur un écran étroit, seuls « Précédent », « Page n sur N » et « Suivant » restent affichés. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-mise-en-page-pagination--docs)
+
+## Import
+
+```tsx
+import { Pagination } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <Pagination page={6} total={20} hrefFor={(page) => `#page-${page}`} />
+</Preview>
+
+```tsx
+<Pagination page={6} total={20} hrefFor={(page) => `#page-${page}`} />
+```
+
+## Avec la première page
+
+<Preview>
+  <Pagination page={1} total={20} hrefFor={(page) => `#page-${page}`} />
+</Preview>
+
+```tsx
+<Pagination page={1} total={20} hrefFor={(page) => `#page-${page}`} />
+```
+
+## Avec la dernière page
+
+<Preview>
+  <Pagination page={20} total={20} hrefFor={(page) => `#page-${page}`} />
+</Preview>
+
+```tsx
+<Pagination page={20} total={20} hrefFor={(page) => `#page-${page}`} />
+```
+
+## Avec des boutons
+
+<Preview>
+  <Pagination page={2} total={5} onChange={() => {}} />
+</Preview>
+
+```tsx
+<Pagination page={page} total={5} onChange={setPage} />
+```

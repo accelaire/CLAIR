@@ -1,0 +1,71 @@
+.date {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.icon {
+  width: var(--clair-espacement-4v);
+  height: var(--clair-espacement-4v);
+  flex-shrink: 0;
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-2v);
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.detail {
+  min-width: 0;
+}
+
+.detail dt {
+  font-weight: var(--clair-texte-h6-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.detail dd {
+  margin: 0;
+  color: var(--clair-texte-mention);
+  overflow-wrap: anywhere;
+}
+
+.parlementaire {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-2v);
+}
+
+.auteur {
+  display: flex;
+  align-items: center;
+  gap: var(--clair-espacement-3v);
+  min-width: 0;
+  padding-top: var(--clair-espacement-3v);
+  border-top: var(--clair-trait-defaut);
+}
+
+.auteurTexte {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.auteurNom {
+  font-weight: var(--clair-texte-h6-graisse);
+  overflow-wrap: anywhere;
+}
+
+.mention {
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+  overflow-wrap: anywhere;
+}

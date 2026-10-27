@@ -1,0 +1,75 @@
+---
+title: "StatutBadge"
+sidebar_label: "StatutBadge"
+sidebar_icon: "gavel"
+description: "Statut législatif (sort d'un scrutin ou d'un amendement, état d'un dossier) avec un ton issu d'un mapping central."
+---
+
+import { StatutBadge } from "@clair/ui";
+
+Statut législatif : sort d'un scrutin ou d'un amendement, état d'un dossier. Le ton vient du mapping central `STATUTS` et le libellé porte toujours l'information ; `parseStatut` convertit une valeur brute de l'API (« Adopté », `rejete`, « Cavalier (45) »…). [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-fondations-statutbadge--docs)
+
+## Import
+
+```tsx
+import { parseStatut, StatutBadge } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <StatutBadge statut="adopte" />
+</Preview>
+
+```tsx
+<StatutBadge statut="adopte" />
+```
+
+## Avec le sort d'un amendement
+
+<Preview>
+  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+    <StatutBadge statut="adopte" />
+    <StatutBadge statut="rejete" />
+    <StatutBadge statut="retire" />
+    <StatutBadge statut="tombe" />
+    <StatutBadge statut="non_soutenu" />
+    <StatutBadge statut="irrecevable" />
+  </div>
+</Preview>
+
+```tsx
+<StatutBadge statut="adopte" />
+<StatutBadge statut="rejete" />
+<StatutBadge statut="retire" />
+<StatutBadge statut="tombe" />
+<StatutBadge statut="non_soutenu" />
+<StatutBadge statut="irrecevable" />
+```
+
+## Avec l'état d'un dossier
+
+<Preview>
+  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+    <StatutBadge statut="en_cours" />
+    <StatutBadge statut="promulgue" />
+    <StatutBadge statut="caduc" />
+  </div>
+</Preview>
+
+```tsx
+<StatutBadge statut="en_cours" />
+<StatutBadge statut="promulgue" />
+<StatutBadge statut="caduc" />
+```
+
+## Avec un libellé précis
+
+<Preview>
+  <StatutBadge statut="irrecevable" label="Irrecevable (art. 40)" size="sm" />
+</Preview>
+
+```tsx
+const statut = parseStatut(amendement.sort);
+{statut ? <StatutBadge statut={statut} label="Irrecevable (art. 40)" size="sm" /> : null}
+```

@@ -1,0 +1,83 @@
+---
+title: "ComparisonBar"
+sidebar_label: "ComparisonBar"
+sidebar_icon: "git-compare-arrows"
+description: "Barre fixée en bas de l'écran listant les élus à comparer ; le lien « Comparer » s'active à partir de deux élus."
+---
+
+import { ComparisonBar } from "@clair/ui";
+
+Barre de comparaison, **contrôlée** : l'écran tient la sélection et fournit l'adresse de la comparaison. Chaque élu est retirable (« Retirer … de la comparaison ») ; le nombre d'élus est annoncé. Sous deux élus, « Comparer » est désactivé et une aide l'explique ; au maximum (`max`, 4 par défaut), un message le signale. La barre est fixée en bas de l'écran (`fixed={false}` pour l'afficher dans le flux, comme ici) et n'apparaît pas sans sélection. Remplace `comparison/ComparisonSelectionBar.tsx` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-filtres-comparisonbar--docs)
+
+## Import
+
+```tsx
+import { ComparisonBar } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <ComparisonBar
+    fixed={false}
+    items={[
+      { id: "camille-exemple", name: "Camille Exemple", detail: "SOC" },
+      { id: "dominique-modele", name: "Dominique Modèle", detail: "EPR" },
+    ]}
+    onRemove={() => {}}
+    compareHref="#"
+  />
+</Preview>
+
+```tsx
+<ComparisonBar
+  items={[
+    { id: "camille-exemple", name: "Camille Exemple", detail: "SOC" },
+    { id: "dominique-modele", name: "Dominique Modèle", detail: "EPR" },
+  ]}
+  onRemove={retirer}
+  compareHref="#"
+/>
+```
+
+## Avec un seul élu
+
+<Preview>
+  <ComparisonBar
+    fixed={false}
+    items={[{ id: "camille-exemple", name: "Camille Exemple", detail: "SOC" }]}
+    onRemove={() => {}}
+    onClear={() => {}}
+    compareHref="#"
+    noun={["député", "députés"]}
+  />
+</Preview>
+
+```tsx
+<ComparisonBar
+  items={[{ id: "camille-exemple", name: "Camille Exemple", detail: "SOC" }]}
+  onRemove={retirer}
+  onClear={vider}
+  compareHref="#"
+  noun={["député", "députés"]}
+/>
+```
+
+## Avec le maximum atteint
+
+<Preview>
+  <ComparisonBar
+    fixed={false}
+    max={2}
+    items={[
+      { id: "camille-exemple", name: "Camille Exemple" },
+      { id: "dominique-modele", name: "Dominique Modèle" },
+    ]}
+    onRemove={() => {}}
+    compareHref="#"
+  />
+</Preview>
+
+```tsx
+<ComparisonBar max={2} items={selection} onRemove={retirer} compareHref="#" />
+```

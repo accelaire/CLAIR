@@ -1,0 +1,97 @@
+.root {
+  width: 100%;
+}
+
+.entete {
+  max-width: none;
+  margin-bottom: var(--clair-espacement-2v);
+}
+
+.niveau {
+  font-size: var(--clair-texte-h4-taille);
+  line-height: var(--clair-texte-h4-interligne);
+  font-weight: var(--clair-texte-h4-graisse);
+  color: var(--clair-texte-titre);
+  text-transform: capitalize;
+}
+
+.niveau:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.controle {
+  border: var(--clair-trait-fort);
+  border-radius: var(--clair-rayon-md);
+  color: var(--clair-texte-defaut);
+}
+
+.jourSemaine {
+  font-size: var(--clair-texte-xs-taille);
+  font-weight: var(--clair-texte-sm-graisse);
+  color: var(--clair-texte-mention);
+  text-transform: capitalize;
+}
+
+.contenu {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+}
+
+.numero {
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.marques {
+  display: flex;
+  align-items: center;
+  gap: var(--clair-trait-epaisseur);
+  min-height: var(--clair-espacement-2v);
+}
+
+.jour {
+  position: relative;
+  width: 100%;
+  height: auto;
+  min-height: calc(var(--clair-espacement-8v) + var(--clair-espacement-4v));
+  padding: var(--clair-espacement-1v) 0 var(--clair-espacement-2v);
+  border-radius: var(--clair-rayon-md);
+  color: var(--clair-texte-defaut);
+}
+
+.jour:hover {
+  background: var(--clair-fond-neutre);
+}
+
+.jour:focus-visible {
+  outline: var(--clair-focus-contour);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+.jour[data-weekend] {
+  color: var(--clair-texte-mention);
+}
+
+.jour[aria-current="date"] .numero {
+  font-weight: var(--clair-texte-h6-graisse);
+  text-decoration: underline;
+  text-underline-offset: var(--clair-espacement-1v);
+}
+
+.jour[data-selected],
+.jour[data-selected]:hover {
+  background: var(--clair-fond-action);
+  color: var(--clair-texte-sur-action);
+}
+
+.jour[data-periode]::after {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: var(--clair-trait-epaisseur);
+  background: var(--clair-bordure-forte);
+  content: "";
+}

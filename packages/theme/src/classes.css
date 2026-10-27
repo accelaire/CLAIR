@@ -1,0 +1,31 @@
+/*
+ * Classes utilitaires de CLAIR. Aucune règle sur des éléments (body, h1, a…) :
+ * ce fichier peut être chargé dans n'importe quel site (application, documentation, Storybook).
+ */
+
+/* Masqué visuellement, lu par les lecteurs d'écran. */
+.clair-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Chiffres alignés dans les tableaux et les compteurs. */
+.clair-chiffres {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Contour des champs Mantine (TextInput, Select, DatePicker…) : la bordure forte, à 3:1 sur les
+ * fonds (WCAG 1.4.11), au lieu des gris de Mantine (1,5:1). Même spécificité que la règle de
+ * Mantine, chargée après elle.
+ */
+[data-mantine-color-scheme] .mantine-Input-wrapper[data-variant="default"] {
+  --input-bd: var(--clair-bordure-forte);
+}

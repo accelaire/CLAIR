@@ -4,7 +4,8 @@ FROM node:24-alpine AS builder
 # Install OpenSSL for Prisma client generation
 RUN apk add --no-cache openssl
 
-RUN corepack enable && corepack prepare pnpm@8.15.0 --activate
+# pnpm : version de packageManager (package.json), téléchargée par corepack au premier appel
+RUN corepack enable
 
 WORKDIR /app
 
@@ -37,7 +38,8 @@ FROM node:24-alpine AS runner
 # publie qu'en PDF (cf. sources/assemblee-nationale/compte-rendu-commission-parser.ts).
 RUN apk add --no-cache openssl poppler-utils
 
-RUN corepack enable && corepack prepare pnpm@8.15.0 --activate
+# pnpm : version de packageManager (package.json), téléchargée par corepack au premier appel
+RUN corepack enable
 
 WORKDIR /app
 

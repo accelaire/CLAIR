@@ -119,7 +119,11 @@ Variables lues par le code de l'ingestion : `DATABASE_URL`, `LOG_LEVEL`, `NODE_E
 
 `.github/workflows/ci.yml`, sur chaque push et pull request vers `master` (ou `main`), avec la version de Node lue dans `.nvmrc` :
 
-1. **lint-and-test** : installation, génération du client Prisma, `pnpm lint`, `pnpm test`, couverture de l'API envoyée à Codecov sur les pull requests. Le `type-check` est désactivé (erreurs préexistantes dans l'ingestion et le site).
-2. **build** : démarre PostgreSQL 16 et Redis 7, applique le schéma par `prisma db push` puis les triggers (`db:triggers`), construit et lance l'API, puis construit tout le monorepo. Le build du site prérend `/sitemap.xml`, qui interroge l'API : c'est ce qui impose une API réelle pendant la CI.
+1. **lint-and-test** : installation, génération du client Prisma, `pnpm lint` (ESLint), `pnpm test`, couverture de l'API envoyée à Codecov sur les pull requests. Le `type-check` de l'existant est désactivé (erreurs préexistantes dans l'ingestion et `apps/web`).
+2. **front** : Biome (`pnpm check`, la seule exécution de la CI), type-check de `packages/*`, `apps/storybook` et `apps/site`, tests des packages, stories rendues dans Chromium avec axe, build de Storybook.
+3. **e2e-site** : build de `apps/site`, puis `pnpm test:e2e --project=site` contre un faux serveur d'API local (`e2e/fake-api.mjs`) ; ni l'API de production ni la documentation.
+4. **build** : démarre PostgreSQL 16 et Redis 7, applique le schéma par `prisma db push` puis les triggers (`db:triggers`), construit et lance l'API, puis construit tout le monorepo. Le build du site prérend `/sitemap.xml`, qui interroge l'API : c'est ce qui impose une API réelle pendant la CI.
+
+`.github/workflows/changelog.yml` vérifie le format des fragments de `.changelog/` et, sur une pull request, qu'elle en ajoute un ou que sa description contient la ligne `Journal : aucun` (simple avertissement pendant l'adoption).
 
 La CI ne déploie rien.

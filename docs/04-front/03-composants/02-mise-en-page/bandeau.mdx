@@ -1,0 +1,72 @@
+---
+title: "Bandeau"
+sidebar_label: "Bandeau"
+sidebar_icon: "megaphone"
+description: "Bandeau d'annonce en haut de page, ton information ou « en direct », avec lien et fermeture optionnels."
+---
+
+import { Bandeau } from "@clair/ui";
+
+Bandeau d'annonce placé au-dessus de l'en-tête (prop `banner` de `AppShell`). Le ton « direct » ajoute la mention « En direct » et une pastille animée, immobile si les animations sont réduites ; la couleur n'est jamais seule. L'application décide de l'afficher et lui passe ses données. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-mise-en-page-bandeau--docs)
+
+## Import
+
+```tsx
+import { Bandeau } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview surface="page">
+  <Bandeau>La documentation des données a été mise à jour.</Bandeau>
+</Preview>
+
+```tsx
+<Bandeau>La documentation des données a été mise à jour.</Bandeau>
+```
+
+## Avec un lien
+
+<Preview surface="page">
+  <Bandeau link={{ href: "#", label: "En savoir plus" }}>
+    La documentation des données a été mise à jour.
+  </Bandeau>
+</Preview>
+
+```tsx
+<Bandeau link={{ href: "#", label: "En savoir plus" }}>
+  La documentation des données a été mise à jour.
+</Bandeau>
+```
+
+## Avec le ton « en direct »
+
+<Preview surface="page">
+  <Bandeau tone="direct" link={{ href: "#", label: "Suivre les résultats" }}>
+    Élections fictives : les résultats arrivent, circonscription par circonscription.
+  </Bandeau>
+</Preview>
+
+```tsx
+<Bandeau tone="direct" link={{ href: "#", label: "Suivre les résultats" }}>
+  Élections fictives : les résultats arrivent, circonscription par circonscription.
+</Bandeau>
+```
+
+## Avec un bouton de fermeture
+
+<Preview surface="page">
+  <Bandeau dismissible dismissLabel="Masquer l'annonce">
+    La documentation des données a été mise à jour.
+  </Bandeau>
+</Preview>
+
+```tsx
+<Bandeau
+  dismissible
+  dismissLabel="Masquer l'annonce"
+  onDismiss={() => sessionStorage.setItem("clair:bandeau-ferme", "1")}
+>
+  La documentation des données a été mise à jour.
+</Bandeau>
+```

@@ -1,0 +1,77 @@
+.page {
+  padding-block: var(--clair-espacement-6v) var(--clair-espacement-16v);
+}
+
+.lead {
+  margin: 0;
+}
+
+.mention {
+  margin: 0 0 var(--clair-espacement-4v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.annees {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--clair-espacement-3v);
+  margin: var(--clair-espacement-6v) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 640px) {
+  .annees {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .annees {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.navMois {
+  margin-block: var(--clair-espacement-4v) var(--clair-espacement-6v);
+}
+
+.mois {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.resultats {
+  margin-top: var(--clair-espacement-6v);
+}
+
+.liste {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+  margin: 0 0 var(--clair-espacement-8v);
+  padding: 0;
+  list-style: none;
+}
+
+.voisins {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--clair-espacement-4v);
+  margin-top: var(--clair-espacement-8v);
+}
+
+.pied {
+  margin: var(--clair-espacement-10v) 0 0;
+  padding-top: var(--clair-espacement-6v);
+  border-top: var(--clair-trait-defaut);
+  font-size: var(--clair-texte-sm-taille);
+  color: var(--clair-texte-mention);
+}

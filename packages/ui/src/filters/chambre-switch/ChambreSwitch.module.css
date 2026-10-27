@@ -1,0 +1,34 @@
+.fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-1v);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.legend {
+  padding: 0;
+  margin-bottom: var(--clair-espacement-1v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  font-weight: 500;
+  color: var(--clair-texte-defaut);
+}
+
+.control {
+  align-self: flex-start;
+  max-width: 100%;
+  border: var(--clair-trait-defaut);
+  background: var(--clair-fond-neutre);
+}
+
+.fieldset[data-full-width] .control {
+  align-self: stretch;
+}
+
+.control input:focus-visible + label {
+  outline: var(--clair-focus-contour);
+  outline-offset: var(--clair-focus-decalage);
+}

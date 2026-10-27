@@ -1,0 +1,142 @@
+---
+title: "ChartFrame"
+sidebar_label: "ChartFrame"
+sidebar_icon: "frame"
+description: "Cadre de tout graphique : titre, nature et source de la donnée, et alternative textuelle obligatoire révélée par « Afficher les données »."
+---
+
+import { BarChart, ChartFrame } from "@clair/ui";
+
+Cadre commun des graphiques de CLAIR. Il porte le titre, le sous-titre, la nature de la donnée (officielle, calculée par CLAIR ou générée par IA, via `ProvenanceLabel`), la source, et une alternative textuelle obligatoire : le bouton « Afficher les données » révèle le tableau des mêmes valeurs. Remplace `CadreGraphique` et `ChartTooltip` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-graphiques-chartframe--docs)
+
+## Import
+
+```tsx
+import { ChartFrame } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <ChartFrame
+    title="Votes d'un groupe par mois"
+    subtitle="Données d'exemple"
+    provenance="calculee"
+    table={{
+      caption: "Votes par mois (exemple)",
+      columns: [
+        { key: "mois", label: "Mois" },
+        { key: "pour", label: "Pour" },
+        { key: "contre", label: "Contre" },
+      ],
+      rows: [
+        { mois: "Janvier", pour: 42, contre: 18 },
+        { mois: "Février", pour: 35, contre: 22 },
+      ],
+    }}
+  >
+    <BarChart
+      categoryKey="mois"
+      data={[
+        { mois: "Janvier", pour: 42, contre: 18 },
+        { mois: "Février", pour: 35, contre: 22 },
+      ]}
+      series={[
+        { key: "pour", label: "Pour", color: "var(--clair-graphique-vote-pour)" },
+        { key: "contre", label: "Contre", color: "var(--clair-graphique-vote-contre)" },
+      ]}
+    />
+  </ChartFrame>
+</Preview>
+
+```tsx
+<ChartFrame
+  title="Votes d'un groupe par mois"
+  subtitle="Données d'exemple"
+  provenance="calculee"
+  table={{
+    caption: "Votes par mois (exemple)",
+    columns: [
+      { key: "mois", label: "Mois" },
+      { key: "pour", label: "Pour" },
+      { key: "contre", label: "Contre" },
+    ],
+    rows: [
+      { mois: "Janvier", pour: 42, contre: 18 },
+      { mois: "Février", pour: 35, contre: 22 },
+    ],
+  }}
+>
+  <BarChart
+    categoryKey="mois"
+    data={[
+      { mois: "Janvier", pour: 42, contre: 18 },
+      { mois: "Février", pour: 35, contre: 22 },
+    ]}
+    series={[
+      { key: "pour", label: "Pour", color: "var(--clair-graphique-vote-pour)" },
+      { key: "contre", label: "Contre", color: "var(--clair-graphique-vote-contre)" },
+    ]}
+  />
+</ChartFrame>
+```
+
+## Avec une source officielle
+
+<Preview>
+  <ChartFrame
+    title="Scrutins publics par mois"
+    provenance="officielle"
+    source={{ label: "Assemblée nationale, open data", href: "https://data.assemblee-nationale.fr" }}
+    note="Décompte d'exemple."
+    table={{
+      caption: "Scrutins par mois (exemple)",
+      columns: [
+        { key: "mois", label: "Mois" },
+        { key: "scrutins", label: "Scrutins" },
+      ],
+      rows: [
+        { mois: "Janvier", scrutins: 66 },
+        { mois: "Février", scrutins: 54 },
+      ],
+    }}
+  >
+    <BarChart
+      categoryKey="mois"
+      data={[
+        { mois: "Janvier", scrutins: 66 },
+        { mois: "Février", scrutins: 54 },
+      ]}
+      series={[{ key: "scrutins", label: "Scrutins" }]}
+    />
+  </ChartFrame>
+</Preview>
+
+```tsx
+<ChartFrame
+  title="Scrutins publics par mois"
+  provenance="officielle"
+  source={{ label: "Assemblée nationale, open data", href: "https://data.assemblee-nationale.fr" }}
+  note="Décompte d'exemple."
+  table={{
+    caption: "Scrutins par mois (exemple)",
+    columns: [
+      { key: "mois", label: "Mois" },
+      { key: "scrutins", label: "Scrutins" },
+    ],
+    rows: [
+      { mois: "Janvier", scrutins: 66 },
+      { mois: "Février", scrutins: 54 },
+    ],
+  }}
+>
+  <BarChart
+    categoryKey="mois"
+    data={[
+      { mois: "Janvier", scrutins: 66 },
+      { mois: "Février", scrutins: 54 },
+    ]}
+    series={[{ key: "scrutins", label: "Scrutins" }]}
+  />
+</ChartFrame>
+```

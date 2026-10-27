@@ -1,0 +1,50 @@
+.root {
+  min-width: 0;
+}
+
+.label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--clair-espacement-6v);
+  padding: 0 var(--clair-espacement-2v);
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--clair-fond-action);
+  color: var(--clair-texte-sur-action);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  font-weight: var(--clair-texte-h6-graisse);
+}
+
+.option {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--clair-espacement-3v);
+  min-width: 0;
+}
+
+.optionLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.optionCount {
+  flex-shrink: 0;
+  font-size: var(--clair-texte-xs-taille);
+  color: var(--clair-texte-mention);
+}
+
+.limite {
+  margin: var(--clair-espacement-1v) 0 0;
+  font-size: var(--clair-texte-xs-taille);
+  color: var(--clair-texte-mention);
+}

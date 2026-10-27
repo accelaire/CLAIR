@@ -1,0 +1,62 @@
+---
+title: "ParlementaireAvatar"
+sidebar_label: "ParlementaireAvatar"
+sidebar_icon: "circle-user"
+description: "Photo d'un député ou d'un sénateur, ou ses initiales en repli, avec le nom comme alternative textuelle."
+---
+
+import { ParlementaireAvatar } from "@clair/ui";
+
+Photo officielle d'un député ou d'un sénateur. Sans photo, ou si elle ne se charge pas, les initiales la remplacent. Le nom est l'alternative textuelle ; à côté d'un nom déjà écrit (carte, liste), l'avatar est déclaré `decorative` et masqué aux lecteurs d'écran. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-parlementaire-parlementaireavatar--docs)
+
+## Import
+
+```tsx
+import { ParlementaireAvatar } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <ParlementaireAvatar nom="Camille Exemple" />
+</Preview>
+
+```tsx
+<ParlementaireAvatar nom="Camille Exemple" />
+```
+
+## Avec une taille
+
+<Preview>
+  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+    <ParlementaireAvatar nom="Camille Exemple" size="sm" />
+    <ParlementaireAvatar nom="Camille Exemple" size="md" />
+    <ParlementaireAvatar nom="Camille Exemple" size="lg" />
+    <ParlementaireAvatar nom="Camille Exemple" size="xl" />
+  </div>
+</Preview>
+
+```tsx
+<div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+  <ParlementaireAvatar nom="Camille Exemple" size="sm" />
+  <ParlementaireAvatar nom="Camille Exemple" size="md" />
+  <ParlementaireAvatar nom="Camille Exemple" size="lg" />
+  <ParlementaireAvatar nom="Camille Exemple" size="xl" />
+</div>
+```
+
+## Avec un rôle décoratif
+
+<Preview>
+  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <ParlementaireAvatar nom="Dominique Modèle" decorative />
+    <span>Dominique Modèle</span>
+  </div>
+</Preview>
+
+```tsx
+<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+  <ParlementaireAvatar nom="Dominique Modèle" decorative />
+  <span>Dominique Modèle</span>
+</div>
+```

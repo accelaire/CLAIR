@@ -26,7 +26,7 @@ export function FeatureCard({ icon, title, description, badge, href }: FeatureCa
         </p>
       </div>
       {href && (
-        <div className="mt-4 text-xs font-semibold text-[#1d70f5] dark:text-[#60a5fa] flex items-center gap-1">
+        <div className="mt-4 text-xs font-semibold text-[#195bcc] dark:text-[#60a5fa] flex items-center gap-1">
           <span>Consulter</span>
           <span>→</span>
         </div>

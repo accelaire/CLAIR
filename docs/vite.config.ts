@@ -38,7 +38,13 @@ export default defineConfig({
     noExternal: ["mermaid", "style-to-js", "style-to-object"],
   },
   optimizeDeps: {
-    include: ["mermaid", "style-to-js", "style-to-object"],
+    // Dépendances indirectes (zudoku → hast-util-to-jsx-runtime) : pnpm ne les expose pas à la
+    // racine de docs/, Vite les atteint par leur chaîne d'import.
+    include: [
+      "mermaid",
+      "zudoku > hast-util-to-jsx-runtime > style-to-js",
+      "zudoku > hast-util-to-jsx-runtime > style-to-js > style-to-object",
+    ],
     exclude: [
       "virtual:zudoku-api-keys-plugin",
       "virtual:zudoku-api-plugins",

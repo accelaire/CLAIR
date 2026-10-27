@@ -35,11 +35,22 @@ pnpm docker:down
 pnpm docker:logs
 
 # Qualité du code
-pnpm lint                 # ESLint sur tous les workspaces, plus scripts/ et apps/api/prisma
+pnpm check                # Biome : nouveau front, scripts/changelog, e2e, configuration racine
+pnpm fix                  # Biome, en corrigeant
+pnpm lint                 # ESLint (apps/web, apps/api, ingestion), plus scripts/ et apps/api/prisma
 pnpm lint:fix
-pnpm type-check           # tsc --noEmit
-pnpm test                 # Vitest (API et ingestion)
-pnpm format               # Prettier
+pnpm type-check           # tsc --noEmit partout (apps/web et l'ingestion ont des erreurs préexistantes)
+pnpm test                 # Vitest (API, ingestion, packages du nouveau front)
+pnpm test:e2e             # Playwright (voir ci-dessous)
+pnpm format               # Prettier (code existant)
+
+# Nouveau front
+pnpm storybook            # atelier des composants (port 6006)
+pnpm storybook:capture    # captures d'une story
+
+# Journal des versions
+pnpm changelog:check      # format des fragments de .changelog/
+pnpm changelog:test       # tests des scripts
 
 # Documentation
 pnpm docs:nav             # régénère la navigation après ajout, renommage ou suppression d'une page
@@ -47,7 +58,7 @@ pnpm docs:validate        # syntaxe MDX et liens internes
 pnpm docs:erd             # régénère les diagrammes de la base depuis le schéma Prisma
 ```
 
-`pnpm test:e2e` est déclaré dans `turbo.json`, mais aucun workspace ne définit de script `test:e2e` : la commande ne lance rien.
+`pnpm test:e2e` lance Playwright (`playwright.config.ts`, tests dans `e2e/`) sur des applications déjà construites : le projet `docs` sur la documentation (`pnpm build:docs`, qui télécharge la spécification OpenAPI de production), le projet `site` sur le nouveau site (`pnpm --filter @clair/site build`), servi par `next start` devant un faux serveur d'API local (`e2e/fake-api.mjs`). `pnpm test:e2e --project=site` ne démarre que les serveurs du site.
 
 `pnpm db:migrate` lance `prisma migrate dev`, qui rejoue l'historique des migrations dans une base fantôme : il échoue (erreur P3006 sur `20260313_add_sujets`), car cet historique ne se rejoue pas depuis une base vide. Pour créer ou appliquer une migration, voir [Modèle Prisma](/donnees/modele-prisma#migrations).
 

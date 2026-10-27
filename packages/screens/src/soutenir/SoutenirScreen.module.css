@@ -1,0 +1,176 @@
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+}
+
+.donation {
+  display: grid;
+  gap: var(--clair-espacement-8v);
+  align-items: start;
+}
+
+@media (min-width: 1024px) {
+  .donation {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Le formulaire reste premier dans le DOM (et en mobile), à droite sur grand écran. */
+  .form {
+    order: 2;
+  }
+
+  .howTo {
+    order: 1;
+    margin-top: var(--clair-espacement-16v);
+  }
+}
+
+.donationTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  margin: 0 0 var(--clair-espacement-6v);
+  font-size: var(--clair-texte-h3-taille);
+  line-height: var(--clair-texte-h3-interligne);
+  color: var(--clair-texte-titre);
+}
+
+.heart {
+  width: var(--clair-espacement-6v);
+  height: var(--clair-espacement-6v);
+  color: var(--clair-statut-erreur);
+}
+
+.inlineHeart {
+  width: var(--clair-espacement-4v);
+  height: var(--clair-espacement-4v);
+  margin-inline-end: var(--clair-espacement-2v);
+  vertical-align: middle;
+}
+
+/* Formulaire intégré sur grand écran, lien direct vers HelloAsso en mobile. */
+.widget {
+  display: none;
+  overflow: hidden;
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-xl);
+  background: var(--clair-fond-surface);
+}
+
+.iframe {
+  display: block;
+  width: 100%;
+  height: calc(var(--clair-espacement-16v) * 12);
+  border: 0;
+}
+
+.mobileDonation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+  padding: var(--clair-espacement-6v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-xl);
+  background: var(--clair-statut-info-fond);
+  text-align: center;
+}
+
+@media (min-width: 1024px) {
+  .widget {
+    display: block;
+  }
+
+  .mobileDonation {
+    display: none;
+  }
+}
+
+.howTo {
+  padding: var(--clair-espacement-6v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-xl);
+  background: var(--clair-statut-info-fond);
+}
+
+.howToTitle {
+  margin: 0 0 var(--clair-espacement-4v);
+  font-size: var(--clair-texte-md-taille);
+  line-height: var(--clair-texte-md-interligne);
+  color: var(--clair-texte-titre);
+}
+
+.guarantees {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.guarantee {
+  display: flex;
+  gap: var(--clair-espacement-3v);
+}
+
+.guaranteeIcon {
+  flex-shrink: 0;
+  width: var(--clair-espacement-6v);
+  height: var(--clair-espacement-6v);
+  color: var(--clair-texte-action);
+}
+
+.guaranteeTitle {
+  margin: 0;
+  font-weight: 600;
+  color: var(--clair-texte-titre);
+}
+
+.guaranteeText {
+  margin: 0;
+  color: var(--clair-texte-mention);
+}
+
+.track {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--clair-espacement-4v);
+}
+
+.member {
+  justify-content: flex-start;
+  align-items: center;
+  text-align: center;
+}
+
+.photo {
+  display: block;
+  width: calc(var(--clair-espacement-10v) * 3);
+  height: calc(var(--clair-espacement-10v) * 3);
+  margin-inline: auto;
+  border-radius: var(--clair-rayon-pilule);
+  object-fit: cover;
+}
+
+.role {
+  margin: var(--clair-espacement-2v) 0;
+  color: var(--clair-texte-mention);
+}
+
+.quote {
+  margin: 0 0 var(--clair-espacement-4v);
+}
+
+.faq {
+  max-width: var(--clair-rupture-md);
+  margin-inline: auto;
+}
+
+.finalAction {
+  justify-content: center;
+  margin-top: var(--clair-espacement-8v);
+}

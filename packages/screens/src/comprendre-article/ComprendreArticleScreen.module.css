@@ -1,0 +1,31 @@
+.blocks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+  color: var(--clair-texte-mention);
+}
+
+.cardBody {
+  color: var(--clair-texte-mention);
+}
+
+.cardTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+}
+
+.cardTitleIcon {
+  flex-shrink: 0;
+  width: var(--clair-espacement-4v);
+  height: var(--clair-espacement-4v);
+  color: var(--clair-texte-action);
+}
+
+.liveActions {
+  margin-top: var(--clair-espacement-1v);
+}
+
+.actions {
+  margin-top: var(--clair-espacement-12v);
+}

@@ -1,0 +1,201 @@
+---
+title: "Version v0.5.0"
+sidebar_label: "Version v0.5.0"
+date: 2026-10-02
+version: 0.5.0
+description: "Sénatoriales 2026, multi-législatures, débats rattachés aux votes, pages de séance"
+commits: 272
+prs: 13
+depuis: v0.4.0
+---
+
+**Publiée le 02/10/2026** · 272 commits et 13 pull requests depuis [v0.4.0](/changelog/v0-4-0) · [Comparer avec v0.4.0](https://github.com/accelaire/CLAIR/compare/v0.4.0...v0.5.0) · [Code de la version](https://github.com/accelaire/CLAIR/tree/v0.5.0)
+
+## En bref
+
+La v0.5.0 est la plus grosse version à ce jour. Elle couvre les **sénatoriales du 27 septembre 2026** de bout en bout : bilan des sortants, candidatures, résultats en direct. Elle remonte l'histoire avec les **législatures précédentes** de l'Assemblée et l'historique du Sénat depuis 2006. Chaque vote retrouve le **débat** qui l'a précédé, et chaque séance a sa page.
+
+| Pour qui | Ce qui change |
+|---|---|
+| Citoyens | page [Sénatoriales 2026](https://clair.vote/senatoriales-2026) et une page par circonscription, anciens parlementaires et sélecteurs de période, débat de chaque scrutin, pages de séance et de réunion |
+| Réutilisateurs | module `senatoriales`, filtre `?legislature=`, groupe « d'époque » porté par le mandat, réponses compressées et mises en cache |
+| Contributeurs | zéro erreur de type et zéro avertissement de lint, contrôles qualité sur les débats et les candidatures |
+
+## Sénatoriales 2026, de la candidature au résultat
+
+<Mermaid
+  title="Le module Sénatoriales 2026"
+  chart={`flowchart LR
+    S["178 sortants<br/>bilan de mandature"] --> P["Page Sénatoriales<br/>et 64 circonscriptions"]
+    C["Candidatures<br/>fichiers du ministère"] --> R{"Déjà connu<br/>de CLAIR ?"}
+    R -->|oui| F["Rattaché à sa fiche"]
+    R -->|non| N["Candidat sans fiche"]
+    F --> P
+    N --> P
+    V["Résultats du soir<br/>site du ministère"] --> D["Direct : bandeau,<br/>accueil, pages"]
+    D --> H["Hémicycle avant / après"]
+    V --> E["Fiches provisoires<br/>des nouveaux sénateurs"]`}
+/>
+
+```bash
+# Les sénateurs sortants et leur bilan
+curl "https://api.clair.vote/api/v1/senatoriales/2026/sortants?limit=5"
+```
+
+## Plusieurs législatures : le groupe appartient au mandat
+
+Jusqu'ici, un parlementaire avait un groupe. Il a désormais des **mandats**, chacun avec sa chambre, sa législature et son groupe « d'époque ». Un député de la 15ᵉ législature apparaît donc avec le groupe qu'il avait alors, et ses statistiques sont bornées à ses mandats.
+
+<Mermaid
+  title="Du parlementaire au groupe d'époque"
+  chart={`flowchart LR
+    P["Parlementaire"] --> M1["Mandat AN<br/>15e législature"]
+    P --> M2["Mandat AN<br/>17e législature"]
+    P --> M3["Mandat Sénat"]
+    M1 --> G1["Groupe de l'époque"]
+    M2 --> G2["Groupe de l'époque"]
+    M3 --> G3["Groupe de l'époque"]`}
+/>
+
+```bash
+# Les députés de la 16e législature
+curl "https://api.clair.vote/api/v1/deputes?legislature=16&limit=5"
+```
+
+## Chaque vote retrouve son débat
+
+Les comptes rendus de l'Assemblée sont désormais lus dans syceron, et chaque scrutin, de l'Assemblée comme du Sénat, retrouve le débat qui l'a précédé, ou dit clairement qu'on ne l'a pas trouvé. Le rattachement au hasard d'une intervention à un scrutin disparaît, et un contrôle qualité échoue si les débats redeviennent muets.
+
+## Notes complètes
+
+_Reprises telles quelles du tag annoté `v0.5.0`._
+
+### Sénatoriales 2026 (nouveau module, full-stack)
+
+- Page du renouvellement du 27 septembre avec le bilan de mandature des 178 sortants, aligné sur les stats de carrière des fiches
+- Sept lectures graphiques du bilan, partageables une à une
+- Une page par circonscription (64), avec image sociale dédiée et ancres par département
+- Candidatures : lecture des fichiers du ministère (XLSX puis CSV 2026), tables dédiées, rattachement aux parlementaires connus, sortants qui remettent leur siège en jeu
+- Candidatures entretenues par le batch de 5h + cinq invariants qualité
+- Résultats du soir lus sur le site du ministère : scrutin majoritaire et proportionnel, 2nd tour, rejeu de la soirée en local
+- Résultats par circonscription et hémicycle avant/après par nuance
+- Direct des résultats : bandeau du site, accroche de l'accueil, pages qui se rafraîchissent
+- Fiches provisoires des nouveaux sénateurs avec leurs mandats locaux (Répertoire national des élus)
+- Un député élu sénateur garde sa fiche, qui passe au Sénat avec son identifiant AN conservé + redirections /deputes ↔ /senateurs
+- Mandature Sénat dérivée à la veille du renouvellement tant que l'annuaire n'a pas basculé
+- Accroches vers le bilan sur la home, l'agenda et les fiches des sénateurs de la série 2
+
+### Multi-législatures
+
+- Mandats parlementaires et dimension législature en base (MandatParlementaire)
+- Ingestion AN 15e/16e/17e : députés, scrutins, dossiers, avec numéros de scrutin désambiguïsés
+- Anciens sénateurs via l'open data ODSEN, historique Sénat depuis 2006
+- Groupe d'époque partout : le groupe est porté par le mandat, plus par la personne
+- Stats bornées aux fenêtres de mandat, stats de carrière et classement mandat/carrière
+- Compositions de groupe d'époque et sélecteurs de période (législature AN, session Sénat)
+- Bloc Mandats unifié et timeline des mandats sur les fiches, filtre ?legislature= dans l'API
+- Chambre nommée sur chaque mandat, listes filtrables par chambre, mention « ancien député » et « Bilan de ses mandats »
+- Législature AN courante et mandatures Sénat dérivées du calendrier (fin des constantes figées)
+- Garde-fous législature sur les rattachements scrutin → dossier, scrutin → amendement, interventions et amendements
+
+### Débats (nouvelle source AN + rattachement aux votes)
+
+- Comptes rendus de séance AN lus dans syceron (portail AN), DILA abandonnée
+- Contexte de discussion porté en base : texte, article, amendement discutés
+- Chaque scrutin AN et Sénat retrouve le débat qui l'a précédé, ou le dit quand on ne l'a pas
+- Fin du rattachement intervention → scrutin au hasard
+- Lecture du débat comme la séance l'a mené, chahut et questions distingués du propos de fond
+- Choix du type d'intervention dans le débat d'un scrutin
+- Sénat : interventions situées dans la structure du débat, identité stable des prises de parole, archive au-delà des deux dernières années
+- Contrôle qualité qui échoue si les débats redeviennent muets
+
+### Séances et réunions (nouvelles pages)
+
+- Une page par réunion de commission et par séance publique, votes dans le fil
+- Sommaire des points examinés, ordre du jour comme fil de la séance, accès direct au passage d'un point
+- La date d'un scrutin mène à sa séance
+- Onglet Parcours sur les dossiers, des commissions au vote final
+- Séances et réunions où les textes d'un sujet ont été examinés
+
+### Commissions
+
+- Comptes rendus et prises de parole des commissions de l'Assemblée, y compris organes partagés avec le Sénat
+- Avis de commission sur les amendements (tableaux « article 88 »)
+- Fonctions au bureau des commissions du Sénat
+- Commissions saisies affichées sur la page d'un dossier, saisine des dossiers du Sénat
+- Réunions de commission du Sénat réparées (vides sur tout le site)
+- Vidéos de réunion rattachées (Sénat) et historique des vidéos de commission (AN)
+- Filtre par période sur les textes d'une commission
+
+### Scrutins & amendements
+
+- Texte des articles AN ingéré (table textes_articles), fourni au résumé IA d'un scrutin
+- Filtre des votes par objet (ensemble, article, amendement, motion)
+- Rattachement scrutin → amendement départagé (homonymes, délibérations successives, autre législature)
+- Auteurs d'amendements rattachés par auteurRef, plus par sous-chaîne de nom
+- Dédoublonnage des amendements par une clé canonique d'uid
+- Remplacement atomique des votes, fenêtre quotidienne de 6 mois
+- Groupe initiateur d'un scrutin : fin des attributions sur coïncidence de lettres
+
+### IA
+
+- Fiches parlementaires sourcées par Wikidata/Wikipédia au lieu de Tavily, provenance des sources
+- Rotation quotidienne des fiches (--random, --skip-recent-days) et ciblage --only (fiches et scrutins)
+- Abstention comptée comme une position dans les résumés
+- Hash de contenu rendu opérant, mode --rehash
+- Âges et durées calculés interdits dans les fiches
+- Prompts durcis : statut « promulgué », chambre sans vote, étape à venir sur un sujet clos
+- Disclaimers IA cliquables vers la méthodologie
+
+### Agenda
+
+- Événements institutionnels (élections, sessions, suspensions, budget) dans l'agenda et sur la home
+- Trou d'agenda du Sénat comblé + service intraday (agenda Sénat et vidéos, toutes les 2h)
+- « En direct » plus doublé d'une pastille « Vidéo »
+
+### Performance & coûts
+
+- Compression des réponses HTTP (@fastify/compress)
+- sourceData retiré des réponses de liste
+- Cache edge Vercel sur le proxy API, les pages de liste et de détail
+- Requêtes bornées et mises en cache : votes et amendements d'un parlementaire, derniers scrutins d'un groupe, compteurs de relations
+- Batch de nuit qui ne réécrit que ce qui a changé et borne les scrapings sans rendement
+
+### Sécurité & trafic
+
+- Secret interne partagé pour authentifier le trafic CLAIR, suppression du tier Origin
+- Navigateur routé via un proxy same-origin
+- POST /homepage/warm réservé au trafic service-à-service
+
+### SEO (saison 4)
+
+- Sitemap via un endpoint dédié, 2 requêtes au lieu de 300, troncature silencieuse réparée
+- Sitemap daté sur les vraies modifications
+- Images Open Graph pour l'agenda, le lobbying, les dossiers et les scrutins
+- Pages de liste et sénatoriales en rendu serveur, pagination explorable
+- Slugs de parlementaires et de groupes gelés à leur création, sujets archivés redirigés (301/308)
+- Scrutins adoptés plus annoncés « Rejeté » hors du site
+- Relevé de vote des fiches servi aux moteurs, description chiffrée
+
+### Robustesse de l'ingestion
+
+- Sources en échec signalées au lieu d'apparaître en succès
+- Téléchargements d'archives AN repris et diagnostiqués
+- Plus de fiches non sourcées ni de boucle infinie quand Tavily est indisponible
+- La synchro du Sénat n'efface plus les dates de naissance
+- Séances du Sénat datées en UTC
+
+### Frontend
+
+- Libellé d'usage des groupes du Sénat au lieu du code source (UMP → Les Républicains)
+- Classement découvrable depuis les fiches, avec deep-link surligné
+- Recherche des anciens parlementaires et des commissions
+- Appel au don sur les pages d'atterrissage
+- Compteur de sénateurs plafonné à 348 sièges
+
+### Infra & docs
+
+- Zéro erreur de type et zéro warning de lint sur api, web, ingestion et scripts
+- Tables orphelines supprimées (promesses et tables de travail)
+- Services planifiés Railway décrits tels qu'ils tournent
+- README et méthodologie corrigés (installation, sources, migrations)

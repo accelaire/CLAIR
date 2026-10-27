@@ -1,0 +1,94 @@
+---
+title: "PageHeader"
+sidebar_label: "PageHeader"
+sidebar_icon: "heading-1"
+description: "En-tête de page : fil d'Ariane, unique titre de niveau 1, badges, chapeau et actions."
+---
+
+import { Badge, PageHeader, ShareButton } from "@clair/ui";
+
+En-tête de page, à placer une fois en tête du contenu principal : il porte le seul `h1` de la page. Le fil d'Ariane est une `nav` nommée « Fil d'Ariane » ; la page courante, dernier élément, n'est pas un lien et porte `aria-current="page"`. `Breadcrumb` s'utilise aussi seul. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-mise-en-page-pageheader--docs)
+
+## Import
+
+```tsx
+import { Breadcrumb, PageHeader } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <PageHeader
+    title="Scrutins"
+    description="Tous les votes publics de l'Assemblée nationale et du Sénat."
+  />
+</Preview>
+
+```tsx
+<PageHeader
+  title="Scrutins"
+  description="Tous les votes publics de l'Assemblée nationale et du Sénat."
+/>
+```
+
+## Avec un fil d'Ariane
+
+<Preview>
+  <PageHeader
+    title="Scrutin n° 1234"
+    breadcrumb={[
+      { label: "Accueil", href: "#" },
+      { label: "Scrutins", href: "#" },
+      { label: "Scrutin n° 1234" },
+    ]}
+  />
+</Preview>
+
+```tsx
+<PageHeader
+  title="Scrutin n° 1234"
+  breadcrumb={[
+    { label: "Accueil", href: "#" },
+    { label: "Scrutins", href: "#" },
+    { label: "Scrutin n° 1234" },
+  ]}
+/>
+```
+
+## Avec des badges
+
+<Preview>
+  <PageHeader
+    title="Camille Exemple"
+    description="Députée d'une circonscription fictive."
+    badges={
+      <>
+        <Badge tone="info">Assemblée nationale</Badge>
+        <Badge tone="succes">En exercice</Badge>
+      </>
+    }
+  />
+</Preview>
+
+```tsx
+<PageHeader
+  title="Camille Exemple"
+  description="Députée d'une circonscription fictive."
+  badges={
+    <>
+      <Badge tone="info">Assemblée nationale</Badge>
+      <Badge tone="succes">En exercice</Badge>
+    </>
+  }
+/>
+```
+
+## Avec des actions
+
+<Preview>
+  <PageHeader title="Scrutins" actions={<ShareButton url="https://clair.vote/scrutins" />} />
+</Preview>
+
+```tsx
+<PageHeader title="Scrutins" actions={<ShareButton url="https://clair.vote/scrutins" />} />
+```

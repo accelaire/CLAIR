@@ -1,0 +1,92 @@
+---
+title: "EvenementCard"
+sidebar_label: "EvenementCard"
+sidebar_icon: "calendar-days"
+description: "Événement de l'agenda parlementaire : date et heure de Paris, chambre, type, titre, lieu et mention « En direct » en texte pendant l'événement."
+---
+
+import { EvenementCard } from "@clair/ui";
+
+Carte d'un événement de l'agenda : réunion de commission, séance publique ou échéance institutionnelle. Les dates et heures sont données en heure de Paris ; une échéance dont la date n'est pas encore fixée n'affiche que son mois. Pendant l'événement, la mention « En direct » est un texte (l'application calcule l'état avec `isHappeningNow`). Fusionne `EvenementCard` et `ReunionCard` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-parlementaire-evenementcard--docs)
+
+## Import
+
+```tsx
+import { EvenementCard } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <EvenementCard
+    title="Commission des finances"
+    type="commission"
+    chambre="assemblee"
+    start="2026-03-03T09:30:00+01:00"
+    end="2026-03-03T12:00:00+01:00"
+    lieu="Salle d'exemple"
+    href="#reunion"
+  />
+</Preview>
+
+```tsx
+<EvenementCard
+  title="Commission des finances"
+  type="commission"
+  chambre="assemblee"
+  start="2026-03-03T09:30:00+01:00"
+  end="2026-03-03T12:00:00+01:00"
+  lieu="Salle d'exemple"
+  href="#reunion"
+/>
+```
+
+## Avec une retransmission en direct
+
+<Preview>
+  <EvenementCard
+    title="Séance publique"
+    type="seance"
+    chambre="senat"
+    start="2026-03-03T14:30:00+01:00"
+    description="Suite de l'examen d'un projet de loi d'exemple."
+    live
+    liveHref="https://videos.senat.fr"
+  />
+</Preview>
+
+```tsx
+<EvenementCard
+  title="Séance publique"
+  type="seance"
+  chambre="senat"
+  start="2026-03-03T14:30:00+01:00"
+  description="Suite de l'examen d'un projet de loi d'exemple."
+  live
+  liveHref="https://videos.senat.fr"
+/>
+```
+
+## Avec une date non encore fixée
+
+<Preview>
+  <EvenementCard
+    title="Élections sénatoriales"
+    type="election"
+    chambre="senat"
+    start="2026-09-01"
+    datePrecise={false}
+    sources={[{ label: "Sénat", href: "https://www.senat.fr" }]}
+  />
+</Preview>
+
+```tsx
+<EvenementCard
+  title="Élections sénatoriales"
+  type="election"
+  chambre="senat"
+  start="2026-09-01"
+  datePrecise={false}
+  sources={[{ label: "Sénat", href: "https://www.senat.fr" }]}
+/>
+```

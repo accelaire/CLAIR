@@ -2,13 +2,13 @@
 title: "Installation & Démarrage Local"
 sidebar_label: "Démarrage Local"
 sidebar_icon: "laptop"
-description: Installer et faire tourner CLAIR sur sa machine (Node 24, pnpm, Docker PostgreSQL et Redis), remplir la base et vérifier.
+description: Installer et faire tourner CLAIR sur sa machine (Node 24, pnpm 12, Docker PostgreSQL et Redis), remplir la base et vérifier.
 ---
 
 ## 📋 Prérequis
 
 - **Node.js 24** : `nvm use` lit la version dans `.nvmrc`, et le `package.json` racine exige au moins 24.11, première LTS de la branche. Les versions antérieures ne sont pas prises en charge : sous Node 20, l'ingestion décode mal les exports windows-1252 de l'Assemblée, et sous Node 18 sa CLI plante au chargement de `undici`.
-- **pnpm 8** (`packageManager: pnpm@8.15.0`).
+- **pnpm 12.15** (`packageManager: pnpm@12.15.0`) : `corepack enable` une fois, puis corepack fournit la version du dépôt à chaque appel de `pnpm`. Le `package.json` racine exige au moins pnpm 12.15 (`engines`).
 - **Docker** et Docker Compose, pour PostgreSQL et Redis.
 - *(Facultatif)* **poppler-utils** (commande `pdftotext`), seulement pour ingérer les comptes rendus de réunion de commission de l'Assemblée, publiés en PDF.
 
@@ -19,7 +19,8 @@ description: Installer et faire tourner CLAIR sur sa machine (Node 24, pnpm, Doc
 ```bash
 git clone https://github.com/accelaire/CLAIR.git
 cd CLAIR
-pnpm install
+corepack enable       # une fois : pnpm à la version de packageManager
+pnpm install          # installe aussi les hooks git (lefthook : Biome et commitlint)
 
 # Variables d'environnement : un seul fichier à la racine...
 cp .env.example .env
@@ -31,7 +32,7 @@ ln -s ../../.env services/ingestion/.env
 pnpm docker:up        # PostgreSQL 16 (port 5432) + Redis 7 (port 6379)
 pnpm db:generate      # client Prisma
 pnpm db:push          # crée le schéma dans la base locale, puis ses triggers
-pnpm dev              # web sur :3000, API sur :3001, documentation sur :3002
+pnpm dev              # tout : web :3000, API :3001, doc :3002, nouveau site :3010, Storybook :6006
 ```
 
 Les valeurs par défaut de `.env.example` pointent déjà vers les conteneurs locaux (`postgresql://clair:clair_dev@localhost:5432/clair`, `redis://localhost:6379`). Le frontend n'a besoin d'aucune variable en local : `NEXT_PUBLIC_API_URL` vaut `http://localhost:3001` par défaut.
@@ -40,7 +41,16 @@ Les valeurs par défaut de `.env.example` pointent déjà vers les conteneurs lo
 >
 > **Les triggers ne passent pas par `prisma db push`**, qui ne les connaît pas. `pnpm db:push` enchaîne donc `prisma db push` et `pnpm db:triggers`, qui joue `apps/api/prisma/triggers.sql` (sans psql, idempotent). Après un `prisma db push` lancé à la main, rejouer `pnpm db:triggers` : sans ses triggers, la base ne tient pas `updated_at` comme la production (voir [Suivi des modifications](/donnees/suivi-des-modifications)), et `check-quality` le signale.
 
-Pour ne lancer que la documentation : `pnpm dev:docs` (port 3002). Elle télécharge la spécification OpenAPI de l'API de production ; sans accès réseau, elle garde la dernière copie téléchargée.
+Pour ne lancer qu'une partie :
+
+```bash
+pnpm dev:api                          # API seule (port 3001)
+pnpm --filter @clair/site dev         # nouveau site (port 3010), branché sur l'API locale
+pnpm storybook                        # atelier des composants (port 6006), sans API
+pnpm dev:docs                         # documentation (port 3002)
+```
+
+La documentation Elle télécharge la spécification OpenAPI de l'API de production ; sans accès réseau, elle garde la dernière copie téléchargée.
 
 ---
 
@@ -65,7 +75,9 @@ Sans `MISTRAL_API_KEY`, l'enrichissement IA est sauté avec un avertissement ; l
 
 ## 🔍 Vérifier
 
-- Site : [http://localhost:3000](http://localhost:3000)
+- Site actuel : [http://localhost:3000](http://localhost:3000)
+- Nouveau site : [http://localhost:3010](http://localhost:3010)
+- Storybook : [http://localhost:6006](http://localhost:6006)
 - API : [http://localhost:3001/health](http://localhost:3001/health)
 - Swagger UI de l'API : [http://localhost:3001/docs](http://localhost:3001/docs)
 - Documentation : [http://localhost:3002](http://localhost:3002)

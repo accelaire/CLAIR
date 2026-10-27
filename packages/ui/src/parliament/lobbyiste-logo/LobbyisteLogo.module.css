@@ -1,0 +1,17 @@
+.root {
+  --avatar-bg: var(--clair-fond-neutre);
+  --avatar-color: var(--clair-texte-mention);
+  --avatar-radius: var(--clair-rayon-lg);
+  flex-shrink: 0;
+  border: var(--clair-trait-defaut);
+}
+
+.placeholder {
+  font-weight: 600;
+}
+
+.image {
+  object-fit: contain;
+  padding: var(--clair-espacement-1v);
+  background: var(--clair-fond-surface);
+}

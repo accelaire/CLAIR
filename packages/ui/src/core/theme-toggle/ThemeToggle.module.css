@@ -1,0 +1,13 @@
+.toggle {
+  color: var(--clair-texte-mention);
+}
+
+.toggle:hover {
+  color: var(--clair-texte-defaut);
+  background: var(--clair-fond-neutre);
+}
+
+.toggle svg {
+  width: var(--clair-texte-lg-taille);
+  height: var(--clair-texte-lg-taille);
+}

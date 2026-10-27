@@ -1,0 +1,179 @@
+.page {
+  padding-block: var(--clair-espacement-6v) var(--clair-espacement-16v);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  margin: 0;
+}
+
+.section {
+  margin-top: var(--clair-espacement-8v);
+}
+
+.section > * + * {
+  margin-top: var(--clair-espacement-4v);
+}
+
+.mention {
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+/* Commissions saisies : deux colonnes sur grand écran (une loi de finances en mobilise neuf). */
+.commissions {
+  display: grid;
+  gap: var(--clair-espacement-3v) var(--clair-espacement-6v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 1024px) {
+  .commissions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.commission {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--clair-espacement-2v);
+  min-width: 0;
+}
+
+.commissionNom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.resume {
+  padding: var(--clair-espacement-4v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+}
+
+.resumeEnTete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-2v) var(--clair-espacement-3v);
+}
+
+.resumeTitre {
+  margin: 0;
+  font-size: var(--clair-texte-h4-taille);
+  font-weight: var(--clair-texte-h4-graisse);
+  line-height: var(--clair-texte-h4-interligne);
+}
+
+.chiffres {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--clair-espacement-4v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 768px) {
+  .chiffres {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.liste {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.onglet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+}
+
+.filtre {
+  max-width: 100%;
+}
+
+@media (min-width: 640px) {
+  .filtre {
+    max-width: calc(var(--clair-espacement-16v) * 5);
+  }
+}
+
+.case {
+  align-self: center;
+}
+
+.epingle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
+}
+
+.epingleEnTete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--clair-espacement-2v);
+}
+
+.epingleTitre {
+  margin: 0;
+  font-size: var(--clair-texte-md-taille);
+  font-weight: var(--clair-texte-h6-graisse);
+}
+
+.etapes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
+  margin: var(--clair-espacement-4v) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.etape {
+  padding-top: var(--clair-espacement-3v);
+  border-top: var(--clair-trait-defaut);
+}
+
+.etapeTitre {
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  overflow-wrap: anywhere;
+}
+
+.votesEtape {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-2v);
+  margin: var(--clair-espacement-2v) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.voteEtape {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-2v);
+  font-size: var(--clair-texte-sm-taille);
+  overflow-wrap: anywhere;
+}

@@ -1,0 +1,475 @@
+/* Cartes et blocs communs de la rubrique Sénatoriales 2026. */
+
+.pile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
+}
+
+.titreSection {
+  margin: 0;
+  font-size: var(--clair-texte-h5-taille);
+  line-height: var(--clair-texte-h5-interligne);
+  font-weight: var(--clair-texte-h5-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.chapeauSection,
+.texteMention {
+  margin: var(--clair-espacement-1v) 0 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.fort {
+  font-weight: var(--clair-texte-h6-graisse);
+  color: var(--clair-texte-defaut);
+}
+
+.petit,
+.petitBloc {
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.petitBloc {
+  display: block;
+}
+
+.carte {
+  padding: var(--clair-espacement-4v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+}
+
+/* Carte d'un sortant : tout le bloc est le lien vers la fiche. */
+.sortant {
+  display: block;
+  padding: var(--clair-espacement-4v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+  color: var(--clair-texte-defaut);
+  text-decoration: none;
+  transition:
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.sortant:hover {
+  border-color: var(--clair-fond-action);
+  box-shadow: var(--clair-ombre-md);
+}
+
+.sortant:focus-visible {
+  outline: var(--clair-focus-contour);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+.sortant[data-surbrillance] {
+  border-color: var(--clair-fond-action);
+  box-shadow: 0 0 0 calc(var(--clair-espacement-1v) / 2)
+    color-mix(in srgb, var(--clair-fond-action) 40%, transparent);
+}
+
+.sortantTete {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--clair-espacement-3v);
+}
+
+.sortantIdentite {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: calc(var(--clair-espacement-1v) / 2);
+}
+
+.sortantNom {
+  font-weight: var(--clair-texte-h6-graisse);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-titre);
+}
+
+.sortant:hover .sortantNom {
+  color: var(--clair-texte-action);
+}
+
+.groupe {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(var(--clair-espacement-1v) * 1.5);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.pointGroupe,
+.pointFamille {
+  display: inline-block;
+  width: var(--clair-espacement-2v);
+  height: var(--clair-espacement-2v);
+  flex-shrink: 0;
+  margin-top: calc(var(--clair-espacement-1v) * 1.5);
+  border-radius: var(--clair-rayon-pilule);
+}
+
+.pointFamille {
+  width: calc(var(--clair-espacement-1v) * 2.5);
+  height: calc(var(--clair-espacement-1v) * 2.5);
+}
+
+.commission {
+  display: block;
+  margin-top: var(--clair-espacement-2v);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--clair-espacement-1v) * 1.5);
+  margin-top: var(--clair-espacement-2v);
+}
+
+.badge {
+  display: inline-block;
+  padding: calc(var(--clair-espacement-1v) / 2) calc(var(--clair-espacement-1v) * 1.5);
+  border: var(--clair-trait-epaisseur) solid transparent;
+  border-radius: var(--clair-rayon-sm);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  font-weight: var(--clair-texte-h6-graisse);
+}
+
+.badge[data-ton="reelu"] {
+  background: var(--clair-texte-titre);
+  color: var(--clair-fond-page);
+}
+
+.badge[data-ton="battu"] {
+  border-color: var(--clair-bordure-forte);
+  color: var(--clair-texte-defaut);
+}
+
+.badge[data-ton="ne_se_representait_pas"],
+.badge[data-ton="pointille"] {
+  border: var(--clair-trait-epaisseur) dashed var(--clair-bordure-forte);
+  color: var(--clair-texte-mention);
+  font-weight: var(--clair-texte-xs-graisse);
+}
+
+.badge[data-ton="candidat"] {
+  background: var(--clair-statut-info-fond);
+  color: var(--clair-statut-info);
+}
+
+.badge[data-ton="neutre"] {
+  background: var(--clair-fond-neutre);
+  color: var(--clair-texte-mention);
+  font-weight: var(--clair-texte-xs-graisse);
+}
+
+.bilan {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--clair-espacement-2v);
+  margin-top: var(--clair-espacement-3v);
+  padding-top: var(--clair-espacement-3v);
+  border-top: var(--clair-trait-defaut);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.bilan > span {
+  display: flex;
+  flex-direction: column;
+}
+
+.bilanValeur {
+  font-weight: var(--clair-texte-h6-graisse);
+}
+
+/* Liste de candidature */
+.listeTete {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(var(--clair-espacement-1v) * 2.5);
+}
+
+.listeTitres {
+  min-width: 0;
+  flex: 1;
+}
+
+.titreCarte {
+  margin: 0;
+  font-size: var(--clair-texte-md-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  font-weight: var(--clair-texte-h6-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.etiquette {
+  margin-left: calc(var(--clair-espacement-1v) * 1.5);
+  padding: calc(var(--clair-espacement-1v) / 2) var(--clair-espacement-1v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-sm);
+  font-size: var(--clair-texte-xs-taille);
+  white-space: nowrap;
+}
+
+.candidats {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--clair-espacement-1v) * 1.5);
+  margin: var(--clair-espacement-3v) 0 0;
+  padding: var(--clair-espacement-3v) 0 0;
+  border-top: var(--clair-trait-defaut);
+  list-style: none;
+}
+
+.candidats li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--clair-espacement-2v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.rang {
+  width: calc(var(--clair-espacement-1v) * 5);
+  flex-shrink: 0;
+  text-align: right;
+  font-size: var(--clair-texte-xs-taille);
+  color: var(--clair-texte-mention);
+}
+
+.candidat {
+  min-width: 0;
+  flex: 1;
+}
+
+.candidat .badge {
+  margin-left: calc(var(--clair-espacement-1v) * 1.5);
+}
+
+.nomLien {
+  font-weight: var(--clair-texte-h6-graisse);
+}
+
+.remplacants {
+  margin: var(--clair-espacement-2v) 0 0;
+  padding-top: var(--clair-espacement-2v);
+  border-top: var(--clair-trait-defaut);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  color: var(--clair-texte-mention);
+}
+
+/* Répartition des sièges sortants par groupe */
+.repartition {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
+}
+
+.barreEmpilee {
+  display: flex;
+  width: 100%;
+  height: var(--clair-espacement-8v);
+  overflow: hidden;
+  border-radius: var(--clair-rayon-md);
+}
+
+.segment {
+  display: block;
+  min-width: calc(var(--clair-trait-epaisseur) * 2);
+}
+
+.legendeGroupes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legendeGroupes li {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--clair-espacement-1v) * 1.5);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.legendeGroupes .pointGroupe {
+  margin-top: 0;
+}
+
+.legendeGroupes .texteMention {
+  margin: 0;
+}
+
+/* Index des circonscriptions */
+.index {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--clair-espacement-1v) var(--clair-espacement-4v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 640px) {
+  .index {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .index {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  .index {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.indexLien {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--clair-espacement-2v);
+  padding: calc(var(--clair-espacement-1v) * 1.5) var(--clair-espacement-2v);
+  border-radius: var(--clair-rayon-sm);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-defaut);
+  text-decoration: none;
+}
+
+.indexLien:hover {
+  background: var(--clair-fond-neutre);
+}
+
+.indexLien:focus-visible {
+  outline: var(--clair-focus-contour);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+.indexNom {
+  min-width: 0;
+}
+
+.indexChiffres {
+  flex-shrink: 0;
+  font-size: var(--clair-texte-xs-taille);
+  color: var(--clair-texte-mention);
+}
+
+.indexChiffres abbr {
+  text-decoration: none;
+}
+
+/* Appel au don */
+.soutien {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+  margin-top: var(--clair-espacement-12v);
+  padding: calc(var(--clair-espacement-1v) * 5);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-xl);
+  background: var(--clair-fond-neutre);
+}
+
+@media (min-width: 640px) {
+  .soutien {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+.soutienIcone {
+  display: none;
+  width: calc(var(--clair-espacement-1v) * 5);
+  height: calc(var(--clair-espacement-1v) * 5);
+  flex-shrink: 0;
+  color: var(--clair-statut-erreur);
+}
+
+@media (min-width: 640px) {
+  .soutienIcone {
+    display: block;
+  }
+}
+
+.soutienTexte {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+/* Pastille « En direct » */
+.direct {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--clair-espacement-1v) * 1.5);
+  padding: var(--clair-espacement-1v) calc(var(--clair-espacement-1v) * 2.5);
+  border: var(--clair-trait-epaisseur) solid var(--clair-statut-erreur);
+  border-radius: var(--clair-rayon-md);
+  background: var(--clair-statut-erreur-fond);
+  color: var(--clair-statut-erreur);
+  font-weight: var(--clair-texte-h6-graisse);
+}
+
+.directPoint {
+  position: relative;
+  display: inline-flex;
+  width: var(--clair-espacement-2v);
+  height: var(--clair-espacement-2v);
+  flex-shrink: 0;
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--clair-statut-erreur);
+}
+
+.directOnde {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--clair-statut-erreur);
+  opacity: 0.75;
+  animation: onde 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes onde {
+  75%,
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .directOnde {
+    animation: none;
+  }
+
+  .sortant {
+    transition: none;
+  }
+}

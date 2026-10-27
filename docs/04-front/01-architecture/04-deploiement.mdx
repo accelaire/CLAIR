@@ -1,0 +1,128 @@
+---
+title: "Déployer Storybook et le site bêta"
+sidebar_label: "Déploiement"
+sidebar_icon: "rocket"
+description: "Mettre en ligne l'atelier Storybook sur storybook.clair.vote et le nouveau site sur beta.clair.vote, avec Vercel."
+---
+
+Le nouveau front se publie en deux projets Vercel, à côté de ceux qui existent déjà (`clair-prod` pour clair.vote, `clair-docs-prod` pour docs.clair.vote) :
+
+| Adresse | Application | Contenu |
+|---|---|---|
+| [storybook.clair.vote](https://storybook.clair.vote) | `apps/storybook` | l'atelier des composants : toutes les variantes, en clair, en sombre et sur chaque taille d'écran |
+| [beta.clair.vote](https://beta.clair.vote) | `apps/site` | le nouveau site, non indexé tant que la bêta dure |
+
+Les deux applications vivent dans le monorepo pnpm : Vercel installe les dépendances à la racine, puis construit l'application de son dossier. Chacune porte son `vercel.json`.
+
+<Mermaid
+  title="Publication du nouveau front"
+  chart={`flowchart LR
+    G["GitHub<br/>accelaire/CLAIR"] --> V1["Projet Vercel<br/>clair-storybook"]
+    G --> V2["Projet Vercel<br/>clair-site-beta"]
+    V1 --> S["storybook.clair.vote<br/>site statique"]
+    V2 --> B["beta.clair.vote<br/>Next.js"]
+    B -->|"proxy /api/v1"| A["api.clair.vote"]`}
+/>
+
+## Avant de commencer
+
+- Un accès propriétaire à l'équipe Vercel de CLAIR et à la zone DNS de `clair.vote`.
+- La branche du nouveau front fusionnée dans `master`. On peut aussi publier une branche de prévisualisation pour essayer.
+- **pnpm 12** : Vercel choisit sa version de pnpm d'après le lockfile, sauf si la variable `ENABLE_EXPERIMENTAL_COREPACK=1` est définie. Avec elle, Vercel lit `packageManager` (`pnpm@12.15.0`) dans le `package.json` racine. Elle est **obligatoire** sur les deux projets, et aussi sur `clair-prod` et `clair-docs-prod` depuis le passage du dépôt à pnpm 12.
+
+## 1. Storybook sur storybook.clair.vote
+
+### Créer le projet
+
+1. Dans Vercel, **Add New → Project**, puis importer le dépôt `accelaire/CLAIR`.
+2. **Project Name** : `clair-storybook`.
+3. **Root Directory** : `apps/storybook`. Laisser cochée l'option qui inclut les fichiers hors de ce dossier : Vercel a besoin de la racine du monorepo (`pnpm-workspace.yaml`, `packages/*`).
+4. **Framework Preset** : `Other`. `apps/storybook/vercel.json` fixe le reste :
+   - commande de build : `pnpm build` (soit `storybook build -o storybook-static`) ;
+   - dossier publié : `storybook-static`.
+5. **Node.js Version** : `24.x`.
+6. **Environment Variables** : `ENABLE_EXPERIMENTAL_COREPACK` = `1`, sur tous les environnements.
+7. **Deploy**. Le premier build dure quelques minutes. Il se vérifie sur l'adresse `*.vercel.app` du projet : l'introduction s'affiche, et le menu liste « Fondations » et « Composants ».
+
+Storybook est un site statique : il n'appelle pas l'API, et il n'a besoin d'aucun secret. Les images servies (`/logo.png`…) viennent de `apps/site/public` (`staticDirs` de `.storybook/main.ts`).
+
+### Brancher le domaine
+
+1. Dans le projet, **Settings → Domains → Add** : `storybook.clair.vote`.
+2. Dans la zone DNS de `clair.vote`, ajouter l'enregistrement que Vercel affiche, en général :
+
+   ```txt
+   storybook  CNAME  cname.vercel-dns.com.
+   ```
+
+3. Attendre que Vercel affiche le domaine comme valide. Le certificat HTTPS est automatique.
+
+### Vérifier
+
+- `https://storybook.clair.vote` s'ouvre sur l'introduction.
+- Les liens « Toutes les variantes dans l'atelier Storybook » des pages de composants de docs.clair.vote mènent à la bonne page (exemple : [Badge](https://storybook.clair.vote/?path=/docs/composants-fondations-badge--docs)).
+- Le thème sombre et les tailles d'écran se choisissent dans la barre d'outils.
+
+Chaque push sur `master` redéploie l'atelier. Les pull requests reçoivent une prévisualisation, que l'on peut joindre aux captures d'une revue de composant.
+
+## 2. Le nouveau site sur beta.clair.vote
+
+### Créer le projet
+
+1. **Add New → Project**, même dépôt.
+2. **Project Name** : `clair-site-beta`.
+3. **Root Directory** : `apps/site`. Inclure les fichiers hors de ce dossier.
+4. **Framework Preset** : `Next.js`. Le build est celui par défaut (`next build`). `apps/site/vercel.json` fixe la région (`cdg1`, Paris, comme clair.vote) et les en-têtes de sécurité.
+5. **Node.js Version** : `24.x`.
+6. **Environment Variables** (détail dans `apps/site/README.md`) :
+
+   | Variable | Valeur | Environnements |
+   |---|---|---|
+   | `ENABLE_EXPERIMENTAL_COREPACK` | `1` | tous |
+   | `NEXT_PUBLIC_SITE_URL` | `https://beta.clair.vote` | Production |
+   | `NEXT_PUBLIC_API_URL` | `https://api.clair.vote` | tous |
+   | `CLAIR_INTERNAL_SECRET` | le secret partagé avec l'API (le même que `clair-prod`) | tous, en **Sensitive** |
+   | `NEXT_PUBLIC_PLAUSIBLE_DOMAIN` | le site Plausible de la bêta (absent : aucune mesure) | Production |
+   | `NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URLS` | `https://stats.clair.vote/js/script.js` | Production |
+
+   **Ne pas définir `SITE_INDEXABLE`** pendant la bêta. Sans elle, `robots.txt` interdit l'indexation et chaque page porte `noindex` : la bêta ne fait pas concurrence à clair.vote dans les moteurs de recherche.
+
+   Les variables `NEXT_PUBLIC_*` sont figées au build : après un changement, relancer un déploiement.
+
+7. **Deploy**. Le build ne dépend pas de l'API : si elle est injoignable, le plan du site est réduit aux pages statiques et l'erreur est journalisée.
+
+### Brancher le domaine
+
+1. **Settings → Domains → Add** : `beta.clair.vote`.
+2. Dans la zone DNS :
+
+   ```txt
+   beta  CNAME  cname.vercel-dns.com.
+   ```
+
+### Vérifier
+
+- `https://beta.clair.vote` affiche l'accueil, et `/deputes`, `/scrutins` et `/senatoriales-2026` répondent avec des données.
+- `https://beta.clair.vote/robots.txt` interdit tout (`Disallow: /`).
+- `https://beta.clair.vote/sitemap.xml` liste des adresses en `https://beta.clair.vote/…`.
+- Le formulaire de retour envoie bien (`POST /api/v1/feedback` dans l'onglet Réseau, réponse 200 ou 201).
+- Dans le tableau de bord de l'API, les appels de la bêta arrivent comme trafic interne : c'est le secret `CLAIR_INTERNAL_SECRET`, posé par le serveur du site et jamais par le navigateur.
+
+## 3. Après la bêta : bascule de clair.vote
+
+Quand le nouveau site remplace l'ancien :
+
+1. Dans `clair-site-beta`, passer `NEXT_PUBLIC_SITE_URL` à `https://clair.vote` et définir `SITE_INDEXABLE=true`.
+2. Déplacer le domaine `clair.vote` (et `www`) de `clair-prod` vers ce projet, puis rediriger `beta.clair.vote` vers `clair.vote`.
+3. Redéployer, puis vérifier `robots.txt`, `sitemap.xml` et les adresses canoniques.
+4. Garder `clair-prod` (apps/web) quelques jours, prêt à reprendre le domaine, puis le supprimer avec `apps/web`.
+
+## En cas de problème
+
+| Symptôme | Cause probable | Remède |
+|---|---|---|
+| `ERR_PNPM_UNSUPPORTED_ENGINE`, ou une installation avec pnpm 9 ou 10 | `ENABLE_EXPERIMENTAL_COREPACK` absente | la définir à `1`, puis redéployer |
+| `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` | une dépendance publiée il y a moins d'un jour | attendre, ou l'exclure dans `minimumReleaseAgeExclude` (`pnpm-workspace.yaml`), en datant l'exclusion |
+| Storybook : page blanche, `404` sur les fichiers | dossier publié incorrect | **Output Directory** = `storybook-static`, avec le Root Directory sur `apps/storybook` |
+| Site bêta : listes vides, erreurs `[api-server]` dans les journaux | `NEXT_PUBLIC_API_URL` ou `CLAIR_INTERNAL_SECRET` absents ou faux | corriger, puis redéployer (les `NEXT_PUBLIC_*` sont figées au build) |
+| Site bêta indexé par les moteurs | `SITE_INDEXABLE=true` défini trop tôt | le retirer, puis redéployer |

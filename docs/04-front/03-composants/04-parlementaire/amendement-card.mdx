@@ -1,0 +1,110 @@
+---
+title: "AmendementCard"
+sidebar_label: "AmendementCard"
+sidebar_icon: "file-pen-line"
+description: "Carte d'un amendement : numéro, sort, article visé, auteur et groupe, exposé repliable et mention de sous-amendement."
+---
+
+import { AmendementCard } from "@clair/ui";
+
+Carte d'un amendement : numéro, sort en badge texte, article et alinéa visés, auteur et groupe, exposé sommaire et dispositif repliables (« Lire la suite », bouton `aria-expanded`), mention « Sous-amendement à… » et liens vers les scrutins et le dossier. Le HTML de la source est réduit à son texte. Fusionne `ExpandableAmendementCard`, son doublon de la fiche sénateur et `AmendementSeance` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-parlementaire-amendementcard--docs)
+
+## Import
+
+```tsx
+import { AmendementCard } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <AmendementCard
+    groupe={{ sigle: "ECO", nom: "Écologiste et Social" }}
+    amendement={{
+      numero: "42",
+      articleVise: "Article 3",
+      alinea: "alinéa 2",
+      auteurLibelle: "Mme Camille Exemple",
+      sort: "Adopté",
+      exposeSommaire:
+        "Cet amendement d'exemple vise à préciser la rédaction de l'article afin de lever une ambiguïté sur le champ d'application du dispositif. Il prévoit que les modalités seront fixées par décret, après consultation des collectivités concernées.",
+      dateDepot: "2026-01-12T00:00:00.000Z",
+    }}
+  />
+</Preview>
+
+```tsx
+<AmendementCard
+  groupe={{ sigle: "ECO", nom: "Écologiste et Social" }}
+  amendement={{
+    numero: "42",
+    articleVise: "Article 3",
+    alinea: "alinéa 2",
+    auteurLibelle: "Mme Camille Exemple",
+    sort: "Adopté",
+    exposeSommaire:
+      "Cet amendement d'exemple vise à préciser la rédaction de l'article afin de lever une ambiguïté sur le champ d'application du dispositif. Il prévoit que les modalités seront fixées par décret, après consultation des collectivités concernées.",
+    dateDepot: "2026-01-12T00:00:00.000Z",
+  }}
+/>
+```
+
+## Avec un sous-amendement
+
+<Preview>
+  <AmendementCard
+    parentHref="#"
+    amendement={{
+      numero: "142",
+      articleVise: "Article 3",
+      auteurLibelle: "M. Dominique Modèle",
+      sort: "rejete",
+      exposeSommaire: "Sous-amendement de précision rédactionnelle.",
+      amendementParent: { numero: "42", auteurLibelle: "Mme Camille Exemple" },
+    }}
+  />
+</Preview>
+
+```tsx
+<AmendementCard
+  parentHref="#"
+  amendement={{
+    numero: "142",
+    articleVise: "Article 3",
+    auteurLibelle: "M. Dominique Modèle",
+    sort: "rejete",
+    exposeSommaire: "Sous-amendement de précision rédactionnelle.",
+    amendementParent: { numero: "42", auteurLibelle: "Mme Camille Exemple" },
+  }}
+/>
+```
+
+## Avec les liens vers le scrutin et le dossier
+
+<Preview>
+  <AmendementCard
+    showAuteur={false}
+    scrutins={[{ numero: 1234, href: "#" }]}
+    dossier={{ label: "Projet de loi d'exemple", href: "#" }}
+    amendement={{
+      numero: "57",
+      articleVise: "Article 1er",
+      sort: "Irrecevable (art. 40)",
+      dispositif: "Supprimer cet article.",
+    }}
+  />
+</Preview>
+
+```tsx
+<AmendementCard
+  showAuteur={false}
+  scrutins={[{ numero: 1234, href: "#" }]}
+  dossier={{ label: "Projet de loi d'exemple", href: "#" }}
+  amendement={{
+    numero: "57",
+    articleVise: "Article 1er",
+    sort: "Irrecevable (art. 40)",
+    dispositif: "Supprimer cet article.",
+  }}
+/>
+```

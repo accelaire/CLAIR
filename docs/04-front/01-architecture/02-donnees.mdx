@@ -1,0 +1,24 @@
+---
+title: "Données du nouveau front"
+sidebar_label: "Données"
+sidebar_icon: "database"
+description: "Comment le nouveau front obtient ses données : types du domaine écrits à la main d'après l'API, client HTTP et hook TanStack Query, fixtures fictives pour les tests et les stories."
+---
+
+<Mermaid
+  title="De l'API aux écrans"
+  chart={`flowchart LR
+    API["apps/api<br/>réponses JSON"] -.->|"relevées, typées à la main"| T["@clair/data<br/>types du domaine"]
+    T --> C["@clair/api-client<br/>client HTTP, useApiQuery"]
+    C -->|"rendu serveur"| S["apps/site<br/>serverApi (secret interne)"]
+    C -->|"navigateur"| P["Proxy /api/v1 de apps/site<br/>secret interne côté serveur"]
+    F["Fixtures fictives<br/>(packages/screens)"] -->|"createFixtureClient"| C2["Tests et stories"]
+    C --> E["Écrans"]`}
+/>
+
+- **Types** : `@clair/data` est **écrit à la main**, d'après les réponses relevées sur l'API (la plupart des fichiers de `packages/data/src/` datent leur relevé en tête). Il n'est pas généré depuis la spécification OpenAPI : un champ ajouté à l'API n'apparaît dans le front que si on l'ajoute au type, et seuls les champs utiles au site sont typés.
+- **Accès** : `@clair/api-client` fournit le client HTTP (`createHttpClient`) et un hook générique, `useApiQuery(chemin, paramètres)`, au-dessus de TanStack Query. Les écrans n'appellent jamais `fetch`.
+- **Rendu serveur** : les routes de `apps/site` chargent la première page côté serveur (`apps/site/lib/api-server.ts`), avec le secret interne ; si l'API ne répond pas, la page est servie quand même et l'écran charge ses données dans le navigateur.
+- **Navigateur** : les appels passent par le proxy same-origin `/api/v1` du site, qui ajoute le secret interne ; celui-ci ne quitte jamais le serveur.
+- **Fixtures** : des données **fictives** (« Camille Exemple »), à côté des écrans (`packages/screens/src/<ecran>/fixtures.ts`), servies par `createFixtureClient` dans les tests et les stories. Le site, lui, n'a pas de mode fixtures : sans API locale, il affiche ses listes vides. Les tests e2e le font tourner devant un faux serveur d'API (`e2e/fake-api.mjs`).
+- **Donnée officielle et donnée calculée** : les types distinguent ce qui vient des sources officielles de ce qui est calculé ou produit par IA, et l'interface l'affiche.

@@ -2,18 +2,19 @@
 title: "Stack Technique & Dépendances"
 sidebar_label: "Stack Technique"
 sidebar_icon: "layers"
-description: Technologies et versions utilisées dans le monorepo CLAIR (Next.js 14, Fastify 4, Prisma 5, PostgreSQL 17, Redis 8, Mistral), en local et en production.
+description: Technologies et versions utilisées dans le monorepo CLAIR (Next.js 16 et Mantine 9 pour le nouveau site, Next.js 14 pour le site actuel, Fastify 4, Prisma 5, PostgreSQL 17, Redis 8, Mistral), en local et en production.
 ---
 
-Versions : plage déclarée dans les `package.json`, et entre parenthèses la version résolue dans `pnpm-lock.yaml` lorsqu'elle diffère utilement.
+Versions : plage déclarée dans les `package.json`, et entre parenthèses la version résolue dans `pnpm-lock.yaml` lorsqu'elle diffère utilement. Le nouveau front épingle ses versions exactement dans le `catalog` de `pnpm-workspace.yaml`.
 
 ## 🧱 Commun
 
 - **Runtime** : Node.js 24 (`.nvmrc` ; au moins 24.11 selon les `engines` du `package.json` racine). La CI lit `.nvmrc`, les images Docker partent de `node:24-alpine`, et le site comme la documentation déclarent `24.x` à Vercel.
-- **Langage** : TypeScript 5 (5.9.3).
-- **Gestionnaire de paquets** : pnpm 8 (`packageManager: pnpm@8.15.0`) ; la CI utilise pnpm 9.
+- **Langage** : TypeScript 5 (5.9.3) pour l'existant, TypeScript 6.0.3 pour le nouveau front (`catalog`).
+- **Gestionnaire de paquets** : pnpm 12.15, une seule version lue partout dans `packageManager` (`pnpm@12.15.0`) : en local par corepack, en CI par `pnpm/action-setup`, dans les images Docker par `corepack enable`. Réglages dans `pnpm-workspace.yaml` (catalog, `hoistPattern`, `packageExtensions`, `allowBuilds`, `minimumReleaseAgeExclude`).
 - **Monorepo** : pnpm workspaces + Turborepo 2.
-- **Tests** : Vitest 1 (API et ingestion ; le frontend n'a pas de tests).
+- **Tests** : Vitest 1 (API et ingestion), Vitest 5 + Testing Library + happy-dom (packages du nouveau front), Storybook 10 + Vitest navigateur (stories et accessibilité), Playwright 1.64 + axe (parcours du site et de la documentation). `apps/web` n'a pas de tests.
+- **Qualité du code** : Biome 2 pour le nouveau front et l'outillage récent (`pnpm check`) ; ESLint 8 et Prettier 3 pour l'existant (`pnpm lint`, `pnpm format`) ; lefthook (hooks git) et commitlint (Conventional Commits).
 - **Logs** : pino 8.
 
 ## ⚡ API (`apps/api`)
@@ -24,7 +25,17 @@ Versions : plage déclarée dans les `package.json`, et entre parenthèses la ve
 - **Cache et limitation de débit** : Redis, via ioredis.
 - **Recherche** : requêtes PostgreSQL par Prisma (`contains`, insensible à la casse), puis classement applicatif par similarité Jaro-Winkler (`apps/api/src/utils/fuzzy-search.ts`). Aucun moteur de recherche dédié.
 
-## 💻 Frontend (`apps/web`)
+## 🧭 Nouveau site (`apps/site` et `packages/*`)
+
+- **Framework** : Next.js 16.4 (App Router), React 19.3.
+- **Interface** : Mantine 9.7 (`@mantine/core`, `charts`, `dates`, `hooks`), thémée par `@clair/theme` (tokens `--clair-*`) ; CSS modules, pas de Tailwind.
+- **Paquets** : `@clair/theme` (tokens et thème), `@clair/ui` (composants), `@clair/data` (types des réponses de l'API, écrits à la main), `@clair/api-client` (client HTTP et TanStack Query 5), `@clair/screens` (un dossier par écran), `@clair/config` (tsconfig et Vitest partagés).
+- **Atelier** : Storybook 10 (`apps/storybook`).
+- **Graphiques et icônes** : Recharts 3, lucide-react 1.
+
+Détail : [Front](/front).
+
+## 💻 Site actuel (`apps/web`)
 
 - **Framework** : Next.js 14.0.4 (App Router), React 18.
 - **Styles** : Tailwind CSS 3, `class-variance-authority`, `tailwind-merge`, `tailwindcss-animate`, thème clair et sombre avec `next-themes`.
@@ -43,7 +54,7 @@ Versions : plage déclarée dans les `package.json`, et entre parenthèses la ve
 
 ## 📚 Documentation (`docs`)
 
-- **Portail** : Zudoku 0.86 ; recherche plein texte par Pagefind.
+- **Portail** : Zudoku 0.93 ; recherche plein texte par Pagefind. Le thème et les aperçus de composants lisent `@clair/theme` et `@clair/ui`.
 - **Référence de l'API** : la spécification OpenAPI générée par l'API de production (`https://api.clair.vote/docs/json`), téléchargée à chaque build dans `docs/public/openapi.json` (fichier ignoré par git).
 
 ## 🌐 Infrastructure
@@ -52,8 +63,10 @@ Versions : plage déclarée dans les `package.json`, et entre parenthèses la ve
 | :--- | :--- | :--- |
 | PostgreSQL | 16 (`postgres:16-alpine`, `docker-compose.yml`) | 17 (image Railway `postgres-ssl:17`) |
 | Redis | 7 (`redis:7-alpine`) | 8.2.1 |
-| Frontend | `next dev` sur le port 3000 | Vercel, région `cdg1` (Paris) |
+| Site actuel (`apps/web`) | `next dev` sur le port 3000 | Vercel, région `cdg1` (Paris) |
+| Nouveau site (`apps/site`) | `next dev` sur le port 3010 | `beta.clair.vote` pendant la migration |
+| Storybook | `storybook dev` sur le port 6006 | |
 | API | `tsx watch` sur le port 3001 | Railway, image construite depuis le `Dockerfile` racine |
 | Documentation | `zudoku dev` sur le port 3002 | Vercel (`docs.clair.vote`) |
 | Ingestion | CLI lancée à la main | Railway, deux services planifiés (voir [Déploiement](/guide/guide-developpeur/deploiement-production)) |
-| CI | | GitHub Actions : lint, tests, build (le `type-check` est désactivé en CI) |
+| CI | | GitHub Actions : ESLint et tests de l'existant, Biome, types, tests, stories et e2e du nouveau front, build ; fragments du journal des versions (voir [Déploiement](/guide/guide-developpeur/deploiement-production)) |

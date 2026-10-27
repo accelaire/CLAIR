@@ -1,0 +1,56 @@
+---
+title: "ChambreSwitch"
+sidebar_label: "ChambreSwitch"
+sidebar_icon: "landmark"
+description: "Choix de la chambre (Assemblée nationale, Sénat, les deux) en groupe de boutons radio avec légende."
+---
+
+import { ChambreSwitch } from "@clair/ui";
+
+Choix de la chambre, **contrôlé** : la valeur vaut `"assemblee"`, `"senat"` ou `""` pour les deux chambres (paramètre alors omis de l'URL). C'est un groupe de boutons radio natifs avec légende : les flèches du clavier passent d'une chambre à l'autre. Fusionne `ChambreToggle` (classements) et `FiltreChambre` (fiche d'un élu) du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-filtres-chambreswitch--docs)
+
+## Import
+
+```tsx
+import { ChambreSwitch } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <ChambreSwitch value="" onChange={() => {}} />
+</Preview>
+
+```tsx
+<ChambreSwitch value={chambre} onChange={setChambre} />
+```
+
+## Avec une chambre choisie
+
+<Preview>
+  <ChambreSwitch value="senat" onChange={() => {}} />
+</Preview>
+
+```tsx
+<ChambreSwitch value="senat" onChange={setChambre} />
+```
+
+## Avec seulement les deux chambres
+
+<Preview>
+  <ChambreSwitch value="assemblee" onChange={() => {}} withBoth={false} legend="Mandats dans la chambre" />
+</Preview>
+
+```tsx
+<ChambreSwitch value={chambre} onChange={setChambre} withBoth={false} legend="Mandats dans la chambre" />
+```
+
+## Avec des libellés courts
+
+<Preview>
+  <ChambreSwitch value="" onChange={() => {}} compact hideLegend />
+</Preview>
+
+```tsx
+<ChambreSwitch value={chambre} onChange={setChambre} compact hideLegend />
+```

@@ -1,0 +1,111 @@
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+  padding-block: var(--clair-espacement-6v);
+}
+
+.top {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+}
+
+@media (min-width: 768px) {
+  .top {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+}
+
+.heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--clair-texte-h2-taille);
+  line-height: var(--clair-texte-h2-interligne);
+  font-weight: var(--clair-texte-h1-graisse);
+  color: var(--clair-texte-titre);
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 768px) {
+  .title {
+    font-size: var(--clair-texte-h1-taille);
+    line-height: var(--clair-texte-h1-interligne);
+  }
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-2v);
+}
+
+.description {
+  max-width: var(--clair-rupture-md);
+  margin: 0;
+  font-size: var(--clair-texte-lg-taille);
+  line-height: var(--clair-texte-lg-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.description > p {
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: var(--clair-espacement-2v);
+}
+
+.breadcrumb {
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.breadcrumbList {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.breadcrumbItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+  min-width: 0;
+}
+
+.breadcrumbLink {
+  color: var(--clair-texte-mention);
+}
+
+.breadcrumbLink:hover {
+  color: var(--clair-texte-defaut);
+}
+
+.separator {
+  flex-shrink: 0;
+  width: var(--clair-espacement-4v);
+  height: var(--clair-espacement-4v);
+}
+
+.current {
+  color: var(--clair-texte-defaut);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}

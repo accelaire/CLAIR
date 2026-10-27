@@ -1,0 +1,126 @@
+.page {
+  padding-block: var(--clair-espacement-6v) var(--clair-espacement-16v);
+}
+
+.chiffresEntete,
+.presidence,
+.sources {
+  margin: 0;
+}
+
+.presidence {
+  margin-top: var(--clair-espacement-2v);
+}
+
+.sources {
+  margin-top: var(--clair-espacement-2v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.onglets {
+  margin-top: var(--clair-espacement-8v);
+}
+
+.pile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+  align-items: stretch;
+}
+
+.pile > button {
+  align-self: flex-start;
+}
+
+.mention {
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.liste {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.grille {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--clair-espacement-3v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 640px) {
+  .grille {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .grille {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.capitale::first-letter {
+  text-transform: uppercase;
+}
+
+.capitale {
+  display: inline-block;
+}
+
+.heure {
+  margin: 0 0 var(--clair-espacement-2v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.odj {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--clair-espacement-1v);
+  margin-bottom: var(--clair-espacement-2v);
+}
+
+.odjListe {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-1v);
+  margin: 0;
+  padding-left: var(--clair-espacement-4v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.reunionMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  font-size: var(--clair-texte-sm-taille);
+  color: var(--clair-texte-mention);
+}
+
+.metaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+}
+
+.icone {
+  width: var(--clair-texte-sm-taille);
+  height: var(--clair-texte-sm-taille);
+  flex-shrink: 0;
+}

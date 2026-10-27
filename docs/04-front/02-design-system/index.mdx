@@ -1,0 +1,20 @@
+---
+title: "Design system"
+sidebar_label: "Principes"
+sidebar_icon: "palette"
+description: "Les principes du design system de CLAIR (@clair/theme) et ce qu'il reprend du système de design de l'État."
+---
+
+Le design system de CLAIR tient dans `packages/theme` : les **tokens** (couleurs, typographie, espacements, rayons, ombres, points de rupture) et le **thème Mantine** qui les applique aux composants.
+
+## Principes
+
+- **Une seule source** : `packages/theme/src/tokens.ts`. Le CSS (`tokens.css`), le thème Mantine, Storybook et cette documentation en dérivent.
+- **Des rôles, pas des valeurs** : on écrit `var(--clair-texte-action)`, jamais `#195BCC`.
+- **Deux thèmes**, clair et sombre, avec les mêmes rôles.
+- **Accessibilité vérifiée** : chaque couple texte / fond est testé (WCAG AA, 4,5:1) dans les deux thèmes.
+- **Jamais la couleur seule** : un vote, un groupe, un statut est toujours accompagné d'un libellé.
+
+## Ce qui vient du système de design de l'État
+
+Le [DSFR](https://www.systeme-de-design.gouv.fr) est réservé aux sites de l'État : CLAIR n'en reprend **pas l'identité visuelle** (ni Marianne, ni bleu France). Il en reprend les **normes** : la structure de l'atelier Storybook, la grille d'espacements `1v`, les tailles d'écran de référence, l'anneau de focus toujours visible, les descriptions de propriétés en français et l'exigence d'accessibilité.

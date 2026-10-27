@@ -1,0 +1,46 @@
+name: Changelog
+
+# Fragments de changement (docs/03-changelog/index.mdx) : format toujours vérifié ;
+# une PR ajoute un fragment dans .changelog/ ou écrit la ligne « Journal : aucun » dans sa
+# description (pas de labels GitHub sur ce dépôt).
+# Pendant l'adoption, un fragment manquant n'est qu'un avertissement (--avertir).
+
+on:
+  pull_request:
+    branches: [main, master]
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  fragments:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Tests des scripts
+        run: node --test scripts/changelog/lib.test.mjs
+
+      - name: Format des fragments
+        if: github.event_name == 'push'
+        run: node scripts/changelog/check.mjs
+
+      - name: Fragment de la PR
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: origin/${{ github.base_ref }}
+          # Description lue par le script dans l'environnement, jamais interpolée dans le shell.
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node scripts/changelog/check.mjs --base "$BASE" --avertir

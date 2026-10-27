@@ -1,0 +1,40 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  max-width: 100%;
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--clair-fond-surface);
+  color: var(--clair-texte-defaut);
+  font-weight: 600;
+  white-space: nowrap;
+  position: relative;
+}
+
+.badge[data-size="md"] {
+  padding: 0 var(--clair-espacement-3v) 0 var(--clair-espacement-2v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.badge[data-size="sm"] {
+  padding: 0 var(--clair-espacement-2v) 0 var(--clair-espacement-1v);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+}
+
+/* Pastille : la couleur du groupe (donnée), cerclée pour rester visible sur tout fond. */
+.pastille {
+  flex-shrink: 0;
+  width: var(--clair-espacement-3v);
+  height: var(--clair-espacement-3v);
+  border: var(--clair-trait-fort);
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--groupe-couleur);
+}
+
+.badge[data-size="sm"] .pastille {
+  width: var(--clair-espacement-2v);
+  height: var(--clair-espacement-2v);
+}

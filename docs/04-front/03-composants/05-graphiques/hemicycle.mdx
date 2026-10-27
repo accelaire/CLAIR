@@ -1,0 +1,144 @@
+---
+title: "Hemicycle"
+sidebar_label: "Hemicycle"
+sidebar_icon: "landmark"
+description: "Hémicycle en SVG : un siège par point, coloré par groupe, légende en texte (sigle et sièges) et description complète de la répartition."
+---
+
+import { ChartFrame, Hemicycle } from "@clair/ui";
+
+Hémicycle dessiné en SVG (577 sièges à l'Assemblée nationale, 348 au Sénat). Les groupes sont placés de gauche à droite dans l'ordre fourni par les données ; un groupe sans couleur prend la palette des graphiques. L'image est nommée par son titre et décrite en texte, la légende donne le sigle et le nombre de sièges de chaque groupe ; survoler ou parcourir la légende au clavier met en avant les sièges d'un groupe. Les répartitions ci-dessous sont des exemples. Remplace `HemicycleChart` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-graphiques-hemicycle--docs)
+
+## Import
+
+```tsx
+import { Hemicycle } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <Hemicycle
+    title="Assemblée nationale (répartition d'exemple)"
+    totalSieges={577}
+    groupes={[
+      { id: "lfi", sigle: "LFI", nom: "La France insoumise", sieges: 71, couleur: "var(--clair-groupe-lfi)" },
+      { id: "soc", sigle: "SOC", nom: "Socialistes et apparentés", sieges: 66, couleur: "var(--clair-groupe-soc)" },
+      { id: "epr", sigle: "EPR", nom: "Ensemble pour la République", sieges: 91, couleur: "var(--clair-groupe-epr)" },
+      { id: "dr", sigle: "DR", nom: "Droite républicaine", sieges: 47, couleur: "var(--clair-groupe-dr)" },
+      { id: "rn", sigle: "RN", nom: "Rassemblement national", sieges: 123, couleur: "var(--clair-groupe-rn)" },
+      { id: "autres", sigle: "Autres", nom: "Autres groupes et non-inscrits", sieges: 179, couleur: "var(--clair-groupe-ni)" },
+    ]}
+  />
+</Preview>
+
+```tsx
+<Hemicycle
+  title="Assemblée nationale (répartition d'exemple)"
+  totalSieges={577}
+  groupes={[
+    { id: "lfi", sigle: "LFI", nom: "La France insoumise", sieges: 71, couleur: "var(--clair-groupe-lfi)" },
+    { id: "soc", sigle: "SOC", nom: "Socialistes et apparentés", sieges: 66, couleur: "var(--clair-groupe-soc)" },
+    { id: "epr", sigle: "EPR", nom: "Ensemble pour la République", sieges: 91, couleur: "var(--clair-groupe-epr)" },
+    { id: "dr", sigle: "DR", nom: "Droite républicaine", sieges: 47, couleur: "var(--clair-groupe-dr)" },
+    { id: "rn", sigle: "RN", nom: "Rassemblement national", sieges: 123, couleur: "var(--clair-groupe-rn)" },
+    { id: "autres", sigle: "Autres", nom: "Autres groupes et non-inscrits", sieges: 179, couleur: "var(--clair-groupe-ni)" },
+  ]}
+/>
+```
+
+## Avec des sièges vacants et des liens
+
+<Preview>
+  <Hemicycle
+    title="Sénat (répartition d'exemple)"
+    totalSieges={348}
+    groupes={[
+      { id: "ser", sigle: "SER", nom: "Socialiste, écologiste et républicain", sieges: 64, href: "#groupe" },
+      { id: "uc", sigle: "UC", nom: "Union centriste", sieges: 59, href: "#groupe" },
+      { id: "lr", sigle: "LR", nom: "Les Républicains", sieges: 130, href: "#groupe" },
+      { id: "autres", sigle: "Autres", nom: "Autres groupes", sieges: 90, href: "#groupe" },
+    ]}
+  />
+</Preview>
+
+```tsx
+<Hemicycle
+  title="Sénat (répartition d'exemple)"
+  totalSieges={348}
+  groupes={[
+    { id: "ser", sigle: "SER", nom: "Socialiste, écologiste et républicain", sieges: 64, href: "#groupe" },
+    { id: "uc", sigle: "UC", nom: "Union centriste", sieges: 59, href: "#groupe" },
+    { id: "lr", sigle: "LR", nom: "Les Républicains", sieges: 130, href: "#groupe" },
+    { id: "autres", sigle: "Autres", nom: "Autres groupes", sieges: 90, href: "#groupe" },
+  ]}
+/>
+```
+
+## Avec un cadre de graphique
+
+<Preview>
+  <ChartFrame
+    title="Composition du Sénat"
+    subtitle="Répartition d'exemple"
+    provenance="officielle"
+    table={{
+      caption: "Sièges par groupe (exemple)",
+      columns: [
+        { key: "sigle", label: "Sigle" },
+        { key: "sieges", label: "Sièges" },
+      ],
+      rows: [
+        { sigle: "SER", sieges: 64 },
+        { sigle: "UC", sieges: 59 },
+        { sigle: "LR", sieges: 130 },
+        { sigle: "Autres", sieges: 95 },
+      ],
+    }}
+  >
+    <Hemicycle
+      title="Composition du Sénat"
+      headingLevel={false}
+      totalSieges={348}
+      groupes={[
+        { id: "ser", sigle: "SER", nom: "Socialiste, écologiste et républicain", sieges: 64 },
+        { id: "uc", sigle: "UC", nom: "Union centriste", sieges: 59 },
+        { id: "lr", sigle: "LR", nom: "Les Républicains", sieges: 130 },
+        { id: "autres", sigle: "Autres", nom: "Autres groupes", sieges: 95 },
+      ]}
+    />
+  </ChartFrame>
+</Preview>
+
+```tsx
+<ChartFrame
+  title="Composition du Sénat"
+  subtitle="Répartition d'exemple"
+  provenance="officielle"
+  table={{
+    caption: "Sièges par groupe (exemple)",
+    columns: [
+      { key: "sigle", label: "Sigle" },
+      { key: "sieges", label: "Sièges" },
+    ],
+    rows: [
+      { sigle: "SER", sieges: 64 },
+      { sigle: "UC", sieges: 59 },
+      { sigle: "LR", sieges: 130 },
+      { sigle: "Autres", sieges: 95 },
+    ],
+  }}
+>
+  <Hemicycle
+    title="Composition du Sénat"
+    headingLevel={false}
+    totalSieges={348}
+    groupes={[
+      { id: "ser", sigle: "SER", nom: "Socialiste, écologiste et républicain", sieges: 64 },
+      { id: "uc", sigle: "UC", nom: "Union centriste", sieges: 59 },
+      { id: "lr", sigle: "LR", nom: "Les Républicains", sieges: 130 },
+      { id: "autres", sigle: "Autres", nom: "Autres groupes", sieges: 95 },
+    ]}
+  />
+</ChartFrame>
+```

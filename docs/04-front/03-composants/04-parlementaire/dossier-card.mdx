@@ -1,0 +1,108 @@
+---
+title: "DossierCard"
+sidebar_label: "DossierCard"
+sidebar_icon: "folder-open"
+description: "Carte d'un dossier législatif : titre en lien, état en badge texte, chambre, dates, scrutins et loi promulguée."
+---
+
+import { Badge, DossierCard } from "@clair/ui";
+
+Carte d'un dossier législatif : titre (complété de la procédure s'il commence par un complément), état en badge texte, chambre, date du dernier vote ou du dépôt, nombre de scrutins et d'amendements. Avec `href`, le titre est l'unique lien de la carte ; sans `href`, la carte est statique et donne les liens officiels de la loi promulguée. Fusionne `DossierCard` et `LoiPromulgueeCard` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-parlementaire-dossiercard--docs)
+
+## Import
+
+```tsx
+import { DossierCard } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <DossierCard
+    href="#"
+    dossier={{
+      titre: "relative à la protection des exemples dans l'espace public",
+      procedureLibelle: "Proposition de loi",
+      etat: "en_cours",
+      chambre: "assemblee",
+      lastScrutinDate: "2026-01-20T00:00:00.000Z",
+      nbScrutins: 4,
+      nbAmendements: 128,
+    }}
+  />
+</Preview>
+
+```tsx
+<DossierCard
+  href="#"
+  dossier={{
+    titre: "relative à la protection des exemples dans l'espace public",
+    procedureLibelle: "Proposition de loi",
+    etat: "en_cours",
+    chambre: "assemblee",
+    lastScrutinDate: "2026-01-20T00:00:00.000Z",
+    nbScrutins: 4,
+    nbAmendements: 128,
+  }}
+/>
+```
+
+## Avec une loi promulguée
+
+<Preview>
+  <DossierCard
+    dossier={{
+      titre: "Projet de loi d'exemple pour la simplification administrative",
+      etat: "promulgue",
+      chambre: "senat",
+      dateDepot: "2025-03-12T00:00:00.000Z",
+      nbScrutins: 7,
+      loiNumero: "2026-0000",
+      loiDateJO: "2026-04-02T00:00:00.000Z",
+      urlLegifrance: "https://www.legifrance.gouv.fr",
+      urlJournalOfficiel: "https://www.journal-officiel.gouv.fr",
+    }}
+  />
+</Preview>
+
+```tsx
+<DossierCard
+  dossier={{
+    titre: "Projet de loi d'exemple pour la simplification administrative",
+    etat: "promulgue",
+    chambre: "senat",
+    dateDepot: "2025-03-12T00:00:00.000Z",
+    nbScrutins: 7,
+    loiNumero: "2026-0000",
+    loiDateJO: "2026-04-02T00:00:00.000Z",
+    urlLegifrance: "https://www.legifrance.gouv.fr",
+    urlJournalOfficiel: "https://www.journal-officiel.gouv.fr",
+  }}
+/>
+```
+
+## Avec un badge de contexte
+
+<Preview>
+  <DossierCard
+    href="#"
+    contexte={<Badge tone="info" size="sm">Saisie au fond</Badge>}
+    dossier={{
+      titre: "Projet de loi d'exemple pour la simplification administrative",
+      etat: "adopte",
+      dateDepot: "2025-03-12T00:00:00.000Z",
+    }}
+  />
+</Preview>
+
+```tsx
+<DossierCard
+  href="#"
+  contexte={<Badge tone="info" size="sm">Saisie au fond</Badge>}
+  dossier={{
+    titre: "Projet de loi d'exemple pour la simplification administrative",
+    etat: "adopte",
+    dateDepot: "2025-03-12T00:00:00.000Z",
+  }}
+/>
+```

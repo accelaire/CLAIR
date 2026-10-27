@@ -1,0 +1,46 @@
+{
+  "name": "@clair/site",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "description": "Nouveau site de CLAIR (Next 16) : une route = ses métadonnées et un écran de @clair/screens.",
+  "scripts": {
+    "dev": "next dev -p 3010",
+    "build": "next build",
+    "start": "next start",
+    "type-check": "next typegen && tsc --noEmit",
+    "clean": "rm -rf .next"
+  },
+  "dependencies": {
+    "@clair/api-client": "workspace:*",
+    "@clair/data": "workspace:*",
+    "@clair/screens": "workspace:*",
+    "@clair/theme": "workspace:*",
+    "@clair/ui": "workspace:*",
+    "@mantine/charts": "catalog:",
+    "@mantine/core": "catalog:",
+    "@mantine/dates": "catalog:",
+    "@mantine/hooks": "catalog:",
+    "@tanstack/react-query": "catalog:",
+    "dayjs": "catalog:",
+    "lucide-react": "catalog:",
+    "next": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "recharts": "catalog:",
+    "server-only": "0.0.1"
+  },
+  "devDependencies": {
+    "@clair/config": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "postcss": "catalog:",
+    "postcss-preset-mantine": "catalog:",
+    "postcss-simple-vars": "catalog:",
+    "typescript": "catalog:"
+  },
+  "engines": {
+    "node": "24.x"
+  }
+}

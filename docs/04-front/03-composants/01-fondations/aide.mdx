@@ -1,0 +1,45 @@
+---
+title: "Aide"
+sidebar_label: "Aide"
+sidebar_icon: "circle-question-mark"
+description: "Bulle d'aide « ? » ouverte au clic, au toucher ou au clavier, refermée par Échap ; remplace le tooltip au survol."
+---
+
+import { Aide } from "@clair/ui";
+
+Bulle d'aide placée à côté d'un terme ou d'un chiffre. Elle s'ouvre au clic, au toucher ou avec Entrée (jamais au seul survol), se ferme avec Échap ou par un clic à l'extérieur et rend le focus au bouton, nommé « Aide : *sujet* » pour les lecteurs d'écran. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-fondations-aide--docs)
+
+## Import
+
+```tsx
+import { Aide } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <p>
+    {"Taux de participation "}
+    <Aide label="taux de participation">{"Part des scrutins publics auxquels le parlementaire a pris part, sur la période."}</Aide>
+  </p>
+</Preview>
+
+```tsx
+<p>
+    {"Taux de participation "}
+    <Aide label="taux de participation">{"Part des scrutins publics auxquels le parlementaire a pris part, sur la période."}</Aide>
+</p>
+```
+
+## Avec un lien « En savoir plus »
+
+<Preview>
+  <p>
+    {"Sort de l'amendement "}
+    <Aide label="sort d'un amendement" learnMoreHref="#">{"Ce qu'il est advenu de l'amendement en séance : adopté, rejeté, retiré, tombé…"}</Aide>
+  </p>
+</Preview>
+
+```tsx
+<Aide label="sort d'un amendement" learnMoreHref="#">{"Ce qu'il est advenu de l'amendement en séance : adopté, rejeté, retiré, tombé…"}</Aide>
+```

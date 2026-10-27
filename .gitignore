@@ -7,7 +7,6 @@
 CLAUDE.md
 
 # OpenCode instructions (local only)
-AGENTS.md
 opencode.json
 .opencode/
 .ocx/
@@ -54,3 +53,7 @@ apps/api/prisma/*.db-journal
 
 # Cache local des contours d'outre-mer (régénérable via scripts/build-geo-departements.mjs)
 scripts/.cache-contours-outre-mer.json
+
+# Tests e2e (Playwright)
+playwright-report/
+test-results/

@@ -1,6 +1,6 @@
 {
   "name": "@clair/docs",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -13,14 +13,21 @@
     "preview": "ZUDOKU_DISABLE_UPDATE_CHECK=1 zudoku preview --port 3002",
     "docs:nav": "node scripts/generate-docs-navigation.mjs",
     "validate": "node scripts/validate-mdx-syntax.mjs --strict && node scripts/check-links.mjs --strict",
-    "typecheck": "tsc --noEmit"
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@clair/theme": "workspace:*",
+    "@clair/ui": "workspace:*",
+    "@mantine/charts": "catalog:",
+    "@mantine/core": "catalog:",
+    "@mantine/dates": "catalog:",
+    "@mantine/hooks": "catalog:",
+    "dayjs": "catalog:",
     "lucide-react": "^0.298.0",
     "mermaid": "^11.17.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "zudoku": "^0.86.0"
+    "zudoku": "0.93.0"
   },
   "devDependencies": {
     "@types/node": "^24.11.0",

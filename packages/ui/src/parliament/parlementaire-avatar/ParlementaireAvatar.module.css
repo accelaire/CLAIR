@@ -1,0 +1,14 @@
+.root {
+  --avatar-bg: var(--clair-fond-neutre);
+  --avatar-color: var(--clair-texte-mention);
+  --avatar-bd: var(--clair-trait-defaut);
+  flex-shrink: 0;
+}
+
+.placeholder {
+  font-weight: 600;
+}
+
+.image {
+  object-fit: cover;
+}

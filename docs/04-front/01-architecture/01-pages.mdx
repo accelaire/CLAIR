@@ -1,0 +1,53 @@
+---
+title: "Pages et écrans"
+sidebar_label: "Pages et écrans"
+sidebar_icon: "layout-dashboard"
+description: "Comment une route du nouveau site rend un écran, et l'avancement de la migration route par route."
+---
+
+## Une route, un écran
+
+Une route de `apps/site` ne fait que deux choses : déclarer ses métadonnées (titre, description, image de partage) et rendre l'écran avec ses paramètres d'URL.
+
+```tsx
+// apps/site/app/deputes/page.tsx
+import { ParlementairesListeScreen } from "@clair/screens";
+
+export const metadata = { title: "Députés" };
+
+const Page = async ({ searchParams }: PageProps<"/deputes">) => (
+  <ParlementairesListeScreen chambre="assemblee" params={await searchParams} />
+);
+
+export default Page;
+```
+
+L'écran, dans `packages/screens`, compose les composants de `@clair/ui`, lit l'état de la page dans l'URL et obtient ses données par les hooks de `@clair/api-client`. Il se teste sans serveur, avec des données de fixtures.
+
+<Mermaid
+  title="Rendu d'une page"
+  chart={`flowchart LR
+    U["URL<br/>/deputes?groupe=RN&page=2"] --> R["Route apps/site<br/>metadata + écran"]
+    R --> P["params.ts<br/>parseXxxParams"]
+    P --> E["XxxScreen<br/>composants @clair/ui"]
+    E --> H["hooks @clair/api-client"]
+    H --> A["API /api/v1"]
+    E -->|"filtre modifié"| O["xxxParamsOf → nouvelle URL"]`}
+/>
+
+## Avancement de la migration
+
+Les routes gardent les mêmes adresses que sur le site actuel. Le suivi détaillé, écran par écran, est tenu dans le dépôt ; cette page en donne l'état.
+
+| Groupe | Routes | État |
+|---|---|---|
+| Éditorial et pédagogie | `/a-propos`, `/methodologie`, `/comprendre/*`, `/guide/*`, pages légales | porté |
+| Parlementaires | `/deputes`, `/senateurs`, fiches, comparateurs | porté |
+| Votes et textes | `/scrutins`, `/votes`, `/dossiers`, `/sujets` | porté |
+| Travaux | `/commissions`, `/agenda`, `/reunions/*` | porté |
+| Lobbying | `/lobbying`, fiches, actions | porté |
+| Groupes et classements | `/groupes`, `/groupes/*`, `/classements` | porté |
+| Accueil et recherche | `/`, `/recherche` | porté |
+| Explorateur | `/explorateur` | page introuvable, comme sur le site actuel (supprimée en janvier 2026) |
+| Sénatoriales 2026 | `/senatoriales-2026`, circonscriptions, graphiques | porté (à l'identique) |
+| Référencement et partage | `/sitemap.xml`, images Open Graph, données structurées (JSON-LD), mesure d'audience | porté |

@@ -1,7 +1,47 @@
 {
   "name": "@clair/config",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
-  "main": "index.js",
-  "types": "index.d.ts"
+  "type": "module",
+  "main": "index.cjs",
+  "exports": {
+    ".": "./index.cjs",
+    "./tsconfig.base.json": "./tsconfig.base.json",
+    "./vitest.shared": "./vitest.shared.ts",
+    "./vitest.setup": "./vitest.setup.ts"
+  },
+  "//": "Outils de test de vitest.shared et vitest.setup : pairs facultatifs (fournis par les packages du front qui les utilisent) et dépendances de développement ici, jamais en dependencies, que l'API et l'ingestion (qui ne lisent que tsconfig.base.json et index.cjs) embarqueraient dans leurs images Docker.",
+  "peerDependencies": {
+    "@testing-library/jest-dom": "*",
+    "@testing-library/react": "*",
+    "@vitejs/plugin-react": "*",
+    "happy-dom": "*",
+    "react": "*",
+    "react-dom": "*",
+    "vitest": "*"
+  },
+  "peerDependenciesMeta": {
+    "@testing-library/jest-dom": {
+      "optional": true
+    },
+    "@testing-library/react": {
+      "optional": true
+    },
+    "@vitejs/plugin-react": {
+      "optional": true
+    },
+    "happy-dom": {
+      "optional": true
+    },
+    "vitest": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "catalog:",
+    "@testing-library/react": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "happy-dom": "catalog:",
+    "vitest": "catalog:"
+  }
 }

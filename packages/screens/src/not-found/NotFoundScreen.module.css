@@ -1,0 +1,26 @@
+.page {
+  max-width: 40rem;
+  margin-inline: auto;
+  padding: var(--clair-espacement-16v) var(--clair-espacement-4v);
+  text-align: center;
+}
+
+.code {
+  margin: 0;
+  font-size: var(--clair-texte-chiffre-taille);
+  font-weight: 700;
+  color: var(--clair-texte-action);
+}
+
+.text {
+  color: var(--clair-texte-mention);
+}
+
+.links {
+  display: flex;
+  justify-content: center;
+  gap: var(--clair-espacement-6v);
+  margin: var(--clair-espacement-6v) 0 0;
+  padding: 0;
+  list-style: none;
+}

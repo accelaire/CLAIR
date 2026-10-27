@@ -1,0 +1,56 @@
+---
+title: "ShareButton"
+sidebar_label: "ShareButton"
+sidebar_icon: "share-2"
+description: "Partage d'une page : partage natif du navigateur, sinon copie du lien avec confirmation annoncée."
+---
+
+import { ShareButton } from "@clair/ui";
+
+Bouton de partage d'une page : il ouvre le partage natif du navigateur (Web Share API) quand il existe, sinon il copie le lien dans le presse-papier ; la confirmation « Lien copié » est visible et annoncée aux lecteurs d'écran (`aria-live`). Si la copie échoue, le lien s'affiche pour être copié à la main. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-mise-en-page-sharebutton--docs)
+
+## Import
+
+```tsx
+import { ShareButton } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <ShareButton url="https://clair.vote/scrutins" />
+</Preview>
+
+```tsx
+<ShareButton url="https://clair.vote/scrutins" />
+```
+
+## Avec une icône seule
+
+<Preview>
+  <ShareButton url="https://clair.vote/scrutins" iconOnly />
+</Preview>
+
+```tsx
+<ShareButton url="https://clair.vote/scrutins" iconOnly />
+```
+
+## Avec un titre et un texte de partage
+
+<Preview>
+  <ShareButton
+    url="https://clair.vote/scrutins"
+    title="Scrutins | CLAIR"
+    text="Tous les votes publics du Parlement"
+    label="Partager la page"
+  />
+</Preview>
+
+```tsx
+<ShareButton
+  url="https://clair.vote/scrutins"
+  title="Scrutins | CLAIR"
+  text="Tous les votes publics du Parlement"
+  label="Partager la page"
+/>
+```

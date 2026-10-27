@@ -1,0 +1,72 @@
+---
+title: "TopFlop"
+sidebar_label: "TopFlop"
+sidebar_icon: "list-ordered"
+description: "Deux listes « les plus » et « les moins » sur un critère : rang, nom en lien et valeur en texte, sans couleur de jugement."
+---
+
+import { TopFlop } from "@clair/ui";
+
+Deux listes ordonnées sur un même critère (présence, amendements…) : rang, nom (lien vers la fiche) et valeur en texte. La présentation reste neutre, sans vert ni rouge, et la nature calculée de la donnée est toujours affichée. Remplace `TopFlopCards` du site actuel. Exemples : personnes fictives. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-parlementaire-topflop--docs)
+
+## Import
+
+```tsx
+import { TopFlop } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <TopFlop
+    criterion="Présence aux scrutins"
+    formatValue={(valeur) => `${valeur} %`}
+    top={[
+      { id: "a", name: "Camille Exemple", href: "#fiche", value: 99 },
+      { id: "b", name: "Dominique Modèle", href: "#fiche", value: 97 },
+    ]}
+    flop={[
+      { id: "c", name: "Alix Fictif", href: "#fiche", value: 12, rank: 577 },
+      { id: "d", name: "Sacha Démo", href: "#fiche", value: 15, rank: 576 },
+    ]}
+  />
+</Preview>
+
+```tsx
+<TopFlop
+  criterion="Présence aux scrutins"
+  formatValue={(valeur) => `${valeur} %`}
+  top={[
+    { id: "a", name: "Camille Exemple", href: "#fiche", value: 99 },
+    { id: "b", name: "Dominique Modèle", href: "#fiche", value: 97 },
+  ]}
+  flop={[
+    { id: "c", name: "Alix Fictif", href: "#fiche", value: 12, rank: 577 },
+    { id: "d", name: "Sacha Démo", href: "#fiche", value: 15, rank: 576 },
+  ]}
+/>
+```
+
+## Avec des titres et une méthodologie
+
+<Preview>
+  <TopFlop
+    criterion="Amendements déposés"
+    topTitle="Les plus nombreux"
+    flopTitle="Les moins nombreux"
+    methodologyHref="#methodologie"
+    top={[{ id: "a", name: "Camille Exemple", value: 1203, detail: "Assemblée nationale" }]}
+    flop={[{ id: "b", name: "Dominique Modèle", value: 0, detail: "Sénat" }]}
+  />
+</Preview>
+
+```tsx
+<TopFlop
+  criterion="Amendements déposés"
+  topTitle="Les plus nombreux"
+  flopTitle="Les moins nombreux"
+  methodologyHref="#methodologie"
+  top={[{ id: "a", name: "Camille Exemple", value: 1203, detail: "Assemblée nationale" }]}
+  flop={[{ id: "b", name: "Dominique Modèle", value: 0, detail: "Sénat" }]}
+/>
+```

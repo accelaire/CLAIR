@@ -1,0 +1,10 @@
+# Code formaté par Biome (biome.jsonc) : Prettier n'y touche pas, les deux ne s'accordent pas
+# (largeur 100 contre 80). Prettier reste l'outil de l'existant (apps/web, apps/api, services, docs).
+packages/
+apps/site/
+apps/storybook/
+scripts/changelog/
+e2e/
+/*.json
+/*.jsonc
+/*.ts

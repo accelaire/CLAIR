@@ -1,0 +1,50 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-10v);
+  padding-block: var(--clair-espacement-8v);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+  min-width: 0;
+}
+
+.profils {
+  display: grid;
+  gap: var(--clair-espacement-4v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 640px) {
+  .profils {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .profils {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Le tableau ne coupe pas ses lignes : le titre du scrutin, long, doit pouvoir passer à la ligne. */
+.scrutin {
+  min-inline-size: calc(var(--clair-espacement-16v) * 4);
+  white-space: normal;
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-1v);
+  font-weight: var(--clair-texte-md-graisse);
+}
+
+.meta {
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}

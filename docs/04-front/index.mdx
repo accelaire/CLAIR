@@ -1,0 +1,36 @@
+---
+title: "Front : nouveau site, design system et composants"
+sidebar_label: "Vue d'ensemble"
+sidebar_icon: "layout-template"
+description: "Le nouveau front de CLAIR (apps/site) en construction à côté du site actuel, son design system (@clair/theme) et le catalogue de ses composants (@clair/ui)."
+---
+
+Le site actuel (`apps/web`) reste en ligne et **n'est pas modifié**. Le nouveau front se construit à côté, dans `apps/site`, écran par écran, sur une architecture reprise de [democracy-watch](https://github.com/dataforgoodfr/democracy-watch) : des routes minces, des écrans testables sans serveur, des composants documentés et un design system unique. Il est déployé sur `beta.clair.vote` pendant la migration, puis remplace le site actuel sur `clair.vote`.
+
+<Mermaid
+  title="Organisation du nouveau front"
+  chart={`flowchart LR
+    T["@clair/theme<br/>tokens --clair-*, thème Mantine"] --> U["@clair/ui<br/>composants + stories + tests"]
+    U --> S["@clair/screens<br/>un dossier par écran"]
+    D["@clair/data<br/>types du domaine"] --> A["@clair/api-client<br/>client et useApiQuery"]
+    A --> S
+    S --> W["apps/site<br/>routes minces (Next 16)"]
+    U --> SB["apps/storybook<br/>atelier de dev"]
+    U --> DOC["docs.clair.vote<br/>catalogue public"]`}
+/>
+
+<FeatureGrid cols={3}>
+  <FeatureCard icon="🏗️" title="Architecture" description="Routes, écrans, données et tests du nouveau site." href="/front/architecture" />
+  <FeatureCard icon="🎨" title="Design system" description="Couleurs, typographie, espacements : les tokens de @clair/theme." href="/front/design-system" />
+  <FeatureCard icon="🧩" title="Composants" description="Le catalogue de @clair/ui : rendu réel, code et variantes." href="/front/composants" />
+</FeatureGrid>
+
+## Deux catalogues, deux rôles
+
+| | Ce catalogue (docs.clair.vote) | Storybook ([storybook.clair.vote](https://storybook.clair.vote), `apps/storybook`) |
+|---|---|---|
+| Pour qui | toute personne qui utilise un composant | qui développe un composant |
+| Contenu | comment l'utiliser : import, usage de base, variantes, avec le rendu réel | toutes les variantes et tous les états, en clair, en sombre et sur chaque taille d'écran |
+| Garanties | un test vérifie le gabarit de chaque page | chaque story est un test : rendu dans Chromium et accessibilité vérifiée par axe |
+
+Un composant exporté par `@clair/ui` a toujours les deux : chaque page du catalogue renvoie à ses variantes dans l'atelier. Mise en ligne de l'atelier et du site bêta : [Déploiement](/front/architecture/deploiement).

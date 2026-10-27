@@ -4,7 +4,8 @@ FROM node:24-alpine AS builder
 # Install OpenSSL for Prisma client generation
 RUN apk add --no-cache openssl
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# pnpm : version de packageManager (package.json), téléchargée par corepack au premier appel
+RUN corepack enable
 
 WORKDIR /app
 

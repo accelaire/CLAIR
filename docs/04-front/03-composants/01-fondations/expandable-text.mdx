@@ -1,0 +1,52 @@
+---
+title: "ExpandableText"
+sidebar_label: "ExpandableText"
+sidebar_icon: "text-align-start"
+description: "Texte long replié avec un bouton « Lire la suite » / « Réduire » ; un texte court s'affiche sans bouton."
+---
+
+import { ExpandableText } from "@clair/ui";
+
+Texte long (exposé sommaire, intervention) replié au-delà de `maxLength` caractères, coupé au dernier mot entier. Le bouton « Lire la suite » / « Réduire » porte `aria-expanded` et `aria-controls` ; un texte court s'affiche entier, sans bouton. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-fondations-expandabletext--docs)
+
+## Import
+
+```tsx
+import { ExpandableText } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <ExpandableText maxLength={120}>{"Cet amendement vise à préciser les conditions dans lesquelles les collectivités territoriales peuvent mutualiser leurs services techniques. Une convention fixe la répartition des charges, et un bilan est transmis chaque année aux assemblées délibérantes."}</ExpandableText>
+</Preview>
+
+```tsx
+<ExpandableText maxLength={120}>{amendement.exposeSommaire}</ExpandableText>
+```
+
+## Avec un texte court
+
+<Preview>
+  <ExpandableText>{"Amendement rédactionnel."}</ExpandableText>
+</Preview>
+
+```tsx
+<ExpandableText>{"Amendement rédactionnel."}</ExpandableText>
+```
+
+## Avec des libellés personnalisés
+
+<Preview>
+  <ExpandableText maxLength={60} expandLabel="Afficher l'intervention" collapseLabel="Masquer l'intervention">{"Madame la présidente, cet article répond à une attente ancienne des élus locaux, qui demandent depuis longtemps des règles plus simples."}</ExpandableText>
+</Preview>
+
+```tsx
+<ExpandableText
+  maxLength={60}
+  expandLabel="Afficher l'intervention"
+  collapseLabel="Masquer l'intervention"
+>
+  {intervention.contenu}
+</ExpandableText>
+```

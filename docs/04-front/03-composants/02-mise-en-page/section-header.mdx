@@ -1,0 +1,62 @@
+---
+title: "SectionHeader"
+sidebar_label: "SectionHeader"
+sidebar_icon: "heading-2"
+description: "Titre de section de niveau 2 ou 3, description et lien « Voir tout » optionnels."
+---
+
+import { SectionHeader } from "@clair/ui";
+
+Titre de section : son niveau (`h2` ou `h3`) suit la hiérarchie de la page, jamais la taille voulue. Le lien « Voir tout » reprend le titre dans son nom accessible (« Voir tout : Scrutins récents ») pour rester explicite hors contexte. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-mise-en-page-sectionheader--docs)
+
+## Import
+
+```tsx
+import { SectionHeader } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <SectionHeader title="Scrutins récents" />
+</Preview>
+
+```tsx
+<SectionHeader title="Scrutins récents" />
+```
+
+## Avec une description
+
+<Preview>
+  <SectionHeader
+    title="Scrutins récents"
+    description="Les derniers votes publics des deux chambres."
+  />
+</Preview>
+
+```tsx
+<SectionHeader
+  title="Scrutins récents"
+  description="Les derniers votes publics des deux chambres."
+/>
+```
+
+## Avec un lien « Voir tout »
+
+<Preview>
+  <SectionHeader title="Scrutins récents" seeAllHref="#" />
+</Preview>
+
+```tsx
+<SectionHeader title="Scrutins récents" seeAllHref="#" />
+```
+
+## Avec un titre de niveau 3
+
+<Preview>
+  <SectionHeader title="Amendements déposés" level={3} />
+</Preview>
+
+```tsx
+<SectionHeader title="Amendements déposés" level={3} />
+```

@@ -1,0 +1,17 @@
+{
+  "extends": "@clair/config/tsconfig.base.json",
+  "compilerOptions": {
+    "allowJs": false,
+    "incremental": true,
+    "plugins": [{ "name": "next" }],
+    "paths": { "@/*": ["./*"] }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    "../../packages/*/src/css-modules.d.ts"
+  ],
+  "exclude": ["node_modules"]
+}

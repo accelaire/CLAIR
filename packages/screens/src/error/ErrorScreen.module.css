@@ -1,0 +1,33 @@
+.page {
+  max-width: 40rem;
+  margin-inline: auto;
+  padding: var(--clair-espacement-16v) var(--clair-espacement-4v);
+  text-align: center;
+}
+
+.text {
+  color: var(--clair-texte-mention);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--clair-espacement-6v);
+  margin-top: var(--clair-espacement-6v);
+}
+
+.retry {
+  padding: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  border: 0;
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-action);
+  color: var(--clair-texte-sur-action);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.retry:hover {
+  background: var(--clair-fond-action-survol);
+}

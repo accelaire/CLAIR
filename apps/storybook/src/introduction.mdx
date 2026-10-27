@@ -1,0 +1,23 @@
+import { Meta } from "@storybook/addon-docs/blocks";
+
+<Meta title="Introduction" />
+
+# CLAIR — atelier des composants
+
+Cet atelier présente les composants du nouveau front de [CLAIR](https://clair.vote) : leurs variantes, leurs états et leur comportement au clavier, dans les thèmes clair et sombre et sur toutes les tailles d'écran.
+
+- **Catalogue public** : [docs.clair.vote/front](https://docs.clair.vote/front) explique comment utiliser chaque composant.
+- **Cet atelier** sert au développement : chaque story est aussi un test (rendu dans Chromium, accessibilité vérifiée par axe).
+
+## Principes
+
+- Composants construits sur **Mantine 9**, thémés par `@clair/theme` ; aucune valeur en dur, uniquement des variables `--clair-*`.
+- **Accessibilité RGAA AA** : navigation au clavier, focus toujours visible, contraste vérifié, jamais la couleur seule.
+- Conventions reprises des Storybook de la DINUM (DSFR) : structure, tailles d'écran, descriptions des propriétés en français. L'identité visuelle de l'État n'est pas utilisée.
+- La donnée **officielle** est toujours distinguée de la donnée **calculée** ou **produite par IA**.
+
+## Utiliser l'atelier
+
+- Barre d'outils : thème (clair / sombre), taille d'écran, panneau **Accessibilité**.
+- Chaque composant a une story **Defaut**, puis ses variantes et ses états.
+- Le code source de chaque composant est dans `packages/ui/src/<catégorie>/<nom>/`.

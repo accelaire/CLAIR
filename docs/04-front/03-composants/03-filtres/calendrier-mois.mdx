@@ -1,0 +1,54 @@
+---
+title: "CalendrierMois"
+sidebar_label: "CalendrierMois"
+sidebar_icon: "calendar-days"
+description: "Calendrier d'un mois en français dont chaque jour dit en toutes lettres ce que montrent ses marques (agenda parlementaire)."
+---
+
+import { CalendrierMois } from "@clair/ui";
+
+Calendrier d'un mois (`Calendar` de `@mantine/dates`, semaine du lundi), **contrôlé** : `mois` (`YYYY-MM`) et `selection` (`YYYY-MM-DD`) se lisent et s'écrivent dans l'URL. Chaque jour est un bouton dont le **nom accessible dit tout ce que montrent ses marques** (« mardi 14 octobre, 3 réunions ») : les marques elles-mêmes sont masquées aux lecteurs d'écran, la couleur n'est jamais seule. Clavier : flèches (y compris d'un mois à l'autre), Début / Fin pour la semaine, Page précédente / suivante pour le mois, Entrée ou Espace pour choisir. `aujourdhui` est fourni par l'écran, calculé dans le fuseau de Paris. L'application doit charger `@mantine/dates/styles.css`. Remplace la grille de `MonthCalendar` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-filtres-calendriermois--docs)
+
+## Import
+
+```tsx
+import { CalendrierMois } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <CalendrierMois mois="2026-10" onMoisChange={() => {}} onSelect={() => {}} />
+</Preview>
+
+```tsx
+<CalendrierMois mois={mois} onMoisChange={setMois} selection={jour} onSelect={setJour} />
+```
+
+## Avec les réunions de chaque jour
+
+<Preview>
+  <CalendrierMois
+    mois="2026-10"
+    selection="2026-10-07"
+    aujourdhui="2026-10-14"
+    onMoisChange={() => {}}
+    onSelect={() => {}}
+    getJour={(jour) => (jour === "2026-10-07" ? { label: "mercredi 7 octobre, 3 réunions", marques: "●", periode: true } : {})}
+  />
+</Preview>
+
+```tsx
+<CalendrierMois
+  mois={mois}
+  selection={jour}
+  aujourdhui={aujourdhui}
+  onMoisChange={setMois}
+  onSelect={setJour}
+  getJour={(cle) => ({
+    label: `${nomDuJour(cle)}, ${reunions[cle] ?? "aucune"} réunion(s)`,
+    marques: <Point densite={densite(reunions[cle])} />,
+    periode: enPeriode.has(cle),
+  })}
+/>
+```

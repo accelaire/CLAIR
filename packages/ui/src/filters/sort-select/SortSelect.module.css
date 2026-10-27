@@ -1,0 +1,16 @@
+.root {
+  min-width: 0;
+}
+
+.label {
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  font-weight: 500;
+  color: var(--clair-texte-defaut);
+}
+
+.icon {
+  width: var(--clair-espacement-4v);
+  height: var(--clair-espacement-4v);
+  color: var(--clair-texte-mention);
+}

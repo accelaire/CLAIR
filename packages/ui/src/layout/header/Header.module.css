@@ -1,0 +1,194 @@
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  border-bottom: var(--clair-trait-defaut);
+  background: var(--clair-fond-page);
+}
+
+.inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--clair-espacement-6v);
+  max-width: var(--clair-largeur-contenu);
+  height: calc(var(--clair-espacement-8v) * 2);
+  margin-inline: auto;
+  padding-inline: var(--clair-espacement-4v);
+}
+
+.brand {
+  font-size: var(--clair-texte-h3-taille);
+  font-weight: var(--clair-texte-h1-graisse);
+  color: var(--clair-fond-action);
+  text-decoration: none;
+}
+
+.desktopNav {
+  display: none;
+  flex: 1;
+}
+
+@media (min-width: 768px) {
+  .desktopNav {
+    display: block;
+  }
+}
+
+.list {
+  display: flex;
+  align-items: center;
+  gap: var(--clair-espacement-6v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.navItem {
+  display: inline-flex;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+  padding-block: var(--clair-espacement-2v);
+  font-size: var(--clair-texte-sm-taille);
+  font-weight: var(--clair-texte-h6-graisse);
+  color: var(--clair-texte-mention);
+  text-decoration: none;
+}
+
+.navItem:hover,
+.navItem[data-active],
+.navItem[aria-current="page"] {
+  color: var(--clair-texte-defaut);
+}
+
+.navItem[aria-current="page"] {
+  text-decoration: underline;
+  text-underline-offset: var(--clair-espacement-2v);
+}
+
+.chevron {
+  width: var(--clair-texte-sm-taille);
+  height: var(--clair-texte-sm-taille);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+}
+
+.iconLink {
+  display: inline-flex;
+  padding: var(--clair-espacement-2v);
+  border-radius: var(--clair-rayon-lg);
+  color: var(--clair-texte-mention);
+}
+
+.iconLink:hover {
+  color: var(--clair-texte-defaut);
+  background: var(--clair-fond-neutre);
+}
+
+.iconLink svg {
+  width: var(--clair-texte-lg-taille);
+  height: var(--clair-texte-lg-taille);
+}
+
+.cta {
+  display: none;
+  padding: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-action);
+  color: var(--clair-texte-sur-action);
+  font-size: var(--clair-texte-sm-taille);
+  font-weight: var(--clair-texte-h6-graisse);
+  text-decoration: none;
+}
+
+.cta:hover {
+  background: var(--clair-fond-action-survol);
+}
+
+@media (min-width: 640px) {
+  .cta {
+    display: inline-flex;
+  }
+}
+
+.burger {
+  display: inline-flex;
+}
+
+@media (min-width: 768px) {
+  .burger {
+    display: none;
+  }
+}
+
+.drawerGroup {
+  margin-bottom: var(--clair-espacement-4v);
+}
+
+.drawerTitle {
+  margin: 0 0 var(--clair-espacement-1v);
+  font-size: var(--clair-texte-xs-taille);
+  font-weight: var(--clair-texte-h6-graisse);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--clair-texte-mention);
+}
+
+.drawerLink {
+  display: block;
+  padding: var(--clair-espacement-2v) 0;
+  color: var(--clair-texte-defaut);
+  text-decoration: none;
+}
+
+/* Page courante : signalée par le texte souligné et la graisse, pas par la seule couleur. */
+.drawerLink[aria-current="page"] {
+  font-weight: var(--clair-texte-h6-graisse);
+  text-decoration: underline;
+  text-underline-offset: var(--clair-espacement-1v);
+}
+
+.group {
+  position: relative;
+}
+
+.dropdown {
+  position: absolute;
+  top: calc(100% + var(--clair-espacement-2v));
+  left: 0;
+  z-index: 200;
+  min-width: calc(var(--clair-espacement-12v) * 4.5);
+  margin: 0;
+  padding: var(--clair-espacement-1v);
+  list-style: none;
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+  box-shadow: var(--clair-ombre-md);
+}
+
+.dropdown[hidden] {
+  display: none;
+}
+
+.dropdownLink {
+  display: block;
+  padding: var(--clair-espacement-2v) var(--clair-espacement-3v);
+  border-radius: var(--clair-rayon-md);
+  font-size: var(--clair-texte-sm-taille);
+  color: var(--clair-texte-defaut);
+  text-decoration: none;
+}
+
+.dropdownLink:hover,
+.dropdownLink[aria-current="page"] {
+  background: var(--clair-fond-neutre);
+}

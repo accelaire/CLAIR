@@ -55,6 +55,16 @@ function formatLabel(name) {
     "demarrage-local": "Démarrage Local",
     "deploiement-production": "Déploiement en Production",
     contribution: "Contribution & Normes",
+    changelog: "Journal des versions",
+    front: "Front",
+    architecture: "Architecture",
+    "design-system": "Design system",
+    composants: "Composants",
+    fondations: "Fondations",
+    "mise-en-page": "Mise en page",
+    filtres: "Filtres",
+    parlementaire: "Parlementaire",
+    graphiques: "Graphiques",
   };
 
   if (exactMatches[clean]) {
@@ -101,7 +111,19 @@ function getDefaultIcon(name, depth) {
     if (lower.includes("api")) return "code";
     if (lower.includes("guide") || lower.includes("dev") || lower.includes("developpeur"))
       return "rocket";
+    if (lower.includes("changelog")) return "history";
+    if (lower.includes("front")) return "layout-template";
   }
+
+  // Front : architecture, design system, familles de composants
+  if (lower.endsWith("architecture")) return "network";
+  if (lower.includes("design-system")) return "palette";
+  if (lower.includes("composants")) return "blocks";
+  if (lower.includes("fondations")) return "brick-wall";
+  if (lower.includes("mise-en-page")) return "panels-top-left";
+  if (lower.includes("filtres")) return "filter";
+  if (lower.includes("parlementaire")) return "landmark";
+  if (lower.includes("graphiques")) return "chart-column";
 
   // Sub-categories or specific folders
   if (lower.includes("source")) return "cloud-download";
@@ -140,6 +162,11 @@ function extractFrontmatter(filePath) {
   }
 }
 
+/** Dossier du journal des versions (`03-changelog`), quel que soit son préfixe numérique. */
+function isChangelogDir(dir) {
+  return path.basename(dir).replace(/^(\d+-)+/, "") === "changelog";
+}
+
 /**
  * Recursively scans a directory and builds Zudoku navigation items.
  */
@@ -172,6 +199,11 @@ function scanDir(dir, baseDir, depth = 0) {
 
     if (a.isFile() && b.isDirectory()) return -1;
     if (a.isDirectory() && b.isFile()) return 1;
+
+    // Journal des versions : la version la plus récente en premier
+    if (isChangelogDir(dir)) {
+      return b.name.localeCompare(a.name, undefined, { numeric: true });
+    }
 
     return a.name.localeCompare(b.name, undefined, {
       numeric: true,
@@ -206,7 +238,11 @@ function scanDir(dir, baseDir, depth = 0) {
             ? "Accueil"
             : formatLabel(path.basename(dir))
           : formatLabel(cleanName));
-      const icon = frontmatter.sidebar_icon || frontmatter.icon || getDefaultIcon(cleanName, depth);
+      // Les pages du journal des versions n'ont pas d'icône : « Version vX.Y.Z » suffit
+      const icon =
+        frontmatter.sidebar_icon ||
+        frontmatter.icon ||
+        (isChangelogDir(dir) ? undefined : getDefaultIcon(cleanName, depth));
 
       if (entry.name.startsWith("index.")) {
         if (depth === 0) {

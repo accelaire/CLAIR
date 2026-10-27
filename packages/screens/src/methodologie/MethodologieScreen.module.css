@@ -1,0 +1,30 @@
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-6v);
+}
+
+.anchor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+  scroll-margin-top: calc(var(--clair-espacement-16v) + var(--clair-espacement-8v));
+}
+
+.note {
+  font-size: var(--clair-texte-sm-taille);
+}
+
+.plainList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-1v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--clair-texte-mention);
+}
+
+.limitations {
+  color: var(--clair-texte-mention);
+}

@@ -1,0 +1,5 @@
+{
+  "extends": "@clair/config/tsconfig.base.json",
+  "compilerOptions": { "types": ["node"], "resolveJsonModule": true },
+  "include": [".storybook", "src", "vitest.config.ts"]
+}

@@ -1,0 +1,283 @@
+.page {
+  padding-block: var(--clair-espacement-6v) var(--clair-espacement-16v);
+}
+
+.quand,
+.liens,
+.aide,
+.source {
+  margin: 0;
+}
+
+.capitale {
+  display: inline-block;
+}
+
+.capitale::first-letter {
+  text-transform: uppercase;
+}
+
+.liens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  margin-top: var(--clair-espacement-2v);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
+  margin-top: var(--clair-espacement-8v);
+}
+
+.titreSection {
+  margin: 0;
+  font-size: var(--clair-texte-h3-taille);
+  line-height: var(--clair-texte-h3-interligne);
+  font-weight: var(--clair-texte-h3-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.aide,
+.mention,
+.source {
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.source {
+  margin-top: var(--clair-espacement-10v);
+}
+
+.odj {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-2v);
+  margin: 0;
+  padding-left: var(--clair-espacement-6v);
+}
+
+/* Vote suivi */
+
+.suivi {
+  margin-top: var(--clair-espacement-6v);
+  padding: var(--clair-espacement-4v);
+  border: var(--clair-trait-epaisseur) solid var(--clair-bordure-defaut);
+  border-left: var(--clair-trait-epaisseur) solid var(--clair-statut-info);
+  border-radius: var(--clair-rayon-md);
+  background: var(--clair-fond-surface);
+}
+
+.suiviEntete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  margin: 0;
+  font-weight: var(--clair-texte-h6-graisse);
+}
+
+/* Sommaire */
+
+.sommaire,
+.listeSimple {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sommaire {
+  border: var(--clair-trait-epaisseur) solid var(--clair-bordure-defaut);
+  border-radius: var(--clair-rayon-md);
+  background: var(--clair-fond-surface);
+}
+
+.point + .point {
+  border-top: var(--clair-trait-epaisseur) solid var(--clair-bordure-defaut);
+}
+
+.pointLigne {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  padding: var(--clair-espacement-3v) var(--clair-espacement-4v);
+}
+
+.pointBouton {
+  display: flex;
+  flex: 1 1 0;
+  align-items: flex-start;
+  gap: var(--clair-espacement-2v);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--clair-texte-defaut);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.pointBouton:focus-visible {
+  outline: var(--clair-focus-epaisseur) solid var(--clair-focus);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+.pointTitre {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-left: var(--clair-espacement-6v);
+}
+
+.chevron {
+  flex-shrink: 0;
+  width: var(--clair-texte-md-taille);
+  height: var(--clair-texte-md-taille);
+  margin-top: var(--clair-espacement-1v);
+}
+
+.chevron[data-ouvert] {
+  transform: rotate(90deg);
+}
+
+.pointAnnexes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-3v);
+  font-size: var(--clair-texte-sm-taille);
+}
+
+.pointDetail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-2v);
+  padding: var(--clair-espacement-3v) var(--clair-espacement-4v) var(--clair-espacement-3v)
+    var(--clair-espacement-10v);
+  border-top: var(--clair-trait-epaisseur) solid var(--clair-bordure-defaut);
+  background: var(--clair-fond-neutre);
+}
+
+.listeSimple {
+  gap: var(--clair-espacement-1v);
+}
+
+/* Débat */
+
+.debat {
+  border: var(--clair-trait-epaisseur) solid var(--clair-bordure-defaut);
+  border-radius: var(--clair-rayon-md);
+  background: var(--clair-fond-surface);
+}
+
+.passage + .passage {
+  border-top: var(--clair-trait-epaisseur) solid var(--clair-bordure-defaut);
+}
+
+.intertitre {
+  margin: 0;
+  padding: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  background: var(--clair-fond-neutre);
+  font-size: var(--clair-texte-sm-taille);
+  font-weight: var(--clair-texte-h6-graisse);
+  overflow-wrap: anywhere;
+}
+
+.priseCadre + .priseCadre {
+  border-top: var(--clair-trait-epaisseur) solid var(--clair-bordure-defaut);
+}
+
+.priseCadre[data-suivi] {
+  background: var(--clair-statut-info-fond);
+}
+
+.prise {
+  padding: var(--clair-espacement-3v) var(--clair-espacement-4v);
+  scroll-margin-top: var(--clair-espacement-16v);
+}
+
+.orateur {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-2v);
+  margin: 0 0 var(--clair-espacement-1v);
+}
+
+.nomOrateur {
+  font-weight: var(--clair-texte-h6-graisse);
+}
+
+.qualite {
+  font-size: var(--clair-texte-sm-taille);
+  font-style: italic;
+  color: var(--clair-texte-mention);
+}
+
+.texte {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.actionsPrise {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  margin: var(--clair-espacement-1v) 0 0;
+  font-size: var(--clair-texte-sm-taille);
+}
+
+.vote {
+  padding: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  border-left: var(--clair-trait-epaisseur) solid var(--clair-statut-info);
+  background: var(--clair-statut-info-fond);
+}
+
+.vote[data-suivi] {
+  outline: var(--clair-trait-epaisseur) solid var(--clair-statut-info);
+  outline-offset: calc(-1 * var(--clair-trait-epaisseur));
+}
+
+.voteEntete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-3v);
+  margin: 0;
+  font-weight: var(--clair-texte-h6-graisse);
+}
+
+.voteTitre {
+  margin: var(--clair-espacement-1v) 0 0;
+  font-size: var(--clair-texte-sm-taille);
+  color: var(--clair-texte-mention);
+  overflow-wrap: anywhere;
+}
+
+/* Participants */
+
+.participants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-2v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.participant {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  padding: var(--clair-espacement-1v) var(--clair-espacement-3v) var(--clair-espacement-1v)
+    var(--clair-espacement-1v);
+  border: var(--clair-trait-epaisseur) solid var(--clair-bordure-defaut);
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--clair-fond-surface);
+}

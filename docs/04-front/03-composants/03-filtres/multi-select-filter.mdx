@@ -1,0 +1,91 @@
+---
+title: "MultiSelectFilter"
+sidebar_label: "MultiSelectFilter"
+sidebar_icon: "list-filter"
+description: "Filtre à choix multiple avec recherche insensible aux accents ; le nombre d'éléments choisis est affiché et annoncé."
+---
+
+import { MultiSelectFilter } from "@clair/ui";
+
+Filtre à choix multiple, **contrôlé** (`value` est la liste des valeurs choisies, à écrire dans l'URL en paramètre répété). La recherche ignore la casse et les accents ; chaque option peut afficher un nombre. Le nombre d'éléments choisis figure dans le libellé et est annoncé aux lecteurs d'écran ; le bouton « Tout désélectionner » est accessible au clavier. Remplace `components/MultiSelectFilter.tsx` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-filtres-multiselectfilter--docs)
+
+## Import
+
+```tsx
+import { MultiSelectFilter } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <MultiSelectFilter
+    label="Groupes"
+    options={[
+      { value: "EPR", label: "EPR" },
+      { value: "SOC", label: "SOC" },
+      { value: "ECO", label: "ECO" },
+    ]}
+    value={[]}
+    onChange={() => {}}
+  />
+</Preview>
+
+```tsx
+<MultiSelectFilter
+  label="Groupes"
+  options={[
+    { value: "EPR", label: "EPR" },
+    { value: "SOC", label: "SOC" },
+    { value: "ECO", label: "ECO" },
+  ]}
+  value={groupes}
+  onChange={setGroupes}
+/>
+```
+
+## Avec une sélection
+
+<Preview>
+  <MultiSelectFilter
+    label="Groupes"
+    options={[
+      { value: "EPR", label: "EPR" },
+      { value: "SOC", label: "SOC" },
+      { value: "ECO", label: "ECO" },
+    ]}
+    value={["SOC", "ECO"]}
+    onChange={() => {}}
+  />
+</Preview>
+
+```tsx
+<MultiSelectFilter label="Groupes" options={options} value={["SOC", "ECO"]} onChange={setGroupes} />
+```
+
+## Avec des nombres par option
+
+<Preview>
+  <MultiSelectFilter
+    label="Secteurs"
+    options={[
+      { value: "a", label: "Secteur d'exemple A", count: 12 },
+      { value: "b", label: "Secteur d'exemple B", count: 7 },
+    ]}
+    value={[]}
+    onChange={() => {}}
+    countLabel={(n) => `${n} secteur${n > 1 ? "s" : ""} choisi${n > 1 ? "s" : ""}`}
+  />
+</Preview>
+
+```tsx
+<MultiSelectFilter
+  label="Secteurs"
+  options={[
+    { value: "a", label: "Secteur d'exemple A", count: 12 },
+    { value: "b", label: "Secteur d'exemple B", count: 7 },
+  ]}
+  value={secteurs}
+  onChange={setSecteurs}
+  countLabel={(n) => `${n} secteur${n > 1 ? "s" : ""} choisi${n > 1 ? "s" : ""}`}
+/>
+```

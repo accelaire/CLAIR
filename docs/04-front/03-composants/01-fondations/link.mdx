@@ -1,0 +1,40 @@
+---
+title: "Link"
+sidebar_label: "Link"
+sidebar_icon: "link"
+description: "Lien de texte, interne (rendu par le routeur de l'application) ou externe (nouvel onglet annoncé aux lecteurs d'écran)."
+---
+
+import { Link } from "@clair/ui";
+
+Lien de texte. Un lien interne est rendu par le routeur de l'application : aucun composant ne dépend de Next.js. Un lien externe s'ouvre dans un nouvel onglet, avec une icône et la mention « nouvelle fenêtre » pour les lecteurs d'écran. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-fondations-link--docs)
+
+## Import
+
+```tsx
+import { Link } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <Link href="/front/composants">Voir le catalogue des composants</Link>
+</Preview>
+
+```tsx
+<Link href="/front/composants">Voir le catalogue des composants</Link>
+```
+
+## Avec un lien externe
+
+<Preview>
+  <Link href="https://www.assemblee-nationale.fr" external>
+    Site de l'Assemblée nationale
+  </Link>
+</Preview>
+
+```tsx
+<Link href="https://www.assemblee-nationale.fr" external>
+  Site de l'Assemblée nationale
+</Link>
+```

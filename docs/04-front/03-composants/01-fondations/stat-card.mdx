@@ -1,0 +1,79 @@
+---
+title: "StatCard"
+sidebar_label: "StatCard"
+sidebar_icon: "hash"
+description: "Chiffre clé et son libellé dans une liste de définitions, avec variation écrite en toutes lettres et aide facultatives."
+---
+
+import { StatCard } from "@clair/ui";
+import { ShieldCheck } from "lucide-react";
+
+Chiffre clé et son libellé, dans une liste de définitions (`dl`), en chiffres tabulaires. La variation est écrite en toutes lettres (« Hausse de 3,2 points ») et reste de ton neutre : une hausse n'est ni bonne ni mauvaise en soi. Fusionne les deux `StatCard` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-fondations-statcard--docs)
+
+## Import
+
+```tsx
+import { StatCard } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <StatCard label="Présence" value={87} unit="%" icon={<ShieldCheck />} />
+</Preview>
+
+```tsx
+<StatCard label="Présence" value={87} unit="%" icon={<ShieldCheck />} />
+```
+
+## Avec une évolution
+
+<Preview>
+  <StatCard
+    label="Présence"
+    value={87}
+    unit="%"
+    variation={{ value: 3.2, unit: "points", period: "sur un an" }}
+  />
+</Preview>
+
+```tsx
+<StatCard
+  label="Présence"
+  value={87}
+  unit="%"
+  variation={{ value: 3.2, unit: "points", period: "sur un an" }}
+/>
+```
+
+## Avec une aide
+
+<Preview>
+  <StatCard
+    label="Présence solennelle"
+    value={92}
+    unit="%"
+    detail="87 % tous scrutins"
+    help="Calculé par CLAIR sur l'ensemble de la carrière parlementaire."
+  />
+</Preview>
+
+```tsx
+<StatCard
+  label="Présence solennelle"
+  value={92}
+  unit="%"
+  detail="87 % tous scrutins"
+  help="Calculé par CLAIR sur l'ensemble de la carrière parlementaire."
+/>
+```
+
+## Avec une donnée indisponible
+
+<Preview>
+  <StatCard label="Présence solennelle" value={null} help="Le Sénat ne publie pas ce chiffre." />
+</Preview>
+
+```tsx
+<StatCard label="Présence solennelle" value={null} help="Le Sénat ne publie pas ce chiffre." />
+```

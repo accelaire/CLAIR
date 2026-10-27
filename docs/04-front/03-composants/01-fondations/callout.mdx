@@ -1,0 +1,73 @@
+---
+title: "Callout"
+sidebar_label: "Callout"
+sidebar_icon: "megaphone"
+description: "Encart d'information, de mise en avant ou d'avertissement, avec un titre, un contenu et au plus une action."
+---
+
+import { Callout } from "@clair/ui";
+import { Heart } from "lucide-react";
+
+Encart qui attire l'attention sur une information, une invitation ou un avertissement ; l'icône et le titre portent le sens, jamais la couleur seule. Il propose au plus une action, un lien. Remplace `FicheCompareCallout`, `SiegeRenouvelableCallout`, `SoutenirCallout` et `EncartResultats` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-fondations-callout--docs)
+
+## Import
+
+```tsx
+import { Callout } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <Callout title="Siège remis en jeu le 27 septembre 2026">
+    Ce siège fait partie des sièges renouvelés avec la série 2 du Sénat.
+  </Callout>
+</Preview>
+
+```tsx
+<Callout title="Siège remis en jeu le 27 septembre 2026">
+  Ce siège fait partie des sièges renouvelés avec la série 2 du Sénat.
+</Callout>
+```
+
+## Avec un ton
+
+<Preview>
+  <div style={{ display: "grid", gap: 16 }}>
+    <Callout tone="info" title="Information">Les données du Sénat sont mises à jour chaque nuit.</Callout>
+    <Callout tone="mise-en-avant" title="Aller plus loin">Comparez deux parcours, indicateur par indicateur.</Callout>
+    <Callout tone="avertissement" title="Données incomplètes">Certains scrutins de 2024 ne sont pas encore publiés.</Callout>
+  </div>
+</Preview>
+
+```tsx
+<Callout tone="info" title="Information">Les données du Sénat sont mises à jour chaque nuit.</Callout>
+<Callout tone="mise-en-avant" title="Aller plus loin">Comparez deux parcours, indicateur par indicateur.</Callout>
+<Callout tone="avertissement" title="Données incomplètes">Certains scrutins de 2024 ne sont pas encore publiés.</Callout>
+```
+
+## Avec une action
+
+<Preview>
+  <Callout
+    as="aside"
+    tone="mise-en-avant"
+    icon={<Heart />}
+    title="Cette page est gratuite, sans publicité et sans financement politique."
+    action={{ label: "Soutenir CLAIR", href: "#" }}
+  >
+    CLAIR est une association d'intérêt général : un don de 10 € vous revient à 3,40 € après déduction fiscale.
+  </Callout>
+</Preview>
+
+```tsx
+<Callout
+  as="aside"
+  tone="mise-en-avant"
+  icon={<Heart />}
+  title="Cette page est gratuite, sans publicité et sans financement politique."
+  action={{ label: "Soutenir CLAIR", href: "#" }}
+>
+  CLAIR est une association d'intérêt général : un don de 10 € vous revient à 3,40 € après déduction fiscale.
+</Callout>
+```

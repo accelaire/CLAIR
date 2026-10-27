@@ -1,0 +1,42 @@
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-2v);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-4v);
+  margin: 0;
+  color: var(--clair-texte-mention);
+}
+
+.item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+}
+
+.icon {
+  flex-shrink: 0;
+  width: 1em;
+  height: 1em;
+}
+
+.loi {
+  display: flex;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  margin: 0;
+  font-weight: 600;
+  color: var(--clair-statut-succes);
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  font-size: var(--clair-texte-sm-taille);
+}

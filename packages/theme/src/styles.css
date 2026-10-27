@@ -1,0 +1,48 @@
+/*
+ * Styles globaux de CLAIR. À importer une fois par application, après les styles Mantine :
+ *   import "@mantine/core/styles.css";
+ *   import "@clair/theme/styles.css";
+ */
+@import "@fontsource-variable/inter";
+@import "./tokens.css";
+@import "./classes.css";
+
+body {
+  background: var(--clair-fond-page);
+  color: var(--clair-texte-defaut);
+  font-family: var(--clair-police-interface);
+}
+
+a {
+  color: var(--clair-texte-action);
+  text-underline-offset: 2px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--clair-texte-titre);
+}
+
+/* Focus clavier : toujours visible, jamais supprimé. `!important` l'emporte sur les styles de Mantine. */
+/* biome-ignore-start lint/complexity/noImportantStyles: le focus clavier doit primer sur tout autre style. */
+:focus-visible {
+  outline: var(--clair-focus-contour) !important;
+  outline-offset: var(--clair-focus-decalage) !important;
+}
+/* biome-ignore-end lint/complexity/noImportantStyles: fin du focus clavier. */
+
+/* biome-ignore-start lint/complexity/noImportantStyles: les préférences d'accessibilité priment. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+/* biome-ignore-end lint/complexity/noImportantStyles: fin des préférences d'accessibilité. */

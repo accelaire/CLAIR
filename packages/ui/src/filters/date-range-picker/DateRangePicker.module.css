@@ -1,0 +1,38 @@
+.label {
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  font-weight: 500;
+  color: var(--clair-texte-defaut);
+}
+
+/* Le gris de Mantine n'atteint pas le contraste 4,5:1. */
+.placeholder {
+  color: var(--clair-texte-mention);
+}
+
+.icon {
+  width: var(--clair-espacement-4v);
+  height: var(--clair-espacement-4v);
+  color: var(--clair-texte-mention);
+}
+
+/*
+ * Sur un écran étroit, les raccourcis passent au-dessus du calendrier, en ligne. Exception à la
+ * règle « mobile d'abord » : la mise en page de base est celle de Mantine (raccourcis à côté du
+ * calendrier), qu'il faudrait sinon recopier ici.
+ */
+@media (max-width: 640px) {
+  .pickerRoot {
+    flex-direction: column;
+  }
+
+  .presetsList {
+    flex-direction: row;
+    flex-wrap: wrap;
+    max-height: none;
+    border-inline-end: 0;
+    border-bottom: var(--clair-trait-defaut);
+    padding-bottom: var(--clair-espacement-2v);
+    margin-bottom: var(--clair-espacement-2v);
+  }
+}

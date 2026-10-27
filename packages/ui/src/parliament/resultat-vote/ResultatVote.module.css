@@ -1,0 +1,71 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-2v);
+  margin: 0;
+  min-width: 0;
+}
+
+.caption {
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  font-weight: 600;
+  color: var(--clair-texte-defaut);
+}
+
+.bar {
+  background: var(--clair-fond-neutre);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-4v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-defaut);
+}
+
+.root[data-size="sm"] .legend,
+.root[data-size="sm"] .caption {
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+}
+
+.item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+}
+
+.name {
+  font-weight: 600;
+}
+
+.swatch {
+  width: var(--clair-espacement-3v);
+  height: var(--clair-espacement-3v);
+  border-radius: var(--clair-rayon-sm);
+}
+
+.item[data-position="pour"] .swatch {
+  background: var(--clair-graphique-vote-pour);
+}
+
+.item[data-position="contre"] .swatch {
+  background: var(--clair-graphique-vote-contre);
+}
+
+.item[data-position="abstention"] .swatch {
+  background: var(--clair-graphique-vote-abstention);
+}
+
+.empty,
+.note {
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  color: var(--clair-texte-mention);
+}

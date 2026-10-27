@@ -1,0 +1,16 @@
+/* Le bouton d'effacement natif de `type="search"` ferait doublon avec le nôtre. */
+.input::-webkit-search-cancel-button,
+.input::-webkit-search-decoration {
+  appearance: none;
+}
+
+.input:focus-visible {
+  outline: var(--clair-focus-contour);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+.icon {
+  width: var(--clair-espacement-4v);
+  height: var(--clair-espacement-4v);
+  color: var(--clair-texte-mention);
+}
