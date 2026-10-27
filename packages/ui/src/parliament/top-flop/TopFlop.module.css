@@ -1,0 +1,104 @@
+.topFlop {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--clair-espacement-3v);
+  color: var(--clair-texte-defaut);
+}
+
+.columns {
+  display: grid;
+  gap: var(--clair-espacement-6v);
+  width: 100%;
+}
+
+@media (min-width: 1024px) {
+  .columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--clair-texte-h6-taille);
+  line-height: var(--clair-texte-h6-interligne);
+  font-weight: var(--clair-texte-h6-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.criterion {
+  font-weight: 400;
+  color: var(--clair-texte-mention);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-2v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--clair-espacement-3v);
+  padding: var(--clair-espacement-3v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+}
+
+.rank {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--clair-espacement-8v);
+  height: var(--clair-espacement-8v);
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--clair-fond-neutre);
+  font-size: var(--clair-texte-sm-taille);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.identity {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.name {
+  overflow: hidden;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail {
+  overflow: hidden;
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  color: var(--clair-texte-mention);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.value {
+  flex-shrink: 0;
+  font-size: var(--clair-texte-sm-taille);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}

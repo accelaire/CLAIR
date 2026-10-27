@@ -1,0 +1,161 @@
+import type { ApiData, DebatDeReunionPage, PriseDeParoleReunion, ReunionDetail } from "@clair/data";
+
+/** Données FICTIVES pour les tests : réunions, personnes et propos inventés. */
+export const reunionDetailExemple: ReunionDetail = {
+  id: "reunion-exemple-1",
+  uid: "RUANREXEMPLE1",
+  type: "commission",
+  dateDebut: "2026-03-03T09:30:00.000Z",
+  dateFin: null,
+  lieu: "Salle d'exemple",
+  etat: "confirme",
+  odjResume: null,
+  odjComplet: "- Audition d'une personne fictive\n- Examen d'un texte d'exemple",
+  captationVideo: true,
+  urlVideo: "https://video.exemple.test/reunion-1",
+  compteRenduRef: "CRCANREXEMPLE",
+  commission: {
+    id: "commission-exemple-1",
+    slug: "assemblee-commission-des-jardins-partages",
+    nom: "Commission des jardins partagés",
+    nomCourt: "CION-JARD",
+    chambre: "assemblee",
+    type: "permanente",
+  },
+  participants: [
+    {
+      presence: "present",
+      parlementaire: {
+        id: "parl-exemple-1",
+        slug: "camille-fictive",
+        nom: "Fictive",
+        prenom: "Camille",
+        photoUrl: null,
+        chambre: "assemblee",
+        groupe: null,
+      },
+    },
+  ],
+  nbInterventions: 2,
+  scrutins: [],
+  sommaire: [],
+  votesDuJour: false,
+  seanceCanonique: null,
+  avisCommission: [
+    {
+      id: "avis-exemple-1",
+      numero: "12",
+      position: "Avis favorable",
+      sens: "favorable",
+      place: "Article 1",
+      auteur: "Camille Fictive",
+      groupe: "GRP",
+      ordre: 1,
+      amendement: null,
+    },
+  ],
+};
+
+export const seanceExemple: ReunionDetail = {
+  ...reunionDetailExemple,
+  id: "seance-exemple-1",
+  uid: "RUANRSEANCEEXEMPLE",
+  type: "seance",
+  odjComplet: null,
+  compteRenduRef: null,
+  compteRenduUrl: "https://compte-rendu.exemple.test/seance",
+  urlVideo: null,
+  commission: {
+    id: "",
+    slug: "",
+    nom: "",
+    nomCourt: null,
+    chambre: "assemblee",
+    type: "hemicycle",
+  },
+  participants: [],
+  avisCommission: [],
+  scrutins: [
+    {
+      id: "scrutin-exemple-1",
+      numero: 42,
+      titre: "l'amendement n° 7 d'exemple",
+      date: "2026-03-03T00:00:00.000Z",
+      sort: "rejete",
+      chambre: "assemblee",
+      session: "17",
+      nombrePour: 79,
+      nombreContre: 84,
+      nombreAbstention: 3,
+    },
+  ],
+  sommaire: [
+    {
+      cle: "point-1",
+      source: "annonce",
+      titre: "Suite de la discussion d'un texte d'exemple",
+      ordre: 1,
+      dossiers: [{ id: "d1", uid: "DLEXEMPLE9", titre: "Texte d'exemple", procedureLibelle: null }],
+      nbPrises: 2,
+      scrutins: [],
+    },
+  ],
+};
+
+const prise = (overrides: Partial<PriseDeParoleReunion>): PriseDeParoleReunion => ({
+  id: "prise-1",
+  type: "intervention",
+  contenu: "Propos d'exemple tenus en réunion.",
+  hasMore: false,
+  date: "2026-03-03T09:30:00.000Z",
+  ordre: 1,
+  sourceUrl: null,
+  orateurNom: "Fictive",
+  orateurPrenom: "Camille",
+  orateurQualite: null,
+  orateurGroupe: null,
+  estPresidence: false,
+  articleVise: null,
+  amendementsVises: null,
+  texteNumero: null,
+  dossier: null,
+  scrutinIds: [],
+  parlementaire: null,
+  ...overrides,
+});
+
+export const debatExemple: DebatDeReunionPage = {
+  data: [
+    prise({
+      id: "prise-1",
+      ordre: 1,
+      articleVise: "1",
+      amendementsVises: ["7"],
+      dossier: { uid: "DLEXEMPLE9", titre: "Texte d'exemple" },
+      contenu: "Début d'un propos d'exemple",
+      hasMore: true,
+    }),
+    prise({
+      id: "prise-2",
+      ordre: 2,
+      articleVise: "1",
+      amendementsVises: ["7"],
+      dossier: { uid: "DLEXEMPLE9", titre: "Texte d'exemple" },
+      orateurPrenom: "Dominique",
+      orateurNom: "Exemple",
+      scrutinIds: ["scrutin-exemple-1"],
+      parlementaire: {
+        id: "parl-exemple-2",
+        slug: "dominique-exemple",
+        nom: "Exemple",
+        prenom: "Dominique",
+        photoUrl: null,
+        chambre: "assemblee",
+        groupe: { nom: "GRP", couleur: null },
+      },
+    }),
+  ],
+  meta: { total: 2, page: 1, limit: 200, totalPages: 1, hasNext: false },
+};
+
+export const detail = (reunion: ReunionDetail): ApiData<ReunionDetail> => ({ data: reunion });

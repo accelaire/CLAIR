@@ -1,0 +1,34 @@
+---
+title: "Composants"
+sidebar_label: "Catalogue"
+sidebar_icon: "blocks"
+description: "Le catalogue des composants de @clair/ui, par famille, et la marche à suivre pour en ajouter un."
+---
+
+Chaque page montre le composant **en direct**, avec le thème de CLAIR et le mode clair ou sombre de cette documentation, suivi du code à copier. Toutes les variantes et tous les états sont dans l'atelier Storybook.
+
+## Fondations
+
+<FeatureGrid cols={3}>
+  <FeatureCard icon="🏷️" title="Badge" description="Étiquette courte de statut ou de catégorie." href="/front/composants/fondations/badge" />
+  <FeatureCard icon="🔗" title="Link" description="Lien interne (routeur de l'application) ou externe." href="/front/composants/fondations/link" />
+  <FeatureCard icon="⏭️" title="SkipLink" description="Lien d'évitement « Aller au contenu »." href="/front/composants/fondations/skip-link" />
+  <FeatureCard icon="🌗" title="ThemeToggle" description="Bascule entre les thèmes clair et sombre." href="/front/composants/fondations/theme-toggle" />
+</FeatureGrid>
+
+## Mise en page
+
+<FeatureGrid cols={3}>
+  <FeatureCard icon="🧭" title="Header" description="En-tête : rubriques, recherche, thème, appel à l'action." href="/front/composants/mise-en-page/header" />
+  <FeatureCard icon="🦶" title="Footer" description="Pied de page : liens, réseaux, sources des données." href="/front/composants/mise-en-page/footer" />
+  <FeatureCard icon="🖼️" title="AppShell" description="Cadre de toutes les pages du site." href="/front/composants/mise-en-page/app-shell" />
+</FeatureGrid>
+
+## Ajouter un composant
+
+1. Créer le dossier `packages/ui/src/<catégorie>/<nom>/` : `Nom.tsx`, `Nom.module.css` (uniquement des `var(--clair-…)`), `Nom.stories.tsx`, `Nom.test.tsx`, `index.ts`.
+2. L'exporter dans `packages/ui/src/index.ts`.
+3. Lui créer une page dans le dossier de sa famille (`docs/04-front/03-composants/<famille>/<nom>.mdx`), sur le modèle de [Badge](/front/composants/fondations/badge) : Import, Utilisation de base, puis une section « Avec … » par variante, chacune avec un aperçu `<Preview>` et le code.
+4. `pnpm docs:nav`, puis `pnpm docs:validate`.
+
+Le skill `clair-composant` décrit chaque étape ; un test vérifie que chaque page respecte ce gabarit.

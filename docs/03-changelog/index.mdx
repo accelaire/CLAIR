@@ -69,7 +69,7 @@ Les fragments restent hors de `docs/` : ce sont des notes de travail, réécrite
   chart={`flowchart LR
     PR1["Pull request A"] --> F1[".changelog/<br/>sous-amendements.md"]
     PR2["Pull request B"] --> F2[".changelog/<br/>node-24.md"]
-    PR3["Pull request C<br/>sans effet notable"] --> L["label<br/>changelog:aucun"]
+    PR3["Pull request C<br/>sans effet notable"] --> L["« Journal : aucun »<br/>dans la description"]
     F1 --> P["pnpm changelog:prepare"]
     F2 --> P
     P --> PG["Page de la version<br/>réécrite et relue"]
@@ -86,7 +86,7 @@ Pour tout changement **visible ou utile en dehors de la pull request** :
 - un changement de méthodologie (calcul d'une statistique, d'une position, d'un classement) ;
 - un changement d'outillage qui touche les contributeurs.
 
-Une pull request sans effet notable (refactor interne, correctif mineur, dépendance sans effet visible) porte à la place le label **`changelog:aucun`**.
+Une pull request sans effet notable (refactor interne, correctif mineur, dépendance sans effet visible) n'a pas de fragment : sa description contient à la place, seule sur sa ligne, **`Journal : aucun`**. Le dépôt n'utilise pas de labels GitHub.
 
 ### Format d'un fragment
 
@@ -110,7 +110,7 @@ Les sous-amendements sont reliés à leur amendement parent, sur le site et dans
 - Dire ce qui est calculé ou produit par IA ; rester apartisan.
 - Une rupture d'API (`type: api`, `niveau: majeur`) dit aux réutilisateurs quoi faire : « À faire de votre côté : … ».
 
-`pnpm changelog:check` vérifie le format ; la CI vérifie aussi qu'une pull request ajoute un fragment ou porte le label `changelog:aucun`.
+`pnpm changelog:check` vérifie le format ; la CI vérifie aussi qu'une pull request ajoute un fragment ou que sa description contient la ligne `Journal : aucun` (relancée quand la description est modifiée). Pendant l'adoption, un fragment manquant n'est qu'un avertissement.
 
 ---
 

@@ -1,0 +1,82 @@
+.dataTable {
+  min-width: 0;
+  color: var(--clair-texte-defaut);
+}
+
+.scroll {
+  overflow-x: auto;
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+}
+
+.scroll:focus-visible {
+  outline: var(--clair-focus-contour);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+.table {
+  --table-border-color: var(--clair-bordure-defaut);
+  --table-hover-color: var(--clair-fond-neutre);
+
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  font-variant-numeric: tabular-nums;
+}
+
+/* En-têtes et nombres sur une ligne ; les textes (titres de scrutin…) passent à la ligne. */
+.table th,
+.table [data-align="end"] {
+  white-space: nowrap;
+}
+
+.caption {
+  padding: var(--clair-espacement-3v) var(--clair-espacement-4v);
+  text-align: start;
+  font-size: var(--clair-texte-md-taille);
+  line-height: var(--clair-texte-md-interligne);
+  font-weight: 600;
+  color: var(--clair-texte-titre);
+}
+
+.table thead th {
+  background: var(--clair-fond-neutre);
+  color: var(--clair-texte-mention);
+  font-weight: 600;
+}
+
+.table [data-align="end"] {
+  text-align: end;
+}
+
+.rowHeader {
+  font-weight: 600;
+}
+
+.sortButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sortButton:hover,
+.sortButton[data-active] {
+  color: var(--clair-texte-defaut);
+}
+
+.sortButton:focus-visible {
+  outline: var(--clair-focus-contour);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+.sortIcon {
+  flex-shrink: 0;
+  width: 1em;
+  height: 1em;
+}

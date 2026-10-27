@@ -1,0 +1,270 @@
+.page {
+  padding-block: var(--clair-espacement-6v) var(--clair-espacement-16v);
+}
+
+.h2 {
+  margin: 0;
+  font-size: var(--clair-texte-h4-taille);
+  line-height: var(--clair-texte-h4-interligne);
+  font-weight: var(--clair-texte-h4-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.h3 {
+  margin: 0 0 var(--clair-espacement-3v);
+  font-size: var(--clair-texte-h5-taille);
+  line-height: var(--clair-texte-h5-interligne);
+  font-weight: var(--clair-texte-h5-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.h4 {
+  margin: 0 0 var(--clair-espacement-2v);
+  font-size: var(--clair-texte-h6-taille);
+  line-height: var(--clair-texte-h6-interligne);
+  font-weight: var(--clair-texte-h6-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.mention {
+  margin: var(--clair-espacement-2v) 0 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+/* Dossier législatif */
+.bandeau {
+  margin-block: var(--clair-espacement-6v);
+}
+
+.bandeauTitre {
+  margin: 0 0 var(--clair-espacement-2v);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  font-weight: var(--clair-texte-h6-graisse);
+  text-transform: uppercase;
+  color: var(--clair-texte-action);
+}
+
+.bandeauMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-4v);
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  color: var(--clair-texte-mention);
+}
+
+/* Résumé IA */
+.resume {
+  margin-block: var(--clair-espacement-6v);
+  padding: var(--clair-espacement-4v) var(--clair-espacement-6v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+}
+
+.resumeTete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-2v) var(--clair-espacement-3v);
+  margin-bottom: var(--clair-espacement-3v);
+}
+
+/* Grille : informations à gauche, onglets à droite */
+.grille {
+  display: grid;
+  gap: var(--clair-espacement-8v);
+  margin-top: var(--clair-espacement-6v);
+}
+
+@media (min-width: 1024px) {
+  .grille {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+    align-items: start;
+  }
+
+  .aside {
+    position: sticky;
+    top: var(--clair-espacement-6v);
+  }
+}
+
+.contenu {
+  min-width: 0;
+}
+
+.infos {
+  padding: var(--clair-espacement-4v) var(--clair-espacement-6v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+}
+
+.infosTitle {
+  margin: 0 0 var(--clair-espacement-4v);
+  font-size: var(--clair-texte-h5-taille);
+  line-height: var(--clair-texte-h5-interligne);
+  font-weight: var(--clair-texte-h5-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.dl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+  margin: 0;
+}
+
+.dl dt {
+  margin-bottom: var(--clair-espacement-1v);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  font-weight: var(--clair-texte-h6-graisse);
+  text-transform: uppercase;
+  color: var(--clair-texte-mention);
+}
+
+.dl dd {
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  overflow-wrap: anywhere;
+}
+
+.inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+}
+
+.demandeurs,
+.tags {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.demandeurs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-1v);
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-3v);
+}
+
+/* Onglets */
+.onglet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-6v);
+}
+
+.sousSection {
+  min-width: 0;
+}
+
+.filtres {
+  display: grid;
+  gap: var(--clair-espacement-3v);
+  align-items: end;
+  margin-bottom: var(--clair-espacement-4v);
+}
+
+@media (min-width: 640px) {
+  .filtres {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+  }
+}
+
+.position + .position {
+  margin-top: var(--clair-espacement-6v);
+}
+
+.elus {
+  display: grid;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-4v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 640px) {
+  .elus {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.elu {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-2v);
+  padding: var(--clair-espacement-2v) 0;
+  border-bottom: var(--clair-trait-defaut);
+  font-size: var(--clair-texte-sm-taille);
+}
+
+.eluMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+}
+
+.amendements,
+.interventions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-6v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.amendement {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
+}
+
+.defense {
+  padding: var(--clair-espacement-3v) var(--clair-espacement-4v);
+  background: var(--clair-statut-info-fond);
+  border-radius: var(--clair-rayon-md);
+}
+
+.defenseTitre {
+  margin: 0 0 var(--clair-espacement-2v);
+  font-size: var(--clair-texte-xs-taille);
+  font-weight: var(--clair-texte-h6-graisse);
+  text-transform: uppercase;
+  color: var(--clair-statut-info);
+}
+
+.intervention {
+  min-width: 0;
+}
+
+.intervention[data-defense] {
+  padding: var(--clair-espacement-3v);
+  border-radius: var(--clair-rayon-md);
+  background: var(--clair-statut-info-fond);
+}
+
+.orateur {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  margin: 0 0 var(--clair-espacement-2v);
+  font-weight: var(--clair-texte-h6-graisse);
+}

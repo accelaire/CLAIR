@@ -1,0 +1,102 @@
+---
+title: "LegislativeTimeline"
+sidebar_label: "LegislativeTimeline"
+sidebar_icon: "milestone"
+description: "Parcours d'un dossier législatif : étapes franchies, en cours et à venir, avec chambre, date et issue officielle ; l'étape courante est annoncée en texte."
+---
+
+import { LegislativeTimeline } from "@clair/ui";
+
+Frise du parcours d'un dossier législatif, construite sur `Timeline` de Mantine. Chaque étape donne sa chambre, sa date et son issue officielle ; l'étape en cours est annoncée par une phrase de résumé et par une mention lue par les lecteurs d'écran, pas seulement par le style. Les étapes suivent la forme renvoyée par l'API. Remplace `LegislativeTimeline` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-parlementaire-legislativetimeline--docs)
+
+## Import
+
+```tsx
+import { LegislativeTimeline } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <LegislativeTimeline
+    steps={[
+      { code: "AN1", label: "1re lecture", chambre: "assemblee", status: "done", outcome: "adopted", date: "2025-01-21" },
+      { code: "SN1", label: "1re lecture", chambre: "senat", status: "active", date: "2025-03-04" },
+      { code: "CMP", label: "Commission mixte paritaire", chambre: "both", status: "pending" },
+      { code: "PROM", label: "Promulgation", chambre: null, status: "pending" },
+    ]}
+  />
+</Preview>
+
+```tsx
+<LegislativeTimeline
+  steps={[
+    { code: "AN1", label: "1re lecture", chambre: "assemblee", status: "done", outcome: "adopted", date: "2025-01-21" },
+    { code: "SN1", label: "1re lecture", chambre: "senat", status: "active", date: "2025-03-04" },
+    { code: "CMP", label: "Commission mixte paritaire", chambre: "both", status: "pending" },
+    { code: "PROM", label: "Promulgation", chambre: null, status: "pending" },
+  ]}
+/>
+```
+
+## Avec un dossier terminé
+
+<Preview>
+  <LegislativeTimeline
+    title="Parcours du texte"
+    headingLevel={3}
+    steps={[
+      { code: "AN1", label: "1re lecture", chambre: "assemblee", status: "done", outcome: "adopted", date: "2024-10-08" },
+      { code: "SN1", label: "1re lecture", chambre: "senat", status: "done", outcome: "adopted_modified", date: "2024-11-19" },
+      { code: "CMP", label: "Commission mixte paritaire", chambre: "both", status: "done", outcome: "cmp_accord", date: "2024-12-03" },
+      { code: "PROM", label: "Promulgation", chambre: null, status: "done", date: "2025-01-24", detail: "Loi publiée au Journal officiel." },
+    ]}
+  />
+</Preview>
+
+```tsx
+<LegislativeTimeline
+  title="Parcours du texte"
+  headingLevel={3}
+  steps={[
+    { code: "AN1", label: "1re lecture", chambre: "assemblee", status: "done", outcome: "adopted", date: "2024-10-08" },
+    { code: "SN1", label: "1re lecture", chambre: "senat", status: "done", outcome: "adopted_modified", date: "2024-11-19" },
+    { code: "CMP", label: "Commission mixte paritaire", chambre: "both", status: "done", outcome: "cmp_accord", date: "2024-12-03" },
+    { code: "PROM", label: "Promulgation", chambre: null, status: "done", date: "2025-01-24", detail: "Loi publiée au Journal officiel." },
+  ]}
+/>
+```
+
+## Avec une navette
+
+<Preview>
+  <LegislativeTimeline
+    steps={[
+      { code: "CMP", label: "Commission mixte paritaire", chambre: "both", status: "done", outcome: "cmp_desaccord", date: "2024-07-09" },
+      { code: "AN-NL", label: "Nouvelle lecture", chambre: "assemblee", status: "active", date: "2024-10-01" },
+      { code: "SN-NL", label: "Nouvelle lecture", chambre: "senat", status: "pending" },
+      { code: "AN-LD", label: "Lecture définitive", chambre: "assemblee", status: "pending" },
+    ]}
+  />
+</Preview>
+
+```tsx
+<LegislativeTimeline
+  steps={[
+    { code: "CMP", label: "Commission mixte paritaire", chambre: "both", status: "done", outcome: "cmp_desaccord", date: "2024-07-09" },
+    { code: "AN-NL", label: "Nouvelle lecture", chambre: "assemblee", status: "active", date: "2024-10-01" },
+    { code: "SN-NL", label: "Nouvelle lecture", chambre: "senat", status: "pending" },
+    { code: "AN-LD", label: "Lecture définitive", chambre: "assemblee", status: "pending" },
+  ]}
+/>
+```
+
+## Avec aucune étape
+
+<Preview>
+  <LegislativeTimeline steps={[]} />
+</Preview>
+
+```tsx
+<LegislativeTimeline steps={[]} />
+```

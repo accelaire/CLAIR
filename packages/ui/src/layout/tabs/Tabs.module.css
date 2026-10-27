@@ -1,0 +1,59 @@
+.root {
+  --tab-border-color: var(--clair-bordure-defaut);
+}
+
+/* Un onglet ne passe pas à la ligne : sur un écran étroit, la barre défile. */
+.list {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.tab {
+  flex-shrink: 0;
+  padding: var(--clair-espacement-3v) var(--clair-espacement-4v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--clair-texte-mention);
+}
+
+.tab:hover {
+  color: var(--clair-texte-defaut);
+  background: var(--clair-fond-neutre);
+}
+
+.tab[data-active] {
+  color: var(--clair-texte-action);
+}
+
+.tab:focus-visible {
+  outline: var(--clair-focus-contour);
+  outline-offset: calc(-1 * var(--clair-focus-epaisseur));
+}
+
+.section svg {
+  width: var(--clair-espacement-4v);
+  height: var(--clair-espacement-4v);
+}
+
+.count {
+  padding: 0 var(--clair-espacement-2v);
+  border-radius: var(--clair-rayon-pilule);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: var(--clair-fond-neutre);
+  color: var(--clair-texte-mention);
+}
+
+.tab[data-active] .count {
+  background: var(--clair-statut-info-fond);
+  color: var(--clair-texte-action);
+}
+
+.panel {
+  padding-top: var(--clair-espacement-6v);
+}

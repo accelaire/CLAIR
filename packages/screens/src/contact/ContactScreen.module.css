@@ -1,0 +1,30 @@
+.channels {
+  margin-top: var(--clair-espacement-6v);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
+  height: 100%;
+}
+
+.subtitle {
+  margin: 0;
+  font-weight: 500;
+  color: var(--clair-texte-defaut);
+}
+
+.action {
+  margin-top: auto;
+  padding-top: var(--clair-espacement-2v);
+}
+
+.text {
+  margin: 0;
+  color: var(--clair-texte-mention);
+}
+
+.response {
+  margin-top: var(--clair-espacement-12v);
+}

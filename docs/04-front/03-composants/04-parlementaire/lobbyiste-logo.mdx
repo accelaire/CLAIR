@@ -1,0 +1,60 @@
+---
+title: "LobbyisteLogo"
+sidebar_label: "LobbyisteLogo"
+sidebar_icon: "building-2"
+description: "Logo d'un représentant d'intérêts, ou ses initiales en repli, avec une alternative textuelle."
+---
+
+import { LobbyisteLogo } from "@clair/ui";
+
+Logo d'un représentant d'intérêts inscrit au répertoire de la HATVP. Sans logo, ou s'il ne se charge pas, les initiales du nom le remplacent. L'adresse du logo est fournie par l'application : le composant n'appelle aucun service tiers. Remplace `LobbyisteLogo` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-parlementaire-lobbyistelogo--docs)
+
+## Import
+
+```tsx
+import { LobbyisteLogo } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <LobbyisteLogo nom="Fédération Exemple des Industries Fictives" />
+</Preview>
+
+```tsx
+<LobbyisteLogo nom="Fédération Exemple des Industries Fictives" />
+```
+
+## Avec une taille
+
+<Preview>
+  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+    <LobbyisteLogo nom="Association Modèle" size="sm" />
+    <LobbyisteLogo nom="Association Modèle" size="md" />
+    <LobbyisteLogo nom="Association Modèle" size="lg" />
+  </div>
+</Preview>
+
+```tsx
+<div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+  <LobbyisteLogo nom="Association Modèle" size="sm" />
+  <LobbyisteLogo nom="Association Modèle" size="md" />
+  <LobbyisteLogo nom="Association Modèle" size="lg" />
+</div>
+```
+
+## Avec un rôle décoratif
+
+<Preview>
+  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <LobbyisteLogo nom="Cabinet Fictif" decorative />
+    <span>Cabinet Fictif</span>
+  </div>
+</Preview>
+
+```tsx
+<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+  <LobbyisteLogo nom="Cabinet Fictif" decorative />
+  <span>Cabinet Fictif</span>
+</div>
+```

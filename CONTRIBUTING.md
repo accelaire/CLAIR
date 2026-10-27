@@ -15,16 +15,19 @@ Ce projet est un outil citoyen et apartisan. Les contributions doivent rester fa
 - **Du code** : fork, branche depuis `master` (`feat/…`, `fix/…`, `docs/…`), puis une pull request vers `master`, après :
 
   ```bash
-  pnpm lint
-  pnpm type-check
+  pnpm check                                  # Biome (nouveau front et outillage)
+  pnpm lint                                   # ESLint (code existant)
+  pnpm --filter <workspace touché> type-check
   pnpm test
   ```
+
+  Les messages de commit suivent Conventional Commits, en français (`type(portée): sujet`), vérifiés par commitlint. Une pull request notable ajoute un fragment `.changelog/<sujet>.md` ; sinon, sa description contient la ligne `Journal : aucun`.
 
   Si tu touches à l'ingestion, à un rattachement ou à l'IA, lance aussi les contrôles de la donnée ; si tu changes le schéma Prisma, joins sa migration. Le détail est dans le [guide](https://docs.clair.vote/guide/guide-developpeur/contribution).
 
 ## Questions
 
-Pour toute question, ouvre une issue avec le label `question`, ou écris à [contact@clair.vote](mailto:contact@clair.vote).
+Pour toute question, ouvre une issue, ou écris à [contact@clair.vote](mailto:contact@clair.vote).
 
 ---
 

@@ -29,13 +29,22 @@ Ouvrir une issue qui décrit la fonctionnalité et son utilité, et attendre une
 3. Avant d'ouvrir la pull request vers `master`, lancer :
 
 ```bash
-pnpm lint
-pnpm type-check
-pnpm test
+pnpm check                                  # Biome : nouveau front et outillage
+pnpm lint                                   # ESLint : apps/web, apps/api, ingestion, scripts
+pnpm --filter <workspace touché> type-check # ex. @clair/api, @clair/ui, @clair/site
+pnpm test                                   # Vitest, tous les workspaces qui ont des tests
+
+# Si un composant de packages/ui est touché
+pnpm --filter @clair/storybook test:stories
+
+# Si une page de apps/site ou un écran de packages/screens est touché
+pnpm --filter @clair/site build && pnpm test:e2e --project=site
 
 # Si la documentation est touchée
-pnpm docs:validate
+pnpm docs:nav && pnpm docs:validate
 ```
+
+Le `pnpm type-check` racine passe aussi par `apps/web` et l'ingestion, qui ont des erreurs préexistantes : on vérifie le workspace touché. En CI, le job `front` fait le type-check de `packages/*`, de `apps/storybook` et de `apps/site`.
 
 4. **Si l'ingestion, un rattachement ou l'enrichissement IA est touché**, lancer aussi les contrôles de la donnée, sur une base remplie (voir [Qualité des données](/donnees/qualite-des-donnees)) :
 
@@ -49,7 +58,7 @@ pnpm --filter @clair/ingestion exec tsx src/cli.ts check-ia-quality   # si l'IA 
 
 6. **Si une route de l'API change**, modifier son schéma dans `apps/api` : la référence de l'API de cette documentation est générée depuis lui, jamais écrite à la main.
 
-7. **Si le changement est notable** (site, API, données, méthodologie, outillage), ajouter un fragment `.changelog/<sujet>.md` qui alimentera la prochaine version ; sinon, demander le label `changelog:aucun`. Format et règles : [Journal des versions](/changelog).
+7. **Si le changement est notable** (site, API, données, méthodologie, outillage), ajouter un fragment `.changelog/<sujet>.md` qui alimentera la prochaine version ; sinon, écrire la ligne `Journal : aucun` dans la description de la pull request. Format et règles : [Journal des versions](/changelog).
 
 ---
 
@@ -57,7 +66,7 @@ pnpm --filter @clair/ingestion exec tsx src/cli.ts check-ia-quality   # si l'IA 
 
 ### Commits
 
-Messages clairs, en français :
+Messages clairs, en français, au format Conventional Commits, vérifié à chaque commit par commitlint (hook lefthook installé par `pnpm install`) :
 
 ```text
 type(portée): description courte
@@ -65,12 +74,14 @@ type(portée): description courte
 corps facultatif, qui explique le pourquoi
 ```
 
-Types : `feat` (fonctionnalité), `fix` (correction), `docs` (documentation), `style` (formatage), `refactor`, `test`, `chore` (maintenance, dépendances, configuration).
+Types acceptés (`@commitlint/config-conventional`) : `feat` (fonctionnalité), `fix` (correction), `docs` (documentation), `style` (formatage), `refactor`, `perf`, `test`, `build`, `ci`, `chore` (maintenance, dépendances, configuration), `revert`. La portée est libre (`site`, `ui`, `api`, `ingestion`, `docs`, `repo`, un domaine comme `senatoriales`…), le sujet peut être long et ne finit pas par un point.
 
 ### Code
 
 - **TypeScript** strict, sans `any`.
-- **ESLint** (`pnpm lint`) et **Prettier** (`pnpm format`).
+- **Biome** (`pnpm check`, `pnpm fix`) pour le nouveau front (`packages/*`, `apps/site`, `apps/storybook`), `scripts/changelog`, `e2e` et la configuration racine ; le hook de commit formate les fichiers indexés.
+- **ESLint** (`pnpm lint`) et **Prettier** (`pnpm format`) pour l'existant (`apps/web`, `apps/api`, `services/ingestion`, `docs`, `scripts/*.ts`), jusqu'à son passage à Biome.
+- **Nouveau front** : standards et emplacements dans la section [Front](/front) et dans `AGENTS.md`.
 - **Nommage** : `camelCase` pour les variables et fonctions, `PascalCase` pour les types, `kebab-case` pour les fichiers.
 - **API** : un module par domaine dans `apps/api/src/modules/<domaine>/` (`.controller.ts`, `.service.ts`, `.schema.ts` en Zod, tests à côté).
 - **Ingestion** : un client par source dans `services/ingestion/src/sources/`, des tests pour chaque parser, et le respect des limites de débit des sources.

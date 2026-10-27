@@ -3,11 +3,6 @@
   "version": "0.5.0",
   "private": true,
   "license": "AGPL-3.0",
-  "workspaces": [
-    "apps/*",
-    "packages/*",
-    "services/*"
-  ],
   "scripts": {
     "dev": "turbo run dev",
     "dev:web": "turbo run dev --filter=@clair/web",
@@ -27,10 +22,15 @@
     "lint": "turbo run lint && pnpm lint:scripts",
     "lint:fix": "turbo run lint:fix",
     "lint:scripts": "eslint scripts apps/api/prisma --ext .ts",
+    "check": "biome check .",
+    "fix": "biome check --write .",
+    "storybook": "pnpm --filter @clair/storybook dev",
+    "storybook:build": "pnpm --filter @clair/storybook build",
+    "storybook:capture": "pnpm --filter @clair/storybook capture",
     "type-check": "turbo run type-check && pnpm type-check:scripts",
     "type-check:scripts": "tsc -p tsconfig.scripts.json",
     "test": "turbo run test",
-    "test:e2e": "turbo run test:e2e",
+    "test:e2e": "playwright test",
     "db:generate": "pnpm --filter @clair/api db:generate",
     "db:migrate": "pnpm --filter @clair/api db:migrate",
     "db:push": "pnpm --filter @clair/api db:push",
@@ -48,31 +48,26 @@
     "ingestion:calculate-stats": "pnpm --filter @clair/ingestion calculate-stats",
     "clean": "turbo run clean && rm -rf node_modules",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
-    "prepare": "husky install"
+    "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && lefthook install || true"
   },
   "devDependencies": {
+    "@axe-core/playwright": "catalog:",
+    "@biomejs/biome": "catalog:",
+    "@commitlint/cli": "catalog:",
+    "@commitlint/config-conventional": "catalog:",
+    "@playwright/test": "catalog:",
     "@types/node": "^24.11.0",
     "@typescript-eslint/eslint-plugin": "^6.15.0",
     "@typescript-eslint/parser": "^6.15.0",
     "eslint": "^8.55.0",
-    "husky": "^8.0.3",
-    "lint-staged": "^15.2.0",
+    "lefthook": "catalog:",
     "prettier": "^3.1.0",
     "turbo": "^2.0.0",
     "typescript": "^5.3.0"
   },
-  "lint-staged": {
-    "*.{ts,tsx,js,jsx}": [
-      "eslint --fix",
-      "prettier --write"
-    ],
-    "*.{json,md}": [
-      "prettier --write"
-    ]
-  },
   "engines": {
     "node": ">=24.11.0",
-    "pnpm": ">=8.0.0"
+    "pnpm": ">=12.15.0"
   },
-  "packageManager": "pnpm@8.15.0"
+  "packageManager": "pnpm@12.15.0"
 }

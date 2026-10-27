@@ -1,0 +1,128 @@
+.accent {
+  color: var(--clair-texte-action);
+}
+
+/* Logo horizontal de data.gouv.fr : hauteur d'une icône, largeur proportionnelle. */
+.logo {
+  display: block;
+  width: auto;
+  height: var(--clair-espacement-4v);
+}
+
+.why {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-8v);
+  padding: var(--clair-espacement-6v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-xl);
+  background: var(--clair-fond-surface);
+}
+
+@media (min-width: 768px) {
+  .why {
+    flex-direction: row;
+    padding: var(--clair-espacement-10v);
+  }
+}
+
+.whyText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+}
+
+.figures {
+  display: grid;
+  gap: var(--clair-espacement-4v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 768px) {
+  .figures {
+    flex: 0 0 calc(var(--clair-espacement-16v) * 4);
+  }
+}
+
+.path {
+  display: block;
+  overflow: hidden;
+  font-family: var(--clair-police-code);
+  font-size: var(--clair-texte-xs-taille);
+  color: var(--clair-texte-action);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inline {
+  padding: 0 var(--clair-espacement-1v);
+  border-radius: var(--clair-rayon-sm);
+  background: var(--clair-fond-neutre);
+  font-family: var(--clair-police-code);
+  font-size: var(--clair-texte-sm-taille);
+}
+
+.terminal {
+  margin: 0;
+  overflow: hidden;
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-xl);
+  background: var(--clair-fond-neutre);
+}
+
+.terminalCaption {
+  display: flex;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  padding: var(--clair-espacement-3v) var(--clair-espacement-6v);
+  border-bottom: var(--clair-trait-defaut);
+  font-family: var(--clair-police-code);
+  font-size: var(--clair-texte-xs-taille);
+  color: var(--clair-texte-mention);
+}
+
+.terminalIcon {
+  width: var(--clair-espacement-4v);
+  height: var(--clair-espacement-4v);
+}
+
+/* Lignes repliées plutôt qu'un défilement horizontal : lisible en mobile, sans zone à focaliser. */
+.code {
+  margin: 0;
+  padding: var(--clair-espacement-6v);
+  font-family: var(--clair-police-code);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-md-interligne);
+  color: var(--clair-texte-defaut);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-2v);
+  margin: 0;
+  padding-inline-start: var(--clair-espacement-6v);
+  color: var(--clair-texte-mention);
+}
+
+.list strong {
+  color: var(--clair-texte-titre);
+}
+
+.ctaTitle {
+  margin: 0;
+  font-size: var(--clair-texte-h3-taille);
+  line-height: var(--clair-texte-h3-interligne);
+  color: var(--clair-texte-titre);
+}
+
+.ctaText {
+  max-width: var(--clair-rupture-sm);
+  margin-inline: auto;
+  color: var(--clair-texte-mention);
+}

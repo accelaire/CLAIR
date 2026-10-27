@@ -1,0 +1,63 @@
+.body {
+  margin: 0;
+  background: var(--clair-fond-page);
+  color: var(--clair-texte-defaut);
+  font-family: system-ui, sans-serif;
+}
+
+.page {
+  max-width: 40rem;
+  margin-inline: auto;
+  padding: var(--clair-espacement-16v) var(--clair-espacement-4v);
+}
+
+.marque {
+  margin: 0 0 var(--clair-espacement-6v);
+  color: var(--clair-texte-action);
+  font-weight: 700;
+}
+
+.titre {
+  margin: 0 0 var(--clair-espacement-4v);
+  color: var(--clair-texte-titre);
+  font-size: var(--clair-texte-h3-taille);
+  line-height: var(--clair-texte-h3-interligne);
+}
+
+.texte {
+  color: var(--clair-texte-mention);
+  line-height: var(--clair-texte-md-interligne);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-6v);
+  margin-top: var(--clair-espacement-6v);
+}
+
+.bouton {
+  padding: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  border: 0;
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-action);
+  color: var(--clair-texte-sur-action);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bouton:hover {
+  background: var(--clair-fond-action-survol);
+}
+
+.lien {
+  color: var(--clair-texte-action);
+}
+
+.bouton:focus-visible,
+.lien:focus-visible {
+  outline: var(--clair-focus-epaisseur) solid var(--clair-focus);
+  outline-offset: var(--clair-focus-decalage);
+}

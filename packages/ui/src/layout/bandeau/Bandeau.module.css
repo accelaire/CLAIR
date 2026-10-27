@@ -1,0 +1,121 @@
+.bandeau {
+  border-bottom: var(--clair-trait-defaut);
+  background: var(--clair-statut-info-fond);
+  color: var(--clair-statut-info);
+}
+
+.bandeau[data-tone="direct"] {
+  background: var(--clair-statut-erreur-fond);
+  color: var(--clair-statut-erreur);
+}
+
+.inner {
+  display: flex;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  box-sizing: border-box;
+  max-width: var(--clair-largeur-contenu);
+  margin-inline: auto;
+  padding: var(--clair-espacement-2v) var(--clair-espacement-4v);
+}
+
+.message {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-2v);
+  min-width: 0;
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.text {
+  font-weight: 500;
+}
+
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.dot {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  width: var(--clair-espacement-2v);
+  height: var(--clair-espacement-2v);
+  border-radius: var(--clair-rayon-pilule);
+  background: currentColor;
+}
+
+.dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes ping {
+  75%,
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot::after {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+.icon {
+  flex-shrink: 0;
+  width: var(--clair-espacement-4v);
+  height: var(--clair-espacement-4v);
+}
+
+.bandeau .link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+  color: inherit;
+  font-weight: 600;
+}
+
+.bandeau .link:focus-visible,
+.close:focus-visible {
+  outline: var(--clair-focus-contour);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+.close {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: var(--clair-espacement-1v);
+  border: 0;
+  border-radius: var(--clair-rayon-sm);
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--clair-fond-surface);
+}
+
+/* Le message peut contenir des paragraphes : sans marge propre dans le bandeau. */
+.text > p {
+  margin: 0;
+}

@@ -1,0 +1,148 @@
+---
+title: "BarChart"
+sidebar_label: "BarChart"
+sidebar_icon: "chart-column"
+description: "Graphique en barres simples, groupées ou empilées (@mantine/charts), couleurs des tokens, toujours placé dans un ChartFrame qui porte l'alternative textuelle."
+---
+
+import { BarChart, ChartFrame } from "@clair/ui";
+
+Graphique en barres construit sur `BarChart` de `@mantine/charts`. Le dessin est masqué aux lecteurs d'écran : il se place toujours dans un `ChartFrame`, dont le tableau « Afficher les données » est l'alternative textuelle ; la légende des séries reste en texte. Les couleurs viennent des tokens (`--clair-graphique-vote-*`, `--clair-groupe-*`) ou, à défaut, de la palette des graphiques. L'application doit charger `@mantine/charts/styles.css`. Remplace `BarresComptage` et les graphiques Recharts du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-graphiques-barchart--docs)
+
+## Import
+
+```tsx
+import { BarChart } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <BarChart
+    categoryKey="mois"
+    data={[
+      { mois: "Janvier", scrutins: 66 },
+      { mois: "Février", scrutins: 54 },
+      { mois: "Mars", scrutins: 71 },
+    ]}
+    series={[{ key: "scrutins", label: "Scrutins" }]}
+  />
+</Preview>
+
+```tsx
+<BarChart
+  categoryKey="mois"
+  data={[
+    { mois: "Janvier", scrutins: 66 },
+    { mois: "Février", scrutins: 54 },
+    { mois: "Mars", scrutins: 71 },
+  ]}
+  series={[{ key: "scrutins", label: "Scrutins" }]}
+/>
+```
+
+## Avec des barres empilées
+
+<Preview>
+  <BarChart
+    type="stacked"
+    categoryKey="mois"
+    data={[
+      { mois: "Janvier", pour: 42, contre: 18, abstention: 6 },
+      { mois: "Février", pour: 35, contre: 22, abstention: 9 },
+    ]}
+    series={[
+      { key: "pour", label: "Pour", color: "var(--clair-graphique-vote-pour)" },
+      { key: "contre", label: "Contre", color: "var(--clair-graphique-vote-contre)" },
+      { key: "abstention", label: "Abstention", color: "var(--clair-graphique-vote-abstention)" },
+    ]}
+  />
+</Preview>
+
+```tsx
+<BarChart
+  type="stacked"
+  categoryKey="mois"
+  data={[
+    { mois: "Janvier", pour: 42, contre: 18, abstention: 6 },
+    { mois: "Février", pour: 35, contre: 22, abstention: 9 },
+  ]}
+  series={[
+    { key: "pour", label: "Pour", color: "var(--clair-graphique-vote-pour)" },
+    { key: "contre", label: "Contre", color: "var(--clair-graphique-vote-contre)" },
+    { key: "abstention", label: "Abstention", color: "var(--clair-graphique-vote-abstention)" },
+  ]}
+/>
+```
+
+## Avec des barres horizontales dans un cadre
+
+<Preview>
+  <ChartFrame
+    title="Membres par commission"
+    subtitle="Décompte d'exemple"
+    provenance="officielle"
+    table={{
+      caption: "Membres par commission (exemple)",
+      columns: [
+        { key: "commission", label: "Commission" },
+        { key: "membres", label: "Membres" },
+      ],
+      rows: [
+        { commission: "Finances", membres: 73 },
+        { commission: "Affaires sociales", membres: 72 },
+      ],
+    }}
+  >
+    <BarChart
+      horizontal
+      height={160}
+      categoryKey="commission"
+      data={[
+        { commission: "Finances", membres: 73 },
+        { commission: "Affaires sociales", membres: 72 },
+      ]}
+      series={[{ key: "membres", label: "Membres" }]}
+    />
+  </ChartFrame>
+</Preview>
+
+```tsx
+<ChartFrame
+  title="Membres par commission"
+  subtitle="Décompte d'exemple"
+  provenance="officielle"
+  table={{
+    caption: "Membres par commission (exemple)",
+    columns: [
+      { key: "commission", label: "Commission" },
+      { key: "membres", label: "Membres" },
+    ],
+    rows: [
+      { commission: "Finances", membres: 73 },
+      { commission: "Affaires sociales", membres: 72 },
+    ],
+  }}
+>
+  <BarChart
+    horizontal
+    height={160}
+    categoryKey="commission"
+    data={[
+      { commission: "Finances", membres: 73 },
+      { commission: "Affaires sociales", membres: 72 },
+    ]}
+    series={[{ key: "membres", label: "Membres" }]}
+  />
+</ChartFrame>
+```
+
+## Avec aucune donnée
+
+<Preview>
+  <BarChart categoryKey="mois" data={[]} series={[{ key: "scrutins", label: "Scrutins" }]} />
+</Preview>
+
+```tsx
+<BarChart categoryKey="mois" data={[]} series={[{ key: "scrutins", label: "Scrutins" }]} />
+```

@@ -1,0 +1,198 @@
+.page {
+  padding-block: var(--clair-espacement-6v) var(--clair-espacement-16v);
+}
+
+.lead,
+.sources {
+  margin: 0;
+}
+
+.sources {
+  margin-top: var(--clair-espacement-2v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.erreur {
+  margin-top: var(--clair-espacement-6v);
+}
+
+.disposition {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--clair-espacement-6v);
+  align-items: start;
+  margin-top: var(--clair-espacement-6v);
+}
+
+@media (min-width: 1024px) {
+  .disposition {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  }
+}
+
+.panneau {
+  min-width: 0;
+  padding: var(--clair-espacement-4v);
+  border: var(--clair-trait-epaisseur) solid var(--clair-bordure-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+}
+
+/* Calendrier */
+
+.calendrier {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+}
+
+.point,
+.carre,
+.trait {
+  display: inline-block;
+  flex-shrink: 0;
+  background: currentColor;
+}
+
+.point {
+  width: var(--clair-espacement-2v);
+  height: var(--clair-espacement-2v);
+  border-radius: var(--clair-rayon-pilule);
+  color: var(--clair-fond-action);
+}
+
+.point[data-densite="faible"] {
+  width: var(--clair-espacement-1v);
+  height: var(--clair-espacement-1v);
+}
+
+.point[data-densite="forte"] {
+  width: var(--clair-espacement-3v);
+  height: var(--clair-espacement-2v);
+}
+
+.carre {
+  width: var(--clair-espacement-2v);
+  height: var(--clair-espacement-2v);
+  border-radius: var(--clair-rayon-aucun);
+  color: var(--clair-statut-avertissement);
+}
+
+.trait {
+  width: var(--clair-espacement-4v);
+  height: var(--clair-trait-epaisseur);
+  color: var(--clair-bordure-forte);
+}
+
+:global([data-selected]) .point,
+:global([data-selected]) .carre {
+  color: var(--clair-texte-sur-action);
+}
+
+.periodes,
+.legende {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.periodes {
+  flex-direction: column;
+  gap: var(--clair-espacement-2v);
+}
+
+.periode {
+  display: flex;
+  flex-direction: column;
+  padding: var(--clair-espacement-2v) var(--clair-espacement-3v);
+  border: var(--clair-trait-epaisseur) solid var(--clair-bordure-defaut);
+  border-radius: var(--clair-rayon-md);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.periodeTitre {
+  font-weight: var(--clair-texte-h6-graisse);
+}
+
+.periodeDate {
+  color: var(--clair-texte-mention);
+}
+
+.legende {
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  font-size: var(--clair-texte-xs-taille);
+  color: var(--clair-texte-mention);
+}
+
+.legende li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+}
+
+/* Détail du jour */
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+}
+
+.enteteDetail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--clair-espacement-2v);
+}
+
+.titreJour {
+  margin: 0;
+  font-size: var(--clair-texte-h4-taille);
+  line-height: var(--clair-texte-h4-interligne);
+  font-weight: var(--clair-texte-h4-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.mention {
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  color: var(--clair-texte-mention);
+}
+
+.liste {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reunion {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-2v);
+}
+
+.complements {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-2v);
+  margin: 0;
+  padding-inline: var(--clair-espacement-4v);
+}
+
+.liensReunion {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  color: var(--clair-texte-mention);
+}

@@ -1,0 +1,38 @@
+import { Meta } from "@storybook/addon-docs/blocks";
+import { ColorSwatches, ContrastTable } from "@clair/ui/documentation";
+
+<Meta title="Fondations/Couleurs" />
+
+# Couleurs
+
+Toutes les couleurs viennent de `packages/theme/src/tokens.ts`. En code, on utilise les **rôles** (`var(--clair-texte-action)`), jamais les valeurs.
+
+## Thème clair
+
+<ColorSwatches set="clair" />
+
+## Thème sombre
+
+<ColorSwatches set="sombre" />
+
+## Contrastes
+
+Chaque couple texte / fond est vérifié par les tests du thème (WCAG AA : 4,5:1 pour le texte).
+
+<ContrastTable />
+
+## Groupes politiques
+
+Couleurs de repli, quand l'API ne fournit pas celle du groupe. Toujours accompagnées du sigle.
+
+<ColorSwatches set="groupes" />
+
+## Graphiques
+
+Couleurs des votes et palette des graphiques. Toujours accompagnées d'un libellé ou d'une légende.
+
+<ColorSwatches set="graphiques" />
+
+## Palette brute
+
+<ColorSwatches set="palette" />

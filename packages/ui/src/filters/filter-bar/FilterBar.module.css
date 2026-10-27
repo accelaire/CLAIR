@@ -1,0 +1,109 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--clair-espacement-3v);
+}
+
+.search {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.filters {
+  display: none;
+}
+
+.mobileOnly {
+  display: block;
+}
+
+.desktopOnly {
+  display: none;
+}
+
+/* Grand écran (md) : filtres en ligne, plus de tiroir. */
+@media (min-width: 768px) {
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--clair-espacement-3v);
+  }
+
+  .mobileOnly {
+    display: none;
+  }
+
+  .desktopOnly {
+    display: block;
+  }
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--clair-espacement-6v);
+  margin-left: var(--clair-espacement-1v);
+  padding: 0 var(--clair-espacement-2v);
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--clair-fond-action);
+  color: var(--clair-texte-sur-action);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  font-weight: 600;
+}
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-2v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+  padding-left: var(--clair-espacement-3v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--clair-fond-neutre);
+  color: var(--clair-texte-defaut);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.remove {
+  border-radius: var(--clair-rayon-pilule);
+}
+
+.drawerBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+}
+
+.drawerFilters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+}
+
+.drawerActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--clair-espacement-2v);
+  padding-top: var(--clair-espacement-4v);
+  border-top: var(--clair-trait-defaut);
+}

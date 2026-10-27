@@ -14,7 +14,7 @@ La norme fait foi : `docs/03-changelog/index.mdx`. Deux niveaux, à ne jamais co
 
 1. Lire le changement : `git diff master...HEAD --stat`, puis les fichiers clés.
 2. Décider s'il est notable : effet visible sur le site, l'API, les données, la méthodologie ou l'outillage des contributeurs.
-   Sinon, ne rien écrire et dire que la PR doit porter le label `changelog:aucun`.
+   Sinon, ne rien écrire et dire que la description de la PR doit contenir, seule sur sa ligne, `Journal : aucun` (pas de labels GitHub).
 3. Choisir le niveau :
    - `majeur` : rupture pour les réutilisateurs (route ou champ d'API retiré ou changé de sens) ;
    - `mineur` : nouveauté (page, source, champ d'API ajouté, méthodologie) ;

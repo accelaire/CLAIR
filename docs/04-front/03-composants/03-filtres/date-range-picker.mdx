@@ -1,0 +1,72 @@
+---
+title: "DateRangePicker"
+sidebar_label: "DateRangePicker"
+sidebar_icon: "calendar-range"
+description: "Choix d'une plage de dates en français, avec raccourcis (périodes glissantes, années, législatures et sessions)."
+---
+
+import { buildDateRangePresets, DateRangePicker } from "@clair/ui";
+
+Choix d'une plage de dates, **contrôlé** : `value` vaut `{ from, to }`, bornes au format `YYYY-MM-DD` (prêtes pour l'URL). Le calendrier (`@mantine/dates`) est en français. La plage n'est transmise qu'une fois complète ; une sélection abandonnée (Échap, clic à l'extérieur) conserve la plage précédente. Par défaut, des raccourcis proposent les 30 derniers jours, les 3 et 12 derniers mois et les dernières années ; les périodes institutionnelles (`toPeriodePresets`) s'y ajoutent. L'application doit charger `@mantine/dates/styles.css`. Remplace `components/DateRangePicker.tsx` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-filtres-daterangepicker--docs)
+
+## Import
+
+```tsx
+import { buildDateRangePresets, DateRangePicker } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <DateRangePicker value={{ from: null, to: null }} onChange={() => {}} />
+</Preview>
+
+```tsx
+<DateRangePicker value={{ from: du, to: au }} onChange={({ from, to }) => setPeriode(from, to)} />
+```
+
+## Avec une plage choisie
+
+<Preview>
+  <DateRangePicker value={{ from: "2026-01-05", to: "2026-03-20" }} onChange={() => {}} />
+</Preview>
+
+```tsx
+<DateRangePicker value={{ from: "2026-01-05", to: "2026-03-20" }} onChange={setPlage} />
+```
+
+## Avec des périodes institutionnelles
+
+<Preview>
+  <DateRangePicker
+    value={{ from: null, to: null }}
+    onChange={() => {}}
+    minDate="2024-07-18"
+    presets={[
+      ...buildDateRangePresets({ minDate: "2024-07-18", startLabel: "Depuis le début du mandat" }),
+      { label: "Session 2024-2025", from: "2024-10-01", to: "2025-09-30" },
+    ]}
+  />
+</Preview>
+
+```tsx
+<DateRangePicker
+  value={plage}
+  onChange={setPlage}
+  minDate="2024-07-18"
+  presets={[
+    ...buildDateRangePresets({ minDate: "2024-07-18", startLabel: "Depuis le début du mandat" }),
+    { label: "Session 2024-2025", from: "2024-10-01", to: "2025-09-30" },
+  ]}
+/>
+```
+
+## Avec un libellé masqué et sans raccourcis
+
+<Preview>
+  <DateRangePicker label="Période des scrutins" hideLabel presets={[]} value={{ from: null, to: null }} onChange={() => {}} />
+</Preview>
+
+```tsx
+<DateRangePicker label="Période des scrutins" hideLabel presets={[]} value={plage} onChange={setPlage} />
+```

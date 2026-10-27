@@ -1,0 +1,104 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+  padding: var(--clair-espacement-4v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+  color: var(--clair-texte-defaut);
+}
+
+@media (min-width: 640px) {
+  .root {
+    padding: var(--clair-espacement-6v);
+  }
+}
+
+.title {
+  margin: 0;
+  font-size: var(--clair-texte-h5-taille);
+  line-height: var(--clair-texte-h5-interligne);
+  font-weight: var(--clair-texte-h5-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.summary {
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  font-weight: 600;
+}
+
+.timeline {
+  --tl-color: var(--clair-statut-succes);
+}
+
+.timeline .item {
+  --item-border-color: var(--clair-bordure-defaut);
+}
+
+.timeline .item[data-status="active"] {
+  --tli-color: var(--clair-statut-info);
+}
+
+.timeline .bullet {
+  border-color: var(--clair-bordure-forte);
+  background-color: var(--clair-fond-surface);
+  color: var(--clair-fond-page);
+}
+
+.timeline .bullet[data-active] {
+  border-color: var(--tli-color, var(--tl-color));
+  background-color: var(--tli-color, var(--tl-color));
+}
+
+.timeline .item[data-status="active"] .bullet {
+  background-color: var(--clair-fond-surface);
+  border-width: var(--clair-espacement-1v);
+}
+
+.timeline .bullet svg {
+  width: var(--clair-espacement-3v);
+  height: var(--clair-espacement-3v);
+}
+
+.itemTitle {
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  font-weight: 600;
+  color: var(--clair-texte-defaut);
+}
+
+.item[data-status="pending"] .itemTitle {
+  font-weight: 500;
+  color: var(--clair-texte-mention);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+}
+
+.date,
+.pending {
+  color: var(--clair-texte-mention);
+}
+
+.both {
+  padding: 0 var(--clair-espacement-2v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-sm);
+  font-weight: 600;
+}
+
+.detail {
+  margin: var(--clair-espacement-1v) 0 0;
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  color: var(--clair-texte-mention);
+}

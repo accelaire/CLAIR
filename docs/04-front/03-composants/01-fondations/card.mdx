@@ -1,0 +1,64 @@
+---
+title: "Card"
+sidebar_label: "Card"
+sidebar_icon: "square"
+description: "Surface qui regroupe un contenu (bordure, rayon, marges), cliquable en « lien bloc » avec un seul lien."
+---
+
+import { Badge, Card } from "@clair/ui";
+
+Surface qui regroupe un contenu, avec titre (niveau choisi par `titleAs`), surtitre et pied facultatifs. Cliquable avec `href` : le titre est l'unique lien et sa zone couvre toute la carte, qui ne doit contenir aucun autre élément interactif. Remplace `.depute-card` et `.stat-card` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-fondations-card--docs)
+
+## Import
+
+```tsx
+import { Card } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <Card title="Camille Exemple">Députée de la 1re circonscription de l'Exemple-sur-Mer.</Card>
+</Preview>
+
+```tsx
+<Card title="Camille Exemple">Députée de la 1re circonscription de l'Exemple-sur-Mer.</Card>
+```
+
+## Avec un en-tête et un pied
+
+<Preview>
+  <Card
+    title="Camille Exemple"
+    titleAs="h2"
+    eyebrow={<Badge tone="info" size="sm">Assemblée nationale</Badge>}
+    footer="Mandat en cours depuis 2024"
+  >
+    Députée de la 1re circonscription de l'Exemple-sur-Mer.
+  </Card>
+</Preview>
+
+```tsx
+<Card
+  title="Camille Exemple"
+  titleAs="h2"
+  eyebrow={<Badge tone="info" size="sm">Assemblée nationale</Badge>}
+  footer="Mandat en cours depuis 2024"
+>
+  Députée de la 1re circonscription de l'Exemple-sur-Mer.
+</Card>
+```
+
+## Avec un lien bloc
+
+<Preview>
+  <Card as="article" title="Camille Exemple" href="#" footer="Voir la fiche">
+    Députée de la 1re circonscription de l'Exemple-sur-Mer.
+  </Card>
+</Preview>
+
+```tsx
+<Card as="article" title="Camille Exemple" href="#" footer="Voir la fiche">
+  Députée de la 1re circonscription de l'Exemple-sur-Mer.
+</Card>
+```

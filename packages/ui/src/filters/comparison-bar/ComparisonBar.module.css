@@ -1,0 +1,106 @@
+.root {
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+  box-shadow: var(--clair-ombre-lg);
+}
+
+.root[data-fixed] {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 150;
+  border: 0;
+  border-top: var(--clair-trait-defaut);
+  border-radius: 0;
+}
+
+.inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  max-width: var(--clair-largeur-contenu);
+  margin-inline: auto;
+  padding: var(--clair-espacement-3v) var(--clair-espacement-4v);
+}
+
+.summary {
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+  white-space: nowrap;
+}
+
+.list {
+  display: flex;
+  flex: 1 1 auto;
+  gap: var(--clair-espacement-2v);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+}
+
+.item {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  padding: var(--clair-espacement-1v);
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--clair-fond-neutre);
+  color: var(--clair-texte-defaut);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--clair-espacement-8v);
+  height: var(--clair-espacement-8v);
+  border-radius: var(--clair-rayon-pilule);
+  object-fit: cover;
+  background: var(--clair-fond-surface);
+  color: var(--clair-texte-mention);
+}
+
+.avatar svg {
+  width: var(--clair-espacement-4v);
+  height: var(--clair-espacement-4v);
+}
+
+.name {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.detail {
+  font-weight: 400;
+  color: var(--clair-texte-mention);
+}
+
+.remove {
+  border-radius: var(--clair-rayon-pilule);
+}
+
+.actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  margin-left: auto;
+}
+
+.hint {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  color: var(--clair-texte-mention);
+}

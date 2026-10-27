@@ -1,0 +1,47 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+  border-radius: var(--clair-rayon-pilule);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge[data-size="md"] {
+  padding: 2px var(--clair-espacement-3v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.badge[data-size="sm"] {
+  padding: 0 var(--clair-espacement-2v);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+}
+
+.badge[data-position="pour"] {
+  background: var(--clair-vote-pour-fond);
+  color: var(--clair-vote-pour);
+}
+
+.badge[data-position="contre"] {
+  background: var(--clair-vote-contre-fond);
+  color: var(--clair-vote-contre);
+}
+
+.badge[data-position="abstention"] {
+  background: var(--clair-vote-abstention-fond);
+  color: var(--clair-vote-abstention);
+}
+
+.badge[data-position="absent"],
+.badge[data-position="non_votant"] {
+  background: var(--clair-vote-absent-fond);
+  color: var(--clair-vote-absent);
+}
+
+.icon {
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+}

@@ -1,0 +1,16 @@
+.link {
+  color: var(--clair-texte-action);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:hover {
+  text-decoration-thickness: 2px;
+}
+
+.icon {
+  width: 0.875em;
+  height: 0.875em;
+  margin-left: var(--clair-espacement-1v);
+  vertical-align: -0.1em;
+}

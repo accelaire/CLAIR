@@ -1,0 +1,51 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+  border-radius: var(--clair-rayon-pilule);
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--clair-statut-neutre-fond);
+  color: var(--clair-statut-neutre);
+}
+
+.badge[data-size="md"] {
+  padding: 2px var(--clair-espacement-3v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.badge[data-size="sm"] {
+  padding: 0 var(--clair-espacement-2v);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+}
+
+.badge[data-tone="info"] {
+  background: var(--clair-statut-info-fond);
+  color: var(--clair-statut-info);
+}
+
+.badge[data-tone="succes"] {
+  background: var(--clair-statut-succes-fond);
+  color: var(--clair-statut-succes);
+}
+
+.badge[data-tone="erreur"] {
+  background: var(--clair-statut-erreur-fond);
+  color: var(--clair-statut-erreur);
+}
+
+.badge[data-tone="avertissement"] {
+  background: var(--clair-statut-avertissement-fond);
+  color: var(--clair-statut-avertissement);
+}
+
+.icon {
+  display: inline-flex;
+}
+
+.icon svg {
+  width: 1em;
+  height: 1em;
+}

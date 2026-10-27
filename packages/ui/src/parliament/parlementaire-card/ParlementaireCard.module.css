@@ -1,0 +1,50 @@
+.root {
+  position: relative;
+  list-style: none;
+}
+
+.card {
+  height: 100%;
+}
+
+/* La sélection ne repose pas sur la couleur : la case cochée la porte aussi. */
+.root[data-selected] .card {
+  border-color: var(--clair-fond-action);
+  outline: var(--clair-focus-epaisseur) solid var(--clair-fond-action);
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: var(--clair-espacement-3v);
+}
+
+.root[data-selectable] .identity {
+  padding-right: var(--clair-espacement-16v);
+}
+
+/* Le nom ne passe jamais sous la case « Comparer », même long. */
+.root[data-selectable] :is(h2, h3, h4) {
+  padding-right: var(--clair-espacement-12v);
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--clair-espacement-2v);
+}
+
+.circonscription {
+  margin: 0;
+  color: var(--clair-texte-mention);
+}
+
+/* Au-dessus de la zone cliquable du lien bloc : la case reste une cible distincte. */
+.selection {
+  position: absolute;
+  top: var(--clair-espacement-3v);
+  right: var(--clair-espacement-3v);
+  z-index: 1;
+  font-size: var(--clair-texte-xs-taille);
+}

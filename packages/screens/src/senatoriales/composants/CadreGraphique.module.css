@@ -1,0 +1,93 @@
+.cadre {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+  min-width: 0;
+  padding: var(--clair-espacement-4v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+  scroll-margin-top: calc(var(--clair-espacement-4v) * 6);
+}
+
+@media (min-width: 640px) {
+  .cadre {
+    padding: var(--clair-espacement-6v);
+  }
+}
+
+.entete {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
+}
+
+@media (min-width: 640px) {
+  .entete {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+}
+
+.titres {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--clair-espacement-1v);
+}
+
+.titre {
+  margin: 0;
+  font-size: var(--clair-texte-h5-taille);
+  line-height: var(--clair-texte-h5-interligne);
+  font-weight: var(--clair-texte-h5-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.titre[data-niveau="h1"] {
+  font-size: var(--clair-texte-h3-taille);
+  line-height: var(--clair-texte-h3-interligne);
+  font-weight: var(--clair-texte-h1-graisse);
+}
+
+.sousTitre {
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: calc(var(--clair-espacement-1v) * 1.5);
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--clair-espacement-1v) * 9);
+  height: calc(var(--clair-espacement-1v) * 9);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-md);
+  color: var(--clair-texte-mention);
+  text-decoration: none;
+}
+
+.action:hover {
+  background: var(--clair-fond-neutre);
+  color: var(--clair-texte-defaut);
+}
+
+.action:focus-visible {
+  outline: var(--clair-focus-contour);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+.action svg {
+  width: var(--clair-espacement-4v);
+  height: var(--clair-espacement-4v);
+}

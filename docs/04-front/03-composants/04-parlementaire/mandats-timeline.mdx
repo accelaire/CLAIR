@@ -1,0 +1,116 @@
+---
+title: "MandatsTimeline"
+sidebar_label: "MandatsTimeline"
+sidebar_icon: "briefcase"
+description: "Mandats et fonctions d'un parlementaire : chambre, législature ou mandature, groupe d'époque, dates et mandat en cours annoncé en texte."
+---
+
+import { MandatsTimeline } from "@clair/ui";
+
+Frise des mandats d'un parlementaire, du plus récent au plus ancien, construite sur `Timeline` de Mantine. Chaque mandat donne sa chambre, sa période, ses dates, le groupe de l'époque (couleur toujours doublée du nom et du sigle), la circonscription et les fonctions exercées : les fonctions en cours sont visibles, les anciennes se déplient. Fusionne `MandatsBlock` et `FonctionsMandat` du site actuel. Exemples : personne fictive. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-parlementaire-mandatstimeline--docs)
+
+## Import
+
+```tsx
+import { MandatsTimeline } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <MandatsTimeline
+    mandats={[
+      {
+        id: "an-17",
+        chambre: "assemblee",
+        periode: "XVIIe législature",
+        dateDebut: "2024-07-18",
+        groupe: { sigle: "ECO", nom: "Écologiste et social", couleur: "var(--clair-groupe-eco)" },
+        circonscription: "Exempleville (1re circonscription)",
+        fonctions: [{ id: "f1", qualite: "Membre", organe: "Commission du développement durable", dateDebut: "2024-07-20" }],
+      },
+    ]}
+  />
+</Preview>
+
+```tsx
+<MandatsTimeline
+  mandats={[
+    {
+      id: "an-17",
+      chambre: "assemblee",
+      periode: "XVIIe législature",
+      dateDebut: "2024-07-18",
+      groupe: { sigle: "ECO", nom: "Écologiste et social", couleur: "var(--clair-groupe-eco)" },
+      circonscription: "Exempleville (1re circonscription)",
+      fonctions: [{ id: "f1", qualite: "Membre", organe: "Commission du développement durable", dateDebut: "2024-07-20" }],
+    },
+  ]}
+/>
+```
+
+## Avec deux chambres
+
+<Preview>
+  <MandatsTimeline
+    sexe="F"
+    mandats={[
+      {
+        id: "an-16",
+        chambre: "assemblee",
+        periode: "XVIe législature",
+        dateDebut: "2022-06-22",
+        dateFin: "2023-09-30",
+        groupe: { sigle: "DEM", nom: "Démocrate (MoDem et indépendants)", couleur: "var(--clair-groupe-dem)" },
+      },
+      {
+        id: "sn-2023",
+        chambre: "senat",
+        periode: "Mandature 2023",
+        dateDebut: "2023-10-01",
+        groupe: { sigle: "UC", nom: "Union centriste", href: "#groupe" },
+        fonctions: [
+          { id: "f2", qualite: "Vice-présidente", organe: "Commission des affaires sociales", dateDebut: "2023-10-10" },
+          { id: "f3", qualite: "Rapporteure", organe: "Mission d'information sur les mobilités", dateDebut: "2024-01-15", dateFin: "2024-07-01" },
+        ],
+      },
+    ]}
+  />
+</Preview>
+
+```tsx
+<MandatsTimeline
+  sexe="F"
+  mandats={[
+    {
+      id: "an-16",
+      chambre: "assemblee",
+      periode: "XVIe législature",
+      dateDebut: "2022-06-22",
+      dateFin: "2023-09-30",
+      groupe: { sigle: "DEM", nom: "Démocrate (MoDem et indépendants)", couleur: "var(--clair-groupe-dem)" },
+    },
+    {
+      id: "sn-2023",
+      chambre: "senat",
+      periode: "Mandature 2023",
+      dateDebut: "2023-10-01",
+      groupe: { sigle: "UC", nom: "Union centriste", href: "#groupe" },
+      fonctions: [
+        { id: "f2", qualite: "Vice-présidente", organe: "Commission des affaires sociales", dateDebut: "2023-10-10" },
+        { id: "f3", qualite: "Rapporteure", organe: "Mission d'information sur les mobilités", dateDebut: "2024-01-15", dateFin: "2024-07-01" },
+      ],
+    },
+  ]}
+/>
+```
+
+## Avec aucun mandat
+
+<Preview>
+  <MandatsTimeline mandats={[]} />
+</Preview>
+
+```tsx
+<MandatsTimeline mandats={[]} />
+```

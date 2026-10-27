@@ -1,0 +1,17 @@
+.container {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--clair-largeur-contenu);
+  margin-inline: auto;
+  padding-inline: var(--clair-espacement-4v);
+}
+
+.container[data-size="etroit"] {
+  max-width: var(--clair-rupture-md);
+}
+
+@media (min-width: 768px) {
+  .container {
+    padding-inline: var(--clair-espacement-6v);
+  }
+}

@@ -1,0 +1,52 @@
+---
+title: "Header"
+sidebar_label: "Header"
+sidebar_icon: "panel-top"
+description: "En-tête du site : rubriques en boutons à disclosure, recherche, thème, appel à l'action, tiroir sur mobile."
+---
+
+import { Header } from "@clair/ui";
+
+En-tête du site. Chaque rubrique suit le motif **disclosure** du W3C (bouton `aria-expanded` et liste de liens), recommandé pour la navigation d'un site : elle se ferme avec Échap, par un clic à l'extérieur ou en suivant un lien. La page courante est signalée par `aria-current="page"`. Sur mobile, la navigation passe dans un tiroir. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-mise-en-page-header--docs)
+
+## Import
+
+```tsx
+import { Header } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview surface="page">
+  <Header
+    navigation={[
+      { label: "Parlementaires", items: [{ label: "Députés", href: "/deputes" }, { label: "Sénateurs", href: "/senateurs" }] },
+      { label: "Lobbying", href: "/lobbying" },
+    ]}
+  />
+</Preview>
+
+```tsx
+<Header
+  navigation={[
+    { label: "Parlementaires", items: [{ label: "Députés", href: "/deputes" }, { label: "Sénateurs", href: "/senateurs" }] },
+    { label: "Lobbying", href: "/lobbying" },
+  ]}
+/>
+```
+
+## Avec un appel à l'action
+
+<Preview surface="page">
+  <Header
+    navigation={[{ label: "Lobbying", href: "/lobbying" }]}
+    cta={{ label: "Nous soutenir", href: "/soutenir" }}
+  />
+</Preview>
+
+```tsx
+<Header
+  navigation={[{ label: "Lobbying", href: "/lobbying" }]}
+  cta={{ label: "Nous soutenir", href: "/soutenir" }}
+/>
+```

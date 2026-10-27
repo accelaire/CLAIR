@@ -1,0 +1,66 @@
+.statCard {
+  height: 100%;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-1v);
+  margin: 0;
+}
+
+/* Libellé au-dessus du chiffre, comme sur les fiches. */
+.label {
+  display: flex;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.value {
+  margin: 0;
+  font-size: var(--clair-texte-chiffre-taille);
+  line-height: var(--clair-texte-chiffre-interligne);
+  font-weight: var(--clair-texte-chiffre-graisse);
+  font-variant-numeric: tabular-nums;
+  color: var(--clair-texte-titre);
+}
+
+.detail {
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  font-variant-numeric: tabular-nums;
+  color: var(--clair-texte-mention);
+}
+
+.variation {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--clair-texte-defaut);
+}
+
+.icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.icon svg {
+  width: 1em;
+  height: 1em;
+}
+
+.help {
+  margin: 0;
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  color: var(--clair-texte-mention);
+}

@@ -1,0 +1,69 @@
+---
+title: "Faq"
+sidebar_label: "Faq"
+sidebar_icon: "messages-square"
+description: "Foire aux questions en accordéon : chaque question est un titre contenant un bouton, une ou plusieurs réponses ouvertes."
+---
+
+import { Faq } from "@clair/ui";
+
+Foire aux questions en accordéon (Mantine `Accordion`). Chaque question est un titre (niveau réglable par `headingLevel`) qui contient un bouton `aria-expanded` ; une seule réponse est ouverte à la fois, ou plusieurs avec `multiple`. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-fondations-faq--docs)
+
+## Import
+
+```tsx
+import { Faq } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <Faq
+    items={[
+      { question: "D'où viennent les données ?", answer: "Des données ouvertes de l'Assemblée nationale et du Sénat." },
+      { question: "Les résumés sont-ils officiels ?", answer: "Non : ils sont produits par une IA et signalés comme tels." },
+    ]}
+  />
+</Preview>
+
+```tsx
+<Faq
+  items={[
+    { question: "D'où viennent les données ?", answer: "Des données ouvertes de l'Assemblée nationale et du Sénat." },
+    { question: "Les résumés sont-ils officiels ?", answer: "Non : ils sont produits par une IA et signalés comme tels." },
+  ]}
+/>
+```
+
+## Avec une réponse ouverte
+
+<Preview>
+  <Faq
+    defaultOpened={[0]}
+    items={[
+      { question: "D'où viennent les données ?", answer: "Des données ouvertes de l'Assemblée nationale et du Sénat." },
+      { question: "Comment signaler une erreur ?", answer: "Par le formulaire de contact." },
+    ]}
+  />
+</Preview>
+
+```tsx
+<Faq defaultOpened={[0]} items={questions} />
+```
+
+## Avec plusieurs réponses ouvertes
+
+<Preview>
+  <Faq
+    multiple
+    defaultOpened={[0, 1]}
+    items={[
+      { question: "D'où viennent les données ?", answer: "Des données ouvertes de l'Assemblée nationale et du Sénat." },
+      { question: "Comment signaler une erreur ?", answer: "Par le formulaire de contact." },
+    ]}
+  />
+</Preview>
+
+```tsx
+<Faq multiple defaultOpened={[0, 1]} items={questions} />
+```

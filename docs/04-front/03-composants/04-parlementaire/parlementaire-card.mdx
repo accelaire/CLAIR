@@ -1,0 +1,158 @@
+---
+title: "ParlementaireCard"
+sidebar_label: "ParlementaireCard"
+sidebar_icon: "id-card"
+description: "Carte d'un député ou d'un sénateur : photo, nom en lien vers la fiche, groupe, circonscription, statut et sélection pour le comparateur."
+---
+
+import { ParlementaireCard } from "@clair/ui";
+
+Carte d'un député ou d'un sénateur (paramètre `chambre`) : photo, nom (unique lien, vers la fiche, dont la zone couvre la carte), groupe, circonscription ou département, et statut (ancien élu). En mode comparateur, une case « Comparer » distincte du lien sélectionne la personne. Remplace `.depute-card`, les cartes des listes des députés et des sénateurs et `SortantCard` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-parlementaire-parlementairecard--docs)
+
+## Import
+
+```tsx
+import { ParlementaireCard } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <ParlementaireCard
+    chambre="assemblee"
+    href="#"
+    parlementaire={{
+      prenom: "Camille",
+      nom: "Exemple",
+      sexe: "F",
+      photoUrl: null,
+      actif: true,
+      groupe: { nom: "ECO", nomComplet: "Écologiste et Social", couleur: null },
+      circonscription: { nom: "Exemple-sur-Mer", departement: "99", numero: 1 },
+    }}
+  />
+</Preview>
+
+```tsx
+<ParlementaireCard
+  chambre="assemblee"
+  href="#"
+  parlementaire={{
+    prenom: "Camille",
+    nom: "Exemple",
+    sexe: "F",
+    photoUrl: null,
+    actif: true,
+    groupe: { nom: "ECO", nomComplet: "Écologiste et Social", couleur: null },
+    circonscription: { nom: "Exemple-sur-Mer", departement: "99", numero: 1 },
+  }}
+/>
+```
+
+## Avec un sénateur
+
+<Preview>
+  <ParlementaireCard
+    chambre="senat"
+    href="#"
+    parlementaire={{
+      prenom: "Dominique",
+      nom: "Modèle",
+      sexe: "M",
+      photoUrl: null,
+      actif: true,
+      groupe: { nom: "UC", nomComplet: "Union Centriste", couleur: "#00BFFF" },
+      circonscription: { nom: "Département-Modèle", departement: "98", numero: 0 },
+    }}
+  />
+</Preview>
+
+```tsx
+<ParlementaireCard
+  chambre="senat"
+  href="#"
+  parlementaire={{
+    prenom: "Dominique",
+    nom: "Modèle",
+    sexe: "M",
+    photoUrl: null,
+    actif: true,
+    groupe: { nom: "UC", nomComplet: "Union Centriste", couleur: "#00BFFF" },
+    circonscription: { nom: "Département-Modèle", departement: "98", numero: 0 },
+  }}
+/>
+```
+
+## Avec un ancien élu
+
+<Preview>
+  <ParlementaireCard
+    chambre="assemblee"
+    href="#"
+    parlementaire={{
+      prenom: "Alex",
+      nom: "Fictif",
+      sexe: "M",
+      photoUrl: null,
+      actif: false,
+      groupe: null,
+      circonscription: { nom: "Ville-Témoin", departement: "97", numero: 3 },
+    }}
+  />
+</Preview>
+
+```tsx
+<ParlementaireCard
+  chambre="assemblee"
+  href="#"
+  parlementaire={{
+    prenom: "Alex",
+    nom: "Fictif",
+    sexe: "M",
+    photoUrl: null,
+    actif: false,
+    groupe: null,
+    circonscription: { nom: "Ville-Témoin", departement: "97", numero: 3 },
+  }}
+/>
+```
+
+## Avec la sélection du comparateur
+
+<Preview>
+  <ParlementaireCard
+    chambre="assemblee"
+    href="#"
+    selectable
+    selected
+    onSelectedChange={() => {}}
+    parlementaire={{
+      prenom: "Camille",
+      nom: "Exemple",
+      sexe: "F",
+      photoUrl: null,
+      actif: true,
+      groupe: { nom: "ECO", nomComplet: "Écologiste et Social", couleur: null },
+      circonscription: { nom: "Exemple-sur-Mer", departement: "99", numero: 1 },
+    }}
+  />
+</Preview>
+
+```tsx
+<ParlementaireCard
+  chambre="assemblee"
+  href="#"
+  selectable
+  selected
+  onSelectedChange={() => {}}
+  parlementaire={{
+    prenom: "Camille",
+    nom: "Exemple",
+    sexe: "F",
+    photoUrl: null,
+    actif: true,
+    groupe: { nom: "ECO", nomComplet: "Écologiste et Social", couleur: null },
+    circonscription: { nom: "Exemple-sur-Mer", departement: "99", numero: 1 },
+  }}
+/>
+```

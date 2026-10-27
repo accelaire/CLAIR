@@ -1,0 +1,54 @@
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--clair-espacement-6v);
+  min-height: var(--clair-espacement-6v);
+  padding: 0;
+  border: 0;
+  border-radius: var(--clair-rayon-pilule);
+  background: none;
+  color: var(--clair-texte-mention);
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.trigger:hover,
+.trigger[aria-expanded="true"] {
+  color: var(--clair-texte-defaut);
+  background: var(--clair-fond-neutre);
+}
+
+.trigger:focus-visible {
+  outline: var(--clair-focus-contour);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+.trigger svg {
+  width: var(--clair-espacement-4v);
+  height: var(--clair-espacement-4v);
+}
+
+.dropdown {
+  max-width: min(calc(100vw - var(--clair-espacement-8v)), calc(var(--clair-espacement-16v) * 5));
+  padding: var(--clair-espacement-3v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+  color: var(--clair-texte-defaut);
+  box-shadow: var(--clair-ombre-md);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.content > p {
+  margin: 0;
+}
+
+.more {
+  display: inline-block;
+  margin-top: var(--clair-espacement-2v);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  font-weight: 500;
+}

@@ -1,13 +1,14 @@
 name: Changelog
 
 # Fragments de changement (docs/03-changelog/index.mdx) : format toujours vérifié ;
-# une PR ajoute un fragment dans .changelog/ ou porte le label « changelog:aucun ».
+# une PR ajoute un fragment dans .changelog/ ou écrit la ligne « Journal : aucun » dans sa
+# description (pas de labels GitHub sur ce dépôt).
 # Pendant l'adoption, un fragment manquant n'est qu'un avertissement (--avertir).
 
 on:
   pull_request:
     branches: [main, master]
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main, master]
 
@@ -40,5 +41,6 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           BASE: origin/${{ github.base_ref }}
-          LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
-        run: node scripts/changelog/check.mjs --base "$BASE" --labels "$LABELS" --avertir
+          # Description lue par le script dans l'environnement, jamais interpolée dans le shell.
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node scripts/changelog/check.mjs --base "$BASE" --avertir

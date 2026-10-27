@@ -1,0 +1,78 @@
+---
+title: "SearchInput"
+sidebar_label: "SearchInput"
+sidebar_icon: "search"
+description: "Champ de recherche contrôlé : libellé obligatoire, bouton d'effacement accessible, validation par Entrée et regroupement optionnel des frappes."
+---
+
+import { SearchInput } from "@clair/ui";
+
+Champ de recherche **contrôlé** : l'écran fournit `value` et `onChange` et synchronise la valeur avec l'URL. Le champ a toujours un nom accessible (`label` visible, ou à défaut `aria-label`) ; l'icône est décorative. Entrée appelle `onSubmit`, Échap ou le bouton « Effacer la recherche » vident le champ et rendent le focus. Avec `debounceMs`, la saisie reste fluide et `onChange` n'est appelé qu'une fois la frappe arrêtée. Remplace `.search-input` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-filtres-searchinput--docs)
+
+## Import
+
+```tsx
+import { SearchInput } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <SearchInput label="Rechercher un parlementaire" value="" onChange={() => {}} />
+</Preview>
+
+```tsx
+<SearchInput label="Rechercher un parlementaire" value={q} onChange={setQ} />
+```
+
+## Avec une saisie et une validation
+
+<Preview>
+  <SearchInput
+    label="Rechercher un parlementaire"
+    value="Camille Exemple"
+    onChange={() => {}}
+    onSubmit={() => {}}
+  />
+</Preview>
+
+```tsx
+<SearchInput
+  label="Rechercher un parlementaire"
+  value={q}
+  onChange={setQ}
+  onSubmit={(value) => lancerLaRecherche(value)}
+/>
+```
+
+## Avec un délai de frappe
+
+<Preview>
+  <SearchInput
+    label="Rechercher un scrutin"
+    description="Au moins deux caractères."
+    value=""
+    onChange={() => {}}
+    debounceMs={300}
+  />
+</Preview>
+
+```tsx
+<SearchInput
+  label="Rechercher un scrutin"
+  description="Au moins deux caractères."
+  value={q}
+  onChange={setQ}
+  debounceMs={300}
+/>
+```
+
+## Avec un libellé implicite
+
+<Preview>
+  <SearchInput aria-label="Rechercher dans les scrutins" placeholder="Rechercher…" value="" onChange={() => {}} />
+</Preview>
+
+```tsx
+<SearchInput aria-label="Rechercher dans les scrutins" placeholder="Rechercher…" value={q} onChange={setQ} />
+```

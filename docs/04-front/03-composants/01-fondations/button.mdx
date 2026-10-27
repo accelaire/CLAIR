@@ -1,0 +1,101 @@
+---
+title: "Button"
+sidebar_label: "Button"
+sidebar_icon: "mouse-pointer-click"
+description: "Bouton d'action primaire, secondaire ou tertiaire ; avec une adresse, il rend un lien au même aspect."
+---
+
+import { Button } from "@clair/ui";
+import { ArrowRight, Share2 } from "lucide-react";
+
+Bouton d'action, à réserver aux actions (une seule action primaire par zone) : avec `href`, il rend un lien au même aspect, interne par le routeur de l'application ou externe dans un nouvel onglet annoncé. Une icône seule exige un `aria-label`, imposé par le type. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-fondations-button--docs)
+
+## Import
+
+```tsx
+import { Button } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <Button>Télécharger les données</Button>
+</Preview>
+
+```tsx
+<Button onClick={telecharger}>Télécharger les données</Button>
+```
+
+## Avec une variante
+
+<Preview>
+  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+    <Button variant="primaire">Primaire</Button>
+    <Button variant="secondaire">Secondaire</Button>
+    <Button variant="tertiaire">Tertiaire</Button>
+  </div>
+</Preview>
+
+```tsx
+<Button variant="primaire">Primaire</Button>
+<Button variant="secondaire">Secondaire</Button>
+<Button variant="tertiaire">Tertiaire</Button>
+```
+
+## Avec une taille
+
+<Preview>
+  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+    <Button size="sm">Petit</Button>
+    <Button size="md">Moyen</Button>
+    <Button size="lg">Grand</Button>
+  </div>
+</Preview>
+
+```tsx
+<Button size="sm">Petit</Button>
+<Button size="md">Moyen</Button>
+<Button size="lg">Grand</Button>
+```
+
+## Avec une icône
+
+<Preview>
+  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+    <Button icon={<ArrowRight />} iconPosition="end">Voir les résultats</Button>
+    <Button variant="secondaire" icon={<Share2 />} aria-label="Partager la page" />
+  </div>
+</Preview>
+
+```tsx
+<Button icon={<ArrowRight />} iconPosition="end">Voir les résultats</Button>
+<Button variant="secondaire" icon={<Share2 />} aria-label="Partager la page" />
+```
+
+## Avec un état de chargement ou désactivé
+
+<Preview>
+  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+    <Button loading>Envoi en cours</Button>
+    <Button disabled>Envoyer</Button>
+  </div>
+</Preview>
+
+```tsx
+<Button loading>Envoi en cours</Button>
+<Button disabled>Envoyer</Button>
+```
+
+## Avec une adresse
+
+<Preview>
+  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+    <Button href="/front/composants">Voir le catalogue</Button>
+    <Button variant="secondaire" href="https://www.senat.fr" external>Site du Sénat</Button>
+  </div>
+</Preview>
+
+```tsx
+<Button href="/front/composants">Voir le catalogue</Button>
+<Button variant="secondaire" href="https://www.senat.fr" external>Site du Sénat</Button>
+```

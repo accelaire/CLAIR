@@ -1,0 +1,44 @@
+---
+title: "ChambreBadge"
+sidebar_label: "ChambreBadge"
+sidebar_icon: "landmark"
+description: "Chambre du Parlement (Assemblée nationale ou Sénat), couleur doublée du nom, version courte accessible."
+---
+
+import { ChambreBadge } from "@clair/ui";
+
+Chambre du Parlement, avec la couleur propre à chaque chambre toujours doublée de son nom. En version courte (« AN »), le nom complet est donné en infobulle et lu par les lecteurs d'écran. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-fondations-chambrebadge--docs)
+
+## Import
+
+```tsx
+import { ChambreBadge } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+    <ChambreBadge chambre="assemblee" />
+    <ChambreBadge chambre="senat" />
+  </div>
+</Preview>
+
+```tsx
+<ChambreBadge chambre="assemblee" />
+<ChambreBadge chambre="senat" />
+```
+
+## Avec un libellé court
+
+<Preview>
+  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+    <ChambreBadge chambre="assemblee" short size="sm" />
+    <ChambreBadge chambre="senat" short size="sm" />
+  </div>
+</Preview>
+
+```tsx
+<ChambreBadge chambre="assemblee" short size="sm" />
+<ChambreBadge chambre="senat" short size="sm" />
+```

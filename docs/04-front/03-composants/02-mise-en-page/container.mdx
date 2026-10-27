@@ -1,0 +1,60 @@
+---
+title: "Container"
+sidebar_label: "Container"
+sidebar_icon: "box"
+description: "Conteneur de contenu : largeur maximale du site ou colonne de lecture, marges latérales adaptées à l'écran."
+---
+
+import { Container } from "@clair/ui";
+
+Conteneur qui centre le contenu, limite sa largeur à celle du site (`--clair-largeur-contenu`) et pose les marges latérales ; la taille `etroit` donne une colonne de lecture pour les textes longs. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-mise-en-page-container--docs)
+
+## Import
+
+```tsx
+import { Container } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <Container>
+    <p>Contenu centré, à la largeur du site.</p>
+  </Container>
+</Preview>
+
+```tsx
+<Container>
+  <p>Contenu centré, à la largeur du site.</p>
+</Container>
+```
+
+## Avec une colonne de lecture
+
+<Preview>
+  <Container size="etroit">
+    <p>Texte long (méthodologie, mentions) : une colonne de 768 px au plus reste lisible.</p>
+  </Container>
+</Preview>
+
+```tsx
+<Container size="etroit">
+  <p>Texte long (méthodologie, mentions) : une colonne de 768 px au plus reste lisible.</p>
+</Container>
+```
+
+## Avec une section nommée
+
+<Preview>
+  <Container as="section" aria-labelledby="titre-methodologie">
+    <h2 id="titre-methodologie">Méthodologie</h2>
+    <p>Une section porte un titre qui la nomme.</p>
+  </Container>
+</Preview>
+
+```tsx
+<Container as="section" aria-labelledby="titre-methodologie">
+  <h2 id="titre-methodologie">Méthodologie</h2>
+  <p>Une section porte un titre qui la nomme.</p>
+</Container>
+```

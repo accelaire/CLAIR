@@ -1,0 +1,9 @@
+/* Fond de l'aperçu = fond de page du thème courant (comme dsfr-sb/preview.css). */
+.docs-story,
+#storybook-root {
+  background: var(--clair-fond-page);
+}
+
+.sb-show-main.sb-main-padded {
+  padding: var(--clair-espacement-4v);
+}

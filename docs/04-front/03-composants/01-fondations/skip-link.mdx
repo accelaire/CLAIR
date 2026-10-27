@@ -1,0 +1,42 @@
+---
+title: "SkipLink"
+sidebar_label: "SkipLink"
+sidebar_icon: "skip-forward"
+description: "Lien d'évitement « Aller au contenu » : premier arrêt du clavier, visible seulement quand il a le focus."
+---
+
+import { SkipLink } from "@clair/ui";
+
+Lien d'évitement : premier élément atteint au clavier, il mène directement au contenu principal (`main#contenu`). Invisible tant qu'il n'a pas le focus. Il est inclus dans `AppShell` : on ne l'utilise seul que hors de ce cadre. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-fondations-skiplink--docs)
+
+## Import
+
+```tsx
+import { SkipLink } from "@clair/ui";
+```
+
+## Utilisation de base
+
+Cliquer dans l'aperçu puis appuyer sur Tab pour le voir apparaître.
+
+<Preview>
+  <div style={{ position: "relative", minHeight: 56 }}>
+    <SkipLink />
+  </div>
+</Preview>
+
+```tsx
+<SkipLink />
+```
+
+## Avec une autre cible
+
+<Preview>
+  <div style={{ position: "relative", minHeight: 56 }}>
+    <SkipLink target="resultats">Aller aux résultats</SkipLink>
+  </div>
+</Preview>
+
+```tsx
+<SkipLink target="resultats">Aller aux résultats</SkipLink>
+```

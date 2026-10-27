@@ -1,0 +1,86 @@
+---
+title: "SortSelect"
+sidebar_label: "SortSelect"
+sidebar_icon: "arrow-up-down"
+description: "Choix du tri d'une liste, en liste déroulante native toujours libellée."
+---
+
+import { SortSelect } from "@clair/ui";
+
+Choix du tri d'une liste, **contrôlé**. Liste déroulante native : la plus accessible et la plus confortable sur mobile. Le libellé (« Trier par » par défaut) est toujours présent, au besoin masqué visuellement. Remplace `classements/SortSelect.tsx` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-filtres-sortselect--docs)
+
+## Import
+
+```tsx
+import { SortSelect } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <SortSelect
+    value="presence"
+    onChange={() => {}}
+    options={[
+      { value: "presence", label: "Présence" },
+      { value: "loyaute", label: "Loyauté" },
+      { value: "nom", label: "Alphabétique" },
+    ]}
+  />
+</Preview>
+
+```tsx
+<SortSelect
+  value={tri}
+  onChange={setTri}
+  options={[
+    { value: "presence", label: "Présence" },
+    { value: "loyaute", label: "Loyauté" },
+    { value: "nom", label: "Alphabétique" },
+  ]}
+/>
+```
+
+## Avec un autre libellé
+
+<Preview>
+  <SortSelect
+    label="Période"
+    value="mandat"
+    onChange={() => {}}
+    options={[
+      { value: "mandat", label: "Mandat en cours" },
+      { value: "carriere", label: "Carrière complète" },
+    ]}
+  />
+</Preview>
+
+```tsx
+<SortSelect
+  label="Période"
+  value={periode}
+  onChange={setPeriode}
+  options={[
+    { value: "mandat", label: "Mandat en cours" },
+    { value: "carriere", label: "Carrière complète" },
+  ]}
+/>
+```
+
+## Avec un libellé masqué
+
+<Preview>
+  <SortSelect
+    hideLabel
+    value="nom"
+    onChange={() => {}}
+    options={[
+      { value: "presence", label: "Présence" },
+      { value: "nom", label: "Alphabétique" },
+    ]}
+  />
+</Preview>
+
+```tsx
+<SortSelect hideLabel value={tri} onChange={setTri} options={options} />
+```

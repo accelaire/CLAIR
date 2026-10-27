@@ -1,0 +1,118 @@
+---
+title: "DataTable"
+sidebar_label: "DataTable"
+sidebar_icon: "table"
+description: "Tableau de données accessible et triable : légende obligatoire, en-têtes de colonne, tri annoncé par aria-sort, état vide et défilement horizontal au clavier."
+---
+
+import { DataTable } from "@clair/ui";
+
+Tableau de données générique, construit sur `Table` de Mantine. La légende est obligatoire (elle peut être masquée visuellement) et nomme aussi la zone de défilement horizontal, atteignable au clavier sur mobile. Une colonne devient triable avec `sortValue` : son en-tête porte un bouton, `aria-sort` et une annonce du tri. Le tri peut être local, contrôlé (lu dans l'URL) ou fait par le serveur (`manualSort`). Remplace `ClassementsTable` et `ComparisonVotesTable` du site actuel. Exemples : personnes fictives. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-parlementaire-datatable--docs)
+
+## Import
+
+```tsx
+import { DataTable } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <DataTable
+    caption="Classement d'exemple"
+    getRowKey={(ligne) => ligne.id}
+    rows={[
+      { id: "1", nom: "Camille Exemple", groupe: "SOC", amendements: 148 },
+      { id: "2", nom: "Dominique Modèle", groupe: "DR", amendements: 312 },
+      { id: "3", nom: "Alix Fictif", groupe: "EPR", amendements: 57 },
+    ]}
+    columns={[
+      { key: "nom", header: "Parlementaire", cell: (ligne) => ligne.nom, rowHeader: true },
+      { key: "groupe", header: "Groupe", cell: (ligne) => ligne.groupe },
+      { key: "amendements", header: "Amendements", cell: (ligne) => ligne.amendements, align: "end" },
+    ]}
+  />
+</Preview>
+
+```tsx
+<DataTable
+  caption="Classement d'exemple"
+  getRowKey={(ligne) => ligne.id}
+  rows={[
+    { id: "1", nom: "Camille Exemple", groupe: "SOC", amendements: 148 },
+    { id: "2", nom: "Dominique Modèle", groupe: "DR", amendements: 312 },
+    { id: "3", nom: "Alix Fictif", groupe: "EPR", amendements: 57 },
+  ]}
+  columns={[
+    { key: "nom", header: "Parlementaire", cell: (ligne) => ligne.nom, rowHeader: true },
+    { key: "groupe", header: "Groupe", cell: (ligne) => ligne.groupe },
+    { key: "amendements", header: "Amendements", cell: (ligne) => ligne.amendements, align: "end" },
+  ]}
+/>
+```
+
+## Avec un tri
+
+<Preview>
+  <DataTable
+    caption="Classement d'exemple, triable"
+    getRowKey={(ligne) => ligne.id}
+    defaultSort={{ key: "amendements", direction: "descending" }}
+    rows={[
+      { id: "1", nom: "Camille Exemple", amendements: 148 },
+      { id: "2", nom: "Dominique Modèle", amendements: 312 },
+      { id: "3", nom: "Alix Fictif", amendements: 57 },
+    ]}
+    columns={[
+      { key: "nom", header: "Parlementaire", cell: (ligne) => ligne.nom, sortValue: (ligne) => ligne.nom, rowHeader: true },
+      { key: "amendements", header: "Amendements", cell: (ligne) => ligne.amendements, sortValue: (ligne) => ligne.amendements, firstDirection: "descending", align: "end" },
+    ]}
+  />
+</Preview>
+
+```tsx
+<DataTable
+  caption="Classement d'exemple, triable"
+  getRowKey={(ligne) => ligne.id}
+  defaultSort={{ key: "amendements", direction: "descending" }}
+  rows={[
+    { id: "1", nom: "Camille Exemple", amendements: 148 },
+    { id: "2", nom: "Dominique Modèle", amendements: 312 },
+    { id: "3", nom: "Alix Fictif", amendements: 57 },
+  ]}
+  columns={[
+    { key: "nom", header: "Parlementaire", cell: (ligne) => ligne.nom, sortValue: (ligne) => ligne.nom, rowHeader: true },
+    { key: "amendements", header: "Amendements", cell: (ligne) => ligne.amendements, sortValue: (ligne) => ligne.amendements, firstDirection: "descending", align: "end" },
+  ]}
+/>
+```
+
+## Avec une légende masquée et aucun résultat
+
+<Preview>
+  <DataTable
+    caption="Votes comparés"
+    hideCaption
+    emptyLabel="Aucun scrutin commun"
+    getRowKey={(ligne) => ligne.id}
+    rows={[]}
+    columns={[
+      { key: "scrutin", header: "Scrutin", cell: (ligne) => ligne.scrutin },
+      { key: "position", header: "Position", cell: (ligne) => ligne.position },
+    ]}
+  />
+</Preview>
+
+```tsx
+<DataTable
+  caption="Votes comparés"
+  hideCaption
+  emptyLabel="Aucun scrutin commun"
+  getRowKey={(ligne) => ligne.id}
+  rows={[]}
+  columns={[
+    { key: "scrutin", header: "Scrutin", cell: (ligne) => ligne.scrutin },
+    { key: "position", header: "Position", cell: (ligne) => ligne.position },
+  ]}
+/>
+```

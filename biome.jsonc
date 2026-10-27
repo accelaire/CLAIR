@@ -1,0 +1,44 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    // Biome couvre le code du nouveau front et l'outillage récent. Les workspaces existants
+    // (apps/web, apps/api, services/ingestion, docs, scripts/*.ts) restent sous ESLint et
+    // Prettier jusqu'à leur reformatage, fait en une fois dans une PR dédiée.
+    "includes": [
+      "packages/**",
+      "apps/site/**",
+      "apps/storybook/**",
+      "scripts/changelog/**",
+      "e2e/**",
+      "*.json",
+      "*.jsonc",
+      "*.ts",
+      "!packages/config/index.cjs",
+      "!**/dist",
+      "!**/.next",
+      "!**/next-env.d.ts",
+      "!**/storybook-static",
+      "!**/public",
+      "!**/*.svg",
+      "!**/*.md",
+      "!**/*.mdx",
+      "!packages/theme/src/tokens.css",
+      "!package.json",
+      "!pnpm-lock.yaml"
+    ]
+  },
+  "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
+  "javascript": { "formatter": { "quoteStyle": "double" } },
+  "css": { "parser": { "cssModules": true } },
+  "linter": {
+    "rules": {
+      "style": {
+        "useImportType": "error",
+        "noNonNullAssertion": "error"
+      },
+      "suspicious": { "noExplicitAny": "error" }
+    }
+  },
+  "assist": { "actions": { "source": { "organizeImports": "on" } } }
+}

@@ -1,0 +1,62 @@
+---
+title: "Footer"
+sidebar_label: "Footer"
+sidebar_icon: "panel-bottom"
+description: "Pied de page : colonnes de liens nommées, réseaux et sources des données."
+---
+
+import { Footer } from "@clair/ui";
+
+Pied de page. Chaque colonne est une navigation nommée par son titre ; les sources des données sont des liens externes annoncés comme tels. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-mise-en-page-footer--docs)
+
+## Import
+
+```tsx
+import { Footer } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview surface="page">
+  <Footer
+    columns={[
+      { title: "Explorer", links: [{ label: "Députés", href: "/deputes" }] },
+      { title: "Légal", links: [{ label: "CGU", href: "/cgu" }] },
+    ]}
+    year={2026}
+  />
+</Preview>
+
+```tsx
+<Footer
+  columns={[
+    { title: "Explorer", links: [{ label: "Députés", href: "/deputes" }] },
+    { title: "Légal", links: [{ label: "CGU", href: "/cgu" }] },
+  ]}
+/>
+```
+
+## Avec les sources des données
+
+<Preview surface="page">
+  <Footer
+    tagline="Plateforme citoyenne de transparence politique."
+    columns={[{ title: "Explorer", links: [{ label: "Scrutins", href: "/scrutins" }] }]}
+    sources={[
+      { label: "Assemblée nationale", href: "https://data.assemblee-nationale.fr" },
+      { label: "Sénat", href: "https://data.senat.fr" },
+    ]}
+    year={2026}
+  />
+</Preview>
+
+```tsx
+<Footer
+  tagline="Plateforme citoyenne de transparence politique."
+  columns={[{ title: "Explorer", links: [{ label: "Scrutins", href: "/scrutins" }] }]}
+  sources={[
+    { label: "Assemblée nationale", href: "https://data.assemblee-nationale.fr" },
+    { label: "Sénat", href: "https://data.senat.fr" },
+  ]}
+/>
+```

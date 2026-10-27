@@ -12,7 +12,11 @@ const RACINE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..
 function main() {
   const tag = process.argv[2];
   if (!/^v\d+\.\d+\.\d+$/.test(tag ?? "")) throw new Error("usage : tag-message.mjs vX.Y.Z");
-  process.stdout.write(messageDeTag(readFileSync(path.join(RACINE, "docs/03-changelog", fichierDeVersion(tag)), "utf8")));
+  process.stdout.write(
+    messageDeTag(
+      readFileSync(path.join(RACINE, "docs/03-changelog", fichierDeVersion(tag)), "utf8"),
+    ),
+  );
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main();

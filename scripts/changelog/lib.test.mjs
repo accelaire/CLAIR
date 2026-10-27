@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   brouillonDeVersion,
   comparerVersions,
+  dispenseDeFragment,
   fichierDeVersion,
   lireFrontmatter,
   messageDeTag,
@@ -12,6 +13,7 @@ import {
   parserFragment,
   prDesCommits,
   verifierFragment,
+  versionSemver,
   versionSuivante,
 } from "./lib.mjs";
 
@@ -30,7 +32,10 @@ describe("verifierFragment", () => {
   });
 
   it("refuse un nom qui n'est pas un sujet en kebab-case", () => {
-    assert.match(verifierFragment("2026-10-25 Sous_amendements.md", fragment(valide))[0], /kebab-case/);
+    assert.match(
+      verifierFragment("2026-10-25 Sous_amendements.md", fragment(valide))[0],
+      /kebab-case/,
+    );
   });
 
   it("refuse un niveau, un type ou un public inconnus", () => {
@@ -41,14 +46,20 @@ describe("verifierFragment", () => {
 
   it("refuse un texte vide ou trop long", () => {
     assert.match(verifierFragment("x.md", fragment(valide, "")).join(), /vide/);
-    assert.match(verifierFragment("x.md", fragment(valide, "a".repeat(601))).join(), /601 caractères/);
+    assert.match(
+      verifierFragment("x.md", fragment(valide, "a".repeat(601))).join(),
+      /601 caractères/,
+    );
   });
 
   it("exige « À faire de votre côté » pour une rupture d'API", () => {
     const meta = "niveau: majeur\ntype: api\npublic: [reutilisateurs]\npr: [1]";
     assert.equal(verifierFragment("x.md", fragment(meta, "La route /x disparaît.")).length, 1);
     assert.deepEqual(
-      verifierFragment("x.md", fragment(meta, "La route /x disparaît. À faire de votre côté : utiliser /y.")),
+      verifierFragment(
+        "x.md",
+        fragment(meta, "La route /x disparaît. À faire de votre côté : utiliser /y."),
+      ),
       [],
     );
   });
@@ -60,7 +71,10 @@ describe("verifierFragment", () => {
 
 describe("lireFrontmatter", () => {
   it("garde un # dans une valeur entre guillemets", () => {
-    assert.equal(lireFrontmatter('---\ntitle: "Sous-amendements (#96)"\n---\n').meta.title, "Sous-amendements (#96)");
+    assert.equal(
+      lireFrontmatter('---\ntitle: "Sous-amendements (#96)"\n---\n').meta.title,
+      "Sous-amendements (#96)",
+    );
   });
 });
 
@@ -90,8 +104,16 @@ describe("versions", () => {
     assert.equal(versionSuivante("v0.5.0", "majeur"), "0.6.0");
   });
 
+  it("n'accepte en --version qu'une version X.Y.Z", () => {
+    for (const ok of ["1.0.0", "v0.10.2", " 2.0.0 "]) assert.equal(versionSemver(ok), true, ok);
+    for (const ko of ["", "1.0", "1.0.0-beta.1", "v1.0.0.1", "01.0.0", "1.0.0+build", "vv1.0.0"]) {
+      assert.equal(versionSemver(ko), false, ko);
+    }
+  });
+
   it("retrouve les PR des commits de merge et des squash", () => {
-    const log = "Merge pull request #106 from accelaire/fix\nfeat(web): sous-amendements (#96)\nfix: x (#96)";
+    const log =
+      "Merge pull request #106 from accelaire/fix\nfeat(web): sous-amendements (#96)\nfix: x (#96)";
     assert.deepEqual(prDesCommits(log), [96, 106]);
   });
 });
@@ -116,7 +138,10 @@ describe("pageDepuisTag", () => {
   });
 
   it("met la date, le volume et les liens dans l'en-tête", () => {
-    assert.match(page, /\*\*Publiée le 02\/10\/2026\*\* · 272 commits et 13 pull requests depuis \[v0.4.0\]\(\/changelog\/v0-4-0\)/);
+    assert.match(
+      page,
+      /\*\*Publiée le 02\/10\/2026\*\* · 272 commits et 13 pull requests depuis \[v0.4.0\]\(\/changelog\/v0-4-0\)/,
+    );
     assert.match(page, /compare\/v0.4.0\.\.\.v0.5.0/);
     assert.match(page, /tree\/v0.5.0/);
   });
@@ -129,7 +154,11 @@ describe("pageDepuisTag", () => {
   });
 
   it("v0.1.0 : titre normalisé, pas de volume, notes absentes signalées", () => {
-    const v01 = pageDepuisTag({ version: "0.1.0", date: "2026-01-07", message: "Version 0.1.0 - Initial public release\n" });
+    const v01 = pageDepuisTag({
+      version: "0.1.0",
+      date: "2026-01-07",
+      message: "Version 0.1.0 - Initial public release\n",
+    });
     assert.match(v01, /description: "Initial public release"/);
     assert.doesNotMatch(v01, /commits:|pull requests/);
     assert.match(v01, /ne détaille pas son contenu/);
@@ -148,7 +177,10 @@ describe("brouillonDeVersion", () => {
   it("regroupe les fragments par type dans les notes complètes", () => {
     const fragments = [
       parserFragment("a.md", fragment(valide)),
-      parserFragment("b.md", fragment("niveau: correctif\ntype: outillage\npublic: [contributeurs]\npr: []", "Node 24.")),
+      parserFragment(
+        "b.md",
+        fragment("niveau: correctif\ntype: outillage\npublic: [contributeurs]\npr: []", "Node 24."),
+      ),
     ];
     const page = brouillonDeVersion({
       version: "0.6.0",
@@ -160,8 +192,43 @@ describe("brouillonDeVersion", () => {
     });
     assert.match(page, /title: "Version v0.6.0"/);
     assert.match(page, /95 commits et 12 pull requests depuis \[v0.5.0\]/);
-    assert.match(page, /### Nouveautés\n\n- Les sous-amendements sont reliés à leur amendement parent\. \(#96\)/);
+    assert.match(
+      page,
+      /### Nouveautés\n\n- Les sous-amendements sont reliés à leur amendement parent\. \(#96\)/,
+    );
     assert.match(page, /### Pour les contributeurs\n\n- Node 24\.$/m);
-    assert.match(messageDeTag(page), /^v0.6.0 — À COMPLÉTER : thèmes du palier\n\n95 commits, 12 PRs depuis v0.5.0\.\n\n=== Nouveautés ===/);
+    assert.match(
+      messageDeTag(page),
+      /^v0.6.0 — À COMPLÉTER : thèmes du palier\n\n95 commits, 12 PRs depuis v0.5.0\.\n\n=== Nouveautés ===/,
+    );
+  });
+});
+
+describe("dispenseDeFragment", () => {
+  it("accepte la ligne « Journal : aucun », seule ou en puce, casse et espaces libres", () => {
+    for (const description of [
+      "Refactor interne.\n\nJournal : aucun",
+      "journal: aucun",
+      "  JOURNAL  :  Aucun.  ",
+      "- Journal : aucun",
+      "- [x] Journal : aucun",
+      "Journal : aucun\r\nautre ligne",
+    ]) {
+      assert.equal(dispenseDeFragment(description), true, description);
+    }
+  });
+
+  it("refuse une description vide, une case non cochée, un commentaire ou une phrase", () => {
+    for (const description of [
+      undefined,
+      "",
+      "- [ ] Journal : aucun",
+      "<!-- Journal : aucun -->",
+      "<!--\nJournal : aucun\n-->",
+      "Pas de `Journal : aucun` ici : un fragment est ajouté.",
+      "Journal : aucun fragment n'est nécessaire",
+    ]) {
+      assert.equal(dispenseDeFragment(description), false, String(description));
+    }
   });
 });

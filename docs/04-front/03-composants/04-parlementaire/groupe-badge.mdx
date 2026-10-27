@@ -1,0 +1,72 @@
+---
+title: "GroupeBadge"
+sidebar_label: "GroupeBadge"
+sidebar_icon: "circle-dot"
+description: "Groupe politique : pastille de couleur et sigle toujours affiché, nom complet lu par les lecteurs d'écran."
+---
+
+import { GroupeBadge } from "@clair/ui";
+
+Groupe politique d'un parlementaire : une pastille de la couleur du groupe et son sigle, toujours affiché (la couleur n'est jamais seule). Le nom complet est donné en infobulle et aux lecteurs d'écran. La couleur vient de l'API (`groupe.couleur`) ; absente, elle se replie sur le token `--clair-groupe-<sigle>`, puis sur le gris des non-inscrits. Remplace `.groupe-badge` et `getGroupColor` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-parlementaire-groupebadge--docs)
+
+## Import
+
+```tsx
+import { GroupeBadge } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <GroupeBadge sigle="ECO" nom="Écologiste et Social" />
+</Preview>
+
+```tsx
+<GroupeBadge sigle="ECO" nom="Écologiste et Social" />
+```
+
+## Avec la couleur de l'API
+
+<Preview>
+  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+    <GroupeBadge sigle="UC" nom="Union Centriste" couleur="#00BFFF" />
+    <GroupeBadge sigle="CRCE-K" nom="Communiste Républicain Citoyen et Écologiste - Kanaky" couleur="204,36,67" />
+  </div>
+</Preview>
+
+```tsx
+<div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+  <GroupeBadge sigle="UC" nom="Union Centriste" couleur="#00BFFF" />
+  <GroupeBadge sigle="CRCE-K" nom="Communiste Républicain Citoyen et Écologiste - Kanaky" couleur="204,36,67" />
+</div>
+```
+
+## Avec les couleurs de repli des tokens
+
+<Preview>
+  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+    <GroupeBadge sigle="EPR" nom="Ensemble pour la République" />
+    <GroupeBadge sigle="RN" nom="Rassemblement National" />
+    <GroupeBadge sigle="SOC" nom="Socialistes et apparentés" />
+    <GroupeBadge sigle="NI" nom="Non inscrits" />
+  </div>
+</Preview>
+
+```tsx
+<div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+  <GroupeBadge sigle="EPR" nom="Ensemble pour la République" />
+  <GroupeBadge sigle="RN" nom="Rassemblement National" />
+  <GroupeBadge sigle="SOC" nom="Socialistes et apparentés" />
+  <GroupeBadge sigle="NI" nom="Non inscrits" />
+</div>
+```
+
+## Avec la petite taille
+
+<Preview>
+  <GroupeBadge sigle="DEM" nom="Les Démocrates" size="sm" />
+</Preview>
+
+```tsx
+<GroupeBadge sigle="DEM" nom="Les Démocrates" size="sm" />
+```

@@ -1,0 +1,104 @@
+.ancre {
+  position: fixed;
+  right: var(--clair-espacement-4v);
+  bottom: var(--clair-espacement-4v);
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--clair-espacement-2v);
+}
+
+@media (min-width: 640px) {
+  .ancre {
+    right: var(--clair-espacement-6v);
+    bottom: var(--clair-espacement-6v);
+  }
+}
+
+.declencheur {
+  border-radius: var(--clair-rayon-pilule);
+  box-shadow: var(--clair-ombre-md);
+  background: var(--clair-fond-surface);
+}
+
+.relance {
+  display: flex;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  max-width: min(20rem, calc(100vw - 2 * var(--clair-espacement-4v)));
+  padding: var(--clair-espacement-2v) var(--clair-espacement-3v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+  box-shadow: var(--clair-ombre-lg);
+  color: var(--clair-texte-defaut);
+}
+
+.relanceTexte {
+  margin: 0;
+  flex: 1;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.titre {
+  font-size: var(--clair-texte-h5-taille);
+  font-weight: var(--clair-texte-h5-graisse);
+  line-height: var(--clair-texte-h5-interligne);
+  color: var(--clair-texte-titre);
+}
+
+.formulaire {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+}
+
+.aide {
+  margin: 0;
+  color: var(--clair-texte-mention);
+  font-size: var(--clair-texte-sm-taille);
+}
+
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-4v);
+  margin-top: var(--clair-espacement-2v);
+}
+
+.erreur {
+  margin: 0;
+  color: var(--clair-statut-erreur);
+  font-size: var(--clair-texte-sm-taille);
+}
+
+.succes {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--clair-espacement-3v);
+  padding-block: var(--clair-espacement-4v);
+  text-align: center;
+}
+
+.succes p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.succesIcone {
+  width: var(--clair-espacement-8v);
+  height: var(--clair-espacement-8v);
+  color: var(--clair-statut-succes);
+}
+
+.piege {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

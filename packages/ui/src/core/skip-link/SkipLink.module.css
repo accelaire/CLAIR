@@ -1,0 +1,17 @@
+.skipLink {
+  position: absolute;
+  top: var(--clair-espacement-2v);
+  left: var(--clair-espacement-2v);
+  z-index: 1000;
+  padding: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  border-radius: var(--clair-rayon-md);
+  background: var(--clair-fond-action);
+  color: var(--clair-texte-sur-action);
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+
+.skipLink:focus {
+  transform: none;
+}

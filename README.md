@@ -3,7 +3,7 @@
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![Node](https://img.shields.io/badge/node-24-brightgreen)
 ![TypeScript](https://img.shields.io/badge/typescript-5-blue)
-![pnpm](https://img.shields.io/badge/pnpm-8.15-orange)
+![pnpm](https://img.shields.io/badge/pnpm-12.15-orange)
 
 **Plateforme de transparence politique pour la jeune génération française.**
 
@@ -27,10 +27,11 @@ Le détail (sources, orchestration, modèle de données et ERD, API, déploiemen
 
 ## Démarrage rapide
 
-Prérequis : Node.js 24 (voir `.nvmrc`), pnpm 8, Docker et Docker Compose. Le guide complet est sur [docs.clair.vote](https://docs.clair.vote/guide/guide-developpeur/demarrage-local).
+Prérequis : Node.js 24 (voir `.nvmrc`), pnpm 12.15 (version lue dans `packageManager`, fournie par `corepack enable`), Docker et Docker Compose. Le guide complet est sur [docs.clair.vote](https://docs.clair.vote/guide/guide-developpeur/demarrage-local).
 
 ```bash
-pnpm install
+corepack enable       # une fois
+pnpm install          # installe aussi les hooks git (lefthook)
 
 # Un seul fichier d'environnement à la racine, lu par l'API et par l'ingestion
 cp .env.example .env
@@ -40,7 +41,16 @@ ln -s ../../.env services/ingestion/.env
 pnpm docker:up
 pnpm db:generate
 pnpm db:push          # initialise le schéma localement, puis ses triggers (voir note migrations ci-dessous)
-pnpm dev
+pnpm dev              # web :3000, API :3001, doc :3002, nouveau site :3010, Storybook :6006
+```
+
+Le nouveau site (`apps/site`, Next 16 et Mantine 9) se construit à côté du site actuel (`apps/web`), sur les paquets `packages/*` ; son architecture, son design system et ses composants sont décrits dans la section [Front](https://docs.clair.vote/front) de la documentation. Avant une pull request :
+
+```bash
+pnpm check                                  # Biome (nouveau front et outillage)
+pnpm lint                                   # ESLint (code existant)
+pnpm --filter <workspace touché> type-check
+pnpm test
 ```
 
 > **Migrations** : `pnpm db:push` applique le schéma Prisma à la base locale sans créer de fichier de migration. C'est la seule méthode qui fonctionne sur une base neuve : l'historique des migrations du dépôt ne se rejoue pas depuis une base vide, ce qui fait aussi échouer `pnpm db:migrate` (`prisma migrate dev`). Les fichiers de migration servent à faire évoluer la base de **production**. Si ton changement de schéma doit y partir, génère le SQL en comparant l'ancienne version du schéma à la nouvelle, relis-le, et ajoute-le dans ta PR sous `apps/api/prisma/migrations/<AAAAMMJJHHMMSS>_<nom>/migration.sql` :

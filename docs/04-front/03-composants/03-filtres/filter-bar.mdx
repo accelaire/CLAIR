@@ -1,0 +1,58 @@
+---
+title: "FilterBar"
+sidebar_label: "FilterBar"
+sidebar_icon: "sliders-horizontal"
+description: "Barre de filtres : recherche, filtres en ligne ou dans un tiroir sur mobile, pastilles retirables, compteur et réinitialisation."
+---
+
+import { ChambreSwitch, FilterBar, SearchInput, SortSelect } from "@clair/ui";
+
+Barre de filtres d'une liste. Elle compose les autres filtres, passés en `children` : en ligne sur grand écran, dans un tiroir ouvert par le bouton « Filtres » sur mobile (fermeture par Échap, focus rendu au bouton). Les filtres actifs apparaissent en pastilles, chacune retirable par un bouton « Retirer le filtre … » ; leur nombre est annoncé et « Réinitialiser » les retire tous. La barre n'a pas d'état : l'écran dérive les pastilles de l'URL. Remplace `components/FilterBar.tsx` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-filtres-filterbar--docs)
+
+## Import
+
+```tsx
+import { FilterBar } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <FilterBar search={<SearchInput aria-label="Rechercher un parlementaire" value="" onChange={() => {}} />}>
+    <ChambreSwitch value="" onChange={() => {}} compact />
+    <SortSelect value="nom" onChange={() => {}} options={[{ value: "nom", label: "Alphabétique" }, { value: "presence", label: "Présence" }]} />
+  </FilterBar>
+</Preview>
+
+```tsx
+<FilterBar search={<SearchInput aria-label="Rechercher un parlementaire" value={q} onChange={setQ} />}>
+  <ChambreSwitch value={chambre} onChange={setChambre} compact />
+  <SortSelect value={tri} onChange={setTri} options={options} />
+</FilterBar>
+```
+
+## Avec des filtres actifs
+
+<Preview>
+  <FilterBar
+    activeFilters={[
+      { id: "chambre=senat", label: "Chambre : Sénat", onRemove: () => {} },
+      { id: "groupe=SOC", label: "Groupe : SOC", onRemove: () => {} },
+    ]}
+    onReset={() => {}}
+  >
+    <ChambreSwitch value="senat" onChange={() => {}} compact />
+  </FilterBar>
+</Preview>
+
+```tsx
+<FilterBar
+  activeFilters={[
+    { id: "chambre=senat", label: "Chambre : Sénat", onRemove: () => setChambre("") },
+    { id: "groupe=SOC", label: "Groupe : SOC", onRemove: () => retirerGroupe("SOC") },
+  ]}
+  onReset={reinitialiser}
+>
+  <ChambreSwitch value={chambre} onChange={setChambre} compact />
+</FilterBar>
+```

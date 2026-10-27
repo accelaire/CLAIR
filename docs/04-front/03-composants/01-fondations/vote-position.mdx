@@ -1,0 +1,56 @@
+---
+title: "VotePosition"
+sidebar_label: "VotePosition"
+sidebar_icon: "vote"
+description: "Position de vote d'un parlementaire (pour, contre, abstention, absent, non-votant) : icône et libellé, jamais la couleur seule."
+---
+
+import { VotePosition } from "@clair/ui";
+
+Position de vote d'un parlementaire sur un scrutin. Chaque position a une icône et un libellé en plus de sa couleur : l'information ne repose jamais sur la couleur seule. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-fondations-voteposition--docs)
+
+## Import
+
+```tsx
+import { VotePosition } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <VotePosition position="pour" />
+</Preview>
+
+```tsx
+<VotePosition position="pour" />
+```
+
+## Avec chaque position
+
+<Preview>
+  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+    <VotePosition position="pour" />
+    <VotePosition position="contre" />
+    <VotePosition position="abstention" />
+    <VotePosition position="absent" />
+    <VotePosition position="non_votant" />
+  </div>
+</Preview>
+
+```tsx
+<VotePosition position="pour" />
+<VotePosition position="contre" />
+<VotePosition position="abstention" />
+<VotePosition position="absent" />
+<VotePosition position="non_votant" />
+```
+
+## En petit
+
+<Preview>
+  <VotePosition position="contre" size="sm" />
+</Preview>
+
+```tsx
+<VotePosition position="contre" size="sm" />
+```

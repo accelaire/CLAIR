@@ -1,0 +1,110 @@
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--clair-espacement-4v);
+  padding: var(--clair-espacement-8v) var(--clair-espacement-4v);
+  color: var(--clair-texte-defaut);
+  text-align: center;
+}
+
+.state[data-variant="skeleton"] {
+  align-items: stretch;
+  padding: 0;
+  text-align: start;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-3v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-2v);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+}
+
+.iconWrapper {
+  display: inline-flex;
+  padding: var(--clair-espacement-3v);
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--clair-fond-neutre);
+  color: var(--clair-texte-mention);
+}
+
+.state[data-state="error"] .iconWrapper {
+  background: var(--clair-statut-erreur-fond);
+  color: var(--clair-statut-erreur);
+}
+
+.iconWrapper svg {
+  width: var(--clair-espacement-6v);
+  height: var(--clair-espacement-6v);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--clair-texte-h6-taille);
+  line-height: var(--clair-texte-h6-interligne);
+  font-weight: var(--clair-texte-h6-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.description {
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.description > p {
+  margin: 0;
+}
+
+.action {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--clair-espacement-2v);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  padding: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  border: 0;
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-action);
+  color: var(--clair-texte-sur-action);
+  font-family: inherit;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--clair-fond-action-survol);
+}
+
+.button:focus-visible {
+  outline: var(--clair-focus-contour);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+.button svg {
+  width: 1em;
+  height: 1em;
+}

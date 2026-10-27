@@ -1,0 +1,100 @@
+.hemicycle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
+  color: var(--clair-texte-defaut);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--clair-texte-h6-taille);
+  line-height: var(--clair-texte-h6-interligne);
+  font-weight: var(--clair-texte-h6-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.seat {
+  fill: var(--siege-couleur);
+  transition: fill 150ms ease;
+}
+
+.seat[data-vacant] {
+  fill: none;
+  stroke: var(--clair-bordure-forte);
+  stroke-width: 1;
+}
+
+.seat[data-dimmed] {
+  fill: var(--clair-fond-neutre);
+}
+
+.total {
+  fill: var(--clair-texte-mention);
+  font-family: var(--clair-police-interface);
+  font-size: var(--clair-texte-sm-taille);
+  font-weight: 600;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-2v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+  padding: var(--clair-espacement-1v) var(--clair-espacement-2v);
+  border: 1px solid transparent;
+  border-radius: var(--clair-rayon-pilule);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+}
+
+.legendItem[data-active] {
+  border-color: var(--clair-bordure-forte);
+  background: var(--clair-fond-neutre);
+}
+
+.legendLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+  color: inherit;
+}
+
+.swatch {
+  flex-shrink: 0;
+  width: var(--clair-espacement-3v);
+  height: var(--clair-espacement-3v);
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--siege-couleur);
+}
+
+.sigle {
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.count {
+  color: var(--clair-texte-mention);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 640px) {
+  .legendItem {
+    font-size: var(--clair-texte-sm-taille);
+    line-height: var(--clair-texte-sm-interligne);
+  }
+}

@@ -1,0 +1,73 @@
+.root {
+  scroll-margin-top: var(--clair-espacement-16v);
+}
+
+/* La mise en évidence est aussi portée par l'ancre de l'adresse, pas seulement par la couleur. */
+.root[data-highlighted] > * {
+  border-color: var(--clair-fond-action);
+  outline: var(--clair-focus-epaisseur) solid var(--clair-fond-action);
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-2v);
+}
+
+.cible {
+  margin: 0;
+  font-weight: 600;
+  color: var(--clair-texte-mention);
+}
+
+.parent {
+  display: flex;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+  margin: 0;
+  color: var(--clair-texte-mention);
+}
+
+.icon {
+  flex-shrink: 0;
+  width: 1em;
+  height: 1em;
+}
+
+.auteur {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  margin: 0;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-1v);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  font-weight: 600;
+  color: var(--clair-texte-mention);
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-4v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-3v);
+  margin: 0;
+}

@@ -1,0 +1,62 @@
+---
+title: "ProvenanceLabel"
+sidebar_label: "ProvenanceLabel"
+sidebar_icon: "badge-check"
+description: "Nature d'une donnée : officielle, calculée par CLAIR ou générée par IA, toujours dite par un libellé."
+---
+
+import { ProvenanceLabel } from "@clair/ui";
+
+Indique la nature d'une donnée. Règle centrale de CLAIR : toujours distinguer la donnée **officielle** (source institutionnelle), la donnée **calculée** par CLAIR et la donnée **générée par IA**, à vérifier. Le libellé porte l'information, l'icône est décorative, et un lien peut mener à la méthodologie. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-fondations-provenancelabel--docs)
+
+## Import
+
+```tsx
+import { ProvenanceLabel } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <ProvenanceLabel provenance="officielle" />
+</Preview>
+
+```tsx
+<ProvenanceLabel provenance="officielle" />
+```
+
+## Avec chaque provenance
+
+<Preview>
+  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+    <ProvenanceLabel provenance="officielle" />
+    <ProvenanceLabel provenance="calculee" />
+    <ProvenanceLabel provenance="ia" />
+  </div>
+</Preview>
+
+```tsx
+<ProvenanceLabel provenance="officielle" />
+<ProvenanceLabel provenance="calculee" />
+<ProvenanceLabel provenance="ia" />
+```
+
+## Avec une source
+
+<Preview>
+  <ProvenanceLabel provenance="officielle" source="Assemblée nationale" />
+</Preview>
+
+```tsx
+<ProvenanceLabel provenance="officielle" source="Assemblée nationale" />
+```
+
+## Avec un lien vers la méthodologie
+
+<Preview>
+  <ProvenanceLabel provenance="ia" methodologyHref="#" />
+</Preview>
+
+```tsx
+<ProvenanceLabel provenance="ia" methodologyHref="#" />
+```

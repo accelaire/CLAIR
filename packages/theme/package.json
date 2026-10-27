@@ -1,0 +1,37 @@
+{
+  "name": "@clair/theme",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "description": "Tokens de CLAIR (--clair-*) et thème Mantine. Source unique des valeurs visuelles du nouveau front.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tokens": "./src/tokens.ts",
+    "./tokens.css": "./src/tokens.css",
+    "./styles.css": "./src/styles.css",
+    "./classes.css": "./src/classes.css"
+  },
+  "scripts": {
+    "generate": "node scripts/generate-css.ts",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "catalog:"
+  },
+  "peerDependencies": {
+    "@mantine/core": "*"
+  },
+  "devDependencies": {
+    "@clair/config": "workspace:*",
+    "@mantine/core": "catalog:",
+    "@mantine/hooks": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

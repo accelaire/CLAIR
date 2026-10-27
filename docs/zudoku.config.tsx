@@ -1,13 +1,20 @@
 import { defaultLanguages, type ZudokuConfig } from "zudoku";
+import { colors, palette, radius } from "@clair/theme/tokens";
 import {
   CodeTabs,
+  ColorSwatches,
+  ContrastTable,
   FeatureCard,
   FeatureGrid,
   Footer,
   HeaderActions,
   Mermaid,
+  Preview,
+  RadiusScale,
+  SpacingScale,
   SwaggerLink,
   TrackCard,
+  TypeScale,
 } from "./src/components";
 import { docsNavigation, docsRedirects } from "./zudoku.navigation";
 import "./zudoku.theme.css";
@@ -23,50 +30,50 @@ const config: ZudokuConfig = {
     fonts: {
       sans: "Inter",
     },
-    // Source de vérité : apps/web/app/globals.css
+    // Couleurs lues dans @clair/theme (packages/theme/src/tokens.ts), plus de copie à la main.
     light: {
-      background: "#ffffff",
-      foreground: "#020817",
-      card: "#ffffff",
-      cardForeground: "#020817",
-      popover: "#ffffff",
-      popoverForeground: "#020817",
-      primary: "#106ff4", // hsl(215, 91%, 51%)
-      primaryForeground: "#f8fafc", // hsl(210, 40%, 98%)
-      secondary: "#f1f5f9", // hsl(210, 40%, 96.1%)
-      secondaryForeground: "#0f172a", // hsl(222.2, 47.4%, 11.2%)
-      muted: "#f1f5f9",
-      mutedForeground: "#64748b", // hsl(215.4, 16.3%, 46.9%)
-      accent: "#f1f5f9",
-      accentForeground: "#0f172a",
-      destructive: "#ef4444", // hsl(0, 84.2%, 60.2%)
-      destructiveForeground: "#f8fafc",
-      border: "#e2e8f0", // hsl(214.3, 31.8%, 91.4%)
-      input: "#e2e8f0",
-      ring: "#106ff4",
-      radius: "0.5rem",
+      background: colors.clair["fond-page"],
+      foreground: colors.clair["texte-defaut"],
+      card: colors.clair["fond-surface"],
+      cardForeground: colors.clair["texte-defaut"],
+      popover: colors.clair["fond-surface"],
+      popoverForeground: colors.clair["texte-defaut"],
+      primary: colors.clair["fond-action"],
+      primaryForeground: colors.clair["texte-sur-action"],
+      secondary: colors.clair["fond-neutre"],
+      secondaryForeground: palette["ardoise-900"],
+      muted: colors.clair["fond-neutre"],
+      mutedForeground: colors.clair["texte-mention"],
+      accent: colors.clair["fond-neutre"],
+      accentForeground: palette["ardoise-900"],
+      destructive: colors.clair["statut-erreur"],
+      destructiveForeground: colors.clair["texte-sur-action"],
+      border: colors.clair["bordure-defaut"],
+      input: colors.clair["bordure-defaut"],
+      ring: colors.clair.focus,
+      radius: `${radius.lg / 16}rem`,
     },
     dark: {
-      background: "#0c0e12", // hsl(220, 20%, 5.9%) — Figma page bg
-      foreground: "#ffffff",
-      card: "#12151b", // hsl(221, 20%, 8.8%) — Figma surface
-      cardForeground: "#ffffff",
-      popover: "#12151b",
-      popoverForeground: "#ffffff",
-      primary: "#106ff4", // hsl(215, 91%, 51%), brand blue
-      primaryForeground: "#ffffff",
-      secondary: "#22262f", // hsl(221, 16%, 15.9%) — Figma divider
-      secondaryForeground: "#ffffff",
-      muted: "#22262f",
-      mutedForeground: "#94969c", // hsl(225, 4%, 59.6%) — Figma muted text
-      accent: "#22262f",
-      accentForeground: "#ffffff",
-      destructive: "#7f1d1d", // hsl(0, 62.8%, 30.6%)
-      destructiveForeground: "#ffffff",
-      border: "#22262f",
-      input: "#373a41", // hsl(222, 8%, 23.5%) — Figma subtle border
-      ring: "#106ff4",
-      radius: "0.5rem",
+      background: colors.sombre["fond-page"],
+      foreground: colors.sombre["texte-defaut"],
+      card: colors.sombre["fond-surface"],
+      cardForeground: colors.sombre["texte-defaut"],
+      popover: colors.sombre["fond-surface"],
+      popoverForeground: colors.sombre["texte-defaut"],
+      primary: colors.sombre["fond-action"],
+      primaryForeground: colors.sombre["texte-sur-action"],
+      secondary: colors.sombre["fond-neutre"],
+      secondaryForeground: colors.sombre["texte-defaut"],
+      muted: colors.sombre["fond-neutre"],
+      mutedForeground: colors.sombre["texte-mention"],
+      accent: colors.sombre["fond-neutre"],
+      accentForeground: colors.sombre["texte-defaut"],
+      destructive: colors.sombre["statut-erreur-fond"],
+      destructiveForeground: colors.sombre["texte-defaut"],
+      border: colors.sombre["bordure-defaut"],
+      input: colors.sombre["bordure-forte"],
+      ring: colors.sombre.focus,
+      radius: `${radius.lg / 16}rem`,
     },
   },
   site: {
@@ -99,6 +106,11 @@ const config: ZudokuConfig = {
         target: "_blank",
       },
       {
+        label: "Storybook",
+        to: "https://storybook.clair.vote",
+        target: "_blank",
+      },
+      {
         label: "GitHub",
         to: "https://github.com/accelaire/CLAIR",
         target: "_blank",
@@ -111,6 +123,8 @@ const config: ZudokuConfig = {
     ],
   },
   syntaxHighlighting: {
+    // Thèmes à contraste élevé : chaque jeton de code passe le contraste WCAG AA.
+    themes: { light: "github-light-high-contrast", dark: "github-dark-high-contrast" },
     languages: [
       ...defaultLanguages,
       "mermaid",
@@ -140,6 +154,12 @@ const config: ZudokuConfig = {
       FeatureGrid,
       TrackCard,
       CodeTabs,
+      Preview,
+      ColorSwatches,
+      ContrastTable,
+      TypeScale,
+      SpacingScale,
+      RadiusScale,
     },
   },
   docs: {

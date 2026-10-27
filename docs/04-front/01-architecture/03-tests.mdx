@@ -1,0 +1,22 @@
+---
+title: "Tests du nouveau front"
+sidebar_label: "Tests"
+sidebar_icon: "flask-conical"
+description: "La pyramide de tests du nouveau front de CLAIR, de la fonction pure au parcours dans le navigateur."
+---
+
+| Niveau | Outil | Ce qui est vérifié | Commande |
+|---|---|---|---|
+| Fonctions pures | Vitest | formatage, paramètres d'URL, tokens et contrastes | `pnpm --filter <package> test` |
+| Composants | Vitest + Testing Library | ce que voit l'utilisateur : rôles et libellés accessibles, clavier | `pnpm --filter @clair/ui test` |
+| Stories | Storybook + Vitest (Chromium) + axe | chaque story s'affiche sans erreur et sans violation d'accessibilité | `pnpm --filter @clair/storybook test:stories` |
+| Écrans | Vitest + fixtures | états chargement, vide, erreur, succès ; URL mise à jour par les filtres | `pnpm --filter @clair/screens test` |
+| Parcours | Playwright + axe | site : chaque grande rubrique répond, a un titre de niveau 1, aucune erreur ni violation d'accessibilité grave ; documentation : pages de la section Front | `pnpm test:e2e --project=site` (ou `docs`) |
+
+Règle : on teste ce que voit l'utilisateur (`getByRole`, libellés), pas les classes CSS.
+
+## Tests e2e du site
+
+`e2e/site.fumee.spec.ts` vérifie le site construit (`pnpm --filter @clair/site build`), servi par `next start` sur le port 4310. Le site y parle à un **faux serveur d'API** (`e2e/fake-api.mjs`, port 4312) : listes vides, fiches en 404, aucune donnée parlementaire réelle ou inventée. Les requêtes vers l'extérieur (formulaire de don, photos des assemblées) sont coupées. Le job `e2e-site` de la CI les lance à chaque pull request ; il ne construit pas la documentation, dont le build télécharge la spécification OpenAPI de production.
+
+Une nouvelle rubrique portée s'ajoute à la liste `RUBRIQUES` du test ; si son écran appelle une route que le faux serveur ne connaît pas encore, l'y ajouter avec la forme de réponse de `packages/data`.

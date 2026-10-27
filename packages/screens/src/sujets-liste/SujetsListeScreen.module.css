@@ -1,0 +1,124 @@
+.page {
+  padding-block: var(--clair-espacement-6v) var(--clair-espacement-16v);
+}
+
+.search {
+  max-width: 28rem;
+  margin-block: var(--clair-espacement-6v) var(--clair-espacement-8v);
+}
+
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-10v);
+}
+
+.section > * + * {
+  margin-top: var(--clair-espacement-4v);
+}
+
+.list,
+.grid {
+  display: grid;
+  gap: var(--clair-espacement-4v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 640px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.aLaUne {
+  border-color: var(--clair-statut-info);
+  background: var(--clair-statut-info-fond);
+}
+
+.note {
+  margin: var(--clair-espacement-2v) 0 0;
+  color: var(--clair-texte-mention);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-3v);
+  margin: 0;
+  color: var(--clair-texte-mention);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.metaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+}
+
+.icon {
+  width: var(--clair-espacement-4v);
+  height: var(--clair-espacement-4v);
+  flex-shrink: 0;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--clair-texte-h4-taille);
+  font-weight: var(--clair-texte-h4-graisse);
+  line-height: var(--clair-texte-h4-interligne);
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  padding: var(--clair-espacement-1v);
+  border: 0;
+  border-radius: var(--clair-rayon-sm);
+  background: none;
+  color: var(--clair-texte-titre);
+  font: inherit;
+  cursor: pointer;
+}
+
+.toggle:hover {
+  color: var(--clair-texte-action);
+}
+
+.toggle:focus-visible {
+  outline: var(--clair-focus-epaisseur) solid var(--clair-focus);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+.chevron {
+  width: var(--clair-espacement-6v);
+  height: var(--clair-espacement-6v);
+  transition: transform 0.2s ease;
+}
+
+.chevron[data-ouvert="false"] {
+  transform: rotate(-90deg);
+}
+
+.count {
+  color: var(--clair-texte-mention);
+  font-size: var(--clair-texte-sm-taille);
+  font-weight: var(--clair-texte-sm-graisse);
+}
+
+.more {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--clair-espacement-6v);
+}

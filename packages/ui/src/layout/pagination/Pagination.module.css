@@ -1,0 +1,98 @@
+.nav {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--clair-espacement-8v);
+}
+
+.list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--clair-espacement-1v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.control,
+.page {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--clair-espacement-1v);
+  box-sizing: border-box;
+  min-width: var(--clair-espacement-10v);
+  min-height: var(--clair-espacement-10v);
+  padding: var(--clair-espacement-2v) var(--clair-espacement-3v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-md);
+  background: var(--clair-fond-surface);
+  color: var(--clair-texte-defaut);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.control:hover:not([data-disabled], :disabled),
+.page:hover:not([aria-current="page"]) {
+  border: var(--clair-trait-fort);
+  background: var(--clair-fond-neutre);
+}
+
+.control:focus-visible,
+.page:focus-visible {
+  outline: var(--clair-focus-contour);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+.control[data-disabled],
+.control:disabled {
+  color: var(--clair-texte-mention);
+  background: var(--clair-fond-neutre);
+  cursor: not-allowed;
+}
+
+.page[aria-current="page"] {
+  border-color: var(--clair-fond-action);
+  background: var(--clair-fond-action);
+  color: var(--clair-texte-sur-action);
+  font-weight: 600;
+}
+
+.icon {
+  width: var(--clair-espacement-4v);
+  height: var(--clair-espacement-4v);
+}
+
+.dots {
+  padding-inline: var(--clair-espacement-1v);
+  color: var(--clair-texte-mention);
+}
+
+/* Version compacte : « Précédent », « Page n sur N », « Suivant ». */
+.pageItem,
+.dots {
+  display: none;
+}
+
+.summary {
+  padding-inline: var(--clair-espacement-2v);
+  color: var(--clair-texte-mention);
+}
+
+@media (min-width: 640px) {
+  .pageItem {
+    display: list-item;
+  }
+
+  .dots {
+    display: list-item;
+  }
+
+  .summary {
+    display: none;
+  }
+}

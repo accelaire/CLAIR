@@ -10,7 +10,14 @@
 // sont dans check.mjs, prepare.mjs, from-tags.mjs et tag-message.mjs.
 
 export const NIVEAUX = ["correctif", "mineur", "majeur"];
-export const TYPES = ["fonctionnalite", "correction", "donnees", "methodologie", "api", "outillage"];
+export const TYPES = [
+  "fonctionnalite",
+  "correction",
+  "donnees",
+  "methodologie",
+  "api",
+  "outillage",
+];
 export const PUBLICS = ["citoyens", "reutilisateurs", "contributeurs"];
 
 /** Titre de section d'une page de version, dans l'ordre d'affichage. */
@@ -23,7 +30,8 @@ export const SECTIONS = {
   outillage: "Pour les contributeurs",
 };
 
-export const LABEL_SANS_FRAGMENT = "changelog:aucun";
+/** Ligne de la description d'une PR qui la dispense de fragment (pas de labels GitHub). */
+export const LIGNE_SANS_FRAGMENT = "Journal : aucun";
 export const LONGUEUR_MAX = 600;
 const NOM_FRAGMENT = /^[a-z0-9]+(-[a-z0-9]+)*\.md$/;
 const VERSION = /^v?(\d+)\.(\d+)\.(\d+)$/;
@@ -72,7 +80,9 @@ export function lireFrontmatter(contenu) {
 export function verifierFragment(fichier, contenu) {
   const erreurs = [];
   if (!NOM_FRAGMENT.test(fichier)) {
-    erreurs.push(`${fichier} : le nom doit être un sujet en kebab-case, par exemple sous-amendements.md`);
+    erreurs.push(
+      `${fichier} : le nom doit être un sujet en kebab-case, par exemple sous-amendements.md`,
+    );
   }
   const lu = lireFrontmatter(contenu);
   if (!lu) return [...erreurs, `${fichier} : en-tête (---) manquant`];
@@ -93,10 +103,14 @@ export function verifierFragment(fichier, contenu) {
   }
   if (!corps) erreurs.push(`${fichier} : le texte est vide`);
   if (corps.length > LONGUEUR_MAX) {
-    erreurs.push(`${fichier} : ${corps.length} caractères, ${LONGUEUR_MAX} au plus (une à trois phrases)`);
+    erreurs.push(
+      `${fichier} : ${corps.length} caractères, ${LONGUEUR_MAX} au plus (une à trois phrases)`,
+    );
   }
   if (meta.type === "api" && meta.niveau === "majeur" && !/à faire de votre côté/i.test(corps)) {
-    erreurs.push(`${fichier} : une rupture d'API dit aux réutilisateurs quoi faire (« À faire de votre côté : … »)`);
+    erreurs.push(
+      `${fichier} : une rupture d'API dit aux réutilisateurs quoi faire (« À faire de votre côté : … »)`,
+    );
   }
   return erreurs;
 }
@@ -114,6 +128,20 @@ export function parserFragment(fichier, contenu) {
   };
 }
 
+/**
+ * Vrai si la description d'une PR contient, seule sur sa ligne, `Journal : aucun`
+ * (casse et espaces libres, puce ou case cochée admises). Les commentaires HTML du
+ * modèle de PR et une case non cochée ne comptent pas.
+ */
+export function dispenseDeFragment(description) {
+  const texte = (description ?? "").replace(/<!--[\s\S]*?-->/g, "");
+  return texte
+    .split(/\r?\n/)
+    .some((ligne) =>
+      /^\s*(?:[-*+]\s+(?:\[[xX]\]\s+)?)?journal\s*:\s*aucun\s*\.?\s*$/iu.test(ligne),
+    );
+}
+
 // --- Versions ----------------------------------------------------------------
 
 export function lireVersion(texte) {
@@ -122,6 +150,13 @@ export function lireVersion(texte) {
   return m.slice(1, 4).map(Number);
 }
 
+/**
+ * Vrai pour une version `X.Y.Z` au sens de semver, sans suffixe de prépublication ni zéro
+ * initial (`v` toléré devant) : seule forme acceptée par `changelog:prepare --version`.
+ */
+export const versionSemver = (texte) =>
+  /^v?(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(String(texte).trim());
+
 export const formaterVersion = ([majeur, mineur, correctif]) => `${majeur}.${mineur}.${correctif}`;
 
 /**
@@ -129,7 +164,8 @@ export const formaterVersion = ([majeur, mineur, correctif]) => `${majeur}.${min
  * `/changelog/v0-5-0`. Pas de points dans l'URL, qu'un hébergeur statique
  * pourrait prendre pour une extension de fichier.
  */
-export const fichierDeVersion = (version) => `v${formaterVersion(lireVersion(version)).replaceAll(".", "-")}.mdx`;
+export const fichierDeVersion = (version) =>
+  `v${formaterVersion(lireVersion(version)).replaceAll(".", "-")}.mdx`;
 
 /** Ordre croissant de deux versions (`v0.10.0` après `v0.9.0`). */
 export function comparerVersions(a, b) {
@@ -140,7 +176,8 @@ export function comparerVersions(a, b) {
 /** Niveau le plus haut parmi les fragments, ou `null` sans fragment. */
 export function niveauLePlusHaut(fragments) {
   return fragments.reduce(
-    (haut, f) => (haut === null || NIVEAUX.indexOf(f.niveau) > NIVEAUX.indexOf(haut) ? f.niveau : haut),
+    (haut, f) =>
+      haut === null || NIVEAUX.indexOf(f.niveau) > NIVEAUX.indexOf(haut) ? f.niveau : haut,
     null,
   );
 }
@@ -160,7 +197,8 @@ export function versionSuivante(actuelle, niveau) {
 /** Numéros de PR cités dans des sujets ou corps de commit, sans doublon, triés. */
 export function prDesCommits(messages) {
   const numeros = new Set();
-  for (const m of messages.matchAll(/(?:Merge pull request #|\(#)(\d+)/g)) numeros.add(Number(m[1]));
+  for (const m of messages.matchAll(/(?:Merge pull request #|\(#)(\d+)/g))
+    numeros.add(Number(m[1]));
   return [...numeros].sort((a, b) => a - b);
 }
 
@@ -177,7 +215,8 @@ const NOTES = "## Notes complètes";
 const STATS = /^(\d+) commits, (\d+) PRs depuis (v\d+\.\d+\.\d+)\.$/;
 
 /** Adresse de la page d'une version dans la documentation. */
-export const lienDeVersion = (version) => `/changelog/${fichierDeVersion(version).replace(/\.mdx$/, "")}`;
+export const lienDeVersion = (version) =>
+  `/changelog/${fichierDeVersion(version).replace(/\.mdx$/, "")}`;
 
 /** Ligne « 272 commits, 13 PRs depuis v0.4.0. » des messages de tag. */
 const ligneStats = ({ commits, prs, depuis }) => `${commits} commits, ${prs} PRs depuis ${depuis}.`;

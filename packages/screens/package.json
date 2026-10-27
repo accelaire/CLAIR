@@ -1,0 +1,46 @@
+{
+  "name": "@clair/screens",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "description": "Écrans du nouveau site : un dossier par écran (XxxScreen.tsx, params.ts, CSS module, test).",
+  "exports": {
+    ".": "./src/index.ts",
+    "./test-utils": "./src/test-utils.tsx"
+  },
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@clair/api-client": "workspace:*",
+    "@clair/data": "workspace:*",
+    "@clair/theme": "workspace:*",
+    "@clair/ui": "workspace:*",
+    "lucide-react": "catalog:"
+  },
+  "peerDependencies": {
+    "@mantine/core": "*",
+    "@mantine/hooks": "*",
+    "react": "*",
+    "react-dom": "*"
+  },
+  "devDependencies": {
+    "@clair/config": "workspace:*",
+    "@mantine/core": "catalog:",
+    "@mantine/hooks": "catalog:",
+    "@storybook/react-vite": "catalog:",
+    "@tanstack/react-query": "catalog:",
+    "@testing-library/jest-dom": "catalog:",
+    "@testing-library/react": "catalog:",
+    "@testing-library/user-event": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "storybook": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

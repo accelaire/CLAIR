@@ -1,0 +1,132 @@
+---
+title: "ScrutinCard"
+sidebar_label: "ScrutinCard"
+sidebar_icon: "vote"
+description: "Carte d'un scrutin : date, chambre, titre en lien, résultat chiffré en texte et sort en badge."
+---
+
+import { ScrutinCard } from "@clair/ui";
+
+Carte d'un scrutin : numéro, chambre, date, titre (unique lien, vers le scrutin), décompte des voix en texte (pour, contre, abstention) et sort en badge texte. Le badge « Important » vient d'un classement calculé par CLAIR et l'annonce comme tel. Remplace `ScrutinListCard` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-parlementaire-scrutincard--docs)
+
+## Import
+
+```tsx
+import { ScrutinCard } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <ScrutinCard
+    href="#"
+    periode="17e législature"
+    scrutin={{
+      numero: 1234,
+      chambre: "assemblee",
+      date: "2025-11-18T15:00:00.000Z",
+      titre: "l'ensemble du projet de loi d'exemple relatif à la simplification administrative",
+      sort: "adopté",
+      typeVote: "solennel",
+      importance: 2,
+      nombrePour: 312,
+      nombreContre: 205,
+      nombreAbstention: 41,
+    }}
+  />
+</Preview>
+
+```tsx
+<ScrutinCard
+  href="#"
+  periode="17e législature"
+  scrutin={{
+    numero: 1234,
+    chambre: "assemblee",
+    date: "2025-11-18T15:00:00.000Z",
+    titre: "l'ensemble du projet de loi d'exemple relatif à la simplification administrative",
+    sort: "adopté",
+    typeVote: "solennel",
+    importance: 2,
+    nombrePour: 312,
+    nombreContre: 205,
+    nombreAbstention: 41,
+  }}
+/>
+```
+
+## Avec un scrutin rejeté
+
+<Preview>
+  <ScrutinCard
+    href="#"
+    periode="Session 2025-2026"
+    scrutin={{
+      numero: 87,
+      chambre: "senat",
+      date: "2026-02-03T10:30:00.000Z",
+      titre: "l'amendement n° 12 d'exemple à l'article 3 du projet de loi fictif",
+      sort: "rejeté",
+      typeVote: "ordinaire",
+      nombrePour: 98,
+      nombreContre: 230,
+      nombreAbstention: 15,
+    }}
+  />
+</Preview>
+
+```tsx
+<ScrutinCard
+  href="#"
+  periode="Session 2025-2026"
+  scrutin={{
+    numero: 87,
+    chambre: "senat",
+    date: "2026-02-03T10:30:00.000Z",
+    titre: "l'amendement n° 12 d'exemple à l'article 3 du projet de loi fictif",
+    sort: "rejeté",
+    typeVote: "ordinaire",
+    nombrePour: 98,
+    nombreContre: 230,
+    nombreAbstention: 15,
+  }}
+/>
+```
+
+## Avec un scrutin important
+
+<Preview>
+  <ScrutinCard
+    href="#"
+    scrutin={{
+      numero: 1240,
+      chambre: "assemblee",
+      date: "2025-11-25T15:00:00.000Z",
+      titre: "la motion de censure d'exemple",
+      sort: "rejeté",
+      typeVote: "motion",
+      importance: 5,
+      nombrePour: 180,
+      nombreContre: 0,
+      nombreAbstention: 0,
+    }}
+  />
+</Preview>
+
+```tsx
+<ScrutinCard
+  href="#"
+  scrutin={{
+    numero: 1240,
+    chambre: "assemblee",
+    date: "2025-11-25T15:00:00.000Z",
+    titre: "la motion de censure d'exemple",
+    sort: "rejeté",
+    typeVote: "motion",
+    importance: 5,
+    nombrePour: 180,
+    nombreContre: 0,
+    nombreAbstention: 0,
+  }}
+/>
+```

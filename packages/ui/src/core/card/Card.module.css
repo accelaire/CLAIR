@@ -1,0 +1,103 @@
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+  color: var(--clair-texte-defaut);
+  box-shadow: var(--clair-ombre-sm);
+  list-style: none;
+}
+
+.card[data-padding="sm"] {
+  padding: var(--clair-espacement-3v);
+}
+
+.card[data-padding="md"] {
+  padding: var(--clair-espacement-4v);
+}
+
+.card[data-padding="lg"] {
+  padding: var(--clair-espacement-6v);
+}
+
+.card[data-clickable] {
+  transition: box-shadow 0.15s ease;
+}
+
+.card[data-clickable]:hover {
+  box-shadow: var(--clair-ombre-md);
+}
+
+/* Le focus du lien est reporté sur toute la carte, qui est sa zone cliquable. */
+.card[data-clickable]:has(.link:focus-visible) {
+  outline: var(--clair-focus-contour);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+/*
+ * Un seul anneau : celui de la carte. Sans cette règle, le focus global (`!important`) dessinait
+ * aussi un contour autour du titre, à l'intérieur de celui de la carte.
+ */
+/* biome-ignore-start lint/complexity/noImportantStyles: doit l'emporter sur le focus global, lui-même en !important. */
+.card[data-clickable] .link:focus-visible {
+  outline: none !important;
+}
+/* biome-ignore-end lint/complexity/noImportantStyles: fin. */
+
+/* Titre d'abord dans le DOM (lu en premier), surtitre affiché au-dessus. */
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-1v);
+}
+
+.eyebrow {
+  order: -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-2v);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--clair-texte-h6-taille);
+  line-height: var(--clair-texte-h6-interligne);
+  font-weight: var(--clair-texte-h6-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.link {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Motif « lien bloc » : la zone cliquable du lien couvre toute la carte. */
+.link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.card[data-clickable]:hover .link {
+  color: var(--clair-texte-action);
+  text-decoration: underline;
+  text-underline-offset: var(--clair-espacement-1v);
+}
+
+.body {
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.footer {
+  margin-top: auto;
+  padding-top: var(--clair-espacement-3v);
+  border-top: var(--clair-trait-defaut);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  color: var(--clair-texte-mention);
+}

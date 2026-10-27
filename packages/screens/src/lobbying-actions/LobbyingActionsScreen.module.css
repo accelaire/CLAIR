@@ -1,0 +1,34 @@
+.page {
+  padding-block: var(--clair-espacement-6v) var(--clair-espacement-16v);
+}
+
+.lead,
+.sources {
+  margin: 0;
+}
+
+.sources {
+  margin-top: var(--clair-espacement-2v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.results {
+  margin-top: var(--clair-espacement-6v);
+}
+
+.count {
+  margin: 0 0 var(--clair-espacement-4v);
+  font-size: var(--clair-texte-sm-taille);
+  color: var(--clair-texte-mention);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+  margin: 0 0 var(--clair-espacement-8v);
+  padding: 0;
+  list-style: none;
+}

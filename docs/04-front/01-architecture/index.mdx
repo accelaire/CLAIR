@@ -1,0 +1,32 @@
+---
+title: "Architecture du nouveau front"
+sidebar_label: "Vue d'ensemble"
+sidebar_icon: "network"
+description: "Les packages du nouveau front de CLAIR, ce que chacun contient et les règles qui les relient."
+---
+
+## Où mettre quoi
+
+| Besoin | Emplacement |
+|---|---|
+| Valeur visuelle (couleur, taille, rayon…) | `packages/theme/src/tokens.ts`, puis `pnpm --filter @clair/theme generate` |
+| Composant réutilisable | `packages/ui/src/<catégorie>/<nom>/` (catégories : `core`, `layout`, `filters`, `parliament`, `charts`), export dans `packages/ui/src/index.ts`, page dans `docs/04-front/03-composants/<famille>/` |
+| Écran | `packages/screens/src/<ecran>/` : `XxxScreen.tsx`, `params.ts`, `XxxScreen.module.css`, test |
+| Route | `apps/site/app/<route>/page.tsx` : `metadata` et l'écran, rien d'autre |
+| Type du domaine | `packages/data/src/<domaine>.ts`, écrit à la main d'après les réponses de l'API (pas de génération depuis l'OpenAPI) |
+| Fixture (données fictives d'un écran) | `packages/screens/src/<ecran>/fixtures.ts` |
+| Accès aux données | `packages/api-client` : client HTTP et `useApiQuery` (TanStack Query) |
+
+## Règles
+
+- **Aucun `next/*` dans `packages/`** : les liens passent par `Link` / `useNavigation` de `@clair/ui`, que l'application branche sur son routeur.
+- **L'état de page vit dans l'URL** : chaque écran a ses fonctions `parseXxxParams` et `xxxParamsOf`.
+- **Jamais de `fetch` direct** dans un écran : les données passent par les hooks de `@clair/api-client`.
+- **Aucune valeur visuelle en dur** : CSS modules et variables `--clair-*`.
+- **`apps/web` ne se modifie pas** : le nouveau front se construit à côté.
+
+## Les pages de cette section
+
+- [Pages et écrans](/front/architecture/pages) : les routes, l'écran de chacune et l'avancement de la migration.
+- [Données](/front/architecture/donnees) : de l'API aux écrans.
+- [Tests](/front/architecture/tests) : la pyramide de tests du nouveau front.

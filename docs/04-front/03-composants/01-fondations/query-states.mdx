@@ -1,0 +1,64 @@
+---
+title: "QueryStates"
+sidebar_label: "QueryStates"
+sidebar_icon: "loader"
+description: "États d'un écran qui charge des données : chargement annoncé, erreur récupérable avec « Réessayer », résultat vide."
+---
+
+import { EmptyState, ErrorState, LoadingState } from "@clair/ui";
+
+Trois composants pour les états d'un écran qui charge des données (règle des 6 états UI) : `LoadingState` annonce le chargement (`role="status"`), `ErrorState` annonce une erreur récupérable (`role="alert"`) avec un bouton « Réessayer », `EmptyState` explique un résultat vide et propose une action. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-fondations-querystates--docs)
+
+## Import
+
+```tsx
+import { EmptyState, ErrorState, LoadingState } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <LoadingState label="Chargement des scrutins…" />
+</Preview>
+
+```tsx
+<LoadingState label="Chargement des scrutins…" />
+```
+
+## Avec des squelettes
+
+<Preview>
+  <LoadingState variant="skeleton" lines={4} />
+</Preview>
+
+```tsx
+<LoadingState variant="skeleton" lines={4} />
+```
+
+## Avec une erreur récupérable
+
+<Preview>
+  <ErrorState onRetry={() => {}} />
+</Preview>
+
+```tsx
+<ErrorState onRetry={() => refetch()} />
+```
+
+## Avec un résultat vide
+
+<Preview>
+  <EmptyState
+    title="Aucun scrutin trouvé"
+    description="Aucun scrutin ne correspond à ces filtres."
+    action={<a href="#">Effacer les filtres</a>}
+  />
+</Preview>
+
+```tsx
+<EmptyState
+  title="Aucun scrutin trouvé"
+  description="Aucun scrutin ne correspond à ces filtres."
+  action={<a href="#">Effacer les filtres</a>}
+/>
+```

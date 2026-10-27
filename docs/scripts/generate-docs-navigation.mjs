@@ -56,6 +56,15 @@ function formatLabel(name) {
     "deploiement-production": "Déploiement en Production",
     contribution: "Contribution & Normes",
     changelog: "Journal des versions",
+    front: "Front",
+    architecture: "Architecture",
+    "design-system": "Design system",
+    composants: "Composants",
+    fondations: "Fondations",
+    "mise-en-page": "Mise en page",
+    filtres: "Filtres",
+    parlementaire: "Parlementaire",
+    graphiques: "Graphiques",
   };
 
   if (exactMatches[clean]) {
@@ -103,7 +112,18 @@ function getDefaultIcon(name, depth) {
     if (lower.includes("guide") || lower.includes("dev") || lower.includes("developpeur"))
       return "rocket";
     if (lower.includes("changelog")) return "history";
+    if (lower.includes("front")) return "layout-template";
   }
+
+  // Front : architecture, design system, familles de composants
+  if (lower.endsWith("architecture")) return "network";
+  if (lower.includes("design-system")) return "palette";
+  if (lower.includes("composants")) return "blocks";
+  if (lower.includes("fondations")) return "brick-wall";
+  if (lower.includes("mise-en-page")) return "panels-top-left";
+  if (lower.includes("filtres")) return "filter";
+  if (lower.includes("parlementaire")) return "landmark";
+  if (lower.includes("graphiques")) return "chart-column";
 
   // Sub-categories or specific folders
   if (lower.includes("source")) return "cloud-download";

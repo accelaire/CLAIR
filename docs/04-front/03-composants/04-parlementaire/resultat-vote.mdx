@@ -1,0 +1,56 @@
+---
+title: "ResultatVote"
+sidebar_label: "ResultatVote"
+sidebar_icon: "chart-bar-stacked"
+description: "Répartition des voix pour, contre et abstention : barre empilée doublée d'une légende chiffrée en texte."
+---
+
+import { ResultatVote } from "@clair/ui";
+
+Répartition des voix d'un scrutin : une barre empilée (pour, contre, abstention) et sa légende, qui donne chaque valeur et son pourcentage en texte. La barre est décorative, la légende porte l'information. Les pourcentages sont calculés sur les voix exprimées et les abstentions. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-parlementaire-resultatvote--docs)
+
+## Import
+
+```tsx
+import { ResultatVote } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <ResultatVote pour={312} contre={205} abstention={41} />
+</Preview>
+
+```tsx
+<ResultatVote pour={312} contre={205} abstention={41} />
+```
+
+## Avec un intitulé
+
+<Preview>
+  <ResultatVote label="Résultat du scrutin n° 87" pour={98} contre={230} abstention={15} />
+</Preview>
+
+```tsx
+<ResultatVote label="Résultat du scrutin n° 87" pour={98} contre={230} abstention={15} />
+```
+
+## Avec une égalité
+
+<Preview>
+  <ResultatVote pour={150} contre={150} abstention={3} />
+</Preview>
+
+```tsx
+<ResultatVote pour={150} contre={150} abstention={3} />
+```
+
+## Avec la petite taille
+
+<Preview>
+  <ResultatVote size="sm" pour={312} contre={205} abstention={41} />
+</Preview>
+
+```tsx
+<ResultatVote size="sm" pour={312} contre={205} abstention={41} />
+```

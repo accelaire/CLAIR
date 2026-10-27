@@ -1,0 +1,53 @@
+.details {
+  margin-top: var(--clair-espacement-4v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.resume {
+  display: inline-flex;
+  cursor: pointer;
+  padding: var(--clair-espacement-1v) var(--clair-espacement-2v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-md);
+  color: var(--clair-texte-action);
+  font-weight: var(--clair-texte-h6-graisse);
+}
+
+.resume:focus-visible {
+  outline: var(--clair-focus-contour);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+.defilement {
+  margin-top: var(--clair-espacement-3v);
+  overflow-x: auto;
+}
+
+.tableau {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.legende {
+  margin-bottom: var(--clair-espacement-2v);
+  text-align: left;
+  color: var(--clair-texte-mention);
+}
+
+.tableau th,
+.tableau td {
+  padding: var(--clair-espacement-1v) var(--clair-espacement-2v);
+  border-bottom: var(--clair-trait-defaut);
+  text-align: left;
+  font-weight: var(--clair-texte-sm-graisse);
+}
+
+.tableau thead th {
+  color: var(--clair-texte-mention);
+  font-weight: var(--clair-texte-h6-graisse);
+}
+
+.tableau [data-numerique] {
+  text-align: right;
+}

@@ -1,0 +1,93 @@
+---
+title: "Tabs"
+sidebar_label: "Tabs"
+sidebar_icon: "layout-panel-top"
+description: "Onglets accessibles au clavier, avec compteur optionnel et onglet actif synchronisable avec l'URL."
+---
+
+import { Tabs } from "@clair/ui";
+
+Onglets accessibles (motif « tabs » du W3C, via Mantine) : les flèches passent d'un onglet à l'autre et chaque panneau est relié à son onglet. Le compteur est annoncé entre parenthèses. En mode contrôlé (`value` et `onChange`), l'onglet actif vit dans l'URL, ce qui permet de partager un lien vers un onglet. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-mise-en-page-tabs--docs)
+
+## Import
+
+```tsx
+import { Tabs } from "@clair/ui";
+```
+
+## Utilisation de base
+
+<Preview>
+  <Tabs
+    label="Fiche de Camille Exemple"
+    items={[
+      { value: "activite", label: "Activité", content: <p>Activité récente.</p> },
+      { value: "votes", label: "Votes", content: <p>Votes publics.</p> },
+      { value: "mandats", label: "Mandats", content: <p>Mandats successifs.</p> },
+    ]}
+  />
+</Preview>
+
+```tsx
+<Tabs
+  label="Fiche de Camille Exemple"
+  items={[
+    { value: "activite", label: "Activité", content: <p>Activité récente.</p> },
+    { value: "votes", label: "Votes", content: <p>Votes publics.</p> },
+    { value: "mandats", label: "Mandats", content: <p>Mandats successifs.</p> },
+  ]}
+/>
+```
+
+## Avec des compteurs
+
+<Preview>
+  <Tabs
+    label="Détail du scrutin"
+    items={[
+      { value: "amendements", label: "Amendements", count: 12, content: <p>Les 12 amendements examinés.</p> },
+      { value: "debats", label: "Débat du vote", count: 48, content: <p>Les 48 interventions.</p> },
+      { value: "vote", label: "Vote", count: 577, content: <p>Le détail du vote.</p> },
+    ]}
+  />
+</Preview>
+
+```tsx
+<Tabs
+  label="Détail du scrutin"
+  items={[
+    { value: "amendements", label: "Amendements", count: 12, content: <p>Les 12 amendements examinés.</p> },
+    { value: "debats", label: "Débat du vote", count: 48, content: <p>Les 48 interventions.</p> },
+    { value: "vote", label: "Vote", count: 577, content: <p>Le détail du vote.</p> },
+  ]}
+/>
+```
+
+## Avec l'onglet actif dans l'URL
+
+L'écran lit l'onglet dans l'URL (`?onglet=vote`) et la met à jour à chaque changement ; l'aperçu ouvre directement l'onglet « Vote ».
+
+<Preview>
+  <Tabs
+    label="Détail du scrutin"
+    defaultValue="vote"
+    items={[
+      { value: "amendements", label: "Amendements", content: <p>Amendements.</p> },
+      { value: "vote", label: "Vote", content: <p>Détail du vote.</p> },
+    ]}
+  />
+</Preview>
+
+```tsx
+const { navigate } = useNavigation();
+
+<Tabs
+  label="Détail du scrutin"
+  value={params.onglet ?? "vote"}
+  onChange={(onglet) => navigate(buildHref(pathname, { ...params, onglet }))}
+  items={[
+    { value: "amendements", label: "Amendements", content: <p>Amendements.</p> },
+    { value: "vote", label: "Vote", content: <p>Détail du vote.</p> },
+  ]}
+/>
+```
