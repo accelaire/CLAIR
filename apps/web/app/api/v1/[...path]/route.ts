@@ -131,26 +131,51 @@ function clientIp(request: NextRequest): string {
 }
 
 /**
- * Normalise avant comparaison : Next décode déjà les segments, on retire les
- * segments vides (`homepage//warm`) et la casse pour qu'aucune de ces variantes
- * ne passe à côté de la liste.
+ * Seuls chemins relayés en écriture. Le proxy pose le secret interne sur tout ce
+ * qu'il transmet : une écriture vers un autre chemin n'a pas à passer par lui.
+ * Seul le formulaire de retour (`FeedbackWidget`) écrit aujourd'hui.
  */
-function isInternalOnly(path: string[]): boolean {
-  return INTERNAL_ONLY_PATHS.has(path.filter(Boolean).join('/').toLowerCase());
+const WRITABLE_PATHS = new Set(['feedback']);
+
+/**
+ * Un segment relayable. Next décode chaque segment de l'URL : `%2F` devient `/`,
+ * `%3F` devient `?`, et `..` reste `..`. Recollés tels quels, ils formeraient
+ * d'autres segments, une chaîne de requête, ou remonteraient hors de `/api/v1`
+ * une fois le chemin normalisé par `fetch`. Un segment vide, `.`, `..`, ou qui
+ * contient l'un de ces séparateurs est donc refusé.
+ */
+function isSafeSegment(segment: string): boolean {
+  return segment !== '' && segment !== '.' && segment !== '..' && !/[/\\?#]/.test(segment);
+}
+
+function notFound(): NextResponse {
+  return NextResponse.json(
+    { error: 'Not Found', code: 'NOT_FOUND' },
+    { status: 404, headers: { 'Cache-Control': 'private, no-store' } },
+  );
 }
 
 async function proxy(request: NextRequest, path: string[]): Promise<Response> {
-  // 404 plutôt que 403 : depuis l'extérieur ce chemin n'existe pas, et une
+  // 404 plutôt que 403 : depuis l'extérieur ces chemins n'existent pas, et une
   // réponse distincte confirmerait qu'il y a quelque chose à trouver.
-  if (isInternalOnly(path)) {
+  if (!path.every(isSafeSegment)) return notFound();
+  const route = path.join('/').toLowerCase();
+  if (INTERNAL_ONLY_PATHS.has(route)) return notFound();
+  if (!SAFE_METHODS.has(request.method) && !WRITABLE_PATHS.has(route)) {
     return NextResponse.json(
-      { error: 'Not Found', code: 'NOT_FOUND' },
-      { status: 404, headers: { 'Cache-Control': 'private, no-store' } },
+      { error: 'Method Not Allowed', code: 'METHOD_NOT_ALLOWED' },
+      { status: 405, headers: { Allow: 'GET, HEAD', 'Cache-Control': 'private, no-store' } },
     );
   }
 
+  // Dernier garde-fou, après normalisation par l'analyseur d'URL : la requête qui
+  // porte le secret ne quitte jamais l'hôte de l'API ni le préfixe `/api/v1/`.
+  const target = new URL(`${API_URL}/api/v1/${path.join('/')}${request.nextUrl.search}`);
+  if (target.origin !== new URL(API_URL).origin || !target.pathname.startsWith('/api/v1/')) {
+    return notFound();
+  }
+
   const secret = process.env.CLAIR_INTERNAL_SECRET?.trim();
-  const target = `${API_URL}/api/v1/${path.join('/')}${request.nextUrl.search}`;
 
   const headers = new Headers({
     accept: request.headers.get('accept') ?? 'application/json',
