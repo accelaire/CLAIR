@@ -130,6 +130,6 @@ La détection des inversions repose sur des expressions régulières appliquées
 
 ## 🧪 Tests unitaires
 
-Les tests de l'ingestion (`*.test.ts` à côté des fichiers testés) couvrent notamment les parsers de sources (syceron, comptes rendus de commission, avis de commission, agenda et vidéos du Sénat, candidatures), les rattachements (débats ↔ scrutins, amendement ↔ scrutin, article ↔ scrutin), la nature des scrutins, les prompts IA et la configuration des contrôles de qualité. L'API a ses propres tests Vitest dans `apps/api/src`. Le frontend n'a pas de tests.
+Les tests de l'ingestion (`*.test.ts` à côté des fichiers testés) couvrent notamment les parsers de sources (syceron, comptes rendus de commission, avis de commission, agenda et vidéos du Sénat, candidatures), les rattachements (débats ↔ scrutins, amendement ↔ scrutin, article ↔ scrutin), la nature des scrutins, les prompts IA et la configuration des contrôles de qualité. L'API a ses propres tests Vitest dans `apps/api/src`. Le frontend n'en a qu'un, celui du proxy `/api/v1` (`app/api/v1/[...path]/route.test.ts`) : chemins relayés vers l'API, chemins refusés.
 
 La CI (GitHub Actions) lance le lint, les tests et le build à chaque push et pull request sur `master`. Elle ne lance ni `check-quality` ni `check-ia-quality`, qui ont besoin d'une base remplie.
