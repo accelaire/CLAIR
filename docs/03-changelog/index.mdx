@@ -1,0 +1,148 @@
+---
+title: "Journal des versions"
+sidebar_label: "Vue d'ensemble"
+sidebar_icon: "history"
+description: Les versions de CLAIR (v0.1.0 à aujourd'hui) résumées, ce que signifie chaque numéro, et comment les changements sont notés au fil des pull requests puis regroupés dans une version.
+---
+
+CLAIR avance par **versions** : des paliers numérotés `vX.Y.Z` qui regroupent plusieurs semaines ou mois de travail. Chaque version a sa page dans ce menu, de la plus récente à la plus ancienne : un résumé, les faits marquants expliqués (schémas, exemples d'appels à l'API), puis les notes complètes. Pour `v0.1.0` à `v0.5.0`, ces notes reprennent telles quelles celles des tags annotés publiés par le mainteneur.
+
+Le site et l'API sont **déployés en continu** : une version ne correspond pas à un déploiement, c'est un **palier** qui dit ce qui a changé et si c'est compatible. Le déploiement en cours est identifié par son commit, et sa version est annoncée par `GET /health` (champ `version`) et par la spécification OpenAPI (`info.version`).
+
+```bash
+curl https://api.clair.vote/health
+# { "status": "ok", "version": "0.5.0", "commit": "…", … }
+```
+
+---
+
+## 🗓️ Les versions en un coup d'œil
+
+<Mermaid
+  title="Les versions de CLAIR"
+  chart={`timeline
+    title CLAIR, de v0.1.0 à v0.5.0
+    v0.1.0 · janvier 2026 : Première version publique
+    v0.2.0 · février 2026 : Dossiers législatifs : Liaison des votes aux textes
+    v0.3.0 · avril 2026 : Résumés IA : Sujets et classements
+    v0.4.0 · juin 2026 : Commissions et agenda : Archives de votes
+    v0.5.0 · octobre 2026 : Sénatoriales 2026 : Législatures précédentes : Débats des votes`}
+/>
+
+| Version | Publiée le | Thèmes | Volume |
+|---|---|---|---|
+| [v0.5.0](/changelog/v0-5-0) | 02/10/2026 | Sénatoriales 2026, législatures précédentes, débats rattachés aux votes, pages de séance | 272 commits, 13 PR |
+| [v0.4.0](/changelog/v0-4-0) | 12/06/2026 | Commissions, agenda parlementaire, sujets enrichis, archives de votes | 55 commits, 7 PR |
+| [v0.3.0](/changelog/v0-3-0) | 19/04/2026 | Enrichissement IA, sujets, classements, fiches parlementaires | 93 commits, 10 PR |
+| [v0.2.0](/changelog/v0-2-0) | 25/02/2026 | Dossiers législatifs, liaison des votes, filtres | 90 commits, 8 PR |
+| [v0.1.0](/changelog/v0-1-0) | 07/01/2026 | Première version publique | — |
+
+---
+
+## 🔢 Ce que signifie le numéro
+
+CLAIR suit le [versionnage sémantique](https://semver.org/lang/fr/), avec une seule version pour tout le dépôt (site, API, ingestion, documentation).
+
+| Niveau | Quand | Exemple |
+|---|---|---|
+| **Majeur** `X` | rupture pour les réutilisateurs : route ou champ de l'API retiré ou changé de sens, nouvelle version de l'API (`/api/v2`) | suppression d'une route de `/api/v1` |
+| **Mineur** `Y` | palier thématique : nouvelles pages, nouvelles sources, nouveaux champs d'API (ajouts compatibles), nouvelle méthodologie | `v0.5.0`, Sénatoriales 2026 |
+| **Correctif** `Z` | corrections et améliorations sans nouveauté notable, entre deux paliers | correction d'un calcul |
+
+Tant que la version commence par `0.`, l'API n'est pas déclarée stable : une rupture peut arriver dans une version mineure, et elle est alors **annoncée explicitement** dans sa page. Le passage en `1.0.0` marquera l'engagement de stabilité de `/api/v1`.
+
+---
+
+## 🧩 Deux niveaux : fragments et versions
+
+| | Fragment | Version |
+|---|---|---|
+| Quoi | une note courte sur un changement | un palier qui regroupe les fragments en attente |
+| Quand | dans **chaque pull request notable** | quand le mainteneur décide de publier un palier |
+| Où | `.changelog/<sujet>.md`, à la racine du dépôt | une page ici (`docs/03-changelog/vX-Y-Z.mdx`), un tag annoté `vX.Y.Z` et une GitHub Release |
+| Qui | l'auteur de la pull request | le mainteneur |
+
+Les fragments restent hors de `docs/` : ce sont des notes de travail, réécrites et regroupées dans la page de la version.
+
+<Mermaid
+  title="D'une pull request à une version"
+  chart={`flowchart LR
+    PR1["Pull request A"] --> F1[".changelog/<br/>sous-amendements.md"]
+    PR2["Pull request B"] --> F2[".changelog/<br/>node-24.md"]
+    PR3["Pull request C<br/>sans effet notable"] --> L["label<br/>changelog:aucun"]
+    F1 --> P["pnpm changelog:prepare"]
+    F2 --> P
+    P --> PG["Page de la version<br/>réécrite et relue"]
+    PG --> T["Tag annoté vX.Y.Z<br/>et GitHub Release"]`}
+/>
+
+### Quand écrire un fragment
+
+Pour tout changement **visible ou utile en dehors de la pull request** :
+
+- une fonctionnalité ou une page du site ;
+- un changement de l'API (route, champ, comportement) ;
+- un changement des données : nouvelle source, nouveau rattachement, correction de masse, nouvel enrichissement IA ;
+- un changement de méthodologie (calcul d'une statistique, d'une position, d'un classement) ;
+- un changement d'outillage qui touche les contributeurs.
+
+Une pull request sans effet notable (refactor interne, correctif mineur, dépendance sans effet visible) porte à la place le label **`changelog:aucun`**.
+
+### Format d'un fragment
+
+`.changelog/sous-amendements.md` :
+
+```md
+---
+niveau: mineur              # correctif | mineur | majeur
+type: fonctionnalite        # fonctionnalite | correction | donnees | methodologie | api | outillage
+public: [citoyens, reutilisateurs]   # citoyens | reutilisateurs | contributeurs
+pr: [96]                    # [] si la pull request n'existe pas encore
+---
+
+Les sous-amendements sont reliés à leur amendement parent, sur le site et dans l'API
+(`amendementParent`, filtre par parent). Les amendements identiques sont regroupés.
+```
+
+- Le nom du fichier est le **sujet** en kebab-case, unique ; pas de date, c'est la version qui date.
+- Une à trois phrases en français, au présent, compréhensibles sans connaître le code ; 600 caractères au plus.
+- Décrire l'effet pour le lecteur, pas l'implémentation ; citer la route ou le champ d'API concernés.
+- Dire ce qui est calculé ou produit par IA ; rester apartisan.
+- Une rupture d'API (`type: api`, `niveau: majeur`) dit aux réutilisateurs quoi faire : « À faire de votre côté : … ».
+
+`pnpm changelog:check` vérifie le format ; la CI vérifie aussi qu'une pull request ajoute un fragment ou porte le label `changelog:aucun`.
+
+---
+
+## 🏷️ Publier une version
+
+Réservé au mainteneur. Merger une pull request ne publie jamais de version.
+
+1. **Préparer**, sur une branche `chore/release-vX.Y.Z` à jour de `master` :
+   ```bash
+   pnpm changelog:prepare --essai     # aperçu : version calculée, PR sans fragment
+   pnpm changelog:prepare             # écrit la page, monte les package.json, consomme les fragments
+   ```
+   La version suit le niveau le plus haut des fragments (`--niveau` pour monter d'un cran, `--version 1.0.0` pour un choix explicite).
+2. **Rédiger** la page `docs/03-changelog/vX-Y-Z.mdx`, sur le modèle des versions précédentes :
+   - la `description` résume les thèmes du palier ;
+   - **En bref** : quelques lignes et un tableau « Pour qui / Ce qui change » ;
+   - **faits marquants** : une section par nouveauté importante, expliquée avec un lien vers le site, un schéma Mermaid ou un exemple d'appel à l'API ;
+   - **Notes complètes** : les fragments regroupés par thème. Elles deviennent le message du tag.
+
+   Puis `pnpm docs:nav` et `pnpm docs:validate`.
+3. **Pull request** `chore(release): vX.Y.Z`, relue puis mergée.
+4. **Taguer** le commit de merge, puis créer la GitHub Release avec les mêmes notes :
+   ```bash
+   node scripts/changelog/tag-message.mjs vX.Y.Z > /tmp/tag.txt
+   git tag -a vX.Y.Z -F /tmp/tag.txt && git push upstream vX.Y.Z
+   gh release create vX.Y.Z --title "vX.Y.Z" --notes-file /tmp/tag.txt
+   ```
+
+Règles des tags :
+
+- un tag **annoté** `vX.Y.Z`, sur `master`, posé sur le commit de la version ;
+- un tag publié n'est **jamais déplacé ni supprimé** : une erreur se corrige par une nouvelle version ;
+- pas de branche de maintenance : une correction urgente passe par un fragment `correctif` et une version `vX.Y.Z+1` depuis `master`.
+
+Les pages des versions déjà taguées se régénèrent depuis leurs tags avec `node scripts/changelog/from-tags.mjs`.

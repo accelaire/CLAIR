@@ -203,6 +203,51 @@ export const docsNavigation: ZudokuConfig["navigation"] = [
   },
   {
     type: "category",
+    label: "Journal des versions",
+    icon: "history",
+    collapsed: false,
+    items: [
+      {
+        type: "doc",
+        file: "03-changelog/index.mdx",
+        path: "/changelog",
+        label: "Vue d'ensemble",
+        icon: "history",
+      },
+      {
+        type: "doc",
+        file: "03-changelog/v0-5-0.mdx",
+        path: "/changelog/v0-5-0",
+        label: "Version v0.5.0",
+      },
+      {
+        type: "doc",
+        file: "03-changelog/v0-4-0.mdx",
+        path: "/changelog/v0-4-0",
+        label: "Version v0.4.0",
+      },
+      {
+        type: "doc",
+        file: "03-changelog/v0-3-0.mdx",
+        path: "/changelog/v0-3-0",
+        label: "Version v0.3.0",
+      },
+      {
+        type: "doc",
+        file: "03-changelog/v0-2-0.mdx",
+        path: "/changelog/v0-2-0",
+        label: "Version v0.2.0",
+      },
+      {
+        type: "doc",
+        file: "03-changelog/v0-1-0.mdx",
+        path: "/changelog/v0-1-0",
+        label: "Version v0.1.0",
+      },
+    ],
+  },
+  {
+    type: "category",
     label: "Explorateur API",
     icon: "code",
     collapsed: false,
@@ -449,5 +494,29 @@ export const docsRedirects: ZudokuConfig["redirects"] = [
   {
     from: "/02-donnees/suivi-des-modifications",
     to: "/donnees/suivi-des-modifications",
+  },
+  {
+    from: "/03-changelog",
+    to: "/changelog",
+  },
+  {
+    from: "/03-changelog/v0-5-0",
+    to: "/changelog/v0-5-0",
+  },
+  {
+    from: "/03-changelog/v0-4-0",
+    to: "/changelog/v0-4-0",
+  },
+  {
+    from: "/03-changelog/v0-3-0",
+    to: "/changelog/v0-3-0",
+  },
+  {
+    from: "/03-changelog/v0-2-0",
+    to: "/changelog/v0-2-0",
+  },
+  {
+    from: "/03-changelog/v0-1-0",
+    to: "/changelog/v0-1-0",
   },
 ];

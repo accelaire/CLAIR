@@ -8,6 +8,7 @@
 // =============================================================================
 
 import { INTERNAL_HEADER } from './utils/internal-auth';
+import { VERSION } from './version';
 
 /** Adresse publique de l'API, la seule à annoncer en production. */
 export const PUBLIC_API_URL = 'https://api.clair.vote';
@@ -50,7 +51,7 @@ export function openapiDocument(isProduction: boolean, apiUrl: string | undefine
     info: {
       title: 'CLAIR API',
       description: 'API de la plateforme de transparence politique CLAIR',
-      version: '0.1.0',
+      version: VERSION,
     },
     servers: [
       isProduction
