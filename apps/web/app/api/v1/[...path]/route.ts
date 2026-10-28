@@ -138,14 +138,22 @@ function clientIp(request: NextRequest): string {
 const WRITABLE_PATHS = new Set(['feedback']);
 
 /**
- * Un segment relayable. Next décode chaque segment de l'URL : `%2F` devient `/`,
- * `%3F` devient `?`, et `..` reste `..`. Recollés tels quels, ils formeraient
- * d'autres segments, une chaîne de requête, ou remonteraient hors de `/api/v1`
- * une fois le chemin normalisé par `fetch`. Un segment vide, `.`, `..`, ou qui
- * contient l'un de ces séparateurs est donc refusé.
+ * Un segment relayable : lettres et chiffres ASCII, `_`, `-`, `~` et `.`, sans
+ * commencer par un point (ni `.`, ni `..`). Tous les identifiants de l'API (slugs,
+ * uids, codes de département) tiennent dans cet alphabet.
+ *
+ * Liste blanche et non liste noire : Next décode chaque segment de l'URL (`%2F`
+ * devient `/`, `%3F` devient `?`), puis l'analyseur d'URL en réinterprète
+ * d'autres en recollant le chemin. Il lit `%2E%2E` comme `..` (un `%252E` du
+ * client, décodé une fois) et supprime les tabulations et retours à la ligne
+ * (`.%09.` devient `..`). Énumérer ces formes en laisse toujours passer une ;
+ * n'accepter que des caractères que l'analyseur ne transforme pas les ferme
+ * toutes.
  */
+const SAFE_SEGMENT = /^[\w~-][\w.~-]*$/;
+
 function isSafeSegment(segment: string): boolean {
-  return segment !== '' && segment !== '.' && segment !== '..' && !/[/\\?#]/.test(segment);
+  return SAFE_SEGMENT.test(segment);
 }
 
 function notFound(): NextResponse {
@@ -169,9 +177,11 @@ async function proxy(request: NextRequest, path: string[]): Promise<Response> {
   }
 
   // Dernier garde-fou, après normalisation par l'analyseur d'URL : la requête qui
-  // porte le secret ne quitte jamais l'hôte de l'API ni le préfixe `/api/v1/`.
+  // porte le secret part vers l'hôte de l'API et vers le chemin exact contrôlé
+  // ci-dessus. Si l'analyseur l'a réécrit, les listes ont été comparées à un
+  // autre chemin que celui qui serait relayé.
   const target = new URL(`${API_URL}/api/v1/${path.join('/')}${request.nextUrl.search}`);
-  if (target.origin !== new URL(API_URL).origin || !target.pathname.startsWith('/api/v1/')) {
+  if (target.origin !== new URL(API_URL).origin || target.pathname !== `/api/v1/${path.join('/')}`) {
     return notFound();
   }
 
