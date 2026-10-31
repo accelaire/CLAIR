@@ -2,12 +2,12 @@
 title: "Modèle de Données Prisma"
 sidebar_label: "Modèle Prisma"
 sidebar_icon: "database"
-description: Les 41 modèles Prisma, leurs conventions, les points de modélisation à connaître, la volumétrie en production, ce que l'API n'expose pas, et les migrations.
+description: Les 42 modèles Prisma, leurs conventions, les points de modélisation à connaître, la volumétrie en production, ce que l'API n'expose pas, et les migrations.
 ---
 
 La base est une base **PostgreSQL 17** décrite par un seul fichier : [`apps/api/prisma/schema.prisma`](https://github.com/accelaire/CLAIR/blob/master/apps/api/prisma/schema.prisma). C'est la source de vérité ; cette page en donne une lecture d'ensemble. Les diagrammes sont sur la page [Schémas ERD](/donnees/schemas-erd).
 
-Le schéma compte **41 modèles**, soit 41 tables, plus 2 tables de jointure créées implicitement par Prisma. Il n'y a ni comptes utilisateurs, ni tables d'authentification. La base de production ne contient aucune autre table que celles-ci, hors la table `_prisma_migrations` de Prisma (vérifié le 21 octobre 2026).
+Le schéma compte **42 modèles**, soit 42 tables, plus 2 tables de jointure créées implicitement par Prisma. Il n'y a ni comptes utilisateurs, ni tables d'authentification. La base de production ne contient aucune autre table que celles-ci, hors la table `_prisma_migrations` de Prisma (vérifié le 21 octobre 2026).
 
 ---
 
@@ -126,6 +126,7 @@ Volumétrie mesurée en production le **21 octobre 2026**.
 | `SujetLien` | `sujet_liens` | 4 709 | Liens sortants d'un sujet : documents officiels, vie-publique.fr, Wikipédia |
 | `LegiTexte` | `legi_textes` | 154 473 | Index de la base LEGI de la DILA : versions des textes cités comme du droit (codes, lois, ordonnances, décrets, arrêtés, Constitution…), avec leur titre et leurs dates. Compté au premier chargement en production, le 31 octobre 2026 |
 | `LegiArticle` | `legi_articles` | 734 625 | Index de la base LEGI : versions des articles de ces textes (hors arrêtés et circulaires) encore en vigueur en 2017 ou après. Identifiant Légifrance, numéro, dates ; aucun contenu. Compté au premier chargement en production, le 31 octobre 2026 |
+| `AmendementRenvois` | `amendements_renvois` | 531 506 | Renvois au droit en vigueur repérés dans le dispositif d'un amendement : positions dans le texte, article (LEGIARTI) ou texte (CID) visé dans l'index LEGI. Une ligne par amendement calculé, même sans renvoi |
 
 ### Commissions et agenda
 
@@ -192,6 +193,7 @@ L'API renvoie l'essentiel de la base, souvent la ligne entière sur les routes d
 | Table | Raison |
 | :--- | :--- |
 | `textes_articles` | Sert uniquement de matière aux résumés IA ; aucune route ne la sert pour l'instant |
+| `amendements_renvois` | Préparation des liens vers Légifrance dans le dispositif des amendements ; aucune route ne la sert pour l'instant |
 | `legi_textes`, `legi_articles` | Index de travail pour lier les références des amendements à Légifrance. Ce sont des données de la DILA, à prendre à la source ([echanges.dila.gouv.fr](https://echanges.dila.gouv.fr/OPENDATA/LEGI/), Licence Ouverte) |
 | `parlementaires_identifiants` | Interne au rattachement des données |
 | `source_states`, `sync_logs` | Suivi de l'ingestion ; la page d'accueil n'en lit que la date de la dernière synchronisation réussie |
