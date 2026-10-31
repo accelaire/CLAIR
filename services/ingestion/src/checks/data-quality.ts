@@ -841,6 +841,38 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     min: 85,
     query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (linked * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE commission_id IS NOT NULL) AS linked FROM reunions) sub`,
   },
+
+  // ---------------------------------------------------------------------------
+  // Index de la base LEGI (workers/index-legi.ts)
+  // ---------------------------------------------------------------------------
+  index_legi_en_retard: {
+    type: 'invariant',
+    label: 'Index LEGI ni chargé, ni vérifié contre la DILA depuis plus de 2 jours',
+    min: 0,
+    max: 0,
+    // Le batch de nuit lit la liste des archives de la DILA et applique les
+    // incréments nouveaux ; il date `last_check_at` même quand il n'y en a
+    // pas. Une date qui vieillit dit que l'étape échoue chaque nuit (index
+    // décroché des archives publiées, DILA injoignable) : les liens vers
+    // Légifrance pointeraient de plus en plus souvent vers une version
+    // périmée. Pas de ligne : l'index n'a jamais été chargé.
+    query: `SELECT CASE WHEN max(last_check_at) >= now() - interval '2 days' THEN 0 ELSE 1 END AS value
+            FROM source_states WHERE source = 'dila' AND data_type = 'legi'`,
+  },
+  legi_textes_count: {
+    type: 'threshold',
+    label: 'Index LEGI : versions de textes',
+    // 154 276 au chargement du 26/10/2026 ; la base ne fait que grossir.
+    min: 140000,
+    query: `SELECT COUNT(*)::int AS value FROM legi_textes`,
+  },
+  legi_articles_count: {
+    type: 'threshold',
+    label: "Index LEGI : versions d'articles",
+    // 734 257 au chargement du 26/10/2026.
+    min: 680000,
+    query: `SELECT COUNT(*)::int AS value FROM legi_articles`,
+  },
 };
 
 // =============================================================================

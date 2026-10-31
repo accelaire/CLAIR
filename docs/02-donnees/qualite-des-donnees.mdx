@@ -57,6 +57,7 @@ Code : `services/ingestion/src/checks/data-quality.ts`. Le contrôle réussit si
 | Ruptures d'alternance femme-homme sur les listes (art. L. 300) |
 | Binômes titulaire-suppléant de même sexe (art. L. 299) |
 | Sortants déclarés par le fichier du ministère mais non rattachés à une personne |
+| Index LEGI jamais chargé, ou pas vérifié contre les archives de la DILA depuis plus de 2 jours |
 
 **Le Congrès n'a pas de votes nominatifs, c'est normal.** Les scrutins du Congrès (députés et sénateurs réunis à Versailles) sont publiés par l'AN sous un uid `VTCG…` (CG pour Congrès, AN pour Assemblée) avec leurs totaux, mais sans aucune liste de votants. Ce n'est ni une perte à l'ingestion ni un scrutin cassé : il n'y a rien à réparer. Ces scrutins sont donc exclus de l'invariant « scrutins sans aucun vote » (filtre sur `source_url` contenant `/scrutins/VTCG`), ce qui ne peut masquer aucun scrutin de l'Assemblée ni du Sénat. Au 7 octobre 2026, la base en compte un seul : `VTCGR5L16V1`, la révision constitutionnelle sur l'IVG du 4 mars 2024 (780 pour, 72 contre).
 
@@ -91,6 +92,8 @@ Code : `services/ingestion/src/checks/data-quality.ts`. Le contrôle réussit si
 | Commissions et organes du Sénat | 35 |
 | Réunions | 6 000 |
 | Taux de liaison réunions → commissions (AN) | 85 % |
+| Index LEGI : versions de textes | 140 000 |
+| Index LEGI : versions d'articles | 680 000 |
 
 Le périmètre des taux de liaison au Sénat commence à la session 2024, parce que les amendements des sessions antérieures ne sont pas ingérés : les compter mesurerait le périmètre de l'ingestion, pas la qualité du rattachement.
 

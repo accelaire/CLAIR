@@ -87,6 +87,12 @@ const SECTIONS = [
     ],
   },
   {
+    titre: "Index de la base LEGI (DILA)",
+    intro:
+      "Sans clé étrangère : `legi_articles.cid` désigne le `cid` commun aux versions d'un texte de `legi_textes`, qui n'est pas unique.",
+    tables: ["legi_textes", "legi_articles"],
+  },
+  {
     titre: "Tables techniques",
     intro: "Sans relation avec les autres tables.",
     tables: ["source_states", "sync_logs", "feedbacks"],

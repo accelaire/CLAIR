@@ -92,6 +92,7 @@ Chaque étape ne tourne que si une source concernée a changé, et son échec n'
 | dossiers ou scrutins | Scrutins → dossiers : retrait des liens vers un dossier d'une autre législature (AN) ou d'une procédure sans vote (rapport, mission d'information, 49.3 hors motion de censure), rattachement au dossier que la source désigne (`voteRefs`), puis, pour les scrutins restés sans dossier : rattachement Sénat, TF-IDF sur les titres, titre (Assemblée), numéro de texte, titre de la loi promulguée |
 | amendements, scrutins ou dossiers | Scrutins ↔ amendements (table de jointure), puis dossier des amendements : retrait des dossiers d'une autre législature, dossier du texte (`texte_ref`), propagation par leurs scrutins et entre amendements d'un même texte ; correction des liens dont l'article contredit le libellé du scrutin ; alignement du dossier des scrutins sur celui de leurs amendements |
 | amendements | Texte des articles des nouvelles versions de textes de l'Assemblée (`textes_articles`). Une version déjà ingérée n'est pas retéléchargée ; seuls les textes que la source ne sert pas, ou dont le gabarit n'est pas couvert (budgets), sont retentés |
+| toujours | Index de la base LEGI (`legi_textes`, `legi_articles`) : les incréments publiés par la DILA depuis la dernière archive appliquée, quelques secondes. Ne charge jamais le dump global : un index vide ou décroché des archives publiées fait échouer l'étape, à relancer à la main avec `sync-index-legi`. Son échec apparaît dans le récapitulatif des sources en échec ; sa réussite ne compte pas comme un changement et ne déclenche donc pas les étapes suivantes |
 | scrutins | Classement de la nature des scrutins encore non classés (`nature_vote`) |
 
 L'ordre compte : le rattachement scrutin → dossier précède le rattachement scrutin → amendement, qui s'appuie sur le dossier pour éviter les faux positifs. Le texte des articles vient après le rattachement aux dossiers, dont il recopie le `dossier_id`, et avant l'IA, qui met l'article dans le prompt des scrutins.
@@ -139,6 +140,7 @@ En fin de batch, la CLI attend 120 s, puis appelle `POST /api/v1/homepage/warm` 
 | `declarations-sync.ts` | Déclarations HATVP |
 | `senat-bureaux.ts`, `senat-dossier-commissions.ts` | Bureaux et saisines des commissions du Sénat |
 | `textes-articles.ts` | Texte des articles des textes de l'Assemblée |
+| `index-legi.ts` | Index de la base LEGI de la DILA (textes et articles de loi, pour les liens vers Légifrance) |
 | `evenements.ts` | Liste curée des événements institutionnels |
 
 La commande `schedule` (fichier `src/scheduler.ts`) lance un planificateur `node-cron` dans le processus. Elle n'est **pas** utilisée en production, où la planification est confiée à Railway.

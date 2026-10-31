@@ -1397,6 +1397,68 @@ model TexteArticle {
 }
 
 // =============================================================================
+// INDEX DE LA BASE LEGI (DILA)
+// =============================================================================
+
+// Index minimal de la base LEGI de la DILA (Licence Ouverte) : de quoi
+// reconnaître un texte cité dans un amendement et pointer l'article visé sur
+// Légifrance, dans sa version en vigueur à la date de l'amendement. Ni le
+// contenu des textes ni leur structure : seulement des identifiants, des
+// numéros et des dates.
+//
+// Tenu par `sync-index-legi` : le dump global de la DILA une fois, puis ses
+// incréments quotidiens rejoués dans l'ordre (workers/index-legi.ts).
+
+// Version d'un texte (une ligne par période de vigueur de son titre).
+model LegiTexte {
+  /// Identifiant de la version : LEGITEXT…
+  id        String    @id
+  /// Identifiant du texte, commun à ses versions : JORFTEXT…, ou LEGITEXT… pour un code
+  cid       String
+  /// Nature LEGI : CODE, LOI, LOI_ORGANIQUE, ORDONNANCE, DECRET, ARRETE, CONSTITUTION…
+  nature    String
+  /// Numéro du texte (« 2016-1691 »), absent des codes
+  num       String?
+  dateTexte DateTime? @map("date_texte") @db.Date
+  /// Période de vigueur de la version. 2999-01-01 : pas de fin connue.
+  dateDebut DateTime? @map("date_debut") @db.Date
+  dateFin   DateTime? @map("date_fin") @db.Date
+  /// VIGUEUR, ABROGE, MODIFIE…
+  etat      String?
+  titre     String
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@index([cid])
+  @@map("legi_textes")
+}
+
+// Version d'un article. Ne sont gardés que les articles des codes, lois,
+// ordonnances, décrets et Constitution encore en vigueur au 1er janvier 2017 ou
+// après : les amendements en base commencent en juin 2017 (15e législature).
+model LegiArticle {
+  /// Identifiant de la version de l'article : LEGIARTI…
+  id        String    @id
+  /// `cid` du texte qui contient l'article (LegiTexte.cid)
+  cid       String
+  /// Numéro tel que LEGI l'écrit : « L. 121-1 » y est « L121-1 »
+  num       String?
+  etat      String?
+  /// Période de vigueur. 2999-01-01 : pas de fin connue, ou article jamais
+  /// consolidé (début ET fin à 2999-01-01) ; 2222-02-22 : entrée en vigueur
+  /// différée, sans date fixée.
+  dateDebut DateTime? @map("date_debut") @db.Date
+  dateFin   DateTime? @map("date_fin") @db.Date
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@index([cid, num])
+  @@map("legi_articles")
+}
+
+// =============================================================================
 // LOBBYING (HATVP)
 // =============================================================================
 

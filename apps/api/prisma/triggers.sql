@@ -175,6 +175,12 @@ CREATE OR REPLACE TRIGGER sujet_liens_updated_at BEFORE INSERT OR UPDATE ON suje
 CREATE OR REPLACE TRIGGER textes_articles_updated_at BEFORE INSERT OR UPDATE ON textes_articles
   FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
 
+-- Index de la base LEGI (DILA).
+CREATE OR REPLACE TRIGGER legi_textes_updated_at BEFORE INSERT OR UPDATE ON legi_textes
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER legi_articles_updated_at BEFORE INSERT OR UPDATE ON legi_articles
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+
 -- Scrutins, votes, débats, amendements. `source_hash` est l'empreinte de ce
 -- que l'ingestion a écrit, pas une donnée de la source.
 CREATE OR REPLACE TRIGGER scrutins_updated_at BEFORE INSERT OR UPDATE ON scrutins
