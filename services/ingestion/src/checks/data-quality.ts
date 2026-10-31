@@ -6,6 +6,7 @@ import { cleMotion, dossierMotionSansReferences } from '../utils/motions-censure
 import { PrismaClient } from '@prisma/client';
 import { LEGISLATURE_AN_COURANTE } from '../workers/mandats';
 import { ORGANES_AN_HORS_MANDAT } from '../workers/mandats-an-sortants';
+import { VERSION_DETECTION } from '../utils/version-renvois-legi';
 import { CTE_LEGISLATURES_DOSSIER_SQL, CTE_TEXTE_DU_DOSSIER_SQL, dossierValantPourSql } from '../utils/legislatures-dossier-sql';
 
 // Les contrôles sont des requêtes texte : les fragments SQL partagés y entrent
@@ -872,6 +873,33 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // 734 257 au chargement du 26/10/2026.
     min: 680000,
     query: `SELECT COUNT(*)::int AS value FROM legi_articles`,
+  },
+
+  // ---------------------------------------------------------------------------
+  // Renvois des amendements à l'index LEGI (workers/renvois-legi.ts)
+  // ---------------------------------------------------------------------------
+  renvois_legi_non_calcules: {
+    type: 'invariant',
+    label: 'Amendements avec dispositif, en base depuis 2 jours, sans renvois calculés par la détection en cours',
+    min: 0,
+    max: 0,
+    // Le batch de nuit calcule les amendements nouveaux ou modifiés. Il en
+    // reste : l'étape échoue, ou VERSION_DETECTION a augmenté sans que le
+    // recalcul complet ait été lancé (`sync-renvois-legi`).
+    query: `SELECT COUNT(*)::int AS value FROM amendements a
+            LEFT JOIN amendements_renvois r ON r.amendement_id = a.id
+            WHERE a.dispositif IS NOT NULL AND a.date_depot IS NOT NULL
+              AND a.created_at < now() - interval '2 days'
+              AND (r.amendement_id IS NULL OR r.version < ${VERSION_DETECTION})`,
+  },
+  renvois_legi_part_avec_lien: {
+    type: 'threshold',
+    label: 'Renvois LEGI : % des amendements calculés avec au moins un lien',
+    // 32 % sur la base locale le 31/10/2026 (AN 30 %, Sénat 37 %). Une chute
+    // dit qu'une montée de tisseuse ou un index vide a cassé la détection.
+    min: 25,
+    query: `SELECT COALESCE(ROUND(100.0 * COUNT(*) FILTER (WHERE jsonb_array_length(renvois) > 0)
+              / NULLIF(COUNT(*), 0)), 0)::int AS value FROM amendements_renvois`,
   },
 };
 

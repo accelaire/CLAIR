@@ -87,10 +87,10 @@ const SECTIONS = [
     ],
   },
   {
-    titre: "Index de la base LEGI (DILA)",
+    titre: "Index de la base LEGI (DILA) et renvois des amendements",
     intro:
-      "Sans clé étrangère : `legi_articles.cid` désigne le `cid` commun aux versions d'un texte de `legi_textes`, qui n'est pas unique.",
-    tables: ["legi_textes", "legi_articles"],
+      "Sans clé étrangère : `legi_articles.cid` désigne le `cid` commun aux versions d'un texte de `legi_textes`, qui n'est pas unique. `amendements_renvois` désigne articles et textes de l'index par leurs identifiants, dans son JSON.",
+    tables: ["legi_textes", "legi_articles", "amendements_renvois"],
   },
   {
     titre: "Tables techniques",

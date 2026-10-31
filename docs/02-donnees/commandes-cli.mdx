@@ -242,6 +242,7 @@ Détail des contrôles : [Qualité des données](/donnees/qualite-des-donnees).
 | `sync-avis-commission` | Avis de commission sur les amendements. Mêmes options que ci-dessus |
 | `sync-textes-articles` | Texte des articles des textes de l'Assemblée. Options : `--texte`, `--limit`, `--force`, `--dry-run` |
 | `sync-index-legi` | Index de la base LEGI de la DILA (`legi_textes`, `legi_articles`). Le premier passage charge le dump global (1,1 Go à télécharger), puis rejoue tous ses incréments ; les suivants n'appliquent que les incréments nouveaux. Options : `--limite <n>` (incréments appliqués), `--reinitialiser` (vide l'index et repart du dernier dump global, à lancer si la DILA en publie un nouveau) |
+| `sync-renvois-legi` | Repère dans le dispositif des amendements les textes et articles de loi cités, et les rattache à l'index LEGI, dans la version en vigueur à la date de dépôt (`amendements_renvois`). Ne traite que les amendements nouveaux, modifiés ou récents. Options : `--tout` (tout recalculer), `--limite <n>`, `--uid <uid>`, `--dry-run` |
 | `fill-article-vise-senat` | Comble l'article visé des amendements du Sénat depuis le dump AMELI, sans écraser une valeur existante (`--depuis-annee`, `--dry-run`) |
 | `fill-metadonnees-senat` | Aligne discussions, numéro d'alinéa et parent des sous-amendements du Sénat sur le dump AMELI, sur tout l'historique (`--dry-run`) |
 | `sync-agenda-senat` | Agenda du Sénat sur une fenêtre (`--jours-avant`, défaut 45 ; `--jours-apres`, défaut 30) |
