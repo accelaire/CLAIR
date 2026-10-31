@@ -6,6 +6,7 @@
 import 'dotenv/config';
 import { Command } from 'commander';
 import { syncTextesArticles } from './workers/textes-articles';
+import { synchroniserIndexLegi } from './workers/index-legi';
 import {
   fullSync,
   incrementalSync,
@@ -1739,6 +1740,34 @@ program
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'sync-textes-articles failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: sync-index-legi
+// =============================================================================
+program
+  .command('sync-index-legi')
+  .description(
+    "Tenir l'index de la base LEGI (DILA) : textes et articles de loi, pour les liens vers Légifrance. " +
+      'Le premier passage charge le dump global (1,1 Go), les suivants les seuls incréments quotidiens',
+  )
+  .option('--limite <n>', "Nombre maximum d'incréments appliqués", (v: string) => parseInt(v, 10))
+  .option('--reinitialiser', "Vider l'index et repartir du dernier dump global")
+  .action(async (options: { limite?: number; reinitialiser?: boolean }) => {
+    try {
+      const r = await synchroniserIndexLegi(options);
+      if (r.global) console.log(`\nDump global chargé  : ${r.global}`);
+      console.log(`Incréments appliqués : ${r.incrementsAppliques}`);
+      console.log(`Incréments restants  : ${r.incrementsRestants}`);
+      console.log(`Dernière archive     : ${r.archive ?? 'aucune'}`);
+      console.log(`Textes écrits        : ${r.textesEcrits}`);
+      console.log(`Articles écrits      : ${r.articlesEcrits}`);
+      console.log(`Lignes supprimées    : ${r.lignesSupprimees}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-index-legi failed');
       process.exit(1);
     }
   });
