@@ -237,6 +237,9 @@ importers:
       '@prisma/client':
         specifier: ^5.7.0
         version: 5.22.0(prisma@5.22.0)
+      '@tricoteuses/tisseuse':
+        specifier: 0.21.0
+        version: 0.21.0
       '@types/xml2js':
         specifier: ^0.4.14
         version: 0.4.14
@@ -4240,6 +4243,13 @@ packages:
     dependencies:
       '@tanstack/query-core': 5.90.16
       react: 18.3.1
+    dev: false
+
+  /@tricoteuses/tisseuse@0.21.0:
+    resolution: {integrity: sha512-8ZG+DRw0z1Ur52B/W6thKm2DVsOYNEiUNFu1vpbqen97hS9D/mGuOvXygqIc2tZTdmlcLGEt5Tx53nOA44LzmQ==}
+    engines: {node: '>=24'}
+    dependencies:
+      zod: 4.4.3
     dev: false
 
   /@tybys/wasm-util@0.10.3:
