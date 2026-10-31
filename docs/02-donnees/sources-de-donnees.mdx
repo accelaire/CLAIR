@@ -11,7 +11,7 @@ Toutes les données de CLAIR viennent de sources publiques. Aucune n'exige de cl
 
 ## 📊 Sources suivies (`source_states`)
 
-Chaque source est identifiée par une clé `organisme:type`, définie dans `services/ingestion/src/utils/source-freshness.ts` et reprise comme clé dans la table `source_states`. Les 22 premières lignes du tableau sont lues par le batch nocturne, dans l'ordre donné sur la page [Orchestrateur d'ingestion](/donnees/orchestrateur-ingestion).
+Chaque source est identifiée par une clé `organisme:type`, définie dans `services/ingestion/src/utils/source-freshness.ts` et reprise comme clé dans la table `source_states`. Les 23 premières lignes du tableau sont lues par le batch nocturne, dans l'ordre donné sur la page [Orchestrateur d'ingestion](/donnees/orchestrateur-ingestion).
 
 « Toujours » signifie que la source n'expose aucun en-tête exploitable (`ETag`, `Last-Modified`) : elle est relue à chaque passage.
 
@@ -39,6 +39,7 @@ Chaque source est identifiée par une clé `organisme:type`, définie dans `serv
 | `senat:videos` | [videos.senat.fr](https://videos.senat.fr) | HTML (toujours) | Liens vers les vidéos des séances et réunions |
 | `hatvp:lobbyistes` | [hatvp.fr](https://www.hatvp.fr/agora/opendata/csv/Vues_Separees_CSV.zip), répertoire des représentants d'intérêts | ZIP / CSV | Représentants d'intérêts, actions déclarées, secteurs |
 | `interieur:candidatures` | [data.gouv.fr](https://www.data.gouv.fr), jeu « élections sénatoriales 2026, candidatures » publié par le ministère de l'Intérieur | CSV (toujours) | Listes et candidats aux sénatoriales 2026 |
+| `dila:legi` | [echanges.dila.gouv.fr](https://echanges.dila.gouv.fr/OPENDATA/LEGI/), base LEGI (droit consolidé, Licence Ouverte) : un dump global, puis un incrément par jour | TAR.GZ / XML | Index des textes et des articles de loi : identifiants Légifrance, numéros, dates de vigueur, titres. Ni le contenu ni la structure des textes. Sert à lier les références des amendements à Légifrance. Son état (dernière archive appliquée) est tenu par `sync-index-legi`, pas par `source-freshness.ts` ; le premier chargement, celui du dump global (1,1 Go), se lance à la main |
 | `dila:interventions` | [echanges.dila.gouv.fr](https://echanges.dila.gouv.fr/OPENDATA/Debats/AN/) | TAR / XML | Ancienne source des débats de l'Assemblée. **Plus rien n'y est publié depuis janvier 2026** : elle est sortie du batch nocturne et n'est plus lue que par la commande manuelle `sync --in` |
 
 Le batch nocturne ne lit que la **législature courante** de l'Assemblée (17e) et une **fenêtre récente** des sessions du Sénat. L'historique (15e et 16e législatures, Sénat depuis la session 2006) a été chargé par des commandes ponctuelles et ne bouge plus : voir [Commandes CLI](/donnees/commandes-cli).
