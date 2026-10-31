@@ -4484,6 +4484,24 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
     }
   }
 
+  // Index de la base LEGI (DILA) : les incréments publiés depuis la veille,
+  // quelques secondes. Rien d'autre n'en dépend dans ce batch : un échec ne
+  // bloque rien, mais il se voit dans le récapitulatif. La source n'entre pas
+  // dans `sourcesChanged`, qui déclencherait le recalcul des stats.
+  if (options.all) {
+    results.sourcesChecked.push('dila:legi');
+    try {
+      const { synchroniserIndexLegi } = await import('./index-legi.js');
+      const legi = await synchroniserIndexLegi({ chargerGlobalSiVide: false });
+      results.results['dila:legi'] = { created: legi.textesEcrits + legi.articlesEcrits, updated: 0 };
+      logger.info(legi, 'Index LEGI à jour');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Index LEGI : mise à jour échouée (non bloquante)');
+      results.sourcesFailed.push('dila:legi');
+      results.results['dila:legi'] = { created: 0, updated: 0, failed: true, error: errorMessage(error) };
+    }
+  }
+
   if (hasScrutinsChanged) {
     // Rattrapage de la nature des scrutins. Les scrutins écrits par ce sync la
     // portent déjà (elle est calculée à l'upsert) : ce passage ne concerne que
