@@ -585,6 +585,9 @@ export async function calculateAllStats(
         stats_carriere_classable = all_stats.new_scrutins >= ${SEUIL_SCRUTINS_CLASSEMENT},
         stats_carriere_interventions = all_stats.new_interventions,
         stats_carriere_amendements = all_stats.new_amendements,
+        -- Carrière, les deux chambres (la fiche) : au Sénat, un vote solennel
+        -- par délégation compte en absence, comme dans le taux du mandat.
+        stats_carriere_presence_solennel = all_stats.new_presence_solennel,
         stats_presence_solennel = CASE
           WHEN mc.non_mesurable THEN NULL
           ELSE COALESCE(

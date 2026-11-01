@@ -70,7 +70,7 @@ export const parlementairesListQuerySchema = z.object({
   periode: periodeStatsEnum
     .default('mandat')
     .describe(
-      "Période des stats servant au tri. 'mandat' (défaut) : le mandat en cours — seul tri qui compare les élus à dénominateur égal. 'carriere' : tous les mandats cumulés, ce qui avantage mécaniquement les réélus.",
+      "Période des stats servant au tri et renvoyées dans `stats`. 'mandat' (défaut) : le mandat en cours, seul tri qui compare les élus à dénominateur égal. 'carriere' : tous les mandats cumulés, ce qui avantage mécaniquement les réélus.",
     ),
 });
 

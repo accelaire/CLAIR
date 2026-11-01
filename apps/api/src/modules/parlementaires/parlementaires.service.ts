@@ -183,6 +183,9 @@ const PARLEMENTAIRE_LIST_SELECT = {
   statsCarriereParticipation: true,
   statsCarriereInterventions: true,
   statsCarriereAmendements: true,
+  statsCarrierePresenceSolennel: true,
+  statsCarriereScrutins: true,
+  statsCarriereClassable: true,
   statsScrutins: true,
   statsClassable: true,
   resumeIA: true,
@@ -257,14 +260,15 @@ export class ParlementairesService {
       prenom: { prenom: order },
       // Au Sénat, la présence se mesure sur les votes personnels (scrutins
       // solennels) : le taux tous scrutins compte des bulletins déposés par le
-      // groupe, présents ou non (ticket #108). Pas de colonne de carrière pour
-      // celle-ci : elle porte le mandat en cours, la carrière à défaut.
+      // groupe, présents ou non (ticket #108).
       // Un taux null (aucun scrutin à évaluer) n'est ni le meilleur ni le pire :
       // il va en fin de classement dans les deux sens. Postgres le mettrait en
       // tête d'un tri décroissant.
       presence:
         chambre === 'senat'
-          ? { statsPresenceSolennel: { sort: order, nulls: 'last' } }
+          ? carriere
+            ? { statsCarrierePresenceSolennel: { sort: order, nulls: 'last' } }
+            : { statsPresenceSolennel: { sort: order, nulls: 'last' } }
           : carriere
             ? { statsCarrierePresence: { sort: order, nulls: 'last' } }
             : { statsPresence: { sort: order, nulls: 'last' } },
@@ -508,21 +512,35 @@ export class ParlementairesService {
         votesCount: votesCount.get(p.id) ?? 0,
         interventionsCount: interventionsCount.get(p.id) ?? 0,
         amendementsCount: amendementsCount.get(p.id) ?? 0,
+        // Les taux de la période demandée : en `periode=carriere`, la liste
+        // était triée sur la carrière mais affichait le mandat en cours, et ne
+        // montrait donc pas les chiffres de la fiche (#108).
         stats: p.statsCalculatedAt
-          ? {
-              presence: p.statsPresence ?? null,
-              presenceSolennel: p.statsPresenceSolennel ?? null,
-              loyaute: p.statsLoyaute ?? null,
-              participation: p.statsParticipation ?? 0,
-              interventions: p.statsInterventions ?? 0,
-              amendements: p.statsAmendements ?? 0,
-              // Scrutins du mandat en cours sur lesquels porte la présence, et
-              // s'ils suffisent à figurer dans les classements (50 au moins).
-              // Le seuil ne vaut pas pour la présence des sénateurs, mesurée
-              // sur les scrutins solennels (presenceSolennel).
-              scrutins: p.statsScrutins,
-              classable: p.statsClassable,
-            }
+          ? periode === 'carriere'
+            ? {
+                presence: p.statsCarrierePresence ?? null,
+                presenceSolennel: p.statsCarrierePresenceSolennel ?? null,
+                loyaute: p.statsCarriereLoyaute ?? null,
+                participation: p.statsCarriereParticipation ?? 0,
+                interventions: p.statsInterventions ?? 0,
+                amendements: p.statsAmendements ?? 0,
+                scrutins: p.statsCarriereScrutins,
+                classable: p.statsCarriereClassable,
+              }
+            : {
+                presence: p.statsPresence ?? null,
+                presenceSolennel: p.statsPresenceSolennel ?? null,
+                loyaute: p.statsLoyaute ?? null,
+                participation: p.statsParticipation ?? 0,
+                interventions: p.statsInterventions ?? 0,
+                amendements: p.statsAmendements ?? 0,
+                // Scrutins du mandat en cours sur lesquels porte la présence, et
+                // s'ils suffisent à figurer dans les classements (50 au moins).
+                // Le seuil ne vaut pas pour la présence des sénateurs, mesurée
+                // sur les scrutins solennels (presenceSolennel).
+                scrutins: p.statsScrutins,
+                classable: p.statsClassable,
+              }
           : null,
         // Retirer les champs stats bruts
         statsScrutins: undefined,
@@ -730,6 +748,7 @@ export class ParlementairesService {
         statsLoyaute: true,
         statsParticipation: true,
         statsCarrierePresence: true,
+        statsCarrierePresenceSolennel: true,
         statsCarriereLoyaute: true,
         statsCarriereParticipation: true,
         statsInterventions: true,
@@ -753,7 +772,9 @@ export class ParlementairesService {
         // null = aucun scrutin où il pouvait voter (président de l'assemblée,
         // mandat passé au Gouvernement), pas 0 % (cf. stats-calculator).
         presence: parlementaire.statsCarrierePresence ?? parlementaire.statsPresence ?? null,
-        presenceSolennel: parlementaire.statsPresenceSolennel ?? null,
+        // Carrière elle aussi : le dernier mandat seul donnait 0 % à Gérard
+        // Collomb, sur un scrutin pendant un mois au Sénat en 2018 (#108).
+        presenceSolennel: parlementaire.statsCarrierePresenceSolennel ?? parlementaire.statsPresenceSolennel ?? null,
         loyaute: parlementaire.statsCarriereLoyaute ?? parlementaire.statsLoyaute ?? null,
         participation:
           parlementaire.statsCarriereParticipation ?? parlementaire.statsParticipation ?? 0,

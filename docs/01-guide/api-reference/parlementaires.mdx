@@ -40,11 +40,13 @@ Toutes les routes, avec leurs schémas de réponse : [explorateur de l'API](/api
 | `session` | Sénateurs ayant siégé pendant cette session (`2024-2025`) ; renvoie le groupe et la circonscription de la période |
 | `sort` | `nom` (par défaut), `prenom`, `presence`, `loyaute`, `activite`, `amendements`, `interventions` |
 | `order` | `asc` (par défaut) ou `desc` |
-| `periode` | Statistiques servant au tri : `mandat` (mandat en cours, par défaut) ou `carriere` (tous mandats cumulés, ce qui avantage mécaniquement les réélus) |
+| `periode` | Statistiques servant au tri et renvoyées dans `stats` : `mandat` (mandat en cours, par défaut) ou `carriere` (tous mandats cumulés, les chiffres de la fiche ; avantage mécaniquement les réélus) |
 
 **Présence au Sénat.** Un scrutin ordinaire du Sénat se vote par groupe : un délégué dépose les bulletins de tous les membres, présents ou non. Le taux sur tous les scrutins (`stats.presence`) y est donc une participation, pas une présence. La présence d'un sénateur est `stats.presenceSolennel` : la part des scrutins solennels où il a voté en personne (un vote confié à un collègue compte comme une absence). Le président du Sénat, le président de séance et les membres du gouvernement, qui ne votent pas, sont hors calcul ; `presence` vaut `null` quand il ne reste aucun scrutin (président du Sénat). En conséquence, `sort=presence` trie les sénateurs sur `presenceSolennel`, et sans `chambre` ne classe que les députés.
 
 Dans `stats`, `presence` et `loyaute` valent `null` quand il n'y a rien à évaluer : aucun scrutin où l'élu pouvait voter (président de l'assemblée, mandat passé au Gouvernement), ou aucun vote exprimé au sein d'un groupe. Ce n'est pas 0 %. Les scrutins tenus pendant un poste ministériel de la personne, ou pendant sa présidence de l'Assemblée, sortent aussi de sa présence, même quand la source du scrutin ne la marque pas. Dans `mandats`, la présidence d'une assemblée figure comme une fonction du mandat (`typeOrgane` `BUREAU`). Triées sur ces taux, les valeurs `null` passent en fin de liste dans les deux sens. Un taux calculé sur moins de 50 scrutins (`stats.scrutins` ; `stats.classable` vaut `false` dans les listes) passe aussi après les autres : il ne se compare pas à celui d'un élu noté sur des milliers de scrutins, et la fiche le montre avec son nombre de scrutins. Ce seuil vaut pour la loyauté et la présence des députés, pas pour celle des sénateurs, mesurée sur les scrutins solennels, peu nombreux.
+
+Les statistiques d'une fiche portent sur toute la carrière parlementaire, les deux chambres et tous les mandats cumulés, `presenceSolennel` comprise. Celles des listes et des classements portent sur le mandat en cours (`periode=mandat`). Pour un président d'assemblée en exercice, la présence solennelle de la fiche exclut ses présidences : c'est sa présence sur le reste de sa carrière.
 
 ---
 

@@ -44,7 +44,8 @@ import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { InterventionsList } from '@/components/parlementaire/interventions-list';
 import { MandatsBlock } from '@/components/parlementaire/mandats-timeline';
 import { fonctionsEnVue, presideUneAssemblee } from '@/lib/fonctions-en-vue';
-import { dateLongue, fonctionEnCours, type FonctionGouvernementale } from '@/lib/gouvernements';
+import { fonctionEnCours, type FonctionGouvernementale } from '@/lib/gouvernements';
+import { TitresFiche, titresDeLaFiche } from '@/components/parlementaire/titres-fiche';
 import {
   FiltreChambre,
   paramChambre,
@@ -729,29 +730,12 @@ export default function PageClient({
             {senateur.prenom} {senateur.nom}
           </h1>
 
-          {/* Fonction en cours (présidence de l'assemblée, d'une commission, d'un
-              groupe) : sans elle, rien ne disait sur sa fiche que Gérard Larcher
-              préside le Sénat (ticket #118). */}
-          {fonctionsEnVue(senateur.mandats ?? []).length > 0 && (
-            <p className="mt-1 text-base font-medium text-primary">
-              {fonctionsEnVue(senateur.mandats ?? []).join(' · ')}
-            </p>
-          )}
-          {/* Une fonction au Gouvernement en cours passe avant le mandat : la
-              fiche de Sébastien Lecornu, sénateur un mois en 2020, présente
-              d'abord le Premier ministre. Le parcours complet suit, dans la
-              partie « Mandats ». */}
-          {gouvernementEnCours && (
-            <div className="mt-3 inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm md:justify-start">
-              <span className="font-semibold">{gouvernementEnCours.titre}</span>
-              <span className="text-muted-foreground">depuis le {dateLongue(gouvernementEnCours.depuis)}</span>
-              {gouvernementEnCours.gouvernement && (
-                <Link href={`/gouvernements/${gouvernementEnCours.gouvernement.slug}`} className="text-primary hover:underline">
-                  Gouvernement {gouvernementEnCours.gouvernement.nom}
-                </Link>
-              )}
-            </div>
-          )}
+          {/* Titres en cours, dans un seul encadré : le poste au Gouvernement
+              d'abord (la fiche de Sébastien Lecornu, sénateur un mois en 2020,
+              présente d'abord le Premier ministre), puis la présidence de
+              l'assemblée, d'une commission ou d'un groupe (sans elle, rien ne
+              disait que Gérard Larcher préside le Sénat, #118). */}
+          <TitresFiche titres={titresDeLaFiche(gouvernementEnCours, fonctionsEnVue(senateur.mandats ?? []))} />
 
           {/* Groupe. Pour un mandat terminé, le groupe affiché est celui du dernier
               mandat : présenté seul, il laissait croire à un élu en exercice (David
@@ -762,14 +746,9 @@ export default function PageClient({
               souvent celle où l'ingestion a constaté le départ (27 mandats de
               députés « terminés » le 22 juillet 2026), pas la date réelle. */}
           {!fonction.enCours && (
-            <div className="mt-2 flex items-center justify-center gap-2 md:justify-start">
-              <span className="rounded-full border px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                Mandat terminé
-              </span>
-              {senateur.groupe && (
-                <span className="text-sm text-muted-foreground">Dernier groupe :</span>
-              )}
-            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {senateur.groupe ? 'Mandat terminé · dernier groupe :' : 'Mandat terminé'}
+            </p>
           )}
           {/* La ligne du groupe reste la même que pour un élu en exercice : le
               libellé « Dernier groupe » est sur la ligne de la mention, au-dessus. */}

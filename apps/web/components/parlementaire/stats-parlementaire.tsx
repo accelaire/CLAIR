@@ -38,6 +38,8 @@ const SEUIL_SCRUTINS_CLASSEMENT = 50;
 
 const CARRIERE = 'Calculé sur l’ensemble de la carrière parlementaire, Assemblée et Sénat, tous mandats confondus.';
 const COMPRENDRE = '/comprendre/parlementaire';
+/** Les classements comparent par défaut le mandat en cours : le chiffre peut y différer de celui de la fiche. */
+const CARRIERE_TAUX = `${CARRIERE} Les classements comparent par défaut le mandat en cours, d’où un chiffre parfois différent.`;
 
 function StatCard({
   label,
@@ -108,22 +110,35 @@ function CartePresence({
       ? `sur ${stats.scrutins} scrutin${stats.scrutins > 1 ? 's' : ''} seulement`
       : undefined;
 
-  // Président d'assemblée en exercice : il ne vote pas, quels que soient les
-  // chiffres de carrière (sa présidence passée n'est pas toujours datée dans les
-  // données, celle de la XVIe législature par exemple). Sinon, aucun scrutin où
-  // il pouvait voter sur la période.
-  if (preside || stats.presence === null) {
+  // Président d'assemblée en exercice : il ne vote pas. Sa présence de carrière
+  // aux votes solennels, hors présidences, reste lisible en second : Yaël
+  // Braun-Pivet a voté sous la XVe avant de présider l'Assemblée.
+  if (preside) {
     return (
       <StatCard
         label="Présence"
         value={null}
-        texteSiVide={preside ? 'Ne vote pas' : 'Non mesurable'}
+        texteSiVide="Ne vote pas"
+        subtitle={solennel !== null ? `${solennel}% hors présidence` : undefined}
         icon={ShieldCheck}
         tooltip={
-          preside
-            ? `Par usage, ${assemblee} ne prend pas part aux votes : sa présence ne se mesure pas.`
-            : `Aucun scrutin où cet élu pouvait voter sur la période. ${horsCalcul}`
+          `Par usage, ${assemblee} ne prend pas part aux votes : sa présence ne se mesure pas pendant sa présidence.` +
+          (solennel !== null
+            ? ` Le second chiffre est sa présence aux scrutins solennels sur le reste de sa carrière parlementaire, présidences exclues.`
+            : '')
         }
+      />
+    );
+  }
+  // Aucun scrutin où il pouvait voter sur toute la carrière.
+  if (stats.presence === null) {
+    return (
+      <StatCard
+        label="Présence"
+        value={null}
+        texteSiVide="Non mesurable"
+        icon={ShieldCheck}
+        tooltip={`Aucun scrutin où cet élu pouvait voter sur la période. ${horsCalcul}`}
       />
     );
   }
@@ -137,8 +152,8 @@ function CartePresence({
         icon={ShieldCheck}
         tooltip={
           senat
-            ? `Présence aux scrutins solennels : part de ceux où ce sénateur a voté en personne. Le second chiffre est sa participation à tous les scrutins publics. ${PRESENCE_SENAT_EXPLICATION}`
-            : `Présence aux scrutins solennels : part de ceux où ce député a voté (pour, contre ou abstention). Le second chiffre porte sur tous les scrutins publics. ${horsCalcul} ${CARRIERE}`
+            ? `Présence aux scrutins solennels : part de ceux où ce sénateur a voté en personne. Le second chiffre est sa participation à tous les scrutins publics. ${PRESENCE_SENAT_EXPLICATION} ${CARRIERE_TAUX}`
+            : `Présence aux scrutins solennels : part de ceux où ce député a voté (pour, contre ou abstention). Le second chiffre porte sur tous les scrutins publics. ${horsCalcul} ${CARRIERE_TAUX}`
         }
       />
     );
@@ -153,7 +168,7 @@ function CartePresence({
       tooltip={
         senat
           ? `Pourcentage de scrutins publics où un bulletin a été déposé pour ce sénateur. ${PRESENCE_SENAT_EXPLICATION} ${PRESENCE_SENAT_NON_MESURABLE}`
-          : `Pourcentage de scrutins publics auxquels ce député a participé (voté pour, contre ou abstention). ${horsCalcul} Sur moins de ${SEUIL_SCRUTINS_CLASSEMENT} scrutins, il n’entre pas dans le classement. ${CARRIERE}`
+          : `Pourcentage de scrutins publics auxquels ce député a participé (voté pour, contre ou abstention). ${horsCalcul} Sur moins de ${SEUIL_SCRUTINS_CLASSEMENT} scrutins, il n’entre pas dans le classement. ${CARRIERE_TAUX}`
       }
     />
   );
@@ -183,7 +198,7 @@ export function StatsParlementaire({
           texteSiVide="—"
           vide="aucun vote à comparer"
           icon={Users}
-          tooltip={`Pourcentage de votes alignés avec la position majoritaire de son groupe politique au moment du vote. ${CARRIERE}`}
+          tooltip={`Pourcentage de votes alignés avec la position majoritaire de son groupe politique au moment du vote. ${CARRIERE_TAUX}`}
         />
         <StatCard
           label="Votes"
