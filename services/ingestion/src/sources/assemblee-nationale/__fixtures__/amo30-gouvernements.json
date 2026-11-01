@@ -1,0 +1,2840 @@
+{
+ "source": "AMO30 17e législature, archive du 21/10/2026 (extraits)",
+ "organes": [
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO268781",
+    "codeType": "MINISTERE",
+    "libelle": "Ministre déléguée à l'industrie, auprès du ministre de l'économie, des finances et de l'industrie",
+    "libelleEdition": "auprès du ministre de l'économie, des finances et de l'industrie à l'industrie",
+    "libelleAbrege": "industrie",
+    "libelleAbrev": "IND",
+    "viMoDe": {
+     "dateDebut": "2002-06-17",
+     "dateAgrement": null,
+     "dateFin": "2004-03-30"
+    },
+    "organeParent": "PO268150",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO382939",
+    "codeType": "GOUVERNEMENT",
+    "libelle": "Gouvernement",
+    "libelleEdition": "du Gouvernement",
+    "libelleAbrege": "FILLON 1",
+    "libelleAbrev": "GVT",
+    "viMoDe": {
+     "dateDebut": "2007-05-17",
+     "dateAgrement": null,
+     "dateFin": "2007-06-18"
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO382940",
+    "codeType": "PRESREP",
+    "libelle": "Présidence de la République : M. Nicolas Sarkozy",
+    "libelleEdition": "de la République",
+    "libelleAbrege": "Présidence de la République",
+    "libelleAbrev": "PRESI",
+    "viMoDe": {
+     "dateDebut": "2007-05-16",
+     "dateAgrement": null,
+     "dateFin": "2012-05-15"
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO382943",
+    "codeType": "MINISTERE",
+    "libelle": "Premier ministre",
+    "libelleEdition": null,
+    "libelleAbrege": "Premier ministre",
+    "libelleAbrev": "PMI",
+    "viMoDe": {
+     "dateDebut": "2007-05-17",
+     "dateAgrement": null,
+     "dateFin": "2007-06-18"
+    },
+    "organeParent": "PO382939",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO384206",
+    "codeType": "GOUVERNEMENT",
+    "libelle": "Gouvernement",
+    "libelleEdition": "du Gouvernement",
+    "libelleAbrege": "FILLON 2",
+    "libelleAbrev": "GVT",
+    "viMoDe": {
+     "dateDebut": "2007-06-18",
+     "dateAgrement": null,
+     "dateFin": "2010-11-13"
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO387931",
+    "codeType": "MINISTERE",
+    "libelle": "Premier ministre",
+    "libelleEdition": null,
+    "libelleAbrege": "Premier ministre",
+    "libelleAbrev": "PMI",
+    "viMoDe": {
+     "dateDebut": "2007-06-18",
+     "dateAgrement": null,
+     "dateFin": "2010-11-13"
+    },
+    "organeParent": "PO384206",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO387998",
+    "codeType": "MINISTERE",
+    "libelle": "Secrétariat d'Etat chargée des affaires étrangères et des droits de l'homme",
+    "libelleEdition": "chargée des affaires étrangères et des droits de l'homme",
+    "libelleAbrege": "Affaires étrangères et droits de l'homme",
+    "libelleAbrev": "ADH",
+    "viMoDe": {
+     "dateDebut": "2007-06-19",
+     "dateAgrement": null,
+     "dateFin": "2009-06-23"
+    },
+    "organeParent": "PO384206",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO419578",
+    "codeType": "MINISTERE",
+    "libelle": "Secrétariat d'Etat aux sports",
+    "libelleEdition": "chargée des sports",
+    "libelleAbrege": "Sports",
+    "libelleAbrev": "SPO",
+    "viMoDe": {
+     "dateDebut": "2009-06-23",
+     "dateAgrement": null,
+     "dateFin": "2010-11-13"
+    },
+    "organeParent": "PO384206",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO425695",
+    "codeType": "GOUVERNEMENT",
+    "libelle": "Gouvernement",
+    "libelleEdition": "du Gouvernement",
+    "libelleAbrege": "FILLON 3",
+    "libelleAbrev": "GVT",
+    "viMoDe": {
+     "dateDebut": "2010-11-14",
+     "dateAgrement": null,
+     "dateFin": "2012-05-10"
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO425696",
+    "codeType": "MINISTERE",
+    "libelle": "Premier ministre",
+    "libelleEdition": null,
+    "libelleAbrege": "Premier ministre",
+    "libelleAbrev": "PMI",
+    "viMoDe": {
+     "dateDebut": "2010-11-14",
+     "dateAgrement": null,
+     "dateFin": "2012-05-10"
+    },
+    "organeParent": "PO425695",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO514475",
+    "codeType": "MINISTERE",
+    "libelle": "Ministère de l'écologie, du développement durable, des transports et du logement",
+    "libelleEdition": "de l'écologie, du développement durable, des transports et du logement",
+    "libelleAbrege": "Écologie, développement durable, transports et logement",
+    "libelleAbrev": "EDD",
+    "viMoDe": {
+     "dateDebut": "2012-02-22",
+     "dateAgrement": null,
+     "dateFin": "2012-05-10"
+    },
+    "organeParent": "PO425695",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO590011",
+    "codeType": "GOUVERNEMENT",
+    "libelle": "Gouvernement",
+    "libelleEdition": "du Gouvernement",
+    "libelleAbrege": "AYRAULT 1",
+    "libelleAbrev": "GVT",
+    "viMoDe": {
+     "dateDebut": "2012-05-16",
+     "dateAgrement": null,
+     "dateFin": "2012-06-18"
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO591180",
+    "codeType": "MINISTERE",
+    "libelle": "Ministère de l'intérieur",
+    "libelleEdition": "de l'intérieur",
+    "libelleAbrege": "Intérieur",
+    "libelleAbrev": "INT",
+    "viMoDe": {
+     "dateDebut": "2012-05-17",
+     "dateAgrement": null,
+     "dateFin": "2012-06-18"
+    },
+    "organeParent": "PO590011",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO653199",
+    "codeType": "GOUVERNEMENT",
+    "libelle": "Gouvernement",
+    "libelleEdition": "du Gouvernement",
+    "libelleAbrege": "AYRAULT 2",
+    "libelleAbrev": "GVT",
+    "viMoDe": {
+     "dateDebut": "2012-06-19",
+     "dateAgrement": null,
+     "dateFin": "2014-03-31"
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO653320",
+    "codeType": "MINISTERE",
+    "libelle": "Ministère de l'intérieur",
+    "libelleEdition": "de l'intérieur",
+    "libelleAbrege": "Intérieur",
+    "libelleAbrev": "INT",
+    "viMoDe": {
+     "dateDebut": null,
+     "dateAgrement": null,
+     "dateFin": "2014-03-31"
+    },
+    "organeParent": "PO653199",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO696251",
+    "codeType": "PRESREP",
+    "libelle": "Présidence de la République : M. François Hollande",
+    "libelleEdition": "de la République",
+    "libelleAbrege": "Présidence de la République",
+    "libelleAbrev": "PRESI",
+    "viMoDe": {
+     "dateDebut": "2012-05-15",
+     "dateAgrement": null,
+     "dateFin": "2017-05-14"
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO700706",
+    "codeType": "GOUVERNEMENT",
+    "libelle": "Gouvernement",
+    "libelleEdition": "du Gouvernement",
+    "libelleAbrege": "VALLS",
+    "libelleAbrev": "GVT",
+    "viMoDe": {
+     "dateDebut": "2014-04-01",
+     "dateAgrement": null,
+     "dateFin": "2014-08-25"
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO700710",
+    "codeType": "MINISTERE",
+    "libelle": "Premier ministre",
+    "libelleEdition": null,
+    "libelleAbrege": "Premier ministre",
+    "libelleAbrev": "PMI",
+    "viMoDe": {
+     "dateDebut": "2014-04-01",
+     "dateAgrement": null,
+     "dateFin": "2014-08-25"
+    },
+    "organeParent": "PO700706",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO700838",
+    "codeType": "MINISTERE",
+    "libelle": "Secrétariat d'État, auprès du ministre des affaires étrangères et du développement international, chargé des affaires européennes",
+    "libelleEdition": ", auprès du ministre des affaires étrangères et du développement international, chargé des affaires européennes",
+    "libelleAbrege": "Affaires européennes",
+    "libelleAbrev": "AEU",
+    "viMoDe": {
+     "dateDebut": "2014-04-10",
+     "dateAgrement": null,
+     "dateFin": "2014-08-26"
+    },
+    "organeParent": "PO700706",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO702883",
+    "codeType": "GOUVERNEMENT",
+    "libelle": "Gouvernement",
+    "libelleEdition": "du Gouvernement",
+    "libelleAbrege": "VALLS 2",
+    "libelleAbrev": "GVT",
+    "viMoDe": {
+     "dateDebut": "2014-08-26",
+     "dateAgrement": null,
+     "dateFin": "2016-12-06"
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO702884",
+    "codeType": "MINISTERE",
+    "libelle": "Premier ministre",
+    "libelleEdition": null,
+    "libelleAbrege": "Premier ministre",
+    "libelleAbrev": "PMI",
+    "viMoDe": {
+     "dateDebut": "2014-08-26",
+     "dateAgrement": null,
+     "dateFin": "2016-12-06"
+    },
+    "organeParent": "PO702883",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO702894",
+    "codeType": "MINISTERE",
+    "libelle": "Secrétariat d'État, auprès du ministre des affaires étrangères et du développement international, chargé des affaires européennes",
+    "libelleEdition": ", auprès du ministre des affaires étrangères et du développement international, chargé des affaires européennes",
+    "libelleAbrege": "Affaires européennes",
+    "libelleAbrev": "AEU",
+    "viMoDe": {
+     "dateDebut": "2014-08-27",
+     "dateAgrement": null,
+     "dateFin": "2016-12-06"
+    },
+    "organeParent": "PO702883",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO702912",
+    "codeType": "MINISTERE",
+    "libelle": "Ministère de l'économie, de l'industrie et du numérique",
+    "libelleEdition": "de l'économie, de l'industrie et du numérique",
+    "libelleAbrege": "Économie, industrie et numérique",
+    "libelleAbrev": "ECO",
+    "viMoDe": {
+     "dateDebut": "2014-08-27",
+     "dateAgrement": null,
+     "dateFin": "2016-08-30"
+    },
+    "organeParent": "PO702883",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO715793",
+    "codeType": "GOUVERNEMENT",
+    "libelle": "Gouvernement",
+    "libelleEdition": "du Gouvernement",
+    "libelleAbrege": "CAZENEUVE",
+    "libelleAbrev": "GVT",
+    "viMoDe": {
+     "dateDebut": "2016-12-07",
+     "dateAgrement": null,
+     "dateFin": "2017-05-17"
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO715892",
+    "codeType": "MINISTERE",
+    "libelle": "Secrétariat d'État, auprès du ministère des affaires étrangères et du développement international, chargé des affaires européennes",
+    "libelleEdition": ", auprès du ministre des affaires étrangères et du développement international, chargé des affaires européennes",
+    "libelleAbrege": "Affaires européennes",
+    "libelleAbrev": "AEU",
+    "viMoDe": {
+     "dateDebut": "2016-12-07",
+     "dateAgrement": null,
+     "dateFin": "2017-05-17"
+    },
+    "organeParent": "PO715793",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO717136",
+    "codeType": "PRESREP",
+    "libelle": "Présidence de la République : M. Emmanuel Macron",
+    "libelleEdition": "de la République",
+    "libelleAbrege": "Présidence de la République",
+    "libelleAbrev": "PRESI",
+    "viMoDe": {
+     "dateDebut": "2017-05-14",
+     "dateAgrement": null,
+     "dateFin": null
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO717173",
+    "codeType": "GOUVERNEMENT",
+    "libelle": "Gouvernement",
+    "libelleEdition": "du Gouvernement",
+    "libelleAbrege": "PHILIPPE",
+    "libelleAbrev": "GVT",
+    "viMoDe": {
+     "dateDebut": "2017-05-18",
+     "dateAgrement": null,
+     "dateFin": "2017-06-19"
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO717180",
+    "codeType": "MINISTERE",
+    "libelle": "Ministère de la justice",
+    "libelleEdition": null,
+    "libelleAbrege": "Justice",
+    "libelleAbrev": "JUS",
+    "viMoDe": {
+     "dateDebut": "2017-05-18",
+     "dateAgrement": null,
+     "dateFin": "2017-06-19"
+    },
+    "organeParent": "PO717173",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO725688",
+    "codeType": "GOUVERNEMENT",
+    "libelle": "Gouvernement",
+    "libelleEdition": "du Gouvernement",
+    "libelleAbrege": "PHILIPPE 2",
+    "libelleAbrev": "GVT",
+    "viMoDe": {
+     "dateDebut": "2017-06-20",
+     "dateAgrement": null,
+     "dateFin": "2020-07-06"
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO730033",
+    "codeType": "MINISTERE",
+    "libelle": "Secrétariat d'État, auprès du ministre d'État, ministre de la transition écologique et solidaire",
+    "libelleEdition": ", auprès du ministre d'État, ministre de la transition écologique et solidaire",
+    "libelleAbrege": "Transition écologique et solidaire (M. le SE auprès du ministre d'État)",
+    "libelleAbrev": "TRE",
+    "viMoDe": {
+     "dateDebut": "2017-06-22",
+     "dateAgrement": null,
+     "dateFin": "2018-10-16"
+    },
+    "organeParent": "PO725688",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO759797",
+    "codeType": "MINISTERE",
+    "libelle": "Ministère auprès de la ministre de la cohésion des territoires et des relations avec les collectivités territoriales, chargé des collectivités territoriales",
+    "libelleEdition": "auprès de la ministre de la cohésion des territoires et des relations avec les collectivités territoriales, chargé des collectivités territoriales",
+    "libelleAbrege": "Collectivités territoriales",
+    "libelleAbrev": "COT",
+    "viMoDe": {
+     "dateDebut": "2018-10-17",
+     "dateAgrement": null,
+     "dateFin": "2020-07-06"
+    },
+    "organeParent": "PO725688",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO773371",
+    "codeType": "GOUVERNEMENT",
+    "libelle": "Gouvernement",
+    "libelleEdition": "du Gouvernement",
+    "libelleAbrege": "CASTEX",
+    "libelleAbrev": "GVT",
+    "viMoDe": {
+     "dateDebut": "2020-07-07",
+     "dateAgrement": null,
+     "dateFin": "2022-05-16"
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO773388",
+    "codeType": "MINISTERE",
+    "libelle": "Ministère des outre-mer",
+    "libelleEdition": "des outre-mer",
+    "libelleAbrege": "Outre-mer",
+    "libelleAbrev": "MOM",
+    "viMoDe": {
+     "dateDebut": "2020-07-07",
+     "dateAgrement": null,
+     "dateFin": "2022-05-16"
+    },
+    "organeParent": "PO773371",
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO791579",
+    "codeType": "GOUVERNEMENT",
+    "libelle": "Gouvernement",
+    "libelleEdition": "du Gouvernement",
+    "libelleAbrege": "BORNE",
+    "libelleAbrev": "GVT",
+    "viMoDe": {
+     "dateDebut": "2022-05-17",
+     "dateAgrement": null,
+     "dateFin": "2024-01-09"
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO791603",
+    "codeType": "MINISTERE",
+    "libelle": "Ministère des armées",
+    "libelleEdition": "des armées",
+    "libelleAbrege": "Armées",
+    "libelleAbrev": "ARM",
+    "viMoDe": {
+     "dateDebut": "2022-05-21",
+     "dateAgrement": null,
+     "dateFin": "2024-01-09"
+    },
+    "organeParent": "PO791579",
+    "preseance": "6",
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO833673",
+    "codeType": "GOUVERNEMENT",
+    "libelle": "Gouvernement",
+    "libelleEdition": "du Gouvernement",
+    "libelleAbrege": "ATTAL",
+    "libelleAbrev": "GVT",
+    "viMoDe": {
+     "dateDebut": "2024-01-10",
+     "dateAgrement": null,
+     "dateFin": "2024-09-05"
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO833681",
+    "codeType": "MINISTERE",
+    "libelle": "Ministère des armées",
+    "libelleEdition": "des armées",
+    "libelleAbrege": "Armées",
+    "libelleAbrev": "ARM",
+    "viMoDe": {
+     "dateDebut": "2024-01-12",
+     "dateAgrement": null,
+     "dateFin": "2024-09-05"
+    },
+    "organeParent": "PO833673",
+    "preseance": "8",
+    "organePrecedentRef": "PO791603"
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO847639",
+    "codeType": "GOUVERNEMENT",
+    "libelle": "Gouvernement",
+    "libelleEdition": "du Gouvernement",
+    "libelleAbrege": "BARNIER",
+    "libelleAbrev": "GVT",
+    "viMoDe": {
+     "dateDebut": "2024-09-06",
+     "dateAgrement": null,
+     "dateFin": "2024-12-13"
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO847647",
+    "codeType": "MINISTERE",
+    "libelle": "Ministère des armées et des anciens combattants",
+    "libelleEdition": "des armées et des anciens combattants",
+    "libelleAbrege": "Armées et anciens combattants",
+    "libelleAbrev": "ARM",
+    "viMoDe": {
+     "dateDebut": "2024-09-22",
+     "dateAgrement": null,
+     "dateFin": "2024-12-13"
+    },
+    "organeParent": "PO847639",
+    "preseance": "8",
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO855052",
+    "codeType": "GOUVERNEMENT",
+    "libelle": "Gouvernement",
+    "libelleEdition": "du Gouvernement",
+    "libelleAbrege": "BAYROU",
+    "libelleAbrev": "GVT",
+    "viMoDe": {
+     "dateDebut": "2024-12-14",
+     "dateAgrement": null,
+     "dateFin": "2025-09-09"
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO855062",
+    "codeType": "MINISTERE",
+    "libelle": "Premier ministre",
+    "libelleEdition": "Premier ministre",
+    "libelleAbrege": "Premier ministre",
+    "libelleAbrev": "PRM",
+    "viMoDe": {
+     "dateDebut": "2024-12-14",
+     "dateAgrement": null,
+     "dateFin": "2025-09-09"
+    },
+    "organeParent": "PO855052",
+    "preseance": "1",
+    "organePrecedentRef": "PO847640"
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO855072",
+    "codeType": "MINISTERE",
+    "libelle": "Ministère des outre-mer",
+    "libelleEdition": "des outre-mer",
+    "libelleAbrege": "Outre-mer",
+    "libelleAbrev": "MOM",
+    "viMoDe": {
+     "dateDebut": "2024-12-24",
+     "dateAgrement": null,
+     "dateFin": "2025-09-09"
+    },
+    "organeParent": "PO855052",
+    "preseance": "3",
+    "organePrecedentRef": "PO847676"
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO855085",
+    "codeType": "MINISTERE",
+    "libelle": "Ministère des armées",
+    "libelleEdition": "des armées",
+    "libelleAbrege": "Armées",
+    "libelleAbrev": "ARM",
+    "viMoDe": {
+     "dateDebut": "2024-12-24",
+     "dateAgrement": null,
+     "dateFin": "2025-09-09"
+    },
+    "organeParent": "PO855052",
+    "preseance": "8",
+    "organePrecedentRef": "PO847647"
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO873418",
+    "codeType": "GOUVERNEMENT",
+    "libelle": "Gouvernement",
+    "libelleEdition": "du Gouvernement",
+    "libelleAbrege": "LECORNU",
+    "libelleAbrev": "GVT",
+    "viMoDe": {
+     "dateDebut": "2025-09-10",
+     "dateAgrement": null,
+     "dateFin": "2025-10-10"
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO873419",
+    "codeType": "MINISTERE",
+    "libelle": "Premier ministre",
+    "libelleEdition": null,
+    "libelleAbrege": "Premier ministre",
+    "libelleAbrev": "PRM",
+    "viMoDe": {
+     "dateDebut": "2025-09-10",
+     "dateAgrement": null,
+     "dateFin": "2025-10-10"
+    },
+    "organeParent": "PO873418",
+    "preseance": "1",
+    "organePrecedentRef": "PO855062"
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO873428",
+    "codeType": "MINISTERE",
+    "libelle": "Ministère des outre-mer",
+    "libelleEdition": "des outre-mer",
+    "libelleAbrege": "Outre-mer",
+    "libelleAbrev": "MOM",
+    "viMoDe": {
+     "dateDebut": "2025-10-05",
+     "dateAgrement": null,
+     "dateFin": "2025-10-10"
+    },
+    "organeParent": "PO873418",
+    "preseance": "3",
+    "organePrecedentRef": "PO855072"
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO873634",
+    "codeType": "GOUVERNEMENT",
+    "libelle": "Gouvernement",
+    "libelleEdition": "du Gouvernement",
+    "libelleAbrege": "LECORNU II",
+    "libelleAbrev": "GVT",
+    "viMoDe": {
+     "dateDebut": "2025-10-11",
+     "dateAgrement": null,
+     "dateFin": null
+    },
+    "organeParent": null,
+    "preseance": null,
+    "organePrecedentRef": null
+   }
+  },
+  {
+   "organe": {
+    "@xmlns": "http://schemas.assemblee-nationale.fr/referentiel",
+    "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+    "@xsi:type": "OrganeExterne_Type",
+    "uid": "PO873635",
+    "codeType": "MINISTERE",
+    "libelle": "Premier ministre",
+    "libelleEdition": null,
+    "libelleAbrege": "Premier ministre",
+    "libelleAbrev": "PRM",
+    "viMoDe": {
+     "dateDebut": "2025-10-11",
+     "dateAgrement": null,
+     "dateFin": null
+    },
+    "organeParent": "PO873634",
+    "preseance": "1",
+    "organePrecedentRef": "PO873419"
+   }
+  }
+ ],
+ "acteurs": [
+  {
+   "acteur": {
+    "uid": {
+     "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+     "@xsi:type": "IdActeur_type",
+     "#text": "PA700879"
+    },
+    "etatCivil": {
+     "ident": {
+      "civ": "M.",
+      "prenom": "Harlem",
+      "nom": "Désir",
+      "alpha": "Desir",
+      "trigramme": {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:nil": "true"
+      }
+     },
+     "infoNaissance": {
+      "dateNais": "1959-11-25",
+      "villeNais": "Paris",
+      "depNais": "Paris",
+      "paysNais": "France"
+     },
+     "dateDeces": {
+      "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+      "@xsi:nil": "true"
+     }
+    },
+    "mandats": {
+     "mandat": [
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15715896",
+       "acteurRef": "PA700879",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2016-12-07",
+       "datePublication": "2016-12-07",
+       "dateFin": "2017-05-17",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO715793"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15700881",
+       "acteurRef": "PA700879",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2014-04-10",
+       "datePublication": "2014-04-10",
+       "dateFin": "2014-08-26",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO700706"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15702963",
+       "acteurRef": "PA700879",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2014-08-27",
+       "datePublication": "2014-08-27",
+       "dateFin": "2016-12-06",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO702883"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM715896",
+       "acteurRef": "PA700879",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2016-12-07",
+       "datePublication": "2016-12-07",
+       "dateFin": "2017-05-17",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Secrétaire d'État",
+        "libQualite": "Secrétaire d'État",
+        "libQualiteSex": "Secrétaire d'État"
+       },
+       "organes": {
+        "organeRef": "PO715892"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM700881",
+       "acteurRef": "PA700879",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2014-04-10",
+       "datePublication": "2014-04-10",
+       "dateFin": "2014-08-26",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Secrétaire d'État",
+        "libQualite": "Secrétaire d'État",
+        "libQualiteSex": "Secrétaire d'État"
+       },
+       "organes": {
+        "organeRef": "PO700838"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM702963",
+       "acteurRef": "PA700879",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2014-08-27",
+       "datePublication": "2014-08-27",
+       "dateFin": "2016-12-06",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Secrétaire d'État",
+        "libQualite": "Secrétaire d'État",
+        "libQualiteSex": "Secrétaire d'État"
+       },
+       "organes": {
+        "organeRef": "PO702894"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "acteur": {
+    "uid": {
+     "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+     "@xsi:type": "IdActeur_type",
+     "#text": "PA410"
+    },
+    "etatCivil": {
+     "ident": {
+      "civ": "M.",
+      "prenom": "François",
+      "nom": "Bayrou",
+      "alpha": "Bayrou",
+      "trigramme": {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:nil": "true"
+      }
+     },
+     "infoNaissance": {
+      "dateNais": "1951-05-25",
+      "villeNais": "Bordères",
+      "depNais": "Pyrénées-Atlantiques",
+      "paysNais": "France"
+     },
+     "dateDeces": {
+      "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+      "@xsi:nil": "true"
+     }
+    },
+    "mandats": {
+     "mandat": [
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15855580",
+       "acteurRef": "PA410",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2024-12-14",
+       "datePublication": "2024-12-14",
+       "dateFin": "2025-09-09",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO855052"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15855113",
+       "acteurRef": "PA410",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2024-12-14",
+       "datePublication": "2024-12-14",
+       "dateFin": null,
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO855052"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15717249",
+       "acteurRef": "PA410",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2017-05-18",
+       "datePublication": "2017-05-18",
+       "dateFin": "2017-06-19",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO717173"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM855580",
+       "acteurRef": "PA410",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2024-12-14",
+       "datePublication": "2024-12-14",
+       "dateFin": "2025-09-09",
+       "preseance": "1",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Premier ministre",
+        "libQualite": "Premier ministre",
+        "libQualiteSex": "Premier ministre"
+       },
+       "organes": {
+        "organeRef": "PO855062"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM717249",
+       "acteurRef": "PA410",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2017-05-18",
+       "datePublication": "2017-05-18",
+       "dateFin": "2017-06-19",
+       "preseance": "20",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Ministre d'État",
+        "libQualite": "Ministre d'État, Garde des Sceaux, ministre de la justice",
+        "libQualiteSex": "Ministre d'État, Garde des Sceaux, ministre de la justice"
+       },
+       "organes": {
+        "organeRef": "PO717180"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "acteur": {
+    "uid": {
+     "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+     "@xsi:type": "IdActeur_type",
+     "#text": "PA388160"
+    },
+    "etatCivil": {
+     "ident": {
+      "civ": "Mme",
+      "prenom": "Rama",
+      "nom": "Yade",
+      "alpha": "Yade",
+      "trigramme": {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:nil": "true"
+      }
+     },
+     "infoNaissance": {
+      "dateNais": "1976-12-13",
+      "villeNais": {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:nil": "true"
+      },
+      "depNais": {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:nil": "true"
+      },
+      "paysNais": {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:nil": "true"
+      }
+     },
+     "dateDeces": {
+      "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+      "@xsi:nil": "true"
+     }
+    },
+    "mandats": {
+     "mandat": [
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15388291",
+       "acteurRef": "PA388160",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2007-06-19",
+       "datePublication": "2007-06-20",
+       "dateFin": "2010-11-13",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO384206"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM419580",
+       "acteurRef": "PA388160",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2009-06-23",
+       "datePublication": "2009-06-24",
+       "dateFin": "2010-11-13",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Secrétaire d'État",
+        "libQualite": "Secrétaire d'État",
+        "libQualiteSex": "Secrétaire d'État"
+       },
+       "organes": {
+        "organeRef": "PO419578"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM388291",
+       "acteurRef": "PA388160",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2007-06-19",
+       "datePublication": "2007-06-20",
+       "dateFin": "2009-06-23",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Secrétaire d'État",
+        "libQualite": "Secrétaire d'État",
+        "libQualiteSex": "Secrétaire d'État"
+       },
+       "organes": {
+        "organeRef": "PO387998"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "acteur": {
+    "uid": {
+     "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+     "@xsi:type": "IdActeur_type",
+     "#text": "PA497"
+    },
+    "etatCivil": {
+     "ident": {
+      "civ": "M.",
+      "prenom": "Jean",
+      "nom": "Besson",
+      "alpha": "Besson Je",
+      "trigramme": {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:nil": "true"
+      }
+     },
+     "infoNaissance": {
+      "dateNais": "1938-08-15",
+      "villeNais": "Ollioules",
+      "depNais": "Var",
+      "paysNais": {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:nil": "true"
+      }
+     },
+     "dateDeces": "2017-09-15"
+    },
+    "mandats": {
+     "mandat": [
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatMission_Type",
+       "uid": "PM287498",
+       "acteurRef": "PA497",
+       "legislature": "12",
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2002-12-24",
+       "datePublication": "2002-12-26",
+       "dateFin": null,
+       "preseance": "1",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "en mission",
+        "libQualite": "en mission",
+        "libQualiteSex": "en mission"
+       },
+       "organes": {
+        "organeRef": "PO268781"
+       },
+       "libelle": "La préparation du débat national sur les énergies",
+       "missionSuivanteRef": null,
+       "missionPrecedenteRef": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "acteur": {
+    "uid": {
+     "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+     "@xsi:type": "IdActeur_type",
+     "#text": "PA267622"
+    },
+    "etatCivil": {
+     "ident": {
+      "civ": "M.",
+      "prenom": "Manuel",
+      "nom": "Valls",
+      "alpha": "Valls",
+      "trigramme": {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:nil": "true"
+      }
+     },
+     "infoNaissance": {
+      "dateNais": "1962-08-13",
+      "villeNais": "Barcelone",
+      "depNais": {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:nil": "true"
+      },
+      "paysNais": "Espagne"
+     },
+     "dateDeces": {
+      "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+      "@xsi:nil": "true"
+     }
+    },
+    "mandats": {
+     "mandat": [
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15653322",
+       "acteurRef": "PA267622",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2012-06-22",
+       "datePublication": "2012-06-22",
+       "dateFin": "2014-03-31",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO653199"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15873430",
+       "acteurRef": "PA267622",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2025-10-05",
+       "datePublication": null,
+       "dateFin": "2025-10-10",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO873418"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15591182",
+       "acteurRef": "PA267622",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2012-05-17",
+       "datePublication": "2012-05-17",
+       "dateFin": "2012-06-18",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO590011"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15700712",
+       "acteurRef": "PA267622",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2014-04-01",
+       "datePublication": "2014-04-01",
+       "dateFin": "2014-08-25",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO700706"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15855121",
+       "acteurRef": "PA267622",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2024-12-24",
+       "datePublication": "2024-12-24",
+       "dateFin": "2025-09-09",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO855052"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15702957",
+       "acteurRef": "PA267622",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2014-08-26",
+       "datePublication": "2014-08-26",
+       "dateFin": "2016-12-06",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO702883"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM653322",
+       "acteurRef": "PA267622",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2012-06-22",
+       "datePublication": "2012-06-22",
+       "dateFin": "2014-03-31",
+       "preseance": "30",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Ministre",
+        "libQualite": "Ministre",
+        "libQualiteSex": "Ministre"
+       },
+       "organes": {
+        "organeRef": "PO653320"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM591182",
+       "acteurRef": "PA267622",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2012-05-17",
+       "datePublication": "2012-05-17",
+       "dateFin": "2012-06-18",
+       "preseance": "30",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Ministre",
+        "libQualite": "Ministre",
+        "libQualiteSex": "Ministre"
+       },
+       "organes": {
+        "organeRef": "PO591180"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM700712",
+       "acteurRef": "PA267622",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2014-04-01",
+       "datePublication": "2014-04-01",
+       "dateFin": "2014-08-25",
+       "preseance": "1",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Premier ministre",
+        "libQualite": "Premier ministre",
+        "libQualiteSex": "Premier ministre"
+       },
+       "organes": {
+        "organeRef": "PO700710"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM873430",
+       "acteurRef": "PA267622",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2025-10-05",
+       "datePublication": null,
+       "dateFin": "2025-10-10",
+       "preseance": "10",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Ministre d'État",
+        "libQualite": "Ministre d'État, ministre",
+        "libQualiteSex": "Ministre d'État, ministre"
+       },
+       "organes": {
+        "organeRef": "PO873428"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM855121",
+       "acteurRef": "PA267622",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2024-12-24",
+       "datePublication": "2024-12-24",
+       "dateFin": "2025-09-09",
+       "preseance": "10",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Ministre d'État",
+        "libQualite": "Ministre d'État, ministre",
+        "libQualiteSex": "Ministre d'État, ministre"
+       },
+       "organes": {
+        "organeRef": "PO855072"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM702957",
+       "acteurRef": "PA267622",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2014-08-26",
+       "datePublication": "2014-08-26",
+       "dateFin": "2016-12-06",
+       "preseance": "1",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Premier ministre",
+        "libQualite": "Premier ministre",
+        "libQualiteSex": "Premier ministre"
+       },
+       "organes": {
+        "organeRef": "PO702884"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "acteur": {
+    "uid": {
+     "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+     "@xsi:type": "IdActeur_type",
+     "#text": "PA1654"
+    },
+    "etatCivil": {
+     "ident": {
+      "civ": "M.",
+      "prenom": "François",
+      "nom": "Hollande",
+      "alpha": "Hollande",
+      "trigramme": "FHL"
+     },
+     "infoNaissance": {
+      "dateNais": "1954-08-12",
+      "villeNais": "Rouen",
+      "depNais": "Seine-Maritime",
+      "paysNais": "France"
+     },
+     "dateDeces": {
+      "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+      "@xsi:nil": "true"
+     }
+    },
+    "mandats": {
+     "mandat": [
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM588892",
+       "acteurRef": "PA1654",
+       "legislature": null,
+       "typeOrgane": "PRESREP",
+       "dateDebut": "2012-05-15",
+       "datePublication": null,
+       "dateFin": null,
+       "preseance": "1",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Président de la République",
+        "libQualite": "Président de la République",
+        "libQualiteSex": "Président de la République"
+       },
+       "organes": {
+        "organeRef": "PO382940"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM703255",
+       "acteurRef": "PA1654",
+       "legislature": null,
+       "typeOrgane": "PRESREP",
+       "dateDebut": "2012-05-15",
+       "datePublication": null,
+       "dateFin": "2017-05-14",
+       "preseance": "1",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Président de la République",
+        "libQualite": "Président de la République",
+        "libQualiteSex": "Président de la République"
+       },
+       "organes": {
+        "organeRef": "PO696251"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "acteur": {
+    "uid": {
+     "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+     "@xsi:type": "IdActeur_type",
+     "#text": "PA702992"
+    },
+    "etatCivil": {
+     "ident": {
+      "civ": "M.",
+      "prenom": "Emmanuel",
+      "nom": "Macron",
+      "alpha": "Macron",
+      "trigramme": {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:nil": "true"
+      }
+     },
+     "infoNaissance": {
+      "dateNais": "1977-12-21",
+      "villeNais": "Amiens",
+      "depNais": "Somme",
+      "paysNais": "France"
+     },
+     "dateDeces": {
+      "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+      "@xsi:nil": "true"
+     }
+    },
+    "mandats": {
+     "mandat": [
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM717139",
+       "acteurRef": "PA702992",
+       "legislature": null,
+       "typeOrgane": "PRESREP",
+       "dateDebut": "2017-05-14",
+       "datePublication": null,
+       "dateFin": null,
+       "preseance": "1",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Président de la République",
+        "libQualite": "Président de la République",
+        "libQualiteSex": "Président de la République"
+       },
+       "organes": {
+        "organeRef": "PO717136"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15702994",
+       "acteurRef": "PA702992",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2014-08-27",
+       "datePublication": "2014-08-27",
+       "dateFin": "2016-08-30",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO702883"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM702994",
+       "acteurRef": "PA702992",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2014-08-27",
+       "datePublication": "2014-08-27",
+       "dateFin": "2016-08-30",
+       "preseance": "30",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Ministre",
+        "libQualite": "Ministre",
+        "libQualiteSex": "Ministre"
+       },
+       "organes": {
+        "organeRef": "PO702912"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "acteur": {
+    "uid": {
+     "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+     "@xsi:type": "IdActeur_type",
+     "#text": "PA643210"
+    },
+    "etatCivil": {
+     "ident": {
+      "civ": "M.",
+      "prenom": "Sébastien",
+      "nom": "Lecornu",
+      "alpha": "Lecornu_sebastien",
+      "trigramme": {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:nil": "true"
+      }
+     },
+     "infoNaissance": {
+      "dateNais": "1986-06-11",
+      "villeNais": {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:nil": "true"
+      },
+      "depNais": {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:nil": "true"
+      },
+      "paysNais": {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:nil": "true"
+      }
+     },
+     "dateDeces": {
+      "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+      "@xsi:nil": "true"
+     }
+    },
+    "mandats": {
+     "mandat": [
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15791690",
+       "acteurRef": "PA643210",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2022-05-21",
+       "datePublication": "2022-05-21",
+       "dateFin": "2024-01-09",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO791579"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15773481",
+       "acteurRef": "PA643210",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2020-07-07",
+       "datePublication": "2020-07-07",
+       "dateFin": "2022-05-16",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO773371"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15833707",
+       "acteurRef": "PA643210",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2024-01-12",
+       "datePublication": "2024-01-12",
+       "dateFin": "2024-09-05",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO833673"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15873423",
+       "acteurRef": "PA643210",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2025-09-10",
+       "datePublication": null,
+       "dateFin": "2025-10-10",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO873418"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15873637",
+       "acteurRef": "PA643210",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2025-10-11",
+       "datePublication": "2025-10-11",
+       "dateFin": null,
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO873634"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15730078",
+       "acteurRef": "PA643210",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2017-06-22",
+       "datePublication": "2017-06-22",
+       "dateFin": "2020-07-06",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO725688"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15855137",
+       "acteurRef": "PA643210",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2024-12-24",
+       "datePublication": "2024-12-24",
+       "dateFin": "2025-09-09",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO855052"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15847763",
+       "acteurRef": "PA643210",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2024-09-22",
+       "datePublication": "2024-09-22",
+       "dateFin": "2024-12-13",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO847639"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM855137",
+       "acteurRef": "PA643210",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2024-12-24",
+       "datePublication": "2024-12-24",
+       "dateFin": "2025-09-09",
+       "preseance": "30",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Ministre",
+        "libQualite": "Ministre",
+        "libQualiteSex": "Ministre"
+       },
+       "organes": {
+        "organeRef": "PO855085"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM759800",
+       "acteurRef": "PA643210",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2018-10-17",
+       "datePublication": "2018-10-17",
+       "dateFin": "2020-07-06",
+       "preseance": "30",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Ministre",
+        "libQualite": "Ministre",
+        "libQualiteSex": "Ministre"
+       },
+       "organes": {
+        "organeRef": "PO759797"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM847763",
+       "acteurRef": "PA643210",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2024-09-22",
+       "datePublication": "2024-09-22",
+       "dateFin": "2024-12-13",
+       "preseance": "30",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Ministre",
+        "libQualite": "Ministre",
+        "libQualiteSex": "Ministre"
+       },
+       "organes": {
+        "organeRef": "PO847647"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM791690",
+       "acteurRef": "PA643210",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2022-05-21",
+       "datePublication": "2022-05-21",
+       "dateFin": "2024-01-09",
+       "preseance": "30",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Ministre",
+        "libQualite": "Ministre",
+        "libQualiteSex": "Ministre"
+       },
+       "organes": {
+        "organeRef": "PO791603"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM773481",
+       "acteurRef": "PA643210",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2020-07-07",
+       "datePublication": "2020-07-07",
+       "dateFin": "2022-05-16",
+       "preseance": "30",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Ministre",
+        "libQualite": "Ministre",
+        "libQualiteSex": "Ministre"
+       },
+       "organes": {
+        "organeRef": "PO773388"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM833707",
+       "acteurRef": "PA643210",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2024-01-12",
+       "datePublication": "2024-01-12",
+       "dateFin": "2024-09-05",
+       "preseance": "30",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Ministre",
+        "libQualite": "Ministre",
+        "libQualiteSex": "Ministre"
+       },
+       "organes": {
+        "organeRef": "PO833681"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM873423",
+       "acteurRef": "PA643210",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2025-09-10",
+       "datePublication": null,
+       "dateFin": "2025-10-10",
+       "preseance": "1",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Premier ministre",
+        "libQualite": "Premier ministre",
+        "libQualiteSex": "Premier ministre"
+       },
+       "organes": {
+        "organeRef": "PO873419"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM873637",
+       "acteurRef": "PA643210",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2025-10-11",
+       "datePublication": "2025-10-11",
+       "dateFin": null,
+       "preseance": "1",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Premier ministre",
+        "libQualite": "Premier ministre",
+        "libQualiteSex": "Premier ministre"
+       },
+       "organes": {
+        "organeRef": "PO873635"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM730078",
+       "acteurRef": "PA643210",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2017-06-22",
+       "datePublication": "2017-06-22",
+       "dateFin": "2018-10-16",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Secrétaire d'État",
+        "libQualite": "Secrétaire d'État",
+        "libQualiteSex": "Secrétaire d'État"
+       },
+       "organes": {
+        "organeRef": "PO730033"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatParlementaire_type",
+       "uid": "PM775592",
+       "acteurRef": "PA643210",
+       "legislature": null,
+       "typeOrgane": "SENAT",
+       "dateDebut": "2020-10-01",
+       "datePublication": null,
+       "dateFin": "2020-11-01",
+       "preseance": "20",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Sénateur",
+        "libQualite": "SENATEUR",
+        "libQualiteSex": "SENATEUR"
+       },
+       "organes": {
+        "organeRef": "PO78718"
+       },
+       "suppleants": null,
+       "chambre": null,
+       "election": {
+        "lieu": {
+         "region": null,
+         "regionType": null,
+         "departement": null,
+         "numDepartement": "27",
+         "numCirco": null
+        },
+        "causeMandat": null
+       },
+       "mandature": {
+        "datePriseFonction": null,
+        "causeFin": null,
+        "premiereElection": "0",
+        "placeHemicycle": null,
+        "mandatRemplaceRef": null
+       },
+       "collaborateurs": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "acteur": {
+    "uid": {
+     "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+     "@xsi:type": "IdActeur_type",
+     "#text": "PA1310"
+    },
+    "etatCivil": {
+     "ident": {
+      "civ": "M.",
+      "prenom": "François",
+      "nom": "Fillon",
+      "alpha": "Fillon",
+      "trigramme": {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:nil": "true"
+      }
+     },
+     "infoNaissance": {
+      "dateNais": "1954-03-04",
+      "villeNais": "Le Mans",
+      "depNais": "Sarthe",
+      "paysNais": "France"
+     },
+     "dateDeces": {
+      "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+      "@xsi:nil": "true"
+     }
+    },
+    "mandats": {
+     "mandat": [
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15382945",
+       "acteurRef": "PA1310",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2007-05-17",
+       "datePublication": "2007-05-19",
+       "dateFin": "2007-06-18",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO382939"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15387933",
+       "acteurRef": "PA1310",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2007-06-18",
+       "datePublication": "2007-06-18",
+       "dateFin": "2010-11-13",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO384206"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM15425758",
+       "acteurRef": "PA1310",
+       "legislature": null,
+       "typeOrgane": "GOUVERNEMENT",
+       "dateDebut": "2010-11-14",
+       "datePublication": "2010-11-16",
+       "dateFin": "2012-05-10",
+       "preseance": "50",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "membre",
+        "libQualite": "membre",
+        "libQualiteSex": "membre"
+       },
+       "organes": {
+        "organeRef": "PO425695"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM514485",
+       "acteurRef": "PA1310",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2012-02-22",
+       "datePublication": "2102-02-23",
+       "dateFin": "2012-05-10",
+       "preseance": "30",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Ministre",
+        "libQualite": "Ministre",
+        "libQualiteSex": "Ministre"
+       },
+       "organes": {
+        "organeRef": "PO514475"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM382945",
+       "acteurRef": "PA1310",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2007-05-17",
+       "datePublication": "2007-05-19",
+       "dateFin": "2007-06-18",
+       "preseance": "1",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Premier ministre",
+        "libQualite": "Premier ministre",
+        "libQualiteSex": "Premier ministre"
+       },
+       "organes": {
+        "organeRef": "PO382943"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM387933",
+       "acteurRef": "PA1310",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2007-06-18",
+       "datePublication": "2007-06-18",
+       "dateFin": "2010-11-13",
+       "preseance": "1",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Premier ministre",
+        "libQualite": "Premier ministre",
+        "libQualiteSex": "Premier ministre"
+       },
+       "organes": {
+        "organeRef": "PO387931"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatSimple_Type",
+       "uid": "PM425758",
+       "acteurRef": "PA1310",
+       "legislature": null,
+       "typeOrgane": "MINISTERE",
+       "dateDebut": "2010-11-14",
+       "datePublication": "2010-11-16",
+       "dateFin": "2012-05-10",
+       "preseance": "1",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Premier ministre",
+        "libQualite": "Premier ministre",
+        "libQualiteSex": "Premier ministre"
+       },
+       "organes": {
+        "organeRef": "PO425696"
+       }
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatParlementaire_type",
+       "uid": "PM313922",
+       "acteurRef": "PA1310",
+       "legislature": null,
+       "typeOrgane": "SENAT",
+       "dateDebut": "2005-09-19",
+       "datePublication": "2005-09-20",
+       "dateFin": "2007-06-17",
+       "preseance": "20",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Sénateur",
+        "libQualite": "SENATEUR",
+        "libQualiteSex": "SENATEUR"
+       },
+       "organes": {
+        "organeRef": "PO78718"
+       },
+       "suppleants": null,
+       "chambre": null,
+       "election": {
+        "lieu": {
+         "region": null,
+         "regionType": null,
+         "departement": null,
+         "numDepartement": "72",
+         "numCirco": null
+        },
+        "causeMandat": null
+       },
+       "mandature": {
+        "datePriseFonction": null,
+        "causeFin": null,
+        "premiereElection": "0",
+        "placeHemicycle": null,
+        "mandatRemplaceRef": null
+       },
+       "collaborateurs": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "acteur": {
+    "uid": {
+     "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+     "@xsi:type": "IdActeur_type",
+     "#text": "PA721908"
+    },
+    "etatCivil": {
+     "ident": {
+      "civ": "Mme",
+      "prenom": "Yaël",
+      "nom": "Braun-Pivet",
+      "alpha": "BraunPivet",
+      "trigramme": "YBR"
+     },
+     "infoNaissance": {
+      "dateNais": "1970-12-07",
+      "villeNais": "Nancy",
+      "depNais": "Meurthe-et-Moselle",
+      "paysNais": "France"
+     },
+     "dateDeces": {
+      "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+      "@xsi:nil": "true"
+     }
+    },
+    "mandats": {
+     "mandat": [
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatParlementaire_type",
+       "uid": "PM800479",
+       "acteurRef": "PA721908",
+       "legislature": "16",
+       "typeOrgane": "BUREAU",
+       "dateDebut": "2022-06-28",
+       "datePublication": null,
+       "dateFin": "2024-06-09",
+       "preseance": "1",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Président",
+        "libQualite": "Président de l'Assemblée nationale",
+        "libQualiteSex": "Présidente de l'Assemblée nationale"
+       },
+       "organes": {
+        "organeRef": "PO800442"
+       },
+       "suppleants": null,
+       "chambre": null,
+       "election": {
+        "lieu": {
+         "region": null,
+         "regionType": null,
+         "departement": null,
+         "numDepartement": null,
+         "numCirco": null
+        },
+        "causeMandat": null
+       },
+       "mandature": {
+        "datePriseFonction": null,
+        "causeFin": null,
+        "premiereElection": "0",
+        "placeHemicycle": null,
+        "mandatRemplaceRef": null
+       },
+       "collaborateurs": null
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatParlementaire_type",
+       "uid": "PM845400",
+       "acteurRef": "PA721908",
+       "legislature": "17",
+       "typeOrgane": "BUREAU",
+       "dateDebut": "2024-07-18",
+       "datePublication": "2024-07-19",
+       "dateFin": null,
+       "preseance": "1",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Président",
+        "libQualite": "Président de l'Assemblée nationale",
+        "libQualiteSex": "Présidente de l'Assemblée nationale"
+       },
+       "organes": {
+        "organeRef": "PO845377"
+       },
+       "suppleants": null,
+       "chambre": null,
+       "election": {
+        "lieu": {
+         "region": null,
+         "regionType": null,
+         "departement": null,
+         "numDepartement": null,
+         "numCirco": null
+        },
+        "causeMandat": null
+       },
+       "mandature": {
+        "datePriseFonction": null,
+        "causeFin": null,
+        "premiereElection": "0",
+        "placeHemicycle": null,
+        "mandatRemplaceRef": null
+       },
+       "collaborateurs": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "acteur": {
+    "uid": {
+     "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+     "@xsi:type": "IdActeur_type",
+     "#text": "PA793362"
+    },
+    "etatCivil": {
+     "ident": {
+      "civ": "M.",
+      "prenom": "José",
+      "nom": "Gonzalez",
+      "alpha": "Gonzalez",
+      "trigramme": "JGO"
+     },
+     "infoNaissance": {
+      "dateNais": "1943-04-28",
+      "villeNais": "Oran",
+      "depNais": {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:nil": "true"
+      },
+      "paysNais": "Algérie"
+     },
+     "dateDeces": {
+      "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+      "@xsi:nil": "true"
+     }
+    },
+    "mandats": {
+     "mandat": [
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatParlementaire_type",
+       "uid": "PM845355",
+       "acteurRef": "PA793362",
+       "legislature": "17",
+       "typeOrgane": "BUREAU",
+       "dateDebut": "2024-07-18",
+       "datePublication": null,
+       "dateFin": null,
+       "preseance": "1",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Président d'âge",
+        "libQualite": "Président d'âge de l'Assemblée nationale",
+        "libQualiteSex": "Président d'âge de l'Assemblée nationale"
+       },
+       "organes": {
+        "organeRef": "PO845352"
+       },
+       "suppleants": null,
+       "chambre": null,
+       "election": {
+        "lieu": {
+         "region": null,
+         "regionType": null,
+         "departement": null,
+         "numDepartement": null,
+         "numCirco": null
+        },
+        "causeMandat": null
+       },
+       "mandature": {
+        "datePriseFonction": null,
+        "causeFin": null,
+        "premiereElection": "0",
+        "placeHemicycle": null,
+        "mandatRemplaceRef": null
+       },
+       "collaborateurs": null
+      },
+      {
+       "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+       "@xsi:type": "MandatParlementaire_type",
+       "uid": "PM800465",
+       "acteurRef": "PA793362",
+       "legislature": "16",
+       "typeOrgane": "BUREAU",
+       "dateDebut": "2022-06-28",
+       "datePublication": null,
+       "dateFin": "2022-06-28",
+       "preseance": "1",
+       "nominPrincipale": "1",
+       "infosQualite": {
+        "codeQualite": "Président d'âge",
+        "libQualite": "Président d'âge de l'Assemblée nationale",
+        "libQualiteSex": "Président d'âge de l'Assemblée nationale"
+       },
+       "organes": {
+        "organeRef": "PO800439"
+       },
+       "suppleants": null,
+       "chambre": null,
+       "election": {
+        "lieu": {
+         "region": null,
+         "regionType": null,
+         "departement": null,
+         "numDepartement": null,
+         "numCirco": null
+        },
+        "causeMandat": null
+       },
+       "mandature": {
+        "datePriseFonction": null,
+        "causeFin": null,
+        "premiereElection": "0",
+        "placeHemicycle": null,
+        "mandatRemplaceRef": null
+       },
+       "collaborateurs": null
+      }
+     ]
+    }
+   }
+  }
+ ]
+}

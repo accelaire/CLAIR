@@ -22,9 +22,12 @@ import {
 import { SenatDossiersClient } from '../sources/senat/dossiers-client';
 import { syncSenateursHistoriques } from './senat-histo';
 import { syncSenatFonctions } from './senat-fonctions';
+import { syncGouvernements } from './gouvernements';
+import { libererArchivesAMO30 } from '../sources/assemblee-nationale/amo30-archive';
 import { syncSenatDossierCommissions } from './senat-dossier-commissions';
 import { logger } from '../utils/logger';
 import { errorMessage } from '../utils/errors';
+import { typeSelonOrateur } from '../utils/interventions';
 import { asArray, isRecord, readString } from '../utils/json';
 import { extractCommissionSaisines } from '../utils/dossier-commissions';
 import { cleMotion, dossierMotionSansReferences } from '../utils/motions-censure';
@@ -137,7 +140,7 @@ export async function syncCommissions(): Promise<{ created: number; updated: num
   logger.info('Starting commissions sync (from AMO30 organes historiques)...');
 
   // AMO30: tous les organes historiques (actifs + clos) — couvre AN + 52 Sénat
-  const organesClient = new AssembleeNationaleOrganesClient(17);
+  const organesClient = new AssembleeNationaleOrganesClient();
   const amo30Organes = await organesClient.getOrganes();
 
   // AMO10 (via anClient): nécessaire uniquement pour la map PM→PO des mandats actifs
@@ -2276,7 +2279,10 @@ export async function syncInterventionsSenat(
         seanceId: intervention.seanceId,
         date: intervention.date,
         ordre: intervention.ordre,
-        type: intervention.type,
+        // Même règle que la segmentation, qui réécrit ce type depuis la
+        // section : les deux doivent s'accorder, sinon la ligne changerait de
+        // type à chaque nuit.
+        type: typeSelonOrateur(intervention.type, intervention.orateurQualite),
         contenu: intervention.contenu,
         motsCles: extractKeywords(intervention.contenu),
         sourceUrl: intervention.sourceUrl,
@@ -3463,6 +3469,7 @@ export interface SmartSyncOptions {
   includeLobbying?: boolean;
   includeCommissions?: boolean;
   includeSenatHisto?: boolean; // Anciens sénateurs (ODSEN)
+  includeGouvernements?: boolean; // Gouvernements, postes ministériels, présidences de la République et de l'Assemblée (AMO30)
   includeReunions?: boolean;
   includeSenatReunions?: boolean;
   includeSenatAgenda?: boolean;
@@ -3574,6 +3581,9 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       //     groupes) : après 'senat:senateurs', dont l'annuaire du jour sert de
       //     contrôle aux appartenances de commission du dump export_sens
       'senat:fonctions',
+      // 2d. Gouvernements (AMO30, archive déjà téléchargée pour les commissions) :
+      //     après les parlementaires, que le rattachement des ministres lit.
+      'assemblee_nationale:gouvernements',
       // 3. Scrutins et votes
       'assemblee_nationale:scrutins',
       'senat:scrutins',
@@ -3617,6 +3627,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       'assemblee_nationale:deputes',
       'senat:senateurs',
       ...(options.includeSenatHisto ? ['senat:senateurs_histo'] : []),
+      ...(options.includeGouvernements ? ['assemblee_nationale:gouvernements'] : []),
       ...(options.includeCommissions ? ['assemblee_nationale:commissions'] : []),
       ...(options.includeScrutins ? ['assemblee_nationale:scrutins', 'senat:scrutins'] : []),
       ...(options.includeAmendements ? ['assemblee_nationale:amendements', 'senat:amendements'] : []),
@@ -3719,6 +3730,19 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
           case 'assemblee_nationale:commissions': {
             const commissionsResult = await syncCommissions();
             syncResult = { created: commissionsResult.created, updated: commissionsResult.updated };
+            break;
+          }
+
+          case 'assemblee_nationale:gouvernements': {
+            const rapport = await syncGouvernements();
+            const somme = (k: 'crees' | 'modifies') =>
+              rapport.gouvernements[k] + rapport.membres[k] + rapport.postes[k] + rapport.presidences[k] +
+              rapport.presidencesAssemblee[k];
+            syncResult = { created: somme('crees'), updated: somme('modifies') };
+            await prisma.syncLog.update({
+              where: { id: syncLog.id },
+              data: { metadata: rapport as unknown as Prisma.InputJsonValue },
+            });
             break;
           }
 
@@ -4006,6 +4030,10 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       results.results[sourceKey] = { created: 0, updated: 0, failed: true, error: message };
     }
   }
+
+  // L'archive AMO30, partagée par les commissions et les gouvernements, n'a plus
+  // de lecteur : on libère le disque avant les étapes de liaison.
+  await libererArchivesAMO30();
 
   // Lier les entités entre elles si des sources pertinentes ont changé
   const hasScrutinsChanged = results.sourcesChanged.some(s => s.includes('scrutins'));

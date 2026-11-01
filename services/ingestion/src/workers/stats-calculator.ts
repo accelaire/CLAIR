@@ -66,9 +66,21 @@ function majoriteUniqueDuGroupe(decompte: 'group_tallies'): Prisma.Sql {
  *   de 2011-2014, quand il ne présidait pas), Yaël Braun-Pivet 1 %. Périodes
  *   prises au bureau (`senat-fonctions.ts` pour le Sénat, AMO pour
  *   l'Assemblée), la source ne marquant pas la présidence sur tous les scrutins.
+ *   Côté Assemblée, les présidences datées viennent aussi de l'AMO30
+ *   (`presidences_assemblee`, ticket #103) : l'AMO10 ne date que la présidence
+ *   de la législature en cours.
  * - Président de séance, membre du gouvernement (et président de l'Assemblée) :
  *   statut publié sur la ligne du vote (`votes.statut_votant`), par DOSLEG au
  *   Sénat, par les non-votants du scrutin à l'Assemblée.
+ * - Membre du Gouvernement, d'après ses postes datés (`postes_ministeriels`,
+ *   ticket #103) : un parlementaire nommé ne prend plus part aux votes (art. 23
+ *   de la Constitution, ordonnance 58-1099), mais son mandat reste souvent
+ *   ouvert dans les sources, et la source du scrutin ne le marque pas toujours.
+ *   Mesuré en prod le 24/10/2026 : 98 mandats (66 à l'Assemblée, 32 au Sénat)
+ *   couvraient 43 754 scrutins tenus pendant un poste ministériel, sans un seul
+ *   vote exprimé ; Stéphanie Rist affichait 9 % au lieu de 26 %, Bruno
+ *   Retailleau 75 % au lieu de 98 %. Bornes incluses : le jour de la
+ *   nomination comme celui de la sortie.
  */
 const EMPECHEMENTS = Prisma.sql`
   SELECT v.parlementaire_id AS personne_id, v.scrutin_id
@@ -83,7 +95,32 @@ const EMPECHEMENTS = Prisma.sql`
       (s.chambre = 'senat' AND f.source_uid LIKE 'SENBUR-%' AND f.qualite LIKE 'Présid% du Sénat')
       OR (s.chambre = 'assemblee' AND f.type_organe = 'BUREAU'
           AND f.qualite IN ('Président de l''Assemblée nationale', 'Présidente de l''Assemblée nationale'))
-    )`;
+    )
+  UNION
+  SELECT pa.parlementaire_id AS personne_id, s.id AS scrutin_id
+  FROM presidences_assemblee pa
+  JOIN scrutins s ON s.chambre = 'assemblee'
+    AND s.date::date >= pa.date_debut
+    AND (pa.date_fin IS NULL OR s.date::date <= pa.date_fin)
+  WHERE pa.parlementaire_id IS NOT NULL
+  UNION
+  SELECT mg.parlementaire_id AS personne_id, s.id AS scrutin_id
+  FROM postes_ministeriels pm
+  JOIN membres_gouvernement mg ON mg.id = pm.membre_id
+  JOIN scrutins s ON s.date::date >= pm.date_debut
+    AND (pm.date_fin IS NULL OR s.date::date <= pm.date_fin)
+  WHERE mg.parlementaire_id IS NOT NULL`;
+
+/**
+ * Nombre de scrutins sous lequel un taux n'entre pas dans les classements : la
+ * fiche le montre, avec son nombre de scrutins, mais le comparer à celui d'un
+ * élu noté sur des milliers n'a pas de sens. Mesuré en prod le 25/10/2026 :
+ * depuis le renouvellement de septembre, 179 sénateurs étaient classés sur 28
+ * scrutins, à égalité en tête avec 100 %. Il porte sur la présence des députés
+ * et la loyauté ; la présence des sénateurs se classe sur les scrutins
+ * solennels, peu nombreux, sans seuil (ticket #108).
+ */
+export const SEUIL_SCRUTINS_CLASSEMENT = 50;
 
 // Pour la version legacy uniquement
 const limit = pLimit(1);
@@ -335,6 +372,7 @@ export async function calculateAllStats(
           ELSE NULL END,
         stats_interventions = COALESCE(im.total_interventions, 0),
         stats_questions = COALESCE(im.total_questions, 0),
+        stats_scrutins = d.total,
         stats_amendements = COALESCE(am.total_amendements, 0),
         stats_amendements_adoptes = COALESCE(am.total_adoptes, 0),
         stats_calculated_at = NOW()
@@ -508,6 +546,7 @@ export async function calculateAllStats(
             ELSE NULL
           END as new_presence_solennel_senat,
           COALESCE(vs.votes_non_absent, 0) as new_participation,
+          COALESCE(sc.total, 0) as new_scrutins,
           COALESCE(ist.total_interventions, 0) as new_interventions,
           COALESCE(ist.total_questions, 0) as new_questions,
           COALESCE(ast.total_amendements, 0) as new_amendements,
@@ -542,6 +581,8 @@ export async function calculateAllStats(
       SET
         stats_carriere_presence = all_stats.new_presence,
         stats_carriere_participation = all_stats.new_participation,
+        stats_carriere_scrutins = all_stats.new_scrutins,
+        stats_carriere_classable = all_stats.new_scrutins >= ${SEUIL_SCRUTINS_CLASSEMENT},
         stats_carriere_interventions = all_stats.new_interventions,
         stats_carriere_amendements = all_stats.new_amendements,
         stats_presence_solennel = CASE
@@ -620,7 +661,7 @@ export async function calculateAllStats(
       UPDATE parlementaires
       SET stats_carriere_loyaute = CASE
         WHEN pl.total_votes > 0 THEN ROUND((pl.loyal_votes::float / pl.total_votes) * 100)
-        ELSE 0
+        ELSE NULL
       END
       FROM parlementaire_loyalty pl
       WHERE parlementaires.id = pl.parlementaire_id
@@ -645,10 +686,11 @@ export async function calculateAllStats(
       WITH mandat_courant AS (
         SELECT DISTINCT ON (m.personne_id)
                m.personne_id,
-               m.date_fin,
                m.stats_presence,
                m.stats_loyaute,
-               m.stats_participation
+               m.stats_participation,
+               m.stats_scrutins,
+               m.stats_calculated_at
         FROM mandats_parlementaires m
         JOIN parlementaires p ON p.id = m.personne_id AND p.chambre = m.chambre
         WHERE m.chambre LIKE ${chambreFilter}
@@ -657,17 +699,26 @@ export async function calculateAllStats(
                  m.date_debut DESC,
                  m.id
       )
+      -- Un mandat calculé est recopié tel quel, NULL compris : une présence
+      -- NULL dit « aucun scrutin où il pouvait voter » (président de
+      -- l'assemblée, mandat passé au Gouvernement, #108), et la remplacer par
+      -- l'ancienne valeur figerait un taux faux, mandat clos ou non. Seul un
+      -- mandat jamais calculé laisse la ligne en l'état.
       UPDATE parlementaires p
       SET
-        -- Mandat en cours, ou Sénat : un NULL veut dire « non mesurable »
-        -- (président de l'assemblée), il est recopié tel quel (#108). Un mandat
-        -- clos sans valeur garde l'ancienne, comme avant.
-        stats_presence = CASE WHEN p.chambre = 'senat' OR mc.date_fin IS NULL THEN mc.stats_presence
-                              ELSE COALESCE(mc.stats_presence, p.stats_presence) END,
-        stats_loyaute = COALESCE(mc.stats_loyaute, p.stats_loyaute),
-        stats_participation = COALESCE(mc.stats_participation, p.stats_participation)
+        stats_presence = mc.stats_presence,
+        stats_loyaute = mc.stats_loyaute,
+        stats_participation = mc.stats_participation,
+        stats_scrutins = mc.stats_scrutins,
+        stats_classable = COALESCE(mc.stats_scrutins, 0) >= ${SEUIL_SCRUTINS_CLASSEMENT}
       FROM mandat_courant mc
       WHERE p.id = mc.personne_id
+        AND mc.stats_calculated_at IS NOT NULL
+        AND (p.stats_presence IS DISTINCT FROM mc.stats_presence
+          OR p.stats_loyaute IS DISTINCT FROM mc.stats_loyaute
+          OR p.stats_participation IS DISTINCT FROM mc.stats_participation
+          OR p.stats_scrutins IS DISTINCT FROM mc.stats_scrutins
+          OR p.stats_classable IS DISTINCT FROM (COALESCE(mc.stats_scrutins, 0) >= ${SEUIL_SCRUTINS_CLASSEMENT}))
     `;
 
     logger.info({ updated: mandatCourantCopie }, 'Current-mandate stats copied to parlementaires');

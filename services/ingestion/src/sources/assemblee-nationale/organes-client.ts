@@ -6,11 +6,9 @@
 
 import { LEGISLATURE_AN_COURANTE } from '../../workers/mandats';
 import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 import { logger } from '../../utils/logger.js';
 import { errorMessage } from '../../utils/errors.js';
-import { downloadWithRetry } from '../../utils/download';
+import { fichiersAMO30, repertoireAMO30 } from './amo30-archive';
 
 // =============================================================================
 // MAPPING codeType → type Commission
@@ -100,62 +98,10 @@ export interface TransformedOrgane {
 
 export class AssembleeNationaleOrganesClient {
   private legislature: number;
-  private baseUrl: string;
 
   constructor(legislature: number = LEGISLATURE_AN_COURANTE) {
     this.legislature = legislature;
-    this.baseUrl = 'https://data.assemblee-nationale.fr/static/openData/repository';
     logger.info({ legislature }, 'AssembleeNationaleOrganesClient initialized');
-  }
-
-  // ===========================================================================
-  // DOWNLOAD & EXTRACT HELPERS
-  // ===========================================================================
-
-  /**
-   * Toutes les archives AN viennent du même CDN, qui throttle sévèrement les
-   * tirages répétés (mesuré le 2026-07-26 : 45x plus lent au 2e tirage
-   * consécutif de la même archive). Un run télécharge plusieurs de ces archives
-   * d'affilée, d'où des coupures dont le message « aborted » ne disait rien.
-   * `downloadWithRetry` reprend avec backoff et journalise le contexte réel.
-   */
-  private async downloadFile(url: string, destPath: string): Promise<void> {
-    await downloadWithRetry(url, destPath);
-  }
-
-  private async extractZip(zipPath: string, extractDir: string): Promise<void> {
-    logger.debug({ zipPath, extractDir }, 'Extracting zip...');
-
-    const { exec } = await import('child_process');
-    const { promisify } = await import('util');
-    const execAsync = promisify(exec);
-
-    await fs.promises.mkdir(extractDir, { recursive: true });
-
-    try {
-      await execAsync(`unzip -q -o "${zipPath}" -d "${extractDir}"`, {
-        maxBuffer: 1024 * 1024 * 200, // 200 MB — AMO30 est volumineux
-      });
-    } catch (error) {
-      logger.error({ error: errorMessage(error) }, 'unzip failed');
-      throw new Error(`Zip extraction failed: ${errorMessage(error)}`);
-    }
-  }
-
-  /** Parcourt récursivement un répertoire et retourne les chemins des .json */
-  private async findJsonFiles(dir: string, files: string[] = []): Promise<string[]> {
-    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        await this.findJsonFiles(fullPath, files);
-      } else if (entry.name.endsWith('.json')) {
-        files.push(fullPath);
-      }
-    }
-
-    return files;
   }
 
   // ===========================================================================
@@ -211,81 +157,57 @@ export class AssembleeNationaleOrganesClient {
   // MÉTHODE PRINCIPALE
   // ===========================================================================
 
+  /** Les organes de l'archive, téléchargée une seule fois par processus (`amo30-archive`). */
   async getOrganes(): Promise<TransformedOrgane[]> {
-    const zipUrl =
-      `${this.baseUrl}/${this.legislature}/amo/` +
-      `tous_acteurs_mandats_organes_xi_legislature/` +
-      `AMO30_tous_acteurs_tous_mandats_tous_organes_historique.json.zip`;
+    const json = await repertoireAMO30(this.legislature);
+    const jsonFiles = await fichiersAMO30(json, 'organe');
+    logger.info({ totalFiles: jsonFiles.length }, 'JSON files found in AMO30');
 
-    const tempDir = path.join(os.tmpdir(), 'clair-amo30');
-    const zipPath = path.join(tempDir, 'AMO30.zip');
-    const extractDir = path.join(tempDir, 'extracted');
+    const organes: TransformedOrgane[] = [];
+    let totalParsed = 0;
+    let totalFiltered = 0;
+    let parseErrors = 0;
 
-    try {
-      await fs.promises.rm(tempDir, { recursive: true, force: true });
-      await fs.promises.mkdir(tempDir, { recursive: true });
+    for (const jsonFile of jsonFiles) {
+      try {
+        const content = await fs.promises.readFile(jsonFile, 'utf-8');
+        const data = JSON.parse(content) as ANOrganeFile;
 
-      logger.info({ url: zipUrl }, 'Downloading AMO30 archive...');
-      await this.downloadFile(zipUrl, zipPath);
+        if (!data?.organe) continue;
 
-      const stats = await fs.promises.stat(zipPath);
-      logger.info({ sizeMB: (stats.size / 1024 / 1024).toFixed(2) }, 'AMO30 archive downloaded');
+        totalParsed++;
+        const transformed = this.transformOrgane(data.organe);
 
-      logger.info('Extracting AMO30 archive...');
-      await this.extractZip(zipPath, extractDir);
-
-      logger.info('Scanning for JSON files...');
-      const jsonFiles = await this.findJsonFiles(extractDir);
-      logger.info({ totalFiles: jsonFiles.length }, 'JSON files found in AMO30');
-
-      const organes: TransformedOrgane[] = [];
-      let totalParsed = 0;
-      let totalFiltered = 0;
-      let parseErrors = 0;
-
-      for (const jsonFile of jsonFiles) {
-        try {
-          const content = await fs.promises.readFile(jsonFile, 'utf-8');
-          const data = JSON.parse(content) as ANOrganeFile;
-
-          if (!data?.organe) continue;
-
-          totalParsed++;
-          const transformed = this.transformOrgane(data.organe);
-
-          if (transformed) {
-            organes.push(transformed);
-          } else {
-            totalFiltered++;
-          }
-
-          if (totalParsed % 1000 === 0) {
-            logger.debug(
-              { parsed: totalParsed, kept: organes.length, filtered: totalFiltered },
-              'AMO30 parsing progress',
-            );
-          }
-        } catch (e) {
-          parseErrors++;
-          logger.warn({ file: jsonFile, error: errorMessage(e) }, 'Failed to parse organe file');
+        if (transformed) {
+          organes.push(transformed);
+        } else {
+          totalFiltered++;
         }
+
+        if (totalParsed % 1000 === 0) {
+          logger.debug(
+            { parsed: totalParsed, kept: organes.length, filtered: totalFiltered },
+            'AMO30 parsing progress',
+          );
+        }
+      } catch (e) {
+        parseErrors++;
+        logger.warn({ file: jsonFile, error: errorMessage(e) }, 'Failed to parse organe file');
       }
-
-      logger.info(
-        {
-          totalFiles: jsonFiles.length,
-          totalParsed,
-          kept: organes.length,
-          filtered: totalFiltered,
-          parseErrors,
-        },
-        'AMO30 parsing complete',
-      );
-
-      return organes;
-    } finally {
-      await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
+
+    logger.info(
+      {
+        totalFiles: jsonFiles.length,
+        totalParsed,
+        kept: organes.length,
+        filtered: totalFiltered,
+        parseErrors,
+      },
+      'AMO30 parsing complete',
+    );
+
+    return organes;
   }
 }
 

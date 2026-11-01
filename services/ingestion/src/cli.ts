@@ -58,6 +58,8 @@ import { backfillMandatsParlementaires } from './workers/backfill-mandats.js';
 import { backfillNatureVote } from './workers/backfill-nature-vote.js';
 import { syncSenateursHistoriques } from './workers/senat-histo.js';
 import { syncSenatFonctions } from './workers/senat-fonctions.js';
+import { syncGouvernements } from './workers/gouvernements.js';
+import { libererArchivesAMO30 } from './sources/assemblee-nationale/amo30-archive.js';
 import { SENAT_SESSION_MIN } from './workers/mandats.js';
 import { logger } from './utils/logger';
 import { errorMessage } from './utils/errors';
@@ -269,7 +271,7 @@ program
         console.log(`   Non matchés: ${result.unmatched}`);
         console.log(`   Erreurs: ${result.errors}`);
       } else if (options.commissions) {
-        const result = await syncCommissions();
+        const result = await syncCommissions().finally(libererArchivesAMO30);
         console.log(`\n📊 Commissions:`);
         console.log(`   Créées: ${result.created}`);
         console.log(`   Mises à jour: ${result.updated}`);
@@ -400,6 +402,7 @@ program
   .option('--lo, --lobbying', 'Inclure les lobbyistes')
   .option('--co, --commissions', 'Inclure les commissions parlementaires')
   .option('--senat-histo', 'Inclure les anciens sénateurs (open data ODSEN)')
+  .option('--gouvernements', 'Inclure les gouvernements, postes ministériels et présidences (AMO30)')
   .option('--re, --reunions', 'Inclure les réunions/agenda parlementaire (AN)')
   .option('--senat-reunions', 'Inclure les réunions Sénat (scraping HTML comptes rendus)')
   .option('--senat-agenda', 'Inclure l\'agenda Sénat (séances publiques à venir via API senat.fr)')
@@ -426,6 +429,7 @@ program
         includeLobbying: options.lobbying,
         includeCommissions: options.commissions,
         includeSenatHisto: options.senatHisto,
+        includeGouvernements: options.gouvernements,
         includeReunions: options.reunions,
         includeSenatReunions: options.senatReunions,
         includeSenatAgenda: options.senatAgenda,
@@ -755,6 +759,30 @@ program
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'backfill-nature-vote failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: sync-gouvernements
+// =============================================================================
+program
+  .command('sync-gouvernements')
+  .description("Gouvernements depuis 2007, postes ministériels, présidences de la République et de l'Assemblée (AMO30)")
+  .action(async () => {
+    try {
+      const r = await syncGouvernements().finally(libererArchivesAMO30);
+      console.log('\n📊 Gouvernements (AMO30) :');
+      for (const table of ['gouvernements', 'membres', 'postes', 'presidences', 'presidencesAssemblee'] as const) {
+        const c = r[table];
+        console.log(`   ${table.padEnd(20)}: ${c.crees} créés, ${c.modifies} modifiés, ${c.supprimes} supprimés`);
+      }
+      const l = r.liaisons;
+      console.log(`   fiches liées  : ${l.source_id} par PA, ${l.identifiant} par identifiant, ${l.etat_civil} par état civil, ${l.sans_fiche} sans fiche`);
+      if (r.ambiguites.length > 0) console.log(`   ambiguïtés    : ${r.ambiguites.length} (voir les logs)`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-gouvernements failed');
       process.exit(1);
     }
   });
