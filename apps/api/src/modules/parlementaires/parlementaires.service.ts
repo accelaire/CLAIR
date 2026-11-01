@@ -526,7 +526,9 @@ export class ParlementairesService {
             OR: [{ dateFin: { not: null } }, { organeRef: { not: null } }],
           },
           orderBy: { dateDebut: 'desc' },
-          take: 50,
+          // Les fonctions datées du Sénat (ticket #118) remontent à 1986 : jusqu'à
+          // 70 lignes pour un sénateur, que 50 coupaient.
+          take: 150,
           include: {
             commission: {
               select: { slug: true, nom: true, chambre: true },

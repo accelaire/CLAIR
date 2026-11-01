@@ -43,6 +43,7 @@ import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { InterventionsList } from '@/components/parlementaire/interventions-list';
 import { MandatsBlock } from '@/components/parlementaire/mandats-timeline';
+import { fonctionsEnVue } from '@/lib/fonctions-en-vue';
 import {
   FiltreChambre,
   paramChambre,
@@ -722,6 +723,15 @@ export default function PageClient({
           <h1 className="text-3xl font-bold">
             {senateur.prenom} {senateur.nom}
           </h1>
+
+          {/* Fonction en cours (présidence de l'assemblée, d'une commission, d'un
+              groupe) : sans elle, rien ne disait sur sa fiche que Gérard Larcher
+              préside le Sénat (ticket #118). */}
+          {fonctionsEnVue(senateur.mandats ?? []).length > 0 && (
+            <p className="mt-1 text-base font-medium text-primary">
+              {fonctionsEnVue(senateur.mandats ?? []).join(' · ')}
+            </p>
+          )}
 
           {/* Groupe. Pour un mandat terminé, le groupe affiché est celui du dernier
               mandat : présenté seul, il laissait croire à un élu en exercice (David
