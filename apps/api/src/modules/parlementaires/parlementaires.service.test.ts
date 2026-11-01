@@ -55,6 +55,28 @@ describe('ParlementairesService', () => {
       expect(result.meta.hasPrev).toBe(false);
     });
 
+    it('classe d’abord les élus notés sur assez de scrutins, dans les deux sens de tri', async () => {
+      mockPrisma.parlementaire.findMany.mockResolvedValue(mockParlementaireList);
+      mockPrisma.parlementaire.count.mockResolvedValue(2);
+
+      for (const [order, periode, cle] of [
+        ['desc', 'mandat', 'statsClassable'],
+        ['asc', 'mandat', 'statsClassable'],
+        ['desc', 'carriere', 'statsCarriereClassable'],
+      ] as const) {
+        mockPrisma.parlementaire.findMany.mockClear();
+        await service.getParlementaires({ ...defaultQuery, sort: 'presence', order, periode });
+        const { orderBy } = mockPrisma.parlementaire.findMany.mock.calls[0]![0] as { orderBy: object[] };
+        expect(orderBy[0]).toEqual({ [cle]: 'desc' });
+      }
+
+      // Un tri sans taux n'en dépend pas.
+      mockPrisma.parlementaire.findMany.mockClear();
+      await service.getParlementaires({ ...defaultQuery, sort: 'nom' });
+      const { orderBy } = mockPrisma.parlementaire.findMany.mock.calls[0]![0] as { orderBy: object[] };
+      expect(orderBy[0]).toEqual({ nom: 'asc' });
+    });
+
     it('devrait retourner les données du cache si disponibles', async () => {
       const cachedData = {
         data: [{ id: 'cached-1', nom: 'Cached' }],
@@ -116,7 +138,7 @@ describe('ParlementairesService', () => {
       );
     });
 
-    it('trie la présence des sénateurs sur les votes solennels, sans valeur en dernier (#108)', async () => {
+    it('trie la présence des sénateurs sur les votes solennels, sans seuil de scrutins, sans valeur en dernier (#108)', async () => {
       mockPrisma.parlementaire.findMany.mockResolvedValue([]);
       mockPrisma.parlementaire.count.mockResolvedValue(0);
 
@@ -128,6 +150,12 @@ describe('ParlementairesService', () => {
           orderBy: [{ statsPresenceSolennel: { sort: 'desc', nulls: 'last' } }, { nom: 'asc' }, { id: 'asc' }],
         })
       );
+
+      // La loyauté des sénateurs garde le seuil.
+      mockPrisma.parlementaire.findMany.mockClear();
+      await service.getParlementaires({ ...defaultQuery, sort: 'loyaute', order: 'desc' }, 'senat');
+      const { orderBy } = mockPrisma.parlementaire.findMany.mock.calls[0]![0] as { orderBy: object[] };
+      expect(orderBy[0]).toEqual({ statsClassable: 'desc' });
     });
 
     it('ne classe que les députés par présence toutes chambres confondues (#108)', async () => {
@@ -139,7 +167,12 @@ describe('ParlementairesService', () => {
       expect(mockPrisma.parlementaire.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({ chambre: 'assemblee' }),
-          orderBy: [{ statsPresence: { sort: 'desc', nulls: 'last' } }, { nom: 'asc' }, { id: 'asc' }],
+          orderBy: [
+            { statsClassable: 'desc' },
+            { statsPresence: { sort: 'desc', nulls: 'last' } },
+            { nom: 'asc' },
+            { id: 'asc' },
+          ],
         })
       );
     });
@@ -299,6 +332,40 @@ describe('ParlementairesService', () => {
         })
       );
     });
+
+    it('range ses présidences de l’Assemblée parmi ses fonctions, à la place de la ligne de l’enrichissement', async () => {
+      const commission = {
+        id: 'm-com', typeOrgane: 'COMPER', qualite: 'Membre', dateDebut: new Date('2024-07-10'), dateFin: null,
+      };
+      const bureau = {
+        id: 'm-bureau', typeOrgane: 'BUREAU', qualite: "Président de l'Assemblée nationale",
+        dateDebut: new Date('2024-07-18'), dateFin: null,
+      };
+      mockPrisma.parlementaire.findUnique.mockResolvedValue({
+        ...mockParlementaireWithRelations,
+        sexe: 'F',
+        mandats: [bureau, commission],
+      });
+      mockPrisma.presidenceAssemblee.findMany.mockImplementation(async () => [
+        {
+          uid: 'PM845400', acteurUid: 'PA721908', dateDebut: new Date('2024-07-18'), dateFin: null,
+          createdAt: new Date(), updatedAt: new Date(),
+        },
+        {
+          uid: 'PM800479', acteurUid: 'PA721908', dateDebut: new Date('2022-06-28'), dateFin: new Date('2024-06-09'),
+          createdAt: new Date(), updatedAt: new Date(),
+        },
+      ]);
+
+      const result = await service.getParlementaireBySlug('jean-dupont');
+
+      type Ligne = { id: string; qualite: string | null; sourceUid?: string | null };
+      expect((result?.mandats as Ligne[]).map((m) => [m.id, m.qualite, m.sourceUid])).toEqual([
+        ['presidence-assemblee-PM845400', 'Présidente de l’Assemblée nationale', 'PM845400'],
+        ['m-com', 'Membre', undefined],
+        ['presidence-assemblee-PM800479', 'Présidente de l’Assemblée nationale', 'PM800479'],
+      ]);
+    });
   });
 
   describe('getParlementaireById', () => {
@@ -363,7 +430,9 @@ describe('ParlementairesService', () => {
       expect(mockPrisma.parlementaire.findUnique).not.toHaveBeenCalled();
     });
 
-    it('devrait gérer les valeurs null avec des défauts', async () => {
+    it('rend un taux sans scrutin à évaluer comme null, pas comme 0 %', async () => {
+      // Sébastien Lecornu : sénateur un mois en 2020 sans quitter le
+      // Gouvernement. Lui afficher 0 % de présence et de loyauté était faux.
       mockPrisma.parlementaire.findUnique.mockResolvedValue({
         statsPresence: null,
         statsPresenceSolennel: null,
@@ -378,10 +447,13 @@ describe('ParlementairesService', () => {
 
       const result = await service.getParlementaireStats('parl-1', 'assemblee');
 
-      // Null : aucun scrutin où il pouvait voter (président de l'assemblée), pas 0 % (#108).
+      // Null : aucun scrutin où il pouvait voter, pas 0 % (#108).
       expect(result.presence).toBeNull();
       expect(result.presenceSolennel).toBeNull();
-      expect(result.loyaute).toBe(0);
+      expect(result.loyaute).toBeNull();
+      // Les compteurs, eux, valent bien 0.
+      expect(result.participation).toBe(0);
+      expect(result.questions).toBe(0);
     });
   });
 
