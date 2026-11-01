@@ -41,8 +41,8 @@ export const GRAPHIQUES = {
   presence: {
     titre: 'Présence et loyauté des sortants',
     sousTitre:
-      'La quasi-totalité des sortants dépasse 95 % de présence. Une dizaine en est très loin.',
-    accroche: 'Répartition des sortants par tranche de présence',
+      'Présence mesurée aux votes solennels, les seuls où chaque sénateur vote en personne : les scrutins ordinaires sont votés par groupe.',
+    accroche: 'Répartition des sortants par présence aux votes solennels',
     court: 'Présence',
   },
   activite: {

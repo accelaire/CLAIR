@@ -867,6 +867,7 @@ export default function PageClient({
         <StatsParlementaire
           stats={senateur.stats}
           titre={fonction.enCours ? 'Statistiques' : bilanMandats(fonction.plusieursMandats)}
+          chambre="senat"
         />
       )}
 

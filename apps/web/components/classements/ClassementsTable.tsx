@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { ArrowUp, ArrowDown, Users } from 'lucide-react';
 import { getGroupColor } from '@/lib/colors';
 import { ShareButton } from '@/components/ShareButton';
+import { presenceDe } from '@/lib/presence';
 
 interface ParlementaireRow {
   slug: string;
@@ -21,6 +22,7 @@ interface ParlementaireRow {
   } | null;
   stats: {
     presence: number;
+    presenceSolennel?: number | null;
     loyaute: number;
     participation: number;
     amendements: number;
@@ -44,7 +46,9 @@ const columns: Column[] = [
     shortLabel: 'Prés.',
     sortable: true,
     format: (v) => `${v}%`,
-    getValue: (r) => r.stats?.presence ?? null,
+    // Sénateur : présence aux votes solennels ; le taux tous scrutins compte
+    // des bulletins déposés par le groupe (#108).
+    getValue: (r) => presenceDe(r.chambre, r.stats),
   },
   {
     key: 'loyaute',

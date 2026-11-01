@@ -23,6 +23,7 @@ import {
 import { TopFlopCards } from '@/components/classements/TopFlopCards';
 import { ShareButton } from '@/components/ShareButton';
 import { ClassementsTable } from '@/components/classements/ClassementsTable';
+import { presenceDe, PRESENCE_SENAT_EXPLICATION } from '@/lib/presence';
 
 // =============================================================================
 // Types
@@ -42,6 +43,7 @@ interface ParlementaireItem {
   } | null;
   stats: {
     presence: number;
+    presenceSolennel?: number | null;
     loyaute: number;
     participation: number;
     amendements: number;
@@ -88,7 +90,7 @@ const CRITERION_CONFIG: Record<string, {
 }> = {
   presence: {
     label: 'Présence',
-    getValue: (item) => item.stats?.presence ?? null,
+    getValue: (item) => presenceDe(item.chambre, item.stats),
     format: (v) => `${v}%`,
   },
   loyaute: {
@@ -107,6 +109,14 @@ const CRITERION_CONFIG: Record<string, {
     format: (v) => v.toLocaleString('fr-FR'),
   },
 };
+
+/**
+ * Présence moyenne d'un groupe : aux votes solennels pour un groupe du Sénat,
+ * où les scrutins ordinaires sont votés par groupe (#108).
+ */
+function presenceGroupe(g: { chambre: string; statsPresenceMoyenne: number | null; statsPresenceSolennelMoyenne: number | null }): number | null {
+  return g.chambre === 'senat' ? g.statsPresenceSolennelMoyenne : g.statsPresenceMoyenne;
+}
 
 const GROUPE_SORT_OPTIONS = [
   { value: 'presence', label: 'Présence moyenne' },
@@ -257,7 +267,7 @@ function ParlementairesTab() {
 
   const hasData = (item: ParlementaireItem) =>
     item.stats !== null &&
-    (item.stats.presence > 0 || item.stats.loyaute > 0 || item.stats.amendements > 0 || item.stats.interventions > 0);
+    ((presenceDe(item.chambre, item.stats) ?? 0) > 0 || item.stats.loyaute > 0 || item.stats.amendements > 0 || item.stats.interventions > 0);
 
   return (
     <div>
@@ -352,6 +362,16 @@ function ParlementairesTab() {
             </p>
           </div>
 
+          {/* La présence ne se mesure pas de la même façon dans les deux chambres
+              (#108) : la note dit laquelle est classée. */}
+          {sort === 'presence' && filters.chambre !== 'assemblee' && (
+            <p className="mb-4 rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
+              {filters.chambre === 'senat'
+                ? `Sénateurs classés sur leur présence aux votes solennels. ${PRESENCE_SENAT_EXPLICATION}`
+                : 'Classement des députés. Au Sénat, les scrutins ordinaires sont votés par groupe : choisissez le Sénat pour classer les sénateurs sur leur présence aux votes solennels.'}
+            </p>
+          )}
+
           <ClassementsTable
             data={parlementairesData.data}
             sort={sort}
@@ -425,7 +445,7 @@ function GroupesTab() {
     return groupes.sort((a, b) => {
       switch (groupeSort) {
         case 'presence':
-          return (b.statsPresenceMoyenne ?? 0) - (a.statsPresenceMoyenne ?? 0);
+          return (presenceGroupe(b) ?? -1) - (presenceGroupe(a) ?? -1);
         case 'loyaute':
           return (b.statsLoyauteMoyenne ?? 0) - (a.statsLoyauteMoyenne ?? 0);
         case 'cohesion':
@@ -455,7 +475,7 @@ function GroupesTab() {
 
   const getStatValue = (g: GroupeItem): number | null => {
     switch (groupeSort) {
-      case 'presence': return g.statsPresenceMoyenne;
+      case 'presence': return presenceGroupe(g);
       case 'loyaute': return g.statsLoyauteMoyenne;
       case 'cohesion': return g.statsCohesion;
       case 'membres': return g.membresActifsCount;

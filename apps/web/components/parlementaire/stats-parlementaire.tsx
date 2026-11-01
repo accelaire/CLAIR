@@ -1,6 +1,7 @@
 import { ShieldCheck, Users, Vote, MessageSquare, HelpCircle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
+import { PRESENCE_SENAT_EXPLICATION, PRESENCE_SENAT_NON_MESURABLE } from '@/lib/presence';
 
 // Statistiques d'une fiche, communes aux députés et aux sénateurs. L'API les
 // calcule de la même façon pour les deux chambres, sur TOUTE la carrière
@@ -9,8 +10,12 @@ import { DidacticielTooltip } from '@/components/ui/didacticiel-tooltip';
 // fausses pour ces élus (« carrière au Sénat » sur des votes de l'Assemblée).
 
 export interface StatsParlementaireData {
-  presence: number;
-  /** Null sans scrutin solennel sur la carrière : le Sénat n'en publie pas. */
+  /** Null au Sénat sans aucun scrutin où il pouvait voter (président du Sénat). */
+  presence: number | null;
+  /**
+   * Null sans scrutin solennel sur la période. Au Sénat, c'est la seule mesure
+   * de la présence : les scrutins ordinaires y sont votés par groupe (#108).
+   */
   presenceSolennel?: number | null;
   loyaute: number;
   participation: number;
@@ -28,6 +33,7 @@ function StatCard({
   suffix = '',
   subtitle,
   tooltip,
+  texteSiVide = 'N/A',
 }: {
   label: string;
   value: number | null;
@@ -35,6 +41,8 @@ function StatCard({
   suffix?: string;
   subtitle?: string;
   tooltip: string;
+  /** Texte affiché sans valeur. */
+  texteSiVide?: string;
 }) {
   return (
     <div className="rounded-lg border bg-card p-4">
@@ -45,7 +53,7 @@ function StatCard({
       </div>
       <div className="mt-2 flex items-baseline gap-2 flex-wrap">
         <span className="text-2xl font-bold">
-          {value !== null ? `${value.toLocaleString('fr-FR')}${suffix}` : 'N/A'}
+          {value !== null ? `${value.toLocaleString('fr-FR')}${suffix}` : texteSiVide}
         </span>
         {subtitle && <span className="text-sm text-muted-foreground">{subtitle}</span>}
       </div>
@@ -53,18 +61,56 @@ function StatCard({
   );
 }
 
-export function StatsParlementaire({ stats, titre }: { stats: StatsParlementaireData; titre: string }) {
+export function StatsParlementaire({
+  stats,
+  titre,
+  chambre = 'assemblee',
+}: {
+  stats: StatsParlementaireData;
+  titre: string;
+  chambre?: 'assemblee' | 'senat';
+}) {
   const solennel = stats.presenceSolennel ?? null;
   return (
     <div className="mb-8">
       <h2 className="mb-4 text-xl font-semibold">{titre}</h2>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {solennel !== null ? (
+        {chambre === 'senat' ? (
+          // Sénat : le taux tous scrutins compte des bulletins déposés par le
+          // groupe ; il est présenté comme une participation, jamais comme une
+          // présence.
+          stats.presence === null ? (
+            <StatCard
+              label="Présence"
+              value={null}
+              texteSiVide="Ne vote pas"
+              icon={ShieldCheck}
+              tooltip="Aucun scrutin où ce sénateur pouvait voter sur la période : le président du Sénat ne prend pas part aux votes, par usage."
+            />
+          ) : solennel !== null ? (
+            <StatCard
+              label="Présence aux votes solennels"
+              value={solennel}
+              suffix="%"
+              subtitle={`${stats.presence}% de participation aux scrutins`}
+              icon={ShieldCheck}
+              tooltip={`Pourcentage de scrutins solennels auxquels ce sénateur a voté en personne. Le second chiffre porte sur tous les scrutins publics. ${PRESENCE_SENAT_EXPLICATION}`}
+            />
+          ) : (
+            <StatCard
+              label="Participation aux scrutins"
+              value={stats.presence}
+              suffix="%"
+              icon={ShieldCheck}
+              tooltip={`Pourcentage de scrutins publics où un bulletin a été déposé pour ce sénateur. ${PRESENCE_SENAT_EXPLICATION} ${PRESENCE_SENAT_NON_MESURABLE}`}
+            />
+          )
+        ) : solennel !== null ? (
           <StatCard
             label="Présence solennelle"
             value={solennel}
             suffix="%"
-            subtitle={`${stats.presence}% tous scrutins`}
+            subtitle={stats.presence !== null ? `${stats.presence}% tous scrutins` : undefined}
             icon={ShieldCheck}
             tooltip={`Pourcentage de scrutins solennels auxquels ce parlementaire a participé (voté pour, contre ou abstention). Le second chiffre porte sur tous les scrutins publics. ${CARRIERE}`}
           />
