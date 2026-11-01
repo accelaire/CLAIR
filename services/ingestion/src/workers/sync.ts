@@ -26,6 +26,7 @@ import { syncGouvernements } from './gouvernements';
 import { libererArchivesAMO30 } from '../sources/assemblee-nationale/amo30-archive';
 import { syncSenatDossierCommissions } from './senat-dossier-commissions';
 import { logger } from '../utils/logger';
+import { choisirFiche, slugLibre } from '../utils/rapprochement-fiche';
 import { errorMessage } from '../utils/errors';
 import { typeSelonOrateur } from '../utils/interventions';
 import { asArray, isRecord, readString } from '../utils/json';
@@ -816,29 +817,36 @@ async function syncSingleParlementaireAN(
     sourceData: p.sourceData as object,
   } satisfies Partial<Prisma.ParlementaireUncheckedCreateInput>;
 
-  const existing = await prisma.parlementaire.findFirst({
+  // Candidats larges, choix strict (utils/rapprochement-fiche) : identifiant
+  // d'abord, puis slug ou nom exact dans la même chambre avec la même date de
+  // naissance. Le OU sans priorité d'avant pouvait retenir un homonyme et
+  // l'écraser (Jean-Louis Masson, député, sur la fiche du sénateur de Moselle).
+  const candidats = await prisma.parlementaire.findMany({
     where: {
       OR: [
         { sourceId: p.uid },
-        // Le rapprochement par slug est borné à la chambre. Sans cette borne, un
-        // nouvel élu homonyme d'une personne de l'autre chambre était résolu sur
-        // SA ligne, qui était alors écrasée : l'URL survivait en pointant vers
-        // quelqu'un d'autre.
         { AND: [{ chambre: p.chambre }, { slug: p.slug }] },
-        {
-          AND: [
-            { chambre: p.chambre },
-            { prenom: p.prenom },
-            { nom: { contains: p.nom } },
-          ],
-        },
+        { AND: [{ chambre: p.chambre }, { prenom: { equals: p.prenom, mode: 'insensitive' } }, { nom: { equals: p.nom, mode: 'insensitive' } }] },
         // Député parti au Sénat : sa fiche porte désormais son matricule, et
         // son identifiant de l'Assemblée est conservé à part.
         { identifiants: { some: { chambre: p.chambre, sourceId: p.uid } } },
       ],
     },
-    select: { id: true, chambre: true },
+    select: {
+      id: true,
+      chambre: true,
+      sourceId: true,
+      slug: true,
+      prenom: true,
+      nom: true,
+      dateNaissance: true,
+      identifiants: { where: { chambre: p.chambre, sourceId: p.uid }, select: { id: true } },
+    },
   });
+  const existing = choisirFiche(
+    candidats.map((c) => ({ ...c, identifiantRange: c.identifiants.length > 0 })),
+    { uid: p.uid, chambre: p.chambre, slug: p.slug, prenom: p.prenom, nom: p.nom, dateNaissance: p.dateNaissance },
+  );
 
   let personneId: string;
   let person: 'created' | 'updated';
@@ -875,10 +883,13 @@ async function syncSingleParlementaireAN(
     // Création : la législature courante affiche groupe/circo/actif=true ; une
     // personne connue uniquement via une législature historique est créée inactive,
     // avec son dernier groupe/circo connus comme valeur d'affichage par défaut.
+    // Slug pris par un homonyme : suffixé de l'identifiant plutôt qu'en échec.
+    const slugPris = candidats.some((c) => c.slug === p.slug) ||
+      (await prisma.parlementaire.findUnique({ where: { slug: p.slug }, select: { id: true } })) !== null;
     const created = await prisma.parlementaire.create({
       data: {
         ...bioData,
-        slug: p.slug,
+        slug: slugLibre(p.slug, p.uid, slugPris),
         actif: isCurrent,
         groupe: groupeId ? { connect: { id: groupeId } } : undefined,
         circonscription: circonscriptionId ? { connect: { id: circonscriptionId } } : undefined,
