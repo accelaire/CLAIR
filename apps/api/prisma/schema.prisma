@@ -81,6 +81,11 @@ model Parlementaire {
   statsCarriereParticipation Int? @map("stats_carriere_participation")
   statsCarriereInterventions Int? @map("stats_carriere_interventions")
   statsCarriereAmendements   Int? @map("stats_carriere_amendements")
+  // Présence aux scrutins solennels sur toute la carrière, hors scrutins où
+  // l'élu ne pouvait pas voter. Sans elle, la fiche d'un ancien élu montrait la
+  // présence solennelle de son seul dernier mandat (Gérard Collomb : 0 % sur un
+  // scrutin en novembre 2018) à côté d'un taux tous scrutins de carrière (#108).
+  statsCarrierePresenceSolennel Int? @map("stats_carriere_presence_solennel")
 
   // Nombre de scrutins sur lequel porte la présence (mandat en cours, carrière),
   // et s'il suffit à classer la personne : sous SEUIL_SCRUTINS_CLASSEMENT
