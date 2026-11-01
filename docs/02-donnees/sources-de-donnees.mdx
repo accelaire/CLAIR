@@ -11,14 +11,14 @@ Toutes les données de CLAIR viennent de sources publiques. Aucune n'exige de cl
 
 ## 📊 Sources suivies (`source_states`)
 
-Chaque source est identifiée par une clé `organisme:type`, définie dans `services/ingestion/src/utils/source-freshness.ts` et reprise comme clé dans la table `source_states`. Les 23 premières lignes du tableau sont lues par le batch nocturne, dans l'ordre donné sur la page [Orchestrateur d'ingestion](/donnees/orchestrateur-ingestion).
+Chaque source est identifiée par une clé `organisme:type`, définie dans `services/ingestion/src/utils/source-freshness.ts` et reprise comme clé dans la table `source_states`. Les 24 premières lignes du tableau sont lues par le batch nocturne, dans l'ordre donné sur la page [Orchestrateur d'ingestion](/donnees/orchestrateur-ingestion).
 
 « Toujours » signifie que la source n'expose aucun en-tête exploitable (`ETag`, `Last-Modified`) : elle est relue à chaque passage.
 
 | Clé | Ressource | Format | Ce qui est ingéré |
 | :--- | :--- | :--- | :--- |
-| `assemblee_nationale:commissions` | [data.assemblee-nationale.fr](https://data.assemblee-nationale.fr), `AMO10_deputes_actifs_mandats_actifs_organes.json.zip` | ZIP / JSON | Organes : commissions, délégations, offices, missions, groupes d'études et d'amitié… |
-| `assemblee_nationale:deputes` | même archive AMO10 | ZIP / JSON | Députés, mandats, groupes politiques, circonscriptions |
+| `assemblee_nationale:commissions` | [data.assemblee-nationale.fr](https://data.assemblee-nationale.fr/acteurs/historique-des-deputes), `AMO30_tous_acteurs_tous_mandats_tous_organes_historique.json.zip` (organes actifs et clos), plus l'AMO10 pour les mandats en cours | ZIP / JSON | Organes : commissions, délégations, offices, missions, groupes d'études et d'amitié… |
+| `assemblee_nationale:deputes` | [data.assemblee-nationale.fr](https://data.assemblee-nationale.fr/acteurs/deputes-en-exercice), `AMO10_deputes_actifs_mandats_actifs_organes.json.zip` | ZIP / JSON | Députés, mandats, groupes politiques, circonscriptions |
 | `assemblee_nationale:scrutins` | `Scrutins.json.zip` | ZIP / JSON | Scrutins publics et votes nominatifs |
 | `assemblee_nationale:amendements` | `Amendements.json.zip` | ZIP / JSON | Amendements, auteurs, cosignataires, métadonnées de séance |
 | `assemblee_nationale:dossiers` | `Dossiers_Legislatifs.json.zip` | ZIP / JSON | Dossiers législatifs, actes, saisines de commissions |
@@ -29,6 +29,7 @@ Chaque source est identifiée par une clé `organisme:type`, définie dans `serv
 | `senat:senateurs` | [senat.fr/api-senat/senateurs.json](https://www.senat.fr/api-senat/senateurs.json) | JSON | Sénateurs en exercice et groupes. Ses commissions du jour servent de contrôle à `senat:fonctions` |
 | `senat:senateurs_histo` | [data.senat.fr](https://data.senat.fr) ODSEN (`ODSEN_ELUSEN.csv` et fichiers associés) | CSV | Anciens sénateurs, mandats clos, groupe d'époque |
 | `senat:fonctions` | `export_sens.zip` de data.senat.fr (dump de la base des sénateurs) | ZIP (dump SQL) | Fonctions datées : bureau du Sénat, commissions permanentes et affaires européennes (membre, président, rapporteur général…), fonctions de groupe |
+| `assemblee_nationale:gouvernements` | même archive AMO30 que les commissions, téléchargée une seule fois pour les deux | ZIP / JSON | Gouvernements depuis 2007, postes ministériels, présidences de la République et de l'Assemblée |
 | `senat:scrutins` | pages `scrutin-public` de senat.fr, `dosleg.zip` de data.senat.fr | HTML + dump SQL | Scrutins publics et votes nominatifs |
 | `senat:amendements` | `ameli.zip` de data.senat.fr, puis un CSV par texte sur senat.fr | ZIP + CSV | Amendements, cosignataires et article visé (colonne « Subdivision » du CSV, sinon `amd.subid` → `sub` d'AMELI) |
 | `senat:dossiers` | `dosleg.zip` de data.senat.fr | ZIP (dump SQL) | Dossiers législatifs |
@@ -100,6 +101,10 @@ Les identifiants des sources sont conservés pour permettre de remonter à l'ori
 | Dossier législatif | `dossiers_legislatifs.uid` | `DLR5L17N50168` |
 | Amendement | `amendements.uid` (tel que publié) et `uid_canonique` (clé de dédoublonnage) | |
 | Organe AN | `commissions.uid` | `PO59048` |
+| Gouvernement, présidence de la République | `gouvernements.uid`, `presidences.uid` | `PO873634` |
+| Présidence de l'Assemblée (mandat au bureau) | `presidences_assemblee.uid` | `PM845400` |
+| Poste ministériel (mandat MINISTERE de l'AN) | `postes_ministeriels.uid` | `PM873637` |
+| Membre du gouvernement | `membres_gouvernement.acteur_uid` | `PA643210` |
 | Intervention AN | `interventions.source_uid` (`id_syceron` du paragraphe) | |
 | Lobbyiste | `lobbyistes.identifiant_national` (SIREN, RNA…) | |
 

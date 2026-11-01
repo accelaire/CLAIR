@@ -28,7 +28,7 @@ Le passage **intraday** ne rafraîchit que ce qui change dans la journée : l'ag
   title="Déroulé du batch nocturne"
   chart={`flowchart TD
     A[Cron Railway] --> B[Événements institutionnels<br/>liste curée dans le code]
-    B --> C{Pour chacune des 22 sources,<br/>dans l'ordre}
+    B --> C{Pour chacune des 23 sources,<br/>dans l'ordre}
     C -->|ETag / Last-Modified inchangés| D[Ignorée<br/>sync_logs : skipped]
     C -->|changée, ou source « toujours »| E[Synchronisée<br/>sync_logs : started puis completed / failed]
     D --> C
@@ -48,30 +48,31 @@ La liste des repères de l'agenda (élections, bornes de session, suspensions, �
 
 ### 2. Les sources, dans cet ordre
 
-L'ordre suit les dépendances : les commissions avant les députés (dont les mandats pointent vers les commissions), les parlementaires avant les votes, les anciens sénateurs avant les scrutins (les votes historiques ont besoin de l'annuaire), les candidatures en dernier (le rattachement d'un candidat à sa fiche lit le corpus).
+L'ordre suit les dépendances : les commissions avant les députés (dont les mandats pointent vers les commissions), les parlementaires avant les votes, les anciens sénateurs avant les scrutins (les votes historiques ont besoin de l'annuaire), les gouvernements après les parlementaires (un ministre est rattaché à sa fiche), les candidatures en dernier (le rattachement d'un candidat à sa fiche lit le corpus).
 
 1. `assemblee_nationale:commissions`
 2. `assemblee_nationale:deputes`
 3. `senat:senateurs`
 4. `senat:senateurs_histo`
 5. `senat:fonctions`
-6. `assemblee_nationale:scrutins`
-7. `senat:scrutins`
-8. `assemblee_nationale:amendements`
-9. `senat:amendements`
-10. `assemblee_nationale:dossiers`
-11. `senat:dossiers`
-12. `assemblee_nationale:interventions`
-13. `senat:interventions`
-14. `hatvp:lobbyistes`
-15. `assemblee_nationale:reunions`
-16. `assemblee_nationale:seances_odj`
-17. `senat:agenda`
-18. `senat:reunions`
-19. `senat:dossier_commissions`
-20. `senat:videos`
-21. `assemblee_nationale:videos`
-22. `interieur:candidatures`
+6. `assemblee_nationale:gouvernements`
+7. `assemblee_nationale:scrutins`
+8. `senat:scrutins`
+9. `assemblee_nationale:amendements`
+10. `senat:amendements`
+11. `assemblee_nationale:dossiers`
+12. `senat:dossiers`
+13. `assemblee_nationale:interventions`
+14. `senat:interventions`
+15. `hatvp:lobbyistes`
+16. `assemblee_nationale:reunions`
+17. `assemblee_nationale:seances_odj`
+18. `senat:agenda`
+19. `senat:reunions`
+20. `senat:dossier_commissions`
+21. `senat:videos`
+22. `assemblee_nationale:videos`
+23. `interieur:candidatures`
 
 Le détail de chaque source est sur la page [Sources de données](/donnees/sources-de-donnees). Les résultats des élections et les mandats locaux des candidats ne sont dans aucun des deux batchs : ils se lancent à la main (voir [Commandes CLI](/donnees/commandes-cli)).
 
@@ -140,6 +141,7 @@ En fin de batch, la CLI attend 120 s, puis appelle `POST /api/v1/homepage/warm` 
 | `ia-enrichment.ts`, `parlementaire-enrichment.ts` | Enrichissement IA |
 | `declarations-sync.ts` | Déclarations HATVP |
 | `senat-fonctions.ts`, `senat-dossier-commissions.ts` | Fonctions datées des sénateurs (bureau, commissions, groupes) et saisines des commissions du Sénat |
+| `gouvernements.ts` | Gouvernements, postes ministériels, présidences de la République et de l'Assemblée (archive AMO30), rattachement à la fiche |
 | `textes-articles.ts` | Texte des articles des textes de l'Assemblée |
 | `index-legi.ts` | Index de la base LEGI de la DILA (textes et articles de loi, pour les liens vers Légifrance) |
 | `renvois-legi.ts` | Renvois au droit en vigueur dans le dispositif des amendements, rattachés à l'index LEGI (grammaire de `@tricoteuses/tisseuse`) |

@@ -75,6 +75,7 @@ Toutes les routes métier sont sous le préfixe `/api/v1`. La spécification Ope
 | `/dossiers` | `/`, `/filters`, `/trending`, `/:uid`, `/:uid/chronologie`, `/:uid/scrutins`, `/:uid/amendements` |
 | `/sujets` | `/`, `/featured`, `/categories`, `/:slug`, `/:slug/archive`, `/:slug/documents-lies`, `/:slug/dossiers`, `/:slug/chronologie`, `/:slug/scrutins`, `/:slug/presse`, `/:slug/stats` |
 | `/commissions` | `/`, `/:slug`, `/:slug/reunions`, `/:slug/dossiers` |
+| `/gouvernements` | `/` (les gouvernements depuis 2007, le plus récent d'abord, avec `nbMembres` et `nbFemmes`), `/:slug` (postes dans l'ordre protocolaire, avec les dates de chaque titulaire et leur `domaine`, et `domaines`, la liste ordonnée des domaines avec leurs libellés). Le domaine d'un portefeuille est un classement de CLAIR, la source n'en donne pas : `null` pour un intitulé que la table ne connaît pas encore. Identifiants de la source : `PO…` (gouvernement, présidence), `PM…` (poste), `PA…` (personne) |
 | `/agenda` | `/`, `/evenements`, `/:uid`, `/:uid/debat` |
 | `/lobbying` | `/`, `/secteurs`, `/stats`, `/actions`, `/actions/recent`, `/:id`, `/:id/actions` |
 | `/senatoriales` | `/2026`, `/2026/sortants`, `/2026/candidats`, `/2026/resultats`, `/2026/resultats/:departement`, `/2026/elus`, `/2026/elus/:slug` |
