@@ -10,9 +10,20 @@ describe('regrouperModifications', () => {
       { existant: { id: 'v4' }, voulu: { parlementaireId: 'p4', position: 'pour', parDelegation: false } },
     ]);
     expect(groupes).toEqual([
-      { valeurs: { position: 'contre', parDelegation: false }, ids: ['v1', 'v2'] },
-      { valeurs: { position: 'contre', parDelegation: true }, ids: ['v3'] },
-      { valeurs: { position: 'pour', parDelegation: false }, ids: ['v4'] },
+      { valeurs: { position: 'contre', parDelegation: false, statutVotant: null }, ids: ['v1', 'v2'] },
+      { valeurs: { position: 'contre', parDelegation: true, statutVotant: null }, ids: ['v3'] },
+      { valeurs: { position: 'pour', parDelegation: false, statutVotant: null }, ids: ['v4'] },
+    ]);
+  });
+
+  it('sépare les statuts du votant (Sénat)', () => {
+    const groupes = regrouperModifications([
+      { existant: { id: 'v1' }, voulu: { parlementaireId: 'p1', position: 'absent', parDelegation: false, statutVotant: 'president_seance' } },
+      { existant: { id: 'v2' }, voulu: { parlementaireId: 'p2', position: 'absent', parDelegation: false } },
+    ]);
+    expect(groupes).toEqual([
+      { valeurs: { position: 'absent', parDelegation: false, statutVotant: 'president_seance' }, ids: ['v1'] },
+      { valeurs: { position: 'absent', parDelegation: false, statutVotant: null }, ids: ['v2'] },
     ]);
   });
 

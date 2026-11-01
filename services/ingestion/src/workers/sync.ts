@@ -1792,6 +1792,7 @@ export async function syncScrutinsSenat(
           parlementaireId,
           position: vote.position,
           parDelegation: vote.parDelegation,
+          statutVotant: vote.statutVotant ?? null,
         });
       }
 
