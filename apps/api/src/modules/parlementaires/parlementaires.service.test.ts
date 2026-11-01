@@ -158,6 +158,37 @@ describe('ParlementairesService', () => {
       expect(orderBy[0]).toEqual({ statsClassable: 'desc' });
     });
 
+    it('en période carrière, trie et affiche les chiffres de carrière, ceux de la fiche (#108)', async () => {
+      mockPrisma.parlementaire.findMany.mockResolvedValue([
+        {
+          id: 'p1',
+          chambre: 'senat',
+          statsPresence: 100,
+          statsPresenceSolennel: 85,
+          statsLoyaute: 97,
+          statsParticipation: 120,
+          statsScrutins: 120,
+          statsClassable: true,
+          statsCarrierePresence: 99,
+          statsCarrierePresenceSolennel: 89,
+          statsCarriereLoyaute: 98,
+          statsCarriereParticipation: 1621,
+          statsCarriereScrutins: 1631,
+          statsCarriereClassable: true,
+          statsInterventions: 560,
+          statsAmendements: 370,
+          statsCalculatedAt: new Date(),
+        },
+      ]);
+      mockPrisma.parlementaire.count.mockResolvedValue(1);
+
+      const res = await service.getParlementaires({ ...defaultQuery, sort: 'presence', order: 'desc', periode: 'carriere' }, 'senat');
+
+      const { orderBy } = mockPrisma.parlementaire.findMany.mock.calls[0]![0] as { orderBy: object[] };
+      expect(orderBy[0]).toEqual({ statsCarrierePresenceSolennel: { sort: 'desc', nulls: 'last' } });
+      expect(res.data[0]!.stats).toMatchObject({ presence: 99, presenceSolennel: 89, loyaute: 98, participation: 1621, scrutins: 1631 });
+    });
+
     it('ne classe que les députés par présence toutes chambres confondues (#108)', async () => {
       mockPrisma.parlementaire.findMany.mockResolvedValue([]);
       mockPrisma.parlementaire.count.mockResolvedValue(0);
