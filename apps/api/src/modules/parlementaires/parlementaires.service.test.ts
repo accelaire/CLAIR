@@ -139,7 +139,7 @@ describe('ParlementairesService', () => {
       expect(mockPrisma.parlementaire.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({ chambre: 'assemblee' }),
-          orderBy: [{ statsPresence: 'desc' }, { nom: 'asc' }, { id: 'asc' }],
+          orderBy: [{ statsPresence: { sort: 'desc', nulls: 'last' } }, { nom: 'asc' }, { id: 'asc' }],
         })
       );
     });
@@ -378,7 +378,8 @@ describe('ParlementairesService', () => {
 
       const result = await service.getParlementaireStats('parl-1', 'assemblee');
 
-      expect(result.presence).toBe(0);
+      // Null : aucun scrutin où il pouvait voter (président de l'assemblée), pas 0 % (#108).
+      expect(result.presence).toBeNull();
       expect(result.presenceSolennel).toBeNull();
       expect(result.loyaute).toBe(0);
     });

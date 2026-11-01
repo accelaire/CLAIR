@@ -260,8 +260,8 @@ export class ParlementairesService {
         chambre === 'senat'
           ? { statsPresenceSolennel: { sort: order, nulls: 'last' } }
           : carriere
-            ? { statsCarrierePresence: order }
-            : { statsPresence: order },
+            ? { statsCarrierePresence: { sort: order, nulls: 'last' } }
+            : { statsPresence: { sort: order, nulls: 'last' } },
       loyaute: carriere ? { statsCarriereLoyaute: order } : { statsLoyaute: order },
       activite: { statsInterventions: order },
       amendements: { statsAmendements: order },
@@ -492,7 +492,7 @@ export class ParlementairesService {
         amendementsCount: amendementsCount.get(p.id) ?? 0,
         stats: p.statsCalculatedAt
           ? {
-              presence: p.statsPresence ?? 0,
+              presence: p.statsPresence ?? null,
               presenceSolennel: p.statsPresenceSolennel ?? null,
               loyaute: p.statsLoyaute ?? 0,
               participation: p.statsParticipation ?? 0,
@@ -670,11 +670,8 @@ export class ParlementairesService {
     // encore rempli les colonnes de carrière (déploiement, base fraîche).
     if (parlementaire?.statsCalculatedAt) {
       const stats = {
-        // Sénat : null = aucun scrutin où il pouvait voter (président du Sénat).
-        presence:
-          parlementaire.statsCarrierePresence ??
-          parlementaire.statsPresence ??
-          (chambre === 'senat' ? null : 0),
+        // null = aucun scrutin où il pouvait voter (président de l'assemblée).
+        presence: parlementaire.statsCarrierePresence ?? parlementaire.statsPresence ?? null,
         presenceSolennel: parlementaire.statsPresenceSolennel ?? null,
         loyaute: parlementaire.statsCarriereLoyaute ?? parlementaire.statsLoyaute ?? 0,
         participation:

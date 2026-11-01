@@ -150,7 +150,7 @@ export const parlementaireStatsSchema = z.object({
     .max(100)
     .nullable()
     .describe(
-      "Taux de participation aux scrutins publics en %. Au Sénat, les scrutins ordinaires sont votés par groupe : ce taux n'y mesure pas la présence (voir presenceSolennel). Null pour un sénateur sans aucun scrutin où il pouvait voter (président du Sénat).",
+      "Taux de participation aux scrutins publics en %, hors scrutins où l'élu ne pouvait pas voter (président de l'assemblée, président de séance, membre du gouvernement). Au Sénat, les scrutins ordinaires sont votés par groupe : ce taux n'y mesure pas la présence (voir presenceSolennel). Null sans aucun scrutin où il pouvait voter (président de l'assemblée).",
     ),
   presenceSolennel: z
     .number()
