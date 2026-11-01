@@ -363,13 +363,26 @@ function ParlementairesTab() {
           </div>
 
           {/* La présence ne se mesure pas de la même façon dans les deux chambres
-              (#108) : la note dit laquelle est classée. */}
-          {sort === 'presence' && filters.chambre !== 'assemblee' && (
-            <p className="mb-4 rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
-              {filters.chambre === 'senat'
-                ? `Sénateurs classés sur leur présence aux votes solennels. ${PRESENCE_SENAT_EXPLICATION}`
-                : 'Classement des députés. Au Sénat, les scrutins ordinaires sont votés par groupe : choisissez le Sénat pour classer les sénateurs sur leur présence aux votes solennels.'}
-            </p>
+              (#108) : la note dit laquelle est classée. Elle dit aussi la
+              période : la fiche d'un élu présente sa carrière, le classement
+              par défaut son mandat en cours, et les deux chiffres diffèrent. */}
+          {sortEstUnTaux && (
+            <div className="mb-4 space-y-1 rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
+              {sort === 'presence' && filters.chambre !== 'assemblee' && (
+                <p>
+                  {filters.chambre === 'senat'
+                    ? `Sénateurs classés sur leur présence aux votes solennels. ${PRESENCE_SENAT_EXPLICATION}`
+                    : 'Classement des députés. Au Sénat, les scrutins ordinaires sont votés par groupe : choisissez le Sénat pour classer les sénateurs sur leur présence aux votes solennels.'}
+                </p>
+              )}
+              <p>
+                {periode === 'carriere'
+                  ? 'Taux calculés sur toute la carrière parlementaire : ce sont ceux de la fiche de chaque élu.'
+                  : `Taux calculés sur le mandat en cours, pour comparer les élus sur la même période. La fiche d’un élu présente sa carrière entière${
+                      showPeriodeSelect ? ' : choisissez « Carrière complète » pour retrouver ses chiffres.' : '.'
+                    }`}
+              </p>
+            </div>
           )}
 
           <ClassementsTable
