@@ -1675,6 +1675,8 @@ export async function syncScrutinsSenat(
   for (const p of parlementaires) {
     if (p.sourceId) parlementaireMap.set(p.sourceId, p.id);
   }
+  // Ancien sénateur devenu député : son matricule est rangé dans les identifiants.
+  await ajouterIdentifiantsConserves(prisma, 'senat', parlementaireMap);
 
   // Charger les dossiers législatifs pour le mapping dossierRef -> dossierId
   const dossiers = await prisma.dossierLegislatif.findMany({
@@ -2909,6 +2911,7 @@ export async function syncSenatReunions(options: { maxWeeks?: number } = {}): Pr
   for (const s of senateurs) {
     if (s.sourceId) idByMatricule.set(s.sourceId.toUpperCase(), s.id);
   }
+  await ajouterIdentifiantsConserves(prisma, 'senat', idByMatricule);
 
   let created = 0;
   let updated = 0;

@@ -344,6 +344,15 @@ export async function syncSenatFonctions(options: { archive?: string } = {}): Pr
   });
   const senateurs = new Map<string, SenateurConnu>();
   for (const p of parlementaires) senateurs.set(p.sourceId!.toUpperCase(), { id: p.id, sexe: p.sexe });
+  // Ancien sénateur devenu député : son matricule est rangé dans les identifiants.
+  const conserves = await prisma.parlementaireIdentifiant.findMany({
+    where: { chambre: 'senat' },
+    select: { sourceId: true, personne: { select: { id: true, sexe: true } } },
+  });
+  for (const c of conserves) {
+    const cle = c.sourceId.toUpperCase();
+    if (!senateurs.has(cle)) senateurs.set(cle, { id: c.personne.id, sexe: c.personne.sexe });
+  }
 
   const commissionsSenat = await prisma.commission.findMany({
     where: { chambre: 'senat', organeRef: { not: null } },
