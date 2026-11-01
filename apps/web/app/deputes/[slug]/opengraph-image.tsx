@@ -78,7 +78,7 @@ export default async function Image({
           <div style={{ display: 'flex', gap: '16px', marginTop: '16px' }}>
             <OgStat label="Présence" value={`${data.stats.presence}%`} />
             <OgStat label="Loyauté" value={`${data.stats.loyaute}%`} />
-            <OgStat label="Participation" value={`${data.stats.participation}%`} />
+            <OgStat label="Votes" value={data.stats.participation.toLocaleString('fr-FR')} />
           </div>
         )}
       </OgLayout>

@@ -1066,6 +1066,12 @@ model Vote {
   position      String // 'pour', 'contre', 'abstention', 'absent'
   miseAuPoint   String? @map("mise_au_point")
   parDelegation Boolean @default(false) @map("par_delegation")
+  // Sénat : statut particulier du votant publié par DOSLEG (`votsen.stavotidt`).
+  // Un président de séance ou un membre du gouvernement ne peut pas voter : ces
+  // scrutins sortent du calcul de sa présence (ticket #108). NULL = sans statut.
+  // Valeurs : president_seance, gouvernement, conge, excuse, depute,
+  // depute_europeen, haute_cour, deport.
+  statutVotant  String? @map("statut_votant")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @map("updated_at")

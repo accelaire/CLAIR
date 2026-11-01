@@ -830,6 +830,51 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     min: 35,
     query: `SELECT COUNT(*)::int AS value FROM commissions WHERE chambre = 'senat'`,
   },
+  senat_president_en_fonction: {
+    type: 'threshold',
+    label: 'Président du Sénat en fonction (bureau, export_sens)',
+    min: 1,
+    max: 1,
+    // Avant les fonctions datées (ticket #118), la présidence n'apparaissait
+    // nulle part : un seul titulaire, jamais zéro, jamais deux.
+    query: `SELECT COUNT(*)::int AS value FROM mandats
+      WHERE source_uid LIKE 'SENBUR-%' AND date_fin IS NULL AND qualite LIKE 'Présid% du Sénat'`,
+  },
+  senat_scrutins_solennels: {
+    type: 'threshold',
+    label: 'Scrutins solennels du Sénat (votes personnels, déduits des délégations)',
+    // DOSLEG ne publie pas le type d'un scrutin : un scrutin avec des délégations
+    // personnelles est un vote personnel (solennel ou à la tribune), à partir de
+    // 2014-2015. 36 sur les sessions 2021 à 2025 le 01/11/2026. Zéro voudrait
+    // dire que la lecture des délégations a cassé, et la présence des sénateurs
+    // avec elle (#108).
+    min: 30,
+    query: `SELECT COUNT(*)::int AS value FROM scrutins WHERE chambre = 'senat' AND type_vote = 'solennel'`,
+  },
+  senat_commissions_contre_annuaire: {
+    type: 'threshold',
+    label: "Concordance des commissions Sénat en cours avec l'annuaire du jour (%)",
+    // Les commissions viennent du dump export_sens ; l'annuaire du jour
+    // (senateurs.json, gardé dans source_data) en est le contrôle. Part des
+    // appartenances présentes des deux côtés : 100 % le 31/10/2026. Au-delà de
+    // `ECART_ANNUAIRE_MAX` écarts (~97 % sur 388), `senat-fonctions.ts` gèle les
+    // commissions : ce contrôle le signale, et attrape aussi un dump qui ne
+    // serait plus mis à jour.
+    min: 97,
+    query: `WITH annuaire AS (
+        SELECT p.id AS pid, o->>'code' AS ref
+        FROM parlementaires p, jsonb_array_elements(p.source_data->'organismes') o
+        WHERE p.chambre = 'senat' AND p.actif
+          AND o->>'type' = 'COMMISSION' AND o->>'code' ~ '^(COM|COMEUR)-'
+      ), base AS (
+        SELECT m.parlementaire_id AS pid, m.organe_ref AS ref
+        FROM mandats m JOIN parlementaires p ON p.id = m.parlementaire_id
+        WHERE p.chambre = 'senat' AND m.type_organe = 'COMMISSION' AND m.date_fin IS NULL
+          AND m.organe_ref ~ '^(COM|COMEUR)-'
+      )
+      SELECT COALESCE(FLOOR(100.0 * (SELECT COUNT(*) FROM (SELECT * FROM annuaire INTERSECT SELECT * FROM base) i)
+        / NULLIF((SELECT COUNT(*) FROM (SELECT * FROM annuaire UNION SELECT * FROM base) u), 0)), 0)::int AS value`,
+  },
   reunions_count: {
     type: 'threshold',
     label: 'Nombre de réunions',

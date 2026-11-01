@@ -547,7 +547,9 @@ export default function MethodologiePage() {
           <li>
             <strong>Statistiques calculées</strong> : Les taux de présence et de loyauté sont
             calculés par nos soins à partir des données brutes. La méthodologie de calcul
-            est documentée dans notre code source.
+            est documentée dans notre code source. Au Sénat, les scrutins ordinaires sont
+            votés par groupe : la présence n&apos;y est mesurée qu&apos;aux scrutins
+            solennels, où chaque sénateur vote en personne ou délègue son vote.
           </li>
         </ul>
       </div>

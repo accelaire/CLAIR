@@ -57,6 +57,7 @@ import {
 import { backfillMandatsParlementaires } from './workers/backfill-mandats.js';
 import { backfillNatureVote } from './workers/backfill-nature-vote.js';
 import { syncSenateursHistoriques } from './workers/senat-histo.js';
+import { syncSenatFonctions } from './workers/senat-fonctions.js';
 import { SENAT_SESSION_MIN } from './workers/mandats.js';
 import { logger } from './utils/logger';
 import { errorMessage } from './utils/errors';
@@ -402,7 +403,7 @@ program
   .option('--re, --reunions', 'Inclure les réunions/agenda parlementaire (AN)')
   .option('--senat-reunions', 'Inclure les réunions Sénat (scraping HTML comptes rendus)')
   .option('--senat-agenda', 'Inclure l\'agenda Sénat (séances publiques à venir via API senat.fr)')
-  .option('--senat-bureaux', 'Inclure les fonctions au bureau des commissions Sénat (scraping senat.fr)')
+  .option('--senat-fonctions', 'Inclure les fonctions datées des sénateurs : bureau, commissions, groupes (export_sens)')
   .option('--senat-dossier-commissions', 'Inclure les commissions saisies des dossiers Sénat (scraping senat.fr)')
   .option('--senat-videos', 'Inclure les vidéos Sénat (scraping videos.senat.fr)')
   .option('--an-videos', 'Inclure les vidéos AN (videos.assemblee-nationale.fr)')
@@ -428,7 +429,7 @@ program
         includeReunions: options.reunions,
         includeSenatReunions: options.senatReunions,
         includeSenatAgenda: options.senatAgenda,
-        includeSenatBureaux: options.senatBureaux,
+        includeSenatFonctions: options.senatFonctions,
         includeSenatDossierCommissions: options.senatDossierCommissions,
         includeSenatVideos: options.senatVideos,
         includeAnVideos: options.anVideos,
@@ -786,6 +787,30 @@ program
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'sync-senateurs-histo failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: sync-senat-fonctions
+// =============================================================================
+program
+  .command('sync-senat-fonctions')
+  .description('Fonctions datées des sénateurs (bureau du Sénat, commissions, groupes) depuis export_sens.zip')
+  .option('--archive <chemin>', "Lire un export_sens.zip déjà téléchargé plutôt que la version du jour")
+  .action(async (options) => {
+    try {
+      const r = await syncSenatFonctions({ archive: options.archive });
+      console.log('\n📊 Fonctions des sénateurs (export_sens) :');
+      console.log(`   Créées                   : ${r.crees}`);
+      console.log(`   Modifiées                : ${r.modifies}`);
+      console.log(`   Supprimées               : ${r.supprimes}`);
+      console.log(`   Inchangées               : ${r.inchanges}`);
+      console.log(`   Anciennes lignes remplacées : ${r.remplaces}`);
+      console.log(`   Écart avec l'annuaire    : ${r.ecartAnnuaire}${r.commissionsGelees ? ' (commissions gelées)' : ''}`);
+      process.exit(r.commissionsGelees ? 1 : 0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-senat-fonctions failed');
       process.exit(1);
     }
   });

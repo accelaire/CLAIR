@@ -42,6 +42,8 @@ Toutes les routes, avec leurs schémas de réponse : [explorateur de l'API](/api
 | `order` | `asc` (par défaut) ou `desc` |
 | `periode` | Statistiques servant au tri : `mandat` (mandat en cours, par défaut) ou `carriere` (tous mandats cumulés, ce qui avantage mécaniquement les réélus) |
 
+**Présence au Sénat.** Un scrutin ordinaire du Sénat se vote par groupe : un délégué dépose les bulletins de tous les membres, présents ou non. Le taux sur tous les scrutins (`stats.presence`) y est donc une participation, pas une présence. La présence d'un sénateur est `stats.presenceSolennel` : la part des scrutins solennels où il a voté en personne (un vote confié à un collègue compte comme une absence). Le président du Sénat, le président de séance et les membres du gouvernement, qui ne votent pas, sont hors calcul ; `presence` vaut `null` quand il ne reste aucun scrutin (président du Sénat). En conséquence, `sort=presence` trie les sénateurs sur `presenceSolennel`, et sans `chambre` ne classe que les députés.
+
 ---
 
 ## 🗳️ Votes d'un parlementaire

@@ -16,6 +16,12 @@ const stats = [
       'Pourcentage de scrutins solennels auxquels le parlementaire a participé (voté pour, contre ou abstention). Les scrutins solennels portent sur l\u2019ensemble d\u2019un texte de loi et sont les plus importants.',
   },
   {
+    icon: TrendingUp,
+    title: 'Présence au Sénat',
+    description:
+      'Au Sénat, un scrutin ordinaire se vote par groupe : un délégué dépose les bulletins de tous les membres, présents ou non. Seuls les scrutins solennels, où chacun vote en personne ou confie son vote à un collègue, mesurent la présence. Un vote confié compte comme une absence ; le président du Sénat, le président de séance et les membres du gouvernement, qui ne votent pas, sont hors calcul. Le taux sur tous les scrutins est affiché comme une participation.',
+  },
+  {
     icon: ShieldCheck,
     title: 'Loyauté au groupe',
     description:

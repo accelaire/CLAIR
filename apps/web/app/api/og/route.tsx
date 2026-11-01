@@ -2,6 +2,7 @@ import { ImageResponse } from 'next/og';
 import { NextRequest } from 'next/server';
 import { fetchFromApi } from '@/lib/api-server';
 import { OgLayout, OgStat, OG_SIZE, loadFont } from '@/lib/og';
+import { presenceDe } from '@/lib/presence';
 
 export const runtime = 'nodejs';
 
@@ -29,12 +30,27 @@ interface ParlementaireOg {
   chambre: 'assemblee' | 'senat';
   groupe: { nom: string; couleur: string | null } | null;
   stats: {
-    presence: number;
+    presence: number | null;
+    presenceSolennel?: number | null;
     loyaute: number;
     participation: number;
     amendements: number;
     interventions: number;
   } | null;
+}
+
+/**
+ * Valeur d'un critère pour l'image : la présence d'un sénateur se lit aux votes
+ * solennels, les scrutins ordinaires étant votés par groupe (#108).
+ */
+function valeurCritere(p: Pick<ParlementaireOg, 'chambre' | 'stats'>, sort: string): string {
+  if (!p.stats) return '—';
+  if (sort === 'presence') {
+    const v = presenceDe(p.chambre, p.stats);
+    return v === null ? '—' : `${v}%`;
+  }
+  if (sort === 'loyaute') return `${p.stats.loyaute}%`;
+  return (p.stats[sort as 'amendements' | 'interventions'] ?? 0).toLocaleString('fr-FR');
 }
 
 interface GroupeOg {
@@ -103,11 +119,7 @@ async function renderClassement(searchParams: URLSearchParams, font: ArrayBuffer
                 {p.prenom} {p.nom}
               </span>
               <span style={{ fontSize: '22px', fontWeight: 700, color: '#3b82f6' }}>
-                {p.stats
-                  ? sort === 'presence' || sort === 'loyaute'
-                    ? `${p.stats[sort as 'presence' | 'loyaute']}%`
-                    : (p.stats[sort as 'amendements' | 'interventions'] ?? 0).toLocaleString('fr-FR')
-                  : '—'}
+                {valeurCritere(p, sort)}
               </span>
             </div>
           ))}
@@ -130,11 +142,7 @@ async function renderClassementParlementaire(searchParams: URLSearchParams, font
   const data = res?.data;
   if (!data) return new Response('Not found', { status: 404 });
 
-  const statValue = data.stats
-    ? sort === 'presence' || sort === 'loyaute'
-      ? `${data.stats[sort as 'presence' | 'loyaute']}%`
-      : (data.stats[sort as 'amendements' | 'interventions'] ?? 0).toLocaleString('fr-FR')
-    : '—';
+  const statValue = valeurCritere(data, sort);
 
   return new ImageResponse(
     (
@@ -178,7 +186,7 @@ async function renderClassementParlementaire(searchParams: URLSearchParams, font
           <OgStat label={label} value={statValue} />
           {data.stats && (
             <>
-              <OgStat label="Présence" value={`${data.stats.presence}%`} />
+              <OgStat label={data.chambre === 'senat' ? 'Présence (solennels)' : 'Présence'} value={valeurCritere(data, 'presence')} />
               <OgStat label="Loyauté" value={`${data.stats.loyaute}%`} />
             </>
           )}

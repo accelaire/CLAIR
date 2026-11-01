@@ -171,7 +171,7 @@ export function SortantCard({
       <div className="mt-3 grid grid-cols-2 gap-2 border-t pt-3 text-sm">
         <div>
           <p className="font-medium">{fmt(sortant.bilan.presence, ' %')}</p>
-          <p className="text-xs text-muted-foreground">Présence</p>
+          <p className="text-xs text-muted-foreground">Présence (solennels)</p>
         </div>
         <div>
           <p className="font-medium">{fmt(sortant.bilan.loyaute, ' %')}</p>

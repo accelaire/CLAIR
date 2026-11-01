@@ -39,6 +39,7 @@ import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { InterventionsList } from '@/components/parlementaire/interventions-list';
 import { MandatsBlock } from '@/components/parlementaire/mandats-timeline';
+import { fonctionsEnVue, presideUneAssemblee } from '@/lib/fonctions-en-vue';
 import {
   FiltreChambre,
   paramChambre,
@@ -588,6 +589,15 @@ export default function PageClient({
             {depute.prenom} {depute.nom}
           </h1>
 
+          {/* Fonction en cours (présidence de l'assemblée, d'une commission, d'un
+              groupe) : sans elle, rien ne disait sur sa fiche que Gérard Larcher
+              préside le Sénat (ticket #118). */}
+          {fonctionsEnVue(depute.mandats ?? []).length > 0 && (
+            <p className="mt-1 text-base font-medium text-primary">
+              {fonctionsEnVue(depute.mandats ?? []).join(' · ')}
+            </p>
+          )}
+
           {/* Groupe. Pour un mandat terminé, le groupe affiché est celui du dernier
               mandat : présenté seul, il laissait croire à un élu en exercice (David
               Guiraud, maire de Roubaix depuis avril 2026, apparaissait « La France
@@ -701,6 +711,7 @@ export default function PageClient({
         <StatsParlementaire
           stats={depute.stats}
           titre={fonction.enCours ? 'Statistiques' : bilanMandats(fonction.plusieursMandats)}
+          preside={presideUneAssemblee(depute.mandats ?? [])}
         />
       )}
 
