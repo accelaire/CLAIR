@@ -840,6 +840,17 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     query: `SELECT COUNT(*)::int AS value FROM mandats
       WHERE source_uid LIKE 'SENBUR-%' AND date_fin IS NULL AND qualite LIKE 'Présid% du Sénat'`,
   },
+  senat_scrutins_solennels: {
+    type: 'threshold',
+    label: 'Scrutins solennels du Sénat (votes personnels, déduits des délégations)',
+    // DOSLEG ne publie pas le type d'un scrutin : un scrutin avec des délégations
+    // personnelles est un vote personnel (solennel ou à la tribune), à partir de
+    // 2014-2015. 36 sur les sessions 2021 à 2025 le 01/11/2026. Zéro voudrait
+    // dire que la lecture des délégations a cassé, et la présence des sénateurs
+    // avec elle (#108).
+    min: 30,
+    query: `SELECT COUNT(*)::int AS value FROM scrutins WHERE chambre = 'senat' AND type_vote = 'solennel'`,
+  },
   senat_commissions_contre_annuaire: {
     type: 'threshold',
     label: "Concordance des commissions Sénat en cours avec l'annuaire du jour (%)",
