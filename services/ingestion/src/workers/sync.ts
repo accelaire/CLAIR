@@ -1528,6 +1528,10 @@ export async function syncScrutins(
           parlementaireId,
           position: vote.position,
           parDelegation: vote.parDelegation,
+          // Non-votant de droit (président, président de séance, gouvernement) :
+          // absent du calcul de sa présence (#108). Clé omise sinon, pour que
+          // l'empreinte des scrutins sans non-votant ne bouge pas.
+          ...(vote.statutVotant ? { statutVotant: vote.statutVotant } : {}),
         });
       }
 
