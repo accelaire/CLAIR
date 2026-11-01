@@ -58,29 +58,32 @@ function majoriteUniqueDuGroupe(decompte: 'group_tallies'): Prisma.Sql {
 }
 
 /**
- * Scrutins du Sénat où une personne ne pouvait pas voter (ticket #108) : ils
- * sortent du numérateur ET du dénominateur de sa présence.
+ * Scrutins où une personne ne pouvait pas voter (ticket #108), dans les deux
+ * chambres : ils sortent du numérateur ET du dénominateur de sa présence.
  *
- * - Président du Sénat : il ne vote pas, par usage. Gérard Larcher affichait
- *   18 % de présence en carrière, ses seuls votes datant de 2007 et de
- *   2011-2014, quand il ne présidait pas. Périodes prises au bureau du Sénat
- *   (`senat-fonctions.ts`), DOSLEG ne marquant la présidence que sur une
- *   minorité de scrutins (157 lignes sur 4 500 pour lui).
- * - Président de séance, membre du gouvernement : statut publié par DOSLEG
- *   sur la ligne du vote (`votes.statut_votant`).
+ * - Président de l'assemblée : il ne vote pas, par usage. Gérard Larcher
+ *   affichait 18 % de présence en carrière (ses seuls votes datent de 2007 et
+ *   de 2011-2014, quand il ne présidait pas), Yaël Braun-Pivet 1 %. Périodes
+ *   prises au bureau (`senat-fonctions.ts` pour le Sénat, AMO pour
+ *   l'Assemblée), la source ne marquant pas la présidence sur tous les scrutins.
+ * - Président de séance, membre du gouvernement (et président de l'Assemblée) :
+ *   statut publié sur la ligne du vote (`votes.statut_votant`), par DOSLEG au
+ *   Sénat, par les non-votants du scrutin à l'Assemblée.
  */
-const EMPECHEMENTS_SENAT = Prisma.sql`
+const EMPECHEMENTS = Prisma.sql`
   SELECT v.parlementaire_id AS personne_id, v.scrutin_id
   FROM votes v
-  JOIN scrutins s ON s.id = v.scrutin_id AND s.chambre = 'senat'
-  WHERE v.statut_votant IN ('president_seance', 'gouvernement')
+  WHERE v.statut_votant IN ('president_seance', 'gouvernement', 'president_assemblee')
   UNION
   SELECT f.parlementaire_id AS personne_id, s.id AS scrutin_id
   FROM mandats f
-  JOIN scrutins s ON s.chambre = 'senat'
-    AND s.date >= f.date_debut
+  JOIN scrutins s ON s.date >= f.date_debut
     AND (f.date_fin IS NULL OR s.date <= f.date_fin)
-  WHERE f.source_uid LIKE 'SENBUR-%' AND f.qualite LIKE 'Présid% du Sénat'`;
+    AND (
+      (s.chambre = 'senat' AND f.source_uid LIKE 'SENBUR-%' AND f.qualite LIKE 'Présid% du Sénat')
+      OR (s.chambre = 'assemblee' AND f.type_organe = 'BUREAU'
+          AND f.qualite IN ('Président de l''Assemblée nationale', 'Présidente de l''Assemblée nationale'))
+    )`;
 
 // Pour la version legacy uniquement
 const limit = pLimit(1);
@@ -171,7 +174,7 @@ export async function calculateAllStats(
     logger.info({ includeFrozen }, 'Calculating per-mandate stats...');
 
     const mandatStatsUpdated = await prisma.$executeRaw`
-      WITH empechements AS (${EMPECHEMENTS_SENAT}),
+      WITH empechements AS (${EMPECHEMENTS}),
       mandats_cibles AS (
         SELECT m.id, m.chambre, m.legislature, m.date_debut, m.date_fin,
                m.personne_id, m.groupe_id
@@ -217,21 +220,24 @@ export async function calculateAllStats(
       -- (total=0) : il reçoit alors interventions/amendements sans rester à NULL.
       denom_assemblee AS (
         SELECT m.id as mandat_id,
-               COUNT(s.id)::bigint as total,
-               COUNT(s.id) FILTER (WHERE s.type_vote = 'solennel')::bigint as total_solennel
+               COUNT(s.id) FILTER (WHERE e.scrutin_id IS NULL)::bigint as total,
+               COUNT(s.id) FILTER (WHERE s.type_vote = 'solennel' AND e.scrutin_id IS NULL)::bigint as total_solennel,
+               COUNT(s.id)::bigint as total_brut
         FROM mandats_cibles m
         LEFT JOIN scrutins s ON s.chambre = 'assemblee'
           AND s.legislature IS NOT NULL
           AND s.legislature = m.legislature
           AND s.date >= m.date_debut
           AND (m.date_fin IS NULL OR s.date <= m.date_fin)
+        LEFT JOIN empechements e ON e.personne_id = m.personne_id AND e.scrutin_id = s.id
         WHERE m.chambre = 'assemblee'
         GROUP BY m.id
       ),
       denom_senat AS (
         SELECT m.id as mandat_id,
                COUNT(s.id) FILTER (WHERE e.scrutin_id IS NULL)::bigint as total,
-               COUNT(s.id) FILTER (WHERE s.type_vote = 'solennel' AND e.scrutin_id IS NULL)::bigint as total_solennel
+               COUNT(s.id) FILTER (WHERE s.type_vote = 'solennel' AND e.scrutin_id IS NULL)::bigint as total_solennel,
+               COUNT(s.id)::bigint as total_brut
         FROM mandats_cibles m
         LEFT JOIN scrutins s ON s.chambre = 'senat'
           AND s.date >= m.date_debut
@@ -315,9 +321,10 @@ export async function calculateAllStats(
       SET
         stats_presence = CASE
           WHEN d.total > 0 THEN ROUND((COALESCE(n.votes, 0)::float / d.total) * 100)
-          -- Sénateur sans aucun scrutin où il pouvait voter (président du Sénat
-          -- sur tout le mandat) : non mesurable, pas 0 % (#108).
-          WHEN mp.chambre = 'senat' THEN NULL
+          -- Aucun scrutin où il pouvait voter (président de l'assemblée sur tout
+          -- le mandat) : non mesurable, pas 0 % (#108). Au Sénat, un mandat sans
+          -- scrutin du tout l'est aussi.
+          WHEN mp.chambre = 'senat' OR d.total_brut > 0 THEN NULL
           ELSE 0 END,
         stats_presence_solennel = CASE
           WHEN d.total_solennel > 0 THEN ROUND((COALESCE(n.votes_solennel, 0)::float / d.total_solennel) * 100)
@@ -364,7 +371,7 @@ export async function calculateAllStats(
     // deux chambres somme ses scrutins couverts AN + Sénat en une seule ligne, cohérent
     // avec le numérateur qui compte lui aussi tous chambres confondues.
     const baseStatsUpdated = await prisma.$executeRaw`
-      WITH empechements AS (${EMPECHEMENTS_SENAT}),
+      WITH empechements AS (${EMPECHEMENTS}),
       scrutins_couverts AS (
         -- Une ligne par (personne, scrutin couvert) : le DISTINCT dédoublonne les
         -- chevauchements de mandats sur un même scrutin.
@@ -380,10 +387,16 @@ export async function calculateAllStats(
                  AND s.date >= m.date_debut
                  AND (m.date_fin IS NULL OR s.date <= m.date_fin))
               )
-        -- Scrutins où la personne ne pouvait pas voter : hors dénominateur (#108).
+      ),
+      -- Scrutins où la personne ne pouvait pas voter : hors dénominateur (#108).
+      scrutins_couverts_votables AS (
+        SELECT sc.* FROM scrutins_couverts sc
         WHERE NOT EXISTS (
-          SELECT 1 FROM empechements e WHERE e.personne_id = m.personne_id AND e.scrutin_id = s.id
+          SELECT 1 FROM empechements e WHERE e.personne_id = sc.personne_id AND e.scrutin_id = sc.scrutin_id
         )
+      ),
+      scrutins_couverts_bruts AS (
+        SELECT personne_id, COUNT(*)::bigint as total_brut FROM scrutins_couverts GROUP BY personne_id
       ),
       scrutin_counts AS (
         -- Dénominateur carrière : une seule ligne par personne (SUM des deux chambres).
@@ -391,7 +404,7 @@ export async function calculateAllStats(
                COUNT(*)::bigint as total,
                COUNT(*) FILTER (WHERE type_vote = 'solennel')::bigint as total_solennel,
                COUNT(*) FILTER (WHERE type_vote = 'solennel' AND chambre = 'senat')::bigint as total_solennel_senat
-        FROM scrutins_couverts
+        FROM scrutins_couverts_votables
         GROUP BY personne_id
       ),
       vote_stats AS (
@@ -461,7 +474,12 @@ export async function calculateAllStats(
       ),
       -- Même définition du mandat en cours que la copie plus bas.
       mandat_courant AS (
-        SELECT DISTINCT ON (m.personne_id) m.personne_id, m.stats_presence_solennel
+        SELECT DISTINCT ON (m.personne_id) m.personne_id, m.stats_presence_solennel,
+               -- Mandat en cours sans aucun scrutin où il pouvait voter (président
+               -- de l'assemblée) : la présence solennelle ne retombe pas sur la
+               -- carrière. Yaël Braun-Pivet y gardait 49 %, sa présidence de la
+               -- XVIe n'étant pas datée dans nos données (#108).
+               (m.date_fin IS NULL AND m.stats_presence IS NULL) AS non_mesurable
         FROM mandats_parlementaires m
         JOIN parlementaires p ON p.id = m.personne_id AND p.chambre = m.chambre
         WHERE m.chambre LIKE ${chambreFilter}
@@ -475,7 +493,7 @@ export async function calculateAllStats(
           p.id,
           CASE
             WHEN sc.total > 0 THEN ROUND((COALESCE(vs.votes_non_absent, 0)::float / sc.total) * 100)
-            WHEN p.chambre = 'senat' THEN NULL
+            WHEN p.chambre = 'senat' OR COALESCE(scb.total_brut, 0) > 0 THEN NULL
             ELSE 0
           END as new_presence,
           CASE
@@ -496,6 +514,7 @@ export async function calculateAllStats(
           COALESCE(ast.total_adoptes, 0) as new_adoptes
         FROM parlementaires p
         LEFT JOIN scrutin_counts sc ON sc.personne_id = p.id
+        LEFT JOIN scrutins_couverts_bruts scb ON scb.personne_id = p.id
         LEFT JOIN vote_stats vs ON vs.parlementaire_id = p.id
         LEFT JOIN intervention_stats ist ON ist.parlementaire_id = p.id
         LEFT JOIN amendement_stats ast ON ast.parlementaire_id = p.id
@@ -525,10 +544,13 @@ export async function calculateAllStats(
         stats_carriere_participation = all_stats.new_participation,
         stats_carriere_interventions = all_stats.new_interventions,
         stats_carriere_amendements = all_stats.new_amendements,
-        stats_presence_solennel = COALESCE(
-          mc.stats_presence_solennel,
-          CASE WHEN parlementaires.chambre = 'senat' THEN all_stats.new_presence_solennel_senat ELSE all_stats.new_presence_solennel END
-        ),
+        stats_presence_solennel = CASE
+          WHEN mc.non_mesurable THEN NULL
+          ELSE COALESCE(
+            mc.stats_presence_solennel,
+            CASE WHEN parlementaires.chambre = 'senat' THEN all_stats.new_presence_solennel_senat ELSE all_stats.new_presence_solennel END
+          )
+        END,
         stats_interventions = all_stats.new_interventions,
         stats_questions = all_stats.new_questions,
         stats_amendements = all_stats.new_amendements,
@@ -623,6 +645,7 @@ export async function calculateAllStats(
       WITH mandat_courant AS (
         SELECT DISTINCT ON (m.personne_id)
                m.personne_id,
+               m.date_fin,
                m.stats_presence,
                m.stats_loyaute,
                m.stats_participation
@@ -636,9 +659,10 @@ export async function calculateAllStats(
       )
       UPDATE parlementaires p
       SET
-        -- Au Sénat, un NULL du mandat en cours veut dire « non mesurable »
-        -- (président du Sénat) : il est recopié, pas remplacé par l'ancienne valeur.
-        stats_presence = CASE WHEN p.chambre = 'senat' THEN mc.stats_presence
+        -- Mandat en cours, ou Sénat : un NULL veut dire « non mesurable »
+        -- (président de l'assemblée), il est recopié tel quel (#108). Un mandat
+        -- clos sans valeur garde l'ancienne, comme avant.
+        stats_presence = CASE WHEN p.chambre = 'senat' OR mc.date_fin IS NULL THEN mc.stats_presence
                               ELSE COALESCE(mc.stats_presence, p.stats_presence) END,
         stats_loyaute = COALESCE(mc.stats_loyaute, p.stats_loyaute),
         stats_participation = COALESCE(mc.stats_participation, p.stats_participation)
