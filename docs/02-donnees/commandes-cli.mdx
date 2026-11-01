@@ -178,7 +178,7 @@ pnpm ingestion:calculate-stats -c assemblee          # ou senat
 pnpm ingestion:calculate-stats --include-frozen      # recalcule aussi les législatures passées
 ```
 
-Calcule la présence, la présence aux scrutins solennels, la loyauté au groupe, la participation, les compteurs d'interventions et d'amendements, les stats de carrière, les stats par mandat, puis les stats de groupes, les alliances entre groupes et les positions par thématique. `reconcile-actif` réaligne `parlementaires.actif` sur l'existence d'un mandat en cours.
+Calcule la présence (au Sénat, hors scrutins où le sénateur ne pouvait pas voter : présidence du Sénat, présidence de séance, gouvernement), la présence aux scrutins solennels (au Sénat, un vote par délégation y compte comme une absence), la loyauté au groupe, la participation, les compteurs d'interventions et d'amendements, les stats de carrière, les stats par mandat, puis les stats de groupes, les alliances entre groupes et les positions par thématique. `reconcile-actif` réaligne `parlementaires.actif` sur l'existence d'un mandat en cours.
 
 ---
 
