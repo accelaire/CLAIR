@@ -13,7 +13,7 @@ const stats = [
     icon: TrendingUp,
     title: 'Présence solennelle',
     description:
-      'Pourcentage de scrutins solennels auxquels le parlementaire a participé (voté pour, contre ou abstention). Les scrutins solennels portent sur l\u2019ensemble d\u2019un texte de loi et sont les plus importants.',
+      'Pourcentage de scrutins solennels auxquels le parlementaire a participé (voté pour, contre ou abstention). Les scrutins solennels portent sur l\u2019ensemble d\u2019un texte de loi et sont les plus importants. Les scrutins tenus pendant qu\u2019il était membre du Gouvernement ou président de sa chambre n\u2019y comptent pas : un ministre ne vote pas, un président de chambre seulement par exception. Sans aucun scrutin publié sur ses périodes de mandat, le taux n\u2019est pas calculé et s\u2019affiche « — », jamais 0 %.',
   },
   {
     icon: TrendingUp,

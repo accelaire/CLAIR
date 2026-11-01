@@ -42,9 +42,9 @@ interface ParlementaireItem {
     position: string | null;
   } | null;
   stats: {
-    presence: number;
+    presence: number | null;
     presenceSolennel?: number | null;
-    loyaute: number;
+    loyaute: number | null;
     participation: number;
     amendements: number;
     interventions: number;
@@ -267,7 +267,7 @@ function ParlementairesTab() {
 
   const hasData = (item: ParlementaireItem) =>
     item.stats !== null &&
-    ((presenceDe(item.chambre, item.stats) ?? 0) > 0 || item.stats.loyaute > 0 || item.stats.amendements > 0 || item.stats.interventions > 0);
+    ((presenceDe(item.chambre, item.stats) ?? 0) > 0 || (item.stats.loyaute ?? 0) > 0 || item.stats.amendements > 0 || item.stats.interventions > 0);
 
   return (
     <div>

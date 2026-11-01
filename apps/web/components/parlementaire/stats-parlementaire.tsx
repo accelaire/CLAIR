@@ -10,18 +10,31 @@ import { PRESENCE_SENAT_EXPLICATION, PRESENCE_SENAT_NON_MESURABLE } from '@/lib/
 // fausses pour ces élus (« carrière au Sénat » sur des votes de l'Assemblée).
 
 export interface StatsParlementaireData {
-  /** Null au Sénat sans aucun scrutin où il pouvait voter (président du Sénat). */
+  /**
+   * Null sans aucun scrutin où il pouvait voter : président de l'assemblée,
+   * mandats passés au Gouvernement. Ce n'est pas 0 %.
+   */
   presence: number | null;
   /**
    * Null sans scrutin solennel sur la période. Au Sénat, c'est la seule mesure
    * de la présence : les scrutins ordinaires y sont votés par groupe (#108).
    */
   presenceSolennel?: number | null;
-  loyaute: number;
+  /** Null sans vote exprimé au sein d'un groupe. */
+  loyaute: number | null;
   participation: number;
   interventions: number;
   questions: number;
+  /** Scrutins sur lesquels porte la présence (carrière). */
+  scrutins?: number | null;
 }
+
+/**
+ * En dessous, un député ne figure pas dans le classement de présence, et aucun
+ * élu dans celui de loyauté (SEUIL_SCRUTINS_CLASSEMENT, ingestion). La présence
+ * des sénateurs, mesurée sur les scrutins solennels, n'a pas de seuil.
+ */
+const SEUIL_SCRUTINS_CLASSEMENT = 50;
 
 const CARRIERE = 'Calculé sur l’ensemble de la carrière parlementaire, Assemblée et Sénat, tous mandats confondus.';
 const COMPRENDRE = '/comprendre/parlementaire';
@@ -32,6 +45,7 @@ function StatCard({
   icon: Icon,
   suffix = '',
   subtitle,
+  vide,
   tooltip,
   texteSiVide = 'N/A',
 }: {
@@ -40,6 +54,8 @@ function StatCard({
   icon: LucideIcon;
   suffix?: string;
   subtitle?: string;
+  /** Ce qu'on dit quand la valeur n'existe pas, à la place d'un 0 qui mentirait. */
+  vide?: string;
   tooltip: string;
   /** Texte affiché sans valeur. */
   texteSiVide?: string;
@@ -55,6 +71,7 @@ function StatCard({
         <span className="text-2xl font-bold">
           {value !== null ? `${value.toLocaleString('fr-FR')}${suffix}` : texteSiVide}
         </span>
+        {value === null && vide && <span className="text-sm text-muted-foreground">{vide}</span>}
         {subtitle && <span className="text-sm text-muted-foreground">{subtitle}</span>}
       </div>
     </div>
@@ -85,6 +102,11 @@ function CartePresence({
   const assemblee = senat ? 'le président du Sénat' : 'le président de l’Assemblée';
   const horsCalcul =
     'Les scrutins où l’élu ne pouvait pas voter (présidence de l’assemblée ou de la séance, membre du gouvernement) sont hors calcul.';
+  // Un taux sur 28 scrutins se lit autrement qu'un taux sur 8 000 : on le dit.
+  const peuDeScrutins =
+    !senat && stats.scrutins != null && stats.scrutins < SEUIL_SCRUTINS_CLASSEMENT
+      ? `sur ${stats.scrutins} scrutin${stats.scrutins > 1 ? 's' : ''} seulement`
+      : undefined;
 
   // Président d'assemblée en exercice : il ne vote pas, quels que soient les
   // chiffres de carrière (sa présidence passée n'est pas toujours datée dans les
@@ -126,11 +148,12 @@ function CartePresence({
       label={senat ? 'Participation' : 'Présence'}
       value={stats.presence}
       suffix="%"
+      subtitle={peuDeScrutins}
       icon={ShieldCheck}
       tooltip={
         senat
           ? `Pourcentage de scrutins publics où un bulletin a été déposé pour ce sénateur. ${PRESENCE_SENAT_EXPLICATION} ${PRESENCE_SENAT_NON_MESURABLE}`
-          : `Pourcentage de scrutins publics auxquels ce député a participé (voté pour, contre ou abstention). ${horsCalcul} ${CARRIERE}`
+          : `Pourcentage de scrutins publics auxquels ce député a participé (voté pour, contre ou abstention). ${horsCalcul} Sur moins de ${SEUIL_SCRUTINS_CLASSEMENT} scrutins, il n’entre pas dans le classement. ${CARRIERE}`
       }
     />
   );
@@ -157,6 +180,8 @@ export function StatsParlementaire({
           label="Loyauté au groupe"
           value={stats.loyaute}
           suffix="%"
+          texteSiVide="—"
+          vide="aucun vote à comparer"
           icon={Users}
           tooltip={`Pourcentage de votes alignés avec la position majoritaire de son groupe politique au moment du vote. ${CARRIERE}`}
         />

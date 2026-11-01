@@ -40,6 +40,7 @@ import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { InterventionsList } from '@/components/parlementaire/interventions-list';
 import { MandatsBlock } from '@/components/parlementaire/mandats-timeline';
 import { fonctionsEnVue, presideUneAssemblee } from '@/lib/fonctions-en-vue';
+import { dateLongue, fonctionEnCours, type FonctionGouvernementale } from '@/lib/gouvernements';
 import {
   FiltreChambre,
   paramChambre,
@@ -73,13 +74,14 @@ export interface DeputeDetail {
     nom: string;
   } | null;
   stats?: {
-    presence: number;
+    presence: number | null;
     presenceSolennel: number | null;
-    loyaute: number;
+    loyaute: number | null;
     participation: number;
     interventions: number;
     amendements: { proposes: number; adoptes: number };
     questions: number;
+    scrutins?: number | null;
   };
   // Enrichissement IA
   resumeIA?: string | null;
@@ -99,6 +101,8 @@ export interface DeputeDetail {
     sourceUid?: string | null;
     organeRef?: string | null;
   }>;
+  // Postes ministériels et présidence de la République (AMO30)
+  fonctionsGouvernementales?: FonctionGouvernementale[];
   // Mandats parlementaires (parcours par législature : groupe + circonscription)
   mandatsParlementaires?: Array<{
     chambre?: string;
@@ -546,6 +550,7 @@ export default function PageClient({
     actif: depute.actif,
     mandats: depute.mandatsParlementaires,
   });
+  const gouvernementEnCours = fonctionEnCours(depute.fonctionsGouvernementales, depute.sexe);
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -596,6 +601,21 @@ export default function PageClient({
             <p className="mt-1 text-base font-medium text-primary">
               {fonctionsEnVue(depute.mandats ?? []).join(' · ')}
             </p>
+          )}
+          {/* Une fonction au Gouvernement en cours passe avant le mandat : la
+              fiche de Sébastien Lecornu, sénateur un mois en 2020, présente
+              d'abord le Premier ministre. Le parcours complet suit, dans la
+              partie « Mandats ». */}
+          {gouvernementEnCours && (
+            <div className="mt-3 inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm md:justify-start">
+              <span className="font-semibold">{gouvernementEnCours.titre}</span>
+              <span className="text-muted-foreground">depuis le {dateLongue(gouvernementEnCours.depuis)}</span>
+              {gouvernementEnCours.gouvernement && (
+                <Link href={`/gouvernements/${gouvernementEnCours.gouvernement.slug}`} className="text-primary hover:underline">
+                  Gouvernement {gouvernementEnCours.gouvernement.nom}
+                </Link>
+              )}
+            </div>
           )}
 
           {/* Groupe. Pour un mandat terminé, le groupe affiché est celui du dernier
@@ -717,7 +737,8 @@ export default function PageClient({
 
       {/* Mandats et fonctions */}
       {((depute.mandats?.length ?? 0) > 0 ||
-        (depute.mandatsParlementaires?.length ?? 0) > 0) && (
+        (depute.mandatsParlementaires?.length ?? 0) > 0 ||
+        (depute.fonctionsGouvernementales?.length ?? 0) > 0) && (
         <div className="mb-8">
           {/* Mandats : frise des législatures + fonctions en commission rattachées */}
           <MandatsBlock
@@ -725,6 +746,7 @@ export default function PageClient({
             sexe={depute.sexe}
             chambre="assemblee"
             fonctions={depute.mandats ?? []}
+            fonctionsGouvernementales={depute.fonctionsGouvernementales ?? []}
           />
         </div>
       )}
