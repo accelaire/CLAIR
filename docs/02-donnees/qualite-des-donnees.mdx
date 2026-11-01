@@ -35,6 +35,7 @@ Code : `services/ingestion/src/checks/data-quality.ts`. Le contrôle réussit si
 | Liaisons qui ne datent pas leur parent (cosignataires, amendement ↔ scrutin, secteurs, participants) |
 | Parlementaires actifs sans groupe |
 | Personnes à la fois député et sénateur en cours de mandat |
+| Fiches portant des mandats de l'autre chambre sans son identifiant (homonymes fusionnés : `separer-homonyme` ; vrai changement de chambre : `lier-identifiant`) |
 | Mandats d'organe AN ouverts sans mandat de député ouvert |
 | Liens scrutin → dossier entre chambres différentes |
 | Liens scrutin → dossier entre législatures différentes (AN) |
