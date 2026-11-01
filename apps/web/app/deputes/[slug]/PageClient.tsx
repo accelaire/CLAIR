@@ -39,7 +39,7 @@ import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { InterventionsList } from '@/components/parlementaire/interventions-list';
 import { MandatsBlock } from '@/components/parlementaire/mandats-timeline';
-import { fonctionsEnVue } from '@/lib/fonctions-en-vue';
+import { fonctionsEnVue, presideUneAssemblee } from '@/lib/fonctions-en-vue';
 import {
   FiltreChambre,
   paramChambre,
@@ -711,6 +711,7 @@ export default function PageClient({
         <StatsParlementaire
           stats={depute.stats}
           titre={fonction.enCours ? 'Statistiques' : bilanMandats(fonction.plusieursMandats)}
+          preside={presideUneAssemblee(depute.mandats ?? [])}
         />
       )}
 

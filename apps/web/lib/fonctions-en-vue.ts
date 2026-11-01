@@ -14,6 +14,14 @@ export interface FonctionEnCours {
 }
 
 const PRESIDENCE = /^présidente?$/i;
+
+/**
+ * Commissions dont la présidence se met en avant : permanentes (et affaires
+ * européennes au Sénat), d'enquête, spéciales. Les présidences tenues d'office
+ * par le président de l'Assemblée (comité d'évaluation, section de l'APF…)
+ * encombraient la ligne sous son nom.
+ */
+const TYPES_COMMISSION = new Set(['COMMISSION', 'COMPER', 'CNPE', 'CNPS']);
 const RAPPORTEUR_GENERAL = /^rapporteure? générale?$/i;
 
 /** « Commission des finances » → « commission des finances », pour s'insérer dans une phrase. */
@@ -26,7 +34,7 @@ function avecOrgane(qualite: string, organe: string): string {
   const o = minusculeInitiale(organe);
   if (o.startsWith('commission') || o.startsWith('délégation')) return `${qualite} de la ${o}`;
   if (o.startsWith('groupe')) return `${qualite} du ${o}`;
-  return `${qualite} (${organe})`;
+  return `${qualite} de ${o}`;
 }
 
 /**
@@ -39,7 +47,7 @@ export function fonctionsEnVue(fonctions: readonly FonctionEnCours[]): string[] 
   const enCours = fonctions.filter((f) => !f.dateFin && f.qualite && !/d['’]âge/i.test(f.qualite));
   const bureau = enCours.filter((f) => f.typeOrgane === 'BUREAU').map((f) => f.qualite!.trim());
   const commissions = enCours
-    .filter((f) => f.typeOrgane !== 'BUREAU' && f.typeOrgane !== 'GP')
+    .filter((f) => TYPES_COMMISSION.has(f.typeOrgane))
     .filter((f) => PRESIDENCE.test(f.qualite!.trim()) || RAPPORTEUR_GENERAL.test(f.qualite!.trim()))
     .map((f) => {
       const organe = f.commission?.nom || f.institution;
@@ -49,4 +57,14 @@ export function fonctionsEnVue(fonctions: readonly FonctionEnCours[]): string[] 
     .filter((f) => f.typeOrgane === 'GP' && PRESIDENCE.test(f.qualite!.trim()) && f.institution)
     .map((f) => avecOrgane(f.qualite!.trim(), f.institution!));
   return [...new Set([...bureau, ...commissions, ...groupes])];
+}
+
+/** Préside son assemblée (Sénat ou Assemblée nationale) : ne vote pas, par usage. */
+export function presideUneAssemblee(fonctions: readonly FonctionEnCours[]): boolean {
+  return fonctions.some(
+    (f) =>
+      !f.dateFin &&
+      f.typeOrgane === 'BUREAU' &&
+      /^présidente? (du sénat|de l['’]assemblée nationale)$/i.test((f.qualite ?? '').trim()),
+  );
 }

@@ -61,68 +61,98 @@ function StatCard({
   );
 }
 
+/**
+ * Carte de présence, la même structure dans les deux chambres (#108) : la
+ * présence aux votes solennels en tête, le taux sur tous les scrutins en second.
+ * Seul le sens du second chiffre change : au Sénat, les scrutins ordinaires sont
+ * votés par groupe, c'est une participation, pas une présence.
+ */
+function CartePresence({
+  stats,
+  chambre,
+  preside,
+}: {
+  stats: StatsParlementaireData;
+  chambre: 'assemblee' | 'senat';
+  preside: boolean;
+}) {
+  const solennel = stats.presenceSolennel ?? null;
+  const senat = chambre === 'senat';
+  // Libellés courts : une case qui passe sur deux lignes désaligne les autres.
+  // Les précisions (votes solennels, vote par groupe au Sénat) sont dans
+  // l'infobulle.
+  const tousScrutins = (v: number) => `${v}% tous scrutins`;
+  const assemblee = senat ? 'le président du Sénat' : 'le président de l’Assemblée';
+  const horsCalcul =
+    'Les scrutins où l’élu ne pouvait pas voter (présidence de l’assemblée ou de la séance, membre du gouvernement) sont hors calcul.';
+
+  // Président d'assemblée en exercice : il ne vote pas, quels que soient les
+  // chiffres de carrière (sa présidence passée n'est pas toujours datée dans les
+  // données, celle de la XVIe législature par exemple). Sinon, aucun scrutin où
+  // il pouvait voter sur la période.
+  if (preside || stats.presence === null) {
+    return (
+      <StatCard
+        label="Présence"
+        value={null}
+        texteSiVide={preside ? 'Ne vote pas' : 'Non mesurable'}
+        icon={ShieldCheck}
+        tooltip={
+          preside
+            ? `Par usage, ${assemblee} ne prend pas part aux votes : sa présence ne se mesure pas.`
+            : `Aucun scrutin où cet élu pouvait voter sur la période. ${horsCalcul}`
+        }
+      />
+    );
+  }
+  if (solennel !== null) {
+    return (
+      <StatCard
+        label="Présence"
+        value={solennel}
+        suffix="%"
+        subtitle={tousScrutins(stats.presence)}
+        icon={ShieldCheck}
+        tooltip={
+          senat
+            ? `Présence aux scrutins solennels : part de ceux où ce sénateur a voté en personne. Le second chiffre est sa participation à tous les scrutins publics. ${PRESENCE_SENAT_EXPLICATION}`
+            : `Présence aux scrutins solennels : part de ceux où ce député a voté (pour, contre ou abstention). Le second chiffre porte sur tous les scrutins publics. ${horsCalcul} ${CARRIERE}`
+        }
+      />
+    );
+  }
+  return (
+    <StatCard
+      label={senat ? 'Participation' : 'Présence'}
+      value={stats.presence}
+      suffix="%"
+      icon={ShieldCheck}
+      tooltip={
+        senat
+          ? `Pourcentage de scrutins publics où un bulletin a été déposé pour ce sénateur. ${PRESENCE_SENAT_EXPLICATION} ${PRESENCE_SENAT_NON_MESURABLE}`
+          : `Pourcentage de scrutins publics auxquels ce député a participé (voté pour, contre ou abstention). ${horsCalcul} ${CARRIERE}`
+      }
+    />
+  );
+}
+
 export function StatsParlementaire({
   stats,
   titre,
   chambre = 'assemblee',
+  preside = false,
 }: {
   stats: StatsParlementaireData;
   titre: string;
   chambre?: 'assemblee' | 'senat';
+  /** Préside son assemblée : ne vote pas, par usage. */
+  preside?: boolean;
 }) {
-  const solennel = stats.presenceSolennel ?? null;
   return (
     <div className="mb-8">
       <h2 className="mb-4 text-xl font-semibold">{titre}</h2>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {chambre === 'senat' ? (
-          // Sénat : le taux tous scrutins compte des bulletins déposés par le
-          // groupe ; il est présenté comme une participation, jamais comme une
-          // présence.
-          stats.presence === null ? (
-            <StatCard
-              label="Présence"
-              value={null}
-              texteSiVide="Ne vote pas"
-              icon={ShieldCheck}
-              tooltip="Aucun scrutin où ce sénateur pouvait voter sur la période : le président du Sénat ne prend pas part aux votes, par usage."
-            />
-          ) : solennel !== null ? (
-            <StatCard
-              label="Présence aux votes solennels"
-              value={solennel}
-              suffix="%"
-              subtitle={`${stats.presence}% de participation aux scrutins`}
-              icon={ShieldCheck}
-              tooltip={`Pourcentage de scrutins solennels auxquels ce sénateur a voté en personne. Le second chiffre porte sur tous les scrutins publics. ${PRESENCE_SENAT_EXPLICATION}`}
-            />
-          ) : (
-            <StatCard
-              label="Participation aux scrutins"
-              value={stats.presence}
-              suffix="%"
-              icon={ShieldCheck}
-              tooltip={`Pourcentage de scrutins publics où un bulletin a été déposé pour ce sénateur. ${PRESENCE_SENAT_EXPLICATION} ${PRESENCE_SENAT_NON_MESURABLE}`}
-            />
-          )
-        ) : solennel !== null ? (
-          <StatCard
-            label="Présence solennelle"
-            value={solennel}
-            suffix="%"
-            subtitle={stats.presence !== null ? `${stats.presence}% tous scrutins` : undefined}
-            icon={ShieldCheck}
-            tooltip={`Pourcentage de scrutins solennels auxquels ce parlementaire a participé (voté pour, contre ou abstention). Le second chiffre porte sur tous les scrutins publics. ${CARRIERE}`}
-          />
-        ) : (
-          <StatCard
-            label="Présence"
-            value={stats.presence}
-            suffix="%"
-            icon={ShieldCheck}
-            tooltip={`Pourcentage de scrutins publics auxquels ce parlementaire a participé (voté pour, contre ou abstention). ${CARRIERE}`}
-          />
-        )}
+        <CartePresence stats={stats} chambre={chambre} preside={preside} />
         <StatCard
           label="Loyauté au groupe"
           value={stats.loyaute}

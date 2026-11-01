@@ -606,22 +606,22 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
           // Sénat : la présence ne se mesure qu'aux votes solennels ; le taux tous
           // scrutins compte des bulletins déposés par le groupe (#108).
           <StatCard
-            label={groupe.stats.presenceSolennelMoyenne !== null ? 'Présence aux votes solennels' : 'Participation aux scrutins'}
+            label={groupe.stats.presenceSolennelMoyenne !== null ? 'Présence' : 'Participation'}
             value={groupe.stats.presenceSolennelMoyenne ?? groupe.stats.presenceMoyenne}
             suffix="%"
             subtitle={
               groupe.stats.presenceSolennelMoyenne !== null
-                ? `${groupe.stats.presenceMoyenne}% de participation aux scrutins`
-                : 'Aucun scrutin solennel sur la période'
+                ? `${groupe.stats.presenceMoyenne}% tous scrutins`
+                : 'Pas de scrutin solennel'
             }
             icon={Vote}
           />
         ) : (
           <StatCard
-            label="Présence solennelle"
+            label="Présence"
             value={groupe.stats.presenceSolennelMoyenne ?? groupe.stats.presenceMoyenne}
             suffix="%"
-            subtitle={`${groupe.stats.presenceMoyenne}% tous scrutins`}
+            subtitle={groupe.stats.presenceSolennelMoyenne !== null ? `${groupe.stats.presenceMoyenne}% tous scrutins` : undefined}
             icon={Vote}
           />
         )}

@@ -43,7 +43,7 @@ import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { InterventionsList } from '@/components/parlementaire/interventions-list';
 import { MandatsBlock } from '@/components/parlementaire/mandats-timeline';
-import { fonctionsEnVue } from '@/lib/fonctions-en-vue';
+import { fonctionsEnVue, presideUneAssemblee } from '@/lib/fonctions-en-vue';
 import {
   FiltreChambre,
   paramChambre,
@@ -82,7 +82,7 @@ export interface SenateurDetail {
     nom: string;
   } | null;
   stats?: {
-    presence: number;
+    presence: number | null;
     presenceSolennel?: number | null;
     loyaute: number;
     participation: number;
@@ -867,6 +867,7 @@ export default function PageClient({
         <StatsParlementaire
           stats={senateur.stats}
           titre={fonction.enCours ? 'Statistiques' : bilanMandats(fonction.plusieursMandats)}
+          preside={presideUneAssemblee(senateur.mandats ?? [])}
           chambre="senat"
         />
       )}

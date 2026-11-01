@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fonctionsEnVue, type FonctionEnCours } from './fonctions-en-vue';
+import { fonctionsEnVue, presideUneAssemblee, type FonctionEnCours } from './fonctions-en-vue';
 
 const f = (typeOrgane: string, qualite: string, institution: string | null, dateFin: string | null = null): FonctionEnCours => ({
   typeOrgane,
@@ -36,6 +36,17 @@ describe('fonctionsEnVue', () => {
     ]);
   });
 
+  it("n'affiche pas les présidences tenues d'office (comité, section d'assemblée internationale)", () => {
+    expect(
+      fonctionsEnVue([
+        f('BUREAU', "Président de l'Assemblée nationale", "Bureau de l'Assemblée"),
+        f('COMNL', 'Président', "Comité d'évaluation et de contrôle des politiques publiques"),
+        f('API', 'Président', "Section française de l'Assemblée parlementaire de la francophonie"),
+        f('COMPER', 'Présidente', 'Commission des lois'),
+      ]),
+    ).toEqual(["Président de l'Assemblée nationale", 'Présidente de la commission des lois']);
+  });
+
   it("écarte les fonctions d'âge de l'Assemblée", () => {
     expect(fonctionsEnVue([f('BUREAU', "Secrétaire d'âge de l'Assemblée nationale", "Bureau de l'Assemblée")])).toEqual([]);
   });
@@ -48,5 +59,18 @@ describe('fonctionsEnVue', () => {
         f('BUREAU', 'Questeur du Sénat', 'Bureau du Sénat'),
       ]),
     ).toEqual(['Questeur du Sénat', 'Président de la commission des lois', 'Président du groupe Union Centriste']);
+  });
+});
+
+describe('presideUneAssemblee', () => {
+  it('reconnaît la présidence en cours du Sénat et de l’Assemblée', () => {
+    expect(presideUneAssemblee([f('BUREAU', 'Président du Sénat', 'Bureau du Sénat')])).toBe(true);
+    expect(presideUneAssemblee([f('BUREAU', "Président de l'Assemblée nationale", "Bureau de l'Assemblée")])).toBe(true);
+  });
+
+  it('écarte une présidence passée, une vice-présidence et le président d’âge', () => {
+    expect(presideUneAssemblee([f('BUREAU', 'Président du Sénat', 'Bureau du Sénat', '2011-09-30')])).toBe(false);
+    expect(presideUneAssemblee([f('BUREAU', 'Vice-président du Sénat', 'Bureau du Sénat')])).toBe(false);
+    expect(presideUneAssemblee([f('BUREAU', "Président d'âge de l'Assemblée nationale", "Bureau de l'Assemblée")])).toBe(false);
   });
 });

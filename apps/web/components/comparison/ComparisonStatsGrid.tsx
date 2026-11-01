@@ -107,7 +107,7 @@ export function ComparisonStatsGrid({ parlementaires, chambre = 'assemblee' }: C
     {
       // Au Sénat, les scrutins ordinaires sont votés par groupe : ce taux y est
       // une participation, pas une présence (#108).
-      label: senat ? 'Participation aux scrutins' : 'Présence',
+      label: senat ? 'Participation' : 'Présence',
       icon: <UserCheck className="h-4 w-4" />,
       format: 'percent' as const,
       getValue: (p: ParlementaireStats) => p.stats.presence,
@@ -117,7 +117,7 @@ export function ComparisonStatsGrid({ parlementaires, chambre = 'assemblee' }: C
     ...(hasPresenceSolennel || senat
       ? [
           {
-            label: senat ? 'Présence aux votes solennels' : 'Présence solennelle',
+            label: 'Présence solennelle',
             icon: <Award className="h-4 w-4" />,
             format: 'percent' as const,
             getValue: (p: ParlementaireStats) => p.stats.presenceSolennel,
