@@ -47,7 +47,7 @@ Diagrammes entité-relation de la base, générés depuis [`apps/api/prisma/sche
 
 ## 🗺️ Vue d'ensemble des relations
 
-Les 50 relations entre tables, sans les colonnes. Les 7 tables sans clé étrangère (`evenements_institutionnels`, `candidats_mandats_locaux`, `legi_textes`, `legi_articles`, `sync_logs`, `source_states`, `feedbacks`) n'y figurent pas ; elles sont détaillées plus bas.
+Les 51 relations entre tables, sans les colonnes. Les 7 tables sans clé étrangère (`evenements_institutionnels`, `candidats_mandats_locaux`, `legi_textes`, `legi_articles`, `sync_logs`, `source_states`, `feedbacks`) n'y figurent pas ; elles sont détaillées plus bas.
 
 <Mermaid
   title="Toutes les relations"
@@ -88,6 +88,7 @@ Les 50 relations entre tables, sans les colonnes. Les 7 tables sans clé étrang
     reunions ||--o{ avis_commission : "reunion_id"
     amendements |o--o{ avis_commission : "amendement_id"
     dossiers_legislatifs |o--o{ textes_articles : "dossier_id"
+    amendements ||--o{ amendements_renvois : "amendement_id"
     lobbyistes ||--o{ actions_lobby : "lobbyiste_id"
     parlementaires |o--o{ actions_lobby : "parlementaire_id"
     cible_types |o--o{ actions_lobby : "cible_type_id"
@@ -792,12 +793,12 @@ Les 50 relations entre tables, sans les colonnes. Les 7 tables sans clé étrang
 `}
 />
 
-## Index de la base LEGI (DILA)
+## Index de la base LEGI (DILA) et renvois des amendements
 
-Sans clé étrangère : `legi_articles.cid` désigne le `cid` commun aux versions d'un texte de `legi_textes`, qui n'est pas unique.
+Sans clé étrangère : `legi_articles.cid` désigne le `cid` commun aux versions d'un texte de `legi_textes`, qui n'est pas unique. `amendements_renvois` désigne articles et textes de l'index par leurs identifiants, dans son JSON.
 
 <Mermaid
-  title="Index de la base LEGI (DILA)"
+  title="Index de la base LEGI (DILA) et renvois des amendements"
   chart={`erDiagram
     legi_textes {
         text id PK
@@ -822,6 +823,15 @@ Sans clé étrangère : `legi_articles.cid` désigne le `cid` commun aux version
         timestamp created_at
         timestamp updated_at
     }
+    amendements_renvois {
+        text amendement_id PK, FK
+        jsonb renvois
+        int version
+        timestamp calcule_le
+        timestamp created_at
+        timestamp updated_at
+    }
+    amendements ||--o{ amendements_renvois : "amendement_id"
 `}
 />
 

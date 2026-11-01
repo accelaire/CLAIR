@@ -4485,9 +4485,10 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
   }
 
   // Index de la base LEGI (DILA) : les incréments publiés depuis la veille,
-  // quelques secondes. Rien d'autre n'en dépend dans ce batch : un échec ne
-  // bloque rien, mais il se voit dans le récapitulatif. La source n'entre pas
-  // dans `sourcesChanged`, qui déclencherait le recalcul des stats.
+  // quelques secondes. Seuls les renvois des amendements, juste après, en
+  // dépendent : un échec ne bloque rien, mais il se voit dans le récapitulatif.
+  // La source n'entre pas dans `sourcesChanged`, qui déclencherait le recalcul
+  // des stats.
   if (options.all) {
     results.sourcesChecked.push('dila:legi');
     try {
@@ -4499,6 +4500,20 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.error({ error: errorMessage(error) }, 'Index LEGI : mise à jour échouée (non bloquante)');
       results.sourcesFailed.push('dila:legi');
       results.results['dila:legi'] = { created: 0, updated: 0, failed: true, error: errorMessage(error) };
+    }
+
+    // Renvois au droit en vigueur dans le dispositif des amendements : les
+    // amendements nouveaux, modifiés ou déposés depuis moins de 45 jours (la
+    // DILA consolide une loi nouvelle avec retard). Après les amendements, les
+    // articles des textes (le contexte du dispositif) et l'index LEGI. Les
+    // titres de l'index restent en mémoire jusqu'à la fin du batch (0,9 Go
+    // pour le processus seul, mesuré sur 3 000 amendements).
+    try {
+      const { synchroniserRenvoisLegi } = await import('./renvois-legi.js');
+      const renvois = await synchroniserRenvoisLegi();
+      logger.info(renvois, 'Renvois LEGI des amendements à jour');
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Renvois LEGI des amendements : calcul échoué (non bloquant)');
     }
   }
 

@@ -36,8 +36,9 @@ Versions : plage déclarée dans les `package.json`, et entre parenthèses la ve
 ## 📥 Ingestion (`services/ingestion`)
 
 - **CLI** : commander 11.
-- **Téléchargement et lecture** : axios, cheerio (HTML), xml2js (XML), csv-parse (CSV), lecteur XLSX maison (`src/utils/xlsx.ts`), `pdftotext` de poppler-utils pour les comptes rendus de commission publiés en PDF.
+- **Téléchargement et lecture** : axios, cheerio (HTML), xml2js (XML), csv-parse (CSV), tar-stream (archives de la base LEGI), lecteur XLSX maison (`src/utils/xlsx.ts`), `pdftotext` de poppler-utils pour les comptes rendus de commission publiés en PDF.
 - **Concurrence** : p-limit, limiter.
+- **Références juridiques** : [@tricoteuses/tisseuse](https://www.npmjs.com/package/@tricoteuses/tisseuse) (AGPL-3.0, comme CLAIR) repère les textes et articles de loi cités dans le dispositif des amendements ; la résolution vers Légifrance passe par notre index de la base LEGI.
 - **Build** : tsup (CJS + ESM) ; exécution en développement avec tsx.
 - **IA** : API Mistral (`mistral-small-latest` pour la génération, `mistral-embed` pour le classement des liens de contexte), Tavily (recherche ciblée sur vie-publique.fr).
 

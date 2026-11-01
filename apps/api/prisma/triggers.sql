@@ -180,6 +180,10 @@ CREATE OR REPLACE TRIGGER legi_textes_updated_at BEFORE INSERT OR UPDATE ON legi
   FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
 CREATE OR REPLACE TRIGGER legi_articles_updated_at BEFORE INSERT OR UPDATE ON legi_articles
   FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+-- Renvois des amendements à l'index LEGI : un recalcul au même résultat, ou
+-- par une version plus récente de la détection, n'est pas un changement.
+CREATE OR REPLACE TRIGGER amendements_renvois_updated_at BEFORE INSERT OR UPDATE ON amendements_renvois
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at('version', 'calcule_le');
 
 -- Scrutins, votes, débats, amendements. `source_hash` est l'empreinte de ce
 -- que l'ingestion a écrit, pas une donnée de la source.
