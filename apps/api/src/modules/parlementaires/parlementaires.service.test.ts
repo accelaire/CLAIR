@@ -116,6 +116,44 @@ describe('ParlementairesService', () => {
       );
     });
 
+    it('trie la présence des sénateurs sur les votes solennels, sans valeur en dernier (#108)', async () => {
+      mockPrisma.parlementaire.findMany.mockResolvedValue([]);
+      mockPrisma.parlementaire.count.mockResolvedValue(0);
+
+      await service.getParlementaires({ ...defaultQuery, sort: 'presence', order: 'desc' }, 'senat');
+
+      expect(mockPrisma.parlementaire.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ chambre: 'senat' }),
+          orderBy: [{ statsPresenceSolennel: { sort: 'desc', nulls: 'last' } }, { nom: 'asc' }, { id: 'asc' }],
+        })
+      );
+    });
+
+    it('ne classe que les députés par présence toutes chambres confondues (#108)', async () => {
+      mockPrisma.parlementaire.findMany.mockResolvedValue([]);
+      mockPrisma.parlementaire.count.mockResolvedValue(0);
+
+      await service.getParlementaires({ ...defaultQuery, sort: 'presence', order: 'desc' });
+
+      expect(mockPrisma.parlementaire.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ chambre: 'assemblee' }),
+          orderBy: [{ statsPresence: 'desc' }, { nom: 'asc' }, { id: 'asc' }],
+        })
+      );
+    });
+
+    it('garde les deux chambres pour un autre tri', async () => {
+      mockPrisma.parlementaire.findMany.mockResolvedValue([]);
+      mockPrisma.parlementaire.count.mockResolvedValue(0);
+
+      await service.getParlementaires({ ...defaultQuery, sort: 'loyaute', order: 'desc' });
+
+      const where = mockPrisma.parlementaire.findMany.mock.calls[0]![0].where;
+      expect(where).not.toHaveProperty('chambre');
+    });
+
     it('devrait forcer la chambre si spécifiée', async () => {
       mockPrisma.parlementaire.findMany.mockResolvedValue([]);
       mockPrisma.parlementaire.count.mockResolvedValue(0);

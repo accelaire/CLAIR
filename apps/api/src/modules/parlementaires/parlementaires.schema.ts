@@ -144,8 +144,22 @@ export const parlementaireSchema = z.object({
 });
 
 export const parlementaireStatsSchema = z.object({
-  presence: z.number().min(0).max(100).describe('Taux de présence en % (tous scrutins)'),
-  presenceSolennel: z.number().min(0).max(100).nullable().describe('Taux de présence aux scrutins solennels en %'),
+  presence: z
+    .number()
+    .min(0)
+    .max(100)
+    .nullable()
+    .describe(
+      "Taux de participation aux scrutins publics en %. Au Sénat, les scrutins ordinaires sont votés par groupe : ce taux n'y mesure pas la présence (voir presenceSolennel). Null pour un sénateur sans aucun scrutin où il pouvait voter (président du Sénat).",
+    ),
+  presenceSolennel: z
+    .number()
+    .min(0)
+    .max(100)
+    .nullable()
+    .describe(
+      "Taux de présence aux scrutins solennels en %. Au Sénat, seule mesure de la présence : vote en personne, un vote confié à un collègue compte comme une absence. Null sans scrutin solennel sur la période.",
+    ),
   loyaute: z.number().min(0).max(100).describe('Taux de loyauté au groupe en %'),
   participation: z.number().describe('Nombre de votes'),
   interventions: z.number().describe("Nombre d'interventions"),

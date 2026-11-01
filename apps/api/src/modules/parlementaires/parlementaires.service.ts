@@ -60,6 +60,19 @@ function parseSessionWindow(session: string): SessionWindow | null {
 }
 
 /**
+ * Chambre d'une liste ou d'un rang. Un classement de présence toutes chambres
+ * confondues ne compare que les députés : au Sénat, le taux tous scrutins ne
+ * mesure pas la présence (les bulletins sont déposés par le groupe, présents ou
+ * non) et la présence aux votes solennels ne se compare pas à celle de
+ * l'Assemblée (ticket #108). Les sénateurs ont leur classement, sur la chambre
+ * Sénat.
+ */
+export function chambreDuClassement(sort: string, chambre?: Chambre): Chambre | undefined {
+  if (chambre) return chambre;
+  return sort === 'presence' ? 'assemblee' : undefined;
+}
+
+/**
  * Filtre `MandatParlementaire` correspondant à la période demandée, quel que soit
  * l'axe : `legislature` (AN) ou `session` (Sénat, par chevauchement d'intervalle).
  * Renvoie `null` si aucune période n'est demandée.
@@ -232,13 +245,23 @@ export class ParlementairesService {
   private buildParlementaireOrderBy(
     sort: string,
     order: 'asc' | 'desc',
-    periode: 'mandat' | 'carriere' = 'mandat'
+    periode: 'mandat' | 'carriere' = 'mandat',
+    chambre?: Chambre,
   ): Prisma.ParlementaireOrderByWithRelationInput[] {
     const carriere = periode === 'carriere';
     const primaryMap: Record<string, Prisma.ParlementaireOrderByWithRelationInput> = {
       nom: { nom: order },
       prenom: { prenom: order },
-      presence: carriere ? { statsCarrierePresence: order } : { statsPresence: order },
+      // Au Sénat, la présence se mesure sur les votes personnels (scrutins
+      // solennels) : le taux tous scrutins compte des bulletins déposés par le
+      // groupe, présents ou non (ticket #108). Pas de colonne de carrière pour
+      // celle-ci : elle porte le mandat en cours, la carrière à défaut.
+      presence:
+        chambre === 'senat'
+          ? { statsPresenceSolennel: { sort: order, nulls: 'last' } }
+          : carriere
+            ? { statsCarrierePresence: order }
+            : { statsPresence: order },
       loyaute: carriere ? { statsCarriereLoyaute: order } : { statsLoyaute: order },
       activite: { statsInterventions: order },
       amendements: { statsAmendements: order },
@@ -281,15 +304,16 @@ export class ParlementairesService {
       return JSON.parse(cached);
     }
 
+    const chambreClassement = chambreDuClassement(sort, chambre);
     const where: Prisma.ParlementaireWhereInput = {
       actif: true,
-      ...(chambre && { chambre }),
+      ...(chambreClassement && { chambre: chambreClassement }),
       ...(groupe && { groupe: { slug: groupe } }),
     };
 
     const rows = await this.prisma.parlementaire.findMany({
       where,
-      orderBy: this.buildParlementaireOrderBy(sort, order, periode),
+      orderBy: this.buildParlementaireOrderBy(sort, order, periode, chambreClassement),
       select: { slug: true },
     });
 
@@ -371,6 +395,7 @@ export class ParlementairesService {
     // Dans les deux cas, le groupe/circonscription de la période sont réinjectés au
     // shaping. Sans filtre de période : comportement courant (parlementaires actifs).
     const periodMandatWhere = buildPeriodMandatWhere(legislature, session);
+    const chambreClassement = chambreDuClassement(sort, chambre);
 
     const where: Prisma.ParlementaireWhereInput = {
       ...(periodMandatWhere
@@ -388,11 +413,11 @@ export class ParlementairesService {
             ...(groupe && { groupe: { slug: groupe } }),
             ...(departement && { circonscription: { departement } }),
           }),
-      ...(chambre && { chambre }),
+      ...(chambreClassement && { chambre: chambreClassement }),
       ...(search && buildParlementaireSearchCondition(search)),
     };
 
-    const orderBy = this.buildParlementaireOrderBy(sort, order, periode);
+    const orderBy = this.buildParlementaireOrderBy(sort, order, periode, chambreClassement);
 
     let [parlementaires, total]: [ParlementaireListRow[], number] = await Promise.all([
       this.prisma.parlementaire.findMany({
@@ -468,6 +493,7 @@ export class ParlementairesService {
         stats: p.statsCalculatedAt
           ? {
               presence: p.statsPresence ?? 0,
+              presenceSolennel: p.statsPresenceSolennel ?? null,
               loyaute: p.statsLoyaute ?? 0,
               participation: p.statsParticipation ?? 0,
               interventions: p.statsInterventions ?? 0,
@@ -644,7 +670,11 @@ export class ParlementairesService {
     // encore rempli les colonnes de carrière (déploiement, base fraîche).
     if (parlementaire?.statsCalculatedAt) {
       const stats = {
-        presence: parlementaire.statsCarrierePresence ?? parlementaire.statsPresence ?? 0,
+        // Sénat : null = aucun scrutin où il pouvait voter (président du Sénat).
+        presence:
+          parlementaire.statsCarrierePresence ??
+          parlementaire.statsPresence ??
+          (chambre === 'senat' ? null : 0),
         presenceSolennel: parlementaire.statsPresenceSolennel ?? null,
         loyaute: parlementaire.statsCarriereLoyaute ?? parlementaire.statsLoyaute ?? 0,
         participation:

@@ -50,6 +50,8 @@ export interface GroupeDetail extends GroupeWithStats {
       nom: string;
     } | null;
     statsPresence: number | null;
+    /** Présence aux scrutins solennels du mandat : au Sénat, la seule mesure de la présence (#108). */
+    statsPresenceSolennel: number | null;
     statsLoyaute: number | null;
   }[];
   stats: {
@@ -302,6 +304,7 @@ export class GroupesService {
       where: this.mandatsPeriodeWhere(groupe, whereSession),
       select: {
         statsPresence: true,
+        statsPresenceSolennel: true,
         statsLoyaute: true,
         circonscription: { select: { departement: true, numero: true, nom: true } },
         personne: {
@@ -327,6 +330,7 @@ export class GroupesService {
       circonscription: m.circonscription ?? m.personne.circonscription,
       // Stats DU MANDAT (période du groupe), pas la carrière entière de la personne.
       statsPresence: m.statsPresence,
+      statsPresenceSolennel: m.statsPresenceSolennel,
       statsLoyaute: m.statsLoyaute,
     }));
 
@@ -343,7 +347,14 @@ export class GroupesService {
     const cohesion = historique
       ? await this.calculateSenatGroupeCohesionSession(groupe.id, sessionAffichee!)
       : groupe.statsCohesion;
-    const presenceSolennelMoyenne = historique ? null : groupe.statsPresenceSolennelMoyenne;
+    // Vue historique : moyenne des mandats de la période qui ont des scrutins
+    // solennels ; au Sénat, c'est la présence du groupe (#108).
+    const solennels = membres.map((m) => m.statsPresenceSolennel).filter((v): v is number => v !== null);
+    const presenceSolennelMoyenne = historique
+      ? solennels.length > 0
+        ? Math.round(solennels.reduce((a, b) => a + b, 0) / solennels.length)
+        : null
+      : groupe.statsPresenceSolennelMoyenne;
 
     // Calculer le rang par nombre de membres (hors NI)
     let rang: number | null = null;
@@ -414,6 +425,7 @@ export class GroupesService {
         photoUrl: m.photoUrl,
         circonscription: m.circonscription,
         statsPresence: m.statsPresence,
+        statsPresenceSolennel: m.statsPresenceSolennel,
         statsLoyaute: m.statsLoyaute,
       })),
       stats: {
