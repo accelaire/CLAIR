@@ -269,6 +269,8 @@ Détail des contrôles : [Qualité des données](/donnees/qualite-des-donnees).
 | `link-amendements-dossiers` | Rattache les amendements à leur dossier : texte de la source d'abord, puis scrutins et amendements voisins |
 | `unlink-wrong-legislature` | Supprime les liens scrutin AN → dossier d'une autre législature |
 | `unlink-procedure-incompatible` | Supprime les liens scrutin → dossier incompatibles avec la procédure du dossier : rapport ou mission d'information, 49.3 hors motion de censure |
+| `separer-homonyme <slug> <matricule ou PA>` | Rend à l'homonyme de l'autre chambre sa fiche, avec ses mandats et ses votes de cette chambre (`--appliquer`, sinon simulation) |
+| `lier-identifiant <slug> <chambre> <id>` | Range sur la fiche l'identifiant de l'autre chambre d'un élu passé de l'une à l'autre (`--appliquer`) |
 | `relink-voterefs` | Rattache chaque scrutin AN au dossier qui le référence (`voteRefs` de la source), en corrigeant les liens contraires |
 | `verifier-amendements-scrutins-an` | Fiabilise les liens scrutin AN → amendement : efface les impossibles, revérifie les douteux sur la page de l'Assemblée, puis aligne leur dossier (`--dry-run`, `--concurrence`, `--articles`) |
 | `generate-sujets` | Génère les sujets (`--reset`, `--dry-run`) |

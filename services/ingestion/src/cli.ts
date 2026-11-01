@@ -61,6 +61,7 @@ import { syncSenatFonctions } from './workers/senat-fonctions.js';
 import { syncGouvernements } from './workers/gouvernements.js';
 import { libererArchivesAMO30 } from './sources/assemblee-nationale/amo30-archive.js';
 import { SENAT_SESSION_MIN } from './workers/mandats.js';
+import { separerHomonyme, lierIdentifiant } from './workers/identite-fiches.js';
 import { logger } from './utils/logger';
 import { errorMessage } from './utils/errors';
 
@@ -880,6 +881,42 @@ program
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'unlink-procedure-incompatible failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDES: separer-homonyme, lier-identifiant (identité des fiches)
+// =============================================================================
+program
+  .command('separer-homonyme <slug> <sourceId>')
+  .description("Rendre à l'homonyme de l'autre chambre (matricule ou PA) sa fiche, avec ses mandats et ses votes de cette chambre")
+  .option('--appliquer', 'Écrire (sans : compte seulement)')
+  .action(async (slug: string, sourceId: string, opts: { appliquer?: boolean }) => {
+    try {
+      const r = await separerHomonyme({ slug, sourceId, appliquer: !!opts.appliquer });
+      console.log(`\n👥 ${r.fiche} → ${r.ficheSeparee}${r.creee ? ' (nouvelle fiche)' : ''}`);
+      console.log(`   Mandats déplacés: ${r.mandats} · votes déplacés: ${r.votes}${r.groupeRetabli ? ' · groupe/circo de la fiche rétablis' : ''}`);
+      console.log(r.appliquee ? '   ✅ Appliqué' : '   (simulation : relancer avec --appliquer)');
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'separer-homonyme failed');
+      process.exit(1);
+    }
+  });
+
+program
+  .command('lier-identifiant <slug> <chambre> <sourceId>')
+  .description("Ranger sur la fiche l'identifiant de l'autre chambre d'un élu passé de l'une à l'autre")
+  .option('--appliquer', 'Écrire (sans : vérifie seulement)')
+  .action(async (slug: string, chambre: string, sourceId: string, opts: { appliquer?: boolean }) => {
+    try {
+      if (chambre !== 'assemblee' && chambre !== 'senat') throw new Error('chambre : assemblee ou senat');
+      const r = await lierIdentifiant({ slug, chambre, sourceId, appliquer: !!opts.appliquer });
+      console.log(`🔗 ${r.fiche} ${r.chambre}:${r.sourceId} ${r.deja ? 'déjà lié' : r.appliquee ? 'lié' : '(simulation)'}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'lier-identifiant failed');
       process.exit(1);
     }
   });

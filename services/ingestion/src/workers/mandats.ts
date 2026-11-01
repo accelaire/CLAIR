@@ -610,12 +610,21 @@ const JOUR_MS = 24 * 60 * 60 * 1000;
  * Un mandat de sénateur commencé APRÈS le début du mandat de député le clôt donc
  * au plus tard la veille. Un mandat de sénateur antérieur (sénateur devenu
  * député) ne borne rien.
+ *
+ * Seule une fin ABSENTE de la source se borne : sans fin publiée (mandat encore
+ * listé) ou avec la fin de législature posée par défaut. Une fin publiée fait
+ * foi. Jean-Louis Masson, député du Var jusqu'au 2 août 2020, voyait son mandat
+ * coupé au 1er octobre 2017 par les mandats du sénateur de Moselle, son homonyme,
+ * fusionnés sur sa fiche.
  */
 async function finBorneeParLeSenat(
   prisma: PrismaLike,
   personneId: string,
   ctx: MandatContext,
 ): Promise<Date | null> {
+  const finParDefaut = ctx.legislature !== null ? LEGISLATURE_FIN[ctx.legislature] ?? null : null;
+  const finPubliee = ctx.dateFin !== null && (finParDefaut === null || ctx.dateFin.getTime() !== finParDefaut.getTime());
+  if (finPubliee) return ctx.dateFin;
   const senat = await prisma.mandatParlementaire.findFirst({
     where: { personneId, chambre: 'senat', dateDebut: { gt: ctx.dateDebut } },
     orderBy: { dateDebut: 'asc' },
