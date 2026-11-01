@@ -9,8 +9,48 @@ export interface FonctionEnCours {
   typeOrgane: string;
   institution: string | null;
   qualite: string | null;
+  dateDebut?: string | null;
   dateFin: string | null;
   commission?: { nom: string } | null;
+}
+
+/** Une fonction mise en avant, et la date depuis laquelle elle est tenue sans interruption. */
+export interface FonctionEnVue {
+  libelle: string;
+  depuis: string | null;
+}
+
+/**
+ * Battement toléré entre deux périodes d'une même fonction : le bureau du Sénat
+ * est réélu à chaque renouvellement (période close le 1er octobre 2023, suivante
+ * ouverte le 2), les commissions aussi.
+ */
+const BATTEMENT_MS = 15 * 24 * 3600 * 1000;
+
+function cle(f: FonctionEnCours): string {
+  return [f.typeOrgane, (f.qualite ?? '').trim().toLowerCase(), (f.commission?.nom || f.institution || '').toLowerCase()].join('|');
+}
+
+/**
+ * Début de la fonction en cours, en remontant les périodes qui s'enchaînent :
+ * Gérard Larcher préside le Sénat depuis le 1er octobre 2014, pas depuis sa
+ * dernière réélection au plateau.
+ */
+function debutContinu(f: FonctionEnCours, toutes: readonly FonctionEnCours[]): string | null {
+  if (!f.dateDebut) return null;
+  const k = cle(f);
+  const memes = toutes.filter((m) => m !== f && m.dateDebut && m.dateFin && cle(m) === k);
+  let debut = f.dateDebut;
+  for (;;) {
+    const t = Date.parse(debut);
+    const precedente = memes.find((m) => {
+      const fin = Date.parse(m.dateFin!);
+      return Date.parse(m.dateDebut!) < t && fin <= t && t - fin <= BATTEMENT_MS;
+    });
+    // Jour civil seul : l'API envoie un horodatage (« 2014-10-01T00:00:00.000Z »).
+    if (!precedente) return debut.slice(0, 10);
+    debut = precedente.dateDebut!;
+  }
 }
 
 const PRESIDENCE = /^présidente?$/i;
@@ -43,20 +83,27 @@ function avecOrgane(qualite: string, organe: string): string {
  * commission, puis présidence d'un groupe. Les fonctions « d'âge » (doyen qui
  * préside la séance d'ouverture) sont provisoires par nature : écartées.
  */
-export function fonctionsEnVue(fonctions: readonly FonctionEnCours[]): string[] {
+export function fonctionsEnVue(fonctions: readonly FonctionEnCours[]): FonctionEnVue[] {
   const enCours = fonctions.filter((f) => !f.dateFin && f.qualite && !/d['’]âge/i.test(f.qualite));
-  const bureau = enCours.filter((f) => f.typeOrgane === 'BUREAU').map((f) => f.qualite!.trim());
+  const enVue = (f: FonctionEnCours, libelle: string): FonctionEnVue => ({ libelle, depuis: debutContinu(f, fonctions) });
+  const bureau = enCours.filter((f) => f.typeOrgane === 'BUREAU').map((f) => enVue(f, f.qualite!.trim()));
   const commissions = enCours
     .filter((f) => TYPES_COMMISSION.has(f.typeOrgane))
     .filter((f) => PRESIDENCE.test(f.qualite!.trim()) || RAPPORTEUR_GENERAL.test(f.qualite!.trim()))
     .map((f) => {
       const organe = f.commission?.nom || f.institution;
-      return organe ? avecOrgane(f.qualite!.trim(), organe) : f.qualite!.trim();
+      return enVue(f, organe ? avecOrgane(f.qualite!.trim(), organe) : f.qualite!.trim());
     });
   const groupes = enCours
     .filter((f) => f.typeOrgane === 'GP' && PRESIDENCE.test(f.qualite!.trim()) && f.institution)
-    .map((f) => avecOrgane(f.qualite!.trim(), f.institution!));
-  return [...new Set([...bureau, ...commissions, ...groupes])];
+    .map((f) => enVue(f, avecOrgane(f.qualite!.trim(), f.institution!)));
+  // Une même fonction en double (deux sources) : la plus ancienne date l'emporte.
+  const parLibelle = new Map<string, FonctionEnVue>();
+  for (const f of [...bureau, ...commissions, ...groupes]) {
+    const deja = parLibelle.get(f.libelle);
+    if (!deja || (f.depuis && (!deja.depuis || f.depuis < deja.depuis))) parLibelle.set(f.libelle, f);
+  }
+  return [...parLibelle.values()];
 }
 
 /** Préside son assemblée (Sénat ou Assemblée nationale) : ne vote pas, par usage. */
