@@ -466,8 +466,11 @@ export async function enrichParlementairesIA(
             return;
           }
 
-          // Persist mandats to DB (upsert by sourceUid)
-          await persistMandats(parl.id, mandats);
+          // Persist mandats to DB (upsert by sourceUid). Pas pour le Sénat : ses
+          // fonctions datées viennent de `senat-fonctions.ts`. Les lignes
+          // `senat-<code>` d'ici n'avaient ni date ni matricule dans la clé, une
+          // seule existait par organe, réattribuée d'un sénateur à l'autre.
+          if (parl.chambre !== 'senat') await persistMandats(parl.id, mandats);
 
           // Save enrichment
           await prisma.parlementaire.update({

@@ -21,13 +21,12 @@ import {
 } from '../sources/senat/interventions-client';
 import { SenatDossiersClient } from '../sources/senat/dossiers-client';
 import { syncSenateursHistoriques } from './senat-histo';
-import { syncSenatBureaux } from './senat-bureaux';
+import { syncSenatFonctions } from './senat-fonctions';
 import { syncSenatDossierCommissions } from './senat-dossier-commissions';
 import { logger } from '../utils/logger';
 import { errorMessage } from '../utils/errors';
 import { asArray, isRecord, readString } from '../utils/json';
 import { extractCommissionSaisines } from '../utils/dossier-commissions';
-import { commissionsQuittees } from '../utils/commissions-senat';
 import { cleMotion, dossierMotionSansReferences } from '../utils/motions-censure';
 import { classifyNatureScrutin } from '../utils/nature-scrutin';
 import { CTE_LEGISLATURES_DOSSIER, CTE_TEXTE_DU_DOSSIER, dossierValantPour } from '../utils/legislatures-dossier';
@@ -1115,15 +1114,11 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
   });
   const circoMap = new Map(circosDb.map((c) => [c.departement, c.id]));
 
-  // Sync Senate commissions first, then build organeRef→commissionId map
+  // Les commissions elles-mêmes (table `commissions`). Les appartenances et les
+  // fonctions des sénateurs viennent du dump export_sens (`senat-fonctions.ts`),
+  // datées : l'annuaire du jour, gardé dans `source_data`, n'en est plus que le
+  // contrôle.
   await syncSenatCommissions();
-  const commissionsDb = await prisma.commission.findMany({
-    where: { chambre: 'senat', organeRef: { not: null } },
-    select: { id: true, organeRef: true },
-  });
-  const commissionByOrganeRef = new Map<string, string>(
-    commissionsDb.map((c) => [c.organeRef!, c.id]),
-  );
 
   let created = 0;
   let updated = 0;
@@ -1143,7 +1138,7 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
     senateurs.map((s) =>
       limit(async () => {
         try {
-          return await syncSingleSenateur(s, groupeMap, circoMap, commissionByOrganeRef, derivation);
+          return await syncSingleSenateur(s, groupeMap, circoMap, derivation);
         } catch (error) {
           logger.error({ slug: s.slug, error: errorMessage(error) }, 'Error syncing sénateur');
           return null;
@@ -1160,7 +1155,6 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
   }
 
   const sortants = await cloturerSenateursSortants(senateurs.map((s) => s.uid));
-  const commissionsCloses = await cloturerCommissionsSenatQuittees(senateurs);
 
   // Un groupe que la source ne publie plus et qui ne porte plus aucun mandat ne
   // vit plus que dans la liste des groupes. C'est le pseudo-groupe « AUCUN »
@@ -1179,7 +1173,7 @@ export async function syncSenateurs(fullSync: boolean = false): Promise<{ create
   });
 
   logger.info(
-    { created, updated, mandatsCreated, sortants, commissionsCloses, groupesDesactives, total: senateurs.length },
+    { created, updated, mandatsCreated, sortants, groupesDesactives, total: senateurs.length },
     'Sénateurs sync completed',
   );
   return { created, updated };
@@ -1257,76 +1251,10 @@ async function cloturerSenateursSortants(sourceUids: string[]): Promise<number> 
   return ids.length;
 }
 
-/**
- * Clôt les mandats de commission que l'annuaire ne porte plus : sénateurs
- * sortis, ou passés dans une autre commission. Voir `utils/commissions-senat`.
- * Sur les organes que l'annuaire ne publie pas (délégations…), seules les
- * appartenances des personnes sorties sont closes.
- */
-async function cloturerCommissionsSenatQuittees(senateurs: TransformedSenateur[]): Promise<number> {
-  if (senateurs.length < SENAT_EFFECTIF_MIN) {
-    logger.warn(
-      { recus: senateurs.length, minimum: SENAT_EFFECTIF_MIN },
-      'Effectif Sénat source anormalement bas — clôture des commissions ANNULÉE',
-    );
-    return 0;
-  }
-
-  const annuaire = senateurs.flatMap((s) =>
-    (s.sourceData.organismes ?? [])
-      .filter((o) => o.type === 'COMMISSION' && o.code)
-      .map((o) => ({ matricule: s.uid, organeRef: o.code })),
-  );
-  // Annuaire de transition sans aucune commission : on ne touche à rien.
-  if (annuaire.length === 0) return 0;
-
-  const ouverts = await prisma.mandat.findMany({
-    where: { dateFin: null, organeRef: { not: null }, commission: { chambre: 'senat' } },
-    select: {
-      id: true, parlementaireId: true, organeRef: true, dateDebut: true,
-      parlementaire: { select: { sourceId: true } },
-    },
-  });
-
-  const personnes = [...new Set(ouverts.map((m) => m.parlementaireId))];
-  const derniersMandats = await prisma.mandatParlementaire.findMany({
-    where: { personneId: { in: personnes }, chambre: 'senat', dateFin: { not: null } },
-    select: { personneId: true, dateFin: true },
-  });
-  const finSenat = new Map<string, Date>();
-  for (const m of derniersMandats) {
-    const precedent = finSenat.get(m.personneId);
-    if (m.dateFin && (!precedent || m.dateFin > precedent)) finSenat.set(m.personneId, m.dateFin);
-  }
-
-  const clotures = commissionsQuittees(
-    ouverts.map((m) => ({
-      id: m.id,
-      parlementaireId: m.parlementaireId,
-      matricule: m.parlementaire.sourceId,
-      organeRef: m.organeRef ?? '',
-      dateDebut: m.dateDebut,
-    })),
-    annuaire,
-    new Set(senateurs.map((s) => s.uid.toUpperCase())),
-    finSenat,
-    new Date(),
-  );
-
-  for (const c of clotures) {
-    await prisma.mandat.update({ where: { id: c.id }, data: { dateFin: c.dateFin } });
-  }
-  if (clotures.length > 0) {
-    logger.info({ clos: clotures.length }, 'Mandats de commission du Sénat quittés clos');
-  }
-  return clotures.length;
-}
-
 async function syncSingleSenateur(
   s: TransformedSenateur,
   groupeMap: Map<string, string>,
   circoMap: Map<string, string>,
-  commissionByOrganeRef: Map<string, string>,
   derivation: Date,
 ): Promise<{ person: 'created' | 'updated'; mandatCreated: boolean } | null> {
   // Trouver le groupe par sigle
@@ -1443,59 +1371,6 @@ async function syncSingleSenateur(
   // Mandat parlementaire (mandature dérivée de la série électorale).
   const ctx = deriveMandatContextSenat(s.serie, derivation);
 
-  // Mandats de commission depuis sourceData.organismes.
-  // `SenatOrganisme` n'expose que { code, type, libelle, ordre } : ni qualité ni
-  // dates. On ancre donc le mandat sur le début de la mandature du sénateur
-  // (stable et idempotent) plutôt que sur la date du run. Les appartenances
-  // que l'annuaire ne porte plus sont closes par `cloturerCommissionsSenatQuittees`.
-  const organismes = s.sourceData.organismes || [];
-  for (const org of organismes) {
-    if (org.type !== 'COMMISSION' || !org.code) continue;
-    const commissionId = commissionByOrganeRef.get(org.code);
-    if (!commissionId) continue;
-
-    // `Mandat` n'a PAS de contrainte unique (parlementaireId, organeRef) : on
-    // résout à la main plutôt que via un upsert sur une clé inexistante (qui
-    // faisait planter le sync dès que le lookup commission aboutissait).
-    // Le mandat EN COURS seulement : une appartenance close (commission quittée
-    // puis retrouvée) ne doit pas absorber la nouvelle, qui ne serait jamais
-    // rouverte.
-    const existingMandat = await prisma.mandat.findFirst({
-      where: { parlementaireId, organeRef: org.code, dateFin: null },
-      select: { id: true },
-    });
-
-    if (existingMandat) {
-      await prisma.mandat.update({
-        where: { id: existingMandat.id },
-        data: { commissionId, institution: org.libelle },
-      });
-    } else {
-      // Ancre au début de mandature, sauf changement de commission EN COURS de
-      // mandature : la personne avait déjà une appartenance commencée après ce
-      // début. La date du changement n'est pas publiée, on prend celle où on
-      // l'observe. Sans ça, un sénateur de la série 1 passé dans une autre
-      // commission au renouvellement de 2026 y figurait « depuis 2023 ».
-      const precedente = await prisma.mandat.findFirst({
-        where: { parlementaireId, organeRef: { not: org.code }, commission: { chambre: 'senat' } },
-        orderBy: { dateDebut: 'desc' },
-        select: { dateDebut: true },
-      });
-      const changementEnCours = precedente !== null && precedente.dateDebut >= ctx.dateDebut;
-      await prisma.mandat.create({
-        data: {
-          typeOrgane: 'COMMISSION',
-          institution: org.libelle,
-          qualite: 'Membre',
-          dateDebut: changementEnCours ? new Date() : ctx.dateDebut,
-          dateFin: null,
-          organeRef: org.code,
-          parlementaireId,
-          commissionId,
-        },
-      });
-    }
-  }
   const { created: mandatCreated } = await upsertMandatParlementaire(prisma, {
     personneId: parlementaireId,
     chambre: s.chambre,
@@ -3586,7 +3461,7 @@ export interface SmartSyncOptions {
   includeReunions?: boolean;
   includeSenatReunions?: boolean;
   includeSenatAgenda?: boolean;
-  includeSenatBureaux?: boolean; // Fonctions au bureau des commissions Sénat
+  includeSenatFonctions?: boolean; // Fonctions datées des sénateurs (export_sens)
   includeSenatDossierCommissions?: boolean; // Commissions saisies des dossiers Sénat
   includeSenatVideos?: boolean;
   includeAnVideos?: boolean;
@@ -3690,9 +3565,10 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       // 2b. Anciens sénateurs (ODSEN) : après senateurs.json (réconcilie ses mandats
       //     courants), avant les scrutins (les votes historiques ont besoin du roster)
       'senat:senateurs_histo',
-      // 2c. Bureaux des commissions Sénat : requiert les mandats de commission
-      //     créés par 'senat:senateurs' — ce worker ne fait que corriger leur qualité
-      'senat:bureaux',
+      // 2c. Fonctions datées des sénateurs (bureau du Sénat, commissions,
+      //     groupes) : après 'senat:senateurs', dont l'annuaire du jour sert de
+      //     contrôle aux appartenances de commission du dump export_sens
+      'senat:fonctions',
       // 3. Scrutins et votes
       'assemblee_nationale:scrutins',
       'senat:scrutins',
@@ -3746,7 +3622,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       ...(options.includeSeancesODJ ? ['assemblee_nationale:seances_odj'] : []),
       ...(options.includeSenatAgenda ? ['senat:agenda'] : []),
       ...(options.includeSenatReunions ? ['senat:reunions'] : []),
-      ...(options.includeSenatBureaux ? ['senat:bureaux'] : []),
+      ...(options.includeSenatFonctions ? ['senat:fonctions'] : []),
       ...(options.includeSenatDossierCommissions ? ['senat:dossier_commissions'] : []),
       ...(options.includeSenatVideos ? ['senat:videos'] : []),
       ...(options.includeAnVideos ? ['assemblee_nationale:videos'] : []),
@@ -3971,10 +3847,16 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
             break;
           }
 
-          case 'senat:bureaux': {
-            const bureauxResult = await syncSenatBureaux();
-            // Ce worker ne crée aucune ligne : il requalifie des mandats existants.
-            syncResult = { created: 0, updated: bureauxResult.updated + bureauxResult.reset };
+          case 'senat:fonctions': {
+            const fonctions = await syncSenatFonctions();
+            // Bureau et groupes sont écrits ; les commissions, gelées, doivent
+            // apparaître en échec dans le récapitulatif plutôt qu'en ✅.
+            if (fonctions.commissionsGelees) {
+              throw new Error(
+                `${fonctions.ecartAnnuaire} appartenances de commission divergent de l'annuaire : commissions non mises à jour`,
+              );
+            }
+            syncResult = { created: fonctions.crees, updated: fonctions.modifies + fonctions.supprimes };
             break;
           }
 

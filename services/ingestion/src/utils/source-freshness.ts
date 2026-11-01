@@ -133,15 +133,12 @@ export const SOURCES: Record<string, SourceConfig> = {
     dataType: 'agenda',
     url: 'https://www.senat.fr/api/v1/agenda/events',
   },
-  'senat:bureaux': {
+  'senat:fonctions': {
     source: 'senat',
-    dataType: 'bureaux',
-    // Pages HTML « Le bureau de la commission … ». Elles n'exposent ni ETag ni
-    // Last-Modified exploitable, et une recomposition de bureau ne change aucune
-    // URL amont : rien à interroger pour décider. Le coût est marginal
-    // (~17 requêtes), on resynchronise donc systématiquement.
-    url: 'https://www.senat.fr/travaux-parlementaires/commissions.html',
-    alwaysSync: true,
+    dataType: 'fonctions',
+    // Dump de la base des sénateurs : bureau du Sénat, commissions et groupes,
+    // datés. Régénéré chaque nuit vers 2h30, avec un Last-Modified exploitable.
+    url: 'https://data.senat.fr/data/senateurs/export_sens.zip',
   },
   'senat:dossier_commissions': {
     source: 'senat',
