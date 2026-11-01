@@ -87,7 +87,7 @@ pnpm ingestion:smart-sync -a -l 100          # limite appliquée à chaque type 
 pnpm ingestion:smart-sync --sources senat:agenda,senat:videos   # clés de sources explicites
 ```
 
-Sans `-a` ni `--sources`, la commande traite `assemblee_nationale:deputes` et `senat:senateurs`, plus les familles demandées : `-s` (scrutins), `--am` (amendements), `--do` (dossiers), `--in` (interventions), `--lo` (lobbying), `--co` (commissions), `--re` (réunions AN), `--seances-odj`, `--senat-histo`, `--senat-agenda`, `--senat-reunions`, `--senat-fonctions`, `--senat-dossier-commissions`, `--senat-videos`, `--an-videos`, `--candidatures`.
+Sans `-a` ni `--sources`, la commande traite `assemblee_nationale:deputes` et `senat:senateurs`, plus les familles demandées : `-s` (scrutins), `--am` (amendements), `--do` (dossiers), `--in` (interventions), `--lo` (lobbying), `--co` (commissions), `--re` (réunions AN), `--seances-odj`, `--senat-histo`, `--gouvernements`, `--senat-agenda`, `--senat-reunions`, `--senat-fonctions`, `--senat-dossier-commissions`, `--senat-videos`, `--an-videos`, `--candidatures`.
 
 ---
 
@@ -178,7 +178,9 @@ pnpm ingestion:calculate-stats -c assemblee          # ou senat
 pnpm ingestion:calculate-stats --include-frozen      # recalcule aussi les législatures passées
 ```
 
-Calcule la présence (au Sénat, hors scrutins où le sénateur ne pouvait pas voter : présidence du Sénat, présidence de séance, gouvernement), la présence aux scrutins solennels (au Sénat, un vote par délégation y compte comme une absence), la loyauté au groupe, la participation, les compteurs d'interventions et d'amendements, les stats de carrière, les stats par mandat, puis les stats de groupes, les alliances entre groupes et les positions par thématique. `reconcile-actif` réaligne `parlementaires.actif` sur l'existence d'un mandat en cours.
+Calcule la présence (hors scrutins où l'élu ne pouvait pas voter : présidence de l'assemblée, présidence de séance, gouvernement), la présence aux scrutins solennels (au Sénat, un vote par délégation y compte comme une absence), la loyauté au groupe, la participation, les compteurs d'interventions et d'amendements, les stats de carrière, les stats par mandat, puis les stats de groupes, les alliances entre groupes et les positions par thématique. `reconcile-actif` réaligne `parlementaires.actif` sur l'existence d'un mandat en cours.
+
+Les scrutins où l'élu ne pouvait pas voter viennent du statut publié sur la ligne du vote (`votes.statut_votant`), des présidences datées (bureau du Sénat dans `mandats`, `presidences_assemblee` pour l'Assemblée) et des postes ministériels (`postes_ministeriels`) : un membre du Gouvernement ne vote pas, même quand son mandat reste ouvert dans la source. Les législatures révolues ne sont recalculées qu'avec `--include-frozen`. Le calcul enregistre aussi le nombre de scrutins sur lequel porte chaque présence (`stats_scrutins`, `stats_carriere_scrutins`) et si ce nombre atteint le seuil des classements, 50 scrutins (`stats_classable`, `stats_carriere_classable` ; `SEUIL_SCRUTINS_CLASSEMENT`). Le seuil vaut pour la loyauté et la présence des députés ; celle des sénateurs se classe sur les scrutins solennels, sans seuil. Sans aucun scrutin à évaluer, la présence et la loyauté valent `null`, jamais 0 : l'API les rend `null` et les classements les placent en fin de liste dans les deux sens de tri. Le compteur de questions posées écarte les réponses des membres du Gouvernement (type `reponse_gouvernement`, reconnu à la qualité imprimée de l'orateur, dans les deux chambres).
 
 ---
 
@@ -237,6 +239,7 @@ Détail des contrôles : [Qualité des données](/donnees/qualite-des-donnees).
 | `backfill-nature-vote` | Classe la nature des scrutins (`--force` pour tout reclasser) |
 | `sync-senateurs-histo` | Anciens sénateurs depuis l'open data ODSEN (`--depuis <date>`) |
 | `sync-senat-fonctions` | Fonctions datées des sénateurs depuis `export_sens.zip` (`--archive <chemin>` pour un zip déjà téléchargé) |
+| `sync-gouvernements` | Gouvernements depuis 2007, postes ministériels, présidences de la République et de l'Assemblée, lus dans l'archive AMO30 de l'Assemblée ; rattache chacun à sa fiche parlementaire |
 | `clore-mandats-an` | Clôt les mandats de député des sortants (élus sénateurs compris) et les mandats d'organe AN qui survivent au mandat de député (`--dry-run`) |
 | `sync-debats-an` | Comptes rendus de séance de l'Assemblée (source syceron). Options : `--legislature` (défaut 17), `--max-seances`, `--repertoire`, `--reingerer` |
 | `sync-debats-commission` | Comptes rendus de commission de l'Assemblée (PDF). Options : `--depuis`, `--max-reunions`, `--seulement`, `--reingerer`, `--dry-run` |

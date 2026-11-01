@@ -2,12 +2,12 @@
 title: "Modèle de Données Prisma"
 sidebar_label: "Modèle Prisma"
 sidebar_icon: "database"
-description: Les 42 modèles Prisma, leurs conventions, les points de modélisation à connaître, la volumétrie en production, ce que l'API n'expose pas, et les migrations.
+description: Les 47 modèles Prisma, leurs conventions, les points de modélisation à connaître, la volumétrie en production, ce que l'API n'expose pas, et les migrations.
 ---
 
 La base est une base **PostgreSQL 17** décrite par un seul fichier : [`apps/api/prisma/schema.prisma`](https://github.com/accelaire/CLAIR/blob/master/apps/api/prisma/schema.prisma). C'est la source de vérité ; cette page en donne une lecture d'ensemble. Les diagrammes sont sur la page [Schémas ERD](/donnees/schemas-erd).
 
-Le schéma compte **42 modèles**, soit 42 tables, plus 2 tables de jointure créées implicitement par Prisma. Il n'y a ni comptes utilisateurs, ni tables d'authentification. La base de production ne contient aucune autre table que celles-ci, hors la table `_prisma_migrations` de Prisma (vérifié le 21 octobre 2026).
+Le schéma compte **47 modèles**, soit 47 tables, plus 2 tables de jointure créées implicitement par Prisma. Il n'y a ni comptes utilisateurs, ni tables d'authentification. La base de production ne contient aucune autre table que celles-ci, hors la table `_prisma_migrations` de Prisma (vérifié le 21 octobre 2026).
 
 ---
 
@@ -40,13 +40,23 @@ Le groupe, la circonscription, la commission permanente et la série sénatorial
 
 ### 4. Deux tables de mandats distinctes
 
-`mandats_parlementaires` est le siège de parlementaire. `mandats` contient les fonctions dans des organes (commission, délégation, groupe d'études, gouvernement…), avec la qualité (membre, président, rapporteur…).
+`mandats_parlementaires` est le siège de parlementaire. `mandats` contient les fonctions dans des organes (commission, délégation, groupe d'études, mission…), avec la qualité (membre, président, rapporteur…).
+
+Les fonctions gouvernementales n'y sont **pas** : elles ont leurs propres tables (point 6). Les mandats `GOUVERNEMENT` et `PRESREP` de la source sont faux (appartenances jamais closes, présidence rattachée à l'organe d'un prédécesseur). Seules les missions confiées à un parlementaire (`MINISTERE`, qualité « en mission ») restent dans `mandats`.
 
 ### 5. Groupes politiques
 
 À l'Assemblée, un groupe a une ligne par législature. Au Sénat, une ligne par sigle, valable dans le temps (`legislature` à `NULL`). `nom` contient le **sigle tel que la source le code**, figé à travers les renommages (`UMP` pour Les Républicains au Sénat) : c'est une clé de rapprochement, pas un libellé. Le libellé d'usage est `nom_court` ; l'API renvoie `nom_court` à la place de `nom` quand il existe.
 
-### 6. Statistiques pré-calculées
+### 6. Gouvernements et présidence
+
+`gouvernements`, `postes_ministeriels`, `membres_gouvernement` et `presidences` viennent de l'archive AMO30 de l'Assemblée (organes `GOUVERNEMENT`, `MINISTERE`, `PRESREP`), depuis 2007. Un poste est un portefeuille tenu par une personne dans un gouvernement, entre deux dates : une personne peut en tenir plusieurs, successifs ou simultanés. Le Premier ministre est le poste de rang protocolaire 1. Les dates sont des dates civiles (`DATE`), telles que la source les publie : un ministre sortant peut finir le lendemain de la fin de son gouvernement, il expédie les affaires courantes.
+
+Un membre du gouvernement n'est pas un parlementaire : `membres_gouvernement.parlementaire_id` le rattache à sa fiche quand elle existe, par son identifiant AN ou, pour un sénateur, par son état civil (`liaison` dit comment). Ce rattachement est recalculé à chaque synchronisation.
+
+`presidences_assemblee` porte les présidences de l'Assemblée (mandats BUREAU « Président » de l'AMO30, depuis 2007), rattachées à la fiche par l'identifiant AN : l'AMO10 ne date que celle de la législature en cours. Celles du Sénat sont des mandats du bureau dans `mandats` (`SENBUR-…`). Ces périodes, comme les postes ministériels, sortent de la présence de la personne : un membre du Gouvernement ne vote pas, un président d'assemblée seulement par exception.
+
+### 7. Statistiques pré-calculées
 
 Elles sont calculées par le batch nocturne, jamais par l'API. La position majoritaire d'un groupe sur un scrutin n'existe que si une seule position est en tête : en cas d'égalité, le scrutin ne compte ni pour la loyauté (il sort du dénominateur), ni pour les alliances, ni pour les thématiques.
 
@@ -55,11 +65,11 @@ Elles sont calculées par le batch nocturne, jamais par l'API. La position major
 - `mandats_parlementaires.stats_*` : par mandat ;
 - `groupes_politiques.stats_*`, `groupes_alliances`, `groupes_thematiques` : par groupe.
 
-### 7. Scrutins, votes et amendements
+### 8. Scrutins, votes et amendements
 
 Un scrutin peut porter sur plusieurs amendements et un amendement sur plusieurs scrutins : table implicite `_AmendementToScrutin` (`A` = amendement, `B` = scrutin). Les cosignataires sont dans `_AmendementCosignataires` (`A` = amendement, `B` = parlementaire). `numero` n'identifie un scrutin qu'avec `chambre` et `session` (contrainte unique `numero, chambre, session`). Un vote (`votes.position`) vaut `pour`, `contre`, `abstention` ou `absent`.
 
-### 8. Sous-amendements et discussions
+### 9. Sous-amendements et discussions
 
 Un sous-amendement modifie un amendement, pas le texte : `amendements.amendement_parent_id` pointe vers l'amendement qu'il modifie, et `amendement_parent_ref` garde la référence lue à la source. Les amendements discutés ensemble en séance partagent un `id_discussion_commune`, les amendements identiques un `id_discussion_identique`, chacun unique au sein d'une chambre seulement.
 
@@ -72,15 +82,15 @@ Un sous-amendement modifie un amendement, pas le texte : `amendements.amendement
 
 Au Sénat, chaque colonne n'a qu'un écrivain (le CSV pour le libellé de l'alinéa, la passe AMELI pour le reste) : deux sources qui se disputeraient une colonne la réécriraient chaque nuit, et `updated_at` bougerait sans changement.
 
-### 9. Interventions
+### 10. Interventions
 
 `interventions` contient les prises de parole en séance (`reunion_id` à `NULL`) et en commission (`reunion_id` renseigné). `parlementaire_id` est vide pour les orateurs non parlementaires (ministres…), dont le nom reste dans `orateur_nom`. `intervention_scrutin` relie une prise de parole au scrutin qu'elle précède, avec la méthode du rattachement dans `via` : `amendement` et `article` dans les deux chambres ; `ensemble` (explications de vote), `motion` et `finances` (fascicule budgétaire) au Sénat ; `fenetre` (ce qui a été dit entre deux votes) à l'Assemblée.
 
-### 10. Sujets
+### 11. Sujets
 
 Un sujet regroupe les dossiers de l'Assemblée et du Sénat qui portent sur le même texte (`dossiers_legislatifs.sujet_id`).
 
-### 11. Élections sénatoriales
+### 12. Élections sénatoriales
 
 Chaque ingestion aligne les candidatures sur le fichier du ministère : une liste se reconnaît à son `source_uid`, une candidature à sa liste, son rôle et son rang, et toutes deux gardent leur `id` d'une ingestion à l'autre. Les tables de résultats ne s'y rattachent pourtant pas par clé étrangère, mais par des identifiants de la source, pour ne pas dépendre de la vie des lignes de candidature :
 
@@ -108,6 +118,18 @@ Volumétrie mesurée en production le **21 octobre 2026**.
 | `GroupeAlliance` | `groupes_alliances` | 506 | Taux d'accord entre deux groupes |
 | `GroupeThematique` | `groupes_thematiques` | 752 | Position moyenne d'un groupe par thème |
 | `DeclarationHATVP` | `declarations_hatvp` | 4 943 | Déclarations d'intérêts et de patrimoine (liens vers la HATVP) |
+
+### Gouvernements et présidence
+
+Volumétrie de l'archive AMO30 du 21 octobre 2026.
+
+| Modèle | Table | Lignes | Contenu |
+| :--- | :--- | ---: | :--- |
+| `Gouvernement` | `gouvernements` | 17 | De Fillon I (mai 2007) à Lecornu II |
+| `PosteMinisteriel` | `postes_ministeriels` | 766 | Portefeuille tenu par une personne dans un gouvernement, avec ses dates (missions exclues) |
+| `MembreGouvernement` | `membres_gouvernement` | 311 | Personnes ayant tenu au moins un poste ; 145 rattachées à leur fiche parlementaire |
+| `Presidence` | `presidences` | 3 | Présidences de la République depuis 2007 (un seul organe pour les deux mandats d'Emmanuel Macron) |
+| `PresidenceAssemblee` | `presidences_assemblee` | 7 | Présidences de l'Assemblée depuis 2007 |
 
 ### Travail législatif
 
@@ -165,7 +187,7 @@ Volumétrie mesurée en production le **21 octobre 2026**.
 
 | Modèle | Table | Contenu |
 | :--- | :--- | :--- |
-| `SourceState` | `source_states` | État de fraîcheur de chaque source (23 lignes, une par clé) |
+| `SourceState` | `source_states` | État de fraîcheur de chaque source (24 lignes, une par clé) |
 | `SyncLog` | `sync_logs` | Journal des synchronisations |
 | `Feedback` | `feedbacks` | Retours anonymes envoyés depuis le site |
 
@@ -218,6 +240,11 @@ L'API renvoie l'essentiel de la base, souvent la ligne entière sur les routes d
 | `candidatures` | `date_naissance`, `profession_code`, `sortant_declare`, `match_confiance`, `tour_election` | La date de naissance des candidats est **volontairement** tenue hors de l'API : seule l'année est publiée |
 | `candidatures_listes` | `numero_depot` | |
 | `candidats_mandats_locaux` | `date_naissance`, `confiance` | Même règle pour la date de naissance |
+| `gouvernements` | `libelle_source` | Libellé brut de la source (« VALLS 2 », « LECORNU II »), incohérent ; l'API renvoie à la place `nom` (« Valls II ») |
+| `membres_gouvernement` | `slug`, `date_naissance`, `liaison` | La date de naissance ne sert qu'au rattachement des sénateurs |
+| `postes_ministeriels` | `qualite` quand `qualite_accordee` existe | L'API renvoie la qualité accordée au titulaire (« Ministre déléguée ») sous le nom `qualite` |
+| `presidences` | `acteur_uid`, `liaison` | |
+| `presidences_assemblee` | toutes | Sert au calcul de la présence ; la fiche affiche la présidence parmi les fonctions du mandat |
 
 Méthode : liste relevée le 1er octobre 2026 en interrogeant toutes les routes GET documentées avec des paramètres réels (plus de 500 appels), puis revue dans le code le 21 octobre 2026, après l'ajout des métadonnées de séance des amendements. Les colonnes renvoyées sous un autre nom (par exemple `cible_types.label` en `cibleNom`, `groupes_thematiques.position_moyenne` en `position`) comptent comme exposées.
 

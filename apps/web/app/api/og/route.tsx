@@ -1,7 +1,7 @@
 import { ImageResponse } from 'next/og';
 import { NextRequest } from 'next/server';
 import { fetchFromApi } from '@/lib/api-server';
-import { OgLayout, OgStat, OG_SIZE, loadFont } from '@/lib/og';
+import { OgLayout, OgStat, OG_SIZE, loadFont, pourcent } from '@/lib/og';
 import { presenceDe } from '@/lib/presence';
 
 export const runtime = 'nodejs';
@@ -32,7 +32,7 @@ interface ParlementaireOg {
   stats: {
     presence: number | null;
     presenceSolennel?: number | null;
-    loyaute: number;
+    loyaute: number | null;
     participation: number;
     amendements: number;
     interventions: number;
@@ -46,10 +46,9 @@ interface ParlementaireOg {
 function valeurCritere(p: Pick<ParlementaireOg, 'chambre' | 'stats'>, sort: string): string {
   if (!p.stats) return '—';
   if (sort === 'presence') {
-    const v = presenceDe(p.chambre, p.stats);
-    return v === null ? '—' : `${v}%`;
+    return pourcent(presenceDe(p.chambre, p.stats));
   }
-  if (sort === 'loyaute') return `${p.stats.loyaute}%`;
+  if (sort === 'loyaute') return pourcent(p.stats.loyaute);
   return (p.stats[sort as 'amendements' | 'interventions'] ?? 0).toLocaleString('fr-FR');
 }
 
@@ -187,7 +186,7 @@ async function renderClassementParlementaire(searchParams: URLSearchParams, font
           {data.stats && (
             <>
               <OgStat label={data.chambre === 'senat' ? 'Présence (solennels)' : 'Présence'} value={valeurCritere(data, 'presence')} />
-              <OgStat label="Loyauté" value={`${data.stats.loyaute}%`} />
+              <OgStat label="Loyauté" value={pourcent(data.stats.loyaute)} />
             </>
           )}
         </div>

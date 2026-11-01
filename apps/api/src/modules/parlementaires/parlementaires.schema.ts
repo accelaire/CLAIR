@@ -150,7 +150,7 @@ export const parlementaireStatsSchema = z.object({
     .max(100)
     .nullable()
     .describe(
-      "Taux de participation aux scrutins publics en %, hors scrutins où l'élu ne pouvait pas voter (président de l'assemblée, président de séance, membre du gouvernement). Au Sénat, les scrutins ordinaires sont votés par groupe : ce taux n'y mesure pas la présence (voir presenceSolennel). Null sans aucun scrutin où il pouvait voter (président de l'assemblée).",
+      "Taux de participation aux scrutins publics en %, hors scrutins où l'élu ne pouvait pas voter (président de l'assemblée, président de séance, membre du gouvernement). Au Sénat, les scrutins ordinaires sont votés par groupe : ce taux n'y mesure pas la présence (voir presenceSolennel). Null sans aucun scrutin où il pouvait voter (président de l'assemblée, période passée au Gouvernement).",
     ),
   presenceSolennel: z
     .number()
@@ -160,7 +160,7 @@ export const parlementaireStatsSchema = z.object({
     .describe(
       "Taux de présence aux scrutins solennels en %. Au Sénat, seule mesure de la présence : vote en personne, un vote confié à un collègue compte comme une absence. Null sans scrutin solennel sur la période.",
     ),
-  loyaute: z.number().min(0).max(100).describe('Taux de loyauté au groupe en %'),
+  loyaute: z.number().min(0).max(100).nullable().describe('Taux de loyauté au groupe en %. Null sans vote exprimé dans un groupe'),
   participation: z.number().describe('Nombre de votes'),
   interventions: z.number().describe("Nombre d'interventions"),
   amendements: z.object({
@@ -168,6 +168,7 @@ export const parlementaireStatsSchema = z.object({
     adoptes: z.number(),
   }),
   questions: z.number().describe('Nombre de questions posées'),
+  scrutins: z.number().nullable().optional().describe('Scrutins sur lesquels porte la présence ; sous 50, la personne ne figure pas dans les classements de loyauté, ni dans celui de la présence des députés'),
 });
 
 export const parlementaireDetailSchema = parlementaireSchema.extend({

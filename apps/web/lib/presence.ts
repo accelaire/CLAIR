@@ -11,7 +11,7 @@
 export type ChambreParlementaire = 'assemblee' | 'senat';
 
 export interface StatsPresence {
-  /** Null au Sénat sans aucun scrutin où il pouvait voter (président du Sénat). */
+  /** Null sans aucun scrutin où il pouvait voter (président de l'assemblée, période au Gouvernement). */
   presence: number | null;
   presenceSolennel?: number | null;
 }

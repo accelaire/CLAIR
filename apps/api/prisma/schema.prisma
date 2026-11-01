@@ -82,6 +82,16 @@ model Parlementaire {
   statsCarriereInterventions Int? @map("stats_carriere_interventions")
   statsCarriereAmendements   Int? @map("stats_carriere_amendements")
 
+  // Nombre de scrutins sur lequel porte la présence (mandat en cours, carrière),
+  // et s'il suffit à classer la personne : sous SEUIL_SCRUTINS_CLASSEMENT
+  // (stats-calculator), un taux sur 28 scrutins mettait 179 sénateurs tout juste
+  // élus en tête des classements. Booléens et non expression : un tri Prisma
+  // exige une colonne.
+  statsScrutins           Int?    @map("stats_scrutins")
+  statsCarriereScrutins   Int?    @map("stats_carriere_scrutins")
+  statsClassable          Boolean @default(false) @map("stats_classable")
+  statsCarriereClassable  Boolean @default(false) @map("stats_carriere_classable")
+
   // Enrichissement IA (fiches parlementaires enrichies)
   resumeIA        String?   @map("resume_ia")
   parcoursIA      String?   @map("parcours_ia")
@@ -95,7 +105,7 @@ model Parlementaire {
   votes                 Vote[]
   interventions         Intervention[]
   amendements           Amendement[]
-  amendementsCoSignes   Amendement[]          @relation("AmendementCosignataires")
+  amendementsCoSignes   Amendement[]               @relation("AmendementCosignataires")
   actionsLobby          ActionLobby[]
   mandats               Mandat[]
   mandatsParlementaires MandatParlementaire[]
@@ -103,6 +113,9 @@ model Parlementaire {
   reunionParticipants   ReunionParticipant[]
   candidatures          Candidature[]
   identifiants          ParlementaireIdentifiant[]
+  membreGouvernement    MembreGouvernement?
+  presidences           Presidence[]
+  presidencesAssemblee  PresidenceAssemblee[]
 
   // Métadonnées source
   sourceId   String? @map("source_id") // PA123456 (AN) ou 14133K (Sénat)
@@ -244,6 +257,8 @@ model MandatParlementaire {
   statsAmendements        Int?      @map("stats_amendements")
   statsAmendementsAdoptes Int?      @map("stats_amendements_adoptes")
   statsQuestions          Int?      @map("stats_questions")
+  /// Scrutins de la fenêtre du mandat sur lesquels porte sa présence.
+  statsScrutins           Int?      @map("stats_scrutins")
   statsCalculatedAt       DateTime? @map("stats_calculated_at")
 
   // Dédoublonnage source (ref organe-mandature AN / id mandat Sénat si dispo)
@@ -303,6 +318,152 @@ model Mandat {
   @@index([dateDebut])
   @@index([commissionId])
   @@map("mandats")
+}
+
+// =============================================================================
+// GOUVERNEMENTS ET PRÉSIDENCE DE LA RÉPUBLIQUE
+// Source : l'archive AMO30 de l'AN (organes GOUVERNEMENT, MINISTERE, PRESREP),
+// qui remonte à 2007. Voir SPEC-GOUVERNEMENT.md.
+//
+// Les dates sont des dates civiles (`@db.Date`) : les contrôles comparent des
+// jours, sans fuseau. Les fonctions gouvernementales ne passent PAS par
+// `mandats` : les mandats GOUVERNEMENT et PRESREP de la source sont faux
+// (appartenances jamais closes, présidence rattachée au mauvais organe).
+// =============================================================================
+
+/// Un gouvernement de la Ve République, tel que l'AN le publie (organe GOUVERNEMENT).
+/// Le Premier ministre est le poste de rang protocolaire 1, aux dates du gouvernement.
+model Gouvernement {
+  id   String @id @default(uuid())
+  uid  String @unique // PO873634
+  slug String @unique // lecornu-2 : posé à la création, jamais réécrit
+
+  libelleSource String    @map("libelle_source") // « LECORNU II », tel que publié ; ne sert qu'au slug
+  numero        Int // rang parmi les gouvernements du même Premier ministre (Valls I, Valls II)
+  dateDebut     DateTime  @map("date_debut") @db.Date
+  dateFin       DateTime? @map("date_fin") @db.Date // null = en cours
+
+  postes PosteMinisteriel[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@index([dateDebut])
+  @@map("gouvernements")
+}
+
+/// Une personne ayant occupé au moins un poste ministériel. Distincte de
+/// Parlementaire : une partie des ministres n'a jamais siégé, ou a siégé hors
+/// de notre corpus.
+model MembreGouvernement {
+  id            String    @id @default(uuid())
+  acteurUid     String    @unique @map("acteur_uid") // PA643210
+  slug          String    @unique // posé à la création, jamais réécrit
+  civilite      String? // « M. », « Mme »
+  prenom        String
+  nom           String
+  dateNaissance DateTime? @map("date_naissance") @db.Date
+
+  // Fiche de la personne, recalculée à chaque synchronisation.
+  parlementaireId String?        @unique @map("parlementaire_id")
+  parlementaire   Parlementaire? @relation(fields: [parlementaireId], references: [id], onDelete: SetNull)
+  liaison         String? // 'source_id' | 'identifiant' | 'etat_civil' : comment la fiche a été trouvée
+
+  postes PosteMinisteriel[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@map("membres_gouvernement")
+}
+
+/// Un poste : une personne, un portefeuille, dans un gouvernement, entre deux
+/// dates (mandat MINISTERE de l'AN, hors missions). Une personne peut tenir
+/// plusieurs portefeuilles à la fois, ou quitter un gouvernement et y revenir.
+model PosteMinisteriel {
+  id  String @id @default(uuid())
+  uid String @unique // PM847741
+
+  gouvernementId String             @map("gouvernement_id")
+  gouvernement   Gouvernement       @relation(fields: [gouvernementId], references: [id], onDelete: Cascade)
+  membreId       String             @map("membre_id")
+  membre         MembreGouvernement @relation(fields: [membreId], references: [id], onDelete: Cascade)
+
+  organeUid          String  @map("organe_uid") // PO… du portefeuille
+  qualite            String // libQualite : « Ministre délégué »
+  qualiteAccordee    String? @map("qualite_accordee") // libQualiteSex : « Ministre déléguée »
+  rangProtocolaire   Int     @map("rang_protocolaire") // preseance : 1 = Premier ministre … 50 = secrétaire d'État
+  intitule           String // libelle du portefeuille
+  intituleCourt      String? @map("intitule_court") // libelleAbrege
+  intituleComplement String? @map("intitule_complement") // libelleEdition (« auprès de …, chargée de … »)
+  /// Grand secteur du portefeuille (« economie », « sante »…), d'après la table
+  /// de l'ingestion (domaines-ministeriels.ts) ; null pour un intitulé nouveau.
+  domaine            String?
+
+  // Dates du mandat, jamais de l'organe (certains organes n'en ont pas).
+  dateDebut       DateTime  @map("date_debut") @db.Date
+  dateFin         DateTime? @map("date_fin") @db.Date
+  datePublication DateTime? @map("date_publication") @db.Date
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@index([gouvernementId, rangProtocolaire])
+  @@index([membreId])
+  @@map("postes_ministeriels")
+}
+
+/// Une présidence de la République (organe PRESREP). La personne vient du
+/// libellé de l'organe ; `acteurUid` n'est posé que par un mandat PRESREP
+/// rattaché à CET organe (la source en rattache à l'organe d'un prédécesseur).
+/// L'AN ne publie qu'un organe pour les deux mandats d'Emmanuel Macron.
+model Presidence {
+  id        String    @id @default(uuid())
+  uid       String    @unique // PO717136
+  civilite  String?
+  prenom    String
+  nom       String
+  dateDebut DateTime  @map("date_debut") @db.Date
+  dateFin   DateTime? @map("date_fin") @db.Date // null = en cours
+
+  acteurUid       String?        @map("acteur_uid") // PA…, absent pour Nicolas Sarkozy
+  parlementaireId String?        @map("parlementaire_id")
+  parlementaire   Parlementaire? @relation(fields: [parlementaireId], references: [id], onDelete: SetNull)
+  liaison         String? // comme MembreGouvernement.liaison
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@index([dateDebut])
+  @@index([parlementaireId])
+  @@map("presidences")
+}
+
+/// Présidence de l'Assemblée nationale, datée par l'AMO30 depuis 2007 (l'AMO10
+/// ne date que celle de la législature en cours). Par tradition, le président
+/// ne prend part aux votes que par exception : les scrutins de sa présidence
+/// sortent de sa présence (stats-calculator). Celle du Sénat est un mandat du
+/// bureau (`mandats`, `SENBUR-…`, senat-fonctions).
+model PresidenceAssemblee {
+  id        String    @id @default(uuid())
+  /// uid du mandat au bureau (PM…) dans l'AMO30
+  uid       String    @unique
+  acteurUid String    @map("acteur_uid") // PA…
+  prenom    String
+  nom       String
+  dateDebut DateTime  @map("date_debut") @db.Date
+  dateFin   DateTime? @map("date_fin") @db.Date // null = en cours
+
+  parlementaireId String?        @map("parlementaire_id")
+  parlementaire   Parlementaire? @relation(fields: [parlementaireId], references: [id], onDelete: SetNull)
+  liaison         String? // 'source_id' | 'identifiant'
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@index([dateDebut])
+  @@index([parlementaireId])
+  @@map("presidences_assemblee")
 }
 
 // =============================================================================

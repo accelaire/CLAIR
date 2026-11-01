@@ -8,6 +8,7 @@ import { logger } from './logger';
 import { errorMessage, httpStatus } from './errors';
 import { estOpenDataAN, lireEnTetesParGet, urlSansCacheAN } from './cdn-an';
 import { LEGISLATURE_AN_COURANTE } from '../workers/mandats';
+import { urlArchiveAMO30 } from '../sources/assemblee-nationale/amo30-archive';
 
 const prisma = new PrismaClient();
 
@@ -72,8 +73,14 @@ export const SOURCES: Record<string, SourceConfig> = {
   'assemblee_nationale:commissions': {
     source: 'assemblee_nationale',
     dataType: 'commissions',
-    // Same AMO10 ZIP as deputes — organes are in the same archive
-    url: `https://data.assemblee-nationale.fr/static/openData/repository/${LEGISLATURE}/amo/deputes_actifs_mandats_actifs_organes/AMO10_deputes_actifs_mandats_actifs_organes.json.zip`,
+    // Les commissions viennent de l'AMO30 (organes historiques), pas de l'AMO10.
+    url: urlArchiveAMO30(LEGISLATURE_AN_COURANTE),
+  },
+  'assemblee_nationale:gouvernements': {
+    source: 'assemblee_nationale',
+    dataType: 'gouvernements',
+    // Même archive que les commissions, téléchargée une fois pour les deux.
+    url: urlArchiveAMO30(LEGISLATURE_AN_COURANTE),
   },
   'assemblee_nationale:reunions': {
     source: 'assemblee_nationale',

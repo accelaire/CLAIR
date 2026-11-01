@@ -16,7 +16,7 @@ Les trois préfixes servent les mêmes routes sur la même table : `/parlementai
 | `GET` | `/api/v1/parlementaires` | Liste paginée des parlementaires (Assemblée et Sénat) |
 | `GET` | `/api/v1/deputes` | Même liste, restreinte aux députés |
 | `GET` | `/api/v1/senateurs` | Même liste, restreinte aux sénateurs |
-| `GET` | `/api/v1/parlementaires/:slug` | Fiche d'un parlementaire : identité, mandats, statistiques, fiche IA |
+| `GET` | `/api/v1/parlementaires/:slug` | Fiche d'un parlementaire : identité, mandats, statistiques, fiche IA. `fonctionsGouvernementales` liste ses postes ministériels et sa présidence de la République, s'il en a (voir `/gouvernements`) ; ils ne figurent pas dans `mandats` |
 | `GET` | `/api/v1/parlementaires/:slug/votes` | Votes du parlementaire, filtrables |
 | `GET` | `/api/v1/parlementaires/:slug/amendements` | Amendements déposés et cosignés |
 | `GET` | `/api/v1/parlementaires/:slug/interventions` | Prises de parole en séance et en commission |
@@ -43,6 +43,8 @@ Toutes les routes, avec leurs schémas de réponse : [explorateur de l'API](/api
 | `periode` | Statistiques servant au tri : `mandat` (mandat en cours, par défaut) ou `carriere` (tous mandats cumulés, ce qui avantage mécaniquement les réélus) |
 
 **Présence au Sénat.** Un scrutin ordinaire du Sénat se vote par groupe : un délégué dépose les bulletins de tous les membres, présents ou non. Le taux sur tous les scrutins (`stats.presence`) y est donc une participation, pas une présence. La présence d'un sénateur est `stats.presenceSolennel` : la part des scrutins solennels où il a voté en personne (un vote confié à un collègue compte comme une absence). Le président du Sénat, le président de séance et les membres du gouvernement, qui ne votent pas, sont hors calcul ; `presence` vaut `null` quand il ne reste aucun scrutin (président du Sénat). En conséquence, `sort=presence` trie les sénateurs sur `presenceSolennel`, et sans `chambre` ne classe que les députés.
+
+Dans `stats`, `presence` et `loyaute` valent `null` quand il n'y a rien à évaluer : aucun scrutin où l'élu pouvait voter (président de l'assemblée, mandat passé au Gouvernement), ou aucun vote exprimé au sein d'un groupe. Ce n'est pas 0 %. Les scrutins tenus pendant un poste ministériel de la personne, ou pendant sa présidence de l'Assemblée, sortent aussi de sa présence, même quand la source du scrutin ne la marque pas. Dans `mandats`, la présidence d'une assemblée figure comme une fonction du mandat (`typeOrgane` `BUREAU`). Triées sur ces taux, les valeurs `null` passent en fin de liste dans les deux sens. Un taux calculé sur moins de 50 scrutins (`stats.scrutins` ; `stats.classable` vaut `false` dans les listes) passe aussi après les autres : il ne se compare pas à celui d'un élu noté sur des milliers de scrutins, et la fiche le montre avec son nombre de scrutins. Ce seuil vaut pour la loyauté et la présence des députés, pas pour celle des sénateurs, mesurée sur les scrutins solennels, peu nombreux.
 
 ---
 

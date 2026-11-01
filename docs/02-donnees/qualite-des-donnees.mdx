@@ -59,6 +59,22 @@ Code : `services/ingestion/src/checks/data-quality.ts`. Le contrôle réussit si
 | Sortants déclarés par le fichier du ministère mais non rattachés à une personne |
 | Index LEGI jamais chargé, ou pas vérifié contre les archives de la DILA depuis plus de 2 jours |
 | Amendements avec dispositif, en base depuis plus de 2 jours, dont les renvois au droit en vigueur n'ont pas été calculés par la version courante de la détection |
+| Gouvernements qui se chevauchent au-delà du jour de passation |
+| Écart à un seul gouvernement en cours |
+| Postes ministériels hors des dates de leur gouvernement (un sortant peut finir au plus tard le jour où commence le gouvernement suivant : il expédie les affaires courantes) |
+| Postes ministériels qui finissent avant de commencer |
+| Gouvernements sans exactement un Premier ministre (poste de rang protocolaire 1) à leurs dates |
+| Membres du gouvernement sans poste |
+| Membres du gouvernement rattachés à une fiche qui ne leur correspond plus (identifiant AN ou état civil) |
+| Fonctions gouvernementales encore dans `mandats` (elles viennent de `postes_ministeriels` et `presidences`) |
+| Réponses de membres du Gouvernement typées « question » (elles entreraient dans le compteur de questions posées de leur fiche) |
+| Votes exprimés pendant un poste ministériel (un membre du Gouvernement ne vote pas : un tel vote trahit une fiche mal liée ou des dates de poste fausses) |
+| Présidences qui se chevauchent au-delà du jour de passation |
+| Écart à une seule présidence en cours |
+| Gouvernements qui ne commencent pendant aucune présidence |
+| Postes ministériels sans domaine : un intitulé nouveau, à ajouter à `domaines-ministeriels.ts` |
+| Présidences de l'Assemblée qui se chevauchent au-delà du jour de passation |
+| Écart à une seule présidence de l'Assemblée en cours |
 
 **Le Congrès n'a pas de votes nominatifs, c'est normal.** Les scrutins du Congrès (députés et sénateurs réunis à Versailles) sont publiés par l'AN sous un uid `VTCG…` (CG pour Congrès, AN pour Assemblée) avec leurs totaux, mais sans aucune liste de votants. Ce n'est ni une perte à l'ingestion ni un scrutin cassé : il n'y a rien à réparer. Ces scrutins sont donc exclus de l'invariant « scrutins sans aucun vote » (filtre sur `source_url` contenant `/scrutins/VTCG`), ce qui ne peut masquer aucun scrutin de l'Assemblée ni du Sénat. Au 7 octobre 2026, la base en compte un seul : `VTCGR5L16V1`, la révision constitutionnelle sur l'IVG du 4 mars 2024 (780 pour, 72 contre).
 
@@ -99,6 +115,12 @@ Code : `services/ingestion/src/checks/data-quality.ts`. Le contrôle réussit si
 | Index LEGI : versions de textes | 140 000 |
 | Index LEGI : versions d'articles | 680 000 |
 | Amendements calculés dont le dispositif cite au moins un texte ou article lié | 25 % |
+| Gouvernements (depuis 2007) | 17 |
+| Postes ministériels | 766 |
+| Membres du gouvernement | 311 |
+| Membres du gouvernement rattachés à leur fiche | 145 |
+| Présidences de la République (depuis 2007) | 3 |
+| Présidences de l'Assemblée (depuis 2007) | 7 |
 
 Le périmètre des taux de liaison au Sénat commence à la session 2024, parce que les amendements des sessions antérieures ne sont pas ingérés : les compter mesurerait le périmètre de l'ingestion, pas la qualité du rattachement.
 

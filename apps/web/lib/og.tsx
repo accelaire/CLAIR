@@ -113,6 +113,11 @@ export function ogNombre(n: number): string {
   return n.toLocaleString('fr-FR').replace(/[\u202f\u00a0]/g, ' ');
 }
 
+/** Un taux, ou un tiret quand il n'existe pas (aucun scrutin \u00e0 \u00e9valuer) : jamais \u00ab null% \u00bb. */
+export function pourcent(v: number | null): string {
+  return v === null ? '\u2014' : `${v}%`;
+}
+
 /** Stat pill used in parlementaire OG images. */
 /**
  * Visuel Open Graph d'une page de rubrique.

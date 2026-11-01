@@ -135,6 +135,20 @@ CREATE OR REPLACE TRIGGER groupes_alliances_updated_at BEFORE INSERT OR UPDATE O
 CREATE OR REPLACE TRIGGER groupes_thematiques_updated_at BEFORE INSERT OR UPDATE ON groupes_thematiques
   FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at('calculated_at');
 
+-- Gouvernements et présidence. La fiche liée (`parlementaire_id`, `liaison`)
+-- est recalculée chaque nuit, mais ne bouge que si elle change : c'est du
+-- contenu.
+CREATE OR REPLACE TRIGGER gouvernements_updated_at BEFORE INSERT OR UPDATE ON gouvernements
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER membres_gouvernement_updated_at BEFORE INSERT OR UPDATE ON membres_gouvernement
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER postes_ministeriels_updated_at BEFORE INSERT OR UPDATE ON postes_ministeriels
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER presidences_updated_at BEFORE INSERT OR UPDATE ON presidences
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER presidences_assemblee_updated_at BEFORE INSERT OR UPDATE ON presidences_assemblee
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+
 -- Commissions, réunions, agenda.
 CREATE OR REPLACE TRIGGER commissions_updated_at BEFORE INSERT OR UPDATE ON commissions
   FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();

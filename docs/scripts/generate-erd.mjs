@@ -38,6 +38,10 @@ const SECTIONS = [
     ],
   },
   {
+    titre: "Gouvernements et présidence de la République",
+    tables: ["gouvernements", "postes_ministeriels", "membres_gouvernement", "presidences", "presidences_assemblee"],
+  },
+  {
     titre: "Travail législatif : dossiers, scrutins, amendements, débats, sujets",
     tables: [
       "dossiers_legislatifs",

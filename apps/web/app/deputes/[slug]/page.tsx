@@ -5,6 +5,7 @@ import { chambreDeLaFiche } from '@/lib/chambre-de-la-fiche';
 import { REVALIDATE_LISTE_S } from '@/lib/liste-ssr';
 import { PersonJsonLd, BreadcrumbJsonLd } from '@/components/seo/JsonLd';
 import { descriptionParlementaire, fonctionParlementaire } from '@/lib/meta-parlementaire';
+import { fonctionEnCours } from '@/lib/gouvernements';
 import PageClient from './PageClient';
 import type { DeputeDetail, PageVotes } from './PageClient';
 
@@ -56,11 +57,15 @@ export async function generateMetadata({
     actif: data.actif,
     mandats: data.mandatsParlementaires,
   });
-  const title = `${fullName}, ${fonction.libelle} — votes et activité`;
+  // Une fonction au Gouvernement en cours passe avant le mandat : le lecteur
+  // qui cherche le Premier ministre doit le reconnaître dans le résultat.
+  const gouvernement = fonctionEnCours(data.fonctionsGouvernementales, data.sexe);
+  const libelle = gouvernement ? `${gouvernement.dansUnTitre}, ${fonction.libelle}` : fonction.libelle;
+  const title = `${fullName}, ${libelle} — votes et activité`;
 
   const description = descriptionParlementaire({
     fullName,
-    fonction: fonction.libelle,
+    fonction: libelle,
     groupe: data.groupe?.nom,
     stats: data.stats,
     enCours: fonction.enCours,

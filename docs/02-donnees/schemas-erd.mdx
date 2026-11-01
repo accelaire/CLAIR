@@ -47,7 +47,7 @@ Diagrammes entité-relation de la base, générés depuis [`apps/api/prisma/sche
 
 ## 🗺️ Vue d'ensemble des relations
 
-Les 51 relations entre tables, sans les colonnes. Les 7 tables sans clé étrangère (`evenements_institutionnels`, `candidats_mandats_locaux`, `legi_textes`, `legi_articles`, `sync_logs`, `source_states`, `feedbacks`) n'y figurent pas ; elles sont détaillées plus bas.
+Les 56 relations entre tables, sans les colonnes. Les 7 tables sans clé étrangère (`evenements_institutionnels`, `candidats_mandats_locaux`, `legi_textes`, `legi_articles`, `sync_logs`, `source_states`, `feedbacks`) n'y figurent pas ; elles sont détaillées plus bas.
 
 <Mermaid
   title="Toutes les relations"
@@ -60,6 +60,11 @@ Les 51 relations entre tables, sans les colonnes. Les 7 tables sans clé étrang
     circonscriptions |o--o{ mandats_parlementaires : "circonscription_id"
     parlementaires ||--o{ mandats : "parlementaire_id"
     commissions |o--o{ mandats : "commission_id"
+    parlementaires |o--o| membres_gouvernement : "parlementaire_id"
+    gouvernements ||--o{ postes_ministeriels : "gouvernement_id"
+    membres_gouvernement ||--o{ postes_ministeriels : "membre_id"
+    parlementaires |o--o{ presidences : "parlementaire_id"
+    parlementaires |o--o{ presidences_assemblee : "parlementaire_id"
     commissions |o--o{ reunions : "commission_id"
     reunions ||--o{ reunion_participants : "reunion_id"
     parlementaires ||--o{ reunion_participants : "parlementaire_id"
@@ -145,6 +150,10 @@ Les 51 relations entre tables, sans les colonnes. Les 7 tables sans clé étrang
         int stats_carriere_participation  "nullable"
         int stats_carriere_interventions  "nullable"
         int stats_carriere_amendements  "nullable"
+        int stats_scrutins  "nullable"
+        int stats_carriere_scrutins  "nullable"
+        bool stats_classable
+        bool stats_carriere_classable
         text resume_ia  "nullable"
         text parcours_ia  "nullable"
         text positions_cles_ia  "nullable"
@@ -185,6 +194,7 @@ Les 51 relations entre tables, sans les colonnes. Les 7 tables sans clé étrang
         int stats_amendements  "nullable"
         int stats_amendements_adoptes  "nullable"
         int stats_questions  "nullable"
+        int stats_scrutins  "nullable"
         timestamp stats_calculated_at  "nullable"
         text mandat_uid UK  "nullable"
         jsonb source_data  "nullable"
@@ -297,6 +307,89 @@ Les 51 relations entre tables, sans les colonnes. Les 7 tables sans clé étrang
 `}
 />
 
+## Gouvernements et présidence de la République
+
+<Mermaid
+  title="Gouvernements et présidence de la République"
+  chart={`erDiagram
+    gouvernements {
+        text id PK
+        text uid UK
+        text slug UK
+        text libelle_source
+        int numero
+        timestamp date_debut
+        timestamp date_fin  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    postes_ministeriels {
+        text id PK
+        text uid UK
+        text gouvernement_id FK
+        text membre_id FK
+        text organe_uid
+        text qualite
+        text qualite_accordee  "nullable"
+        int rang_protocolaire
+        text intitule
+        text intitule_court  "nullable"
+        text intitule_complement  "nullable"
+        text domaine  "nullable"
+        timestamp date_debut
+        timestamp date_fin  "nullable"
+        timestamp date_publication  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    membres_gouvernement {
+        text id PK
+        text acteur_uid UK
+        text slug UK
+        text civilite  "nullable"
+        text prenom
+        text nom
+        timestamp date_naissance  "nullable"
+        text parlementaire_id FK, UK  "nullable"
+        text liaison  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    presidences {
+        text id PK
+        text uid UK
+        text civilite  "nullable"
+        text prenom
+        text nom
+        timestamp date_debut
+        timestamp date_fin  "nullable"
+        text acteur_uid  "nullable"
+        text parlementaire_id FK  "nullable"
+        text liaison  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    presidences_assemblee {
+        text id PK
+        text uid UK
+        text acteur_uid
+        text prenom
+        text nom
+        timestamp date_debut
+        timestamp date_fin  "nullable"
+        text parlementaire_id FK  "nullable"
+        text liaison  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    parlementaires |o--o| membres_gouvernement : "parlementaire_id"
+    gouvernements ||--o{ postes_ministeriels : "gouvernement_id"
+    membres_gouvernement ||--o{ postes_ministeriels : "membre_id"
+    parlementaires |o--o{ presidences : "parlementaire_id"
+    parlementaires |o--o{ presidences_assemblee : "parlementaire_id"
+`}
+/>
+
 ## Travail législatif : dossiers, scrutins, amendements, débats, sujets
 
 <Mermaid
@@ -367,6 +460,7 @@ Les 51 relations entre tables, sans les colonnes. Les 7 tables sans clé étrang
         text position
         text mise_au_point  "nullable"
         bool par_delegation
+        text statut_votant  "nullable"
         timestamp created_at
         timestamp updated_at
     }

@@ -648,11 +648,24 @@ function consigneDeNouvelEssai(defauts: string[]): string {
 // Persist mandats to DB
 // =============================================================================
 
+/**
+ * Fonction gouvernementale ou présidentielle : servie par `postes_ministeriels`
+ * et `presidences` (worker gouvernements), jamais par `mandats`. Les mandats
+ * GOUVERNEMENT et PRESREP de la source sont faux (appartenances jamais closes
+ * dans Bayrou, présidence de Hollande ouverte sur l'organe de Sarkozy) et
+ * s'affichaient « en cours » sur les fiches. Les missions confiées à un
+ * parlementaire (MINISTERE « en mission ») restent des mandats.
+ */
+export function estFonctionGouvernementale(m: Pick<ExtractedMandat, 'typeOrgane' | 'qualite'>): boolean {
+  return m.typeOrgane === 'GOUVERNEMENT' || m.typeOrgane === 'PRESREP' || (m.typeOrgane === 'MINISTERE' && m.qualite !== 'en mission');
+}
+
 async function persistMandats(parlementaireId: string, mandats: ExtractedMandat[]): Promise<void> {
   if (mandats.length === 0) return;
 
   for (const m of mandats) {
     if (!m.sourceUid) continue;
+    if (estFonctionGouvernementale(m)) continue;
 
     try {
       await prisma.mandat.upsert({
