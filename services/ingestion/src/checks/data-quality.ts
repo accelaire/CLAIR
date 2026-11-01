@@ -1029,6 +1029,24 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     min: 35,
     query: `SELECT COUNT(*)::int AS value FROM commissions WHERE chambre = 'senat'`,
   },
+  fiches_deux_chambres_sans_identifiant: {
+    type: 'invariant',
+    label: "Fiches portant des mandats de l'autre chambre sans son identifiant (homonymes fusionnés)",
+    min: 0,
+    max: 0,
+    // Un élu passé d'une chambre à l'autre garde l'identifiant de celle qu'il a
+    // quittée (parlementaires_identifiants). Une fiche qui porte des mandats de
+    // l'autre chambre SANS cet identifiant est suspecte : avant le rapprochement
+    // borné à la chambre, deux homonymes y étaient fusionnés (Jean-Louis Masson,
+    // député du Var, portait les mandats et votes du sénateur de Moselle).
+    // Séparer (separer-homonyme) ou lier (lier-identifiant).
+    query: `SELECT COUNT(DISTINCT p.id)::int AS value
+      FROM parlementaires p
+      JOIN mandats_parlementaires m ON m.personne_id = p.id AND m.chambre <> p.chambre
+      WHERE NOT EXISTS (
+        SELECT 1 FROM parlementaires_identifiants i
+        WHERE i.personne_id = p.id AND i.chambre = m.chambre)`,
+  },
   senat_president_en_fonction: {
     type: 'threshold',
     label: 'Président du Sénat en fonction (bureau, export_sens)',
