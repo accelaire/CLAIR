@@ -258,8 +258,7 @@ export async function calculateAllStats(
       denom_assemblee AS (
         SELECT m.id as mandat_id,
                COUNT(s.id) FILTER (WHERE e.scrutin_id IS NULL)::bigint as total,
-               COUNT(s.id) FILTER (WHERE s.type_vote = 'solennel' AND e.scrutin_id IS NULL)::bigint as total_solennel,
-               COUNT(s.id)::bigint as total_brut
+               COUNT(s.id) FILTER (WHERE s.type_vote = 'solennel' AND e.scrutin_id IS NULL)::bigint as total_solennel
         FROM mandats_cibles m
         LEFT JOIN scrutins s ON s.chambre = 'assemblee'
           AND s.legislature IS NOT NULL
@@ -273,8 +272,7 @@ export async function calculateAllStats(
       denom_senat AS (
         SELECT m.id as mandat_id,
                COUNT(s.id) FILTER (WHERE e.scrutin_id IS NULL)::bigint as total,
-               COUNT(s.id) FILTER (WHERE s.type_vote = 'solennel' AND e.scrutin_id IS NULL)::bigint as total_solennel,
-               COUNT(s.id)::bigint as total_brut
+               COUNT(s.id) FILTER (WHERE s.type_vote = 'solennel' AND e.scrutin_id IS NULL)::bigint as total_solennel
         FROM mandats_cibles m
         LEFT JOIN scrutins s ON s.chambre = 'senat'
           AND s.date >= m.date_debut
@@ -358,11 +356,10 @@ export async function calculateAllStats(
       SET
         stats_presence = CASE
           WHEN d.total > 0 THEN ROUND((COALESCE(n.votes, 0)::float / d.total) * 100)
-          -- Aucun scrutin où il pouvait voter (président de l'assemblée sur tout
-          -- le mandat) : non mesurable, pas 0 % (#108). Au Sénat, un mandat sans
-          -- scrutin du tout l'est aussi.
-          WHEN mp.chambre = 'senat' OR d.total_brut > 0 THEN NULL
-          ELSE 0 END,
+          -- Aucun scrutin où il pouvait voter : non mesurable, pas 0 %. Qu'il
+          -- présidât l'assemblée (#108) ou qu'aucun scrutin ne tombe dans son
+          -- mandat : Anne Grignon, députée du 5 au 12 août 2022, affichait 0 %.
+          ELSE NULL END,
         stats_presence_solennel = CASE
           WHEN d.total_solennel > 0 THEN ROUND((COALESCE(n.votes_solennel, 0)::float / d.total_solennel) * 100)
           ELSE NULL END,
@@ -432,9 +429,6 @@ export async function calculateAllStats(
         WHERE NOT EXISTS (
           SELECT 1 FROM empechements e WHERE e.personne_id = sc.personne_id AND e.scrutin_id = sc.scrutin_id
         )
-      ),
-      scrutins_couverts_bruts AS (
-        SELECT personne_id, COUNT(*)::bigint as total_brut FROM scrutins_couverts GROUP BY personne_id
       ),
       scrutin_counts AS (
         -- Dénominateur carrière : une seule ligne par personne (SUM des deux chambres).
@@ -531,8 +525,8 @@ export async function calculateAllStats(
           p.id,
           CASE
             WHEN sc.total > 0 THEN ROUND((COALESCE(vs.votes_non_absent, 0)::float / sc.total) * 100)
-            WHEN p.chambre = 'senat' OR COALESCE(scb.total_brut, 0) > 0 THEN NULL
-            ELSE 0
+            -- Aucun scrutin où il pouvait voter sur toute la carrière : non mesurable.
+            ELSE NULL
           END as new_presence,
           CASE
             WHEN sc.total_solennel > 0 THEN ROUND((COALESCE(vs.votes_solennel_non_absent, 0)::float / sc.total_solennel) * 100)
@@ -553,7 +547,6 @@ export async function calculateAllStats(
           COALESCE(ast.total_adoptes, 0) as new_adoptes
         FROM parlementaires p
         LEFT JOIN scrutin_counts sc ON sc.personne_id = p.id
-        LEFT JOIN scrutins_couverts_bruts scb ON scb.personne_id = p.id
         LEFT JOIN vote_stats vs ON vs.parlementaire_id = p.id
         LEFT JOIN intervention_stats ist ON ist.parlementaire_id = p.id
         LEFT JOIN amendement_stats ast ON ast.parlementaire_id = p.id
