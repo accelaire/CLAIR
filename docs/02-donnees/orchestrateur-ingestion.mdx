@@ -54,7 +54,7 @@ L'ordre suit les dépendances : les commissions avant les députés (dont les ma
 2. `assemblee_nationale:deputes`
 3. `senat:senateurs`
 4. `senat:senateurs_histo`
-5. `senat:bureaux`
+5. `senat:fonctions`
 6. `assemblee_nationale:scrutins`
 7. `senat:scrutins`
 8. `assemblee_nationale:amendements`
@@ -139,7 +139,7 @@ En fin de batch, la CLI attend 120 s, puis appelle `POST /api/v1/homepage/warm` 
 | `sujet-generator.ts`, `sujet-links-generator.ts` | Sujets et leurs liens sortants |
 | `ia-enrichment.ts`, `parlementaire-enrichment.ts` | Enrichissement IA |
 | `declarations-sync.ts` | Déclarations HATVP |
-| `senat-bureaux.ts`, `senat-dossier-commissions.ts` | Bureaux et saisines des commissions du Sénat |
+| `senat-fonctions.ts`, `senat-dossier-commissions.ts` | Fonctions datées des sénateurs (bureau, commissions, groupes) et saisines des commissions du Sénat |
 | `textes-articles.ts` | Texte des articles des textes de l'Assemblée |
 | `index-legi.ts` | Index de la base LEGI de la DILA (textes et articles de loi, pour les liens vers Légifrance) |
 | `renvois-legi.ts` | Renvois au droit en vigueur dans le dispositif des amendements, rattachés à l'index LEGI (grammaire de `@tricoteuses/tisseuse`) |

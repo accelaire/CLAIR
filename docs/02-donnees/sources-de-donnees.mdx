@@ -26,9 +26,9 @@ Chaque source est identifiée par une clé `organisme:type`, définie dans `serv
 | `assemblee_nationale:reunions` | `Agenda.json.zip` | ZIP / JSON | Agenda : réunions de commission et séances |
 | `assemblee_nationale:seances_odj` | `seances_publique_excel.csv` | CSV | Ordre du jour des séances publiques |
 | `assemblee_nationale:videos` | [videos.assemblee-nationale.fr](https://videos.assemblee-nationale.fr) | HTML | Liens vers les vidéos des séances et réunions |
-| `senat:senateurs` | [senat.fr/api-senat/senateurs.json](https://www.senat.fr/api-senat/senateurs.json) | JSON | Sénateurs en exercice, groupes, commissions |
+| `senat:senateurs` | [senat.fr/api-senat/senateurs.json](https://www.senat.fr/api-senat/senateurs.json) | JSON | Sénateurs en exercice et groupes. Ses commissions du jour servent de contrôle à `senat:fonctions` |
 | `senat:senateurs_histo` | [data.senat.fr](https://data.senat.fr) ODSEN (`ODSEN_ELUSEN.csv` et fichiers associés) | CSV | Anciens sénateurs, mandats clos, groupe d'époque |
-| `senat:bureaux` | pages commissions de senat.fr | HTML (toujours) | Fonctions au bureau des commissions (président, vice-président…) |
+| `senat:fonctions` | `export_sens.zip` de data.senat.fr (dump de la base des sénateurs) | ZIP (dump SQL) | Fonctions datées : bureau du Sénat, commissions permanentes et affaires européennes (membre, président, rapporteur général…), fonctions de groupe |
 | `senat:scrutins` | pages `scrutin-public` de senat.fr, `dosleg.zip` de data.senat.fr | HTML + dump SQL | Scrutins publics et votes nominatifs |
 | `senat:amendements` | `ameli.zip` de data.senat.fr, puis un CSV par texte sur senat.fr | ZIP + CSV | Amendements, cosignataires et article visé (colonne « Subdivision » du CSV, sinon `amd.subid` → `sub` d'AMELI) |
 | `senat:dossiers` | `dosleg.zip` de data.senat.fr | ZIP (dump SQL) | Dossiers législatifs |

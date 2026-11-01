@@ -87,7 +87,7 @@ pnpm ingestion:smart-sync -a -l 100          # limite appliquée à chaque type 
 pnpm ingestion:smart-sync --sources senat:agenda,senat:videos   # clés de sources explicites
 ```
 
-Sans `-a` ni `--sources`, la commande traite `assemblee_nationale:deputes` et `senat:senateurs`, plus les familles demandées : `-s` (scrutins), `--am` (amendements), `--do` (dossiers), `--in` (interventions), `--lo` (lobbying), `--co` (commissions), `--re` (réunions AN), `--seances-odj`, `--senat-histo`, `--senat-agenda`, `--senat-reunions`, `--senat-bureaux`, `--senat-dossier-commissions`, `--senat-videos`, `--an-videos`, `--candidatures`.
+Sans `-a` ni `--sources`, la commande traite `assemblee_nationale:deputes` et `senat:senateurs`, plus les familles demandées : `-s` (scrutins), `--am` (amendements), `--do` (dossiers), `--in` (interventions), `--lo` (lobbying), `--co` (commissions), `--re` (réunions AN), `--seances-odj`, `--senat-histo`, `--senat-agenda`, `--senat-reunions`, `--senat-fonctions`, `--senat-dossier-commissions`, `--senat-videos`, `--an-videos`, `--candidatures`.
 
 ---
 
@@ -236,6 +236,7 @@ Détail des contrôles : [Qualité des données](/donnees/qualite-des-donnees).
 | `backfill-mandats` | Initialisation des mandats parlementaires multi-législatures (idempotent) |
 | `backfill-nature-vote` | Classe la nature des scrutins (`--force` pour tout reclasser) |
 | `sync-senateurs-histo` | Anciens sénateurs depuis l'open data ODSEN (`--depuis <date>`) |
+| `sync-senat-fonctions` | Fonctions datées des sénateurs depuis `export_sens.zip` (`--archive <chemin>` pour un zip déjà téléchargé) |
 | `clore-mandats-an` | Clôt les mandats de député des sortants (élus sénateurs compris) et les mandats d'organe AN qui survivent au mandat de député (`--dry-run`) |
 | `sync-debats-an` | Comptes rendus de séance de l'Assemblée (source syceron). Options : `--legislature` (défaut 17), `--max-seances`, `--repertoire`, `--reingerer` |
 | `sync-debats-commission` | Comptes rendus de commission de l'Assemblée (PDF). Options : `--depuis`, `--max-reunions`, `--seulement`, `--reingerer`, `--dry-run` |
