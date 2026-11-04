@@ -46,6 +46,7 @@ Une PR = un fragment, en général. Plusieurs fragments seulement si la PR mêle
 
 1. Partir de `master` à jour, sur une branche `chore/release-vX.Y.Z`.
 2. `pnpm changelog:prepare --essai` : version calculée (niveau le plus haut des fragments ; en 0.x, une rupture monte le mineur), commits et PR depuis le dernier tag, **PR sans fragment**.
+   Il liste aussi les **commits poussés sur master sans PR** : relire ceux dont l'effet est notable et leur écrire un fragment.
    Pour chaque PR sans fragment, regarder la PR (`gh pr view <n> -R accelaire/CLAIR`) et signaler celles qui auraient dû en avoir un.
 3. `pnpm changelog:prepare` (avec `--niveau` ou `--version` seulement si on le demande) : écrit `docs/03-changelog/vX-Y-Z.mdx`, monte les `package.json`, supprime les fragments.
 4. Rédiger la page, sur le modèle de `docs/03-changelog/v0-5-0.mdx`. Le titre reste « Version vX.Y.Z ».

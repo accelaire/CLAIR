@@ -120,7 +120,7 @@ Réservé au mainteneur. Merger une pull request ne publie jamais de version.
 
 1. **Préparer**, sur une branche `chore/release-vX.Y.Z` à jour de `master` :
    ```bash
-   pnpm changelog:prepare --essai     # aperçu : version calculée, PR sans fragment
+   pnpm changelog:prepare --essai     # aperçu : version calculée, PR sans fragment, commits hors PR
    pnpm changelog:prepare             # écrit la page, monte les package.json, consomme les fragments
    ```
    La version suit le niveau le plus haut des fragments (`--niveau` pour monter d'un cran, `--version 1.0.0` pour un choix explicite).

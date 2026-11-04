@@ -15,6 +15,7 @@ import { DOSSIER, fichiersFragments } from "./check.mjs";
 import {
   NIVEAUX,
   brouillonDeVersion,
+  commitsHorsPr,
   comparerVersions,
   fichierDeVersion,
   messageDeTag,
@@ -77,6 +78,10 @@ function main() {
   const sansFragment = prs.filter((n) => !fragments.some((f) => f.pr.includes(n)));
   if (sansFragment.length > 0) {
     console.log(`PR sans fragment (à vérifier) : ${sansFragment.map((n) => `#${n}`).join(", ")}`);
+  }
+  const horsPr = commitsHorsPr(git("log", "--first-parent", "--no-merges", "--format=%h %s", `${precedente}..HEAD`));
+  if (horsPr.length > 0) {
+    console.log(`Commits poussés hors PR (à vérifier) :\n${horsPr.map((c) => `  ${c}`).join("\n")}`);
   }
 
   if (essai) {

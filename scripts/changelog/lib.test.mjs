@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   brouillonDeVersion,
+  commitsHorsPr,
   comparerVersions,
   fichierDeVersion,
   lireFrontmatter,
@@ -96,6 +97,11 @@ describe("versions", () => {
     assert.equal(versionCible({ precedente: "v0.5.0", niveau: "mineur", forcee: "1.0.0" }), "1.0.0");
     assert.equal(versionCible({ precedente: "v0.5.0", niveau: "mineur", forcee: undefined }), "0.6.0");
     assert.throws(() => versionCible({ precedente: "v0.5.0", niveau: "mineur", forcee: "" }), /version invalide/);
+  });
+
+  it("isole les commits poussés sans PR", () => {
+    const log = "a1b2c3d fix(api): départage des ex æquo\ne4f5a6b feat(web): sous-amendements (#96)\n\n";
+    assert.deepEqual(commitsHorsPr(log), ["a1b2c3d fix(api): départage des ex æquo"]);
   });
 
   it("retrouve les PR des commits de merge et des squash", () => {

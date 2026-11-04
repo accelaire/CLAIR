@@ -172,6 +172,18 @@ export function prDesCommits(messages) {
   return [...numeros].sort((a, b) => a - b);
 }
 
+/**
+ * Commits poussés sur master sans pull request : lignes `<sha> <sujet>` de
+ * `git log --first-parent --no-merges`, moins les squash qui citent `(#n)`.
+ * Ils n'ont pas de fragment par construction : à relire avant une version.
+ */
+export function commitsHorsPr(log) {
+  return log
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !/\(#\d+\)/.test(l));
+}
+
 // --- Pages de version ----------------------------------------------------------
 
 /** `2026-10-02` → `02/10/2026`. */
