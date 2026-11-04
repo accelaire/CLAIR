@@ -12,6 +12,7 @@ import {
   parserFragment,
   prDesCommits,
   verifierFragment,
+  versionCible,
   versionSuivante,
 } from "./lib.mjs";
 
@@ -90,6 +91,13 @@ describe("versions", () => {
     assert.equal(versionSuivante("v0.5.0", "majeur"), "0.6.0");
   });
 
+  it("accepte une version demandée avec ou sans v", () => {
+    assert.equal(versionCible({ precedente: "v0.5.0", niveau: "mineur", forcee: "v1.0.0" }), "1.0.0");
+    assert.equal(versionCible({ precedente: "v0.5.0", niveau: "mineur", forcee: "1.0.0" }), "1.0.0");
+    assert.equal(versionCible({ precedente: "v0.5.0", niveau: "mineur", forcee: undefined }), "0.6.0");
+    assert.throws(() => versionCible({ precedente: "v0.5.0", niveau: "mineur", forcee: "" }), /version invalide/);
+  });
+
   it("retrouve les PR des commits de merge et des squash", () => {
     const log = "Merge pull request #106 from accelaire/fix\nfeat(web): sous-amendements (#96)\nfix: x (#96)";
     assert.deepEqual(prDesCommits(log), [96, 106]);
@@ -163,5 +171,20 @@ describe("brouillonDeVersion", () => {
     assert.match(page, /### Nouveautés\n\n- Les sous-amendements sont reliés à leur amendement parent\. \(#96\)/);
     assert.match(page, /### Pour les contributeurs\n\n- Node 24\.$/m);
     assert.match(messageDeTag(page), /^v0.6.0 — À COMPLÉTER : thèmes du palier\n\n95 commits, 12 PRs depuis v0.5.0\.\n\n=== Nouveautés ===/);
+  });
+
+  it("échappe les accolades et < hors du code, garde le code tel quel", () => {
+    const meta = "niveau: correctif\ntype: correction\npublic: [citoyens]\npr: []";
+    const texte = "Écart < 5 % sur {loyauté}, route `/deputes/{slug}` et `a < b`.";
+    const page = brouillonDeVersion({
+      version: "0.6.1",
+      date: "2026-12-10",
+      precedente: "v0.6.0",
+      commits: 3,
+      prs: 1,
+      fragments: [parserFragment("c.md", fragment(meta, texte))],
+    });
+    assert.ok(page.includes("- Écart &lt; 5 % sur \\{loyauté\\}, route `/deputes/{slug}` et `a < b`."));
+    assert.ok(messageDeTag(page).includes("- Écart < 5 % sur {loyauté}, route `/deputes/{slug}` et `a < b`."));
   });
 });

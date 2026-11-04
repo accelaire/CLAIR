@@ -157,6 +157,14 @@ export function versionSuivante(actuelle, niveau) {
   throw new Error(`niveau invalide : ${niveau}`);
 }
 
+/**
+ * Version à publier : celle demandée (`--version`, avec ou sans `v`), sinon la
+ * suivante d'après le niveau des fragments.
+ */
+export function versionCible({ precedente, niveau, forcee }) {
+  return forcee === undefined ? versionSuivante(precedente, niveau) : formaterVersion(lireVersion(forcee));
+}
+
 /** Numéros de PR cités dans des sujets ou corps de commit, sans doublon, triés. */
 export function prDesCommits(messages) {
   const numeros = new Set();
@@ -171,6 +179,13 @@ const dateFr = (iso) => iso.split("-").reverse().join("/");
 
 /** Texte brut → MDX sûr (les accolades et `<` ouvriraient du JSX). */
 const echapperMdx = (texte) => texte.replace(/[{}]/g, (c) => `\\${c}`).replace(/</g, "&lt;");
+
+/** Idem, sans toucher au code entre accents graves, que MDX affiche tel quel. */
+const echapperMdxHorsCode = (texte) =>
+  texte
+    .split(/(`[^`]*`)/)
+    .map((partie, i) => (i % 2 === 1 ? partie : echapperMdx(partie)))
+    .join("");
 
 const DEPOT = "https://github.com/accelaire/CLAIR";
 const NOTES = "## Notes complètes";
@@ -264,7 +279,7 @@ export function brouillonDeVersion({ version, date, precedente, commits, prs, fr
       if (duType.length === 0) return null;
       const puces = duType.map((f) => {
         const refs = f.pr.length ? ` (${f.pr.map((n) => `#${n}`).join(", ")})` : "";
-        return `- ${f.texte.replace(/\s*\n\s*/g, " ")}${refs}`;
+        return `- ${echapperMdxHorsCode(f.texte.replace(/\s*\n\s*/g, " "))}${refs}`;
       });
       return [`### ${titre}`, "", ...puces].join("\n");
     })

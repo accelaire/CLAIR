@@ -22,7 +22,7 @@ import {
   parserFragment,
   prDesCommits,
   verifierFragment,
-  versionSuivante,
+  versionCible,
 } from "./lib.mjs";
 
 const RACINE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -63,7 +63,7 @@ function main() {
   const niveauFragments = niveauLePlusHaut(fragments);
   const niveau =
     niveauForce && NIVEAUX.indexOf(niveauForce) > NIVEAUX.indexOf(niveauFragments) ? niveauForce : niveauFragments;
-  const version = versionForcee ?? versionSuivante(precedente, niveau);
+  const version = versionCible({ precedente, niveau, forcee: versionForcee });
   if (comparerVersions(version, precedente) <= 0) throw new Error(`${version} n'est pas après ${precedente}`);
 
   const commits = Number(git("rev-list", "--count", `${precedente}..HEAD`));

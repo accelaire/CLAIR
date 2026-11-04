@@ -135,7 +135,7 @@ Réservé au mainteneur. Merger une pull request ne publie jamais de version.
 4. **Taguer** le commit de merge, puis créer la GitHub Release avec les mêmes notes :
    ```bash
    node scripts/changelog/tag-message.mjs vX.Y.Z > /tmp/tag.txt
-   git tag -a vX.Y.Z -F /tmp/tag.txt && git push upstream vX.Y.Z
+   git tag -a vX.Y.Z -F /tmp/tag.txt && git push origin vX.Y.Z
    gh release create vX.Y.Z --title "vX.Y.Z" --notes-file /tmp/tag.txt
    ```
 
