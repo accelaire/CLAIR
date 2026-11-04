@@ -1,0 +1,120 @@
+---
+title: "Version v0.2.0"
+sidebar_label: "Version v0.2.0"
+date: 2026-02-25
+version: 0.2.0
+description: "Dossiers législatifs, pipeline de linking fiable, UI filters"
+commits: 90
+prs: 8
+depuis: v0.1.0
+---
+
+**Publiée le 25/02/2026** · 90 commits et 8 pull requests depuis [v0.1.0](/changelog/v0-1-0) · [Comparer avec v0.1.0](https://github.com/accelaire/CLAIR/compare/v0.1.0...v0.2.0) · [Code de la version](https://github.com/accelaire/CLAIR/tree/v0.2.0)
+
+## En bref
+
+La v0.2.0 ajoute les **dossiers législatifs** : on peut suivre un texte de loi et retrouver les scrutins et les amendements qui s'y rattachent. Ce rattachement, difficile parce que les sources ne relient pas toujours un vote à son texte, repose sur une nouvelle chaîne de liaison contrôlée par 20 vérifications automatiques.
+
+| Pour qui | Ce qui change |
+|---|---|
+| Citoyens | pages des dossiers législatifs, filtres sur les pages principales, pages légales et méthodologie |
+| Réutilisateurs | module `dossiers` dans l'API, recherche multi-mots et géographique, limitation de débit |
+| Contributeurs | ESLint, TypeScript et tests en CI ; contrôles de qualité des données en ligne de commande |
+
+## Relier un vote à son texte
+
+Un scrutin porte sur un amendement ou sur un texte, mais les sources ne disent pas toujours lequel. La v0.2.0 croise plusieurs indices et écarte les faux liens :
+
+<Mermaid
+  title="Chaîne de liaison scrutin ↔ amendement ↔ dossier"
+  chart={`flowchart TD
+    S["Scrutins AN et Sénat"] --> H["Lecture des pages HTML<br/>AN et Sénat"]
+    A["Amendements Sénat<br/>(CSV, séance comprise)"] --> H
+    H --> SA["Scrutin ↔ amendement<br/>relation plusieurs-à-plusieurs"]
+    S --> M["Correspondance par titre<br/>TF-IDF puis validation Jaccard"]
+    M --> SD["Scrutin → dossier"]
+    SA --> P["Propagation du dossier<br/>scrutin → amendements"]
+    SD --> P
+    P --> Q{"20 contrôles qualité"}
+    Q -->|"0 faux lien entre dossiers"| OK["Liens publiés"]`}
+/>
+
+Résultat annoncé par le tag : 99,3 % des amendements du Sénat (2025) et 91 % de ceux de l'Assemblée reliés à leur scrutin.
+
+## Les dossiers dans l'API
+
+```bash
+# Les cinq derniers dossiers promulgués examinés par le Sénat
+curl "https://api.clair.vote/api/v1/dossiers?chambre=senat&etat=promulgue&limit=5"
+```
+
+Exemple valable sur l'API actuelle ; la [référence de l'API](/api) détaille tous les paramètres.
+
+## Notes complètes
+
+_Reprises telles quelles du tag annoté `v0.2.0`._
+
+### Dossiers législatifs (full-stack)
+
+- Ingestion des dossiers AN (Open Data) et Sénat (DOSLEG)
+- API : module dossiers avec CRUD, filtre votedOnly, chambre filter
+- Frontend : pages liste et détail dossiers, recherche dossiers, sitemap dynamique
+- Intégration dossiers dans les pages existantes (députés, scrutins, amendements)
+- Accordion des amendements votés sur la page dossier
+
+### Pipeline de linking scrutin↔amendement↔dossier
+
+- Sync amendements Sénat via CSV (remplace API AMELI, inclut amendements de séance)
+- HTML scraping AN et Sénat pour lier scrutins↔amendements (AMELI texteRef mapping)
+- Relation M:N scrutin↔amendement (remplace l'ancien 1:N)
+- CTE SQL avec contrainte dossier pour le linking par titre
+- Extraction numéros articles pour désambiguïser les amendements homonymes
+- TF-IDF + validation Jaccard pour matching scrutin→dossier (élimine faux positifs)
+- Matching orphelins par texte_numero partagé et loi_titre/peer matching
+- Validation cross-dossier AN (faux positifs BTC éliminés)
+- Fix critique : syncScrutinsSenat n'écrase plus les liens HTML scraping (suppression set DOSLEG)
+- Propagation dossier_id : scrutin→amendement, texteRef, siblings (safe mode)
+- VACUUM ANALYZE post-sync pour optimiser les requêtes
+
+### Data quality
+
+- 20 checks automatisés (6 invariants, 14 seuils quantitatifs)
+- Intégrité multi-amendements (informatif)
+- CLI : check-quality, link-by-texte-numero, link-by-loi-titre
+- Sénat 2025 : 99.3% liaison amendement-scrutin
+- AN : 91% liaison amendement-scrutin
+- 0 faux liens cross-dossier
+- 87 tests (unit + intégration)
+
+### API
+
+- Rate limiting Redis avec auto-ban et blocage user-agent
+- Endpoint homepage avec agrégation
+- Recherche multi-mots et géographique (départements, régions)
+- Circuit breaker et retry pour Meilisearch
+
+### Frontend
+
+- FilterBar réutilisable intégrée sur les pages principales
+- Trending dossiers avec stats de votes
+- Section actions de lobbying récentes sur la homepage
+- Carousel, pagination interventions, tri lobbying
+- Texte expandable pour les interventions
+- Logos lobbyistes
+- Votes dissidents, présence solennelle, stats groupes
+- SEO : structured data, sitemap, robots.txt
+- Pages légales : politique de confidentialité, contact, mentions légales, méthodologie
+
+### Ingestion
+
+- Nettoyage artefacts Windows-1252 dans les textes Sénat
+- Dossiers Sénat via DOSLEG (SenatDossiersClient)
+- Réduction parallélisme et pauses pour éviter OOM en prod
+- Suppression source Légifrance (inutilisée)
+
+### Tests & CI
+
+- ESLint + TypeScript
+- Tests unitaires : geo, search, ingestion, parlementaire
+- Script audit qualité données HATVP
+- CI sur master (push + PR)
