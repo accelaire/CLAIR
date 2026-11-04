@@ -3,7 +3,8 @@ import os from 'os';
 import path from 'path';
 import zlib from 'zlib';
 import * as tarStream from 'tar-stream';
-import { describe, it, expect } from 'vitest';
+import axios from 'axios';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   analyserCheminLegi,
   dateLegi,
@@ -13,6 +14,7 @@ import {
   lireListeArchives,
   lireSuppressions,
   lireVersionTexte,
+  listerArchivesLegi,
   type ElementLegi,
 } from './legi-client';
 
@@ -112,6 +114,34 @@ describe('archives listées', () => {
     expect(horodatageArchive('Freemium_legi_global_20250713-140000.tar.gz')).toBe('20250713-140000');
     expect(horodatageArchive('LEGI_20250713-205013.tar.gz') > '20250713-140000').toBe(true);
     expect(() => horodatageArchive('LEGI.tar.gz')).toThrow();
+  });
+});
+
+describe('listerArchivesLegi', () => {
+  const page = { data: '<a href="LEGI_20261103-214151.tar.gz">LEGI_20261103-214151.tar.gz</a>' };
+  const coupure = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it('reprend après une connexion coupée', async () => {
+    vi.useFakeTimers();
+    const get = vi.spyOn(axios, 'get').mockRejectedValueOnce(coupure).mockResolvedValueOnce(page);
+    const liste = listerArchivesLegi();
+    await vi.runAllTimersAsync();
+    await expect(liste).resolves.toEqual({ globaux: [], increments: ['LEGI_20261103-214151.tar.gz'] });
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it('abandonne après trois tentatives', async () => {
+    vi.useFakeTimers();
+    const get = vi.spyOn(axios, 'get').mockRejectedValue(coupure);
+    const liste = expect(listerArchivesLegi()).rejects.toThrow('read ECONNRESET');
+    await vi.runAllTimersAsync();
+    await liste;
+    expect(get).toHaveBeenCalledTimes(3);
   });
 });
 

@@ -43,6 +43,7 @@ import { pipeline } from 'stream/promises';
 import axios from 'axios';
 import * as tarStream from 'tar-stream';
 import { downloadWithRetry } from '../../utils/download.js';
+import { errorMessage } from '../../utils/errors.js';
 import { logger } from '../../utils/logger.js';
 
 export const URL_LEGI = 'https://echanges.dila.gouv.fr/OPENDATA/LEGI/';
@@ -238,17 +239,34 @@ export function lireArticle(xml: string, conteneur: string): ArticleLegi | null 
 // RÉSEAU ET ARCHIVES
 // =============================================================================
 
+// La DILA coupe parfois la connexion sur la page d'index : `read ECONNRESET`
+// deux nuits de suite (2 et 3 novembre 2026), l'index LEGI restait en retard.
+const TENTATIVES_LISTE = 3;
+const ATTENTE_LISTE_MS = 30_000;
+
 export async function listerArchivesLegi(): Promise<ArchivesLegi> {
-  const { data } = await axios.get<string>(URL_LEGI, {
-    timeout: 60_000,
-    responseType: 'text',
-    headers: { 'User-Agent': USER_AGENT },
-  });
-  const archives = lireListeArchives(data);
+  const archives = lireListeArchives(await lirePageIndex());
   if (archives.globaux.length === 0 && archives.increments.length === 0) {
     throw new Error(`Aucune archive LEGI lue sur ${URL_LEGI} : la page d'index a changé de forme ?`);
   }
   return archives;
+}
+
+async function lirePageIndex(): Promise<string> {
+  for (let essai = 1; ; essai++) {
+    try {
+      const { data } = await axios.get<string>(URL_LEGI, {
+        timeout: 60_000,
+        responseType: 'text',
+        headers: { 'User-Agent': USER_AGENT },
+      });
+      return data;
+    } catch (erreur) {
+      if (essai >= TENTATIVES_LISTE) throw erreur;
+      logger.warn({ essai, error: errorMessage(erreur) }, 'Liste des archives LEGI illisible, nouvel essai');
+      await new Promise((r) => setTimeout(r, ATTENTE_LISTE_MS * essai));
+    }
+  }
 }
 
 /**
