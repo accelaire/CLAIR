@@ -22,6 +22,11 @@
 //   quand le scrutin arrive chez nous, pas quand il a eu lieu.
 // - la dernière génération de sa fiche IA, qui réécrit le texte de présentation.
 //
+// Pour un ancien parlementaire, seule la fiche IA compte : sa présence et ses
+// votes sont calculés sur ses propres mandats, qu'un nouveau scrutin ne touche
+// plus. La fin de son mandat, elle, périme sa fiche IA, qui est régénérée la
+// nuit suivante (`signatureEditoriale`, ingestion) : sa date la couvre.
+//
 // Pendant les vacances parlementaires, aucune des deux ne bouge, et la date non
 // plus : c'est ce qui la rend crédible, là où `updatedAt` avançait chaque nuit.
 //
@@ -33,6 +38,7 @@
 
 export interface ParlementaireLastmodInput {
   chambre: string;
+  actif: boolean;
   iaGeneratedAt: Date | null;
 }
 
@@ -42,7 +48,7 @@ export function lastmodParlementaire(
   dernierScrutinParChambre: ReadonlyMap<string, Date>,
 ): Date | null {
   const candidates = [
-    dernierScrutinParChambre.get(parlementaire.chambre) ?? null,
+    parlementaire.actif ? (dernierScrutinParChambre.get(parlementaire.chambre) ?? null) : null,
     parlementaire.iaGeneratedAt,
   ].filter((d): d is Date => d instanceof Date && !Number.isNaN(d.getTime()));
 
