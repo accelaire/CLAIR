@@ -77,7 +77,7 @@ const INTERESTING_TYPE_ORGANES = new Set([
 // Extract mandats from sourceData
 // =============================================================================
 
-interface ExtractedMandat {
+export interface ExtractedMandat {
   typeOrgane: string;
   institution: string;
   qualite: string;
@@ -660,6 +660,23 @@ export function estFonctionGouvernementale(m: Pick<ExtractedMandat, 'typeOrgane'
   return m.typeOrgane === 'GOUVERNEMENT' || m.typeOrgane === 'PRESREP' || (m.typeOrgane === 'MINISTERE' && m.qualite !== 'en mission');
 }
 
+/**
+ * Mise à jour d'un mandat d'organe existant depuis le `source_data` de la fiche.
+ * Ce snapshot date du dernier passage du député dans l'AMO10 : un sortant y
+ * garde ses organes sans date de fin. Le recopier rouvrait ce que
+ * `cloreOrganesANHorsMandat` venait de clore (4 organes de F. Boccaletti,
+ * régénéré dans la nuit de son départ, le 10/11/2026). On ne fait donc
+ * qu'ajouter une date de fin, jamais en retirer une.
+ */
+export function miseAJourMandatEnrichi(m: ExtractedMandat): Prisma.MandatUpdateInput {
+  return {
+    institution: m.institution,
+    qualite: m.qualite,
+    ...(m.dateFin ? { dateFin: new Date(m.dateFin) } : {}),
+    organeRef: m.organeRef || undefined,
+  };
+}
+
 async function persistMandats(parlementaireId: string, mandats: ExtractedMandat[]): Promise<void> {
   if (mandats.length === 0) return;
 
@@ -680,12 +697,7 @@ async function persistMandats(parlementaireId: string, mandats: ExtractedMandat[
           sourceUid: m.sourceUid,
           organeRef: m.organeRef || null,
         },
-        update: {
-          institution: m.institution,
-          qualite: m.qualite,
-          dateFin: m.dateFin ? new Date(m.dateFin) : null,
-          organeRef: m.organeRef || undefined,
-        },
+        update: miseAJourMandatEnrichi(m),
       });
     } catch (error) {
       // Skip duplicate / invalid date errors silently
