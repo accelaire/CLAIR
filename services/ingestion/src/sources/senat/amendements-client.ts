@@ -672,8 +672,8 @@ export class SenatAmendementsClient {
         transformed.push({
           uid: `SENAT-AMD-${amd.id}`,
           numero: amd.numero,
-          dispositif: amd.dispositif?.substring(0, 5000) || null,
-          exposeSommaire: amd.objet?.substring(0, 5000) || null,
+          dispositif: amd.dispositif || null,
+          exposeSommaire: amd.objet || null,
           dateDepot: amd.dateDepot,
           sort: amd.sortCode ? (SORT_MAP[amd.sortCode] || amd.sort) : null,
           auteurNom: auteurPrincipal?.nom || null,
@@ -1078,8 +1078,8 @@ export class SenatAmendementsClient {
         results.push({
           uid,
           numero,
-          dispositif: stripHtml(dispositif)?.substring(0, 5000) || null,
-          exposeSommaire: stripHtml(objet)?.substring(0, 5000) || null,
+          dispositif: stripHtml(dispositif) || null,
+          exposeSommaire: stripHtml(objet) || null,
           dateDepot,
           sort: mapCsvSort(sortStr),
           auteurNom,
