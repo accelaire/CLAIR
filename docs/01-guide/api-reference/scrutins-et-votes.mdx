@@ -13,7 +13,7 @@ description: Scrutins publics de l'Assemblée et du Sénat, votes nominatifs (po
 | `GET` | `/api/v1/scrutins/importants` | Scrutins récents les plus importants |
 | `GET` | `/api/v1/scrutins/tags` | Tags thématiques des scrutins |
 | `GET` | `/api/v1/scrutins/annees`, `/periodes` | Années et périodes couvertes |
-| `GET` | `/api/v1/scrutins/:numero` | Détail d'un scrutin, avec ses votes |
+| `GET` | `/api/v1/scrutins/:numero` | Détail d'un scrutin, avec ses votes. Pour une motion de censure, `motionCensure` donne le gouvernement visé (celui en fonction le jour du vote), l'alinéa, le premier signataire, les voix pour et la majorité requise, et le 49.3 auquel elle répond avec son texte ; `null` pour les autres scrutins |
 | `GET` | `/api/v1/scrutins/:numero/votes` | Votes nominatifs, filtrables par `position` et `groupe` |
 | `GET` | `/api/v1/scrutins/:numero/interventions` | Prises de parole qui ont précédé le vote |
 
@@ -40,6 +40,7 @@ Toutes les routes, avec leurs schémas de réponse : [explorateur de l'API](/api
 | `importance` | De 1 à 5 |
 | `dateFrom`, `dateTo` | Bornes de date |
 | `search` | Recherche dans le titre |
+| `censure` | Motions de censure seulement : `toutes`, `alinea2` (motions spontanées) ou `alinea3` (en réponse à un 49.3). Assemblée, depuis juin 2017 |
 
 ---
 

@@ -2,12 +2,12 @@
 title: "Modèle de Données Prisma"
 sidebar_label: "Modèle Prisma"
 sidebar_icon: "database"
-description: Les 47 modèles Prisma, leurs conventions, les points de modélisation à connaître, la volumétrie en production, ce que l'API n'expose pas, et les migrations.
+description: Les 52 modèles Prisma, leurs conventions, les points de modélisation à connaître, la volumétrie en production, ce que l'API n'expose pas, et les migrations.
 ---
 
 La base est une base **PostgreSQL 17** décrite par un seul fichier : [`apps/api/prisma/schema.prisma`](https://github.com/accelaire/CLAIR/blob/master/apps/api/prisma/schema.prisma). C'est la source de vérité ; cette page en donne une lecture d'ensemble. Les diagrammes sont sur la page [Schémas ERD](/donnees/schemas-erd).
 
-Le schéma compte **47 modèles**, soit 47 tables, plus 2 tables de jointure créées implicitement par Prisma. Il n'y a ni comptes utilisateurs, ni tables d'authentification. La base de production ne contient aucune autre table que celles-ci, hors la table `_prisma_migrations` de Prisma (vérifié le 21 octobre 2026).
+Le schéma compte **52 modèles**, soit 52 tables, plus 2 tables de jointure créées implicitement par Prisma. Il n'y a ni comptes utilisateurs, ni tables d'authentification. La base de production ne contient aucune autre table que celles-ci, hors la table `_prisma_migrations` de Prisma (vérifié le 21 octobre 2026) et, jusqu'à sa suppression, `presidences_assemblee`, remplacée par `presidences_chambre` en novembre 2026.
 
 ---
 
@@ -54,7 +54,17 @@ Les fonctions gouvernementales n'y sont **pas** : elles ont leurs propres tables
 
 Un membre du gouvernement n'est pas un parlementaire : `membres_gouvernement.parlementaire_id` le rattache à sa fiche quand elle existe, par son identifiant AN ou, pour un sénateur, par son état civil (`liaison` dit comment). Ce rattachement est recalculé à chaque synchronisation.
 
-`presidences_assemblee` porte les présidences de l'Assemblée (mandats BUREAU « Président » de l'AMO30, depuis 2007), rattachées à la fiche par l'identifiant AN : l'AMO10 ne date que celle de la législature en cours. Celles du Sénat sont des mandats du bureau dans `mandats` (`SENBUR-…`). Ces périodes, comme les postes ministériels, sortent de la présence de la personne : un membre du Gouvernement ne vote pas, un président d'assemblée seulement par exception.
+`presidences_chambre` porte les présidences des deux chambres, une ligne par mandat de président publié par la source, que le président ait une fiche ou non (`chambre` vaut `assemblee` ou `senat`). Celles de l'Assemblée viennent de l'AMO30 (mandats BUREAU « Président », depuis 2007 ; l'AMO10 ne date que celle de la législature en cours), celles du Sénat du dump de la base des sénateurs (`senbur`, depuis 1959). `source_id` est l'identifiant de la personne dans sa chambre, comme `parlementaires.source_id` (`PA…` ou matricule du Sénat) ; `parlementaire_id` la rattache à sa fiche. Au Sénat, la même présidence est aussi une ligne du bureau dans `mandats`, sous le même identifiant (`SENBUR-…`), pour l'affichage de la fiche. Ces périodes, comme les postes ministériels, sortent de la présence de la personne : un membre du Gouvernement ne vote pas, un président d'assemblée seulement par exception.
+
+### 6 bis. Bilan des gouvernements
+
+Depuis juin 2017 (15e législature), cinq tables calculées chaque nuit par différence, depuis les dossiers, les scrutins et les débats déjà en base, plus la base DOSLEG du Sénat :
+
+- `projets_loi` : un projet de loi du Gouvernement, rattaché à son dossier (celui de l'Assemblée, à défaut celui du Sénat pour un projet que l'Assemblée n'a pas reçu) et au gouvernement de son dépôt. `nature` le range (projet ordinaire, ratification d'ordonnance, convention internationale, finances, constitutionnelle, organique) d'après la procédure et le titre long. `stade` est le stade atteint : `promulgue`, `adopte` (adoption définitive sans promulgation connue), `examine` (au moins une décision de séance), `depose` (jamais examiné en séance). Il n'y a pas de stade « rejeté » : un rejet en première lecture renvoie le texte à l'autre chambre, il ne clôt rien.
+- `projets_loi_signataires` : chaque signataire, rattaché à son poste (`postes_ministeriels`), avec son rang, son rôle (`premier_ministre`, `chef_de_file`, `cosignataire`) et sa source. L'Assemblée publie les signataires d'un projet dans `initiateur` (`mandatRef` = `postes_ministeriels.uid`), mais seulement le Premier ministre pour un projet déposé d'abord au Sénat ; ses ministres viennent alors des auteurs du texte de dépôt dans DOSLEG (`source` = `senat`), rattachés à leur poste par le nom et la date.
+- `engagements_responsabilite` : chaque recours à l'article 49, alinéa 3, de la Constitution (dossier AN « Engagement de la responsabilité du Gouvernement »), avec le poste du Premier ministre, sa date et le dossier du texte visé.
+- `motions_censure` : chaque motion de censure mise aux voix à l'Assemblée, avec le gouvernement en fonction le jour du vote, l'alinéa (2 : motion spontanée ; 3 : réponse à un 49.3), l'engagement auquel elle répond et son premier signataire. En 16e législature, la source ne publie pas le lien entre le vote d'une motion et son engagement : il est déduit du jour du vote, et laissé vide quand deux engagements sont votés le même jour (le 24 octobre 2022).
+- `reponses_gouvernement` : chaque réponse en séance d'un membre du Gouvernement (`interventions.type` = `reponse_gouvernement`), rattachée au poste qu'il occupait ce jour-là. Une réponse donnée après la fin publiée d'un poste (affaires courantes) n'est pas rattachée.
 
 ### 7. Statistiques pré-calculées
 
@@ -129,7 +139,19 @@ Volumétrie de l'archive AMO30 du 21 octobre 2026.
 | `PosteMinisteriel` | `postes_ministeriels` | 766 | Portefeuille tenu par une personne dans un gouvernement, avec ses dates (missions exclues) |
 | `MembreGouvernement` | `membres_gouvernement` | 311 | Personnes ayant tenu au moins un poste ; 145 rattachées à leur fiche parlementaire |
 | `Presidence` | `presidences` | 3 | Présidences de la République depuis 2007 (un seul organe pour les deux mandats d'Emmanuel Macron) |
-| `PresidenceAssemblee` | `presidences_assemblee` | 7 | Présidences de l'Assemblée depuis 2007 |
+| `PresidenceChambre` | `presidences_chambre` | 17 | Présidences de l'Assemblée depuis 2007 (7) et du Sénat depuis 1959 (10) |
+
+### Bilan des gouvernements
+
+Volumétrie du 11 novembre 2026 (projets déposés depuis le 21 juin 2017).
+
+| Modèle | Table | Lignes | Contenu |
+| :--- | :--- | ---: | :--- |
+| `ProjetLoi` | `projets_loi` | 786 | Projets de loi du Gouvernement, avec leur nature et leur stade |
+| `ProjetLoiSignataire` | `projets_loi_signataires` | 1 704 | Signataires, rattachés à leur poste |
+| `EngagementResponsabilite` | `engagements_responsabilite` | 32 | Recours au 49.3 |
+| `MotionCensure` | `motions_censure` | 61 | Motions de censure votées à l'Assemblée |
+| `ReponseGouvernement` | `reponses_gouvernement` | 25 000 | Réponses en séance rattachées à un poste |
 
 ### Travail législatif
 
@@ -244,7 +266,9 @@ L'API renvoie l'essentiel de la base, souvent la ligne entière sur les routes d
 | `membres_gouvernement` | `slug`, `date_naissance`, `liaison` | La date de naissance ne sert qu'au rattachement des sénateurs |
 | `postes_ministeriels` | `qualite` quand `qualite_accordee` existe | L'API renvoie la qualité accordée au titulaire (« Ministre déléguée ») sous le nom `qualite` |
 | `presidences` | `acteur_uid`, `liaison` | |
-| `presidences_assemblee` | toutes | Sert au calcul de la présence ; la fiche affiche la présidence parmi les fonctions du mandat |
+| `presidences_chambre` | toutes | Sert au calcul de la présence ; la fiche affiche la présidence parmi les fonctions du mandat |
+| `projets_loi_signataires` | `rang`, `source` | L'API donne le chef de file et les cosignataires, pas l'ordre brut |
+| `reponses_gouvernement` | toutes | L'API en donne le nombre par poste et par chambre |
 
 Méthode : liste relevée le 1er octobre 2026 en interrogeant toutes les routes GET documentées avec des paramètres réels (plus de 500 appels), puis revue dans le code le 21 octobre 2026, après l'ajout des métadonnées de séance des amendements. Les colonnes renvoyées sous un autre nom (par exemple `cible_types.label` en `cibleNom`, `groupes_thematiques.position_moyenne` en `position`) comptent comme exposées.
 
