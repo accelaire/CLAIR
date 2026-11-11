@@ -23,6 +23,7 @@
 // =============================================================================
 
 import { Prisma, PrismaClient } from '@prisma/client';
+import { PROCEDURES_PROJET } from '../sources/assemblee-nationale/dossiers-client';
 import { telechargerDepotsSenat, type DepotSenat } from '../sources/senat/dosleg-depots';
 import { differencier, tranches } from '../utils/synchro-differentielle';
 import { logger } from '../utils/logger';
@@ -39,15 +40,7 @@ export const DEBUT_COUVERTURE = '2017-06-21';
  */
 const DEPOTS_SENAT_MIN = 350;
 
-/**
- * Procédures AN qui ne sont que des projets (ordinaire, finances, financement de
- * la sécurité sociale, conventions, rectificatives, approbation des comptes).
- * Un tel dossier est un projet même quand l'Assemblée n'en publie aucun
- * signataire (conventions déposées au Sénat pendant la dissolution de 2024).
- * Les procédures mixtes (« projet ou proposition » organique, constitutionnelle)
- * ne le sont que par un signataire ministre.
- */
-export const PROCEDURES_PROJET = new Set(['1', '3', '4', '6', '21', '33']);
+export { PROCEDURES_PROJET };
 
 /** Procédures AN qui ne sont pas des projets : déclaration du Gouvernement, engagement de responsabilité. */
 const PROCEDURE_DECLARATION = '11';
