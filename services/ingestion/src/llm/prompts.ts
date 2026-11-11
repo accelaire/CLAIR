@@ -829,8 +829,23 @@ export interface ParlementairePromptData {
     anneeFin: number | null;
   }[];
 
-  // Mandats extraits du sourceData
+  // Mandats extraits du sourceData (organes de la chambre ; sans les fonctions
+  // gouvernementales, que la source publie fausses ou génériques)
   mandats: MandatInfo[];
+
+  /**
+   * Postes ministériels et présidences, datés (`postes_ministeriels`,
+   * `presidences`, `presidences_chambre`). Font foi : ils remplacent les lignes
+   * « Gouvernement », « Ministère » et « Présidence de la République » du
+   * `source_data`, sans portefeuille ni gouvernement, et dont l'absence de date
+   * de fin faisait dire au modèle qu'un ancien ministre l'était encore.
+   */
+  fonctionsHorsChambre?: {
+    libelle: string;
+    gouvernement: string | null;
+    dateDebut: string;
+    dateFin: string | null;
+  }[];
 
   // Lobbying ciblant ce parlementaire
   lobbyingActions: LobbyingTarget[];
@@ -854,11 +869,6 @@ function periodeStr(f: { debut?: string; fin?: string }): string {
   if (f.fin) return ` (jusqu'en ${f.fin})`;
   return '';
 }
-
-// Fonctions exercées hors de la chambre : elles survivent à la fin du mandat.
-// Un député nommé ministre cède son siège à son suppléant (`actif = false`)
-// mais reste ministre, et sa fonction au gouvernement est bel et bien en cours.
-const FONCTIONS_HORS_CHAMBRE = new Set(['GOUVERNEMENT', 'MINISTERE', 'PRESREP']);
 
 export function buildParlementaireResumePrompt(data: ParlementairePromptData): string {
   const chambreLabel = data.chambre === 'senat' ? 'Sénateur' : 'Député';
@@ -928,6 +938,17 @@ export function buildParlementaireResumePrompt(data: ParlementairePromptData): s
     }
   }
 
+  // Fonctions au gouvernement et présidences : datées par nos tables. Une
+  // fonction sans fin est en cours même pour un ancien parlementaire (un député
+  // nommé ministre cède son siège à son suppléant et reste ministre).
+  if (data.fonctionsHorsChambre?.length) {
+    parts.push('\n--- Fonctions gouvernementales et présidences (données CLAIR, font foi) ---');
+    for (const f of data.fonctionsHorsChambre) {
+      const gouvernement = f.gouvernement ? `, gouvernement ${f.gouvernement}` : '';
+      parts.push(`${f.libelle}${gouvernement} : ${f.dateDebut} → ${f.dateFin ?? 'en cours'}`);
+    }
+  }
+
   // Mandats et fonctions
   if (data.mandats.length > 0) {
     parts.push('\n--- Mandats et fonctions ---');
@@ -937,7 +958,7 @@ export function buildParlementaireResumePrompt(data: ParlementairePromptData): s
       // le clore (le Sénat ne publie aucune date d'appartenance).
       const finStr = m.dateFin
         ? ` → ${m.dateFin}`
-        : data.actif || FONCTIONS_HORS_CHAMBRE.has(m.typeOrgane)
+        : data.actif
           ? ' → en cours'
           : ' → terminé (date non publiée)';
       // Sans le code brut de l'organe : le modèle lisait « (CNPE) », code des

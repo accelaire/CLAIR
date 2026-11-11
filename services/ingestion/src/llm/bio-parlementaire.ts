@@ -38,6 +38,12 @@ export interface SignatureEditorialeInput {
     dateDebut: Date;
     dateFin: Date | null;
   }[];
+  /**
+   * Postes ministériels et présidences (République, Assemblée, Sénat), par leur
+   * identifiant source. Une entrée au gouvernement, un remaniement ou une sortie
+   * font ainsi régénérer la fiche concernée, et elle seule.
+   */
+  fonctionsHorsChambre?: { uid: string; dateDebut: Date; dateFin: Date | null }[];
 }
 
 /**
@@ -67,6 +73,13 @@ export function signatureEditoriale(p: SignatureEditorialeInput): string {
     .sort((a, b) => a.debut - b.debut || (a.cle < b.cle ? -1 : a.cle > b.cle ? 1 : 0))
     .map(m => m.cle)
     .join(',');
+  // En années, comme les mandats. N'entre dans l'empreinte que s'il y en a :
+  // l'empreinte des fiches sans poste ni présidence reste celle d'avant
+  // (SPEC-BILAN-MINISTRE §14), et seules les fiches concernées se régénèrent.
+  const fonctions = (p.fonctionsHorsChambre ?? [])
+    .map(f => [f.uid, f.dateDebut.getUTCFullYear(), f.dateFin?.getUTCFullYear() ?? ''].join(':'))
+    .sort()
+    .join(',');
   return computeContentHash(
     `v${PROMPT_PARLEMENTAIRE_VERSION}`,
     p.nom,
@@ -77,6 +90,7 @@ export function signatureEditoriale(p: SignatureEditorialeInput): string {
     p.commissionPermanente,
     p.circonscription ? `${p.circonscription.departement ?? ''}-${p.circonscription.numero ?? ''}` : '',
     mandats,
+    ...(fonctions ? [`fonctions:${fonctions}`] : []),
   );
 }
 

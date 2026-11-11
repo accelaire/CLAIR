@@ -13,6 +13,7 @@ import {
   type ParlementairePromptData,
 } from '../llm/prompts.js';
 import { defautsBio, signatureEditoriale } from '../llm/bio-parlementaire.js';
+import { chargerFonctionsHorsChambre, jourCivil } from './fonctions-hors-chambre.js';
 import { fetchWikipediaBio } from '../sources/wikipedia/client.js';
 import { fetchWikidataFacts } from '../sources/wikidata/client.js';
 import { DECLARATION_TYPES } from '../sources/hatvp/declarations-client.js';
@@ -87,6 +88,20 @@ export interface ExtractedMandat {
   organeRef?: string | null;
 }
 
+/**
+ * Date de fin d'un mandat d'organe AN. Le bureau d'âge (président et
+ * secrétaires d'âge) ne siège que jusqu'à l'élection du président, le jour
+ * même : l'AMO10 a publié celui du 18/07/2024 sans date de fin, et Jean-Pierre
+ * Gonzalez restait « Président d'âge » en cours deux ans plus tard (celui de
+ * 2022 était clos le jour même). Une fonction d'âge sans fin se clôt donc à
+ * sa date de début.
+ */
+export function dateFinMandatAN(m: { typeOrgane: string; qualite: string; dateDebut: string; dateFin: string | null }): string | null {
+  if (m.dateFin) return m.dateFin;
+  if (m.typeOrgane === 'BUREAU' && /\bd['’]âge\b/i.test(m.qualite) && m.dateDebut) return m.dateDebut;
+  return null;
+}
+
 function extractMandatsAN(sourceData: unknown): ExtractedMandat[] {
   const mandats = isRecord(sourceData) && isRecord(sourceData.mandats)
     ? sourceData.mandats.mandat
@@ -99,12 +114,14 @@ function extractMandatsAN(sourceData: unknown): ExtractedMandat[] {
     )
     .map((m) => {
       const typeOrgane = readString(m, 'typeOrgane') ?? '';
+      const qualite = readString(m.infosQualite, 'libQualite') || 'Membre';
+      const dateDebut = readString(m, 'dateDebut') ?? '';
       return {
         typeOrgane,
         institution: TYPE_ORGANE_LABELS[typeOrgane] || typeOrgane,
-        qualite: readString(m.infosQualite, 'libQualite') || 'Membre',
-        dateDebut: readString(m, 'dateDebut') ?? '',
-        dateFin: readString(m, 'dateFin') || null,
+        qualite,
+        dateDebut,
+        dateFin: dateFinMandatAN({ typeOrgane, qualite, dateDebut, dateFin: readString(m, 'dateFin') || null }),
         sourceUid: readString(m, 'uid') || undefined,
         organeRef: readString(m.organes, 'organeRef') || null,
       };
@@ -158,6 +175,9 @@ export async function enrichParlementairesIA(
 
   const mistral = new CLAIRMistralClient();
   const limiter = pLimit(concurrency);
+  // Postes ministériels et présidences, par fiche : dans le prompt et dans
+  // l'empreinte (quelques centaines de lignes, lues une fois).
+  const fonctionsHorsChambre = await chargerFonctionsHorsChambre(prisma);
 
   // Plus de dépendance web dure. Le socle sourcé de chaque fiche, c'est NOTRE dossier
   // parlementaire (mandats, votes, présence, HATVP), toujours présent. Wikipédia et
@@ -225,7 +245,11 @@ export async function enrichParlementairesIA(
       },
     });
     const perimes = fiches
-      .filter(f => f.iaContentHash !== signatureEditoriale({ ...f, groupe: f.groupe?.nom }))
+      .filter(f => f.iaContentHash !== signatureEditoriale({
+        ...f,
+        groupe: f.groupe?.nom,
+        fonctionsHorsChambre: fonctionsHorsChambre.get(f.id),
+      }))
       // Les plus anciennes d'abord ; départage par id pour un ordre stable.
       .sort((a, b) =>
         (a.iaGeneratedAt?.getTime() ?? 0) - (b.iaGeneratedAt?.getTime() ?? 0) || a.id.localeCompare(b.id));
@@ -299,6 +323,7 @@ export async function enrichParlementairesIA(
           const mandats = parl.chambre === 'senat'
             ? extractMandatsSenat(parl.sourceData)
             : extractMandatsAN(parl.sourceData);
+          const fonctions = fonctionsHorsChambre.get(parl.id) ?? [];
 
           // Empreinte des seuls faits que la fiche affirme (statut, chambre, groupe,
           // commission, mandats, version du prompt) : cf. llm/bio-parlementaire.ts.
@@ -313,6 +338,7 @@ export async function enrichParlementairesIA(
             commissionPermanente: parl.commissionPermanente,
             circonscription: parl.circonscription,
             mandatsParlementaires: parl.mandatsParlementaires,
+            fonctionsHorsChambre: fonctions,
           });
 
           if (!bypassHash && parl.iaContentHash === contentHash) {
@@ -386,12 +412,20 @@ export async function enrichParlementairesIA(
               anneeDebut: m.dateDebut.getUTCFullYear(),
               anneeFin: m.dateFin?.getUTCFullYear() ?? null,
             })),
-            mandats: mandats.map(m => ({
+            // Les fonctions gouvernementales du `source_data` sont génériques ou
+            // fausses : le prompt reçoit à la place `fonctionsHorsChambre`.
+            mandats: mandats.filter(m => !estFonctionGouvernementale(m)).map(m => ({
               typeOrgane: m.typeOrgane,
               institution: m.institution,
               qualite: m.qualite,
               dateDebut: m.dateDebut,
               dateFin: m.dateFin,
+            })),
+            fonctionsHorsChambre: fonctions.map(f => ({
+              libelle: f.libelle,
+              gouvernement: f.gouvernement,
+              dateDebut: jourCivil(f.dateDebut),
+              dateFin: f.dateFin ? jourCivil(f.dateFin) : null,
             })),
             lobbyingActions: lobbyActions.map(a => ({
               lobbyiste: a.lobbyiste.nom,
