@@ -26,6 +26,129 @@ export interface GouvernementResume {
   nbMembres: number;
   /** Membres dont la civilité publiée est « Mme ». */
   nbFemmes: number;
+  /** Absents d'une réponse mise en cache avant le déploiement du bilan. */
+  couverture?: Couverture;
+  /** Recours au 49.3 et motions de censure ; null avant juin 2017. */
+  bilan?: { engagements: number; motions: number } | null;
+}
+
+/** « avant_2017 » : pas de données de bilan (ni dossiers ni scrutins avant la 15e législature). */
+export type Couverture = 'depuis_2017' | 'avant_2017';
+
+export type NatureProjet = 'ordinaire' | 'ratification_ordonnance' | 'convention' | 'finances' | 'constitutionnelle' | 'organique';
+export type StadeProjet = 'promulgue' | 'adopte' | 'examine' | 'depose';
+
+export interface ProjetLoi {
+  dossier: { uid: string; titre: string };
+  nature: NatureProjet;
+  stade: StadeProjet;
+  chambreDepot: 'assemblee' | 'senat';
+  dateDepot: string;
+  loi: { numero: string; urlLegifrance: string | null } | null;
+}
+
+export interface ComptesProjets {
+  total: number;
+  /** Hors ratifications d'ordonnances et conventions, comptées à part. */
+  portes: number;
+  parNature: Record<NatureProjet, number>;
+  parStadePortes: Record<StadeProjet, number>;
+}
+
+export interface MotionCensure {
+  date: string;
+  alinea: number;
+  premierSignataire: string | null;
+  pour: number;
+  majoriteRequise: number | null;
+  adoptee: boolean;
+  scrutin: { numero: number; chambre: string; session: string };
+  engagementDossierUid: string | null;
+}
+
+export interface Engagement {
+  date: string;
+  dossier: { uid: string; titre: string };
+  texte: { uid: string; titre: string } | null;
+}
+
+export interface BilanGouvernement {
+  textes: ComptesProjets & {
+    liste: Array<ProjetLoi & {
+      chefDeFile: { posteUid: string; intitule: string; intituleCourt: string | null; domaine: string | null; membre: PersonneGouvernement } | null;
+    }>;
+  };
+  engagements: Array<Engagement & { motions: MotionCensure[] }>;
+  motions: { total: number; alinea2: number; alinea3: number; adoptees: number; liste: MotionCensure[] };
+}
+
+/** Un gouvernement désigné dans une autre page (dossier, scrutin). */
+export interface RepereGouvernement {
+  slug: string;
+  nom: string;
+}
+
+/**
+ * Contexte gouvernemental d'un dossier ou d'un sujet (`gouvernement` de
+ * `/dossiers/:uid` et `/sujets/:slug`) : le projet de loi et ses signataires,
+ * les recours au 49.3 sur ce texte et leurs motions de censure.
+ */
+export interface ContexteGouvernemental {
+  projets: Array<ProjetLoi & {
+    gouvernement: RepereGouvernement | null;
+    signataires: Array<{
+      role: 'premier_ministre' | 'chef_de_file' | 'cosignataire';
+      qualite: string;
+      intitule: string;
+      intituleCourt: string | null;
+      membre: PersonneGouvernement & { slug: string };
+    }>;
+  }>;
+  engagements: Array<Engagement & {
+    gouvernement: RepereGouvernement | null;
+    premierMinistre: PersonneGouvernement & { slug: string };
+    motions: MotionCensure[];
+  }>;
+}
+
+/** Une motion de censure vue depuis la page de son scrutin (`motionCensure` de `/scrutins/:numero`). */
+export interface MotionDuScrutin extends MotionCensure {
+  gouvernement: RepereGouvernement | null;
+  engagement: { date: string; dossierUid: string; texte: { uid: string; titre: string } | null } | null;
+}
+
+/** Bilan d'un poste : comptes sur la fiche, listes sur la page d'un membre. */
+export interface BilanPoste {
+  textes: { chefDeFile: ComptesProjets; cosignataire: number; liste?: Array<ProjetLoi & { role: string }> } | null;
+  reponses: { assemblee: number; senat: number };
+  premierMinistre: {
+    engagements: number;
+    motions: number;
+    motionsAdoptees: number;
+    listeEngagements?: Engagement[];
+    listeMotions?: MotionCensure[];
+  } | null;
+}
+
+export const LIBELLES_STADE: Record<StadeProjet, string> = {
+  promulgue: 'promulgué',
+  adopte: 'adopté, pas encore promulgué',
+  examine: 'examiné, sans adoption définitive',
+  depose: 'déposé, jamais examiné en séance',
+};
+
+export const LIBELLES_NATURE: Record<NatureProjet, string> = {
+  ordinaire: 'projet de loi',
+  ratification_ordonnance: 'ratification d’ordonnance',
+  convention: 'convention internationale',
+  finances: 'loi de finances ou de financement de la sécurité sociale',
+  constitutionnelle: 'révision constitutionnelle',
+  organique: 'loi organique',
+};
+
+/** Pluriel simple : « 1 texte », « 3 textes ». */
+export function nombre(n: number, singulier: string, pluriel = `${singulier}s`): string {
+  return `${n.toLocaleString('fr-FR')} ${n > 1 ? pluriel : singulier}`;
 }
 
 export interface PosteMinisteriel {
@@ -44,10 +167,12 @@ export interface PosteMinisteriel {
   membre: PersonneGouvernement;
 }
 
-export interface GouvernementDetail extends GouvernementResume {
+export interface GouvernementDetail extends Omit<GouvernementResume, 'bilan'> {
   precedent: { slug: string; nom: string } | null;
   suivant: { slug: string; nom: string } | null;
   postes: PosteMinisteriel[];
+  /** null avant juin 2017 (`couverture` = « avant_2017 ») ; absent d'une réponse antérieure au bilan. */
+  bilan?: BilanGouvernement | null;
 }
 
 export interface SourceGouvernements {
@@ -70,6 +195,10 @@ export interface FonctionGouvernementale {
   dateDebut: string;
   dateFin: string | null;
   gouvernement: { uid: string; slug: string; nom: string } | null;
+  /** Slug du membre (`/gouvernements/membres/:slug`) ; absent d'une réponse antérieure au bilan. */
+  membreSlug?: string | null;
+  /** Comptes du poste ; null avant juin 2017 ou pour une présidence. */
+  bilan?: BilanPoste | null;
 }
 
 /** Une date civile de la source affichée sans décalage de fuseau. */

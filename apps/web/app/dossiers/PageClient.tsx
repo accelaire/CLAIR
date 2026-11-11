@@ -59,7 +59,8 @@ function DossiersPageContent({ initialDossiers, initialPage = 1 }: PageClientPro
     chambre: string;
     procedureCode: string;
     procedureLibelle: string;
-  }>(['search', 'etat', 'chambre', 'procedureCode', 'procedureLibelle']);
+    gouvernement: string;
+  }>(['search', 'etat', 'chambre', 'procedureCode', 'procedureLibelle', 'gouvernement']);
 
   const { data: filtersData } = useQuery<{ procedures: { label: string; count: number }[] }>({
     queryKey: ['dossiers-filters'],
@@ -87,6 +88,7 @@ function DossiersPageContent({ initialDossiers, initialPage = 1 }: PageClientPro
           chambre: filters.chambre || undefined,
           procedureCode: filters.procedureCode || undefined,
           procedureLibelle: filters.procedureLibelle || undefined,
+          gouvernement: filters.gouvernement || undefined,
           page: pageParam,
           limit: 20,
           ...dateParams,
@@ -98,7 +100,7 @@ function DossiersPageContent({ initialDossiers, initialPage = 1 }: PageClientPro
     // La donnée du rendu serveur ne vaut que pour la vue canonique : dès qu'un
     // filtre est actif, on repart sur un chargement client.
     initialData:
-      initialDossiers && aucunFiltre([filters.search, filters.etat, filters.chambre, filters.procedureCode, filters.procedureLibelle]) &&
+      initialDossiers && aucunFiltre([filters.search, filters.etat, filters.chambre, filters.procedureCode, filters.procedureLibelle, filters.gouvernement]) &&
       Object.keys(dateParams).length === 0
         ? { pages: [initialDossiers], pageParams: [initialPage] }
         : undefined,
@@ -119,9 +121,10 @@ function DossiersPageContent({ initialDossiers, initialPage = 1 }: PageClientPro
     if (filters.chambre) count++;
     if (filters.etat) count++;
     if (filters.procedureLibelle) count++;
+    if (filters.gouvernement) count++;
     if (dateRange.from || dateRange.to) count++;
     return count;
-  }, [filters.chambre, filters.etat, filters.procedureLibelle, dateRange.from, dateRange.to]);
+  }, [filters.chambre, filters.etat, filters.procedureLibelle, filters.gouvernement, dateRange.from, dateRange.to]);
 
   const handleClearFilters = () => {
     clearAll(['dateFrom', 'dateTo']);
@@ -187,6 +190,22 @@ function DossiersPageContent({ initialDossiers, initialPage = 1 }: PageClientPro
             <option value="caduc">Caduc</option>
             <option value="fusionne">Fusionné</option>
             <option value="retire">Retiré</option>
+          </select>
+          <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+        </div>
+
+        {/* Projets du Gouvernement et textes passés au 49.3 (bilan des
+            gouvernements, depuis juin 2017). */}
+        <div className="relative md:w-auto">
+          <select
+            value={filters.gouvernement}
+            onChange={(e) => setFilter('gouvernement', e.target.value)}
+            aria-label="Textes du Gouvernement"
+            className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="">Origine du texte</option>
+            <option value="projets">Projets du Gouvernement</option>
+            <option value="49-3">Passés au 49.3</option>
           </select>
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>
