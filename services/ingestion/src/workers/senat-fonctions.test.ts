@@ -9,6 +9,8 @@ import {
   dumpPlausible,
   ecartAvecAnnuaire,
   fonctionsVoulues,
+  presidencesSenatPlausibles,
+  presidencesSenatVoulues,
   type MandatVoulu,
   type TablesSens,
 } from './senat-fonctions';
@@ -196,5 +198,41 @@ describe('ecartAvecAnnuaire', () => {
     ];
     expect(ecartAvecAnnuaire(dump, annuaire)).toBe(2);
     expect(ecartAvecAnnuaire(dump, dump)).toBe(0);
+  });
+});
+
+describe('presidencesSenatVoulues', () => {
+  const t = tables({
+    sen: [
+      { senmat: '000677', sennomuse: 'Monnerville', senprenomuse: 'Gaston' },
+      { senmat: LARCHER, sennomuse: 'Larcher', senprenomuse: 'Gérard' },
+    ],
+    senbur: [
+      { senburid: '621', burcod: 'PDTSEN', senmat: '000677', senburdatdeb: '1959-05-05 00:00:00', senburdatfin: '1968-10-02 00:00:00' },
+      { senburid: '3122', burcod: 'PDTSEN', senmat: LARCHER, senburdatdeb: '2026-10-01 00:00:00', senburdatfin: null },
+      { senburid: '3200', burcod: 'QUESTESEN', senmat: LARCHER, senburdatdeb: '2026-10-01 00:00:00', senburdatfin: null },
+    ],
+  });
+
+  it('garde chaque présidence, fiche ou non, sous l’uid de la ligne du bureau', () => {
+    const fiches = new Map([[LARCHER, { id: 'p-larcher', liaison: 'source_id' as const }]]);
+    expect(presidencesSenatVoulues(t, fiches)).toEqual([
+      {
+        uid: 'SENBUR-621', chambre: 'senat', sourceId: '000677', prenom: 'Gaston', nom: 'Monnerville',
+        dateDebut: new Date('1959-05-05T00:00:00Z'), dateFin: new Date('1968-10-02T00:00:00Z'), parlementaireId: null, liaison: null,
+      },
+      {
+        uid: 'SENBUR-3122', chambre: 'senat', sourceId: LARCHER, prenom: 'Gérard', nom: 'Larcher',
+        dateDebut: new Date('2026-10-01T00:00:00Z'), dateFin: null, parlementaireId: 'p-larcher', liaison: 'source_id',
+      },
+    ]);
+  });
+
+  it('tient pour faux un dump sans au moins 10 présidences ou sans exactement une en cours', () => {
+    const p = presidencesSenatVoulues(t, new Map());
+    expect(presidencesSenatPlausibles(p)).toBe(false);
+    const dix = Array.from({ length: 10 }, (_, i) => ({ ...p[0]!, uid: `SENBUR-${i}`, dateFin: i === 9 ? null : p[0]!.dateFin }));
+    expect(presidencesSenatPlausibles(dix)).toBe(true);
+    expect(presidencesSenatPlausibles(dix.map((x) => ({ ...x, dateFin: null })))).toBe(false);
   });
 });

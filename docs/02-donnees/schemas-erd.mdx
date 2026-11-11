@@ -47,7 +47,7 @@ Diagrammes entité-relation de la base, générés depuis [`apps/api/prisma/sche
 
 ## 🗺️ Vue d'ensemble des relations
 
-Les 56 relations entre tables, sans les colonnes. Les 7 tables sans clé étrangère (`evenements_institutionnels`, `candidats_mandats_locaux`, `legi_textes`, `legi_articles`, `sync_logs`, `source_states`, `feedbacks`) n'y figurent pas ; elles sont détaillées plus bas.
+Les 68 relations entre tables, sans les colonnes. Les 7 tables sans clé étrangère (`evenements_institutionnels`, `candidats_mandats_locaux`, `legi_textes`, `legi_articles`, `sync_logs`, `source_states`, `feedbacks`) n'y figurent pas ; elles sont détaillées plus bas.
 
 <Mermaid
   title="Toutes les relations"
@@ -64,7 +64,19 @@ Les 56 relations entre tables, sans les colonnes. Les 7 tables sans clé étrang
     gouvernements ||--o{ postes_ministeriels : "gouvernement_id"
     membres_gouvernement ||--o{ postes_ministeriels : "membre_id"
     parlementaires |o--o{ presidences : "parlementaire_id"
-    parlementaires |o--o{ presidences_assemblee : "parlementaire_id"
+    parlementaires |o--o{ presidences_chambre : "parlementaire_id"
+    dossiers_legislatifs ||--o| projets_loi : "dossier_id"
+    gouvernements ||--o{ projets_loi : "gouvernement_id"
+    projets_loi ||--o{ projets_loi_signataires : "projet_id"
+    postes_ministeriels ||--o{ projets_loi_signataires : "poste_id"
+    dossiers_legislatifs ||--o| engagements_responsabilite : "dossier_id"
+    postes_ministeriels ||--o{ engagements_responsabilite : "poste_id"
+    dossiers_legislatifs |o--o{ engagements_responsabilite : "dossier_texte_id"
+    scrutins ||--o| motions_censure : "scrutin_id"
+    gouvernements ||--o{ motions_censure : "gouvernement_id"
+    engagements_responsabilite |o--o{ motions_censure : "engagement_id"
+    interventions ||--o| reponses_gouvernement : "intervention_id"
+    postes_ministeriels ||--o{ reponses_gouvernement : "poste_id"
     commissions |o--o{ reunions : "commission_id"
     reunions ||--o{ reunion_participants : "reunion_id"
     parlementaires ||--o{ reunion_participants : "parlementaire_id"
@@ -308,10 +320,10 @@ Les 56 relations entre tables, sans les colonnes. Les 7 tables sans clé étrang
 `}
 />
 
-## Gouvernements et présidence de la République
+## Gouvernements, présidence de la République et présidences des chambres
 
 <Mermaid
-  title="Gouvernements et présidence de la République"
+  title="Gouvernements, présidence de la République et présidences des chambres"
   chart={`erDiagram
     gouvernements {
         text id PK
@@ -370,10 +382,11 @@ Les 56 relations entre tables, sans les colonnes. Les 7 tables sans clé étrang
         timestamp created_at
         timestamp updated_at
     }
-    presidences_assemblee {
+    presidences_chambre {
         text id PK
+        text chambre
         text uid UK
-        text acteur_uid
+        text source_id
         text prenom
         text nom
         timestamp date_debut
@@ -387,7 +400,74 @@ Les 56 relations entre tables, sans les colonnes. Les 7 tables sans clé étrang
     gouvernements ||--o{ postes_ministeriels : "gouvernement_id"
     membres_gouvernement ||--o{ postes_ministeriels : "membre_id"
     parlementaires |o--o{ presidences : "parlementaire_id"
-    parlementaires |o--o{ presidences_assemblee : "parlementaire_id"
+    parlementaires |o--o{ presidences_chambre : "parlementaire_id"
+`}
+/>
+
+## Bilan des gouvernements : projets de loi, 49.3, motions de censure, réponses en séance
+
+<Mermaid
+  title="Bilan des gouvernements : projets de loi, 49.3, motions de censure, réponses en séance"
+  chart={`erDiagram
+    projets_loi {
+        text id PK
+        text dossier_id FK, UK
+        text gouvernement_id FK
+        text nature
+        text chambre_depot
+        timestamp date_depot
+        text stade
+        timestamp created_at
+        timestamp updated_at
+    }
+    projets_loi_signataires {
+        text id PK
+        text projet_id FK
+        text poste_id FK
+        int rang
+        text role
+        text source
+        timestamp created_at
+        timestamp updated_at
+    }
+    engagements_responsabilite {
+        text id PK
+        text dossier_id FK, UK
+        text poste_id FK
+        timestamp date
+        text dossier_texte_id FK  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    motions_censure {
+        text id PK
+        text scrutin_id FK, UK
+        text gouvernement_id FK
+        int alinea
+        text engagement_id FK  "nullable"
+        text premier_signataire  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    reponses_gouvernement {
+        text id PK
+        text intervention_id FK, UK
+        text poste_id FK
+        timestamp created_at
+        timestamp updated_at
+    }
+    dossiers_legislatifs ||--o| projets_loi : "dossier_id"
+    gouvernements ||--o{ projets_loi : "gouvernement_id"
+    projets_loi ||--o{ projets_loi_signataires : "projet_id"
+    postes_ministeriels ||--o{ projets_loi_signataires : "poste_id"
+    dossiers_legislatifs ||--o| engagements_responsabilite : "dossier_id"
+    postes_ministeriels ||--o{ engagements_responsabilite : "poste_id"
+    dossiers_legislatifs |o--o{ engagements_responsabilite : "dossier_texte_id"
+    scrutins ||--o| motions_censure : "scrutin_id"
+    gouvernements ||--o{ motions_censure : "gouvernement_id"
+    engagements_responsabilite |o--o{ motions_censure : "engagement_id"
+    interventions ||--o| reponses_gouvernement : "intervention_id"
+    postes_ministeriels ||--o{ reponses_gouvernement : "poste_id"
 `}
 />
 

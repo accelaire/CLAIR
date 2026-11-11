@@ -76,11 +76,11 @@ model Parlementaire {
   // Comparer des élus entre eux suppose la même période (défaut = mandat en cours) ;
   // la carrière répond à une autre question : « qui a le plus siégé, tout compris ».
   // Voir SPEC-MULTI-LEGISLATURES.md (ticket #13).
-  statsCarrierePresence      Int? @map("stats_carriere_presence")
-  statsCarriereLoyaute       Int? @map("stats_carriere_loyaute")
-  statsCarriereParticipation Int? @map("stats_carriere_participation")
-  statsCarriereInterventions Int? @map("stats_carriere_interventions")
-  statsCarriereAmendements   Int? @map("stats_carriere_amendements")
+  statsCarrierePresence         Int? @map("stats_carriere_presence")
+  statsCarriereLoyaute          Int? @map("stats_carriere_loyaute")
+  statsCarriereParticipation    Int? @map("stats_carriere_participation")
+  statsCarriereInterventions    Int? @map("stats_carriere_interventions")
+  statsCarriereAmendements      Int? @map("stats_carriere_amendements")
   // Présence aux scrutins solennels sur toute la carrière, hors scrutins où
   // l'élu ne pouvait pas voter. Sans elle, la fiche d'un ancien élu montrait la
   // présence solennelle de son seul dernier mandat (Gérard Collomb : 0 % sur un
@@ -92,10 +92,10 @@ model Parlementaire {
   // (stats-calculator), un taux sur 28 scrutins mettait 179 sénateurs tout juste
   // élus en tête des classements. Booléens et non expression : un tri Prisma
   // exige une colonne.
-  statsScrutins           Int?    @map("stats_scrutins")
-  statsCarriereScrutins   Int?    @map("stats_carriere_scrutins")
-  statsClassable          Boolean @default(false) @map("stats_classable")
-  statsCarriereClassable  Boolean @default(false) @map("stats_carriere_classable")
+  statsScrutins          Int?    @map("stats_scrutins")
+  statsCarriereScrutins  Int?    @map("stats_carriere_scrutins")
+  statsClassable         Boolean @default(false) @map("stats_classable")
+  statsCarriereClassable Boolean @default(false) @map("stats_carriere_classable")
 
   // Enrichissement IA (fiches parlementaires enrichies)
   resumeIA        String?   @map("resume_ia")
@@ -120,7 +120,7 @@ model Parlementaire {
   identifiants          ParlementaireIdentifiant[]
   membreGouvernement    MembreGouvernement?
   presidences           Presidence[]
-  presidencesAssemblee  PresidenceAssemblee[]
+  presidencesChambre    PresidenceChambre[]
 
   // Métadonnées source
   sourceId   String? @map("source_id") // PA123456 (AN) ou 14133K (Sénat)
@@ -348,7 +348,9 @@ model Gouvernement {
   dateDebut     DateTime  @map("date_debut") @db.Date
   dateFin       DateTime? @map("date_fin") @db.Date // null = en cours
 
-  postes PosteMinisteriel[]
+  postes  PosteMinisteriel[]
+  projets ProjetLoi[]
+  motions MotionCensure[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @map("updated_at")
@@ -410,6 +412,10 @@ model PosteMinisteriel {
   dateFin         DateTime? @map("date_fin") @db.Date
   datePublication DateTime? @map("date_publication") @db.Date
 
+  projetsSignes ProjetLoiSignataire[]
+  engagements   EngagementResponsabilite[]
+  reponses      ReponseGouvernement[]
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @map("updated_at")
 
@@ -444,16 +450,22 @@ model Presidence {
   @@map("presidences")
 }
 
-/// Présidence de l'Assemblée nationale, datée par l'AMO30 depuis 2007 (l'AMO10
-/// ne date que celle de la législature en cours). Par tradition, le président
-/// ne prend part aux votes que par exception : les scrutins de sa présidence
-/// sortent de sa présence (stats-calculator). Celle du Sénat est un mandat du
-/// bureau (`mandats`, `SENBUR-…`, senat-fonctions).
-model PresidenceAssemblee {
+/// Présidence d'une chambre, une ligne par mandat de président publié par la
+/// source : l'AMO30 pour l'Assemblée (depuis 2007 ; l'AMO10 ne date que celle de
+/// la législature en cours), le dump `export_sens` pour le Sénat (`senbur`,
+/// depuis 1959). Une ligne existe que le président ait une fiche ou non. Par
+/// tradition, le président ne prend part aux votes que par exception : les
+/// scrutins de sa présidence sortent de sa présence (stats-calculator). Au Sénat,
+/// la même présidence est aussi une ligne du bureau dans `mandats`, de même
+/// `source_uid` (`SENBUR-…`), pour l'affichage de la fiche ; `check-quality`
+/// vérifie que les deux concordent.
+model PresidenceChambre {
   id        String    @id @default(uuid())
-  /// uid du mandat au bureau (PM…) dans l'AMO30
+  chambre   String // 'assemblee' | 'senat'
+  /// PM… (mandat au bureau dans l'AMO30) | SENBUR-<senburid> (export_sens)
   uid       String    @unique
-  acteurUid String    @map("acteur_uid") // PA…
+  /// PA… | matricule du Sénat, comme `parlementaires.source_id`
+  sourceId  String    @map("source_id")
   prenom    String
   nom       String
   dateDebut DateTime  @map("date_debut") @db.Date
@@ -466,9 +478,130 @@ model PresidenceAssemblee {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @map("updated_at")
 
-  @@index([dateDebut])
+  @@index([chambre, dateDebut])
   @@index([parlementaireId])
-  @@map("presidences_assemblee")
+  @@map("presidences_chambre")
+}
+
+// =============================================================================
+// BILAN DES GOUVERNEMENTS (SPEC-BILAN-MINISTRE.md)
+// Recalculé en entier, par différence, à chaque nuit (`sync-bilan-gouvernement`),
+// après les gouvernements, les dossiers et les scrutins. Couverture : dépôts et
+// scrutins depuis la 15e législature (21 juin 2017).
+// =============================================================================
+
+/// Un projet de loi du Gouvernement : un dossier dont au moins un signataire est
+/// un poste ministériel. Le dossier de l'Assemblée quand il existe, sinon celui du
+/// Sénat (projet déposé au Sénat que l'Assemblée n'a pas reçu).
+model ProjetLoi {
+  id             String            @id @default(uuid())
+  dossierId      String            @unique @map("dossier_id")
+  dossier        DossierLegislatif @relation("ProjetLoi", fields: [dossierId], references: [id], onDelete: Cascade)
+  gouvernementId String            @map("gouvernement_id")
+  gouvernement   Gouvernement      @relation(fields: [gouvernementId], references: [id], onDelete: Cascade)
+
+  /// 'ordinaire' | 'ratification_ordonnance' | 'convention' | 'finances' | 'constitutionnelle' | 'organique'
+  nature       String
+  chambreDepot String   @map("chambre_depot") // 'assemblee' | 'senat'
+  dateDepot    DateTime @map("date_depot") @db.Date
+  /// Stade atteint : 'promulgue' | 'adopte' | 'examine' | 'rejete' | 'depose' (jamais examiné en séance)
+  stade        String
+
+  signataires ProjetLoiSignataire[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@index([gouvernementId])
+  @@index([dateDepot])
+  @@map("projets_loi")
+}
+
+/// Un signataire d'un projet de loi, rattaché à son poste (donc au bon
+/// gouvernement et au bon portefeuille).
+model ProjetLoiSignataire {
+  id       String           @id @default(uuid())
+  projetId String           @map("projet_id")
+  projet   ProjetLoi        @relation(fields: [projetId], references: [id], onDelete: Cascade)
+  posteId  String           @map("poste_id")
+  poste    PosteMinisteriel @relation(fields: [posteId], references: [id], onDelete: Cascade)
+
+  rang   Int // ordre des signataires dans la source, à partir de 1
+  /// 'premier_ministre' | 'chef_de_file' (premier signataire autre que le PM) | 'cosignataire'
+  role   String
+  /// 'assemblee' (`initiateur` du dossier AN) | 'senat' (auteurs du texte de dépôt, DOSLEG)
+  source String
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@unique([projetId, posteId])
+  @@index([posteId])
+  @@map("projets_loi_signataires")
+}
+
+/// Un recours à l'article 49, alinéa 3 : un dossier « Engagement de la
+/// responsabilité gouvernementale » de l'Assemblée.
+model EngagementResponsabilite {
+  id        String            @id @default(uuid())
+  dossierId String            @unique @map("dossier_id")
+  dossier   DossierLegislatif @relation("EngagementResponsabilite", fields: [dossierId], references: [id], onDelete: Cascade)
+  posteId   String            @map("poste_id") // le Premier ministre
+  poste     PosteMinisteriel  @relation(fields: [posteId], references: [id], onDelete: Cascade)
+  date      DateTime          @db.Date // acte « …-DGVT »
+
+  /// Le texte sur lequel la responsabilité est engagée (`texteAssocie` de l'acte DGVT)
+  dossierTexteId String?            @map("dossier_texte_id")
+  dossierTexte   DossierLegislatif? @relation("EngagementTexte", fields: [dossierTexteId], references: [id], onDelete: SetNull)
+
+  motions MotionCensure[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@index([posteId])
+  @@index([dossierTexteId])
+  @@map("engagements_responsabilite")
+}
+
+/// Une motion de censure mise aux voix à l'Assemblée.
+model MotionCensure {
+  id                String                    @id @default(uuid())
+  scrutinId         String                    @unique @map("scrutin_id")
+  scrutin           Scrutin                   @relation(fields: [scrutinId], references: [id], onDelete: Cascade)
+  /// Le gouvernement en fonction le jour du scrutin
+  gouvernementId    String                    @map("gouvernement_id")
+  gouvernement      Gouvernement              @relation(fields: [gouvernementId], references: [id], onDelete: Cascade)
+  alinea            Int // 2 (motion spontanée) | 3 (réponse à un 49.3)
+  /// Alinéa 3 : l'engagement auquel elle répond, par les `voteRefs` de son dossier
+  engagementId      String?                   @map("engagement_id")
+  engagement        EngagementResponsabilite? @relation(fields: [engagementId], references: [id], onDelete: SetNull)
+  /// « Mathilde Panot », lu dans le titre du scrutin
+  premierSignataire String?                   @map("premier_signataire")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@index([gouvernementId])
+  @@index([engagementId])
+  @@map("motions_censure")
+}
+
+/// Une réponse d'un membre du Gouvernement en séance (`interventions.type =
+/// 'reponse_gouvernement'`), rattachée au poste que l'orateur occupait ce jour-là.
+/// Table de liaison plutôt que colonne : `interventions` pèse 2 Go.
+model ReponseGouvernement {
+  id             String           @id @default(uuid())
+  interventionId String           @unique @map("intervention_id")
+  intervention   Intervention     @relation(fields: [interventionId], references: [id], onDelete: Cascade)
+  posteId        String           @map("poste_id")
+  poste          PosteMinisteriel @relation(fields: [posteId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@index([posteId])
+  @@map("reponses_gouvernement")
 }
 
 // =============================================================================
@@ -873,15 +1006,15 @@ model CandidatMandatsLocaux {
   id      String @id @default(uuid())
   scrutin String // 'senatoriales-2026'
 
-  nom    String
-  prenom String
+  nom           String
+  prenom        String
   /// Clef de jointure avec `candidatures`, comme là-bas jamais exposée.
   dateNaissance DateTime @map("date_naissance") @db.Date
 
   /// [{ type, libelle, depuis }], dans l'ordre d'affichage.
-  mandats Json
+  mandats    Json
   /// 'A' (nom + prénom + date) ou 'B' (nom + date, prénom d'usage divergent).
-  confiance String
+  confiance  String
   /// Date de mise à jour du répertoire lu, citée avec les mandats.
   sourceDate DateTime @map("source_date") @db.Date
 
@@ -1011,6 +1144,9 @@ model DossierLegislatif {
   dossierCommissions DossierCommission[]
   articles           TexteArticle[]
   interventions      Intervention[]
+  projetLoi          ProjetLoi?                 @relation("ProjetLoi")
+  engagement         EngagementResponsabilite?  @relation("EngagementResponsabilite")
+  engagementsVisant  EngagementResponsabilite[] @relation("EngagementTexte")
 
   // Contenu enrichi par IA
   resumeIA      String?   @map("resume_ia")
@@ -1185,6 +1321,7 @@ model Scrutin {
 
   votes              Vote[]
   interventionsLiees InterventionScrutin[]
+  motionCensure      MotionCensure?
 
   // Contenu enrichi par IA
   resumeIA      String?   @map("resume_ia")
@@ -1329,7 +1466,8 @@ model Intervention {
   /// La séance publique ne le donne pas : là, c'est le mandat d'époque qui l'apporte.
   orateurGroupe String?            @map("orateur_groupe")
 
-  scrutinsLies InterventionScrutin[]
+  scrutinsLies        InterventionScrutin[]
+  reponseGouvernement ReponseGouvernement?
 
   sourceUrl String?  @map("source_url")
   createdAt DateTime @default(now()) @map("created_at")

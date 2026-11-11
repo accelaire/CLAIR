@@ -28,12 +28,13 @@ Chaque source est identifiée par une clé `organisme:type`, définie dans `serv
 | `assemblee_nationale:videos` | [videos.assemblee-nationale.fr](https://videos.assemblee-nationale.fr) | HTML | Liens vers les vidéos des séances et réunions |
 | `senat:senateurs` | [senat.fr/api-senat/senateurs.json](https://www.senat.fr/api-senat/senateurs.json) | JSON | Sénateurs en exercice et groupes. Ses commissions du jour servent de contrôle à `senat:fonctions` |
 | `senat:senateurs_histo` | [data.senat.fr](https://data.senat.fr) ODSEN (`ODSEN_ELUSEN.csv` et fichiers associés) | CSV | Anciens sénateurs, mandats clos, groupe d'époque |
-| `senat:fonctions` | `export_sens.zip` de data.senat.fr (dump de la base des sénateurs) | ZIP (dump SQL) | Fonctions datées : bureau du Sénat, commissions permanentes et affaires européennes (membre, président, rapporteur général…), fonctions de groupe |
+| `senat:fonctions` | `export_sens.zip` de data.senat.fr (dump de la base des sénateurs) | ZIP (dump SQL) | Fonctions datées : bureau du Sénat, commissions permanentes et affaires européennes (membre, président, rapporteur général…), fonctions de groupe ; présidences du Sénat depuis 1959 (`presidences_chambre`) |
 | `assemblee_nationale:gouvernements` | même archive AMO30 que les commissions, téléchargée une seule fois pour les deux | ZIP / JSON | Gouvernements depuis 2007, postes ministériels, présidences de la République et de l'Assemblée |
 | `senat:scrutins` | pages `scrutin-public` de senat.fr, `dosleg.zip` de data.senat.fr | HTML + dump SQL | Scrutins publics et votes nominatifs |
 | `senat:amendements` | `ameli.zip` de data.senat.fr, puis un CSV par texte sur senat.fr | ZIP + CSV | Amendements, cosignataires et article visé (colonne « Subdivision » du CSV, sinon `amd.subid` → `sub` d'AMELI) |
 | `senat:dossiers` | `dosleg.zip` de data.senat.fr | ZIP (dump SQL) | Dossiers législatifs |
 | `senat:interventions` | `cri.zip` de data.senat.fr et comptes rendus HTML de senat.fr | ZIP + HTML | Prises de parole en séance |
+| `clair:bilan_gouvernement` | la base (dossiers, scrutins, débats, postes ministériels) et `dosleg.zip` de data.senat.fr | calcul + dump SQL (toujours) | Bilan des gouvernements depuis juin 2017 : projets de loi et leurs signataires (les ministres d'un projet déposé au Sénat viennent des auteurs de son texte de dépôt dans DOSLEG), recours au 49.3, motions de censure, réponses en séance rattachées au poste |
 | `senat:agenda` | API agenda de senat.fr (`/api/v1/agenda/events`) | JSON | Séances publiques et réunions de commission |
 | `senat:reunions` | comptes rendus de commission sur senat.fr | HTML (toujours) | Comptes rendus rattachés aux réunions, sénateurs cités |
 | `senat:dossier_commissions` | pages dossier législatif de senat.fr | HTML (toujours) | Commissions saisies des dossiers du Sénat |
@@ -102,7 +103,7 @@ Les identifiants des sources sont conservés pour permettre de remonter à l'ori
 | Amendement | `amendements.uid` (tel que publié) et `uid_canonique` (clé de dédoublonnage) | |
 | Organe AN | `commissions.uid` | `PO59048` |
 | Gouvernement, présidence de la République | `gouvernements.uid`, `presidences.uid` | `PO873634` |
-| Présidence de l'Assemblée (mandat au bureau) | `presidences_assemblee.uid` | `PM845400` |
+| Présidence d'une chambre (mandat au bureau) | `presidences_chambre.uid` | `PM845400` (Assemblée), `SENBUR-3122` (Sénat) |
 | Poste ministériel (mandat MINISTERE de l'AN) | `postes_ministeriels.uid` | `PM873637` |
 | Membre du gouvernement | `membres_gouvernement.acteur_uid` | `PA643210` |
 | Intervention AN | `interventions.source_uid` (`id_syceron` du paragraphe) | |

@@ -38,8 +38,18 @@ const SECTIONS = [
     ],
   },
   {
-    titre: "Gouvernements et présidence de la République",
-    tables: ["gouvernements", "postes_ministeriels", "membres_gouvernement", "presidences", "presidences_assemblee"],
+    titre: "Gouvernements, présidence de la République et présidences des chambres",
+    tables: ["gouvernements", "postes_ministeriels", "membres_gouvernement", "presidences", "presidences_chambre"],
+  },
+  {
+    titre: "Bilan des gouvernements : projets de loi, 49.3, motions de censure, réponses en séance",
+    tables: [
+      "projets_loi",
+      "projets_loi_signataires",
+      "engagements_responsabilite",
+      "motions_censure",
+      "reponses_gouvernement",
+    ],
   },
   {
     titre: "Travail législatif : dossiers, scrutins, amendements, débats, sujets",

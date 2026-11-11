@@ -11,6 +11,9 @@ import {
 } from 'lucide-react';
 import { FilterBar } from '@/components/FilterBar';
 import { api } from '@/lib/api';
+import { useOngletAncre } from '@/lib/use-onglet-ancre';
+import { ContexteGouvernementalBandeau } from '@/components/gouvernements/contexte-gouvernemental';
+import type { ContexteGouvernemental } from '@/lib/gouvernements';
 import { scrutinHref } from '@/lib/scrutin-url';
 import { NATURES_FILTRABLES, natureLabels } from '@/lib/nature-scrutin';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
@@ -88,6 +91,8 @@ export interface DossierDetail {
   urlLegifrance: string | null;
   urlJournalOfficiel: string | null;
   resumeIA: string | null;
+  /** Projet de loi du Gouvernement, 49.3 et motions de censure ; absent d'une réponse antérieure. */
+  gouvernement?: ContexteGouvernemental | null;
   sujet: {
     slug: string;
     label: string;
@@ -185,12 +190,19 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
   // `null` tant que le lecteur n'a rien choisi : l'onglet par défaut dépend de
   // ce que le dossier a réellement à montrer, et cela n'est connu qu'après le
   // chargement du parcours.
+  //
+  // L'onglet se demande par l'ancre (`#scrutins`), comme sur toutes les pages
+  // à onglets, ou par `?tab=`, que les liens existants emploient encore ;
+  // l'ancre l'emporte, et un clic l'écrit.
   const ongletDeLUrl = searchParams.get('tab');
-  const [activeTab, setActiveTab] = useState<'amendements' | 'scrutins' | 'parcours' | null>(
-    ongletDeLUrl === 'scrutins' || ongletDeLUrl === 'amendements' || ongletDeLUrl === 'parcours'
-      ? ongletDeLUrl
-      : null,
-  );
+  const {
+    explicite: ongletDeLAncre,
+    choisir: setActiveTab,
+    barre: barreOnglets,
+  } = useOngletAncre(['parcours', 'amendements', 'scrutins'] as const, 'parcours');
+  const activeTab: 'amendements' | 'scrutins' | 'parcours' | null =
+    ongletDeLAncre ??
+    (ongletDeLUrl === 'scrutins' || ongletDeLUrl === 'amendements' || ongletDeLUrl === 'parcours' ? ongletDeLUrl : null);
 
   // Groupe filter from URL (set when coming from sujet stats page)
   const groupeFilter = searchParams.get('groupe') || '';
@@ -373,7 +385,7 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
     setCibleTraitee(cible);
     setActiveTab('amendements');
     setCibleEpinglee(cibleAffichee ? null : cible);
-  }, [cible, cibleTraitee, cibleAffichee, dossier]);
+  }, [cible, cibleTraitee, cibleAffichee, dossier, setActiveTab]);
 
   const { data: amendementEpingle, isFetched: epingleCherche } = useQuery<DossierAmendement | null>({
     queryKey: ['dossier-amendement-cible', uid, cibleEpinglee],
@@ -585,6 +597,9 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
         </div>
       )}
 
+      {/* Le Gouvernement et ce texte : qui l'a porté, 49.3, motions de censure. */}
+      <ContexteGouvernementalBandeau contexte={dossier.gouvernement} dossierUid={dossier.uid} />
+
       {/* En clair — IA summary */}
       {dossier.resumeIA && (
         <div className="rounded-lg border bg-card p-5 mb-8">
@@ -719,7 +734,7 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
       )}
 
       {/* Tabs: Parcours / Amendements / Scrutins */}
-      <div id="tabs-section" className="mb-6 flex items-center gap-1 overflow-x-auto border-b scroll-mt-20">
+      <div ref={barreOnglets} id="tabs-section" className="mb-6 flex items-center gap-1 overflow-x-auto border-b scroll-mt-20">
         {hasParcours && (
           <button
             onClick={() => setActiveTab('parcours')}

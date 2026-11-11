@@ -377,13 +377,13 @@ describe('ParlementairesService', () => {
         sexe: 'F',
         mandats: [bureau, commission],
       });
-      mockPrisma.presidenceAssemblee.findMany.mockImplementation(async () => [
+      mockPrisma.presidenceChambre.findMany.mockImplementation(async () => [
         {
-          uid: 'PM845400', acteurUid: 'PA721908', dateDebut: new Date('2024-07-18'), dateFin: null,
+          uid: 'PM845400', chambre: 'assemblee', sourceId: 'PA721908', dateDebut: new Date('2024-07-18'), dateFin: null,
           createdAt: new Date(), updatedAt: new Date(),
         },
         {
-          uid: 'PM800479', acteurUid: 'PA721908', dateDebut: new Date('2022-06-28'), dateFin: new Date('2024-06-09'),
+          uid: 'PM800479', chambre: 'assemblee', sourceId: 'PA721908', dateDebut: new Date('2022-06-28'), dateFin: new Date('2024-06-09'),
           createdAt: new Date(), updatedAt: new Date(),
         },
       ]);

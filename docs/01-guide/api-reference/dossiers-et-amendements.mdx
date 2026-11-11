@@ -9,9 +9,9 @@ description: Dossiers législatifs de l'Assemblée et du Sénat, leur chronologi
 
 | Méthode | Route | Description |
 | :--- | :--- | :--- |
-| `GET` | `/api/v1/dossiers` | Liste paginée des dossiers législatifs déposés à l'AN et au Sénat |
+| `GET` | `/api/v1/dossiers` | Liste paginée des dossiers législatifs déposés à l'AN et au Sénat (ceux qui ont au moins un scrutin). `gouvernement=projets` ne garde que les projets de loi du Gouvernement, `gouvernement=49-3` les textes sur lesquels il a engagé sa responsabilité, avec ou sans scrutin (depuis juin 2017) |
 | `GET` | `/api/v1/dossiers/trending` | Dossiers ayant le plus de scrutins sur les 3 derniers mois |
-| `GET` | `/api/v1/dossiers/:uid` | Fiche complète d'un dossier (titre, statut, procédure, résumé IA) |
+| `GET` | `/api/v1/dossiers/:uid` | Fiche complète d'un dossier (titre, statut, procédure, résumé IA). `gouvernement` : le projet de loi du Gouvernement (gouvernement, signataires et leur rôle, stade) et les recours au 49.3 sur ce texte avec leurs motions de censure ; sur un dossier d'engagement, le texte visé ; `null` pour les autres dossiers |
 | `GET` | `/api/v1/dossiers/:uid/chronologie` | Étapes du parcours du texte, d'une chambre à l'autre |
 | `GET` | `/api/v1/dossiers/:uid/scrutins` | Tous les scrutins publics rattachés à ce texte |
 | `GET` | `/api/v1/dossiers/:uid/amendements` | Amendements déposés sur le dossier |
@@ -63,7 +63,7 @@ Un sujet regroupe les dossiers de l'Assemblée nationale et du Sénat qui porten
 | :--- | :--- | :--- |
 | `GET` | `/api/v1/sujets` | Liste des sujets avec pagination et filtres thématiques |
 | `GET` | `/api/v1/sujets/featured` | Sujets majeurs mis en avant |
-| `GET` | `/api/v1/sujets/:slug` | Synthèse complète du sujet (enjeux, résumés, positions comparées) |
+| `GET` | `/api/v1/sujets/:slug` | Synthèse complète du sujet (enjeux, résumés, positions comparées). `gouvernement` : comme sur un dossier, pour l'ensemble de ses dossiers |
 | `GET` | `/api/v1/sujets/:slug/presse` | Articles de presse récents, lus en direct sur Google Actualités (liens seulement, cache de 3 h) |
 
 Toutes les routes des sujets (`/categories`, `/:slug/archive`, `/:slug/documents-lies`, `/:slug/dossiers`, `/:slug/chronologie`, `/:slug/scrutins`, `/:slug/stats`) et leurs schémas de réponse : [explorateur de l'API](/api).

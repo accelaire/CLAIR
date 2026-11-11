@@ -146,7 +146,20 @@ CREATE OR REPLACE TRIGGER postes_ministeriels_updated_at BEFORE INSERT OR UPDATE
   FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
 CREATE OR REPLACE TRIGGER presidences_updated_at BEFORE INSERT OR UPDATE ON presidences
   FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
-CREATE OR REPLACE TRIGGER presidences_assemblee_updated_at BEFORE INSERT OR UPDATE ON presidences_assemblee
+CREATE OR REPLACE TRIGGER presidences_chambre_updated_at BEFORE INSERT OR UPDATE ON presidences_chambre
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+
+-- Bilan des gouvernements, recalculé chaque nuit par différence : une ligne
+-- inchangée n'est pas réécrite.
+CREATE OR REPLACE TRIGGER projets_loi_updated_at BEFORE INSERT OR UPDATE ON projets_loi
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER projets_loi_signataires_updated_at BEFORE INSERT OR UPDATE ON projets_loi_signataires
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER engagements_responsabilite_updated_at BEFORE INSERT OR UPDATE ON engagements_responsabilite
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER motions_censure_updated_at BEFORE INSERT OR UPDATE ON motions_censure
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER reponses_gouvernement_updated_at BEFORE INSERT OR UPDATE ON reponses_gouvernement
   FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
 
 -- Commissions, réunions, agenda.

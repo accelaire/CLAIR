@@ -6,6 +6,7 @@ import { FastifyPluginAsync } from 'fastify';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { ApiError } from '../../utils/errors';
+import { GouvernementsService } from '../gouvernements/gouvernements.service';
 import { buildTextSearchCondition } from '../../utils/search';
 import { INTERVENTIONS_DE_FOND, jourDeSeanceSenat, journeeDeSeance } from '../../utils/interventions';
 import { defensesDesAmendements, numeroCite } from './defense-amendement';
@@ -138,6 +139,9 @@ const scrutinsListQuerySchema = z.object({
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
   search: z.string().optional(),
+  // Motions de censure : toutes, ou celles de l'alinéa 2 (spontanées) ou 3
+  // (en réponse à un 49.3). Table `motions_censure` (bilan des gouvernements).
+  censure: z.enum(['toutes', 'alinea2', 'alinea3']).optional(),
 });
 
 // Note: scrutinParamsSchema moved inline to handlers to avoid unused variable warning
@@ -169,12 +173,17 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           dateFrom: { type: 'string', format: 'date' },
           dateTo: { type: 'string', format: 'date' },
           search: { type: 'string', description: 'Recherche dans le titre' },
+          censure: {
+            type: 'string',
+            enum: ['toutes', 'alinea2', 'alinea3'],
+            description: "Motions de censure seulement : toutes, spontanées (article 49, alinéa 2) ou en réponse à un 49.3 (alinéa 3)",
+          },
         },
       },
     },
     handler: async (request, _reply) => {
       const query = scrutinsListQuerySchema.parse(request.query);
-      const { page, limit, chambre, type, nature, sort, tag, importance, dateFrom, dateTo, search } = query;
+      const { page, limit, chambre, type, nature, sort, tag, importance, dateFrom, dateTo, search, censure } = query;
 
       // Cache key based on query params
       const cacheKey = `scrutins:list:${JSON.stringify(query)}`;
@@ -246,6 +255,9 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
         ...(sort && { sort }),
         ...(tag && { tags: { has: tag } }),
         ...(importance && { importance }),
+        ...(censure && {
+          motionCensure: censure === 'toutes' ? { isNot: null } : { is: { alinea: censure === 'alinea2' ? 2 : 3 } },
+        }),
         ...dateCondition,
         ...searchCondition,
       };
@@ -793,6 +805,10 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           seance: seanceUid && seanceConsultable
             ? { uid: seanceUid, rang: debutDansLaSeance?._min.ordre ?? null }
             : null,
+          // Une motion de censure : le gouvernement visé (celui en fonction le
+          // jour du vote), l'alinéa, le 49.3 auquel elle répond et la majorité
+          // requise. null pour tout autre scrutin.
+          motionCensure: await new GouvernementsService(fastify.prisma, fastify.redis).motionDuScrutin(scrutin.id),
         },
       };
     },

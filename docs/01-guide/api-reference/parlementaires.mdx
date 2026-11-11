@@ -16,7 +16,7 @@ Les trois préfixes servent les mêmes routes sur la même table : `/parlementai
 | `GET` | `/api/v1/parlementaires` | Liste paginée des parlementaires (Assemblée et Sénat) |
 | `GET` | `/api/v1/deputes` | Même liste, restreinte aux députés |
 | `GET` | `/api/v1/senateurs` | Même liste, restreinte aux sénateurs |
-| `GET` | `/api/v1/parlementaires/:slug` | Fiche d'un parlementaire : identité, mandats, statistiques, fiche IA. `fonctionsGouvernementales` liste ses postes ministériels et sa présidence de la République, s'il en a (voir `/gouvernements`) ; ils ne figurent pas dans `mandats` |
+| `GET` | `/api/v1/parlementaires/:slug` | Fiche d'un parlementaire : identité, mandats, statistiques, fiche IA. `fonctionsGouvernementales` liste ses postes ministériels et sa présidence de la République, s'il en a (voir `/gouvernements`) ; ils ne figurent pas dans `mandats`. Chaque poste depuis juin 2017 porte `bilan` (projets signés comme chef de file ou cosignataire, réponses en séance par chambre, et pour un Premier ministre ses 49.3 et motions) et `membreSlug`, qui donne le détail à `/gouvernements/membres/:slug` |
 | `GET` | `/api/v1/parlementaires/:slug/votes` | Votes du parlementaire, filtrables |
 | `GET` | `/api/v1/parlementaires/:slug/amendements` | Amendements déposés et cosignés |
 | `GET` | `/api/v1/parlementaires/:slug/interventions` | Prises de parole en séance et en commission |

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Landmark, Users } from 'lucide-react';
+import { Gavel, Landmark, Users } from 'lucide-react';
 import { fetchRessource } from '@/lib/api-server';
 import { BreadcrumbJsonLd } from '@/components/seo/JsonLd';
 import { Portrait } from '@/components/gouvernements/portrait';
@@ -10,6 +10,7 @@ import {
   dateLongue,
   duree,
   lienFiche,
+  nombre,
   nomComplet,
   type GouvernementResume,
   type SourceGouvernements,
@@ -111,6 +112,13 @@ function CarteGouvernement({ g, plusLong, jour }: { g: GouvernementResume; plusL
             {g.nbMembres} membres
             {femmes !== null && `, dont ${femmes} femmes (${Math.round((100 * femmes) / Math.max(g.nbMembres, 1))} %)`}
           </p>
+          {/* Absent d'une réponse antérieure au bilan, null avant juin 2017 (pas de données, et non zéro). */}
+          {g.bilan && (
+            <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
+              <Gavel className="h-3.5 w-3.5" />
+              {nombre(g.bilan.engagements, 'recours au 49.3', 'recours au 49.3')}, {nombre(g.bilan.motions, 'motion de censure', 'motions de censure')}
+            </p>
+          )}
         </div>
       </div>
     </li>

@@ -81,31 +81,43 @@ export async function lireTablesDump(
   return resultat;
 }
 
+/** Un dump PostgreSQL du Sénat publié en zip : export_sens, DOSLEG… */
+export interface DumpSenat {
+  url: string;
+  /** Nom du fichier SQL dans le zip */
+  fichierSql: string;
+  /** Pour les journaux et les erreurs */
+  nom: string;
+}
+
+export const DUMP_SENS: DumpSenat = { url: SENS_URL, fichierSql: 'export_sens.sql', nom: 'export_sens' };
+
 /**
- * Télécharge le dump (ou lit `archive`, un zip déjà téléchargé), en lit les
- * tables demandées, puis efface les fichiers temporaires.
+ * Télécharge un dump du Sénat (ou lit `archive`, un zip déjà téléchargé), en
+ * lit les tables demandées, puis efface les fichiers temporaires.
  *
  * Une table vide fait échouer la lecture : le 01/11/2026, le Sénat a publié un
- * dump de 444 octets, schéma seul, sans aucune table. L'écrire aurait effacé
- * toutes les fonctions.
+ * dump export_sens de 444 octets, schéma seul, sans aucune table. L'écrire
+ * aurait effacé toutes les fonctions.
  */
-export async function telechargerTablesSens(
+export async function telechargerTablesDump(
+  dump: DumpSenat,
   tables: readonly string[],
   options: { archive?: string } = {},
 ): Promise<Map<string, LigneDump[]>> {
-  const dossier = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'clair-sens-'));
+  const dossier = await fs.promises.mkdtemp(path.join(os.tmpdir(), `clair-${dump.nom}-`));
   try {
     let zip = options.archive;
     if (!zip) {
-      zip = path.join(dossier, 'export_sens.zip');
-      const { bytes } = await downloadWithRetry(SENS_URL, zip, { timeoutMs: 300_000 });
-      logger.info({ mo: (bytes / 1024 / 1024).toFixed(1) }, 'Dump de la base des sénateurs téléchargé');
+      zip = path.join(dossier, `${dump.nom}.zip`);
+      const { bytes } = await downloadWithRetry(dump.url, zip, { timeoutMs: 300_000 });
+      logger.info({ dump: dump.nom, mo: (bytes / 1024 / 1024).toFixed(1) }, 'Dump du Sénat téléchargé');
     }
 
-    await execAsync(`unzip -o "${zip}" -d "${dossier}"`, { maxBuffer: 16 * 1024 * 1024 });
-    const sql = path.join(dossier, 'export_sens.sql');
+    await execAsync(`unzip -o "${zip}" "${dump.fichierSql}" -d "${dossier}"`, { maxBuffer: 16 * 1024 * 1024 });
+    const sql = path.join(dossier, dump.fichierSql);
     if (!(await fs.promises.stat(sql).catch(() => null))) {
-      throw new Error('export_sens.sql absent de export_sens.zip');
+      throw new Error(`${dump.fichierSql} absent de ${dump.nom}.zip`);
     }
 
     const rl = readline.createInterface({
@@ -114,10 +126,18 @@ export async function telechargerTablesSens(
     });
     const resultat = await lireTablesDump(rl, tables);
     for (const t of tables) {
-      if ((resultat.get(t)?.length ?? 0) === 0) throw new Error(`Table ${t} vide ou absente du dump export_sens`);
+      if ((resultat.get(t)?.length ?? 0) === 0) throw new Error(`Table ${t} vide ou absente du dump ${dump.nom}`);
     }
     return resultat;
   } finally {
     await fs.promises.rm(dossier, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+/** Les tables demandées du dump de la base des sénateurs (export_sens). */
+export function telechargerTablesSens(
+  tables: readonly string[],
+  options: { archive?: string } = {},
+): Promise<Map<string, LigneDump[]>> {
+  return telechargerTablesDump(DUMP_SENS, tables, options);
 }

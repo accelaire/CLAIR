@@ -4,6 +4,7 @@ import { legislatureLabel, mandatureLabel, sessionForDate } from '@/lib/periodes
 import { mandatDeChaqueFonction } from '@/lib/fonctions-par-mandat';
 import { libellePoste, moisAnnee as moisAnneeCivil, type FonctionGouvernementale } from '@/lib/gouvernements';
 import { FonctionsMandat, type FonctionItem } from './fonctions-mandat';
+import { BilanPosteLigne } from './bilan-poste';
 
 export interface MandatParlementaireItem {
   /** Chambre du MANDAT, qui peut différer de celle de la fiche (député élu sénateur). */
@@ -75,6 +76,7 @@ function EntreeGouvernementale({ f }: { f: FonctionGouvernementale }) {
             </Link>
           </div>
         )}
+        <BilanPosteLigne f={f} />
       </div>
     </li>
   );

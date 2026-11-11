@@ -749,23 +749,171 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // domaine, et il faut l'ajouter à domaines-ministeriels.ts.
     query: `SELECT COUNT(*)::int AS value FROM postes_ministeriels WHERE domaine IS NULL`,
   },
-  presidences_assemblee_chevauchement: {
+  presidences_chambre_chevauchement: {
     type: 'invariant',
-    label: 'Présidences de l’Assemblée qui se chevauchent au-delà du jour de passation',
+    label: 'Présidences d’une même chambre qui se chevauchent au-delà du jour de passation',
     min: 0,
     max: 0,
-    query: `SELECT COUNT(*)::int AS value FROM presidences_assemblee a JOIN presidences_assemblee b
-      ON (a.date_debut, a.id) < (b.date_debut, b.id)
+    query: `SELECT COUNT(*)::int AS value FROM presidences_chambre a JOIN presidences_chambre b
+      ON a.chambre = b.chambre
+      AND (a.date_debut, a.id) < (b.date_debut, b.id)
       AND coalesce(a.date_fin, 'infinity'::date) > b.date_debut`,
   },
-  presidences_assemblee_en_cours: {
+  presidences_chambre_en_cours: {
     type: 'invariant',
-    label: 'Écart à une seule présidence de l’Assemblée en cours',
+    label: 'Écart à une seule présidence en cours par chambre',
     min: 0,
     max: 0,
     // Entre une dissolution et l'élection du nouveau président (juin-juillet
     // 2024), l'Assemblée n'a pas de président : l'écart vaut alors 1.
-    query: `SELECT abs(COUNT(*) FILTER (WHERE date_fin IS NULL) - 1)::int AS value FROM presidences_assemblee`,
+    query: `SELECT coalesce(sum(abs(n - 1)), 2)::int AS value FROM (
+      SELECT c.chambre, COUNT(pc.id) FILTER (WHERE pc.date_fin IS NULL) AS n
+      FROM (VALUES ('assemblee'), ('senat')) c(chambre)
+      LEFT JOIN presidences_chambre pc ON pc.chambre = c.chambre
+      GROUP BY c.chambre) x`,
+  },
+  presidences_senat_contre_bureau: {
+    type: 'invariant',
+    label: 'Présidences du Sénat et lignes du bureau (`mandats`) qui ne concordent pas',
+    min: 0,
+    max: 0,
+    // Les deux viennent de `senbur`, écrites par senat-fonctions dans la même
+    // transaction, sous le même uid (`SENBUR-…`) : la table pour les deux
+    // chambres, la ligne de bureau pour la fiche. Elles ne divergent que si
+    // l'une cesse d'être écrite.
+    query: `SELECT COUNT(*)::int AS value FROM (
+      SELECT pc.uid FROM presidences_chambre pc
+      WHERE pc.chambre = 'senat' AND pc.parlementaire_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM mandats m
+          WHERE m.source_uid = pc.uid AND m.parlementaire_id = pc.parlementaire_id
+            AND m.date_debut::date = pc.date_debut
+            AND m.date_fin::date IS NOT DISTINCT FROM pc.date_fin)
+      UNION ALL
+      SELECT m.source_uid FROM mandats m
+      WHERE m.source_uid LIKE 'SENBUR-%' AND m.qualite LIKE 'Présid% du Sénat'
+        AND NOT EXISTS (
+          SELECT 1 FROM presidences_chambre pc
+          WHERE pc.uid = m.source_uid AND pc.parlementaire_id = m.parlementaire_id)) x`,
+  },
+  bureau_age_ouvert: {
+    type: 'invariant',
+    label: 'Fonctions du bureau d’âge de l’Assemblée sans date de fin',
+    min: 0,
+    max: 0,
+    // Le bureau d'âge ne siège que jusqu'à l'élection du président, le jour
+    // même. L'AMO10 a publié celui du 18/07/2024 sans date de fin : Jean-Pierre
+    // Gonzalez restait « Président d'âge » en cours deux ans plus tard.
+    query: `SELECT COUNT(*)::int AS value FROM mandats
+      WHERE type_organe = 'BUREAU' AND qualite ~* 'd''âge' AND date_fin IS NULL`,
+  },
+  // --- Bilan des gouvernements (SPEC-BILAN-MINISTRE.md, §9) ------------------
+  projets_loi_manquants: {
+    type: 'invariant',
+    label: 'Projets de loi déposés depuis juin 2017 absents du bilan',
+    min: 0,
+    max: 0,
+    // Procédures qui ne sont que des projets : chacune doit avoir sa ligne.
+    query: `SELECT COUNT(*)::int AS value FROM dossiers_legislatifs d
+      WHERE d.uid LIKE 'DL%' AND d.legislature >= 15
+        AND d.procedure_code IN ('1', '3', '4', '6', '21', '33')
+        AND d.date_depot >= '2017-06-21'
+        AND NOT EXISTS (SELECT 1 FROM projets_loi p WHERE p.dossier_id = d.id)`,
+  },
+  projets_loi_sans_signataire: {
+    type: 'invariant',
+    label: 'Projets de loi sans aucun signataire rattaché à un poste',
+    min: 0,
+    max: 0,
+    query: `SELECT COUNT(*)::int AS value FROM projets_loi p
+      WHERE NOT EXISTS (SELECT 1 FROM projets_loi_signataires s WHERE s.projet_id = p.id)`,
+  },
+  projets_loi_hors_poste: {
+    type: 'invariant',
+    label: 'Signataires dont le poste ne couvre pas la date de dépôt, ou projet hors de son gouvernement',
+    min: 0,
+    max: 0,
+    query: `SELECT (
+      (SELECT COUNT(*) FROM projets_loi_signataires s
+        JOIN projets_loi p ON p.id = s.projet_id
+        JOIN postes_ministeriels ps ON ps.id = s.poste_id
+        WHERE p.date_depot < ps.date_debut OR (ps.date_fin IS NOT NULL AND p.date_depot > ps.date_fin))
+      + (SELECT COUNT(*) FROM projets_loi p JOIN gouvernements g ON g.id = p.gouvernement_id
+        WHERE p.date_depot < g.date_debut OR (g.date_fin IS NOT NULL AND p.date_depot > g.date_fin)))::int AS value`,
+  },
+  projets_ordonnance_mal_classes: {
+    type: 'invariant',
+    label: 'Projets dont le titre ratifie une ordonnance, classés comme textes ordinaires',
+    min: 0,
+    max: 0,
+    // Le titre court ne le dit pas toujours (« Code de la commande publique ») :
+    // la nature se lit sur le titre long ou le chemin AN. Un projet classé
+    // ordinaire alors que son titre ou son chemin parle de ratifier une
+    // ordonnance gonflerait le chiffre de tête du gouvernement qui l'a déposé.
+    query: `SELECT COUNT(*)::int AS value FROM projets_loi p
+      JOIN dossiers_legislatifs d ON d.id = p.dossier_id
+      WHERE p.nature IN ('ordinaire', 'organique', 'constitutionnelle')
+        AND coalesce(d.titre, '') || ' ' || coalesce(d.source_data->'titreDossier'->>'titreChemin', '')
+            ~* 'ratifi[^.]*ordonnance|ordonnance[^.]*ratifi|ratification_ordonnance'`,
+  },
+  engagements_hors_premier_ministre: {
+    type: 'invariant',
+    label: 'Recours au 49.3 sans poste de Premier ministre à leur date',
+    min: 0,
+    max: 0,
+    query: `SELECT COUNT(*)::int AS value FROM engagements_responsabilite e
+      JOIN postes_ministeriels p ON p.id = e.poste_id
+      WHERE p.rang_protocolaire <> 1 OR e.date < p.date_debut OR (p.date_fin IS NOT NULL AND e.date > p.date_fin)`,
+  },
+  engagements_sans_texte: {
+    type: 'invariant',
+    label: 'Recours au 49.3 sans le dossier du texte visé',
+    min: 0,
+    max: 0,
+    // 32 sur 32 le 11/11/2026, la réforme des retraites comprise (sa référence
+    // diffère d'un suffixe de document entre les deux dossiers).
+    query: `SELECT COUNT(*)::int AS value FROM engagements_responsabilite WHERE dossier_texte_id IS NULL`,
+  },
+  motions_censure_manquantes: {
+    type: 'invariant',
+    label: 'Motions de censure votées à l’Assemblée depuis juin 2017 absentes du bilan',
+    min: 0,
+    max: 0,
+    // Chaque motion tombe dans un gouvernement (61 sur 61 le 10/11/2026) et a
+    // un alinéa lisible dans son titre.
+    query: `SELECT COUNT(*)::int AS value FROM scrutins s
+      WHERE s.chambre = 'assemblee' AND s.titre ~* 'motion de censure' AND s.date >= '2017-06-21'
+        AND NOT EXISTS (SELECT 1 FROM motions_censure m WHERE m.scrutin_id = s.id)`,
+  },
+  motions_49_3_orphelines: {
+    type: 'invariant',
+    label: 'Motions de l’alinéa 3 sans aucun recours au 49.3 dans les 10 jours qui précèdent',
+    min: 0,
+    max: 0,
+    // Les trois motions du 24/10/2022 restent sans engagement (PLF et PLFSS
+    // 2023 votés le même jour, sans voteRefs en 16e) mais ont deux candidats :
+    // ce contrôle ne compte que les motions qu'aucun engagement n'explique.
+    query: `SELECT COUNT(*)::int AS value FROM motions_censure m
+      JOIN scrutins s ON s.id = m.scrutin_id
+      WHERE m.alinea = 3 AND m.engagement_id IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM engagements_responsabilite e
+          WHERE e.date BETWEEN s.date::date - 10 AND s.date::date)`,
+  },
+  reponses_gouvernement_non_rattachees: {
+    type: 'invariant',
+    label: 'Chambres dont plus de 1 % des réponses du Gouvernement n’ont pas de poste',
+    min: 0,
+    max: 0,
+    // Restent non rattachées : les réponses pendant les affaires courantes,
+    // après la date de fin publiée du poste (Laurent Saint-Martin le 18/12/2024).
+    query: `SELECT COUNT(*)::int AS value FROM (
+      SELECT i.chambre
+      FROM interventions i
+      LEFT JOIN reponses_gouvernement r ON r.intervention_id = i.id
+      WHERE i.type = 'reponse_gouvernement'
+      GROUP BY i.chambre
+      HAVING COUNT(*) FILTER (WHERE r.id IS NULL) > 0.01 * COUNT(*)) x`,
   },
   gouvernements_hors_presidence: {
     type: 'invariant',
@@ -1198,11 +1346,42 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     min: 3,
     query: `SELECT COUNT(*)::int AS value FROM presidences`,
   },
+  projets_loi_count: {
+    type: 'threshold',
+    label: 'Projets de loi du Gouvernement depuis juin 2017',
+    min: 780,
+    query: `SELECT COUNT(*)::int AS value FROM projets_loi`,
+  },
+  projets_loi_signataires_senat: {
+    type: 'threshold',
+    label: 'Signataires de projets lus dans DOSLEG (projets déposés au Sénat)',
+    min: 450,
+    // Sans eux, les projets déposés au Sénat ne seraient portés que par le PM.
+    query: `SELECT COUNT(*)::int AS value FROM projets_loi_signataires WHERE source = 'senat'`,
+  },
+  engagements_responsabilite_count: {
+    type: 'threshold',
+    label: 'Recours au 49.3 depuis juin 2017',
+    min: 32,
+    query: `SELECT COUNT(*)::int AS value FROM engagements_responsabilite`,
+  },
+  motions_censure_count: {
+    type: 'threshold',
+    label: 'Motions de censure votées depuis juin 2017',
+    min: 56,
+    query: `SELECT COUNT(*)::int AS value FROM motions_censure`,
+  },
   presidences_assemblee_count: {
     type: 'threshold',
     label: 'Présidences de l’Assemblée (depuis 2007)',
     min: 7,
-    query: `SELECT COUNT(*)::int AS value FROM presidences_assemblee`,
+    query: `SELECT COUNT(*)::int AS value FROM presidences_chambre WHERE chambre = 'assemblee'`,
+  },
+  presidences_senat_count: {
+    type: 'threshold',
+    label: 'Présidences du Sénat (depuis 1959)',
+    min: 10,
+    query: `SELECT COUNT(*)::int AS value FROM presidences_chambre WHERE chambre = 'senat'`,
   },
 };
 

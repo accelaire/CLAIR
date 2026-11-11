@@ -74,8 +74,19 @@ Code : `services/ingestion/src/checks/data-quality.ts`. Le contrôle réussit si
 | Écart à une seule présidence en cours |
 | Gouvernements qui ne commencent pendant aucune présidence |
 | Postes ministériels sans domaine : un intitulé nouveau, à ajouter à `domaines-ministeriels.ts` |
-| Présidences de l'Assemblée qui se chevauchent au-delà du jour de passation |
-| Écart à une seule présidence de l'Assemblée en cours |
+| Présidences d'une même chambre qui se chevauchent au-delà du jour de passation |
+| Écart à une seule présidence en cours par chambre |
+| Présidences du Sénat et lignes du bureau (`mandats`, `SENBUR-…`) qui ne concordent pas |
+| Fonctions du bureau d'âge de l'Assemblée sans date de fin (il ne siège que jusqu'à l'élection du président, le jour même) |
+| Projets de loi déposés depuis juin 2017 absents du bilan |
+| Projets de loi sans aucun signataire rattaché à un poste |
+| Signataires dont le poste ne couvre pas la date de dépôt, ou projet hors de son gouvernement |
+| Projets dont le titre ratifie une ordonnance, classés comme textes ordinaires |
+| Recours au 49.3 sans poste de Premier ministre à leur date |
+| Recours au 49.3 sans le dossier du texte visé |
+| Motions de censure votées depuis juin 2017 absentes du bilan |
+| Motions de l'alinéa 3 sans aucun recours au 49.3 dans les 10 jours qui précèdent |
+| Chambres dont plus de 1 % des réponses du Gouvernement n'ont pas de poste |
 
 **Le Congrès n'a pas de votes nominatifs, c'est normal.** Les scrutins du Congrès (députés et sénateurs réunis à Versailles) sont publiés par l'AN sous un uid `VTCG…` (CG pour Congrès, AN pour Assemblée) avec leurs totaux, mais sans aucune liste de votants. Ce n'est ni une perte à l'ingestion ni un scrutin cassé : il n'y a rien à réparer. Ces scrutins sont donc exclus de l'invariant « scrutins sans aucun vote » (filtre sur `source_url` contenant `/scrutins/VTCG`), ce qui ne peut masquer aucun scrutin de l'Assemblée ni du Sénat. Au 7 octobre 2026, la base en compte un seul : `VTCGR5L16V1`, la révision constitutionnelle sur l'IVG du 4 mars 2024 (780 pour, 72 contre).
 
@@ -122,6 +133,11 @@ Code : `services/ingestion/src/checks/data-quality.ts`. Le contrôle réussit si
 | Membres du gouvernement rattachés à leur fiche | 145 |
 | Présidences de la République (depuis 2007) | 3 |
 | Présidences de l'Assemblée (depuis 2007) | 7 |
+| Présidences du Sénat (depuis 1959) | 10 |
+| Projets de loi du Gouvernement depuis juin 2017 | 780 |
+| Signataires de projets lus dans DOSLEG (projets déposés au Sénat) | 450 |
+| Recours au 49.3 depuis juin 2017 | 32 |
+| Motions de censure votées depuis juin 2017 | 56 |
 
 Le périmètre des taux de liaison au Sénat commence à la session 2024, parce que les amendements des sessions antérieures ne sont pas ingérés : les compter mesurerait le périmètre de l'ingestion, pas la qualité du rattachement.
 

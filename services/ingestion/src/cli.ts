@@ -58,6 +58,7 @@ import { backfillMandatsParlementaires } from './workers/backfill-mandats.js';
 import { backfillNatureVote } from './workers/backfill-nature-vote.js';
 import { syncSenateursHistoriques } from './workers/senat-histo.js';
 import { syncSenatFonctions } from './workers/senat-fonctions.js';
+import { syncBilanGouvernement } from './workers/bilan-gouvernement.js';
 import { syncGouvernements } from './workers/gouvernements.js';
 import { libererArchivesAMO30 } from './sources/assemblee-nationale/amo30-archive.js';
 import { SENAT_SESSION_MIN } from './workers/mandats.js';
@@ -404,6 +405,7 @@ program
   .option('--co, --commissions', 'Inclure les commissions parlementaires')
   .option('--senat-histo', 'Inclure les anciens sénateurs (open data ODSEN)')
   .option('--gouvernements', 'Inclure les gouvernements, postes ministériels et présidences (AMO30)')
+  .option('--bilan-gouvernement', 'Inclure le bilan des gouvernements : projets de loi, 49.3, motions de censure, réponses en séance')
   .option('--re, --reunions', 'Inclure les réunions/agenda parlementaire (AN)')
   .option('--senat-reunions', 'Inclure les réunions Sénat (scraping HTML comptes rendus)')
   .option('--senat-agenda', 'Inclure l\'agenda Sénat (séances publiques à venir via API senat.fr)')
@@ -431,6 +433,7 @@ program
         includeCommissions: options.commissions,
         includeSenatHisto: options.senatHisto,
         includeGouvernements: options.gouvernements,
+        includeBilanGouvernement: options.bilanGouvernement,
         includeReunions: options.reunions,
         includeSenatReunions: options.senatReunions,
         includeSenatAgenda: options.senatAgenda,
@@ -769,7 +772,7 @@ program
 // =============================================================================
 program
   .command('sync-gouvernements')
-  .description("Gouvernements depuis 2007, postes ministériels, présidences de la République et de l'Assemblée (AMO30)")
+  .description("Gouvernements depuis 2007, postes ministériels, présidences de la République et de l'Assemblée (AMO30 ; celles de l'Assemblée dans presidences_chambre)")
   .action(async () => {
     try {
       const r = await syncGouvernements().finally(libererArchivesAMO30);
@@ -824,8 +827,33 @@ program
 // COMMANDE: sync-senat-fonctions
 // =============================================================================
 program
+  .command('sync-bilan-gouvernement')
+  .description('Bilan des gouvernements depuis juin 2017 : projets de loi et leurs signataires (dossiers AN + DOSLEG), 49.3, motions de censure, réponses en séance')
+  .option('--archive-dosleg <chemin>', 'Lire un dosleg.zip déjà téléchargé plutôt que la version du jour')
+  .action(async (options) => {
+    try {
+      const r = await syncBilanGouvernement({ archiveDosleg: options.archiveDosleg });
+      console.log('\n📊 Bilan des gouvernements :');
+      for (const table of ['projets', 'signataires', 'engagements', 'motions', 'reponses'] as const) {
+        const c = r[table];
+        console.log(`   ${table.padEnd(12)}: ${c.crees} créés, ${c.modifies} modifiés, ${c.supprimes} supprimés`);
+      }
+      const a = r.anomalies;
+      console.log(`   réponses non rattachées       : ${r.reponsesNonRattachees}`);
+      console.log(`   auteurs Sénat sans poste      : ${a.auteursSenatNonRattaches.length}`);
+      console.log(`   engagements sans texte        : ${a.engagementsSansTexte.length}`);
+      console.log(`   motions sans gouvernement     : ${a.motionsSansGouvernement.length}, sans alinéa : ${a.motionsSansAlinea.length}`);
+      console.log(`   dossiers sans dépôt lisible   : ${a.sansDepot.length}, hors gouvernement : ${a.horsGouvernement.length}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-bilan-gouvernement failed');
+      process.exit(1);
+    }
+  });
+
+program
   .command('sync-senat-fonctions')
-  .description('Fonctions datées des sénateurs (bureau du Sénat, commissions, groupes) depuis export_sens.zip')
+  .description('Fonctions datées des sénateurs (bureau du Sénat, commissions, groupes) et présidences du Sénat depuis export_sens.zip')
   .option('--archive <chemin>', "Lire un export_sens.zip déjà téléchargé plutôt que la version du jour")
   .action(async (options) => {
     try {
@@ -837,7 +865,12 @@ program
       console.log(`   Inchangées               : ${r.inchanges}`);
       console.log(`   Anciennes lignes remplacées : ${r.remplaces}`);
       console.log(`   Écart avec l'annuaire    : ${r.ecartAnnuaire}${r.commissionsGelees ? ' (commissions gelées)' : ''}`);
-      process.exit(r.commissionsGelees ? 1 : 0);
+      console.log(
+        r.presidences
+          ? `   Présidences du Sénat     : ${r.presidences.crees} créées, ${r.presidences.modifies} modifiées, ${r.presidences.supprimes} supprimées`
+          : '   Présidences du Sénat     : dump incomplet, laissées telles quelles',
+      );
+      process.exit(r.commissionsGelees || !r.presidences ? 1 : 0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'sync-senat-fonctions failed');
       process.exit(1);
