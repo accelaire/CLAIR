@@ -64,11 +64,11 @@ function majoriteUniqueDuGroupe(decompte: 'group_tallies'): Prisma.Sql {
  * - Président de l'assemblée : il ne vote pas, par usage. Gérard Larcher
  *   affichait 18 % de présence en carrière (ses seuls votes datent de 2007 et
  *   de 2011-2014, quand il ne présidait pas), Yaël Braun-Pivet 1 %. Périodes
- *   prises au bureau (`senat-fonctions.ts` pour le Sénat, AMO pour
- *   l'Assemblée), la source ne marquant pas la présidence sur tous les scrutins.
- *   Côté Assemblée, les présidences datées viennent aussi de l'AMO30
- *   (`presidences_assemblee`, ticket #103) : l'AMO10 ne date que la présidence
- *   de la législature en cours.
+ *   prises dans `presidences_chambre` (ticket #103), datée pour les deux
+ *   chambres : l'AMO30 pour l'Assemblée (l'AMO10 ne date que la présidence de
+ *   la législature en cours), le bureau du dump `export_sens` pour le Sénat. La
+ *   source du scrutin ne marque pas la présidence sur tous les scrutins. Bornes
+ *   incluses, au jour.
  * - Président de séance, membre du gouvernement (et président de l'Assemblée) :
  *   statut publié sur la ligne du vote (`votes.statut_votant`), par DOSLEG au
  *   Sénat, par les non-votants du scrutin à l'Assemblée.
@@ -87,22 +87,12 @@ const EMPECHEMENTS = Prisma.sql`
   FROM votes v
   WHERE v.statut_votant IN ('president_seance', 'gouvernement', 'president_assemblee')
   UNION
-  SELECT f.parlementaire_id AS personne_id, s.id AS scrutin_id
-  FROM mandats f
-  JOIN scrutins s ON s.date >= f.date_debut
-    AND (f.date_fin IS NULL OR s.date <= f.date_fin)
-    AND (
-      (s.chambre = 'senat' AND f.source_uid LIKE 'SENBUR-%' AND f.qualite LIKE 'Présid% du Sénat')
-      OR (s.chambre = 'assemblee' AND f.type_organe = 'BUREAU'
-          AND f.qualite IN ('Président de l''Assemblée nationale', 'Présidente de l''Assemblée nationale'))
-    )
-  UNION
-  SELECT pa.parlementaire_id AS personne_id, s.id AS scrutin_id
-  FROM presidences_assemblee pa
-  JOIN scrutins s ON s.chambre = 'assemblee'
-    AND s.date::date >= pa.date_debut
-    AND (pa.date_fin IS NULL OR s.date::date <= pa.date_fin)
-  WHERE pa.parlementaire_id IS NOT NULL
+  SELECT pc.parlementaire_id AS personne_id, s.id AS scrutin_id
+  FROM presidences_chambre pc
+  JOIN scrutins s ON s.chambre = pc.chambre
+    AND s.date::date >= pc.date_debut
+    AND (pc.date_fin IS NULL OR s.date::date <= pc.date_fin)
+  WHERE pc.parlementaire_id IS NOT NULL
   UNION
   SELECT mg.parlementaire_id AS personne_id, s.id AS scrutin_id
   FROM postes_ministeriels pm

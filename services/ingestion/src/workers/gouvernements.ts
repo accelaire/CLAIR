@@ -17,8 +17,10 @@
 //      indexée par son matricule Sénat, que rien ne relie à son PA.
 //
 // Les présidences de l'Assemblée suivent la même règle de différence et
-// s'écrivent avec les gouvernements ; elles se rattachent par PA seulement.
-// Celles du Sénat sont des mandats du bureau, écrits par senat-fonctions.
+// s'écrivent avec les gouvernements, dans `presidences_chambre` (lignes
+// `chambre = 'assemblee'`, les seules que ce worker touche) ; elles se
+// rattachent par PA seulement. Celles du Sénat, même table, sont écrites par
+// senat-fonctions.
 //
 // Ne touche pas à la table `mandats`.
 // =============================================================================
@@ -206,7 +208,7 @@ const CHAMPS_POSTE = [
   'intituleCourt', 'intituleComplement', 'domaine', 'dateDebut', 'dateFin', 'datePublication',
 ] as const;
 const CHAMPS_PRESIDENCE = ['civilite', 'prenom', 'nom', 'dateDebut', 'dateFin', 'acteurUid', 'parlementaireId', 'liaison'] as const;
-const CHAMPS_PRESIDENCE_ASSEMBLEE = ['acteurUid', 'prenom', 'nom', 'dateDebut', 'dateFin', 'parlementaireId', 'liaison'] as const;
+const CHAMPS_PRESIDENCE_CHAMBRE = ['chambre', 'sourceId', 'prenom', 'nom', 'dateDebut', 'dateFin', 'parlementaireId', 'liaison'] as const;
 
 const selection = <C extends string>(champs: readonly C[]) =>
   Object.fromEntries(champs.map((c) => [c, true])) as Record<C, true>;
@@ -230,7 +232,11 @@ async function chargerFiches(): Promise<{ fiches: FicheCandidate[]; identifiants
 
 type Lien = { parlementaireId: string; liaison: Liaison } | null;
 
-/** Aligne les présidences de l'Assemblée sur l'archive, par différence. */
+/**
+ * Aligne les présidences de l'Assemblée (`presidences_chambre`, chambre
+ * `assemblee`) sur l'archive, par différence. Les lignes du Sénat ne sont ni
+ * lues ni touchées.
+ */
 async function ecrirePresidencesAssemblee(
   tx: Prisma.TransactionClient,
   sources: readonly PresidenceAssembleeSource[],
@@ -240,7 +246,8 @@ async function ecrirePresidencesAssemblee(
     const l = lien(p.acteurUid);
     return {
       uid: p.uid,
-      acteurUid: p.acteurUid,
+      chambre: 'assemblee',
+      sourceId: p.acteurUid,
       prenom: p.prenom,
       nom: p.nom,
       dateDebut: jour(p.dateDebut),
@@ -249,16 +256,17 @@ async function ecrirePresidencesAssemblee(
       liaison: l?.liaison ?? null,
     };
   });
-  const existantes = await tx.presidenceAssemblee.findMany({
-    select: { id: true, uid: true, ...selection(CHAMPS_PRESIDENCE_ASSEMBLEE) },
+  const existantes = await tx.presidenceChambre.findMany({
+    where: { chambre: 'assemblee' },
+    select: { id: true, uid: true, ...selection(CHAMPS_PRESIDENCE_CHAMBRE) },
   });
-  const d = differencier(existantes, voulues, { existant: (e) => e.uid, voulu: (v) => v.uid }, CHAMPS_PRESIDENCE_ASSEMBLEE);
-  if (d.aSupprimer.length > 0) await tx.presidenceAssemblee.deleteMany({ where: { id: { in: d.aSupprimer.map((p) => p.id) } } });
+  const d = differencier(existantes, voulues, { existant: (e) => e.uid, voulu: (v) => v.uid }, CHAMPS_PRESIDENCE_CHAMBRE);
+  if (d.aSupprimer.length > 0) await tx.presidenceChambre.deleteMany({ where: { id: { in: d.aSupprimer.map((p) => p.id) } } });
   for (const { existant, voulu } of d.aModifier) {
     const { uid: _cle, ...valeurs } = voulu;
-    await tx.presidenceAssemblee.update({ where: { id: existant.id }, data: valeurs });
+    await tx.presidenceChambre.update({ where: { id: existant.id }, data: valeurs });
   }
-  if (d.aCreer.length > 0) await tx.presidenceAssemblee.createMany({ data: d.aCreer });
+  if (d.aCreer.length > 0) await tx.presidenceChambre.createMany({ data: d.aCreer });
   return { crees: d.aCreer.length, modifies: d.aModifier.length, supprimes: d.aSupprimer.length };
 }
 

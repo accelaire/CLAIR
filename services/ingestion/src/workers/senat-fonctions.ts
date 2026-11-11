@@ -24,6 +24,12 @@
 // Ce worker est le seul à écrire ces lignes : il crée, modifie et supprime par
 // différence sur la clé `source_uid`, sans toucher aux mandats d'organe de
 // l'Assemblée d'un sénateur ancien député.
+//
+// Il écrit aussi les présidences du Sénat dans `presidences_chambre` (lignes
+// `chambre = 'senat'`, les seules qu'il touche), y compris celles des présidents
+// sans fiche (Monnerville, Poher, Monory) : la table vaut pour les deux
+// chambres, l'Assemblée y est écrite par sync-gouvernements. Même `uid` que la
+// ligne du bureau dans `mandats` (`SENBUR-<senburid>`).
 
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
@@ -33,7 +39,7 @@ import { telechargerTablesSens, type LigneDump } from '../sources/senat/sens-cli
 const prisma = new PrismaClient();
 
 export const TABLES_SENS = [
-  'bur', 'senbur',
+  'sen', 'bur', 'senbur',
   'com', 'libcom', 'foncom', 'memcom', 'fonmemcom',
   'libgrppol', 'fongrppol', 'memgrppol', 'fonmemgrppol',
 ] as const;
@@ -44,6 +50,17 @@ export type TablesSens = Map<string, LigneDump[]>;
 export const PREFIXE_BUREAU = 'SENBUR-';
 export const PREFIXE_COMMISSION = 'SENCOM-';
 export const PREFIXE_GROUPE = 'SENGRP-';
+
+/** Code du président du Sénat dans la nomenclature du bureau (`bur.burcod`). */
+export const BUREAU_PRESIDENT = 'PDTSEN';
+
+/**
+ * Présidences du Sénat attendues au minimum : 10 mandats de 1959 à octobre 2026
+ * (Monnerville, Poher, Monory, Poncelet ×2, Larcher ×4, Bel). En dessous, ou
+ * sans exactement une présidence en cours, le dump est tenu pour faux et les
+ * présidences ne sont pas réécrites.
+ */
+const PRESIDENCES_SENAT_MIN = 10;
 
 /** `organe_ref` du bureau du Sénat (aucun code d'organe dans le dump). */
 export const ORGANE_BUREAU_SENAT = 'SENAT-BUREAU';
@@ -260,6 +277,58 @@ export function fonctionsVoulues(
   return voulues;
 }
 
+export type LiaisonSenat = 'source_id' | 'identifiant';
+
+export interface PresidenceSenatVoulue {
+  uid: string;
+  chambre: 'senat';
+  sourceId: string;
+  prenom: string;
+  nom: string;
+  dateDebut: Date;
+  dateFin: Date | null;
+  parlementaireId: string | null;
+  liaison: LiaisonSenat | null;
+}
+
+/**
+ * Les présidences du Sénat (`senbur`, code `PDTSEN`), une par mandat de
+ * président, que le président ait une fiche ou non. Le nom vient de `sen` ;
+ * la fiche, du matricule (`parlementaires.source_id`, à défaut un identifiant
+ * Sénat conservé d'un ancien sénateur devenu député).
+ */
+export function presidencesSenatVoulues(
+  tables: TablesSens,
+  fiches: ReadonlyMap<string, { id: string; liaison: LiaisonSenat }>,
+): PresidenceSenatVoulue[] {
+  const senateurs = indexPar(tables.get('sen'), 'senmat');
+  const voulues: PresidenceSenatVoulue[] = [];
+  for (const l of tables.get('senbur') ?? []) {
+    if (texte(l.burcod) !== BUREAU_PRESIDENT || !l.senburid) continue;
+    const matricule = texte(l.senmat).toUpperCase();
+    const p = periode(l.senburdatdeb, l.senburdatfin, null, null);
+    const sen = senateurs.get(texte(l.senmat));
+    if (!matricule || !p || !sen) continue;
+    const fiche = fiches.get(matricule);
+    voulues.push({
+      uid: `${PREFIXE_BUREAU}${l.senburid}`,
+      chambre: 'senat',
+      sourceId: matricule,
+      prenom: texte(sen.senprenomuse),
+      nom: texte(sen.sennomuse),
+      ...p,
+      parlementaireId: fiche?.id ?? null,
+      liaison: fiche?.liaison ?? null,
+    });
+  }
+  return voulues.sort((a, b) => a.dateDebut.getTime() - b.dateDebut.getTime() || a.uid.localeCompare(b.uid));
+}
+
+/** Les présidences lues paraissent-elles complètes ? */
+export function presidencesSenatPlausibles(voulues: readonly PresidenceSenatVoulue[]): boolean {
+  return voulues.length >= PRESIDENCES_SENAT_MIN && voulues.filter((v) => !v.dateFin).length === 1;
+}
+
 /**
  * Écart toléré entre les appartenances de commission en cours du dump et celles
  * de l'annuaire du jour (`senateurs.json`, relu chaque nuit par
@@ -302,6 +371,8 @@ const CHAMPS = [
   'parlementaireId', 'typeOrgane', 'institution', 'qualite', 'dateDebut', 'dateFin', 'organeRef', 'commissionId',
 ] as const;
 
+const CHAMPS_PRESIDENCE = ['chambre', 'sourceId', 'prenom', 'nom', 'dateDebut', 'dateFin', 'parlementaireId', 'liaison'] as const;
+
 export interface SenatFonctionsResult {
   crees: number;
   modifies: number;
@@ -313,6 +384,8 @@ export interface SenatFonctionsResult {
   ecartAnnuaire: number;
   /** Écart au-delà du seuil : commissions laissées telles quelles. */
   commissionsGelees: boolean;
+  /** Présidences du Sénat dans `presidences_chambre` ; `null` si le dump les a fait écarter. */
+  presidences: { crees: number; modifies: number; supprimes: number } | null;
 }
 
 /** Appartenances de commission en cours selon l'annuaire du jour. */
@@ -343,7 +416,11 @@ export async function syncSenatFonctions(options: { archive?: string } = {}): Pr
     select: { id: true, sourceId: true, sexe: true },
   });
   const senateurs = new Map<string, SenateurConnu>();
-  for (const p of parlementaires) senateurs.set(p.sourceId!.toUpperCase(), { id: p.id, sexe: p.sexe });
+  const fichesPresidents = new Map<string, { id: string; liaison: LiaisonSenat }>();
+  for (const p of parlementaires) {
+    senateurs.set(p.sourceId!.toUpperCase(), { id: p.id, sexe: p.sexe });
+    fichesPresidents.set(p.sourceId!.toUpperCase(), { id: p.id, liaison: 'source_id' });
+  }
   // Ancien sénateur devenu député : son matricule est rangé dans les identifiants.
   const conserves = await prisma.parlementaireIdentifiant.findMany({
     where: { chambre: 'senat' },
@@ -352,6 +429,7 @@ export async function syncSenatFonctions(options: { archive?: string } = {}): Pr
   for (const c of conserves) {
     const cle = c.sourceId.toUpperCase();
     if (!senateurs.has(cle)) senateurs.set(cle, { id: c.personne.id, sexe: c.personne.sexe });
+    if (!fichesPresidents.has(cle)) fichesPresidents.set(cle, { id: c.personne.id, liaison: 'identifiant' });
   }
 
   const commissionsSenat = await prisma.commission.findMany({
@@ -400,6 +478,27 @@ export async function syncSenatFonctions(options: { archive?: string } = {}): Pr
 
   const anciennes = commissionsGelees ? [] : await prisma.$queryRawUnsafe<{ id: string }[]>(ANCIENNES_LIGNES_SQL);
 
+  const presidencesVoulues = presidencesSenatVoulues(dump, fichesPresidents);
+  const presidencesOk = presidencesSenatPlausibles(presidencesVoulues);
+  if (!presidencesOk) {
+    logger.error(
+      { presidences: presidencesVoulues.length, enCours: presidencesVoulues.filter((v) => !v.dateFin).length },
+      'Présidences du Sénat : dump incomplet, presidences_chambre laissée telle quelle',
+    );
+  }
+  const presidencesExistantes = presidencesOk
+    ? await prisma.presidenceChambre.findMany({
+        where: { chambre: 'senat' },
+        select: {
+          id: true, uid: true, chambre: true, sourceId: true, prenom: true, nom: true,
+          dateDebut: true, dateFin: true, parlementaireId: true, liaison: true,
+        },
+      })
+    : [];
+  const diffPresidences = presidencesOk
+    ? differencier(presidencesExistantes, presidencesVoulues, { existant: (e) => e.uid, voulu: (v) => v.uid }, CHAMPS_PRESIDENCE)
+    : null;
+
   // Une seule transaction : une panne entre la création des nouvelles lignes et
   // la suppression des anciennes doublerait les membres des pages commission.
   const aSupprimer = [...diff.aSupprimer.map((e) => e.id), ...anciennes.map((a) => a.id)];
@@ -415,6 +514,16 @@ export async function syncSenatFonctions(options: { archive?: string } = {}): Pr
       for (const lot of tranches(aSupprimer, 500)) {
         await tx.mandat.deleteMany({ where: { id: { in: lot } } });
       }
+      if (diffPresidences) {
+        if (diffPresidences.aSupprimer.length > 0) {
+          await tx.presidenceChambre.deleteMany({ where: { id: { in: diffPresidences.aSupprimer.map((p) => p.id) } } });
+        }
+        for (const { existant, voulu } of diffPresidences.aModifier) {
+          const { uid: _cle, ...champs } = voulu;
+          await tx.presidenceChambre.update({ where: { id: existant.id }, data: champs });
+        }
+        if (diffPresidences.aCreer.length > 0) await tx.presidenceChambre.createMany({ data: diffPresidences.aCreer });
+      }
     },
     { timeout: 300_000, maxWait: 30_000 },
   );
@@ -427,6 +536,9 @@ export async function syncSenatFonctions(options: { archive?: string } = {}): Pr
     remplaces: anciennes.length,
     ecartAnnuaire,
     commissionsGelees,
+    presidences: diffPresidences
+      ? { crees: diffPresidences.aCreer.length, modifies: diffPresidences.aModifier.length, supprimes: diffPresidences.aSupprimer.length }
+      : null,
   };
   logger.info({ ...resultat, bureauEnCours: plausible.bureau, commissionsEnCours: plausible.commissions }, 'Fonctions des sénateurs synchronisées');
   return resultat;
