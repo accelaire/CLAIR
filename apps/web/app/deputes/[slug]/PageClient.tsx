@@ -12,6 +12,7 @@ import { aucunFiltre, STALE_TIME_LISTE_MS } from '@/lib/liste-ssr';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useOngletAncre } from '@/lib/use-onglet-ancre';
 import {
   Users,
   MapPin,
@@ -488,7 +489,11 @@ export default function PageClient({
   const params = useParams();
   const router = useRouter();
   const slug = params.slug as string;
-  const [activeTab, setActiveTab] = useState<'votes' | 'interventions' | 'amendements'>('votes');
+  // L'onglet ouvert suit l'ancre de l'URL (`#interventions`) : un lien peut y mener.
+  const { actif: activeTab, choisir: setActiveTab, barre: barreOnglets } = useOngletAncre(
+    ['votes', 'interventions', 'amendements'] as const,
+    'votes',
+  );
   const [showAllDeclarations, setShowAllDeclarations] = useState(false);
 
   const { data, isLoading, error } = useQuery({
@@ -852,7 +857,7 @@ export default function PageClient({
       <SoutenirCallout spaced={false} className="mb-8" />
 
       {/* Onglets */}
-      <div className="border-b">
+      <div ref={barreOnglets} className="scroll-mt-20 border-b">
         <nav className="flex gap-8 overflow-x-auto scrollbar-none">
           <button
             onClick={() => setActiveTab('votes')}
