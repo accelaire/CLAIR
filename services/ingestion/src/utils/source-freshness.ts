@@ -140,6 +140,15 @@ export const SOURCES: Record<string, SourceConfig> = {
     dataType: 'agenda',
     url: 'https://www.senat.fr/api/v1/agenda/events',
   },
+  'clair:bilan_gouvernement': {
+    source: 'clair',
+    dataType: 'bilan_gouvernement',
+    // Calculé depuis la base (postes, dossiers, scrutins, débats) et le dump
+    // DOSLEG : il suit des sources déjà vérifiées plus haut, donc à refaire
+    // chaque nuit. Quelques secondes, écriture par différence.
+    url: 'https://data.senat.fr/data/dosleg/dosleg.zip',
+    alwaysSync: true,
+  },
   'senat:fonctions': {
     source: 'senat',
     dataType: 'fonctions',

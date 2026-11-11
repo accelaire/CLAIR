@@ -22,6 +22,7 @@ import {
 import { SenatDossiersClient } from '../sources/senat/dossiers-client';
 import { syncSenateursHistoriques } from './senat-histo';
 import { syncSenatFonctions } from './senat-fonctions';
+import { syncBilanGouvernement } from './bilan-gouvernement';
 import { syncGouvernements } from './gouvernements';
 import { libererArchivesAMO30 } from '../sources/assemblee-nationale/amo30-archive';
 import { syncSenatDossierCommissions } from './senat-dossier-commissions';
@@ -3484,6 +3485,7 @@ export interface SmartSyncOptions {
   includeCommissions?: boolean;
   includeSenatHisto?: boolean; // Anciens sénateurs (ODSEN)
   includeGouvernements?: boolean; // Gouvernements, postes ministériels, présidences de la République et de l'Assemblée (AMO30)
+  includeBilanGouvernement?: boolean; // Bilan des gouvernements : projets de loi, 49.3, motions de censure, réponses en séance
   includeReunions?: boolean;
   includeSenatReunions?: boolean;
   includeSenatAgenda?: boolean;
@@ -3611,6 +3613,9 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       //    depuis janvier 2026, et sa matière n'était pas segmentée.
       'assemblee_nationale:interventions',
       'senat:interventions',
+      // 6b. Bilan des gouvernements : lit les postes (2d), les scrutins (3), les
+      //     dossiers (5) et les réponses en séance (6), plus le dump DOSLEG.
+      'clair:bilan_gouvernement',
       // 7. Lobbying
       'hatvp:lobbyistes',
       // 8. Réunions / Agenda (nécessite commissions + parlementaires)
@@ -3647,6 +3652,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       ...(options.includeAmendements ? ['assemblee_nationale:amendements', 'senat:amendements'] : []),
       ...(options.includeDossiers ? ['assemblee_nationale:dossiers', 'senat:dossiers'] : []),
       ...(options.includeInterventions ? ['assemblee_nationale:interventions', 'senat:interventions'] : []),
+      ...(options.includeBilanGouvernement ? ['clair:bilan_gouvernement'] : []),
       ...(options.includeLobbying ? ['hatvp:lobbyistes'] : []),
       ...(options.includeReunions ? ['assemblee_nationale:reunions'] : []),
       ...(options.includeSeancesODJ ? ['assemblee_nationale:seances_odj'] : []),
@@ -3890,6 +3896,20 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
             break;
           }
 
+          case 'clair:bilan_gouvernement': {
+            const bilan = await syncBilanGouvernement();
+            const tables = [bilan.projets, bilan.signataires, bilan.engagements, bilan.motions, bilan.reponses];
+            syncResult = {
+              created: tables.reduce((n, c) => n + c.crees, 0),
+              updated: tables.reduce((n, c) => n + c.modifies + c.supprimes, 0),
+            };
+            await prisma.syncLog.update({
+              where: { id: syncLog.id },
+              data: { metadata: bilan as unknown as Prisma.InputJsonValue },
+            });
+            break;
+          }
+
           case 'senat:fonctions': {
             const fonctions = await syncSenatFonctions();
             // Bureau et groupes sont écrits ; les commissions, gelées, doivent
@@ -3899,7 +3919,14 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
                 `${fonctions.ecartAnnuaire} appartenances de commission divergent de l'annuaire : commissions non mises à jour`,
               );
             }
-            syncResult = { created: fonctions.crees, updated: fonctions.modifies + fonctions.supprimes };
+            if (!fonctions.presidences) {
+              throw new Error('Présidences du Sénat incomplètes dans export_sens : presidences_chambre non mise à jour');
+            }
+            const pr = fonctions.presidences;
+            syncResult = {
+              created: fonctions.crees + pr.crees,
+              updated: fonctions.modifies + fonctions.supprimes + pr.modifies + pr.supprimes,
+            };
             break;
           }
 
