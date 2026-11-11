@@ -11,6 +11,7 @@ import { buildTextSearchCondition } from '../../utils/search';
 import { INTERVENTIONS_DE_FOND, jourDeSeanceSenat, journeeDeSeance } from '../../utils/interventions';
 import { defensesDesAmendements, numeroCite } from './defense-amendement';
 import { METADONNEES_AMENDEMENT_SELECT, avecNombreDeSousAmendements } from '../../utils/amendements';
+import { RENVOIS_SELECT, avecRenvois } from '../../utils/renvois-legi';
 import {
   joinMandatEpoque,
   chargerGroupesEpoque,
@@ -593,7 +594,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
               uid: true,
               numero: true,
               articleVise: true,
-              dispositif: true,
+              ...RENVOIS_SELECT,
               exposeSommaire: true,
               auteurLibelle: true,
               sort: true,
@@ -784,7 +785,7 @@ export const scrutinsRoutes: FastifyPluginAsync = async (fastify) => {
           ...scrutin,
           // Chaque amendement porte la prise où il a été défendu, quand le
           // compte rendu permet de la reconnaître.
-          amendements: (await avecNombreDeSousAmendements(fastify.prisma, scrutin.amendements)).map((a) => {
+          amendements: (await avecNombreDeSousAmendements(fastify.prisma, scrutin.amendements.map(avecRenvois))).map((a) => {
             const defense = defenses.get(a.id);
             return { ...a, defense: defense ? truncateContenu(defense) : null };
           }),

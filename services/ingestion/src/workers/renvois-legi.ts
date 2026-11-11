@@ -287,8 +287,9 @@ export function sansChevauchement(renvois: RenvoiLegi[]): RenvoiLegi[] {
 
 interface AmendementATraiter {
   id: string;
-  dispositif: string;
-  date: string;
+  /** NULL pour une ligne de renvois dont l'amendement a perdu son dispositif. */
+  dispositif: string | null;
+  date: string | null;
   texteRef: string | null;
   articleVise: string | null;
 }
@@ -297,6 +298,10 @@ interface AmendementATraiter {
  * Amendements à (re)calculer : jamais traités, modifiés depuis, traités par
  * une version antérieure de la détection, dont le texte amendé a reçu ses
  * articles depuis, ou trop récents pour que la DILA ait tout consolidé.
+ *
+ * Ramène aussi, sans dispositif, les amendements calculés dont le dispositif a
+ * disparu depuis (107 à l'Assemblée le 11/11/2026) : leurs renvois pointent
+ * dans un texte qui n'existe plus, la ligne est effacée.
  */
 async function lireLot(apres: string, tout: boolean, uid?: string): Promise<AmendementATraiter[]> {
   return prisma.$queryRaw<AmendementATraiter[]>`
@@ -304,14 +309,17 @@ async function lireLot(apres: string, tout: boolean, uid?: string): Promise<Amen
       a.article_vise AS "articleVise"
     FROM amendements a
     LEFT JOIN amendements_renvois r ON r.amendement_id = a.id
-    WHERE a.id > ${apres} AND a.dispositif IS NOT NULL AND a.date_depot IS NOT NULL
+    WHERE a.id > ${apres}
       AND (${uid ?? null}::text IS NULL OR a.uid = ${uid ?? null})
       AND (
-        ${tout} OR r.amendement_id IS NULL OR r.version < ${VERSION_DETECTION}
-        OR a.updated_at > r.calcule_le
-        OR a.date_depot > now() - make_interval(days => ${JOURS_RECALCUL_RECENTS}::int)
-        OR EXISTS (
-          SELECT 1 FROM textes_articles ta WHERE ta.texte_ref = a.texte_ref AND ta.created_at > r.calcule_le)
+        (a.dispositif IS NULL OR a.date_depot IS NULL) AND r.amendement_id IS NOT NULL
+        OR a.dispositif IS NOT NULL AND a.date_depot IS NOT NULL AND (
+          ${tout} OR r.amendement_id IS NULL OR r.version < ${VERSION_DETECTION}
+          OR a.updated_at > r.calcule_le
+          OR a.date_depot > now() - make_interval(days => ${JOURS_RECALCUL_RECENTS}::int)
+          OR EXISTS (
+            SELECT 1 FROM textes_articles ta WHERE ta.texte_ref = a.texte_ref AND ta.created_at > r.calcule_le)
+        )
       )
     ORDER BY a.id
     LIMIT ${TAILLE_LOT}`;
@@ -326,6 +334,11 @@ async function ecrireLot(lignes: Array<{ amendementId: string; renvois: RenvoiLe
     FROM json_to_recordset(${JSON.stringify(lignes)}::json) AS x("amendementId" text, renvois jsonb)
     ON CONFLICT (amendement_id) DO UPDATE SET version = EXCLUDED.version, renvois = EXCLUDED.renvois,
       calcule_le = now()`;
+}
+
+async function effacerLot(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await prisma.$executeRaw`DELETE FROM amendements_renvois WHERE amendement_id = ANY(${ids}::text[])`;
 }
 
 /**
@@ -379,6 +392,8 @@ export interface RenvoisLegiResultat {
   avecContexte: number;
   erreurs: number;
   titresEcartes: number;
+  /** Lignes effacées : amendements qui n'ont plus de dispositif. */
+  effaces: number;
 }
 
 export async function synchroniserRenvoisLegi(options: RenvoisLegiOptions = {}): Promise<RenvoisLegiResultat> {
@@ -390,7 +405,7 @@ export async function synchroniserRenvoisLegi(options: RenvoisLegiOptions = {}):
 
   const resultat: RenvoisLegiResultat = {
     amendements: 0, avecRenvoi: 0, renvois: { article: 0, texte: 0 }, avecContexte: 0, erreurs: 0,
-    titresEcartes: resolveur.titresEcartes.length,
+    titresEcartes: resolveur.titresEcartes.length, effaces: 0,
   };
   // Texte courant de chaque article amendé, calculé une fois par article.
   const contextes = new Map<string, Promise<TextAstText | undefined>>();
@@ -398,9 +413,12 @@ export async function synchroniserRenvoisLegi(options: RenvoisLegiOptions = {}):
   for (;;) {
     const restant = options.limite !== undefined ? options.limite - resultat.amendements : Infinity;
     if (restant <= 0) break;
-    const lot = (await lireLot(apres, options.tout ?? false, options.uid)).slice(0, restant);
-    if (lot.length === 0) break;
-    apres = lot.at(-1)!.id;
+    const lus = (await lireLot(apres, options.tout ?? false, options.uid)).slice(0, restant);
+    if (lus.length === 0) break;
+    apres = lus.at(-1)!.id;
+    const aEffacer = lus.filter((a) => a.dispositif === null || a.date === null).map((a) => a.id);
+    const lot = lus.filter((a): a is AmendementATraiter & { dispositif: string; date: string } =>
+      a.dispositif !== null && a.date !== null);
 
     const { cleParAmendement, contenuParCle } = await articlesAmendes(lot);
     const lignes: Array<{ amendementId: string; renvois: RenvoiLegi[] }> = [];
@@ -427,7 +445,11 @@ export async function synchroniserRenvoisLegi(options: RenvoisLegiOptions = {}):
         logger.warn({ amendementId: a.id, erreur: String(e).slice(0, 300) }, 'Renvois LEGI : dispositif illisible');
       }
     }
-    if (!options.dryRun) await ecrireLot(lignes);
+    if (!options.dryRun) {
+      await ecrireLot(lignes);
+      await effacerLot(aEffacer);
+    }
+    resultat.effaces += aEffacer.length;
     resultat.amendements += lot.length;
     if (resultat.amendements % 10_000 < TAILLE_LOT) {
       logger.info({ ...resultat, ms: Date.now() - debut }, 'Renvois LEGI : avancement');

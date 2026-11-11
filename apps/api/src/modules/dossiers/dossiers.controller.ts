@@ -11,6 +11,7 @@ import { ApiError } from '../../utils/errors';
 import { buildMultiFieldSearchCondition } from '../../utils/search';
 import { buildJournalOfficielUrl } from '../../utils/journal-officiel';
 import { METADONNEES_AMENDEMENT_SELECT, avecNombreDeSousAmendements } from '../../utils/amendements';
+import { RENVOIS_SELECT, avecRenvois } from '../../utils/renvois-legi';
 import { GROUPE_DE_L_AMENDEMENT } from '../../utils/groupe-epoque';
 import { GouvernementsService } from '../gouvernements/gouvernements.service';
 
@@ -370,7 +371,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
               numero: true,
               auteurLibelle: true,
               articleVise: true,
-              dispositif: true,
+              ...RENVOIS_SELECT,
               exposeSommaire: true,
               texteRef: true,
               sort: true,
@@ -521,7 +522,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
 
       const result = {
         ...dossier,
-        amendements: await avecNombreDeSousAmendements(fastify.prisma, dossier.amendements),
+        amendements: await avecNombreDeSousAmendements(fastify.prisma, dossier.amendements.map(avecRenvois)),
         sourceData: undefined,
         // Aplati pour éviter au client de traverser la table de liaison.
         // Le rang est explicite : un tri alphabétique sur `role` placerait
@@ -770,7 +771,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
             numero: true,
             auteurLibelle: true,
             articleVise: true,
-            dispositif: true,
+            ...RENVOIS_SELECT,
             exposeSommaire: true,
             texteRef: true,
             sort: true,
@@ -793,7 +794,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
       const totalPages = Math.ceil(total / limit);
 
       const result = {
-        data: await avecNombreDeSousAmendements(fastify.prisma, amendements),
+        data: await avecNombreDeSousAmendements(fastify.prisma, amendements.map(avecRenvois)),
         meta: {
           total,
           page,

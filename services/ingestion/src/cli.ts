@@ -1919,6 +1919,7 @@ program
       console.log(`Liens vers un article : ${r.renvois.article}`);
       console.log(`Liens vers un texte   : ${r.renvois.texte}`);
       console.log(`Titres LEGI écartés   : ${r.titresEcartes}`);
+      console.log(`Lignes effacées (amendement sans dispositif) : ${r.effaces}`);
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'sync-renvois-legi failed');

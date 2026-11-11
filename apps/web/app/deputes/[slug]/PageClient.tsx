@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { ExpandableAmendementCard } from '@/components/ExpandableAmendementCard';
+import type { RenvoiDispositif } from '@/lib/texte-amendement';
 import { FicheCompareCallout } from '@/components/FicheCompareCallout';
 import { bilanMandats, fonctionParlementaire } from '@/lib/meta-parlementaire';
 import { StatsParlementaire } from '@/components/parlementaire/stats-parlementaire';
@@ -170,6 +171,8 @@ interface AmendementItem {
   texteRef: string | null;
   articleVise: string | null;
   dispositif: string | null;
+  /** Liens Légifrance du dispositif. */
+  renvois?: RenvoiDispositif[];
   exposeSommaire: string | null;
   auteurLibelle: string | null;
   sort: string | null;

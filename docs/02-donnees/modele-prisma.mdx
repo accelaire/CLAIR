@@ -237,7 +237,6 @@ L'API renvoie l'essentiel de la base, souvent la ligne entière sur les routes d
 | Table | Raison |
 | :--- | :--- |
 | `textes_articles` | Sert uniquement de matière aux résumés IA ; aucune route ne la sert pour l'instant |
-| `amendements_renvois` | Préparation des liens vers Légifrance dans le dispositif des amendements ; aucune route ne la sert pour l'instant |
 | `legi_textes`, `legi_articles` | Index de travail pour lier les références des amendements à Légifrance. Ce sont des données de la DILA, à prendre à la source ([echanges.dila.gouv.fr](https://echanges.dila.gouv.fr/OPENDATA/LEGI/), Licence Ouverte) |
 | `parlementaires_identifiants` | Interne au rattachement des données |
 | `source_states`, `sync_logs` | Suivi de l'ingestion ; la page d'accueil n'en lit que la date de la dernière synchronisation réussie |
@@ -255,6 +254,7 @@ L'API renvoie l'essentiel de la base, souvent la ligne entière sur les routes d
 | Table | Colonnes | Remarque |
 | :--- | :--- | :--- |
 | `amendements` | `parlementaire_id`, `source_url`, `numero_ordre`, `uid_canonique`, `auteur_ref`, `groupe_ref`, `source_hash`, `amendement_parent_ref` | L'auteur n'est donné que par `auteur_libelle` ; le parent d'un sous-amendement l'est par `amendementParent` |
+| `amendements_renvois` | `version`, `calcule_le` | Les renvois sont servis avec chaque amendement (`renvois`), adresse Légifrance comprise, sauf s'ils ont été calculés avant la dernière modification de l'amendement |
 | `interventions` | `source_uid`, `seance_uid`, `ordre_absolu` | Repérage dans le compte rendu source |
 | `dossiers_legislatifs` | `source_data`, `ia_content_hash`, `ia_generated_at` | L'API extrait de `source_data` la chronologie et le lien vers le Journal officiel, sans le renvoyer brut |
 | `sujets` | `ia_content_hash`, `ia_generated_at`, `ia_groupe_amendement_hash`, `context_resolved_at`, `context_input_hash` | Suivi de l'enrichissement |
