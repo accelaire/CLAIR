@@ -7,6 +7,8 @@ import { AmendementSortBadge } from '@/components/AmendementSortBadge';
 import { DiscussionsEtSousAmendements, SousAmendementDe } from '@/components/AmendementSeance';
 import { amendementHref, ancreAmendement, libelleAlinea, type MetadonneesAmendement } from '@/lib/amendements';
 import { scrutinHref } from '@/lib/scrutin-url';
+import { nettoyerTexteAmendement, type RenvoiDispositif } from '@/lib/texte-amendement';
+import { TexteAmendement } from '@/components/TexteAmendement';
 
 interface AmendementData extends MetadonneesAmendement {
   id: string;
@@ -16,6 +18,8 @@ interface AmendementData extends MetadonneesAmendement {
   auteurLibelle?: string | null;
   exposeSommaire?: string | null;
   dispositif?: string | null;
+  /** Liens Légifrance du dispositif. */
+  renvois?: RenvoiDispositif[];
   sort?: string | null;
   dateDepot?: string | null;
   texteRef?: string | null;
@@ -32,21 +36,13 @@ interface ExpandableAmendementCardProps {
   surligne?: boolean;
 }
 
-const stripHtml = (html: string) =>
-  html
-    .replace(/<[^>]*>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\r\n/g, '\n')
-    .trim();
-
 export function ExpandableAmendementCard({ amendement, showAuteur, dossierUid, surligne }: ExpandableAmendementCardProps) {
   const [expanded, setExpanded] = useState(false);
   const alinea = libelleAlinea(amendement);
   const dossierDeLAmendement = dossierUid ?? amendement.dossier?.uid;
 
-  const exposeSommaireText = amendement.exposeSommaire ? stripHtml(amendement.exposeSommaire) : null;
-  const dispositifText = amendement.dispositif ? stripHtml(amendement.dispositif) : null;
-  const hasLongContent = (exposeSommaireText && exposeSommaireText.length > 200) || !!dispositifText;
+  const exposeSommaireText = amendement.exposeSommaire ? nettoyerTexteAmendement(amendement.exposeSommaire).trim() : null;
+  const hasLongContent = (exposeSommaireText && exposeSommaireText.length > 200) || !!amendement.dispositif;
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -81,10 +77,14 @@ export function ExpandableAmendementCard({ amendement, showAuteur, dossierUid, s
               </p>
             </div>
           )}
-          {expanded && dispositifText && (
+          {expanded && amendement.dispositif && (
             <div className="mt-3 rounded bg-muted/50 p-3">
               <p className="text-xs font-medium text-muted-foreground mb-1">Dispositif :</p>
-              <p className="text-sm leading-relaxed whitespace-pre-line">{dispositifText}</p>
+              <TexteAmendement
+                texte={amendement.dispositif}
+                renvois={amendement.renvois}
+                className="text-sm leading-relaxed"
+              />
             </div>
           )}
           {/* Sous le texte qu'il déplie, et non en pied de carte, après les

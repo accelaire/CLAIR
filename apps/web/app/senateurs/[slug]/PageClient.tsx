@@ -55,6 +55,8 @@ import {
   type ParcoursFiche,
 } from '@/components/parlementaire/filtre-chambre';
 import { SiegeRenouvelableCallout } from '@/components/SiegeRenouvelableCallout';
+import { TexteAmendement } from '@/components/TexteAmendement';
+import type { RenvoiDispositif } from '@/lib/texte-amendement';
 
 export interface SenateurDetail {
   id: string;
@@ -181,6 +183,8 @@ interface AmendementItem extends MetadonneesAmendement {
   texteRef: string | null;
   articleVise: string | null;
   dispositif: string | null;
+  /** Liens Légifrance du dispositif. */
+  renvois?: RenvoiDispositif[];
   exposeSommaire: string | null;
   auteurLibelle: string | null;
   sort: string | null;
@@ -252,7 +256,11 @@ function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }
           {isExpanded && amendement.dispositif && (
             <div className="mt-3 rounded bg-muted/50 p-3">
               <p className="text-xs font-medium text-muted-foreground mb-1">Dispositif :</p>
-              <p className="text-sm leading-relaxed">{amendement.dispositif}</p>
+              <TexteAmendement
+                texte={amendement.dispositif}
+                renvois={amendement.renvois}
+                className="text-sm leading-relaxed"
+              />
             </div>
           )}
 

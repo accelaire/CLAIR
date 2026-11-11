@@ -7,6 +7,8 @@ import { ArrowRight, ChevronDown, Landmark, MessageSquare, Users } from 'lucide-
 import { ExpandableText } from '@/components/ui/expandable-text';
 import { DiscussionsEtSousAmendements, SousAmendementDe } from '@/components/AmendementSeance';
 import { amendementHref, libelleAlinea, type MetadonneesAmendement } from '@/lib/amendements';
+import type { RenvoiDispositif } from '@/lib/texte-amendement';
+import { TexteAmendement } from '@/components/TexteAmendement';
 import type { InterventionScrutin } from './scrutin-debats-tab';
 
 export interface AmendementDetail extends MetadonneesAmendement {
@@ -15,6 +17,8 @@ export interface AmendementDetail extends MetadonneesAmendement {
   numero: string;
   articleVise: string | null;
   dispositif: string | null;
+  /** Liens Légifrance du dispositif. */
+  renvois?: RenvoiDispositif[];
   exposeSommaire: string | null;
   auteurLibelle: string | null;
   sort: string | null;
@@ -140,7 +144,7 @@ export function ScrutinAmendementsTab({
                   <div>
                     <h4 className="text-sm font-semibold mb-2">Texte de l&apos;amendement</h4>
                     <div className="bg-muted/50 text-sm text-muted-foreground leading-relaxed rounded-lg p-4">
-                      <div dangerouslySetInnerHTML={{ __html: a.dispositif.replace(/\n/g, '<br/>') }} />
+                      <TexteAmendement texte={a.dispositif} renvois={a.renvois} />
                     </div>
                   </div>
                 )}
@@ -148,7 +152,7 @@ export function ScrutinAmendementsTab({
                   <div>
                     <h4 className="text-sm font-semibold mb-2">Exposé des motifs</h4>
                     <div className="bg-muted/50 text-sm text-muted-foreground leading-relaxed rounded-lg p-4">
-                      <div dangerouslySetInnerHTML={{ __html: a.exposeSommaire.replace(/\n/g, '<br/>') }} />
+                      <TexteAmendement texte={a.exposeSommaire} />
                     </div>
                   </div>
                 )}
