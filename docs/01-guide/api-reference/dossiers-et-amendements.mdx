@@ -53,6 +53,21 @@ Chaque amendement renvoyé par l'API (liste d'un dossier, détail d'un scrutin, 
 | `amendementParentId`, `amendementParent` | Pour un sous-amendement : l'amendement qu'il modifie (`id`, `uid`, `numero`, `auteurLibelle`) |
 | `sousAmendementsCount` | Le nombre de sous-amendements de l'amendement |
 
+### Renvois au droit en vigueur
+
+Les mêmes routes donnent, dans `renvois`, les articles et textes de loi que cite le dispositif (« l'article L. 242-1 du code de la sécurité sociale »), avec leur adresse sur Légifrance. Un amendement sans renvoi reconnu a un tableau vide.
+
+| Champ | Contenu |
+| :--- | :--- |
+| `debut`, `fin` | Position du passage dans `dispositif`, en unités de code UTF-16 : `dispositif.slice(debut, fin)` en JavaScript. Les renvois sont triés et ne se chevauchent pas |
+| `type` | `article` ou `texte` (un code, une loi cités sans article) |
+| `article` | Identifiant Légifrance (`LEGIARTI…`) de l'article, **dans la version en vigueur au dépôt de l'amendement** ; `null` pour un texte |
+| `texte` | Identifiant Légifrance du texte : `LEGITEXT…` pour un code, `JORFTEXT…` pour un texte paru au Journal officiel |
+| `nature` | `CODE`, `LOI`, `LOI_ORGANIQUE`, `ORDONNANCE`, `DECRET`, `CONSTITUTION`… |
+| `url` | La page Légifrance de l'article ou du texte, datée du jour du dépôt de l'amendement (`…/LEGIARTI…/AAAA-MM-JJ`) : Légifrance affiche la version alors en vigueur. Sans la date, il afficherait la version d'aujourd'hui, même sous l'identifiant d'une version ancienne |
+
+Les références sont repérées par la grammaire de [@tricoteuses/tisseuse](https://www.npmjs.com/package/@tricoteuses/tisseuse) et rattachées à notre index de la base LEGI de la DILA. Environ un amendement sur trois en a au moins une. Ne sont pas liés : les articles du texte en discussion (« l'article 3 » sans autre précision), une partie des renvois de forme « le même code », les textes européens, les sections (titres, chapitres). Les positions portent sur le dispositif **tel que l'API le renvoie** : nettoyer le texte (balises, `&nbsp;`) avant de découper décale les liens.
+
 ---
 
 ## 🗂️ Routes des sujets
