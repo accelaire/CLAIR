@@ -674,15 +674,18 @@ export class ParlementairesService {
 
     const [fonctionsGouvernementales, presidencesAssemblee] = await Promise.all([
       new GouvernementsService(this.prisma, this.redis).getFonctionsGouvernementales(parlementaire.id),
-      this.prisma.presidenceAssemblee.findMany({ where: { parlementaireId: parlementaire.id }, orderBy: { dateDebut: 'desc' } }),
+      this.prisma.presidenceChambre.findMany({
+        where: { parlementaireId: parlementaire.id, chambre: 'assemblee' },
+        orderBy: { dateDebut: 'desc' },
+      }),
     ]);
 
     // Une présidence de l'Assemblée est une fonction exercée PENDANT le mandat :
     // elle se range sous lui, avec les commissions. Elle vient de
-    // `presidences_assemblee` (AMO30), complète et datée ; l'enrichissement
+    // `presidences_chambre` (AMO30), complète et datée ; l'enrichissement
     // (AMO10) n'écrit que celle de la législature en cours : sa ligne est
     // remplacée, pas doublée. Celle du Sénat est déjà un mandat du bureau daté
-    // (senat-fonctions).
+    // (senat-fonctions), de même uid que sa ligne de `presidences_chambre`.
     const presidences = presidencesAssemblee.map((p) => ({
       id: `presidence-assemblee-${p.uid}`,
       parlementaireId: parlementaire.id,

@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { Redis } from 'ioredis';
+import { BilanGouvernements, SOURCE_BILAN, couvertureBilan } from './gouvernements-bilan';
 
 // =============================================================================
 // Gouvernements depuis 2007, postes ministériels et présidences de la
@@ -115,11 +116,14 @@ export function presidenceAuDebut<P extends { dateDebut: Date; dateFin: Date | n
 export class GouvernementsService {
   // Données relues une fois par nuit.
   private readonly CACHE_TTL = 3600;
+  private readonly bilan: BilanGouvernements;
 
   constructor(
     private prisma: PrismaClient,
     private redis: Redis,
-  ) {}
+  ) {
+    this.bilan = new BilanGouvernements(prisma);
+  }
 
   /** Les 17 gouvernements nommés, du plus ancien au plus récent : base de toutes les réponses. */
   private async gouvernementsNommes() {
@@ -184,10 +188,15 @@ export class GouvernementsService {
     const cached = await this.redis.get(cacheKey);
     if (cached) return JSON.parse(cached);
 
-    const gouvernements = await this.gouvernementsNommes();
+    const [gouvernements, comptes] = await Promise.all([this.gouvernementsNommes(), this.bilan.comptesParGouvernement()]);
     // Le plus récent d'abord, comme on les lit.
     const result = {
-      data: gouvernements.reverse().map(({ id: _id, ...g }) => g),
+      data: gouvernements.reverse().map(({ id, ...g }) => ({
+        ...g,
+        couverture: couvertureBilan(g.dateFin),
+        // Recours au 49.3 et motions de censure ; null sans données (avant juin 2017).
+        bilan: couvertureBilan(g.dateFin) === 'avant_2017' ? null : comptes.get(id) ?? { engagements: 0, motions: 0 },
+      })),
       source: SOURCE_GOUVERNEMENTS,
     };
     await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
@@ -226,10 +235,15 @@ export class GouvernementsService {
       },
     });
 
+    const couverture = couvertureBilan(gouvernement.dateFin);
+    const bilan = couverture === 'avant_2017' ? null : await this.bilan.duGouvernement(id);
+
     const voisin = (g: (typeof gouvernements)[number] | undefined) => (g ? { slug: g.slug, nom: g.nom } : null);
     const result = {
       data: {
         ...gouvernement,
+        couverture,
+        bilan,
         precedent: voisin(gouvernements[index - 1]),
         suivant: voisin(gouvernements[index + 1]),
         postes: postes.map((p) => ({
@@ -250,9 +264,111 @@ export class GouvernementsService {
       },
       domaines: DOMAINES,
       source: SOURCE_GOUVERNEMENTS,
+      sourceBilan: SOURCE_BILAN,
     };
     await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
     return result;
+  }
+
+  /**
+   * Un membre du Gouvernement, fiche parlementaire ou non : ses postes et le
+   * bilan de chacun (textes signés, réponses en séance ; 49.3 et motions pour
+   * un Premier ministre). Donne une API aux membres sans fiche.
+   */
+  async getMembreBySlug(slug: string) {
+    const cacheKey = `gouvernement:membre:${slug}`;
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
+    const membre = await this.prisma.membreGouvernement.findUnique({
+      where: { slug },
+      select: {
+        slug: true,
+        ...selectionPersonne,
+        postes: {
+          orderBy: [{ dateDebut: 'desc' }, { uid: 'asc' }],
+          select: {
+            id: true,
+            uid: true,
+            qualite: true,
+            qualiteAccordee: true,
+            rangProtocolaire: true,
+            intitule: true,
+            intituleCourt: true,
+            domaine: true,
+            dateDebut: true,
+            dateFin: true,
+            gouvernementId: true,
+          },
+        },
+      },
+    });
+    if (!membre) return null;
+
+    const [gouvernements, bilans] = await Promise.all([
+      this.gouvernementsNommes(),
+      this.bilan.desPostes(membre.postes.map((p) => p.id), true),
+    ]);
+    const parId = new Map(gouvernements.map((g) => [g.id, g]));
+    const { postes, slug: slugMembre, ...identite } = membre;
+    const result = {
+      data: {
+        slug: slugMembre,
+        ...personne(identite),
+        postes: postes.map((p) => {
+          const g = parId.get(p.gouvernementId);
+          return {
+            uid: p.uid,
+            qualite: p.qualiteAccordee ?? p.qualite,
+            rangProtocolaire: p.rangProtocolaire,
+            intitule: p.intitule,
+            intituleCourt: p.intituleCourt,
+            domaine: p.domaine,
+            dateDebut: jour(p.dateDebut),
+            dateFin: jourOuNull(p.dateFin),
+            gouvernement: g ? { uid: g.uid, slug: g.slug, nom: g.nom } : null,
+            // null : poste fini avant juin 2017, sans données de bilan.
+            bilan: bilans.get(p.id) ?? null,
+          };
+        }),
+      },
+      source: SOURCE_GOUVERNEMENTS,
+      sourceBilan: SOURCE_BILAN,
+    };
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+    return result;
+  }
+
+  /** Le nom usuel et le slug de chaque gouvernement, par id. */
+  private async reperesGouvernements(): Promise<Map<string, { slug: string; nom: string }>> {
+    return new Map((await this.gouvernementsNommes()).map((g) => [g.id, { slug: g.slug, nom: g.nom }]));
+  }
+
+  /**
+   * Le contexte gouvernemental de dossiers législatifs (la page d'un dossier,
+   * ou les dossiers d'un sujet) : le projet de loi et ses signataires, les
+   * recours au 49.3 sur ces textes et les motions qu'ils ont suscitées. Sur un
+   * dossier « Engagement de la responsabilité », le texte visé. `null` si aucun
+   * de ces dossiers n'en a.
+   */
+  async contexteDesDossiers(dossierIds: readonly string[]) {
+    if (dossierIds.length === 0) return null;
+    const brut = await this.bilan.desDossiers(dossierIds);
+    if (brut.projets.length === 0 && brut.engagements.length === 0) return null;
+    const reperes = await this.reperesGouvernements();
+    return {
+      projets: brut.projets.map(({ gouvernementId, ...p }) => ({ ...p, gouvernement: reperes.get(gouvernementId) ?? null })),
+      engagements: brut.engagements.map(({ gouvernementId, ...e }) => ({ ...e, gouvernement: reperes.get(gouvernementId) ?? null })),
+    };
+  }
+
+  /** La motion de censure qu'est ce scrutin, avec le gouvernement visé et le 49.3 auquel elle répond. */
+  async motionDuScrutin(scrutinId: string) {
+    const m = await this.bilan.motionDuScrutin(scrutinId);
+    if (!m) return null;
+    const reperes = await this.reperesGouvernements();
+    const { gouvernementId, ...motion } = m;
+    return { ...motion, gouvernement: reperes.get(gouvernementId) ?? null };
   }
 
   /**
@@ -266,6 +382,8 @@ export class GouvernementsService {
         where: { membre: { parlementaireId } },
         orderBy: [{ dateDebut: 'desc' }, { uid: 'asc' }],
         select: {
+          id: true,
+          membre: { select: { slug: true } },
           uid: true,
           qualite: true,
           qualiteAccordee: true,
@@ -284,7 +402,11 @@ export class GouvernementsService {
     ]);
     if (postes.length === 0 && presidences.length === 0) return [];
 
-    const gouvernements = postes.length > 0 ? new Map((await this.gouvernementsNommes()).map((g) => [g.id, g])) : new Map();
+    const [gouvernementsNommes, bilans] = await Promise.all([
+      postes.length > 0 ? this.gouvernementsNommes() : Promise.resolve([]),
+      this.bilan.desPostes(postes.map((p) => p.id), false),
+    ]);
+    const gouvernements = new Map(gouvernementsNommes.map((g) => [g.id, g]));
     return [
       ...presidences.map((p) => ({
         type: 'presidence' as const,
@@ -295,6 +417,8 @@ export class GouvernementsService {
         dateDebut: jour(p.dateDebut),
         dateFin: jourOuNull(p.dateFin),
         gouvernement: null,
+        membreSlug: null,
+        bilan: null,
       })),
       ...postes.map((p) => {
         const g = gouvernements.get(p.gouvernementId);
@@ -307,6 +431,10 @@ export class GouvernementsService {
           dateDebut: jour(p.dateDebut),
           dateFin: jourOuNull(p.dateFin),
           gouvernement: g ? { uid: g.uid, slug: g.slug, nom: g.nom } : null,
+          // Page API du membre (`/gouvernements/membres/:slug`), qui donne les listes.
+          membreSlug: p.membre.slug,
+          // Comptes seulement ; null pour un poste fini avant juin 2017.
+          bilan: bilans.get(p.id) ?? null,
         };
       }),
     ].sort((a, b) => b.dateDebut.localeCompare(a.dateDebut) || a.uid.localeCompare(b.uid));
