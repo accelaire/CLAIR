@@ -30,6 +30,7 @@ import { logger } from '../utils/logger';
 import { choisirFiche, slugLibre } from '../utils/rapprochement-fiche';
 import { errorMessage } from '../utils/errors';
 import { typeSelonOrateur } from '../utils/interventions';
+import { dateFinMandatAN } from '../utils/date-fin-mandat-an';
 import { asArray, isRecord, readString } from '../utils/json';
 import { extractCommissionSaisines } from '../utils/dossier-commissions';
 import { cleMotion, dossierMotionSansReferences } from '../utils/motions-censure';
@@ -552,14 +553,16 @@ async function syncMandatsFromSourceData(
       ? (organeRefToCommissionId.get(organeRef) || undefined)
       : undefined;
     const newDateDebut = m.dateDebut ? new Date(m.dateDebut) : new Date();
+    const qualite: string | null = m.infosQualite?.libQualite || null;
+    const dateFin = dateFinMandatAN({ typeOrgane: m.typeOrgane, qualite, dateDebut: m.dateDebut || null, dateFin: m.dateFin || null });
 
     await prisma.mandat.upsert({
       where: { sourceUid: m.uid },
       update: {
         typeOrgane: m.typeOrgane,
-        qualite: m.infosQualite?.libQualite || null,
+        qualite,
         dateDebut: newDateDebut,
-        dateFin: m.dateFin ? new Date(m.dateFin) : null,
+        dateFin: dateFin ? new Date(dateFin) : null,
         organeRef: organeRef || null,
         commissionId: commissionId || null,
       },
@@ -567,9 +570,9 @@ async function syncMandatsFromSourceData(
         id: randomUUID(),
         parlementaireId,
         typeOrgane: m.typeOrgane,
-        qualite: m.infosQualite?.libQualite || null,
+        qualite,
         dateDebut: newDateDebut,
-        dateFin: m.dateFin ? new Date(m.dateFin) : null,
+        dateFin: dateFin ? new Date(dateFin) : null,
         sourceUid: m.uid,
         organeRef: organeRef || null,
         commissionId: commissionId || null,
