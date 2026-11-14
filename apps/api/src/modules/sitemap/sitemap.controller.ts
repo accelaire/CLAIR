@@ -21,10 +21,10 @@ import { lastmodParlementaire } from './lastmod-parlementaire';
 /** Le sitemap est régénéré une fois par jour, après l'ingestion de 04:00 UTC. */
 const CACHE_TTL_24H = 86400;
 
-// Versionnée : la charge utile a gagné un champ `lastModified` par parlementaire.
-// Sous l'ancienne clé, la version en cache (24 h) l'aurait masqué jusqu'au
-// lendemain du déploiement.
-const CACHE_KEY = 'sitemap:all:v2';
+// Versionnée : la charge utile a gagné un champ `lastModified` par parlementaire
+// (v2), puis les anciens parlementaires (v3). Sous l'ancienne clé, la version en
+// cache (24 h) les aurait masqués jusqu'au lendemain du déploiement.
+const CACHE_KEY = 'sitemap:all:v3';
 
 export const sitemapRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/', {
@@ -34,8 +34,8 @@ export const sitemapRoutes: FastifyPluginAsync = async (fastify) => {
       description:
         "Retourne, pour chaque type d'entité indexable, uniquement les champs " +
         "nécessaires à la construction d'une URL et d'une date de dernière " +
-        'modification. Périmètre identique à celui des listes publiques ' +
-        '(parlementaires, groupes et sujets actifs uniquement).',
+        'modification. Parlementaires en exercice et anciens ; sujets actifs ' +
+        'uniquement.',
     },
   }, async (_request, reply) => {
     const cached = await fastify.redis.get(CACHE_KEY);
@@ -49,13 +49,19 @@ export const sitemapRoutes: FastifyPluginAsync = async (fastify) => {
     // requête de plus au sitemap pour une poignée d'entrées.
     const [deputesBruts, senateursBruts, scrutins, lobbyistes, dossiers, sujets, derniersScrutins] =
       await Promise.all([
+        // Anciens compris : leur fiche existe, montre leur carrière, et c'est
+        // parfois la plus cherchée (David Guiraud, devenu maire, était en
+        // novembre 2026 la fiche la plus cliquée depuis Google, hors sitemap).
+        // Tri par slug : un ordre stable d'une régénération à l'autre.
         fastify.prisma.parlementaire.findMany({
-          where: { chambre: 'assemblee', actif: true },
-          select: { slug: true, chambre: true, updatedAt: true, iaGeneratedAt: true },
+          where: { chambre: 'assemblee' },
+          select: { slug: true, chambre: true, actif: true, updatedAt: true, iaGeneratedAt: true },
+          orderBy: { slug: 'asc' },
         }),
         fastify.prisma.parlementaire.findMany({
-          where: { chambre: 'senat', actif: true },
-          select: { slug: true, chambre: true, updatedAt: true, iaGeneratedAt: true },
+          where: { chambre: 'senat' },
+          select: { slug: true, chambre: true, actif: true, updatedAt: true, iaGeneratedAt: true },
+          orderBy: { slug: 'asc' },
         }),
         fastify.prisma.scrutin.findMany({
           select: { numero: true, chambre: true, session: true, date: true },

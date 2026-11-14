@@ -20,6 +20,9 @@ import type { ScrutinDossier } from './components/scrutin-dossier-banner';
 import type { AmendementDetail } from './components/scrutin-amendements-tab';
 import type { InterventionScrutin } from './components/scrutin-debats-tab';
 import { seanceDuVoteHref, type SeanceDuVote } from '@/lib/seance-url';
+import { useOngletAncre } from '@/lib/use-onglet-ancre';
+import { MotionCensureBandeau } from '@/components/gouvernements/contexte-gouvernemental';
+import type { MotionDuScrutin } from '@/lib/gouvernements';
 
 // ── Types ──
 
@@ -85,6 +88,8 @@ export interface ScrutinDetail {
    * porte pas.
    */
   seance?: SeanceDuVote | null;
+  /** Une motion de censure : gouvernement visé, 49.3, majorité requise ; absent d'une réponse antérieure. */
+  motionCensure?: MotionDuScrutin | null;
   /** `totalInterventions` compte-t-il le débat du vote, ou celui de la journée ? */
   debatRattache?: boolean;
 }
@@ -209,8 +214,6 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
   const defaultTab: TabType = data?.data.amendements && data.data.amendements.length > 0
     ? 'amendements'
     : 'vote';
-  const [activeTab, setActiveTab] = useState<TabType | null>(null);
-  const currentTab = activeTab ?? defaultTab;
 
   // Paginated interventions query
   const {
@@ -255,6 +258,14 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
     [interventionsData]
   );
   const totalInterventions = data?.data.totalInterventions ?? 0;
+  // L'onglet ouvert suit l'ancre de l'URL (`#vote`, `#debats`, `#amendements`) :
+  // un lien peut mener à un onglet précis.
+  const onglets: TabType[] = [
+    ...(data?.data.amendements && data.data.amendements.length > 0 ? ['amendements' as const] : []),
+    ...(totalInterventions > 0 ? ['debats' as const] : []),
+    'vote',
+  ];
+  const { actif: currentTab, choisir: setActiveTab, barre: barreOnglets } = useOngletAncre(onglets, defaultTab);
   // Le décompte vient du serveur, filtre de nature exclu : une option ne peut
   // pas disparaître au moment où on la choisit.
   const interventionsParType = interventionsData?.pages[0]?.meta.parType ?? {};
@@ -551,6 +562,9 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
       {/* Title */}
       <h1 className="text-xl md:text-2xl font-bold mb-6 leading-tight">{scrutin.titre}</h1>
 
+      {/* Motion de censure : le gouvernement visé et le 49.3 auquel elle répond, avant le dossier. */}
+      <MotionCensureBandeau motion={scrutin.motionCensure} />
+
       {/* Dossier législatif — contexte du vote, avant tout le reste */}
       {scrutin.dossier && <ScrutinDossierBanner dossier={scrutin.dossier} />}
 
@@ -597,7 +611,7 @@ export default function PageClient({ initialData }: { initialData?: { data: Scru
         {/* Main content */}
         <div className="min-w-0">
           {/* Tab bar */}
-          <div className="border-b mb-6 overflow-x-auto">
+          <div ref={barreOnglets} className="border-b mb-6 overflow-x-auto scroll-mt-20">
             <div className="flex gap-0">
               {tabConfig.map((tab) => {
                 const Icon = tab.icon;

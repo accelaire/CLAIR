@@ -51,6 +51,8 @@ interface Membre {
     nom: string;
   } | null;
   statsPresence: number | null;
+  /** Au Sénat, la présence se lit aux votes solennels (#108). */
+  statsPresenceSolennel?: number | null;
   statsLoyaute: number | null;
 }
 
@@ -322,12 +324,19 @@ function MembreCard({ membre, chambre }: { membre: Membre; chambre: string }) {
           )}
           {/* Stats */}
           <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
-            {membre.statsPresence !== null && (
-              <span title="Participation" className="flex items-center gap-0.5">
-                <Vote className="h-3 w-3" />
-                {membre.statsPresence}%
-              </span>
-            )}
+            {chambre === 'senat'
+              ? membre.statsPresenceSolennel != null && (
+                  <span title="Présence aux votes solennels" className="flex items-center gap-0.5">
+                    <Vote className="h-3 w-3" />
+                    {membre.statsPresenceSolennel}%
+                  </span>
+                )
+              : membre.statsPresence !== null && (
+                  <span title="Participation" className="flex items-center gap-0.5">
+                    <Vote className="h-3 w-3" />
+                    {membre.statsPresence}%
+                  </span>
+                )}
             {membre.statsLoyaute !== null && (
               <span title="Loyauté" className="flex items-center gap-0.5">
                 <ShieldCheck className="h-3 w-3" />
@@ -347,15 +356,19 @@ function MembresList({ membres, chambre }: { membres: Membre[]; chambre: string 
   const sortedMembres = useMemo(() => {
     const sorted = [...membres];
     switch (triMembres) {
-      case 'presence':
-        return sorted.sort((a, b) => (b.statsPresence ?? -1) - (a.statsPresence ?? -1));
+      case 'presence': {
+        // Sénat : présence aux votes solennels ; le taux tous scrutins compte des
+        // bulletins déposés par le groupe (#108).
+        const presence = (m: Membre) => (chambre === 'senat' ? m.statsPresenceSolennel : m.statsPresence) ?? -1;
+        return sorted.sort((a, b) => presence(b) - presence(a));
+      }
       case 'loyaute':
         return sorted.sort((a, b) => (b.statsLoyaute ?? -1) - (a.statsLoyaute ?? -1));
       case 'nom':
       default:
         return sorted.sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
     }
-  }, [membres, triMembres]);
+  }, [membres, triMembres, chambre]);
 
   return (
     <section id="membres">
@@ -589,13 +602,29 @@ export default function PageClient({ initialData }: { initialData?: { data: Grou
           subtitle={groupe.rang ? `${groupe.rang}${groupe.rang === 1 ? 'er' : 'e'} groupe sur ${groupe.totalGroupes}` : undefined}
           icon={Users}
         />
-        <StatCard
-          label="Présence solennelle"
-          value={groupe.stats.presenceSolennelMoyenne ?? groupe.stats.presenceMoyenne}
-          suffix="%"
-          subtitle={`${groupe.stats.presenceMoyenne}% tous scrutins`}
-          icon={Vote}
-        />
+        {groupe.chambre === 'senat' ? (
+          // Sénat : la présence ne se mesure qu'aux votes solennels ; le taux tous
+          // scrutins compte des bulletins déposés par le groupe (#108).
+          <StatCard
+            label={groupe.stats.presenceSolennelMoyenne !== null ? 'Présence' : 'Participation'}
+            value={groupe.stats.presenceSolennelMoyenne ?? groupe.stats.presenceMoyenne}
+            suffix="%"
+            subtitle={
+              groupe.stats.presenceSolennelMoyenne !== null
+                ? `${groupe.stats.presenceMoyenne}% tous scrutins`
+                : 'Pas de scrutin solennel'
+            }
+            icon={Vote}
+          />
+        ) : (
+          <StatCard
+            label="Présence"
+            value={groupe.stats.presenceSolennelMoyenne ?? groupe.stats.presenceMoyenne}
+            suffix="%"
+            subtitle={groupe.stats.presenceSolennelMoyenne !== null ? `${groupe.stats.presenceMoyenne}% tous scrutins` : undefined}
+            icon={Vote}
+          />
+        )}
         <StatCard
           label="Loyauté moyenne"
           value={groupe.stats.loyauteMoyenne}

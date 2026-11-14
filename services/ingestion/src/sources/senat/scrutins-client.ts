@@ -7,7 +7,7 @@
 import axios from 'axios';
 import { logger } from '../../utils/logger';
 import { errorMessage } from '../../utils/errors';
-import { DoslegClient, TransformedDoslegVote } from './dosleg-client';
+import { DoslegClient, TransformedDoslegVote, SESSION_DELEGATIONS_MIN, type StatutVotant } from './dosleg-client';
 import { SENAT_SESSION_MIN } from '../../workers/mandats';
 
 // =============================================================================
@@ -41,6 +41,20 @@ export interface TransformedVoteSenat {
   matricule: string;
   position: 'pour' | 'contre' | 'abstention' | 'absent';
   parDelegation: boolean;
+  /** Statut particulier publié par DOSLEG ; le JSON de senat.fr n'en donne pas. */
+  statutVotant?: StatutVotant | null;
+}
+
+/**
+ * Type d'un scrutin du Sénat. DOSLEG ne le publie pas, mais les délégations
+ * personnelles n'existent qu'aux votes personnels (scrutins solennels et à la
+ * tribune), à partir de la session 2014-2015 (cf. `SESSION_DELEGATIONS_MIN`).
+ * Le reste est voté par groupe : un délégué dépose les bulletins de tous les
+ * membres, présents ou non (ticket #108).
+ */
+export function typeVoteSenat(session: string, votes: Pick<TransformedVoteSenat, 'parDelegation'>[]): 'solennel' | 'ordinaire' {
+  const annee = parseInt(session, 10);
+  return annee >= SESSION_DELEGATIONS_MIN && votes.some((v) => v.parDelegation) ? 'solennel' : 'ordinaire';
 }
 
 export interface ScrutinSenatWithVotes {
@@ -294,7 +308,7 @@ export class SenatScrutinsClient {
         session: scr.session,
         date: scr.date,
         titre: scr.titre,
-        typeVote: 'ordinaire', // DOSLEG doesn't distinguish types
+        typeVote: 'ordinaire', // fixé plus bas d'après les délégations (typeVoteSenat)
         sort: scr.sort,
         nombreVotants: scr.nombreVotants,
         nombrePour: scr.nombrePour,
@@ -316,8 +330,10 @@ export class SenatScrutinsClient {
       const transformedVotes: TransformedVoteSenat[] = scrutinVotes.map(v => ({
         matricule: v.senmatricule,
         position: v.position,
-        parDelegation: false, // Not available in DOSLEG
+        parDelegation: v.parDelegation,
+        statutVotant: v.statutVotant,
       }));
+      transformedScrutin.typeVote = typeVoteSenat(scr.session, transformedVotes);
 
       results.push({
         scrutin: transformedScrutin,

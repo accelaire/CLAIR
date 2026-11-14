@@ -6,6 +6,8 @@ export interface VoteVoulu {
   parlementaireId: string;
   position: string;
   parDelegation: boolean;
+  /** Sénat seulement (DOSLEG) : président de séance, membre du gouvernement… */
+  statutVotant?: string | null;
 }
 
 interface VoteEnBase extends VoteVoulu {
@@ -43,13 +45,13 @@ export async function ecrireVotesDuScrutin(
     async (tx) => {
       const existants: VoteEnBase[] = await tx.vote.findMany({
         where: { scrutinId },
-        select: { id: true, parlementaireId: true, position: true, parDelegation: true },
+        select: { id: true, parlementaireId: true, position: true, parDelegation: true, statutVotant: true },
       });
       const d = differencier(
         existants,
         voulus,
         { existant: (e) => e.parlementaireId, voulu: (v) => v.parlementaireId },
-        ['position', 'parDelegation'],
+        ['position', 'parDelegation', 'statutVotant'],
       );
 
       if (d.aSupprimer.length > 0) {
@@ -79,18 +81,21 @@ export async function ecrireVotesDuScrutin(
 }
 
 /**
- * Regroupe les votes à modifier par valeur cible : une requête par couple
- * (position, délégation) plutôt qu'une par vote. Il n'en existe que huit.
+ * Regroupe les votes à modifier par valeur cible : une requête par triplet
+ * (position, délégation, statut) plutôt qu'une par vote. Il en existe peu.
  */
+type ValeursVote = { position: string; parDelegation: boolean; statutVotant: string | null };
+
 export function regrouperModifications(
   aModifier: Array<{ existant: { id: string }; voulu: VoteVoulu }>,
-): Array<{ valeurs: { position: string; parDelegation: boolean }; ids: string[] }> {
-  const groupes = new Map<string, { valeurs: { position: string; parDelegation: boolean }; ids: string[] }>();
+): Array<{ valeurs: ValeursVote; ids: string[] }> {
+  const groupes = new Map<string, { valeurs: ValeursVote; ids: string[] }>();
   for (const { existant, voulu } of aModifier) {
-    const k = `${voulu.position}\u0000${voulu.parDelegation}`;
+    const statutVotant = voulu.statutVotant ?? null;
+    const k = `${voulu.position}\u0000${voulu.parDelegation}\u0000${statutVotant ?? ''}`;
     let g = groupes.get(k);
     if (!g) {
-      g = { valeurs: { position: voulu.position, parDelegation: voulu.parDelegation }, ids: [] };
+      g = { valeurs: { position: voulu.position, parDelegation: voulu.parDelegation, statutVotant }, ids: [] };
       groupes.set(k, g);
     }
     g.ids.push(existant.id);

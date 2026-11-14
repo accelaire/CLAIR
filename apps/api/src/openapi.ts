@@ -30,6 +30,7 @@ export const OPENAPI_TAGS = [
   { name: 'Dossiers', description: 'Dossiers législatifs' },
   { name: 'Sujets', description: 'Sujets : dossiers de l\'AN et du Sénat portant sur le même texte' },
   { name: 'Commissions', description: 'Commissions et autres organes, AN et Sénat' },
+  { name: 'Gouvernements', description: 'Gouvernements depuis 2007, postes ministériels et présidences de la République' },
   { name: 'Agenda', description: 'Agenda parlementaire : séances publiques, réunions, événements institutionnels' },
   { name: 'Lobbying', description: 'Données HATVP sur le lobbying' },
   { name: 'Senatoriales', description: 'Élections sénatoriales 2026 : sortants, candidats, résultats, élus' },

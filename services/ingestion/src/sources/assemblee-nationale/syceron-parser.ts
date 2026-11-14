@@ -131,6 +131,20 @@ export interface SeanceSyceron {
   etat: string | null;
   prises: PriseDeParoleSyceron[];
   votes: VoteAnnonceSyceron[];
+  /**
+   * Rangs des paragraphes qui disent le sort d'un amendement ou d'un
+   * sous-amendement — « (L'amendement no 831 n'est pas adopté.) », « (… est
+   * retiré.) ».
+   *
+   * `votes` ne connaît que les scrutins publics, relevés sur leurs chiffres
+   * proclamés. Or la plupart des amendements se votent à main levée : entre
+   * deux scrutins publics, la séance en examine souvent plusieurs, chacun
+   * clos par cette seule ligne. Sans elle, le débat d'un vote remontait
+   * jusqu'au scrutin public précédent et prêtait à l'amendement mis aux voix
+   * la défense de ceux qui l'avaient précédé (scrutin 9054 : les amendements
+   * 2206 et 831 avant le 1536).
+   */
+  sortsDAmendements: number[];
 }
 
 // =============================================================================
@@ -420,7 +434,27 @@ export function parseCompteRendu(xml: string): SeanceSyceron | null {
     etat: $('metadonnees > etat').first().text().trim() || null,
     prises: prisesDeParole(paragraphes),
     votes: releverVotes(paragraphes),
+    sortsDAmendements: paragraphes
+      .filter((p) => !p.nomBrut && Number.isFinite(p.ordreAbsolu) && estSortDAmendement(p.contenu))
+      .map((p) => p.ordreAbsolu),
   };
+}
+
+/**
+ * La ligne qui clôt l'examen d'un amendement : « (L'amendement no 831 n'est
+ * pas adopté.) », « (Les amendements identiques nos 22 et 37 sont adoptés.) »,
+ * « (Le sous-amendement no 858 est retiré.) ».
+ *
+ * On lit la phrase et non le code de grammaire : la même ligne en porte plus
+ * de vingt selon que le vote est public, à main levée, sur des identiques ou
+ * un sous-amendement (`REJET_ADT`, `ADOP_ADT`, `RETRAIT_ADT`,
+ * `SCRUT_PUB_ADT_1_5`, `ADT_SORTS_DIRECT_1_20`…), et une liste incomplète en
+ * perdrait sans rien signaler. La phrase, elle, ne varie pas : sur les 17 377
+ * paragraphes sans orateur qu'elle reconnaît dans la 17e législature, tous
+ * disent un amendement adopté, rejeté, retiré ou tombé.
+ */
+export function estSortDAmendement(texte: string): boolean {
+  return /^\(\s*(?:Après[^()]*?,\s*)?(?:l[’']|les?\s+)(?:sous-)?amendements?\b/i.test(texte.trim());
 }
 
 /** Prises de parole du compte rendu, chacune sachant si elle explique un vote. */

@@ -8,6 +8,7 @@ import { logger } from './logger';
 import { errorMessage, httpStatus } from './errors';
 import { estOpenDataAN, lireEnTetesParGet, urlSansCacheAN } from './cdn-an';
 import { LEGISLATURE_AN_COURANTE } from '../workers/mandats';
+import { urlArchiveAMO30 } from '../sources/assemblee-nationale/amo30-archive';
 
 const prisma = new PrismaClient();
 
@@ -72,8 +73,14 @@ export const SOURCES: Record<string, SourceConfig> = {
   'assemblee_nationale:commissions': {
     source: 'assemblee_nationale',
     dataType: 'commissions',
-    // Same AMO10 ZIP as deputes — organes are in the same archive
-    url: `https://data.assemblee-nationale.fr/static/openData/repository/${LEGISLATURE}/amo/deputes_actifs_mandats_actifs_organes/AMO10_deputes_actifs_mandats_actifs_organes.json.zip`,
+    // Les commissions viennent de l'AMO30 (organes historiques), pas de l'AMO10.
+    url: urlArchiveAMO30(LEGISLATURE_AN_COURANTE),
+  },
+  'assemblee_nationale:gouvernements': {
+    source: 'assemblee_nationale',
+    dataType: 'gouvernements',
+    // Même archive que les commissions, téléchargée une fois pour les deux.
+    url: urlArchiveAMO30(LEGISLATURE_AN_COURANTE),
   },
   'assemblee_nationale:reunions': {
     source: 'assemblee_nationale',
@@ -133,15 +140,21 @@ export const SOURCES: Record<string, SourceConfig> = {
     dataType: 'agenda',
     url: 'https://www.senat.fr/api/v1/agenda/events',
   },
-  'senat:bureaux': {
-    source: 'senat',
-    dataType: 'bureaux',
-    // Pages HTML « Le bureau de la commission … ». Elles n'exposent ni ETag ni
-    // Last-Modified exploitable, et une recomposition de bureau ne change aucune
-    // URL amont : rien à interroger pour décider. Le coût est marginal
-    // (~17 requêtes), on resynchronise donc systématiquement.
-    url: 'https://www.senat.fr/travaux-parlementaires/commissions.html',
+  'clair:bilan_gouvernement': {
+    source: 'clair',
+    dataType: 'bilan_gouvernement',
+    // Calculé depuis la base (postes, dossiers, scrutins, débats) et le dump
+    // DOSLEG : il suit des sources déjà vérifiées plus haut, donc à refaire
+    // chaque nuit. Quelques secondes, écriture par différence.
+    url: 'https://data.senat.fr/data/dosleg/dosleg.zip',
     alwaysSync: true,
+  },
+  'senat:fonctions': {
+    source: 'senat',
+    dataType: 'fonctions',
+    // Dump de la base des sénateurs : bureau du Sénat, commissions et groupes,
+    // datés. Régénéré chaque nuit vers 2h30, avec un Last-Modified exploitable.
+    url: 'https://data.senat.fr/data/senateurs/export_sens.zip',
   },
   'senat:dossier_commissions': {
     source: 'senat',

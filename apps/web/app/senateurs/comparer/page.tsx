@@ -30,9 +30,9 @@ interface Parlementaire {
     departement: string;
   } | null;
   stats: {
-    presence: number;
+    presence: number | null;
     presenceSolennel: number | null;
-    loyaute: number;
+    loyaute: number | null;
     participation: number;
     interventions: number;
     amendements: { proposes: number; adoptes: number };
@@ -216,7 +216,7 @@ function ComparerPageContent() {
           </div>
 
           {/* Statistiques comparées */}
-          <ComparisonStatsGrid parlementaires={parlementaires} />
+          <ComparisonStatsGrid parlementaires={parlementaires} chambre="senat" />
 
           {/* Votes comparés */}
           <ComparisonVotesTable

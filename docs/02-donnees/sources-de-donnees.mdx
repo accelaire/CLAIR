@@ -11,14 +11,14 @@ Toutes les données de CLAIR viennent de sources publiques. Aucune n'exige de cl
 
 ## 📊 Sources suivies (`source_states`)
 
-Chaque source est identifiée par une clé `organisme:type`, définie dans `services/ingestion/src/utils/source-freshness.ts` et reprise comme clé dans la table `source_states`. Les 22 premières lignes du tableau sont lues par le batch nocturne, dans l'ordre donné sur la page [Orchestrateur d'ingestion](/donnees/orchestrateur-ingestion).
+Chaque source est identifiée par une clé `organisme:type`, définie dans `services/ingestion/src/utils/source-freshness.ts` et reprise comme clé dans la table `source_states`. Les 24 premières lignes du tableau sont lues par le batch nocturne, dans l'ordre donné sur la page [Orchestrateur d'ingestion](/donnees/orchestrateur-ingestion).
 
 « Toujours » signifie que la source n'expose aucun en-tête exploitable (`ETag`, `Last-Modified`) : elle est relue à chaque passage.
 
 | Clé | Ressource | Format | Ce qui est ingéré |
 | :--- | :--- | :--- | :--- |
-| `assemblee_nationale:commissions` | [data.assemblee-nationale.fr](https://data.assemblee-nationale.fr), `AMO10_deputes_actifs_mandats_actifs_organes.json.zip` | ZIP / JSON | Organes : commissions, délégations, offices, missions, groupes d'études et d'amitié… |
-| `assemblee_nationale:deputes` | même archive AMO10 | ZIP / JSON | Députés, mandats, groupes politiques, circonscriptions |
+| `assemblee_nationale:commissions` | [data.assemblee-nationale.fr](https://data.assemblee-nationale.fr/acteurs/historique-des-deputes), `AMO30_tous_acteurs_tous_mandats_tous_organes_historique.json.zip` (organes actifs et clos), plus l'AMO10 pour les mandats en cours | ZIP / JSON | Organes : commissions, délégations, offices, missions, groupes d'études et d'amitié… |
+| `assemblee_nationale:deputes` | [data.assemblee-nationale.fr](https://data.assemblee-nationale.fr/acteurs/deputes-en-exercice), `AMO10_deputes_actifs_mandats_actifs_organes.json.zip` | ZIP / JSON | Députés, mandats, groupes politiques, circonscriptions |
 | `assemblee_nationale:scrutins` | `Scrutins.json.zip` | ZIP / JSON | Scrutins publics et votes nominatifs |
 | `assemblee_nationale:amendements` | `Amendements.json.zip` | ZIP / JSON | Amendements, auteurs, cosignataires, métadonnées de séance |
 | `assemblee_nationale:dossiers` | `Dossiers_Legislatifs.json.zip` | ZIP / JSON | Dossiers législatifs, actes, saisines de commissions |
@@ -26,19 +26,22 @@ Chaque source est identifiée par une clé `organisme:type`, définie dans `serv
 | `assemblee_nationale:reunions` | `Agenda.json.zip` | ZIP / JSON | Agenda : réunions de commission et séances |
 | `assemblee_nationale:seances_odj` | `seances_publique_excel.csv` | CSV | Ordre du jour des séances publiques |
 | `assemblee_nationale:videos` | [videos.assemblee-nationale.fr](https://videos.assemblee-nationale.fr) | HTML | Liens vers les vidéos des séances et réunions |
-| `senat:senateurs` | [senat.fr/api-senat/senateurs.json](https://www.senat.fr/api-senat/senateurs.json) | JSON | Sénateurs en exercice, groupes, commissions |
+| `senat:senateurs` | [senat.fr/api-senat/senateurs.json](https://www.senat.fr/api-senat/senateurs.json) | JSON | Sénateurs en exercice et groupes. Ses commissions du jour servent de contrôle à `senat:fonctions` |
 | `senat:senateurs_histo` | [data.senat.fr](https://data.senat.fr) ODSEN (`ODSEN_ELUSEN.csv` et fichiers associés) | CSV | Anciens sénateurs, mandats clos, groupe d'époque |
-| `senat:bureaux` | pages commissions de senat.fr | HTML (toujours) | Fonctions au bureau des commissions (président, vice-président…) |
+| `senat:fonctions` | `export_sens.zip` de data.senat.fr (dump de la base des sénateurs) | ZIP (dump SQL) | Fonctions datées : bureau du Sénat, commissions permanentes et affaires européennes (membre, président, rapporteur général…), fonctions de groupe ; présidences du Sénat depuis 1959 (`presidences_chambre`) |
+| `assemblee_nationale:gouvernements` | même archive AMO30 que les commissions, téléchargée une seule fois pour les deux | ZIP / JSON | Gouvernements depuis 2007, postes ministériels, présidences de la République et de l'Assemblée |
 | `senat:scrutins` | pages `scrutin-public` de senat.fr, `dosleg.zip` de data.senat.fr | HTML + dump SQL | Scrutins publics et votes nominatifs |
 | `senat:amendements` | `ameli.zip` de data.senat.fr, puis un CSV par texte sur senat.fr | ZIP + CSV | Amendements, cosignataires et article visé (colonne « Subdivision » du CSV, sinon `amd.subid` → `sub` d'AMELI) |
 | `senat:dossiers` | `dosleg.zip` de data.senat.fr | ZIP (dump SQL) | Dossiers législatifs |
 | `senat:interventions` | `cri.zip` de data.senat.fr et comptes rendus HTML de senat.fr | ZIP + HTML | Prises de parole en séance |
+| `clair:bilan_gouvernement` | la base (dossiers, scrutins, débats, postes ministériels) et `dosleg.zip` de data.senat.fr | calcul + dump SQL (toujours) | Bilan des gouvernements depuis juin 2017 : projets de loi et leurs signataires (les ministres d'un projet déposé au Sénat viennent des auteurs de son texte de dépôt dans DOSLEG), recours au 49.3, motions de censure, réponses en séance rattachées au poste |
 | `senat:agenda` | API agenda de senat.fr (`/api/v1/agenda/events`) | JSON | Séances publiques et réunions de commission |
 | `senat:reunions` | comptes rendus de commission sur senat.fr | HTML (toujours) | Comptes rendus rattachés aux réunions, sénateurs cités |
 | `senat:dossier_commissions` | pages dossier législatif de senat.fr | HTML (toujours) | Commissions saisies des dossiers du Sénat |
 | `senat:videos` | [videos.senat.fr](https://videos.senat.fr) | HTML (toujours) | Liens vers les vidéos des séances et réunions |
 | `hatvp:lobbyistes` | [hatvp.fr](https://www.hatvp.fr/agora/opendata/csv/Vues_Separees_CSV.zip), répertoire des représentants d'intérêts | ZIP / CSV | Représentants d'intérêts, actions déclarées, secteurs |
 | `interieur:candidatures` | [data.gouv.fr](https://www.data.gouv.fr), jeu « élections sénatoriales 2026, candidatures » publié par le ministère de l'Intérieur | CSV (toujours) | Listes et candidats aux sénatoriales 2026 |
+| `dila:legi` | [echanges.dila.gouv.fr](https://echanges.dila.gouv.fr/OPENDATA/LEGI/), base LEGI (droit consolidé, Licence Ouverte) : un dump global, puis un incrément par jour | TAR.GZ / XML | Index des textes et des articles de loi : identifiants Légifrance, numéros, dates de vigueur, titres. Ni le contenu ni la structure des textes. Sert à lier les références des amendements à Légifrance. Son état (dernière archive appliquée) est tenu par `sync-index-legi`, pas par `source-freshness.ts` ; le premier chargement, celui du dump global (1,1 Go), se lance à la main |
 | `dila:interventions` | [echanges.dila.gouv.fr](https://echanges.dila.gouv.fr/OPENDATA/Debats/AN/) | TAR / XML | Ancienne source des débats de l'Assemblée. **Plus rien n'y est publié depuis janvier 2026** : elle est sortie du batch nocturne et n'est plus lue que par la commande manuelle `sync --in` |
 
 Le batch nocturne ne lit que la **législature courante** de l'Assemblée (17e) et une **fenêtre récente** des sessions du Sénat. L'historique (15e et 16e législatures, Sénat depuis la session 2006) a été chargé par des commandes ponctuelles et ne bouge plus : voir [Commandes CLI](/donnees/commandes-cli).
@@ -99,6 +102,10 @@ Les identifiants des sources sont conservés pour permettre de remonter à l'ori
 | Dossier législatif | `dossiers_legislatifs.uid` | `DLR5L17N50168` |
 | Amendement | `amendements.uid` (tel que publié) et `uid_canonique` (clé de dédoublonnage) | |
 | Organe AN | `commissions.uid` | `PO59048` |
+| Gouvernement, présidence de la République | `gouvernements.uid`, `presidences.uid` | `PO873634` |
+| Présidence d'une chambre (mandat au bureau) | `presidences_chambre.uid` | `PM845400` (Assemblée), `SENBUR-3122` (Sénat) |
+| Poste ministériel (mandat MINISTERE de l'AN) | `postes_ministeriels.uid` | `PM873637` |
+| Membre du gouvernement | `membres_gouvernement.acteur_uid` | `PA643210` |
 | Intervention AN | `interventions.source_uid` (`id_syceron` du paragraphe) | |
 | Lobbyiste | `lobbyistes.identifiant_national` (SIREN, RNA…) | |
 

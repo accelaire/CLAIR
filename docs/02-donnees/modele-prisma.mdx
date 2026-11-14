@@ -2,12 +2,12 @@
 title: "Modèle de Données Prisma"
 sidebar_label: "Modèle Prisma"
 sidebar_icon: "database"
-description: Les 39 modèles Prisma, leurs conventions, les points de modélisation à connaître, la volumétrie en production, ce que l'API n'expose pas, et les migrations.
+description: Les 52 modèles Prisma, leurs conventions, les points de modélisation à connaître, la volumétrie en production, ce que l'API n'expose pas, et les migrations.
 ---
 
 La base est une base **PostgreSQL 17** décrite par un seul fichier : [`apps/api/prisma/schema.prisma`](https://github.com/accelaire/CLAIR/blob/master/apps/api/prisma/schema.prisma). C'est la source de vérité ; cette page en donne une lecture d'ensemble. Les diagrammes sont sur la page [Schémas ERD](/donnees/schemas-erd).
 
-Le schéma compte **39 modèles**, soit 39 tables, plus 2 tables de jointure créées implicitement par Prisma. Il n'y a ni comptes utilisateurs, ni tables d'authentification. La base de production ne contient aucune autre table que celles-ci, hors la table `_prisma_migrations` de Prisma (vérifié le 21 octobre 2026).
+Le schéma compte **52 modèles**, soit 52 tables, plus 2 tables de jointure créées implicitement par Prisma. Il n'y a ni comptes utilisateurs, ni tables d'authentification. La base de production ne contient aucune autre table que celles-ci, hors la table `_prisma_migrations` de Prisma (vérifié le 13 novembre 2026).
 
 ---
 
@@ -40,13 +40,33 @@ Le groupe, la circonscription, la commission permanente et la série sénatorial
 
 ### 4. Deux tables de mandats distinctes
 
-`mandats_parlementaires` est le siège de parlementaire. `mandats` contient les fonctions dans des organes (commission, délégation, groupe d'études, gouvernement…), avec la qualité (membre, président, rapporteur…).
+`mandats_parlementaires` est le siège de parlementaire. `mandats` contient les fonctions dans des organes (commission, délégation, groupe d'études, mission…), avec la qualité (membre, président, rapporteur…).
+
+Les fonctions gouvernementales n'y sont **pas** : elles ont leurs propres tables (point 6). Les mandats `GOUVERNEMENT` et `PRESREP` de la source sont faux (appartenances jamais closes, présidence rattachée à l'organe d'un prédécesseur). Seules les missions confiées à un parlementaire (`MINISTERE`, qualité « en mission ») restent dans `mandats`.
 
 ### 5. Groupes politiques
 
 À l'Assemblée, un groupe a une ligne par législature. Au Sénat, une ligne par sigle, valable dans le temps (`legislature` à `NULL`). `nom` contient le **sigle tel que la source le code**, figé à travers les renommages (`UMP` pour Les Républicains au Sénat) : c'est une clé de rapprochement, pas un libellé. Le libellé d'usage est `nom_court` ; l'API renvoie `nom_court` à la place de `nom` quand il existe.
 
-### 6. Statistiques pré-calculées
+### 6. Gouvernements et présidence
+
+`gouvernements`, `postes_ministeriels`, `membres_gouvernement` et `presidences` viennent de l'archive AMO30 de l'Assemblée (organes `GOUVERNEMENT`, `MINISTERE`, `PRESREP`), depuis 2007. Un poste est un portefeuille tenu par une personne dans un gouvernement, entre deux dates : une personne peut en tenir plusieurs, successifs ou simultanés. Le Premier ministre est le poste de rang protocolaire 1. Les dates sont des dates civiles (`DATE`), telles que la source les publie : un ministre sortant peut finir le lendemain de la fin de son gouvernement, il expédie les affaires courantes.
+
+Un membre du gouvernement n'est pas un parlementaire : `membres_gouvernement.parlementaire_id` le rattache à sa fiche quand elle existe, par son identifiant AN ou, pour un sénateur, par son état civil (`liaison` dit comment). Ce rattachement est recalculé à chaque synchronisation.
+
+`presidences_chambre` porte les présidences des deux chambres, une ligne par mandat de président publié par la source, que le président ait une fiche ou non (`chambre` vaut `assemblee` ou `senat`). Celles de l'Assemblée viennent de l'AMO30 (mandats BUREAU « Président », depuis 2007 ; l'AMO10 ne date que celle de la législature en cours), celles du Sénat du dump de la base des sénateurs (`senbur`, depuis 1959). `source_id` est l'identifiant de la personne dans sa chambre, comme `parlementaires.source_id` (`PA…` ou matricule du Sénat) ; `parlementaire_id` la rattache à sa fiche. Au Sénat, la même présidence est aussi une ligne du bureau dans `mandats`, sous le même identifiant (`SENBUR-…`), pour l'affichage de la fiche. Ces périodes, comme les postes ministériels, sortent de la présence de la personne : un membre du Gouvernement ne vote pas, un président d'assemblée seulement par exception.
+
+### 6 bis. Bilan des gouvernements
+
+Depuis juin 2017 (15e législature), cinq tables calculées chaque nuit par différence, depuis les dossiers, les scrutins et les débats déjà en base, plus la base DOSLEG du Sénat :
+
+- `projets_loi` : un projet de loi du Gouvernement, rattaché à son dossier (celui de l'Assemblée, à défaut celui du Sénat pour un projet que l'Assemblée n'a pas reçu) et au gouvernement de son dépôt. `nature` le range (projet ordinaire, ratification d'ordonnance, convention internationale, finances, constitutionnelle, organique) d'après la procédure et le titre long. `stade` est le stade atteint : `promulgue`, `adopte` (adoption définitive sans promulgation connue), `examine` (au moins une décision de séance), `depose` (jamais examiné en séance). Il n'y a pas de stade « rejeté » : un rejet en première lecture renvoie le texte à l'autre chambre, il ne clôt rien.
+- `projets_loi_signataires` : chaque signataire, rattaché à son poste (`postes_ministeriels`), avec son rang, son rôle (`premier_ministre`, `chef_de_file`, `cosignataire`) et sa source. L'Assemblée publie les signataires d'un projet dans `initiateur` (`mandatRef` = `postes_ministeriels.uid`), mais seulement le Premier ministre pour un projet déposé d'abord au Sénat ; ses ministres viennent alors des auteurs du texte de dépôt dans DOSLEG (`source` = `senat`), rattachés à leur poste par le nom et la date.
+- `engagements_responsabilite` : chaque recours à l'article 49, alinéa 3, de la Constitution (dossier AN « Engagement de la responsabilité du Gouvernement »), avec le poste du Premier ministre, sa date et le dossier du texte visé.
+- `motions_censure` : chaque motion de censure mise aux voix à l'Assemblée, avec le gouvernement en fonction le jour du vote, l'alinéa (2 : motion spontanée ; 3 : réponse à un 49.3), l'engagement auquel elle répond et son premier signataire. En 16e législature, la source ne publie pas le lien entre le vote d'une motion et son engagement : il est déduit du jour du vote, et laissé vide quand deux engagements sont votés le même jour (le 24 octobre 2022).
+- `reponses_gouvernement` : chaque réponse en séance d'un membre du Gouvernement (`interventions.type` = `reponse_gouvernement`), rattachée au poste qu'il occupait ce jour-là. Une réponse donnée après la fin publiée d'un poste (affaires courantes) n'est pas rattachée.
+
+### 7. Statistiques pré-calculées
 
 Elles sont calculées par le batch nocturne, jamais par l'API. La position majoritaire d'un groupe sur un scrutin n'existe que si une seule position est en tête : en cas d'égalité, le scrutin ne compte ni pour la loyauté (il sort du dénominateur), ni pour les alliances, ni pour les thématiques.
 
@@ -55,11 +75,11 @@ Elles sont calculées par le batch nocturne, jamais par l'API. La position major
 - `mandats_parlementaires.stats_*` : par mandat ;
 - `groupes_politiques.stats_*`, `groupes_alliances`, `groupes_thematiques` : par groupe.
 
-### 7. Scrutins, votes et amendements
+### 8. Scrutins, votes et amendements
 
 Un scrutin peut porter sur plusieurs amendements et un amendement sur plusieurs scrutins : table implicite `_AmendementToScrutin` (`A` = amendement, `B` = scrutin). Les cosignataires sont dans `_AmendementCosignataires` (`A` = amendement, `B` = parlementaire). `numero` n'identifie un scrutin qu'avec `chambre` et `session` (contrainte unique `numero, chambre, session`). Un vote (`votes.position`) vaut `pour`, `contre`, `abstention` ou `absent`.
 
-### 8. Sous-amendements et discussions
+### 9. Sous-amendements et discussions
 
 Un sous-amendement modifie un amendement, pas le texte : `amendements.amendement_parent_id` pointe vers l'amendement qu'il modifie, et `amendement_parent_ref` garde la référence lue à la source. Les amendements discutés ensemble en séance partagent un `id_discussion_commune`, les amendements identiques un `id_discussion_identique`, chacun unique au sein d'une chambre seulement.
 
@@ -72,15 +92,15 @@ Un sous-amendement modifie un amendement, pas le texte : `amendements.amendement
 
 Au Sénat, chaque colonne n'a qu'un écrivain (le CSV pour le libellé de l'alinéa, la passe AMELI pour le reste) : deux sources qui se disputeraient une colonne la réécriraient chaque nuit, et `updated_at` bougerait sans changement.
 
-### 9. Interventions
+### 10. Interventions
 
 `interventions` contient les prises de parole en séance (`reunion_id` à `NULL`) et en commission (`reunion_id` renseigné). `parlementaire_id` est vide pour les orateurs non parlementaires (ministres…), dont le nom reste dans `orateur_nom`. `intervention_scrutin` relie une prise de parole au scrutin qu'elle précède, avec la méthode du rattachement dans `via` : `amendement` et `article` dans les deux chambres ; `ensemble` (explications de vote), `motion` et `finances` (fascicule budgétaire) au Sénat ; `fenetre` (ce qui a été dit entre deux votes) à l'Assemblée.
 
-### 10. Sujets
+### 11. Sujets
 
 Un sujet regroupe les dossiers de l'Assemblée et du Sénat qui portent sur le même texte (`dossiers_legislatifs.sujet_id`).
 
-### 11. Élections sénatoriales
+### 12. Élections sénatoriales
 
 Chaque ingestion aligne les candidatures sur le fichier du ministère : une liste se reconnaît à son `source_uid`, une candidature à sa liste, son rôle et son rang, et toutes deux gardent leur `id` d'une ingestion à l'autre. Les tables de résultats ne s'y rattachent pourtant pas par clé étrangère, mais par des identifiants de la source, pour ne pas dépendre de la vie des lignes de candidature :
 
@@ -109,6 +129,30 @@ Volumétrie mesurée en production le **21 octobre 2026**.
 | `GroupeThematique` | `groupes_thematiques` | 752 | Position moyenne d'un groupe par thème |
 | `DeclarationHATVP` | `declarations_hatvp` | 4 943 | Déclarations d'intérêts et de patrimoine (liens vers la HATVP) |
 
+### Gouvernements et présidence
+
+Volumétrie de l'archive AMO30 du 21 octobre 2026.
+
+| Modèle | Table | Lignes | Contenu |
+| :--- | :--- | ---: | :--- |
+| `Gouvernement` | `gouvernements` | 17 | De Fillon I (mai 2007) à Lecornu II |
+| `PosteMinisteriel` | `postes_ministeriels` | 766 | Portefeuille tenu par une personne dans un gouvernement, avec ses dates (missions exclues) |
+| `MembreGouvernement` | `membres_gouvernement` | 311 | Personnes ayant tenu au moins un poste ; 145 rattachées à leur fiche parlementaire |
+| `Presidence` | `presidences` | 3 | Présidences de la République depuis 2007 (un seul organe pour les deux mandats d'Emmanuel Macron) |
+| `PresidenceChambre` | `presidences_chambre` | 17 | Présidences de l'Assemblée depuis 2007 (7) et du Sénat depuis 1959 (10) |
+
+### Bilan des gouvernements
+
+Volumétrie de la prod au 11 novembre 2026 (projets déposés depuis le 21 juin 2017).
+
+| Modèle | Table | Lignes | Contenu |
+| :--- | :--- | ---: | :--- |
+| `ProjetLoi` | `projets_loi` | 789 | Projets de loi du Gouvernement, avec leur nature et leur stade |
+| `ProjetLoiSignataire` | `projets_loi_signataires` | 1 709 | Signataires, rattachés à leur poste |
+| `EngagementResponsabilite` | `engagements_responsabilite` | 32 | Recours au 49.3 |
+| `MotionCensure` | `motions_censure` | 61 | Motions de censure votées à l'Assemblée |
+| `ReponseGouvernement` | `reponses_gouvernement` | 25 431 | Réponses en séance rattachées à un poste |
+
 ### Travail législatif
 
 | Modèle | Table | Lignes | Contenu |
@@ -124,6 +168,9 @@ Volumétrie mesurée en production le **21 octobre 2026**.
 | `TexteArticle` | `textes_articles` | 5 185 | Texte d'un article dans une version donnée d'un texte (AN) |
 | `Sujet` | `sujets` | 1 785 | Regroupements de dossiers AN + Sénat, résumés IA |
 | `SujetLien` | `sujet_liens` | 4 709 | Liens sortants d'un sujet : documents officiels, vie-publique.fr, Wikipédia |
+| `LegiTexte` | `legi_textes` | 154 473 | Index de la base LEGI de la DILA : versions des textes cités comme du droit (codes, lois, ordonnances, décrets, arrêtés, Constitution…), avec leur titre et leurs dates. Compté au premier chargement en production, le 31 octobre 2026 |
+| `LegiArticle` | `legi_articles` | 734 625 | Index de la base LEGI : versions des articles de ces textes (hors arrêtés et circulaires) encore en vigueur en 2017 ou après. Identifiant Légifrance, numéro, dates ; aucun contenu. Compté au premier chargement en production, le 31 octobre 2026 |
+| `AmendementRenvois` | `amendements_renvois` | 531 547 | Renvois au droit en vigueur repérés dans le dispositif d'un amendement : positions dans le texte, article (LEGIARTI) ou texte (CID) visé dans l'index LEGI. Une ligne par amendement calculé, même sans renvoi ; 31 % en ont au moins un. Compté au premier calcul en production, le 1er novembre 2026 |
 
 ### Commissions et agenda
 
@@ -162,7 +209,7 @@ Volumétrie mesurée en production le **21 octobre 2026**.
 
 | Modèle | Table | Contenu |
 | :--- | :--- | :--- |
-| `SourceState` | `source_states` | État de fraîcheur de chaque source (23 lignes, une par clé) |
+| `SourceState` | `source_states` | État de fraîcheur de chaque source (24 lignes, une par clé) |
 | `SyncLog` | `sync_logs` | Journal des synchronisations |
 | `Feedback` | `feedbacks` | Retours anonymes envoyés depuis le site |
 
@@ -190,6 +237,7 @@ L'API renvoie l'essentiel de la base, souvent la ligne entière sur les routes d
 | Table | Raison |
 | :--- | :--- |
 | `textes_articles` | Sert uniquement de matière aux résumés IA ; aucune route ne la sert pour l'instant |
+| `legi_textes`, `legi_articles` | Index de travail pour lier les références des amendements à Légifrance. Ce sont des données de la DILA, à prendre à la source ([echanges.dila.gouv.fr](https://echanges.dila.gouv.fr/OPENDATA/LEGI/), Licence Ouverte) |
 | `parlementaires_identifiants` | Interne au rattachement des données |
 | `source_states`, `sync_logs` | Suivi de l'ingestion ; la page d'accueil n'en lit que la date de la dernière synchronisation réussie |
 | `feedbacks` | Retours des visiteurs, données personnelles |
@@ -206,6 +254,7 @@ L'API renvoie l'essentiel de la base, souvent la ligne entière sur les routes d
 | Table | Colonnes | Remarque |
 | :--- | :--- | :--- |
 | `amendements` | `parlementaire_id`, `source_url`, `numero_ordre`, `uid_canonique`, `auteur_ref`, `groupe_ref`, `source_hash`, `amendement_parent_ref` | L'auteur n'est donné que par `auteur_libelle` ; le parent d'un sous-amendement l'est par `amendementParent` |
+| `amendements_renvois` | `version`, `calcule_le` | Les renvois sont servis avec chaque amendement (`renvois`), adresse Légifrance comprise, sauf s'ils ont été calculés avant la dernière modification de l'amendement |
 | `interventions` | `source_uid`, `seance_uid`, `ordre_absolu` | Repérage dans le compte rendu source |
 | `dossiers_legislatifs` | `source_data`, `ia_content_hash`, `ia_generated_at` | L'API extrait de `source_data` la chronologie et le lien vers le Journal officiel, sans le renvoyer brut |
 | `sujets` | `ia_content_hash`, `ia_generated_at`, `ia_groupe_amendement_hash`, `context_resolved_at`, `context_input_hash` | Suivi de l'enrichissement |
@@ -213,6 +262,13 @@ L'API renvoie l'essentiel de la base, souvent la ligne entière sur les routes d
 | `candidatures` | `date_naissance`, `profession_code`, `sortant_declare`, `match_confiance`, `tour_election` | La date de naissance des candidats est **volontairement** tenue hors de l'API : seule l'année est publiée |
 | `candidatures_listes` | `numero_depot` | |
 | `candidats_mandats_locaux` | `date_naissance`, `confiance` | Même règle pour la date de naissance |
+| `gouvernements` | `libelle_source` | Libellé brut de la source (« VALLS 2 », « LECORNU II »), incohérent ; l'API renvoie à la place `nom` (« Valls II ») |
+| `membres_gouvernement` | `slug`, `date_naissance`, `liaison` | La date de naissance ne sert qu'au rattachement des sénateurs |
+| `postes_ministeriels` | `qualite` quand `qualite_accordee` existe | L'API renvoie la qualité accordée au titulaire (« Ministre déléguée ») sous le nom `qualite` |
+| `presidences` | `acteur_uid`, `liaison` | |
+| `presidences_chambre` | toutes | Sert au calcul de la présence ; la fiche affiche la présidence parmi les fonctions du mandat |
+| `projets_loi_signataires` | `rang`, `source` | L'API donne le chef de file et les cosignataires, pas l'ordre brut |
+| `reponses_gouvernement` | toutes | L'API en donne le nombre par poste et par chambre |
 
 Méthode : liste relevée le 1er octobre 2026 en interrogeant toutes les routes GET documentées avec des paramètres réels (plus de 500 appels), puis revue dans le code le 21 octobre 2026, après l'ajout des métadonnées de séance des amendements. Les colonnes renvoyées sous un autre nom (par exemple `cible_types.label` en `cibleNom`, `groupes_thematiques.position_moyenne` en `position`) comptent comme exposées.
 

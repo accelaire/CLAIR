@@ -123,14 +123,49 @@ export interface TransformedDossier {
  * Sénat n'avait pas encore examiné le texte.
  *
  * « adopté sans modification » reste une adoption.
+ *
+ * Un PROJET de loi rejeté en première lecture par la chambre où il a été
+ * déposé est transmis d'office à l'autre : la procédure continue. Le PLF et le
+ * PLFSS pour 2027, rejetés par l'Assemblée puis examinés par le Sénat,
+ * s'affichaient « rejetés ». Les autres rejets restent des rejets : après celui
+ * de la seconde chambre, la suite dépend du Gouvernement (réunir une CMP), et
+ * des lois d'approbation des comptes rejetées par le Sénat n'ont jamais été
+ * reprises ; une proposition de loi rejetée n'est pas transmise.
  */
-export function etatApresDecision(etat: string | null, libelle: string): string | null {
+export function etatApresDecision(
+  etat: string | null,
+  libelle: string,
+  contexte: { projet?: boolean; premiereLectureChambreDeDepot?: boolean } = {},
+): string | null {
   const statut = libelle.trim().toLowerCase();
   if (/^modifiée?$/.test(statut) || statut.includes('avec modifications')) return 'en_cours';
   if (statut.includes('adopt')) return 'adopte';
-  if (statut.includes('rejet')) return 'rejete';
+  if (statut.includes('rejet')) {
+    return contexte.projet && contexte.premiereLectureChambreDeDepot ? 'en_cours' : 'rejete';
+  }
   return etat;
 }
+
+/**
+ * La lecture où le texte a été déposé (`AN1` ou `SN1`) : celle de l'acte de
+ * dépôt, à défaut la première lecture rencontrée.
+ */
+export function lectureDeDepot(actes: readonly { codeActe?: string | null }[]): 'AN1' | 'SN1' | null {
+  const depot = actes.find((a) => /^(AN|SN)1-DEPOT/.test(a.codeActe ?? ''));
+  const repere = depot ?? actes.find((a) => /^(AN|SN)1(-|$)/.test(a.codeActe ?? ''));
+  const m = /^(AN|SN)1/.exec(repere?.codeActe ?? '');
+  return m ? (`${m[1]}1` as 'AN1' | 'SN1') : null;
+}
+
+/**
+ * Procédures AN qui ne sont que des projets (ordinaire, finances, financement de
+ * la sécurité sociale, conventions, rectificatives, approbation des comptes).
+ * Un tel dossier est un projet même quand l'Assemblée n'en publie aucun
+ * signataire (conventions déposées au Sénat pendant la dissolution de 2024).
+ * Les procédures mixtes (« projet ou proposition » organique, constitutionnelle)
+ * ne le sont que par un signataire ministre.
+ */
+export const PROCEDURES_PROJET: ReadonlySet<string> = new Set(['1', '3', '4', '6', '21', '33']);
 
 const CHAMBRES: Record<string, string> = { AN: 'Assemblée nationale', SN: 'Sénat' };
 const LECTURES: Record<string, string> = {
@@ -392,7 +427,7 @@ export class DossiersLegislatifsClient {
 
       // Extract dates, votes, and state from actes législatifs
       const { dateDepot, dateAdoption, voteRefs, texteRefs, etat, loiInfo } =
-        this.extractFromActes(raw.actesLegislatifs?.acteLegislatif);
+        this.extractFromActes(raw.actesLegislatifs?.acteLegislatif, PROCEDURES_PROJET.has(procedureCode ?? ''));
 
       return {
         uid,
@@ -437,7 +472,7 @@ export class DossiersLegislatifsClient {
     }
   }
 
-  private extractFromActes(actes: ANActeLegislatif | ANActeLegislatif[] | undefined): {
+  private extractFromActes(actes: ANActeLegislatif | ANActeLegislatif[] | undefined, projet = false): {
     dateDepot: Date | null;
     dateAdoption: Date | null;
     voteRefs: string[];
@@ -457,6 +492,14 @@ export class DossiersLegislatifsClient {
     }
 
     const actesArray = Array.isArray(actes) ? actes : [actes];
+    const tousLesActes: ANActeLegislatif[] = [];
+    const aplatir = (a: ANActeLegislatif) => {
+      tousLesActes.push(a);
+      const enfants = a.actesLegislatifs?.acteLegislatif;
+      if (enfants) (Array.isArray(enfants) ? enfants : [enfants]).forEach(aplatir);
+    };
+    actesArray.forEach(aplatir);
+    const depot = lectureDeDepot(tousLesActes);
 
     const processActe = (acte: ANActeLegislatif) => {
       // Extract depot date
@@ -494,7 +537,10 @@ export class DossiersLegislatifsClient {
         if (statut.includes('adopt') && acte.dateActe) {
           dateAdoption = this.parseDate(acte.dateActe);
         }
-        etat = etatApresDecision(etat, statut);
+        etat = etatApresDecision(etat, statut, {
+          projet,
+          premiereLectureChambreDeDepot: !!depot && (acte.codeActe ?? '').startsWith(`${depot}-`),
+        });
       }
 
       // Extract promulgation info

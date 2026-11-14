@@ -47,7 +47,7 @@ Diagrammes entité-relation de la base, générés depuis [`apps/api/prisma/sche
 
 ## 🗺️ Vue d'ensemble des relations
 
-Les 50 relations entre tables, sans les colonnes. Les 5 tables sans clé étrangère (`evenements_institutionnels`, `candidats_mandats_locaux`, `sync_logs`, `source_states`, `feedbacks`) n'y figurent pas ; elles sont détaillées plus bas.
+Les 68 relations entre tables, sans les colonnes. Les 7 tables sans clé étrangère (`evenements_institutionnels`, `candidats_mandats_locaux`, `legi_textes`, `legi_articles`, `sync_logs`, `source_states`, `feedbacks`) n'y figurent pas ; elles sont détaillées plus bas.
 
 <Mermaid
   title="Toutes les relations"
@@ -60,6 +60,23 @@ Les 50 relations entre tables, sans les colonnes. Les 5 tables sans clé étrang
     circonscriptions |o--o{ mandats_parlementaires : "circonscription_id"
     parlementaires ||--o{ mandats : "parlementaire_id"
     commissions |o--o{ mandats : "commission_id"
+    parlementaires |o--o| membres_gouvernement : "parlementaire_id"
+    gouvernements ||--o{ postes_ministeriels : "gouvernement_id"
+    membres_gouvernement ||--o{ postes_ministeriels : "membre_id"
+    parlementaires |o--o{ presidences : "parlementaire_id"
+    parlementaires |o--o{ presidences_chambre : "parlementaire_id"
+    dossiers_legislatifs ||--o| projets_loi : "dossier_id"
+    gouvernements ||--o{ projets_loi : "gouvernement_id"
+    projets_loi ||--o{ projets_loi_signataires : "projet_id"
+    postes_ministeriels ||--o{ projets_loi_signataires : "poste_id"
+    dossiers_legislatifs ||--o| engagements_responsabilite : "dossier_id"
+    postes_ministeriels ||--o{ engagements_responsabilite : "poste_id"
+    dossiers_legislatifs |o--o{ engagements_responsabilite : "dossier_texte_id"
+    scrutins ||--o| motions_censure : "scrutin_id"
+    gouvernements ||--o{ motions_censure : "gouvernement_id"
+    engagements_responsabilite |o--o{ motions_censure : "engagement_id"
+    interventions ||--o| reponses_gouvernement : "intervention_id"
+    postes_ministeriels ||--o{ reponses_gouvernement : "poste_id"
     commissions |o--o{ reunions : "commission_id"
     reunions ||--o{ reunion_participants : "reunion_id"
     parlementaires ||--o{ reunion_participants : "parlementaire_id"
@@ -88,6 +105,7 @@ Les 50 relations entre tables, sans les colonnes. Les 5 tables sans clé étrang
     reunions ||--o{ avis_commission : "reunion_id"
     amendements |o--o{ avis_commission : "amendement_id"
     dossiers_legislatifs |o--o{ textes_articles : "dossier_id"
+    amendements ||--o{ amendements_renvois : "amendement_id"
     lobbyistes ||--o{ actions_lobby : "lobbyiste_id"
     parlementaires |o--o{ actions_lobby : "parlementaire_id"
     cible_types |o--o{ actions_lobby : "cible_type_id"
@@ -144,6 +162,11 @@ Les 50 relations entre tables, sans les colonnes. Les 5 tables sans clé étrang
         int stats_carriere_participation  "nullable"
         int stats_carriere_interventions  "nullable"
         int stats_carriere_amendements  "nullable"
+        int stats_carriere_presence_solennel  "nullable"
+        int stats_scrutins  "nullable"
+        int stats_carriere_scrutins  "nullable"
+        bool stats_classable
+        bool stats_carriere_classable
         text resume_ia  "nullable"
         text parcours_ia  "nullable"
         text positions_cles_ia  "nullable"
@@ -184,6 +207,7 @@ Les 50 relations entre tables, sans les colonnes. Les 5 tables sans clé étrang
         int stats_amendements  "nullable"
         int stats_amendements_adoptes  "nullable"
         int stats_questions  "nullable"
+        int stats_scrutins  "nullable"
         timestamp stats_calculated_at  "nullable"
         text mandat_uid UK  "nullable"
         jsonb source_data  "nullable"
@@ -296,6 +320,157 @@ Les 50 relations entre tables, sans les colonnes. Les 5 tables sans clé étrang
 `}
 />
 
+## Gouvernements, présidence de la République et présidences des chambres
+
+<Mermaid
+  title="Gouvernements, présidence de la République et présidences des chambres"
+  chart={`erDiagram
+    gouvernements {
+        text id PK
+        text uid UK
+        text slug UK
+        text libelle_source
+        int numero
+        timestamp date_debut
+        timestamp date_fin  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    postes_ministeriels {
+        text id PK
+        text uid UK
+        text gouvernement_id FK
+        text membre_id FK
+        text organe_uid
+        text qualite
+        text qualite_accordee  "nullable"
+        int rang_protocolaire
+        text intitule
+        text intitule_court  "nullable"
+        text intitule_complement  "nullable"
+        text domaine  "nullable"
+        timestamp date_debut
+        timestamp date_fin  "nullable"
+        timestamp date_publication  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    membres_gouvernement {
+        text id PK
+        text acteur_uid UK
+        text slug UK
+        text civilite  "nullable"
+        text prenom
+        text nom
+        timestamp date_naissance  "nullable"
+        text parlementaire_id FK, UK  "nullable"
+        text liaison  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    presidences {
+        text id PK
+        text uid UK
+        text civilite  "nullable"
+        text prenom
+        text nom
+        timestamp date_debut
+        timestamp date_fin  "nullable"
+        text acteur_uid  "nullable"
+        text parlementaire_id FK  "nullable"
+        text liaison  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    presidences_chambre {
+        text id PK
+        text chambre
+        text uid UK
+        text source_id
+        text prenom
+        text nom
+        timestamp date_debut
+        timestamp date_fin  "nullable"
+        text parlementaire_id FK  "nullable"
+        text liaison  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    parlementaires |o--o| membres_gouvernement : "parlementaire_id"
+    gouvernements ||--o{ postes_ministeriels : "gouvernement_id"
+    membres_gouvernement ||--o{ postes_ministeriels : "membre_id"
+    parlementaires |o--o{ presidences : "parlementaire_id"
+    parlementaires |o--o{ presidences_chambre : "parlementaire_id"
+`}
+/>
+
+## Bilan des gouvernements : projets de loi, 49.3, motions de censure, réponses en séance
+
+<Mermaid
+  title="Bilan des gouvernements : projets de loi, 49.3, motions de censure, réponses en séance"
+  chart={`erDiagram
+    projets_loi {
+        text id PK
+        text dossier_id FK, UK
+        text gouvernement_id FK
+        text nature
+        text chambre_depot
+        timestamp date_depot
+        text stade
+        timestamp created_at
+        timestamp updated_at
+    }
+    projets_loi_signataires {
+        text id PK
+        text projet_id FK
+        text poste_id FK
+        int rang
+        text role
+        text source
+        timestamp created_at
+        timestamp updated_at
+    }
+    engagements_responsabilite {
+        text id PK
+        text dossier_id FK, UK
+        text poste_id FK
+        timestamp date
+        text dossier_texte_id FK  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    motions_censure {
+        text id PK
+        text scrutin_id FK, UK
+        text gouvernement_id FK
+        int alinea
+        text engagement_id FK  "nullable"
+        text premier_signataire  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    reponses_gouvernement {
+        text id PK
+        text intervention_id FK, UK
+        text poste_id FK
+        timestamp created_at
+        timestamp updated_at
+    }
+    dossiers_legislatifs ||--o| projets_loi : "dossier_id"
+    gouvernements ||--o{ projets_loi : "gouvernement_id"
+    projets_loi ||--o{ projets_loi_signataires : "projet_id"
+    postes_ministeriels ||--o{ projets_loi_signataires : "poste_id"
+    dossiers_legislatifs ||--o| engagements_responsabilite : "dossier_id"
+    postes_ministeriels ||--o{ engagements_responsabilite : "poste_id"
+    dossiers_legislatifs |o--o{ engagements_responsabilite : "dossier_texte_id"
+    scrutins ||--o| motions_censure : "scrutin_id"
+    gouvernements ||--o{ motions_censure : "gouvernement_id"
+    engagements_responsabilite |o--o{ motions_censure : "engagement_id"
+    interventions ||--o| reponses_gouvernement : "intervention_id"
+    postes_ministeriels ||--o{ reponses_gouvernement : "poste_id"
+`}
+/>
+
 ## Travail législatif : dossiers, scrutins, amendements, débats, sujets
 
 <Mermaid
@@ -366,6 +541,7 @@ Les 50 relations entre tables, sans les colonnes. Les 5 tables sans clé étrang
         text position
         text mise_au_point  "nullable"
         bool par_delegation
+        text statut_votant  "nullable"
         timestamp created_at
         timestamp updated_at
     }
@@ -789,6 +965,48 @@ Les 50 relations entre tables, sans les colonnes. Les 5 tables sans clé étrang
     parlementaires |o--o{ candidatures : "personne_id"
     circonscriptions ||--o{ resultats_tours : "circonscription_id"
     circonscriptions ||--o{ resultats_listes : "circonscription_id"
+`}
+/>
+
+## Index de la base LEGI (DILA) et renvois des amendements
+
+Sans clé étrangère : `legi_articles.cid` désigne le `cid` commun aux versions d'un texte de `legi_textes`, qui n'est pas unique. `amendements_renvois` désigne articles et textes de l'index par leurs identifiants, dans son JSON.
+
+<Mermaid
+  title="Index de la base LEGI (DILA) et renvois des amendements"
+  chart={`erDiagram
+    legi_textes {
+        text id PK
+        text cid
+        text nature
+        text num  "nullable"
+        timestamp date_texte  "nullable"
+        timestamp date_debut  "nullable"
+        timestamp date_fin  "nullable"
+        text etat  "nullable"
+        text titre
+        timestamp created_at
+        timestamp updated_at
+    }
+    legi_articles {
+        text id PK
+        text cid
+        text num  "nullable"
+        text etat  "nullable"
+        timestamp date_debut  "nullable"
+        timestamp date_fin  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    amendements_renvois {
+        text amendement_id PK, FK
+        jsonb renvois
+        int version
+        timestamp calcule_le
+        timestamp created_at
+        timestamp updated_at
+    }
+    amendements ||--o{ amendements_renvois : "amendement_id"
 `}
 />
 

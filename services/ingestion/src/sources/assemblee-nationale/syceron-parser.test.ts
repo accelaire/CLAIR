@@ -10,6 +10,7 @@ import {
   nettoyer,
   estPresidenceDeSeance,
   cibleDeLAnnonce,
+  estSortDAmendement,
 } from './syceron-parser';
 
 // Reproduit la structure réelle d'un compte rendu : <point> imbriqués sur
@@ -542,5 +543,72 @@ describe('proclamations portées par <vote> (archive de la 15e législature)', (
 
   it('ne déclare aucune séance quand l’archive n’en nomme pas', () => {
     expect(parseCompteRendu(SEANCE_15E)!.seanceRef).toBeNull();
+  });
+});
+
+// La séquence du scrutin 9054 (22 octobre 2026) : deux amendements votés à main
+// levée, que seule la ligne de leur sort clôt, puis celui mis au scrutin public.
+const SEANCE_MAINS_LEVEES = `<?xml version='1.0' encoding='UTF-8'?>
+<compteRendu xmlns="http://schemas.assemblee-nationale.fr/referentiel">
+  <uid>CRSANR5L17S2027O1N038</uid>
+  <seanceRef>RUANR5L17S2027IDS30958</seanceRef>
+  <metadonnees>
+    <dateSeance>20261022213000000</dateSeance>
+    <legislature>17</legislature>
+  </metadonnees>
+  <contenu>
+    <point nivpoint="3" code_grammaire="DISC_ARTICLES_2_4" art=" Après 8" bibard=" (n[[o]]&#160;1907)">
+      <paragraphe ordre_absolu_seance="343" code_grammaire="REJET_ADT" id_syceron="1" valeur=" 2235">
+        <texte>(L’amendement n[[o]]&#160;2235 n’est pas adopté.)</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="345" id_acteur="PA841717" code_grammaire="DISC_ARTICLES_3_4_1" id_syceron="2" adt=" 2206">
+        <orateurs><orateur><nom>Mme Sandrine Runel</nom><id>841717</id><qualite/></orateur></orateurs>
+        <texte>Je vais faire plaisir au rapporteur général car il ne s’agit pas d’une taxe.</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="365" code_grammaire="REJET_ADT" id_syceron="3" valeur=" 2206">
+        <texte>(L’amendement n[[o]]&#160;2206 n’est pas adopté.)</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="372" code_grammaire="REJET_ADT" id_syceron="4" valeur=" 831">
+        <texte>(L’amendement n[[o]]&#160;831, repoussé par le gouvernement, n’est pas adopté.)</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="374" id_acteur="PA794154" code_grammaire="DISC_ARTICLES_3_4_1" id_syceron="5" adt=" 1536">
+        <orateurs><orateur><nom>M. Jean-Claude Raux</nom><id>794154</id><qualite/></orateur></orateurs>
+        <texte>Grâce à notre collègue Nicolas Thierry, nous devrions enfin connaître une génération sans tabac.</texte>
+      </paragraphe>
+      <paragraphe ordre_absolu_seance="380" id_acteur="PA642847" code_grammaire="PAROLE_GENERIQUE" id_syceron="6">
+        <orateurs><orateur><nom>M. Thibault Bazin</nom><id>642847</id><qualite>rapporteur général</qualite></orateur></orateurs>
+        <texte>(L’amendement no 1536 n’est pas sans intérêt), mais avis défavorable.</texte>
+      </paragraphe>
+    </point>
+  </contenu>
+</compteRendu>`;
+
+describe('sorts des amendements votés à main levée', () => {
+  it('relève le rang de chaque ligne qui clôt l’examen d’un amendement', () => {
+    expect(parseCompteRendu(SEANCE_MAINS_LEVEES)?.sortsDAmendements).toEqual([343, 365, 372]);
+  });
+
+  it('ne prend jamais une prise de parole pour un sort, même entre parenthèses', () => {
+    expect(parseCompteRendu(SEANCE_MAINS_LEVEES)?.sortsDAmendements).not.toContain(380);
+  });
+
+  it.each([
+    '(L’amendement no 831 n’est pas adopté.)',
+    "(L'amendement no 53 est adopté ; en conséquence, les amendements nos 14 et 15 tombent.)",
+    '(Les amendements identiques nos 22, 37 et 48 ne sont pas adoptés.)',
+    '(Le sous-amendement no 858 est retiré.)',
+    '(Les sous-amendements identiques nos 2403 et 2431 ne sont pas adoptés.)',
+    '(Après une épreuve à main levée déclarée douteuse, l’amendement no 181, mis aux voix par assis et levé, n’est pas adopté.)',
+  ])('reconnaît « %s »', (texte) => {
+    expect(estSortDAmendement(texte)).toBe(true);
+  });
+
+  it.each([
+    '(Le vote à main levée n’ayant pas été concluant, il est procédé à un scrutin public.)',
+    '(L’article 8 est adopté.)',
+    '(La motion de rejet préalable, mise aux voix, n’est pas adoptée.)',
+    'L’amendement no 831 est défendu.',
+  ])('ignore « %s »', (texte) => {
+    expect(estSortDAmendement(texte)).toBe(false);
   });
 });

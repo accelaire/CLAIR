@@ -22,6 +22,7 @@ function DiscordIcon({ className }: { className?: string }) {
 const explorerLinks = [
   { name: 'Députés', href: '/deputes' },
   { name: 'Sénateurs', href: '/senateurs' },
+  { name: 'Gouvernements', href: '/gouvernements' },
   { name: 'Groupes politiques', href: '/groupes' },
   { name: 'Sujets', href: '/sujets' },
   { name: 'Dossiers législatifs', href: '/dossiers' },

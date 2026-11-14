@@ -7,9 +7,9 @@ interface ParlementaireStats {
   nom: string;
   prenom: string;
   stats: {
-    presence: number;
+    presence: number | null;
     presenceSolennel: number | null;
-    loyaute: number;
+    loyaute: number | null;
     participation: number;
     interventions: number;
     amendements: { proposes: number; adoptes: number };
@@ -19,12 +19,15 @@ interface ParlementaireStats {
 
 interface ComparisonStatsGridProps {
   parlementaires: ParlementaireStats[];
+  /** Au Sénat, la présence se lit aux votes solennels (ticket #108). */
+  chambre?: 'assemblee' | 'senat';
 }
 
 interface StatRowProps {
   label: string;
   icon: React.ReactNode;
-  values: { value: number | string; slug: string }[];
+  /** `null` : non mesurable, affiché « — » et hors comparaison. */
+  values: { value: number | string | null; slug: string }[];
   format?: 'percent' | 'number' | 'fraction';
   isHigherBetter?: boolean;
 }
@@ -32,11 +35,12 @@ interface StatRowProps {
 function StatRow({ label, icon, values, format = 'number', isHigherBetter = true }: StatRowProps) {
   // Trouver les valeurs min/max pour highlighting
   const numericValues = values.map((v) =>
-    typeof v.value === 'number' ? v.value : parseFloat(v.value.toString()) || 0
+    v.value === null ? null : typeof v.value === 'number' ? v.value : parseFloat(v.value.toString()) || 0
   );
-  const maxValue = Math.max(...numericValues);
-  const minValue = Math.min(...numericValues);
-  const hasVariance = maxValue !== minValue;
+  const mesurees = numericValues.filter((n): n is number => n !== null);
+  const maxValue = Math.max(...mesurees);
+  const minValue = Math.min(...mesurees);
+  const hasVariance = mesurees.length > 1 && maxValue !== minValue;
 
   return (
     <div className="grid gap-2 sm:gap-4 min-w-fit" style={{ gridTemplateColumns: `minmax(100px, 140px) repeat(${values.length}, minmax(70px, 1fr))` }}>
@@ -48,12 +52,14 @@ function StatRow({ label, icon, values, format = 'number', isHigherBetter = true
 
       {/* Valeurs */}
       {values.map((v, i) => {
-        const numValue = numericValues[i];
-        const isBest = hasVariance && numValue === (isHigherBetter ? maxValue : minValue);
-        const isWorst = hasVariance && numValue === (isHigherBetter ? minValue : maxValue);
+        const numValue = numericValues[i] ?? null;
+        const isBest = hasVariance && numValue !== null && numValue === (isHigherBetter ? maxValue : minValue);
+        const isWorst = hasVariance && numValue !== null && numValue === (isHigherBetter ? minValue : maxValue);
 
         let displayValue: string;
-        if (format === 'percent') {
+        if (numValue === null || v.value === null) {
+          displayValue = '—';
+        } else if (format === 'percent') {
           displayValue = `${Math.round(numValue)}%`;
         } else if (format === 'fraction') {
           displayValue = v.value.toString();
@@ -73,7 +79,7 @@ function StatRow({ label, icon, values, format = 'number', isHigherBetter = true
             }`}
           >
             <span className="text-base sm:text-xl font-bold">{displayValue}</span>
-            {format === 'percent' && (
+            {format === 'percent' && numValue !== null && (
               <div className="mt-1 h-1.5 w-full max-w-20 overflow-hidden rounded-full bg-muted">
                 <div
                   className={`h-full rounded-full transition-all ${
@@ -90,27 +96,31 @@ function StatRow({ label, icon, values, format = 'number', isHigherBetter = true
   );
 }
 
-export function ComparisonStatsGrid({ parlementaires }: ComparisonStatsGridProps) {
+export function ComparisonStatsGrid({ parlementaires, chambre = 'assemblee' }: ComparisonStatsGridProps) {
   if (parlementaires.length === 0) return null;
 
   // Vérifier si on a des données de présence solennelle
   const hasPresenceSolennel = parlementaires.some((p) => p.stats.presenceSolennel !== null);
+  const senat = chambre === 'senat';
 
   const stats = [
     {
-      label: 'Présence',
+      // Au Sénat, les scrutins ordinaires sont votés par groupe : ce taux y est
+      // une participation, pas une présence (#108).
+      label: senat ? 'Participation' : 'Présence',
       icon: <UserCheck className="h-4 w-4" />,
       format: 'percent' as const,
       getValue: (p: ParlementaireStats) => p.stats.presence,
     },
-    // Présence solennelle (affichée uniquement si des données existent)
-    ...(hasPresenceSolennel
+    // Présence solennelle : toujours au Sénat (c'est sa présence), à l'Assemblée
+    // seulement si des données existent.
+    ...(hasPresenceSolennel || senat
       ? [
           {
             label: 'Présence solennelle',
             icon: <Award className="h-4 w-4" />,
             format: 'percent' as const,
-            getValue: (p: ParlementaireStats) => p.stats.presenceSolennel ?? 0,
+            getValue: (p: ParlementaireStats) => p.stats.presenceSolennel,
           },
         ]
       : []),

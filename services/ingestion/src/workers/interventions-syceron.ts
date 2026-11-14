@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { errorMessage } from '../utils/errors';
-import { TYPE_INTERRUPTION, TYPE_REPONSE } from '../utils/interventions';
+import { TYPE_INTERRUPTION, typeSelonOrateur } from '../utils/interventions';
 import { SyceronClient } from '../sources/assemblee-nationale/syceron-client';
 import type { PriseDeParoleSyceron, SeanceSyceron } from '../sources/assemblee-nationale/syceron-parser';
 import { ajouterIdentifiantsConserves } from './changement-chambre';
@@ -253,28 +253,6 @@ function estUneQuestion(code: string | null): boolean {
   return code !== null && PREFIXES_QUESTION.some((prefixe) => code.startsWith(prefixe));
 }
 
-/**
- * Une qualité de membre du Gouvernement.
- *
- * Sert à distinguer, sous une rubrique de questions, celui qui interroge de
- * celui qui répond : la rubrique vaut pour toute la séquence, si bien que sans
- * cette distinction les réponses des ministres tombaient dans leur propre
- * compteur de questions posées — 745 pour Gabriel Attal, dont 539 prononcées
- * comme Premier ministre.
- *
- * Les limites de mot autour de « ministre » ne sont pas décoratives : 562
- * paragraphes ont pour qualité « rapporteur de la commission des lois
- * constitutionnelles, de la législation et de l'administration générale de la
- * République », où « administration » contient la sous-chaîne. Ce sont des
- * députés, et les compter comme gouvernement effacerait leurs questions.
- */
-const QUALITE_GOUVERNEMENT =
-  /\bministres?\b|\bsecr[ée]taire\s+d[’']?[EÉ]tat\b|\bgarde\s+des\s+sceaux\b|\bporte-parole\s+du\s+gouvernement\b/i;
-
-export function estMembreDuGouvernement(qualite: string | null): boolean {
-  return qualite !== null && QUALITE_GOUVERNEMENT.test(qualite);
-}
-
 function typeDIntervention(prise: PriseDeParoleSyceron): string {
   const code = prise.codeGrammaire;
   if (code.startsWith('INTERRUPTION')) return TYPE_INTERRUPTION;
@@ -288,7 +266,7 @@ function typeDIntervention(prise: PriseDeParoleSyceron): string {
   // portent un code générique, et sans la rubrique elle ressemblerait à
   // n'importe quel débat.
   if (code.startsWith('QUESTION') || estUneQuestion(code) || estUneQuestion(prise.codeRubrique)) {
-    return estMembreDuGouvernement(prise.orateurQualite) ? TYPE_REPONSE : 'question';
+    return typeSelonOrateur('question', prise.orateurQualite);
   }
   return 'intervention';
 }

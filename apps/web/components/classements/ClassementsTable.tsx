@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { ArrowUp, ArrowDown, Users } from 'lucide-react';
 import { getGroupColor } from '@/lib/colors';
 import { ShareButton } from '@/components/ShareButton';
+import { presenceDe } from '@/lib/presence';
 
 interface ParlementaireRow {
   slug: string;
@@ -20,12 +21,29 @@ interface ParlementaireRow {
     position: string | null;
   } | null;
   stats: {
-    presence: number;
-    loyaute: number;
+    presence: number | null;
+    presenceSolennel?: number | null;
+    loyaute: number | null;
     participation: number;
     amendements: number;
     interventions: number;
+    /** Scrutins du mandat en cours sur lesquels porte la présence. */
+    scrutins?: number | null;
+    /** Au moins 50 scrutins : le taux se compare aux autres. */
+    classable?: boolean;
   } | null;
+}
+
+/**
+ * Sous 50 scrutins, un taux ne se compare pas : l'API classe la ligne après les
+ * autres. Sauf la présence d'un sénateur, mesurée sur les scrutins solennels,
+ * peu nombreux : elle n'a pas de seuil.
+ */
+const NON_CLASSE = 'Non classé : moins de 50 scrutins sur le mandat en cours, trop peu pour comparer ce taux.';
+
+function nonClasse(row: ParlementaireRow, sort: string): boolean {
+  if (row.stats?.classable !== false) return false;
+  return sort === 'loyaute' || (sort === 'presence' && row.chambre !== 'senat');
 }
 
 interface Column {
@@ -44,7 +62,9 @@ const columns: Column[] = [
     shortLabel: 'Prés.',
     sortable: true,
     format: (v) => `${v}%`,
-    getValue: (r) => r.stats?.presence ?? null,
+    // Sénateur : présence aux votes solennels ; le taux tous scrutins compte
+    // des bulletins déposés par le groupe (#108).
+    getValue: (r) => presenceDe(r.chambre, r.stats),
   },
   {
     key: 'loyaute',
@@ -212,7 +232,15 @@ export function ClassementsTable({ data, sort, order, onSort, page, limit, chamb
                     row.slug === highlightSlug ? highlightClass(row.slug) : 'hover:bg-muted/30'
                   }`}
                 >
-                  <td className="px-3 py-3 text-muted-foreground tabular-nums">{rank}</td>
+                  <td className="px-3 py-3 text-muted-foreground tabular-nums">
+                    {nonClasse(row, sort) ? (
+                      <span title={NON_CLASSE} className="text-xs">
+                        n.c.
+                      </span>
+                    ) : (
+                      rank
+                    )}
+                  </td>
                   <td className="px-3 py-3">
                     <Link href={`/${route}/${row.slug}`} className="flex items-center gap-3 hover:text-primary transition-colors">
                       <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-muted">
@@ -288,7 +316,13 @@ export function ClassementsTable({ data, sort, order, onSort, page, limit, chamb
 
               {/* Rank */}
               <span className="w-8 text-center text-sm font-bold text-muted-foreground tabular-nums">
-                {rank}
+                {nonClasse(row, sort) ? (
+                  <span title={NON_CLASSE} className="text-xs font-normal">
+                    n.c.
+                  </span>
+                ) : (
+                  rank
+                )}
               </span>
 
               {/* Photo */}

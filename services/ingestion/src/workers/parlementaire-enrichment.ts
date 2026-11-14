@@ -13,12 +13,14 @@ import {
   type ParlementairePromptData,
 } from '../llm/prompts.js';
 import { defautsBio, signatureEditoriale } from '../llm/bio-parlementaire.js';
+import { chargerFonctionsHorsChambre, jourCivil } from './fonctions-hors-chambre.js';
 import { fetchWikipediaBio } from '../sources/wikipedia/client.js';
 import { fetchWikidataFacts } from '../sources/wikidata/client.js';
 import { DECLARATION_TYPES } from '../sources/hatvp/declarations-client.js';
 import { logger } from '../utils/logger.js';
 import { isRecord, readString, type JsonRecord } from '../utils/json.js';
 import { errorMessage } from '../utils/errors.js';
+import { dateFinMandatAN } from '../utils/date-fin-mandat-an.js';
 import type { EnrichmentResult, EnrichmentOptions } from './ia-enrichment.js';
 
 const prisma = new PrismaClient();
@@ -77,7 +79,7 @@ const INTERESTING_TYPE_ORGANES = new Set([
 // Extract mandats from sourceData
 // =============================================================================
 
-interface ExtractedMandat {
+export interface ExtractedMandat {
   typeOrgane: string;
   institution: string;
   qualite: string;
@@ -99,12 +101,14 @@ function extractMandatsAN(sourceData: unknown): ExtractedMandat[] {
     )
     .map((m) => {
       const typeOrgane = readString(m, 'typeOrgane') ?? '';
+      const qualite = readString(m.infosQualite, 'libQualite') || 'Membre';
+      const dateDebut = readString(m, 'dateDebut') ?? '';
       return {
         typeOrgane,
         institution: TYPE_ORGANE_LABELS[typeOrgane] || typeOrgane,
-        qualite: readString(m.infosQualite, 'libQualite') || 'Membre',
-        dateDebut: readString(m, 'dateDebut') ?? '',
-        dateFin: readString(m, 'dateFin') || null,
+        qualite,
+        dateDebut,
+        dateFin: dateFinMandatAN({ typeOrgane, qualite, dateDebut, dateFin: readString(m, 'dateFin') || null }),
         sourceUid: readString(m, 'uid') || undefined,
         organeRef: readString(m.organes, 'organeRef') || null,
       };
@@ -158,6 +162,9 @@ export async function enrichParlementairesIA(
 
   const mistral = new CLAIRMistralClient();
   const limiter = pLimit(concurrency);
+  // Postes ministériels et présidences, par fiche : dans le prompt et dans
+  // l'empreinte (quelques centaines de lignes, lues une fois).
+  const fonctionsHorsChambre = await chargerFonctionsHorsChambre(prisma);
 
   // Plus de dépendance web dure. Le socle sourcé de chaque fiche, c'est NOTRE dossier
   // parlementaire (mandats, votes, présence, HATVP), toujours présent. Wikipédia et
@@ -225,7 +232,11 @@ export async function enrichParlementairesIA(
       },
     });
     const perimes = fiches
-      .filter(f => f.iaContentHash !== signatureEditoriale({ ...f, groupe: f.groupe?.nom }))
+      .filter(f => f.iaContentHash !== signatureEditoriale({
+        ...f,
+        groupe: f.groupe?.nom,
+        fonctionsHorsChambre: fonctionsHorsChambre.get(f.id),
+      }))
       // Les plus anciennes d'abord ; départage par id pour un ordre stable.
       .sort((a, b) =>
         (a.iaGeneratedAt?.getTime() ?? 0) - (b.iaGeneratedAt?.getTime() ?? 0) || a.id.localeCompare(b.id));
@@ -299,6 +310,7 @@ export async function enrichParlementairesIA(
           const mandats = parl.chambre === 'senat'
             ? extractMandatsSenat(parl.sourceData)
             : extractMandatsAN(parl.sourceData);
+          const fonctions = fonctionsHorsChambre.get(parl.id) ?? [];
 
           // Empreinte des seuls faits que la fiche affirme (statut, chambre, groupe,
           // commission, mandats, version du prompt) : cf. llm/bio-parlementaire.ts.
@@ -313,6 +325,7 @@ export async function enrichParlementairesIA(
             commissionPermanente: parl.commissionPermanente,
             circonscription: parl.circonscription,
             mandatsParlementaires: parl.mandatsParlementaires,
+            fonctionsHorsChambre: fonctions,
           });
 
           if (!bypassHash && parl.iaContentHash === contentHash) {
@@ -386,12 +399,20 @@ export async function enrichParlementairesIA(
               anneeDebut: m.dateDebut.getUTCFullYear(),
               anneeFin: m.dateFin?.getUTCFullYear() ?? null,
             })),
-            mandats: mandats.map(m => ({
+            // Les fonctions gouvernementales du `source_data` sont génériques ou
+            // fausses : le prompt reçoit à la place `fonctionsHorsChambre`.
+            mandats: mandats.filter(m => !estFonctionGouvernementale(m)).map(m => ({
               typeOrgane: m.typeOrgane,
               institution: m.institution,
               qualite: m.qualite,
               dateDebut: m.dateDebut,
               dateFin: m.dateFin,
+            })),
+            fonctionsHorsChambre: fonctions.map(f => ({
+              libelle: f.libelle,
+              gouvernement: f.gouvernement,
+              dateDebut: jourCivil(f.dateDebut),
+              dateFin: f.dateFin ? jourCivil(f.dateFin) : null,
             })),
             lobbyingActions: lobbyActions.map(a => ({
               lobbyiste: a.lobbyiste.nom,
@@ -466,8 +487,11 @@ export async function enrichParlementairesIA(
             return;
           }
 
-          // Persist mandats to DB (upsert by sourceUid)
-          await persistMandats(parl.id, mandats);
+          // Persist mandats to DB (upsert by sourceUid). Pas pour le Sénat : ses
+          // fonctions datées viennent de `senat-fonctions.ts`. Les lignes
+          // `senat-<code>` d'ici n'avaient ni date ni matricule dans la clé, une
+          // seule existait par organe, réattribuée d'un sénateur à l'autre.
+          if (parl.chambre !== 'senat') await persistMandats(parl.id, mandats);
 
           // Save enrichment
           await prisma.parlementaire.update({
@@ -645,11 +669,41 @@ function consigneDeNouvelEssai(defauts: string[]): string {
 // Persist mandats to DB
 // =============================================================================
 
+/**
+ * Fonction gouvernementale ou présidentielle : servie par `postes_ministeriels`
+ * et `presidences` (worker gouvernements), jamais par `mandats`. Les mandats
+ * GOUVERNEMENT et PRESREP de la source sont faux (appartenances jamais closes
+ * dans Bayrou, présidence de Hollande ouverte sur l'organe de Sarkozy) et
+ * s'affichaient « en cours » sur les fiches. Les missions confiées à un
+ * parlementaire (MINISTERE « en mission ») restent des mandats.
+ */
+export function estFonctionGouvernementale(m: Pick<ExtractedMandat, 'typeOrgane' | 'qualite'>): boolean {
+  return m.typeOrgane === 'GOUVERNEMENT' || m.typeOrgane === 'PRESREP' || (m.typeOrgane === 'MINISTERE' && m.qualite !== 'en mission');
+}
+
+/**
+ * Mise à jour d'un mandat d'organe existant depuis le `source_data` de la fiche.
+ * Ce snapshot date du dernier passage du député dans l'AMO10 : un sortant y
+ * garde ses organes sans date de fin. Le recopier rouvrait ce que
+ * `cloreOrganesANHorsMandat` venait de clore (4 organes de F. Boccaletti,
+ * régénéré dans la nuit de son départ, le 10/11/2026). On ne fait donc
+ * qu'ajouter une date de fin, jamais en retirer une.
+ */
+export function miseAJourMandatEnrichi(m: ExtractedMandat): Prisma.MandatUpdateInput {
+  return {
+    institution: m.institution,
+    qualite: m.qualite,
+    ...(m.dateFin ? { dateFin: new Date(m.dateFin) } : {}),
+    organeRef: m.organeRef || undefined,
+  };
+}
+
 async function persistMandats(parlementaireId: string, mandats: ExtractedMandat[]): Promise<void> {
   if (mandats.length === 0) return;
 
   for (const m of mandats) {
     if (!m.sourceUid) continue;
+    if (estFonctionGouvernementale(m)) continue;
 
     try {
       await prisma.mandat.upsert({
@@ -664,12 +718,7 @@ async function persistMandats(parlementaireId: string, mandats: ExtractedMandat[
           sourceUid: m.sourceUid,
           organeRef: m.organeRef || null,
         },
-        update: {
-          institution: m.institution,
-          qualite: m.qualite,
-          dateFin: m.dateFin ? new Date(m.dateFin) : null,
-          organeRef: m.organeRef || undefined,
-        },
+        update: miseAJourMandatEnrichi(m),
       });
     } catch (error) {
       // Skip duplicate / invalid date errors silently

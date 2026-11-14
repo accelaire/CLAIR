@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { dateDuScrutinSenat, votesConcordentAvecTotaux, votesDuJsonScrutin } from './scrutins-client';
+import { dateDuScrutinSenat, typeVoteSenat, votesConcordentAvecTotaux, votesDuJsonScrutin } from './scrutins-client';
+import { delegantsDesScrutins, statutVotant } from './dosleg-client';
 
 describe('dateDuScrutinSenat', () => {
   it('lit la date en UTC, pas dans le fuseau local', () => {
@@ -67,5 +68,48 @@ describe('votesConcordentAvecTotaux', () => {
   it("refuse des votes qui ne retombent pas sur les totaux", () => {
     expect(votesConcordentAvecTotaux(votes, { nombrePour: 111, nombreContre: 198, nombreAbstention: 33 })).toBe(false);
     expect(votesConcordentAvecTotaux([], { nombrePour: 1, nombreContre: 0, nombreAbstention: 0 })).toBe(false);
+  });
+});
+
+describe('typeVoteSenat', () => {
+  const delegue = { parDelegation: true };
+  const groupe = { parDelegation: false };
+
+  it('marque solennel un scrutin avec au moins une délégation personnelle', () => {
+    expect(typeVoteSenat('2024-2025', [groupe, delegue, groupe])).toBe('solennel');
+  });
+
+  it('laisse ordinaire un scrutin voté par groupe', () => {
+    expect(typeVoteSenat('2024-2025', [groupe, groupe])).toBe('ordinaire');
+  });
+
+  it("ne déduit rien avant 2014, DOSLEG n'y publie aucune délégation", () => {
+    expect(typeVoteSenat('2013-2014', [delegue])).toBe('ordinaire');
+  });
+});
+
+describe('statutVotant', () => {
+  it('lit président de séance et membre du gouvernement', () => {
+    expect(statutVotant('8')).toBe('president_seance');
+    expect(statutVotant('9')).toBe('gouvernement');
+  });
+
+  it('laisse sans statut les positions systématiques et le code 0', () => {
+    expect(statutVotant('0')).toBeNull();
+    expect(statutVotant('3')).toBeNull();
+    expect(statutVotant(null)).toBeNull();
+  });
+});
+
+describe('delegantsDesScrutins', () => {
+  it("marque l'absent, nommé sur la ligne de celui qui vote pour lui", () => {
+    // Budget 2025 (2024-175) : « Pascal Allizard à Laurent Duplomb ».
+    const delegants = delegantsDesScrutins([
+      { sesann: 2024, scrnum: 175, senmatdel: null }, // Allizard, absent
+      { sesann: 2024, scrnum: 175, senmatdel: '14133K' }, // Duplomb, porte le vote d'Allizard
+      { sesann: 2024, scrnum: 176, senmatdel: null },
+    ]);
+    expect([...(delegants.get('2024-175') ?? [])]).toEqual(['14133K']);
+    expect(delegants.has('2024-176')).toBe(false);
   });
 });

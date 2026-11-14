@@ -9,7 +9,7 @@ const scrutins = new Map<string, Date>([
 describe('lastmodParlementaire', () => {
   it('retient la fiche IA quand elle est plus récente que le dernier scrutin', () => {
     const d = lastmodParlementaire(
-      { chambre: 'assemblee', iaGeneratedAt: new Date('2026-09-20T19:10:00Z') },
+      { chambre: 'assemblee', actif: true, iaGeneratedAt: new Date('2026-09-20T19:10:00Z') },
       scrutins,
     );
     expect(d?.toISOString()).toBe('2026-09-20T19:10:00.000Z');
@@ -17,7 +17,7 @@ describe('lastmodParlementaire', () => {
 
   it('retient le dernier scrutin de SA chambre quand la fiche IA est plus ancienne', () => {
     const d = lastmodParlementaire(
-      { chambre: 'senat', iaGeneratedAt: new Date('2026-03-01T00:00:00Z') },
+      { chambre: 'senat', actif: true, iaGeneratedAt: new Date('2026-03-01T00:00:00Z') },
       scrutins,
     );
     expect(d?.toISOString()).toBe('2026-07-23T21:57:18.000Z');
@@ -25,26 +25,38 @@ describe('lastmodParlementaire', () => {
 
   it("n'emprunte pas la date de l'autre chambre", () => {
     const d = lastmodParlementaire(
-      { chambre: 'senat', iaGeneratedAt: null },
+      { chambre: 'senat', actif: true, iaGeneratedAt: null },
       new Map([['assemblee', new Date('2026-09-01T00:00:00Z')]]),
     );
     expect(d).toBeNull();
   });
 
   it('se contente du dernier scrutin sans fiche IA', () => {
-    const d = lastmodParlementaire({ chambre: 'assemblee', iaGeneratedAt: null }, scrutins);
+    const d = lastmodParlementaire({ chambre: 'assemblee', actif: true, iaGeneratedAt: null }, scrutins);
     expect(d?.toISOString()).toBe('2026-07-23T22:27:48.000Z');
   });
 
   it("renvoie null plutôt qu'une date inventée quand rien n'est connu", () => {
-    expect(lastmodParlementaire({ chambre: 'assemblee', iaGeneratedAt: null }, new Map())).toBeNull();
+    expect(lastmodParlementaire({ chambre: 'assemblee', actif: true, iaGeneratedAt: null }, new Map())).toBeNull();
   });
 
   it('ignore une date invalide', () => {
     const d = lastmodParlementaire(
-      { chambre: 'assemblee', iaGeneratedAt: new Date('pas une date') },
+      { chambre: 'assemblee', actif: true, iaGeneratedAt: new Date('pas une date') },
       scrutins,
     );
     expect(d?.toISOString()).toBe('2026-07-23T22:27:48.000Z');
+  });
+
+  it("ignore le dernier scrutin pour un ancien : sa fiche n'en dépend plus", () => {
+    const d = lastmodParlementaire(
+      { chambre: 'assemblee', actif: false, iaGeneratedAt: new Date('2026-05-02T03:00:00Z') },
+      scrutins,
+    );
+    expect(d?.toISOString()).toBe('2026-05-02T03:00:00.000Z');
+  });
+
+  it("ne date pas un ancien sans fiche IA plutôt que de lui prêter le dernier scrutin", () => {
+    expect(lastmodParlementaire({ chambre: 'senat', actif: false, iaGeneratedAt: null }, scrutins)).toBeNull();
   });
 });

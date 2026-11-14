@@ -160,26 +160,71 @@ export function scrutinDeLaMiseAuxVoix(
  * no 222… » — et c'est la discussion qui a précédé la série qui les porte
  * tous. Sa fenêtre remonte donc à celle du vote précédent, de proche en
  * proche jusqu'au dernier échange.
+ *
+ * Le vote précédent n'est pas toujours un scrutin public. Entre deux d'entre
+ * eux, la séance examine souvent d'autres amendements, votés à main levée et
+ * clos par la seule ligne de leur sort (`sortsDAmendements`). Quand
+ * l'amendement mis aux voix est nommé dans sa fenêtre, son débat commence
+ * donc après le dernier sort qui précède cette première mention : le 9054
+ * reprenait sinon la défense des amendements 2206 et 831, rejetés à main
+ * levée avant que le 1536 soit seulement appelé. Un sort tombé APRÈS la
+ * première mention ne borne rien — c'est la discussion commune, où chaque
+ * amendement est défendu avant que le premier soit voté, et où le débat est
+ * bien partagé. Un amendement que sa fenêtre ne nomme pas garde la fenêtre
+ * entière : sans savoir où commence son débat, on ne peut pas le resserrer.
  */
 export function fenetresDeDebat(
   votes: VoteAnnonceSyceron[],
   interventions: InterventionARattacher[] = [],
+  sortsDAmendements: number[] = [],
 ): { vote: VoteAnnonceSyceron; debut: number; fin: number }[] {
   const ordonnes = [...votes].sort((a, b) => a.ordreAbsolu - b.ordreAbsolu);
   const aParle = (debut: number, fin: number): boolean =>
     interventions.some((i) => i.ordreAbsolu > debut && i.ordreAbsolu <= fin);
 
   let votePrecedent = 0;
-  let debutCourant = 0;
+  let debutDeLaSerie = 0;
 
   return ordonnes.map((vote) => {
     // Rien n'a été dit depuis le vote précédent : ce vote n'a pas de débat
     // propre, il reprend celui de la série à laquelle il appartient.
     const propre = interventions.length === 0 || aParle(votePrecedent, vote.ordreAbsolu);
-    if (propre) debutCourant = votePrecedent;
+    if (propre) debutDeLaSerie = votePrecedent;
     votePrecedent = vote.ordreAbsolu;
-    return { vote, debut: debutCourant, fin: vote.ordreAbsolu };
+    // Chaque vote se resserre depuis le début de la série, jamais depuis la
+    // fenêtre resserrée d'un autre : l'article mis aux voix juste après un
+    // amendement garde toute sa discussion.
+    const debut = Math.max(
+      debutDeLaSerie,
+      finDesAmendementsPrecedents(vote, debutDeLaSerie, interventions, sortsDAmendements),
+    );
+    return { vote, debut, fin: vote.ordreAbsolu };
   });
+}
+
+/**
+ * Le rang du dernier sort d'amendement tombé, depuis `depuis`, avant que
+ * l'amendement mis aux voix soit nommé ; 0 s'il n'y en a pas, ou si ce vote ne
+ * porte pas sur un amendement nommé dans sa fenêtre.
+ */
+function finDesAmendementsPrecedents(
+  vote: VoteAnnonceSyceron,
+  depuis: number,
+  interventions: InterventionARattacher[],
+  sortsDAmendements: number[],
+): number {
+  if (vote.cible !== 'amendement' && vote.cible !== 'sous-amendement') return 0;
+  const premiereMention = interventions.find(
+    (i) =>
+      i.ordreAbsolu > depuis &&
+      i.ordreAbsolu <= vote.ordreAbsolu &&
+      i.amendementsVises.some((a) => vote.numeros.includes(a)),
+  );
+  if (!premiereMention) return 0;
+  return sortsDAmendements.reduce(
+    (borne, rang) => (rang > depuis && rang < premiereMention.ordreAbsolu ? Math.max(borne, rang) : borne),
+    0,
+  );
 }
 
 /**
@@ -348,7 +393,7 @@ async function traiterSeance(
 
   const liens: { interventionId: string; scrutinId: string; via: string }[] = [];
 
-  for (const fenetre of fenetresDeDebat(seance.votes, interventions)) {
+  for (const fenetre of fenetresDeDebat(seance.votes, interventions, seance.sortsDAmendements)) {
     const scrutin = scrutinDeLaMiseAuxVoix(fenetre.vote, scrutins);
     if (!scrutin) {
       // Distinguer les deux échecs : aucun scrutin ne porte ces chiffres, ou

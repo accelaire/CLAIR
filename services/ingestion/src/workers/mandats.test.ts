@@ -25,6 +25,7 @@ import {
   isLegislatureCourante,
   deriveLegislatureCourante,
   LEGISLATURE_AN_COURANTE,
+  LEGISLATURE_FIN,
   upsertMandatParlementaire,
   type MandatContext,
 } from './mandats';
@@ -578,6 +579,34 @@ describe('upsertMandatParlementaire — AN, député élu sénateur', () => {
     expect(rows.find((r) => r.chambre === 'assemblee')!.dateFin?.toISOString()).toBe(
       '2026-06-15T00:00:00.000Z',
     );
+  });
+
+  it('une fin publiée postérieure à l’entrée au Sénat fait foi (homonyme fusionné)', async () => {
+    const { prisma, rows } = makeMockPrisma([
+      { personneId: 'P', chambre: 'senat', mandature: 2017, dateDebut: new Date('2017-10-02T00:00:00Z') },
+    ]);
+    await upsertMandatParlementaire(prisma, {
+      ...inputAN,
+      ctx: {
+        legislature: 15,
+        mandature: null,
+        serie: null,
+        dateDebut: new Date('2017-06-21T00:00:00Z'),
+        dateFin: new Date('2020-08-02T00:00:00Z'),
+      },
+    });
+    expect(rows.find((r) => r.chambre === 'assemblee')!.dateFin?.toISOString()).toBe('2020-08-02T00:00:00.000Z');
+  });
+
+  it('borne la fin de législature posée par défaut', async () => {
+    const { prisma, rows } = makeMockPrisma([
+      { personneId: 'P', chambre: 'senat', mandature: 2020, dateDebut: new Date('2020-10-01T00:00:00Z') },
+    ]);
+    await upsertMandatParlementaire(prisma, {
+      ...inputAN,
+      ctx: { legislature: 15, mandature: null, serie: null, dateDebut: new Date('2017-06-21T00:00:00Z'), dateFin: LEGISLATURE_FIN[15]! },
+    });
+    expect(rows.find((r) => r.chambre === 'assemblee')!.dateFin?.toISOString()).toBe('2020-09-30T00:00:00.000Z');
   });
 
   it("un mandat de sénateur antérieur (sénateur devenu député) ne borne rien", async () => {

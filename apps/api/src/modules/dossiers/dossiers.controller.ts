@@ -11,7 +11,9 @@ import { ApiError } from '../../utils/errors';
 import { buildMultiFieldSearchCondition } from '../../utils/search';
 import { buildJournalOfficielUrl } from '../../utils/journal-officiel';
 import { METADONNEES_AMENDEMENT_SELECT, avecNombreDeSousAmendements } from '../../utils/amendements';
+import { RENVOIS_SELECT, avecRenvois } from '../../utils/renvois-legi';
 import { GROUPE_DE_L_AMENDEMENT } from '../../utils/groupe-epoque';
+import { GouvernementsService } from '../gouvernements/gouvernements.service';
 
 const CACHE_TTL_1H = 3600;
 
@@ -25,11 +27,13 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       tags: ['Dossiers'],
       summary: 'Liste des dossiers législatifs',
-      description: 'Retourne la liste paginée des dossiers législatifs avec filtres',
+      description:
+        'Retourne la liste paginée des dossiers législatifs avec filtres. `gouvernement=projets` ne garde que les projets ' +
+        'de loi du Gouvernement, `gouvernement=49-3` les textes sur lesquels il a engagé sa responsabilité (depuis juin 2017).',
     },
     handler: async (request, _reply) => {
       const query = dossiersListQuerySchema.parse(request.query);
-      const { page, limit, etat, chambre, procedureCode, procedureLibelle, search, dateFrom, dateTo, sort, order } = query;
+      const { page, limit, etat, chambre, procedureCode, procedureLibelle, search, dateFrom, dateTo, sort, order, gouvernement } = query;
 
       const cacheKey = `dossiers:list:${JSON.stringify(query)}`;
       const cached = await fastify.redis.get(cacheKey);
@@ -42,6 +46,8 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
       else if (chambre === 'assemblee') where.legislature = { gt: 0 };
       if (procedureCode) where.procedureCode = procedureCode;
       if (procedureLibelle) where.procedureLibelle = procedureLibelle;
+      if (gouvernement === 'projets') where.projetLoi = { isNot: null };
+      else if (gouvernement === '49-3') where.engagementsVisant = { some: {} };
       if (search) {
         Object.assign(where, buildMultiFieldSearchCondition(['titre', 'titreCourt'], search));
       }
@@ -51,8 +57,10 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
         if (dateTo) where.dateDepot.lte = dateTo;
       }
 
-      // Only include dossiers that have at least one scrutin
-      where.scrutins = { some: {} };
+      // Only include dossiers that have at least one scrutin — sauf pour les
+      // textes du Gouvernement : un texte passé au 49.3 est adopté sans vote, et
+      // un projet jamais examiné n'en a aucun ; les écarter viderait le filtre.
+      if (!gouvernement) where.scrutins = { some: {} };
 
       const skip = (page - 1) * limit;
 
@@ -363,7 +371,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
               numero: true,
               auteurLibelle: true,
               articleVise: true,
-              dispositif: true,
+              ...RENVOIS_SELECT,
               exposeSommaire: true,
               texteRef: true,
               sort: true,
@@ -514,7 +522,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
 
       const result = {
         ...dossier,
-        amendements: await avecNombreDeSousAmendements(fastify.prisma, dossier.amendements),
+        amendements: await avecNombreDeSousAmendements(fastify.prisma, dossier.amendements.map(avecRenvois)),
         sourceData: undefined,
         // Aplati pour éviter au client de traverser la table de liaison.
         // Le rang est explicite : un tri alphabétique sur `role` placerait
@@ -551,6 +559,10 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
         })),
         stats,
         naturesCount,
+        // Projet de loi du Gouvernement (signataires, stade) et recours au 49.3
+        // sur ce texte, avec les motions de censure qu'ils ont suscitées ; sur
+        // un dossier d'engagement, le texte visé. null pour les autres dossiers.
+        gouvernement: await new GouvernementsService(fastify.prisma, fastify.redis).contexteDesDossiers([dossier.id]),
       };
 
       await fastify.redis.setex(cacheKey, CACHE_TTL_1H, JSON.stringify(result));
@@ -759,7 +771,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
             numero: true,
             auteurLibelle: true,
             articleVise: true,
-            dispositif: true,
+            ...RENVOIS_SELECT,
             exposeSommaire: true,
             texteRef: true,
             sort: true,
@@ -782,7 +794,7 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
       const totalPages = Math.ceil(total / limit);
 
       const result = {
-        data: await avecNombreDeSousAmendements(fastify.prisma, amendements),
+        data: await avecNombreDeSousAmendements(fastify.prisma, amendements.map(avecRenvois)),
         meta: {
           total,
           page,

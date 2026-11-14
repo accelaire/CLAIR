@@ -6,7 +6,9 @@ import { cleMotion, dossierMotionSansReferences } from '../utils/motions-censure
 import { PrismaClient } from '@prisma/client';
 import { LEGISLATURE_AN_COURANTE } from '../workers/mandats';
 import { ORGANES_AN_HORS_MANDAT } from '../workers/mandats-an-sortants';
+import { VERSION_DETECTION } from '../utils/version-renvois-legi';
 import { CTE_LEGISLATURES_DOSSIER_SQL, CTE_TEXTE_DU_DOSSIER_SQL, dossierValantPourSql } from '../utils/legislatures-dossier-sql';
+import { QUALITE_GOUVERNEMENT_SQL } from '../utils/interventions';
 
 // Les contrôles sont des requêtes texte : les fragments SQL partagés y entrent
 // tels quels (legislatures-dossier-sql.ts, sans import de Prisma).
@@ -34,6 +36,17 @@ const SCRUTINS_PERIMETRE_LIE = `(s.chambre = 'senat' OR s.legislature = ${LEGISL
 // (`SENAT_SESSION_MIN`, cf. workers/mandats), donc leur taux n'a pas besoin de ce
 // périmètre — à surveiller au premier run couvrant les sessions antérieures à 2020.
 const SENAT_SESSION_AMENDEMENTS_MIN = '2024';
+
+/**
+ * Un nom comparé comme le fait `normaliserNom` (gouvernements-client) : sans
+ * casse, accents ni ponctuation. Sans l'extension `unaccent`, absente des bases
+ * locales : les lettres accentuées sont ramenées à la main.
+ */
+function normaliserSql(colonne: string): string {
+  const accents = 'ÀÁÂÃÄÅÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜÝàáâãäåçèéêëìíîïñòóôõöùúûüýÿ';
+  const sansAccents = 'AAAAAACEEEEIIIINOOOOOUUUUYaaaaaaceeeeiiiinooooouuuuyy';
+  return `btrim(regexp_replace(lower(translate(${colonne}, '${accents}', '${sansAccents}')), '[^a-z0-9]+', ' ', 'g'))`;
+}
 
 // Périmètre des vérifications qui comparent les AMENDEMENTS liés à un scrutin.
 // Au Sénat, il faut en plus borner aux sessions dont les amendements sont ingérés :
@@ -580,6 +593,341 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
       WHERE sortant_declare = true AND personne_id IS NULL`,
   },
 
+  // ---- Gouvernements, postes ministériels, présidences (AMO30) ----
+  // Les dates sont stockées telles que l'AN les publie ; ces contrôles encodent
+  // la sémantique réelle (jour de passation, affaires courantes) plutôt que des
+  // tolérances. Voir SPEC-GOUVERNEMENT.md, §2 et §6.
+  gouvernements_chevauchement: {
+    type: 'invariant',
+    label: 'Gouvernements qui se chevauchent au-delà du jour de passation',
+    min: 0,
+    max: 0,
+    // Fillon 1 finit le jour où Fillon 2 commence : permis, jamais plus.
+    query: `SELECT COUNT(*)::int AS value FROM gouvernements a JOIN gouvernements b
+      ON (a.date_debut, a.id) < (b.date_debut, b.id)
+      AND coalesce(a.date_fin, 'infinity'::date) > b.date_debut`,
+  },
+  gouvernements_en_cours: {
+    type: 'invariant',
+    label: 'Écart à un seul gouvernement en cours',
+    min: 0,
+    max: 0,
+    query: `SELECT abs(COUNT(*) FILTER (WHERE date_fin IS NULL) - 1)::int AS value FROM gouvernements`,
+  },
+  postes_hors_gouvernement: {
+    type: 'invariant',
+    label: 'Postes ministériels hors des dates de leur gouvernement',
+    min: 0,
+    max: 0,
+    // Un poste commence dans son gouvernement. Il peut finir après lui, au plus
+    // tard le jour où commence le suivant : les sortants expédient les affaires
+    // courantes (31 postes de Valls 1 finissent le 26/08/2014, Valls 1 le 25).
+    // Un poste ouvert dans un gouvernement clos est une fin manquante.
+    query: `WITH g AS (
+        SELECT id, date_debut, date_fin, lead(date_debut) OVER (ORDER BY date_debut, id) AS suivant
+        FROM gouvernements)
+      SELECT COUNT(*)::int AS value FROM postes_ministeriels p JOIN g ON g.id = p.gouvernement_id
+      WHERE p.date_debut < g.date_debut
+         OR p.date_debut > coalesce(g.date_fin, 'infinity'::date)
+         OR (g.date_fin IS NOT NULL AND (p.date_fin IS NULL OR p.date_fin > greatest(g.date_fin, g.suivant)))`,
+  },
+  postes_dates_inversees: {
+    type: 'invariant',
+    label: 'Postes ministériels qui finissent avant de commencer',
+    min: 0,
+    max: 0,
+    query: `SELECT COUNT(*)::int AS value FROM postes_ministeriels WHERE date_fin < date_debut`,
+  },
+  gouvernements_premier_ministre: {
+    type: 'invariant',
+    label: 'Gouvernements sans exactement un Premier ministre à leurs dates',
+    min: 0,
+    max: 0,
+    // Le Premier ministre est le poste de rang protocolaire 1 ; la source lui
+    // donne exactement les dates du gouvernement (17 sur 17 au 21/10/2026).
+    query: `SELECT COUNT(*)::int AS value FROM gouvernements g
+      WHERE (SELECT COUNT(*) FROM postes_ministeriels p
+             WHERE p.gouvernement_id = g.id AND p.rang_protocolaire = 1
+               AND p.date_debut = g.date_debut AND p.date_fin IS NOT DISTINCT FROM g.date_fin) <> 1`,
+  },
+  membres_sans_poste: {
+    type: 'invariant',
+    label: 'Membres du gouvernement sans poste',
+    min: 0,
+    max: 0,
+    query: `SELECT COUNT(*)::int AS value FROM membres_gouvernement m
+      WHERE NOT EXISTS (SELECT 1 FROM postes_ministeriels p WHERE p.membre_id = m.id)`,
+  },
+  membres_liaison_incoherente: {
+    type: 'invariant',
+    label: 'Membres du gouvernement rattachés à une fiche qui ne leur correspond plus',
+    min: 0,
+    max: 0,
+    // Revérifie chaque rattachement selon la règle qui l'a posé : la fiche
+    // porte toujours le PA, ou l'identifiant, ou le même état civil (nom et
+    // prénom sans casse, accents ni tirets, même date de naissance).
+    query: `WITH n AS (
+        SELECT m.liaison, m.acteur_uid, p.id AS fiche, p.source_id,
+               ${normaliserSql('m.nom')} AS m_nom, ${normaliserSql('m.prenom')} AS m_prenom,
+               to_char(m.date_naissance, 'YYYY-MM-DD') AS m_naissance,
+               ${normaliserSql('p.nom')} AS p_nom, ${normaliserSql('p.prenom')} AS p_prenom,
+               to_char(p.date_naissance, 'YYYY-MM-DD') AS p_naissance
+        FROM membres_gouvernement m LEFT JOIN parlementaires p ON p.id = m.parlementaire_id)
+      SELECT COUNT(*)::int AS value FROM n
+      WHERE (liaison IS NULL) <> (fiche IS NULL)
+         OR (liaison = 'source_id' AND source_id IS DISTINCT FROM acteur_uid)
+         OR (liaison = 'identifiant' AND NOT EXISTS (
+               SELECT 1 FROM parlementaires_identifiants i
+               WHERE i.chambre = 'assemblee' AND i.source_id = n.acteur_uid AND i.personne_id = n.fiche))
+         OR (liaison = 'etat_civil' AND (m_nom <> p_nom OR m_prenom <> p_prenom
+               OR m_naissance IS NULL OR m_naissance IS DISTINCT FROM p_naissance))
+         OR liaison NOT IN ('source_id', 'identifiant', 'etat_civil')`,
+  },
+  mandats_gouvernement_residuels: {
+    type: 'invariant',
+    label: 'Fonctions gouvernementales encore dans mandats',
+    min: 0,
+    max: 0,
+    // Les fonctions gouvernementales viennent de postes_ministeriels et
+    // presidences. Les mandats GOUVERNEMENT et PRESREP de la source sont faux
+    // (appartenances jamais closes, présidence sur l'organe d'un
+    // prédécesseur) et ne doivent plus être écrits. Les missions confiées à
+    // des parlementaires (MINISTERE « en mission ») restent dans mandats.
+    query: `SELECT COUNT(*)::int AS value FROM mandats
+      WHERE type_organe IN ('GOUVERNEMENT', 'PRESREP')
+         OR (type_organe = 'MINISTERE' AND qualite IS DISTINCT FROM 'en mission')`,
+  },
+  reponses_gouvernement_en_questions: {
+    type: 'invariant',
+    label: 'Réponses de membres du Gouvernement typées « question »',
+    min: 0,
+    max: 0,
+    // Une question prononcée par un membre du Gouvernement est sa réponse
+    // (typeSelonOrateur) ; typée « question », elle entre dans le compteur de
+    // questions posées de sa fiche. 12 194 lignes du Sénat en prod le 24/10/2026.
+    query: `SELECT COUNT(*)::int AS value FROM interventions
+      WHERE type = 'question' AND orateur_qualite ~* '${QUALITE_GOUVERNEMENT_SQL.replace(/'/g, "''")}'`,
+  },
+  votes_pendant_poste_ministeriel: {
+    type: 'invariant',
+    label: 'Votes exprimés pendant un poste ministériel',
+    min: 0,
+    max: 0,
+    // Un membre du Gouvernement ne vote pas : le calcul de la présence retire
+    // ces scrutins de ses dénominateurs. Un vote ici trahit une fiche mal liée
+    // ou des dates de poste fausses (0 sur 43 754 scrutins en prod le 24/10/2026).
+    query: `SELECT COUNT(*)::int AS value FROM votes v
+      JOIN scrutins s ON s.id = v.scrutin_id
+      JOIN membres_gouvernement mg ON mg.parlementaire_id = v.parlementaire_id
+      JOIN postes_ministeriels pm ON pm.membre_id = mg.id
+      WHERE v.position <> 'absent'
+        AND s.date::date >= pm.date_debut
+        AND (pm.date_fin IS NULL OR s.date::date <= pm.date_fin)`,
+  },
+  presidences_chevauchement: {
+    type: 'invariant',
+    label: 'Présidences qui se chevauchent au-delà du jour de passation',
+    min: 0,
+    max: 0,
+    query: `SELECT COUNT(*)::int AS value FROM presidences a JOIN presidences b
+      ON (a.date_debut, a.id) < (b.date_debut, b.id)
+      AND coalesce(a.date_fin, 'infinity'::date) > b.date_debut`,
+  },
+  presidences_en_cours: {
+    type: 'invariant',
+    label: 'Écart à une seule présidence en cours',
+    min: 0,
+    max: 0,
+    query: `SELECT abs(COUNT(*) FILTER (WHERE date_fin IS NULL) - 1)::int AS value FROM presidences`,
+  },
+  postes_sans_domaine: {
+    type: 'invariant',
+    label: 'Postes ministériels sans domaine (intitulé absent de la table)',
+    min: 0,
+    max: 0,
+    // Un remaniement peut créer un intitulé inédit : la synchro l'écrit sans
+    // domaine, et il faut l'ajouter à domaines-ministeriels.ts.
+    query: `SELECT COUNT(*)::int AS value FROM postes_ministeriels WHERE domaine IS NULL`,
+  },
+  presidences_chambre_chevauchement: {
+    type: 'invariant',
+    label: 'Présidences d’une même chambre qui se chevauchent au-delà du jour de passation',
+    min: 0,
+    max: 0,
+    query: `SELECT COUNT(*)::int AS value FROM presidences_chambre a JOIN presidences_chambre b
+      ON a.chambre = b.chambre
+      AND (a.date_debut, a.id) < (b.date_debut, b.id)
+      AND coalesce(a.date_fin, 'infinity'::date) > b.date_debut`,
+  },
+  presidences_chambre_en_cours: {
+    type: 'invariant',
+    label: 'Écart à une seule présidence en cours par chambre',
+    min: 0,
+    max: 0,
+    // Entre une dissolution et l'élection du nouveau président (juin-juillet
+    // 2024), l'Assemblée n'a pas de président : l'écart vaut alors 1.
+    query: `SELECT coalesce(sum(abs(n - 1)), 2)::int AS value FROM (
+      SELECT c.chambre, COUNT(pc.id) FILTER (WHERE pc.date_fin IS NULL) AS n
+      FROM (VALUES ('assemblee'), ('senat')) c(chambre)
+      LEFT JOIN presidences_chambre pc ON pc.chambre = c.chambre
+      GROUP BY c.chambre) x`,
+  },
+  presidences_senat_contre_bureau: {
+    type: 'invariant',
+    label: 'Présidences du Sénat et lignes du bureau (`mandats`) qui ne concordent pas',
+    min: 0,
+    max: 0,
+    // Les deux viennent de `senbur`, écrites par senat-fonctions dans la même
+    // transaction, sous le même uid (`SENBUR-…`) : la table pour les deux
+    // chambres, la ligne de bureau pour la fiche. Elles ne divergent que si
+    // l'une cesse d'être écrite.
+    query: `SELECT COUNT(*)::int AS value FROM (
+      SELECT pc.uid FROM presidences_chambre pc
+      WHERE pc.chambre = 'senat' AND pc.parlementaire_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM mandats m
+          WHERE m.source_uid = pc.uid AND m.parlementaire_id = pc.parlementaire_id
+            AND m.date_debut::date = pc.date_debut
+            AND m.date_fin::date IS NOT DISTINCT FROM pc.date_fin)
+      UNION ALL
+      SELECT m.source_uid FROM mandats m
+      WHERE m.source_uid LIKE 'SENBUR-%' AND m.qualite LIKE 'Présid% du Sénat'
+        AND NOT EXISTS (
+          SELECT 1 FROM presidences_chambre pc
+          WHERE pc.uid = m.source_uid AND pc.parlementaire_id = m.parlementaire_id)) x`,
+  },
+  bureau_age_ouvert: {
+    type: 'invariant',
+    label: 'Fonctions du bureau d’âge de l’Assemblée sans date de fin',
+    min: 0,
+    max: 0,
+    // Le bureau d'âge ne siège que jusqu'à l'élection du président, le jour
+    // même. L'AMO10 a publié celui du 18/07/2024 sans date de fin : Jean-Pierre
+    // Gonzalez restait « Président d'âge » en cours deux ans plus tard.
+    query: `SELECT COUNT(*)::int AS value FROM mandats
+      WHERE type_organe = 'BUREAU' AND qualite ~* 'd''âge' AND date_fin IS NULL`,
+  },
+  // --- Bilan des gouvernements (SPEC-BILAN-MINISTRE.md, §9) ------------------
+  projets_loi_manquants: {
+    type: 'invariant',
+    label: 'Projets de loi déposés depuis juin 2017 absents du bilan',
+    min: 0,
+    max: 0,
+    // Procédures qui ne sont que des projets : chacune doit avoir sa ligne.
+    query: `SELECT COUNT(*)::int AS value FROM dossiers_legislatifs d
+      WHERE d.uid LIKE 'DL%' AND d.legislature >= 15
+        AND d.procedure_code IN ('1', '3', '4', '6', '21', '33')
+        AND d.date_depot >= '2017-06-21'
+        AND NOT EXISTS (SELECT 1 FROM projets_loi p WHERE p.dossier_id = d.id)`,
+  },
+  projets_loi_sans_signataire: {
+    type: 'invariant',
+    label: 'Projets de loi sans aucun signataire rattaché à un poste',
+    min: 0,
+    max: 0,
+    query: `SELECT COUNT(*)::int AS value FROM projets_loi p
+      WHERE NOT EXISTS (SELECT 1 FROM projets_loi_signataires s WHERE s.projet_id = p.id)`,
+  },
+  projets_loi_hors_poste: {
+    type: 'invariant',
+    label: 'Signataires dont le poste ne couvre pas la date de dépôt, ou projet hors de son gouvernement',
+    min: 0,
+    max: 0,
+    query: `SELECT (
+      (SELECT COUNT(*) FROM projets_loi_signataires s
+        JOIN projets_loi p ON p.id = s.projet_id
+        JOIN postes_ministeriels ps ON ps.id = s.poste_id
+        WHERE p.date_depot < ps.date_debut OR (ps.date_fin IS NOT NULL AND p.date_depot > ps.date_fin))
+      + (SELECT COUNT(*) FROM projets_loi p JOIN gouvernements g ON g.id = p.gouvernement_id
+        WHERE p.date_depot < g.date_debut OR (g.date_fin IS NOT NULL AND p.date_depot > g.date_fin)))::int AS value`,
+  },
+  projets_ordonnance_mal_classes: {
+    type: 'invariant',
+    label: 'Projets dont le titre ratifie une ordonnance, classés comme textes ordinaires',
+    min: 0,
+    max: 0,
+    // Le titre court ne le dit pas toujours (« Code de la commande publique ») :
+    // la nature se lit sur le titre long ou le chemin AN. Un projet classé
+    // ordinaire alors que son titre ou son chemin parle de ratifier une
+    // ordonnance gonflerait le chiffre de tête du gouvernement qui l'a déposé.
+    query: `SELECT COUNT(*)::int AS value FROM projets_loi p
+      JOIN dossiers_legislatifs d ON d.id = p.dossier_id
+      WHERE p.nature IN ('ordinaire', 'organique', 'constitutionnelle')
+        AND coalesce(d.titre, '') || ' ' || coalesce(d.source_data->'titreDossier'->>'titreChemin', '')
+            ~* 'ratifi[^.]*ordonnance|ordonnance[^.]*ratifi|ratification_ordonnance'`,
+  },
+  engagements_hors_premier_ministre: {
+    type: 'invariant',
+    label: 'Recours au 49.3 sans poste de Premier ministre à leur date',
+    min: 0,
+    max: 0,
+    query: `SELECT COUNT(*)::int AS value FROM engagements_responsabilite e
+      JOIN postes_ministeriels p ON p.id = e.poste_id
+      WHERE p.rang_protocolaire <> 1 OR e.date < p.date_debut OR (p.date_fin IS NOT NULL AND e.date > p.date_fin)`,
+  },
+  engagements_sans_texte: {
+    type: 'invariant',
+    label: 'Recours au 49.3 sans le dossier du texte visé',
+    min: 0,
+    max: 0,
+    // 32 sur 32 le 11/11/2026, la réforme des retraites comprise (sa référence
+    // diffère d'un suffixe de document entre les deux dossiers).
+    query: `SELECT COUNT(*)::int AS value FROM engagements_responsabilite WHERE dossier_texte_id IS NULL`,
+  },
+  motions_censure_manquantes: {
+    type: 'invariant',
+    label: 'Motions de censure votées à l’Assemblée depuis juin 2017 absentes du bilan',
+    min: 0,
+    max: 0,
+    // Chaque motion tombe dans un gouvernement (61 sur 61 le 10/11/2026) et a
+    // un alinéa lisible dans son titre.
+    query: `SELECT COUNT(*)::int AS value FROM scrutins s
+      WHERE s.chambre = 'assemblee' AND s.titre ~* 'motion de censure' AND s.date >= '2017-06-21'
+        AND NOT EXISTS (SELECT 1 FROM motions_censure m WHERE m.scrutin_id = s.id)`,
+  },
+  motions_49_3_orphelines: {
+    type: 'invariant',
+    label: 'Motions de l’alinéa 3 sans aucun recours au 49.3 dans les 10 jours qui précèdent',
+    min: 0,
+    max: 0,
+    // Les trois motions du 24/10/2022 restent sans engagement (PLF et PLFSS
+    // 2023 votés le même jour, sans voteRefs en 16e) mais ont deux candidats :
+    // ce contrôle ne compte que les motions qu'aucun engagement n'explique.
+    query: `SELECT COUNT(*)::int AS value FROM motions_censure m
+      JOIN scrutins s ON s.id = m.scrutin_id
+      WHERE m.alinea = 3 AND m.engagement_id IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM engagements_responsabilite e
+          WHERE e.date BETWEEN s.date::date - 10 AND s.date::date)`,
+  },
+  reponses_gouvernement_non_rattachees: {
+    type: 'invariant',
+    label: 'Chambres dont plus de 1 % des réponses du Gouvernement n’ont pas de poste',
+    min: 0,
+    max: 0,
+    // Restent non rattachées : les réponses pendant les affaires courantes,
+    // après la date de fin publiée du poste (Laurent Saint-Martin le 18/12/2024).
+    query: `SELECT COUNT(*)::int AS value FROM (
+      SELECT i.chambre
+      FROM interventions i
+      LEFT JOIN reponses_gouvernement r ON r.intervention_id = i.id
+      WHERE i.type = 'reponse_gouvernement'
+      GROUP BY i.chambre
+      HAVING COUNT(*) FILTER (WHERE r.id IS NULL) > 0.01 * COUNT(*)) x`,
+  },
+  gouvernements_hors_presidence: {
+    type: 'invariant',
+    label: 'Gouvernements qui ne commencent pendant aucune présidence',
+    min: 0,
+    max: 0,
+    // Seul le début compte : un gouvernement peut enjamber une passation
+    // (Cazeneuve finit le 17/05/2017, Macron entre en fonction le 14).
+    query: `SELECT COUNT(*)::int AS value FROM gouvernements g
+      WHERE NOT EXISTS (SELECT 1 FROM presidences pr
+                        WHERE g.date_debut >= pr.date_debut
+                          AND g.date_debut <= coalesce(pr.date_fin, 'infinity'::date))`,
+  },
+
   // ---- Seuils quantitatifs (minimums) ----
   parlementaires_count: {
     type: 'threshold',
@@ -829,6 +1177,69 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     min: 35,
     query: `SELECT COUNT(*)::int AS value FROM commissions WHERE chambre = 'senat'`,
   },
+  fiches_deux_chambres_sans_identifiant: {
+    type: 'invariant',
+    label: "Fiches portant des mandats de l'autre chambre sans son identifiant (homonymes fusionnés)",
+    min: 0,
+    max: 0,
+    // Un élu passé d'une chambre à l'autre garde l'identifiant de celle qu'il a
+    // quittée (parlementaires_identifiants). Une fiche qui porte des mandats de
+    // l'autre chambre SANS cet identifiant est suspecte : avant le rapprochement
+    // borné à la chambre, deux homonymes y étaient fusionnés (Jean-Louis Masson,
+    // député du Var, portait les mandats et votes du sénateur de Moselle).
+    // Séparer (separer-homonyme) ou lier (lier-identifiant).
+    query: `SELECT COUNT(DISTINCT p.id)::int AS value
+      FROM parlementaires p
+      JOIN mandats_parlementaires m ON m.personne_id = p.id AND m.chambre <> p.chambre
+      WHERE NOT EXISTS (
+        SELECT 1 FROM parlementaires_identifiants i
+        WHERE i.personne_id = p.id AND i.chambre = m.chambre)`,
+  },
+  senat_president_en_fonction: {
+    type: 'threshold',
+    label: 'Président du Sénat en fonction (bureau, export_sens)',
+    min: 1,
+    max: 1,
+    // Avant les fonctions datées (ticket #118), la présidence n'apparaissait
+    // nulle part : un seul titulaire, jamais zéro, jamais deux.
+    query: `SELECT COUNT(*)::int AS value FROM mandats
+      WHERE source_uid LIKE 'SENBUR-%' AND date_fin IS NULL AND qualite LIKE 'Présid% du Sénat'`,
+  },
+  senat_scrutins_solennels: {
+    type: 'threshold',
+    label: 'Scrutins solennels du Sénat (votes personnels, déduits des délégations)',
+    // DOSLEG ne publie pas le type d'un scrutin : un scrutin avec des délégations
+    // personnelles est un vote personnel (solennel ou à la tribune), à partir de
+    // 2014-2015. 36 sur les sessions 2021 à 2025 le 01/11/2026. Zéro voudrait
+    // dire que la lecture des délégations a cassé, et la présence des sénateurs
+    // avec elle (#108).
+    min: 30,
+    query: `SELECT COUNT(*)::int AS value FROM scrutins WHERE chambre = 'senat' AND type_vote = 'solennel'`,
+  },
+  senat_commissions_contre_annuaire: {
+    type: 'threshold',
+    label: "Concordance des commissions Sénat en cours avec l'annuaire du jour (%)",
+    // Les commissions viennent du dump export_sens ; l'annuaire du jour
+    // (senateurs.json, gardé dans source_data) en est le contrôle. Part des
+    // appartenances présentes des deux côtés : 100 % le 31/10/2026. Au-delà de
+    // `ECART_ANNUAIRE_MAX` écarts (~97 % sur 388), `senat-fonctions.ts` gèle les
+    // commissions : ce contrôle le signale, et attrape aussi un dump qui ne
+    // serait plus mis à jour.
+    min: 97,
+    query: `WITH annuaire AS (
+        SELECT p.id AS pid, o->>'code' AS ref
+        FROM parlementaires p, jsonb_array_elements(p.source_data->'organismes') o
+        WHERE p.chambre = 'senat' AND p.actif
+          AND o->>'type' = 'COMMISSION' AND o->>'code' ~ '^(COM|COMEUR)-'
+      ), base AS (
+        SELECT m.parlementaire_id AS pid, m.organe_ref AS ref
+        FROM mandats m JOIN parlementaires p ON p.id = m.parlementaire_id
+        WHERE p.chambre = 'senat' AND m.type_organe = 'COMMISSION' AND m.date_fin IS NULL
+          AND m.organe_ref ~ '^(COM|COMEUR)-'
+      )
+      SELECT COALESCE(FLOOR(100.0 * (SELECT COUNT(*) FROM (SELECT * FROM annuaire INTERSECT SELECT * FROM base) i)
+        / NULLIF((SELECT COUNT(*) FROM (SELECT * FROM annuaire UNION SELECT * FROM base) u), 0)), 0)::int AS value`,
+  },
   reunions_count: {
     type: 'threshold',
     label: 'Nombre de réunions',
@@ -840,6 +1251,137 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     label: 'Taux de liaison réunions-commissions AN (%)',
     min: 85,
     query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (linked * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE commission_id IS NOT NULL) AS linked FROM reunions) sub`,
+  },
+
+  // ---------------------------------------------------------------------------
+  // Index de la base LEGI (workers/index-legi.ts)
+  // ---------------------------------------------------------------------------
+  index_legi_en_retard: {
+    type: 'invariant',
+    label: 'Index LEGI ni chargé, ni vérifié contre la DILA depuis plus de 2 jours',
+    min: 0,
+    max: 0,
+    // Le batch de nuit lit la liste des archives de la DILA et applique les
+    // incréments nouveaux ; il date `last_check_at` même quand il n'y en a
+    // pas. Une date qui vieillit dit que l'étape échoue chaque nuit (index
+    // décroché des archives publiées, DILA injoignable) : les liens vers
+    // Légifrance pointeraient de plus en plus souvent vers une version
+    // périmée. Pas de ligne : l'index n'a jamais été chargé.
+    query: `SELECT CASE WHEN max(last_check_at) >= now() - interval '2 days' THEN 0 ELSE 1 END AS value
+            FROM source_states WHERE source = 'dila' AND data_type = 'legi'`,
+  },
+  legi_textes_count: {
+    type: 'threshold',
+    label: 'Index LEGI : versions de textes',
+    // 154 276 au chargement du 26/10/2026 ; la base ne fait que grossir.
+    min: 140000,
+    query: `SELECT COUNT(*)::int AS value FROM legi_textes`,
+  },
+  legi_articles_count: {
+    type: 'threshold',
+    label: "Index LEGI : versions d'articles",
+    // 734 257 au chargement du 26/10/2026.
+    min: 680000,
+    query: `SELECT COUNT(*)::int AS value FROM legi_articles`,
+  },
+
+  // ---------------------------------------------------------------------------
+  // Renvois des amendements à l'index LEGI (workers/renvois-legi.ts)
+  // ---------------------------------------------------------------------------
+  renvois_legi_non_calcules: {
+    type: 'invariant',
+    label: 'Amendements avec dispositif, en base depuis 2 jours, sans renvois calculés par la détection en cours',
+    min: 0,
+    max: 0,
+    // Le batch de nuit calcule les amendements nouveaux ou modifiés. Il en
+    // reste : l'étape échoue, ou VERSION_DETECTION a augmenté sans que le
+    // recalcul complet ait été lancé (`sync-renvois-legi`).
+    query: `SELECT COUNT(*)::int AS value FROM amendements a
+            LEFT JOIN amendements_renvois r ON r.amendement_id = a.id
+            WHERE a.dispositif IS NOT NULL AND a.date_depot IS NOT NULL
+              AND a.created_at < now() - interval '2 days'
+              AND (r.amendement_id IS NULL OR r.version < ${VERSION_DETECTION})`,
+  },
+  renvois_legi_part_avec_lien: {
+    type: 'threshold',
+    label: 'Renvois LEGI : % des amendements calculés avec au moins un lien',
+    // 31 % en production au premier calcul, le 01/11/2026 (AN 15e 30 %, 16e
+    // 32 %, 17e 29 %, Sénat 36 %). Une chute
+    // dit qu'une montée de tisseuse ou un index vide a cassé la détection.
+    min: 25,
+    query: `SELECT COALESCE(ROUND(100.0 * COUNT(*) FILTER (WHERE jsonb_array_length(renvois) > 0)
+              / NULLIF(COUNT(*), 0)), 0)::int AS value FROM amendements_renvois`,
+  },
+
+  // ---------------------------------------------------------------------------
+  // Gouvernements (workers/gouvernements.ts, AMO30)
+  // ---------------------------------------------------------------------------
+  gouvernements_count: {
+    type: 'threshold',
+    label: 'Gouvernements (depuis 2007)',
+    min: 17,
+    query: `SELECT COUNT(*)::int AS value FROM gouvernements`,
+  },
+  postes_ministeriels_count: {
+    type: 'threshold',
+    label: 'Postes ministériels',
+    min: 766,
+    query: `SELECT COUNT(*)::int AS value FROM postes_ministeriels`,
+  },
+  membres_gouvernement_count: {
+    type: 'threshold',
+    label: 'Membres du gouvernement',
+    min: 311,
+    query: `SELECT COUNT(*)::int AS value FROM membres_gouvernement`,
+  },
+  membres_gouvernement_lies: {
+    type: 'threshold',
+    label: 'Membres du gouvernement rattachés à leur fiche',
+    min: 145,
+    query: `SELECT COUNT(*)::int AS value FROM membres_gouvernement WHERE parlementaire_id IS NOT NULL`,
+  },
+  presidences_count: {
+    type: 'threshold',
+    label: 'Présidences de la République (depuis 2007)',
+    min: 3,
+    query: `SELECT COUNT(*)::int AS value FROM presidences`,
+  },
+  projets_loi_count: {
+    type: 'threshold',
+    label: 'Projets de loi du Gouvernement depuis juin 2017',
+    min: 780,
+    query: `SELECT COUNT(*)::int AS value FROM projets_loi`,
+  },
+  projets_loi_signataires_senat: {
+    type: 'threshold',
+    label: 'Signataires de projets lus dans DOSLEG (projets déposés au Sénat)',
+    min: 450,
+    // Sans eux, les projets déposés au Sénat ne seraient portés que par le PM.
+    query: `SELECT COUNT(*)::int AS value FROM projets_loi_signataires WHERE source = 'senat'`,
+  },
+  engagements_responsabilite_count: {
+    type: 'threshold',
+    label: 'Recours au 49.3 depuis juin 2017',
+    min: 32,
+    query: `SELECT COUNT(*)::int AS value FROM engagements_responsabilite`,
+  },
+  motions_censure_count: {
+    type: 'threshold',
+    label: 'Motions de censure votées depuis juin 2017',
+    min: 56,
+    query: `SELECT COUNT(*)::int AS value FROM motions_censure`,
+  },
+  presidences_assemblee_count: {
+    type: 'threshold',
+    label: 'Présidences de l’Assemblée (depuis 2007)',
+    min: 7,
+    query: `SELECT COUNT(*)::int AS value FROM presidences_chambre WHERE chambre = 'assemblee'`,
+  },
+  presidences_senat_count: {
+    type: 'threshold',
+    label: 'Présidences du Sénat (depuis 1959)',
+    min: 10,
+    query: `SELECT COUNT(*)::int AS value FROM presidences_chambre WHERE chambre = 'senat'`,
   },
 };
 

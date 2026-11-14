@@ -181,6 +181,26 @@ async function fetchGroupes(): Promise<GroupeItem[]> {
 }
 
 /**
+ * Les gouvernements depuis 2007, par leur liste publique (17 entrées). Comme
+ * les groupes, un échec ne fait qu'omettre ces pages.
+ */
+async function fetchGouvernements(): Promise<string[]> {
+  const url = `${API_URL}/api/v1/gouvernements`;
+  try {
+    const response = await fetch(url, { headers: SITEMAP_HEADERS });
+    if (!response.ok) {
+      console.error(`[sitemap] ${response.status} ${response.statusText} — ${url}`);
+      return [];
+    }
+    const body = (await response.json()) as { data?: { slug: string }[] };
+    return Array.isArray(body.data) ? body.data.map((g) => g.slug) : [];
+  } catch (error) {
+    console.error(`[sitemap] fetch failed — ${url}`, error);
+    return [];
+  }
+}
+
+/**
  * Sénateurs élus le 27 septembre qui ont une fiche provisoire. Comme les
  * groupes, un échec ne fait qu'omettre ces pages : la fiche définitive entrera
  * dans le sitemap avec l'annuaire du Sénat.
@@ -238,10 +258,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Les données sont chargées avant les pages statiques : c'est d'elles qu'on
   // déduit la date de la dernière ingestion, qui date les pages de liste.
-  const [data, groupes, elusProvisoires] = await Promise.all([
+  const [data, groupes, elusProvisoires, gouvernements] = await Promise.all([
     fetchSitemapData(),
     fetchGroupes(),
     fetchElusProvisoires(),
+    fetchGouvernements(),
   ]);
   const { deputes, senateurs, scrutins, lobbyistes, dossiers, sujets } = data;
   // Une fiche provisoire s'efface devant la définitive : jamais deux entrées
@@ -307,6 +328,19 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'weekly',
       priority: 0.8,
     },
+    {
+      url: `${BASE_URL}/gouvernements`,
+      lastModified: ingestion,
+      changeFrequency: 'weekly',
+      priority: 0.8,
+    },
+    // Sans `lastmod` : la liste ne date pas le dernier changement de chaque
+    // gouvernement, et une date inventée décrédibiliserait les justes.
+    ...gouvernements.map((slug) => ({
+      url: `${BASE_URL}/gouvernements/${slug}`,
+      changeFrequency: 'weekly' as const,
+      priority: 0.7,
+    })),
     {
       url: `${BASE_URL}/recherche`,
       changeFrequency: 'weekly',

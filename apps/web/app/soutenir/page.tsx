@@ -288,7 +288,7 @@ export default async function SoutenirPage() {
           <h2 className="text-2xl font-bold mb-8 text-center">
             Derrière le projet
           </h2>
-          <div className="grid gap-6 md:grid-cols-3">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             {/* Axel */}
             <div className="bg-card border rounded-2xl p-6 flex flex-col items-center text-center">
               <div className="w-[120px] h-[120px] rounded-full overflow-hidden mb-4 flex-shrink-0">
@@ -380,6 +380,29 @@ export default async function SoutenirPage() {
                 <Linkedin className="h-4 w-4" />
                 LinkedIn
               </a>
+            </div>
+
+            {/* Victor */}
+            <div className="bg-card border rounded-2xl p-6 flex flex-col items-center text-center">
+              <div className="w-[120px] h-[120px] rounded-full overflow-hidden mb-4 flex-shrink-0">
+                <Image
+                  src="/images/victor.jpg"
+                  alt="Victor, contributeur CLAIR"
+                  width={120}
+                  height={120}
+                  className="w-full h-full object-cover"
+                  unoptimized
+                />
+              </div>
+              <h3 className="text-lg font-semibold mb-1">Victor</h3>
+              <p className="text-sm text-muted-foreground mb-3">
+                Architecte logiciel
+              </p>
+              <p className="text-sm leading-relaxed mb-4">
+                Je contribue à CLAIR pour rassembler et normaliser les données publiques, les rendre
+                plus accessibles et faciliter leur intégration dans d&apos;autres outils. Une façon
+                de contribuer à l&apos;open data et à la transparence de la vie publique.
+              </p>
             </div>
           </div>
         </div>

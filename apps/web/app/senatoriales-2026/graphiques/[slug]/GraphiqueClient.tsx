@@ -65,7 +65,7 @@ export default function GraphiqueClient({ slug, apercu, sortants }: GraphiqueCli
         return (
           <div className="space-y-8">
             <section className="space-y-2">
-              <h3 className="text-sm font-semibold">Présence en séance</h3>
+              <h3 className="text-sm font-semibold">Présence aux votes solennels</h3>
               <DistributionBilan sortants={sortants} metrique="presence" />
             </section>
             <section className="space-y-2">

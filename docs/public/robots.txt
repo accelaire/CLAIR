@@ -1,0 +1,7 @@
+# Les chemins d'API cités dans la référence ne sont pas des pages du portail :
+# l'API est servie par api.clair.vote.
+User-agent: *
+Disallow: /api/v1/
+Disallow: /health/
+
+Sitemap: https://docs.clair.vote/sitemap.xml

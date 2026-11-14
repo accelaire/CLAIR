@@ -471,7 +471,6 @@ describe('buildParlementaireResumePrompt — ancien parlementaire', () => {
       stats: { presence: null, loyaute: null, participation: null, interventions: null, amendements: null, amendementsAdoptes: null },
       mandats: [
         { typeOrgane: 'COMPER', institution: 'Commission permanente', qualite: 'Membre', dateDebut: '2024-07-18' },
-        { typeOrgane: 'GOUVERNEMENT', institution: 'Gouvernement', qualite: 'Ministre', dateDebut: '2026-04-07' },
       ],
       lobbyingActions: [],
       declarations: [],
@@ -509,8 +508,20 @@ describe('buildParlementaireResumePrompt — ancien parlementaire', () => {
     expect(parl()).toContain('2024-07-18 → terminé (date non publiée) : Membre — Commission permanente');
   });
 
-  it('garde en cours une fonction au gouvernement, qui survit au mandat', () => {
-    expect(parl()).toContain('2026-04-07 → en cours : Ministre — Gouvernement');
+  it('garde en cours une fonction au gouvernement, qui survit au mandat, avec son portefeuille et son gouvernement', () => {
+    const prompt = parl({
+      fonctionsHorsChambre: [
+        { libelle: "Ministre de l'intérieur", gouvernement: 'Lecornu II', dateDebut: '2025-10-12', dateFin: null },
+        { libelle: 'Président de la République', gouvernement: null, dateDebut: '2012-05-15', dateFin: '2017-05-14' },
+      ],
+    });
+    expect(prompt).toContain('--- Fonctions gouvernementales et présidences (données CLAIR, font foi) ---');
+    expect(prompt).toContain("Ministre de l'intérieur, gouvernement Lecornu II : 2025-10-12 → en cours");
+    expect(prompt).toContain('Président de la République : 2012-05-15 → 2017-05-14');
+  });
+
+  it("n'ouvre pas la section sans fonction hors de la chambre", () => {
+    expect(parl()).not.toContain('Fonctions gouvernementales');
   });
 
   it("ne demande plus son « rôle actuel » comme s'il siégeait encore", () => {

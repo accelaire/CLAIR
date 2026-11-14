@@ -14,6 +14,7 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { errorMessage } from '../utils/errors';
+import { QUALITE_GOUVERNEMENT_SQL, TYPE_REPONSE } from '../utils/interventions';
 import {
   SenatDebatsIndexClient,
   typeDInterventionSenat,
@@ -141,12 +142,23 @@ const RAPPROCHEMENT = Prisma.raw(`
   AND substring(i.source_url from '#par_([0-9]+)$') = v.ancre
 `);
 
+/**
+ * Le type que la section donne, corrigé par la qualité de l'orateur : sous une
+ * section de questions, un membre du Gouvernement répond (`typeSelonOrateur`).
+ * La qualité est sur la ligne en base, pas dans l'index : la règle se pose donc
+ * ici, en SQL, avec son pendant Postgres.
+ */
+const NOUVEAU_TYPE = Prisma.sql`
+  CASE WHEN v.type = 'question' AND i.orateur_qualite ~* ${QUALITE_GOUVERNEMENT_SQL}
+       THEN ${TYPE_REPONSE} ELSE v.type END
+`;
+
 /** Une valeur diffère effectivement de ce qui est déjà en base — sinon écrire ne changerait rien. */
-const UN_CHANGEMENT = Prisma.raw(`
+const UN_CHANGEMENT = Prisma.sql`
   (i.article_vise IS DISTINCT FROM v.article
     OR i.code_grammaire IS DISTINCT FROM v.section
-    OR i.type IS DISTINCT FROM v.type)
-`);
+    OR i.type IS DISTINCT FROM ${NOUVEAU_TYPE})
+`;
 
 /** Colonnes du lot, dénormalisées en tableaux parallèles pour `unnest`. */
 function colonnesDuLot(lot: SegmentDebatSenat[]) {
@@ -198,7 +210,7 @@ async function appliquerLot(
   const [rangee] = await prisma.$queryRaw<{ visees: bigint; modifiees: bigint }[]>`
     WITH candidats AS (
       SELECT i.id, i.article_vise, i.code_grammaire, i.type,
-             v.article AS nouvel_article, v.section AS nouvelle_section, v.type AS nouveau_type
+             v.article AS nouvel_article, v.section AS nouvelle_section, ${NOUVEAU_TYPE} AS nouveau_type
       FROM unnest(
         ${dates}::text[],
         ${ancres}::text[],
