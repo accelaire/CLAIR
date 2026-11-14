@@ -29,6 +29,12 @@ describe('openapiDocument', () => {
     expect(openapiDocument(false, undefined).servers[0]?.url).toBe('http://localhost:3001');
   });
 
+  it('annonce la version de apps/api/package.json, montée à chaque version publiée', () => {
+    const { version } = JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'));
+    expect(openapiDocument(true, undefined).info.version).toBe(version);
+    expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
   it("déclare le jeton interne comme une clé d'en-tête, sans valeur", () => {
     const schema = openapiDocument(true, undefined).components.securitySchemes[INTERNAL_SECURITY_SCHEME];
     expect(schema).toMatchObject({ type: 'apiKey', in: 'header', name: INTERNAL_HEADER });

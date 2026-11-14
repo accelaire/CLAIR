@@ -1,0 +1,130 @@
+---
+title: "Version v0.4.0"
+sidebar_label: "Version v0.4.0"
+date: 2026-06-12
+version: 0.4.0
+description: "Commissions, agenda parlementaire, sujets enrichis, archives de votes"
+commits: 55
+prs: 7
+depuis: v0.3.0
+---
+
+**Publiée le 12/06/2026** · 55 commits et 7 pull requests depuis [v0.3.0](/changelog/v0-3-0) · [Comparer avec v0.3.0](https://github.com/accelaire/CLAIR/compare/v0.3.0...v0.4.0) · [Code de la version](https://github.com/accelaire/CLAIR/tree/v0.4.0)
+
+## En bref
+
+La v0.4.0 ouvre les **commissions** et l'**agenda parlementaire** : composition, réunions, vidéos et séances à venir, avec un badge « En direct ». Les sujets reçoivent des **liens de contexte** (documents officiels, Wikipédia, vie-publique, presse), les amendements leurs **cosignataires**, et les votes des **archives** par mois.
+
+| Pour qui | Ce qui change |
+|---|---|
+| Citoyens | pages [commissions](https://clair.vote/commissions) et [agenda](https://clair.vote/agenda), archives des [votes](https://clair.vote/votes), widget de retour |
+| Réutilisateurs | modules `commissions` et `agenda`, cosignataires et amendements co-déposés |
+| Contributeurs | génération des sujets intégrée au smart-sync, désormais deux fois par jour |
+
+## Commissions et agenda
+
+<Mermaid
+  title="Des commissions jusqu'à l'agenda"
+  chart={`flowchart LR
+    C["Commission"] --> M["Membres et mandats<br/>actuels et anciens"]
+    C --> R["Réunions"]
+    R --> V["Vidéos et<br/>comptes rendus"]
+    C --> D["Dossiers saisis"]
+    R --> AG["Agenda<br/>séances à venir, « En direct »"]
+    SE["Séances publiques<br/>AN et Sénat"] --> AG`}
+/>
+
+```bash
+# Les commissions et organes
+curl "https://api.clair.vote/api/v1/commissions?limit=5"
+
+# L'agenda d'une semaine (dateFrom obligatoire)
+curl "https://api.clair.vote/api/v1/agenda?dateFrom=2026-10-26&dateTo=2026-10-30"
+```
+
+## Des sujets replacés dans leur contexte
+
+Chaque sujet relie désormais ses sources par familles : **documents officiels** (dont le Journal officiel), **contexte** (Wikipédia et vie-publique, classés par proximité de sens) et **presse** (Google Actualités, en direct et mis en cache).
+
+## Notes complètes
+
+_Reprises telles quelles du tag annoté `v0.4.0`._
+
+### Commissions (nouveau module — full-stack)
+
+- Schema commissions, réunions et participants (db)
+- Pipeline d'ingestion commissions, réunions et vidéos
+- Module API commissions + endpoints agenda et "à venir" homepage
+- Pages commissions et agenda (frontend) + section "à venir" sur la homepage
+- Mandats liés aux commissions : nom complet + date en liste, président dans le header de détail, section "anciens mandats" sur la fiche parlementaire
+- Support de plusieurs mandats historiques par parlementaire (membres actuels et anciens)
+- Types de commissions enrichis + filtre commissions historiques
+- Onglet "dossiers législatifs" avec lien de saisine commission↔dossier
+- Type 'hémicycle' + logique d'URL de compte rendu pour les réunions passées
+- Backfill et gestion d'organeRef robustes dans syncCommissions
+- Dédoublonnage des commissions permanentes Sénat (PO* vs SENAT-*)
+- Tri membres, liens vidéos, comptes-rendus et sync mandats corrigés
+- Suppression de la fermeture agressive des mandats dans syncMandatsFromSourceData
+
+### Agenda parlementaire & live
+
+- Source Sénat pour les séances publiques à venir
+- Header + calendrier sticky sur desktop, badges chambre et noms complets
+- Badges "En direct" avec URLs spécifiques par réunion + routing dynamique live now
+- Live stream Sénat + prévention des collisions d'URL cross-chambre
+- Scrutins groupés par dossier, état de navigation, recherche commissions
+- Parsing dateTo en fin de journée UTC (inclut le dernier jour complet)
+
+### Sujets — liens contexte & génération incrémentale
+
+- Modèle SujetLien : liens sortants par famille
+- Liens 'documents officiels' (famille construction) + tests journal-officiel
+- Liens contexte Wikipédia et vie-publique avec re-ranking embeddings et résolution incrémentale
+- Famille de liens 'presse' en live (Google Actualités + cache)
+- Ressources en colonnes/onglets, carte loi mutualisée
+- Génération de sujets idempotente et intégrée au smart-sync
+- Discours recalibré sur l'objet "texte de loi suivi de bout en bout"
+- Rapport qualité des liens sortants
+
+### Amendements
+
+- Cosignataires M:N + numero_ordre (schema)
+- Extraction et liaison des cosignataires AN + Sénat
+- API : amendements co-déposés inclus, tri numérique nulls-last, texteRef
+- Carte amendement partagée ExpandableAmendementCard (harmonisation)
+
+### Archives de votes (scrutins)
+
+- Pagination et archives des votes par année et par mois
+- Composant ScrutinListCard + titres/descriptions metadata
+- Page hub /votes, résolution du conflit de sitemap, 404 sur mois vides
+
+### Recherche
+
+- Recherche groupes / commissions / sujets
+- Correction des compteurs fuzzy et de la pagination
+
+### Feedback utilisateur (nouveau)
+
+- Widget de retour utilisateur + notification Discord
+- Sentiment nullable, retry contexte sur échec source
+
+### Frontend
+
+- Section homepage "Comment ça marche la politique ?" avec thèmes et liens
+
+### Lobbying
+
+- Clé d'upsert stable via identifiantNational (remplace representants_id éphémère)
+- Correction du cast de type UNNEST pour les updates batch d'actions
+
+### SEO (saison 3)
+
+- Déblocage des bots IA (suppression des disallow robots.txt ciblés)
+- User-Agent sur les fetch de sitemap + meilleur logging d'erreurs
+- Page méthodologie enrichie (sources commissions et réunions)
+
+### Infra & docs
+
+- Smart-sync deux fois par jour (5h + 15h UTC)
+- README corrigé (.env.example, instructions OpenCode)
