@@ -36,6 +36,14 @@ describe('SOURCES Configuration', () => {
       expect(config).toBeDefined();
       expect(config.dataType).toBe('dossiers');
     });
+
+    it('teste l’archive que lisent les commissions et les gouvernements (AMO30), pas l’AMO10', () => {
+      for (const cle of ['assemblee_nationale:commissions', 'assemblee_nationale:gouvernements']) {
+        const config = SOURCES[cle]!;
+        expect(config.url).toContain(`/${LEGISLATURE_AN_COURANTE}/amo/`);
+        expect(config.url).toContain('AMO30_tous_acteurs_tous_mandats_tous_organes_historique.json.zip');
+      }
+    });
   });
 
   describe('Sénat', () => {

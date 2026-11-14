@@ -70,7 +70,7 @@ export const parlementairesListQuerySchema = z.object({
   periode: periodeStatsEnum
     .default('mandat')
     .describe(
-      "Période des stats servant au tri. 'mandat' (défaut) : le mandat en cours — seul tri qui compare les élus à dénominateur égal. 'carriere' : tous les mandats cumulés, ce qui avantage mécaniquement les réélus.",
+      "Période des stats servant au tri et renvoyées dans `stats`. 'mandat' (défaut) : le mandat en cours, seul tri qui compare les élus à dénominateur égal. 'carriere' : tous les mandats cumulés, ce qui avantage mécaniquement les réélus.",
     ),
 });
 
@@ -144,9 +144,23 @@ export const parlementaireSchema = z.object({
 });
 
 export const parlementaireStatsSchema = z.object({
-  presence: z.number().min(0).max(100).describe('Taux de présence en % (tous scrutins)'),
-  presenceSolennel: z.number().min(0).max(100).nullable().describe('Taux de présence aux scrutins solennels en %'),
-  loyaute: z.number().min(0).max(100).describe('Taux de loyauté au groupe en %'),
+  presence: z
+    .number()
+    .min(0)
+    .max(100)
+    .nullable()
+    .describe(
+      "Taux de participation aux scrutins publics en %, hors scrutins où l'élu ne pouvait pas voter (président de l'assemblée, président de séance, membre du gouvernement). Au Sénat, les scrutins ordinaires sont votés par groupe : ce taux n'y mesure pas la présence (voir presenceSolennel). Null sans aucun scrutin où il pouvait voter (président de l'assemblée, période passée au Gouvernement).",
+    ),
+  presenceSolennel: z
+    .number()
+    .min(0)
+    .max(100)
+    .nullable()
+    .describe(
+      "Taux de présence aux scrutins solennels en %. Au Sénat, seule mesure de la présence : vote en personne, un vote confié à un collègue compte comme une absence. Null sans scrutin solennel sur la période.",
+    ),
+  loyaute: z.number().min(0).max(100).nullable().describe('Taux de loyauté au groupe en %. Null sans vote exprimé dans un groupe'),
   participation: z.number().describe('Nombre de votes'),
   interventions: z.number().describe("Nombre d'interventions"),
   amendements: z.object({
@@ -154,6 +168,7 @@ export const parlementaireStatsSchema = z.object({
     adoptes: z.number(),
   }),
   questions: z.number().describe('Nombre de questions posées'),
+  scrutins: z.number().nullable().optional().describe('Scrutins sur lesquels porte la présence ; sous 50, la personne ne figure pas dans les classements de loyauté, ni dans celui de la présence des députés'),
 });
 
 export const parlementaireDetailSchema = parlementaireSchema.extend({

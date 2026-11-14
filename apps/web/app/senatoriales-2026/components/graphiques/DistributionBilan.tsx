@@ -15,7 +15,7 @@ import type { Sortant } from '../../PageClient';
 const SEUIL_EXTREMES = 15;
 
 const LIBELLES: Record<MetriqueBilan, { nom: string; couleur: string }> = {
-  presence: { nom: 'présence en séance', couleur: '#3b82f6' },
+  presence: { nom: 'présence aux votes solennels', couleur: '#3b82f6' },
   loyaute: { nom: 'loyauté au groupe', couleur: '#8b5cf6' },
 };
 

@@ -10,6 +10,22 @@ import { internalHeaders } from './internal-headers';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
+/**
+ * Lit une réponse de l'API en retirant tout champ `sourceData`, à n'importe
+ * quelle profondeur.
+ *
+ * `sourceData` est la copie brute de ce que la source (AN, Sénat) a publié. Les
+ * endpoints de détail le renvoient aux réutilisateurs, mais le site ne l'affiche
+ * nulle part. Ce que ces fonctions ramènent est passé aux composants clients et
+ * donc sérialisé dans le HTML : le blob y pesait 8 à 24 Ko par fiche et 18 Ko
+ * par scrutin. Googlebot y lisait en plus des chemins relatifs de la source
+ * (`/in/<compte LinkedIn>`, `/senateur/<fiche senat.fr>.html`), les explorait
+ * sur clair.vote et récoltait des 404 (Search Console, novembre 2026).
+ */
+export function sansDonneesSource(texte: string): unknown {
+  return JSON.parse(texte, (cle, valeur) => (cle === 'sourceData' ? undefined : valeur));
+}
+
 export async function fetchFromApi<T>(
   endpoint: string,
   revalidate = 3600,
@@ -27,7 +43,7 @@ export async function fetchFromApi<T>(
       console.error(`[api-server] ${res.status} ${res.statusText} — ${url}`);
       return null;
     }
-    return res.json() as Promise<T>;
+    return sansDonneesSource(await res.text()) as T;
   } catch (err) {
     console.error(`[api-server] fetch failed — ${url}`, err);
     return null;
@@ -68,5 +84,5 @@ export async function fetchRessource<T>(
     throw new Error(`[api-server] ${res.status} ${res.statusText} — ${url}`);
   }
 
-  return res.json() as Promise<T>;
+  return sansDonneesSource(await res.text()) as T;
 }

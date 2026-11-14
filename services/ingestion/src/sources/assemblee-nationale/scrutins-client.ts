@@ -99,7 +99,7 @@ export interface ANVotant {
   mandatRef: string;
   parDelegation: string; // "true" | "false"
   numPlace?: string;
-  causePositionVote?: string; // "PAN" (Président AN), "PSE" (Président Séance)
+  causePositionVote?: string; // "PAN" (Président AN), "PSE" (Président Séance), "MG" (membre du gouvernement)
 }
 
 // =============================================================================
@@ -128,6 +128,26 @@ export interface TransformedVote {
   acteurRef: string; // PA123456
   position: 'pour' | 'contre' | 'abstention' | 'absent';
   parDelegation: boolean;
+  /** Non-votant de droit : président de l'Assemblée, de séance, membre du gouvernement. */
+  statutVotant?: StatutVotantAN | null;
+}
+
+export type StatutVotantAN = 'president_assemblee' | 'president_seance' | 'gouvernement';
+
+/**
+ * Causes de non-vote publiées par l'Assemblée sur chaque scrutin
+ * (`decompteNominatif.nonVotants`). Ces députés ne peuvent pas voter : leurs
+ * scrutins sortent du calcul de leur présence, comme au Sénat (ticket #108).
+ * Yaël Braun-Pivet, présidente depuis 2022, affichait 1 % de présence.
+ */
+const CAUSES_NON_VOTE: Record<string, StatutVotantAN> = {
+  PAN: 'president_assemblee',
+  PSE: 'president_seance',
+  MG: 'gouvernement',
+};
+
+export function statutVotantAN(cause: string | null | undefined): StatutVotantAN | null {
+  return CAUSES_NON_VOTE[(cause ?? '').trim()] ?? null;
 }
 
 export interface ScrutinWithVotes {
@@ -361,71 +381,92 @@ export class AssembleeNationaleScrutinsClient {
   }
 
   private extractVotes(scrutin: ANScrutin): TransformedVote[] {
-    const votes: TransformedVote[] = [];
+    return extraireVotesAN(scrutin);
+  }
+}
 
-    const groupes = scrutin.ventilationVotes?.organe?.groupes?.groupe;
-    if (!groupes) return votes;
+/** Votes nominatifs d'un scrutin, non-votants de droit compris (#108). */
+export function extraireVotesAN(scrutin: ANScrutin): TransformedVote[] {
+  const votes: TransformedVote[] = [];
 
-    const groupeArray = Array.isArray(groupes) ? groupes : [groupes];
+  const groupes = scrutin.ventilationVotes?.organe?.groupes?.groupe;
+  if (!groupes) return votes;
 
-    for (const groupe of groupeArray) {
-      const decompteNominatif = groupe.vote?.decompteNominatif;
-      if (!decompteNominatif) continue;
+  const groupeArray = Array.isArray(groupes) ? groupes : [groupes];
 
-      // Votes POUR
-      if (decompteNominatif.pours?.votant) {
-        const votants = Array.isArray(decompteNominatif.pours.votant)
-          ? decompteNominatif.pours.votant
-          : [decompteNominatif.pours.votant];
+  for (const groupe of groupeArray) {
+    const decompteNominatif = groupe.vote?.decompteNominatif;
+    if (!decompteNominatif) continue;
 
-        for (const votant of votants) {
-          if (votant?.acteurRef) {
-            votes.push({
-              acteurRef: votant.acteurRef,
-              position: 'pour',
-              parDelegation: votant.parDelegation === 'true',
-            });
-          }
-        }
-      }
+    // Non-votants de droit : une ligne « absent » avec la cause, qui sort le
+    // scrutin du calcul de la présence. Les non-votants sans cause connue ne
+    // sont pas écrits, comme avant.
+    if (decompteNominatif.nonVotants?.votant) {
+      const votants = Array.isArray(decompteNominatif.nonVotants.votant)
+        ? decompteNominatif.nonVotants.votant
+        : [decompteNominatif.nonVotants.votant];
 
-      // Votes CONTRE
-      if (decompteNominatif.contres?.votant) {
-        const votants = Array.isArray(decompteNominatif.contres.votant)
-          ? decompteNominatif.contres.votant
-          : [decompteNominatif.contres.votant];
-
-        for (const votant of votants) {
-          if (votant?.acteurRef) {
-            votes.push({
-              acteurRef: votant.acteurRef,
-              position: 'contre',
-              parDelegation: votant.parDelegation === 'true',
-            });
-          }
-        }
-      }
-
-      // Abstentions
-      if (decompteNominatif.abstentions?.votant) {
-        const votants = Array.isArray(decompteNominatif.abstentions.votant)
-          ? decompteNominatif.abstentions.votant
-          : [decompteNominatif.abstentions.votant];
-
-        for (const votant of votants) {
-          if (votant?.acteurRef) {
-            votes.push({
-              acteurRef: votant.acteurRef,
-              position: 'abstention',
-              parDelegation: votant.parDelegation === 'true',
-            });
-          }
+      for (const votant of votants) {
+        const statutVotant = statutVotantAN(votant?.causePositionVote);
+        if (votant?.acteurRef && statutVotant) {
+          votes.push({ acteurRef: votant.acteurRef, position: 'absent', parDelegation: false, statutVotant });
         }
       }
     }
 
-    return votes;
+    // Votes POUR
+    if (decompteNominatif.pours?.votant) {
+      const votants = Array.isArray(decompteNominatif.pours.votant)
+        ? decompteNominatif.pours.votant
+        : [decompteNominatif.pours.votant];
+
+      for (const votant of votants) {
+        if (votant?.acteurRef) {
+          votes.push({
+            acteurRef: votant.acteurRef,
+            position: 'pour',
+            parDelegation: votant.parDelegation === 'true',
+          });
+        }
+      }
+    }
+
+    // Votes CONTRE
+    if (decompteNominatif.contres?.votant) {
+      const votants = Array.isArray(decompteNominatif.contres.votant)
+        ? decompteNominatif.contres.votant
+        : [decompteNominatif.contres.votant];
+
+      for (const votant of votants) {
+        if (votant?.acteurRef) {
+          votes.push({
+            acteurRef: votant.acteurRef,
+            position: 'contre',
+            parDelegation: votant.parDelegation === 'true',
+          });
+        }
+      }
+    }
+
+    // Abstentions
+    if (decompteNominatif.abstentions?.votant) {
+      const votants = Array.isArray(decompteNominatif.abstentions.votant)
+        ? decompteNominatif.abstentions.votant
+        : [decompteNominatif.abstentions.votant];
+
+      for (const votant of votants) {
+        if (votant?.acteurRef) {
+          votes.push({
+            acteurRef: votant.acteurRef,
+            position: 'abstention',
+            parDelegation: votant.parDelegation === 'true',
+          });
+        }
+      }
+    }
   }
+
+  return votes;
 }
 
 export default AssembleeNationaleScrutinsClient;

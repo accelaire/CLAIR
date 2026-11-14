@@ -38,6 +38,20 @@ const SECTIONS = [
     ],
   },
   {
+    titre: "Gouvernements, présidence de la République et présidences des chambres",
+    tables: ["gouvernements", "postes_ministeriels", "membres_gouvernement", "presidences", "presidences_chambre"],
+  },
+  {
+    titre: "Bilan des gouvernements : projets de loi, 49.3, motions de censure, réponses en séance",
+    tables: [
+      "projets_loi",
+      "projets_loi_signataires",
+      "engagements_responsabilite",
+      "motions_censure",
+      "reponses_gouvernement",
+    ],
+  },
+  {
     titre: "Travail législatif : dossiers, scrutins, amendements, débats, sujets",
     tables: [
       "dossiers_legislatifs",
@@ -85,6 +99,12 @@ const SECTIONS = [
       "resultats_listes",
       "candidats_mandats_locaux",
     ],
+  },
+  {
+    titre: "Index de la base LEGI (DILA) et renvois des amendements",
+    intro:
+      "Sans clé étrangère : `legi_articles.cid` désigne le `cid` commun aux versions d'un texte de `legi_textes`, qui n'est pas unique. `amendements_renvois` désigne articles et textes de l'index par leurs identifiants, dans son JSON.",
+    tables: ["legi_textes", "legi_articles", "amendements_renvois"],
   },
   {
     titre: "Tables techniques",

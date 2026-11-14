@@ -218,9 +218,10 @@ export interface Sortant {
     role: 'titulaire' | 'suppleant';
   } | null;
   /**
-   * Statistiques de carrière de la personne — les mêmes que sa fiche. Il n'existe
-   * pas d'équivalent carrière pour la présence en scrutin solennel, les amendements
-   * adoptés ni les questions : ces mesures ne sont donc pas exposées ici.
+   * Statistiques de carrière de la personne — les mêmes que sa fiche —, sauf la
+   * présence : celle des votes solennels du mandat sortant, seule mesure de la
+   * présence au Sénat (#108). Les amendements adoptés et les questions n'ont pas
+   * d'équivalent carrière : ils ne sont pas exposés ici.
    */
   bilan: {
     presence: number | null;
@@ -897,7 +898,10 @@ export class SenatorialesService {
         // candidats.
         candidature: null,
         bilan: {
-          presence: personne.statsCarrierePresence,
+          // Présence aux votes solennels du mandat sortant : au Sénat, les
+          // scrutins ordinaires sont votés par groupe, le taux tous scrutins ne
+          // mesure pas la présence (#108).
+          presence: siege.statsPresenceSolennel,
           loyaute: personne.statsCarriereLoyaute,
           participation: personne.statsCarriereParticipation,
           interventions: personne.statsCarriereInterventions,

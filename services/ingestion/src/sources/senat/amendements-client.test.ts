@@ -1,11 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import axios from 'axios';
+import { describe, it, expect, vi } from 'vitest';
 import {
+  SenatAmendementsClient,
   enTeteCopyConforme,
   libelleArticleVise,
   lirePositionAmd,
   lireSubdivisionAmeli,
   type SubdivisionAmeli,
 } from './amendements-client';
+
+vi.mock('axios', () => ({ default: vi.fn() }));
 
 // Les lignes et libellés sont repris du dump AMELI du 17/10/2026 ; les valeurs
 // attendues sont celles que la colonne « Subdivision » du CSV écrit pour les
@@ -118,5 +122,33 @@ describe('enTeteCopyConforme', () => {
 
   it('ne juge pas les tables qu’il ne lit pas par position', () => {
     expect(enTeteCopyConforme('COPY typsub (id, lib) FROM stdin;')).toBe(true);
+  });
+});
+
+describe('fetchCsvForTexte', () => {
+  // En-tête du CSV `jeu_complet` de senat.fr ; le dispositif de l'amendement
+  // 162 rect. du texte 2026-2027/138 y fait 12 777 caractères.
+  const ENTETE = [
+    'Nature ', 'Numéro ', 'Subdivision ', 'Alinéa', 'Auteur ', 'Au nom de ', 'Date de dépôt ',
+    'Dispositif ', 'Objet ', 'Sort ', 'Date de saisie du sort ', 'Url amendement ', 'Fiche Sénateur',
+  ].join('\t');
+
+  it("garde le dispositif et l'objet en entier, au-delà de 5 000 caractères", async () => {
+    const dispositif = `<p>${"Après l'article L. 245-1, il est inséré un alinéa. ".repeat(250)}</p>`;
+    const objet = `<p>${'Cet amendement vise à préciser la rédaction. '.repeat(150)}</p>`;
+    const ligne = [
+      'Amt', '162 rect.', 'Article 1er', '', 'M. JADOT', '', '04/11/2026', dispositif, objet,
+      '', '', '//www.senat.fr/amendements/2026-2027/138/Amdt_162.html', '',
+    ].join('\t');
+    vi.mocked(axios).mockResolvedValueOnce({
+      status: 200,
+      data: Buffer.from(`sep=\t\n${ENTETE}\n${ligne}\n`, 'latin1'),
+    });
+
+    const [amd] = await new SenatAmendementsClient().fetchCsvForTexte(107183, '138', '2026-2027');
+
+    expect(amd!.dispositif!.length).toBeGreaterThan(12_000);
+    expect(amd!.dispositif!.endsWith('il est inséré un alinéa.')).toBe(true);
+    expect(amd!.exposeSommaire!.length).toBeGreaterThan(6_000);
   });
 });

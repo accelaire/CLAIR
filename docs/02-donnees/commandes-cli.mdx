@@ -38,7 +38,7 @@ pnpm docker:logs
 pnpm lint                 # ESLint sur tous les workspaces, plus scripts/ et apps/api/prisma
 pnpm lint:fix
 pnpm type-check           # tsc --noEmit
-pnpm test                 # Vitest (API et ingestion)
+pnpm test                 # Vitest (API, ingestion, proxy /api/v1 du frontend)
 pnpm format               # Prettier
 
 # Documentation
@@ -87,7 +87,7 @@ pnpm ingestion:smart-sync -a -l 100          # limite appliquée à chaque type 
 pnpm ingestion:smart-sync --sources senat:agenda,senat:videos   # clés de sources explicites
 ```
 
-Sans `-a` ni `--sources`, la commande traite `assemblee_nationale:deputes` et `senat:senateurs`, plus les familles demandées : `-s` (scrutins), `--am` (amendements), `--do` (dossiers), `--in` (interventions), `--lo` (lobbying), `--co` (commissions), `--re` (réunions AN), `--seances-odj`, `--senat-histo`, `--senat-agenda`, `--senat-reunions`, `--senat-bureaux`, `--senat-dossier-commissions`, `--senat-videos`, `--an-videos`, `--candidatures`.
+Sans `-a` ni `--sources`, la commande traite `assemblee_nationale:deputes` et `senat:senateurs`, plus les familles demandées : `-s` (scrutins), `--am` (amendements), `--do` (dossiers), `--in` (interventions), `--lo` (lobbying), `--co` (commissions), `--re` (réunions AN), `--seances-odj`, `--senat-histo`, `--gouvernements`, `--bilan-gouvernement`, `--senat-agenda`, `--senat-reunions`, `--senat-fonctions`, `--senat-dossier-commissions`, `--senat-videos`, `--an-videos`, `--candidatures`.
 
 ---
 
@@ -178,7 +178,9 @@ pnpm ingestion:calculate-stats -c assemblee          # ou senat
 pnpm ingestion:calculate-stats --include-frozen      # recalcule aussi les législatures passées
 ```
 
-Calcule la présence, la présence aux scrutins solennels, la loyauté au groupe, la participation, les compteurs d'interventions et d'amendements, les stats de carrière, les stats par mandat, puis les stats de groupes, les alliances entre groupes et les positions par thématique. `reconcile-actif` réaligne `parlementaires.actif` sur l'existence d'un mandat en cours.
+Calcule la présence (hors scrutins où l'élu ne pouvait pas voter : présidence de l'assemblée, présidence de séance, gouvernement), la présence aux scrutins solennels (au Sénat, un vote par délégation y compte comme une absence), la loyauté au groupe, la participation, les compteurs d'interventions et d'amendements, les stats de carrière, les stats par mandat, puis les stats de groupes, les alliances entre groupes et les positions par thématique. `reconcile-actif` réaligne `parlementaires.actif` sur l'existence d'un mandat en cours.
+
+Les scrutins où l'élu ne pouvait pas voter viennent du statut publié sur la ligne du vote (`votes.statut_votant`), des présidences datées des deux chambres (`presidences_chambre`) et des postes ministériels (`postes_ministeriels`) : un membre du Gouvernement ne vote pas, même quand son mandat reste ouvert dans la source. Les législatures révolues ne sont recalculées qu'avec `--include-frozen`. Le calcul enregistre aussi le nombre de scrutins sur lequel porte chaque présence (`stats_scrutins`, `stats_carriere_scrutins`) et si ce nombre atteint le seuil des classements, 50 scrutins (`stats_classable`, `stats_carriere_classable` ; `SEUIL_SCRUTINS_CLASSEMENT`). Le seuil vaut pour la loyauté et la présence des députés ; celle des sénateurs se classe sur les scrutins solennels, sans seuil. Sans aucun scrutin à évaluer, la présence et la loyauté valent `null`, jamais 0 : l'API les rend `null` et les classements les placent en fin de liste dans les deux sens de tri. Le compteur de questions posées écarte les réponses des membres du Gouvernement (type `reponse_gouvernement`, reconnu à la qualité imprimée de l'orateur, dans les deux chambres).
 
 ---
 
@@ -236,11 +238,16 @@ Détail des contrôles : [Qualité des données](/donnees/qualite-des-donnees).
 | `backfill-mandats` | Initialisation des mandats parlementaires multi-législatures (idempotent) |
 | `backfill-nature-vote` | Classe la nature des scrutins (`--force` pour tout reclasser) |
 | `sync-senateurs-histo` | Anciens sénateurs depuis l'open data ODSEN (`--depuis <date>`) |
+| `sync-senat-fonctions` | Fonctions datées des sénateurs et présidences du Sénat depuis `export_sens.zip` (`--archive <chemin>` pour un zip déjà téléchargé) |
+| `sync-gouvernements` | Gouvernements depuis 2007, postes ministériels, présidences de la République et de l'Assemblée, lus dans l'archive AMO30 de l'Assemblée ; rattache chacun à sa fiche parlementaire |
+| `sync-bilan-gouvernement` | Bilan des gouvernements depuis juin 2017 : projets de loi et leurs signataires, recours au 49.3, motions de censure, réponses en séance. Recalculé en entier, écrit par différence. Option : `--archive-dosleg <chemin>` (un `dosleg.zip` déjà téléchargé) |
 | `clore-mandats-an` | Clôt les mandats de député des sortants (élus sénateurs compris) et les mandats d'organe AN qui survivent au mandat de député (`--dry-run`) |
 | `sync-debats-an` | Comptes rendus de séance de l'Assemblée (source syceron). Options : `--legislature` (défaut 17), `--max-seances`, `--repertoire`, `--reingerer` |
 | `sync-debats-commission` | Comptes rendus de commission de l'Assemblée (PDF). Options : `--depuis`, `--max-reunions`, `--seulement`, `--reingerer`, `--dry-run` |
 | `sync-avis-commission` | Avis de commission sur les amendements. Mêmes options que ci-dessus |
 | `sync-textes-articles` | Texte des articles des textes de l'Assemblée. Options : `--texte`, `--limit`, `--force`, `--dry-run` |
+| `sync-index-legi` | Index de la base LEGI de la DILA (`legi_textes`, `legi_articles`). Le premier passage charge le dump global (1,1 Go à télécharger), puis rejoue tous ses incréments ; les suivants n'appliquent que les incréments nouveaux. Options : `--limite <n>` (incréments appliqués), `--reinitialiser` (vide l'index et repart du dernier dump global, à lancer si la DILA en publie un nouveau) |
+| `sync-renvois-legi` | Repère dans le dispositif des amendements les textes et articles de loi cités, et les rattache à l'index LEGI, dans la version en vigueur à la date de dépôt (`amendements_renvois`). Ne traite que les amendements nouveaux, modifiés ou récents, et efface la ligne d'un amendement qui a perdu son dispositif. Options : `--tout` (tout recalculer), `--limite <n>`, `--uid <uid>`, `--dry-run` |
 | `fill-article-vise-senat` | Comble l'article visé des amendements du Sénat depuis le dump AMELI, sans écraser une valeur existante (`--depuis-annee`, `--dry-run`) |
 | `fill-metadonnees-senat` | Aligne discussions, numéro d'alinéa et parent des sous-amendements du Sénat sur le dump AMELI, sur tout l'historique (`--dry-run`) |
 | `sync-agenda-senat` | Agenda du Sénat sur une fenêtre (`--jours-avant`, défaut 45 ; `--jours-apres`, défaut 30) |
@@ -263,6 +270,8 @@ Détail des contrôles : [Qualité des données](/donnees/qualite-des-donnees).
 | `link-amendements-dossiers` | Rattache les amendements à leur dossier : texte de la source d'abord, puis scrutins et amendements voisins |
 | `unlink-wrong-legislature` | Supprime les liens scrutin AN → dossier d'une autre législature |
 | `unlink-procedure-incompatible` | Supprime les liens scrutin → dossier incompatibles avec la procédure du dossier : rapport ou mission d'information, 49.3 hors motion de censure |
+| `separer-homonyme <slug> <matricule ou PA>` | Rend à l'homonyme de l'autre chambre sa fiche, avec ses mandats et ses votes de cette chambre (`--appliquer`, sinon simulation) |
+| `lier-identifiant <slug> <chambre> <id>` | Range sur la fiche l'identifiant de l'autre chambre d'un élu passé de l'une à l'autre (`--appliquer`) |
 | `relink-voterefs` | Rattache chaque scrutin AN au dossier qui le référence (`voteRefs` de la source), en corrigeant les liens contraires |
 | `verifier-amendements-scrutins-an` | Fiabilise les liens scrutin AN → amendement : efface les impossibles, revérifie les douteux sur la page de l'Assemblée, puis aligne leur dossier (`--dry-run`, `--concurrence`, `--articles`) |
 | `generate-sujets` | Génère les sujets (`--reset`, `--dry-run`) |

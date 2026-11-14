@@ -135,6 +135,33 @@ CREATE OR REPLACE TRIGGER groupes_alliances_updated_at BEFORE INSERT OR UPDATE O
 CREATE OR REPLACE TRIGGER groupes_thematiques_updated_at BEFORE INSERT OR UPDATE ON groupes_thematiques
   FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at('calculated_at');
 
+-- Gouvernements et présidence. La fiche liée (`parlementaire_id`, `liaison`)
+-- est recalculée chaque nuit, mais ne bouge que si elle change : c'est du
+-- contenu.
+CREATE OR REPLACE TRIGGER gouvernements_updated_at BEFORE INSERT OR UPDATE ON gouvernements
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER membres_gouvernement_updated_at BEFORE INSERT OR UPDATE ON membres_gouvernement
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER postes_ministeriels_updated_at BEFORE INSERT OR UPDATE ON postes_ministeriels
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER presidences_updated_at BEFORE INSERT OR UPDATE ON presidences
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER presidences_chambre_updated_at BEFORE INSERT OR UPDATE ON presidences_chambre
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+
+-- Bilan des gouvernements, recalculé chaque nuit par différence : une ligne
+-- inchangée n'est pas réécrite.
+CREATE OR REPLACE TRIGGER projets_loi_updated_at BEFORE INSERT OR UPDATE ON projets_loi
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER projets_loi_signataires_updated_at BEFORE INSERT OR UPDATE ON projets_loi_signataires
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER engagements_responsabilite_updated_at BEFORE INSERT OR UPDATE ON engagements_responsabilite
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER motions_censure_updated_at BEFORE INSERT OR UPDATE ON motions_censure
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER reponses_gouvernement_updated_at BEFORE INSERT OR UPDATE ON reponses_gouvernement
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+
 -- Commissions, réunions, agenda.
 CREATE OR REPLACE TRIGGER commissions_updated_at BEFORE INSERT OR UPDATE ON commissions
   FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
@@ -174,6 +201,16 @@ CREATE OR REPLACE TRIGGER sujet_liens_updated_at BEFORE INSERT OR UPDATE ON suje
   FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
 CREATE OR REPLACE TRIGGER textes_articles_updated_at BEFORE INSERT OR UPDATE ON textes_articles
   FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+
+-- Index de la base LEGI (DILA).
+CREATE OR REPLACE TRIGGER legi_textes_updated_at BEFORE INSERT OR UPDATE ON legi_textes
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER legi_articles_updated_at BEFORE INSERT OR UPDATE ON legi_articles
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+-- Renvois des amendements à l'index LEGI : un recalcul au même résultat, ou
+-- par une version plus récente de la détection, n'est pas un changement.
+CREATE OR REPLACE TRIGGER amendements_renvois_updated_at BEFORE INSERT OR UPDATE ON amendements_renvois
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at('version', 'calcule_le');
 
 -- Scrutins, votes, débats, amendements. `source_hash` est l'empreinte de ce
 -- que l'ingestion a écrit, pas une donnée de la source.

@@ -13,6 +13,9 @@ export const dossiersListQuerySchema = z.object({
   dateTo: z.coerce.date().optional(),
   sort: z.enum(['date', 'scrutins']).default('date'),
   order: z.enum(['asc', 'desc']).default('desc'),
+  // `projets` : projets de loi du Gouvernement ; `49-3` : textes sur lesquels il
+  // a engagé sa responsabilité (bilan des gouvernements, depuis juin 2017).
+  gouvernement: z.enum(['projets', '49-3']).optional(),
 });
 
 export const paginationQuerySchema = z.object({

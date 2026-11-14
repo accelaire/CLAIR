@@ -125,6 +125,13 @@ const config: ZudokuConfig = {
     ],
   },
   navigation: docsNavigation,
+  // Sans sitemap ni robots.txt (public/robots.txt), Google n'avait que les liens
+  // pour découvrir le portail, et explorait comme des pages les chemins d'API
+  // cités dans la référence (`/api/v1/...`, `/health/live`) : 72 des 116 404 du
+  // domaine relevés par la Search Console en novembre 2026.
+  sitemap: {
+    siteUrl: "https://docs.clair.vote",
+  },
   apis: {
     type: "file",
     input: "./public/openapi.json",

@@ -167,3 +167,27 @@ describe('signatureEditoriale', () => {
     expect(signatureEditoriale(a)).toBe(signatureEditoriale(b));
   });
 });
+
+describe('signatureEditoriale — postes et présidences (SPEC-BILAN-MINISTRE §14)', () => {
+  const poste = { uid: 'PM873424', dateDebut: new Date('2025-10-12T00:00:00Z'), dateFin: null };
+
+  it("ne change pas l'empreinte d'une fiche sans poste ni présidence", () => {
+    expect(signatureEditoriale({ ...base, fonctionsHorsChambre: [] })).toBe(signatureEditoriale(base));
+    expect(signatureEditoriale({ ...base, fonctionsHorsChambre: undefined })).toBe(signatureEditoriale(base));
+  });
+
+  it('change à l’entrée au gouvernement, à un nouveau poste et à la sortie', () => {
+    const entree = signatureEditoriale({ ...base, fonctionsHorsChambre: [poste] });
+    expect(entree).not.toBe(signatureEditoriale(base));
+    const remaniement = signatureEditoriale({ ...base, fonctionsHorsChambre: [{ ...poste, dateFin: new Date('2026-02-26T00:00:00Z') }, { uid: 'PM900000', dateDebut: new Date('2026-02-27T00:00:00Z'), dateFin: null }] });
+    expect(remaniement).not.toBe(entree);
+    const sortie = signatureEditoriale({ ...base, fonctionsHorsChambre: [{ ...poste, dateFin: new Date('2026-06-01T00:00:00Z') }] });
+    expect(sortie).not.toBe(entree);
+  });
+
+  it("ne dépend pas de l'ordre des fonctions", () => {
+    const autre = { uid: 'PO717136', dateDebut: new Date('2017-05-14T00:00:00Z'), dateFin: null };
+    expect(signatureEditoriale({ ...base, fonctionsHorsChambre: [poste, autre] }))
+      .toBe(signatureEditoriale({ ...base, fonctionsHorsChambre: [autre, poste] }));
+  });
+});

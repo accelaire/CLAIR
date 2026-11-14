@@ -14,6 +14,7 @@ import { aucunFiltre, STALE_TIME_LISTE_MS } from '@/lib/liste-ssr';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useOngletAncre } from '@/lib/use-onglet-ancre';
 import {
   Users,
   MapPin,
@@ -43,6 +44,9 @@ import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { InterventionsList } from '@/components/parlementaire/interventions-list';
 import { MandatsBlock } from '@/components/parlementaire/mandats-timeline';
+import { fonctionsEnVue, presideUneAssemblee } from '@/lib/fonctions-en-vue';
+import { fonctionEnCours, type FonctionGouvernementale } from '@/lib/gouvernements';
+import { TitresFiche, titresDeLaFiche } from '@/components/parlementaire/titres-fiche';
 import {
   FiltreChambre,
   paramChambre,
@@ -51,6 +55,8 @@ import {
   type ParcoursFiche,
 } from '@/components/parlementaire/filtre-chambre';
 import { SiegeRenouvelableCallout } from '@/components/SiegeRenouvelableCallout';
+import { TexteAmendement } from '@/components/TexteAmendement';
+import type { RenvoiDispositif } from '@/lib/texte-amendement';
 
 export interface SenateurDetail {
   id: string;
@@ -81,13 +87,14 @@ export interface SenateurDetail {
     nom: string;
   } | null;
   stats?: {
-    presence: number;
+    presence: number | null;
     presenceSolennel?: number | null;
-    loyaute: number;
+    loyaute: number | null;
     participation: number;
     interventions: number;
     amendements: { proposes: number; adoptes: number };
     questions: number;
+    scrutins?: number | null;
   };
   // Enrichissement IA
   resumeIA?: string | null;
@@ -107,6 +114,8 @@ export interface SenateurDetail {
     sourceUid?: string | null;
     organeRef?: string | null;
   }>;
+  // Postes ministériels et présidence de la République (AMO30)
+  fonctionsGouvernementales?: FonctionGouvernementale[];
   // Mandats parlementaires (parcours par mandature : groupe + circonscription)
   mandatsParlementaires?: Array<{
     chambre?: string;
@@ -174,6 +183,8 @@ interface AmendementItem extends MetadonneesAmendement {
   texteRef: string | null;
   articleVise: string | null;
   dispositif: string | null;
+  /** Liens Légifrance du dispositif. */
+  renvois?: RenvoiDispositif[];
   exposeSommaire: string | null;
   auteurLibelle: string | null;
   sort: string | null;
@@ -245,7 +256,11 @@ function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }
           {isExpanded && amendement.dispositif && (
             <div className="mt-3 rounded bg-muted/50 p-3">
               <p className="text-xs font-medium text-muted-foreground mb-1">Dispositif :</p>
-              <p className="text-sm leading-relaxed">{amendement.dispositif}</p>
+              <TexteAmendement
+                texte={amendement.dispositif}
+                renvois={amendement.renvois}
+                className="text-sm leading-relaxed"
+              />
             </div>
           )}
 
@@ -617,7 +632,11 @@ export default function PageClient({
   const params = useParams();
   const router = useRouter();
   const slug = params.slug as string;
-  const [activeTab, setActiveTab] = useState<'votes' | 'interventions' | 'amendements'>('votes');
+  // L'onglet ouvert suit l'ancre de l'URL (`#interventions`) : un lien peut y mener.
+  const { actif: activeTab, choisir: setActiveTab, barre: barreOnglets } = useOngletAncre(
+    ['votes', 'interventions', 'amendements'] as const,
+    'votes',
+  );
   const [showAllDeclarations, setShowAllDeclarations] = useState(false);
 
   const { data, isLoading, error } = useQuery({
@@ -680,6 +699,7 @@ export default function PageClient({
     actif: senateur.actif,
     mandats: senateur.mandatsParlementaires,
   });
+  const gouvernementEnCours = fonctionEnCours(senateur.fonctionsGouvernementales, senateur.sexe);
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -723,6 +743,13 @@ export default function PageClient({
             {senateur.prenom} {senateur.nom}
           </h1>
 
+          {/* Titres en cours, dans un seul encadré : le poste au Gouvernement
+              d'abord (la fiche de Sébastien Lecornu, sénateur un mois en 2020,
+              présente d'abord le Premier ministre), puis la présidence de
+              l'assemblée, d'une commission ou d'un groupe (sans elle, rien ne
+              disait que Gérard Larcher préside le Sénat, #118). */}
+          <TitresFiche titres={titresDeLaFiche(gouvernementEnCours, fonctionsEnVue(senateur.mandats ?? []))} />
+
           {/* Groupe. Pour un mandat terminé, le groupe affiché est celui du dernier
               mandat : présenté seul, il laissait croire à un élu en exercice (David
               Guiraud, maire de Roubaix depuis avril 2026, apparaissait « La France
@@ -732,14 +759,9 @@ export default function PageClient({
               souvent celle où l'ingestion a constaté le départ (27 mandats de
               députés « terminés » le 22 juillet 2026), pas la date réelle. */}
           {!fonction.enCours && (
-            <div className="mt-2 flex items-center justify-center gap-2 md:justify-start">
-              <span className="rounded-full border px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                Mandat terminé
-              </span>
-              {senateur.groupe && (
-                <span className="text-sm text-muted-foreground">Dernier groupe :</span>
-              )}
-            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {senateur.groupe ? 'Mandat terminé · dernier groupe :' : 'Mandat terminé'}
+            </p>
           )}
           {/* La ligne du groupe reste la même que pour un élu en exercice : le
               libellé « Dernier groupe » est sur la ligne de la mention, au-dessus. */}
@@ -857,12 +879,15 @@ export default function PageClient({
         <StatsParlementaire
           stats={senateur.stats}
           titre={fonction.enCours ? 'Statistiques' : bilanMandats(fonction.plusieursMandats)}
+          preside={presideUneAssemblee(senateur.mandats ?? [])}
+          chambre="senat"
         />
       )}
 
       {/* Mandats et fonctions */}
       {((senateur.mandats?.length ?? 0) > 0 ||
-        (senateur.mandatsParlementaires?.length ?? 0) > 0) && (
+        (senateur.mandatsParlementaires?.length ?? 0) > 0 ||
+        (senateur.fonctionsGouvernementales?.length ?? 0) > 0) && (
         <div className="mb-8">
           {/* Mandats : frise des mandatures + fonctions en commission rattachées */}
           <MandatsBlock
@@ -870,6 +895,7 @@ export default function PageClient({
             sexe={senateur.sexe}
             chambre="senat"
             fonctions={senateur.mandats ?? []}
+            fonctionsGouvernementales={senateur.fonctionsGouvernementales ?? []}
           />
         </div>
       )}
@@ -1003,7 +1029,7 @@ export default function PageClient({
       <SoutenirCallout spaced={false} className="mb-8" />
 
       {/* Onglets */}
-      <div className="border-b">
+      <div ref={barreOnglets} className="scroll-mt-20 border-b">
         <nav className="flex gap-8 overflow-x-auto scrollbar-none">
           <button
             onClick={() => setActiveTab('votes')}

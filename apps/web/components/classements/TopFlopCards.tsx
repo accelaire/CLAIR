@@ -19,8 +19,9 @@ interface ParlementaireItem {
     position: string | null;
   } | null;
   stats: {
-    presence: number;
-    loyaute: number;
+    presence: number | null;
+    presenceSolennel?: number | null;
+    loyaute: number | null;
     participation: number;
     amendements: number;
     interventions: number;

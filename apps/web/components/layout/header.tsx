@@ -17,35 +17,42 @@ interface NavItem {
   items?: DropdownItem[];
 }
 
+// Organisé par rôle : qui décide, ce qui se décide, les élections, l'influence,
+// puis les outils. « Parlementaires » ne pouvait pas contenir les gouvernements
+// (leurs membres ne sont pas tous élus) ni les élections.
 const navigation: NavItem[] = [
   {
-    name: 'Parlementaires',
+    name: 'Qui décide',
     items: [
-      { name: 'Groupes politiques', href: '/groupes' },
       { name: 'Députés', href: '/deputes' },
       { name: 'Sénateurs', href: '/senateurs' },
+      { name: 'Gouvernements', href: '/gouvernements' },
+      { name: 'Groupes politiques', href: '/groupes' },
       { name: 'Commissions', href: '/commissions' },
-      { name: 'Sénatoriales 2026', href: '/senatoriales-2026' },
     ],
   },
   {
-    name: 'Activité',
+    name: 'Lois et votes',
     items: [
-      { name: 'Sujets parlementaires', href: '/sujets' },
+      { name: 'Sujets', href: '/sujets' },
       { name: 'Dossiers législatifs', href: '/dossiers' },
       { name: 'Scrutins', href: '/scrutins' },
-      { name: 'Agenda parlementaire', href: '/agenda' },
+      { name: 'Agenda', href: '/agenda' },
     ],
+  },
+  {
+    name: 'Élections',
+    items: [{ name: 'Sénatoriales 2026', href: '/senatoriales-2026' }],
   },
   { name: 'Lobbying', href: '/lobbying' },
   {
     name: 'Outils',
     items: [
-      { name: 'Comprendre', href: '/comprendre' },
-      { name: 'Guide pratique', href: '/guide' },
       { name: 'Classements', href: '/classements' },
       { name: 'Comparer des députés', href: '/deputes?compare=true' },
       { name: 'Comparer des sénateurs', href: '/senateurs?compare=true' },
+      { name: 'Comprendre', href: '/comprendre' },
+      { name: 'Guide pratique', href: '/guide' },
     ],
   },
 ];

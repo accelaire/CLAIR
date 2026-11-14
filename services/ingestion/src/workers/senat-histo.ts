@@ -151,6 +151,19 @@ export async function syncSenateursHistoriques(
   const existantBySource = new Map(
     existants.filter((e) => e.sourceId).map((e) => [e.sourceId!, e]),
   );
+  // Un ancien sénateur devenu député a une fiche Assemblée : son matricule y est
+  // rangé dans les identifiants. Sans cette table, il recevait une seconde fiche
+  // (Mélenchon, Carvounas, Villiers le 01/11/2026).
+  const conserves = await prisma.parlementaireIdentifiant.findMany({
+    where: { chambre: 'senat' },
+    select: {
+      sourceId: true,
+      personne: { select: { id: true, sourceId: true, serie: true, dateNaissance: true, profession: true } },
+    },
+  });
+  for (const c of conserves) {
+    if (!existantBySource.has(c.sourceId)) existantBySource.set(c.sourceId, c.personne);
+  }
 
   // Regroupements par matricule -------------------------------------------
   const appartByMat = new Map<string, OdsenAppartenanceGroupe[]>();

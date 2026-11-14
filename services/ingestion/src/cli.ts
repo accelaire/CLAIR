@@ -6,6 +6,7 @@
 import 'dotenv/config';
 import { Command } from 'commander';
 import { syncTextesArticles } from './workers/textes-articles';
+import { synchroniserIndexLegi } from './workers/index-legi';
 import {
   fullSync,
   incrementalSync,
@@ -56,7 +57,12 @@ import {
 import { backfillMandatsParlementaires } from './workers/backfill-mandats.js';
 import { backfillNatureVote } from './workers/backfill-nature-vote.js';
 import { syncSenateursHistoriques } from './workers/senat-histo.js';
+import { syncSenatFonctions } from './workers/senat-fonctions.js';
+import { syncBilanGouvernement } from './workers/bilan-gouvernement.js';
+import { syncGouvernements } from './workers/gouvernements.js';
+import { libererArchivesAMO30 } from './sources/assemblee-nationale/amo30-archive.js';
 import { SENAT_SESSION_MIN } from './workers/mandats.js';
+import { separerHomonyme, lierIdentifiant } from './workers/identite-fiches.js';
 import { logger } from './utils/logger';
 import { errorMessage } from './utils/errors';
 
@@ -267,7 +273,7 @@ program
         console.log(`   Non matchés: ${result.unmatched}`);
         console.log(`   Erreurs: ${result.errors}`);
       } else if (options.commissions) {
-        const result = await syncCommissions();
+        const result = await syncCommissions().finally(libererArchivesAMO30);
         console.log(`\n📊 Commissions:`);
         console.log(`   Créées: ${result.created}`);
         console.log(`   Mises à jour: ${result.updated}`);
@@ -398,10 +404,12 @@ program
   .option('--lo, --lobbying', 'Inclure les lobbyistes')
   .option('--co, --commissions', 'Inclure les commissions parlementaires')
   .option('--senat-histo', 'Inclure les anciens sénateurs (open data ODSEN)')
+  .option('--gouvernements', 'Inclure les gouvernements, postes ministériels et présidences (AMO30)')
+  .option('--bilan-gouvernement', 'Inclure le bilan des gouvernements : projets de loi, 49.3, motions de censure, réponses en séance')
   .option('--re, --reunions', 'Inclure les réunions/agenda parlementaire (AN)')
   .option('--senat-reunions', 'Inclure les réunions Sénat (scraping HTML comptes rendus)')
   .option('--senat-agenda', 'Inclure l\'agenda Sénat (séances publiques à venir via API senat.fr)')
-  .option('--senat-bureaux', 'Inclure les fonctions au bureau des commissions Sénat (scraping senat.fr)')
+  .option('--senat-fonctions', 'Inclure les fonctions datées des sénateurs : bureau, commissions, groupes (export_sens)')
   .option('--senat-dossier-commissions', 'Inclure les commissions saisies des dossiers Sénat (scraping senat.fr)')
   .option('--senat-videos', 'Inclure les vidéos Sénat (scraping videos.senat.fr)')
   .option('--an-videos', 'Inclure les vidéos AN (videos.assemblee-nationale.fr)')
@@ -424,10 +432,12 @@ program
         includeLobbying: options.lobbying,
         includeCommissions: options.commissions,
         includeSenatHisto: options.senatHisto,
+        includeGouvernements: options.gouvernements,
+        includeBilanGouvernement: options.bilanGouvernement,
         includeReunions: options.reunions,
         includeSenatReunions: options.senatReunions,
         includeSenatAgenda: options.senatAgenda,
-        includeSenatBureaux: options.senatBureaux,
+        includeSenatFonctions: options.senatFonctions,
         includeSenatDossierCommissions: options.senatDossierCommissions,
         includeSenatVideos: options.senatVideos,
         includeAnVideos: options.anVideos,
@@ -758,6 +768,30 @@ program
   });
 
 // =============================================================================
+// COMMANDE: sync-gouvernements
+// =============================================================================
+program
+  .command('sync-gouvernements')
+  .description("Gouvernements depuis 2007, postes ministériels, présidences de la République et de l'Assemblée (AMO30 ; celles de l'Assemblée dans presidences_chambre)")
+  .action(async () => {
+    try {
+      const r = await syncGouvernements().finally(libererArchivesAMO30);
+      console.log('\n📊 Gouvernements (AMO30) :');
+      for (const table of ['gouvernements', 'membres', 'postes', 'presidences', 'presidencesAssemblee'] as const) {
+        const c = r[table];
+        console.log(`   ${table.padEnd(20)}: ${c.crees} créés, ${c.modifies} modifiés, ${c.supprimes} supprimés`);
+      }
+      const l = r.liaisons;
+      console.log(`   fiches liées  : ${l.source_id} par PA, ${l.identifiant} par identifiant, ${l.etat_civil} par état civil, ${l.sans_fiche} sans fiche`);
+      if (r.ambiguites.length > 0) console.log(`   ambiguïtés    : ${r.ambiguites.length} (voir les logs)`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-gouvernements failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
 // COMMANDE: sync-senateurs-histo
 // =============================================================================
 program
@@ -785,6 +819,60 @@ program
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'sync-senateurs-histo failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: sync-senat-fonctions
+// =============================================================================
+program
+  .command('sync-bilan-gouvernement')
+  .description('Bilan des gouvernements depuis juin 2017 : projets de loi et leurs signataires (dossiers AN + DOSLEG), 49.3, motions de censure, réponses en séance')
+  .option('--archive-dosleg <chemin>', 'Lire un dosleg.zip déjà téléchargé plutôt que la version du jour')
+  .action(async (options) => {
+    try {
+      const r = await syncBilanGouvernement({ archiveDosleg: options.archiveDosleg });
+      console.log('\n📊 Bilan des gouvernements :');
+      for (const table of ['projets', 'signataires', 'engagements', 'motions', 'reponses'] as const) {
+        const c = r[table];
+        console.log(`   ${table.padEnd(12)}: ${c.crees} créés, ${c.modifies} modifiés, ${c.supprimes} supprimés`);
+      }
+      const a = r.anomalies;
+      console.log(`   réponses non rattachées       : ${r.reponsesNonRattachees}`);
+      console.log(`   auteurs Sénat sans poste      : ${a.auteursSenatNonRattaches.length}`);
+      console.log(`   engagements sans texte        : ${a.engagementsSansTexte.length}`);
+      console.log(`   motions sans gouvernement     : ${a.motionsSansGouvernement.length}, sans alinéa : ${a.motionsSansAlinea.length}`);
+      console.log(`   dossiers sans dépôt lisible   : ${a.sansDepot.length}, hors gouvernement : ${a.horsGouvernement.length}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-bilan-gouvernement failed');
+      process.exit(1);
+    }
+  });
+
+program
+  .command('sync-senat-fonctions')
+  .description('Fonctions datées des sénateurs (bureau du Sénat, commissions, groupes) et présidences du Sénat depuis export_sens.zip')
+  .option('--archive <chemin>', "Lire un export_sens.zip déjà téléchargé plutôt que la version du jour")
+  .action(async (options) => {
+    try {
+      const r = await syncSenatFonctions({ archive: options.archive });
+      console.log('\n📊 Fonctions des sénateurs (export_sens) :');
+      console.log(`   Créées                   : ${r.crees}`);
+      console.log(`   Modifiées                : ${r.modifies}`);
+      console.log(`   Supprimées               : ${r.supprimes}`);
+      console.log(`   Inchangées               : ${r.inchanges}`);
+      console.log(`   Anciennes lignes remplacées : ${r.remplaces}`);
+      console.log(`   Écart avec l'annuaire    : ${r.ecartAnnuaire}${r.commissionsGelees ? ' (commissions gelées)' : ''}`);
+      console.log(
+        r.presidences
+          ? `   Présidences du Sénat     : ${r.presidences.crees} créées, ${r.presidences.modifies} modifiées, ${r.presidences.supprimes} supprimées`
+          : '   Présidences du Sénat     : dump incomplet, laissées telles quelles',
+      );
+      process.exit(r.commissionsGelees || !r.presidences ? 1 : 0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-senat-fonctions failed');
       process.exit(1);
     }
   });
@@ -826,6 +914,42 @@ program
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'unlink-procedure-incompatible failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDES: separer-homonyme, lier-identifiant (identité des fiches)
+// =============================================================================
+program
+  .command('separer-homonyme <slug> <sourceId>')
+  .description("Rendre à l'homonyme de l'autre chambre (matricule ou PA) sa fiche, avec ses mandats et ses votes de cette chambre")
+  .option('--appliquer', 'Écrire (sans : compte seulement)')
+  .action(async (slug: string, sourceId: string, opts: { appliquer?: boolean }) => {
+    try {
+      const r = await separerHomonyme({ slug, sourceId, appliquer: !!opts.appliquer });
+      console.log(`\n👥 ${r.fiche} → ${r.ficheSeparee}${r.creee ? ' (nouvelle fiche)' : ''}`);
+      console.log(`   Mandats déplacés: ${r.mandats} · votes déplacés: ${r.votes}${r.groupeRetabli ? ' · groupe/circo de la fiche rétablis' : ''}`);
+      console.log(r.appliquee ? '   ✅ Appliqué' : '   (simulation : relancer avec --appliquer)');
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'separer-homonyme failed');
+      process.exit(1);
+    }
+  });
+
+program
+  .command('lier-identifiant <slug> <chambre> <sourceId>')
+  .description("Ranger sur la fiche l'identifiant de l'autre chambre d'un élu passé de l'une à l'autre")
+  .option('--appliquer', 'Écrire (sans : vérifie seulement)')
+  .action(async (slug: string, chambre: string, sourceId: string, opts: { appliquer?: boolean }) => {
+    try {
+      if (chambre !== 'assemblee' && chambre !== 'senat') throw new Error('chambre : assemblee ou senat');
+      const r = await lierIdentifiant({ slug, chambre, sourceId, appliquer: !!opts.appliquer });
+      console.log(`🔗 ${r.fiche} ${r.chambre}:${r.sourceId} ${r.deja ? 'déjà lié' : r.appliquee ? 'lié' : '(simulation)'}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'lier-identifiant failed');
       process.exit(1);
     }
   });
@@ -1739,6 +1863,66 @@ program
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'sync-textes-articles failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: sync-index-legi
+// =============================================================================
+program
+  .command('sync-index-legi')
+  .description(
+    "Tenir l'index de la base LEGI (DILA) : textes et articles de loi, pour les liens vers Légifrance. " +
+      'Le premier passage charge le dump global (1,1 Go), les suivants les seuls incréments quotidiens',
+  )
+  .option('--limite <n>', "Nombre maximum d'incréments appliqués", (v: string) => parseInt(v, 10))
+  .option('--reinitialiser', "Vider l'index et repartir du dernier dump global")
+  .action(async (options: { limite?: number; reinitialiser?: boolean }) => {
+    try {
+      const r = await synchroniserIndexLegi(options);
+      if (r.global) console.log(`\nDump global chargé  : ${r.global}`);
+      console.log(`Incréments appliqués : ${r.incrementsAppliques}`);
+      console.log(`Incréments restants  : ${r.incrementsRestants}`);
+      console.log(`Dernière archive     : ${r.archive ?? 'aucune'}`);
+      console.log(`Textes écrits        : ${r.textesEcrits}`);
+      console.log(`Articles écrits      : ${r.articlesEcrits}`);
+      console.log(`Lignes supprimées    : ${r.lignesSupprimees}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-index-legi failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
+// COMMANDE: sync-renvois-legi
+// =============================================================================
+program
+  .command('sync-renvois-legi')
+  .description(
+    "Repérer dans le dispositif des amendements les textes et articles de loi cités, rattachés à l'index LEGI. " +
+      'Ne traite que les amendements nouveaux, modifiés ou récents, sauf --tout',
+  )
+  .option('--limite <n>', "Nombre maximum d'amendements traités", (v: string) => parseInt(v, 10))
+  .option('--tout', 'Tout recalculer, même ce qui est à jour')
+  .option('--uid <uid>', 'Ne traiter que cet amendement')
+  .option('--dry-run', 'Calculer sans rien écrire')
+  .action(async (options: { limite?: number; tout?: boolean; uid?: string; dryRun?: boolean }) => {
+    try {
+      const { synchroniserRenvoisLegi } = await import('./workers/renvois-legi.js');
+      const r = await synchroniserRenvoisLegi(options);
+      console.log(`\nAmendements traités   : ${r.amendements}${options.dryRun ? ' (dry-run, rien écrit)' : ''}`);
+      console.log(`  avec au moins 1 lien : ${r.avecRenvoi}`);
+      console.log(`  lus avec leur article: ${r.avecContexte}`);
+      console.log(`  illisibles           : ${r.erreurs}`);
+      console.log(`Liens vers un article : ${r.renvois.article}`);
+      console.log(`Liens vers un texte   : ${r.renvois.texte}`);
+      console.log(`Titres LEGI écartés   : ${r.titresEcartes}`);
+      console.log(`Lignes effacées (amendement sans dispositif) : ${r.effaces}`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-renvois-legi failed');
       process.exit(1);
     }
   });

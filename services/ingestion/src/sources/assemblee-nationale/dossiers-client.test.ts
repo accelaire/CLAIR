@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { etatApresDecision, parcoursDossier } from './dossiers-client.js';
+import { etatApresDecision, lectureDeDepot, parcoursDossier } from './dossiers-client.js';
 
 describe('etatApresDecision', () => {
   it('un texte modifié par une chambre repart en navette, même après un rejet', () => {
@@ -31,9 +31,38 @@ describe('etatApresDecision', () => {
     expect(etatApresDecision('en_cours', 'rejeté définitivement')).toBe('rejete');
   });
 
+  it("un projet rejeté en 1re lecture par sa chambre de dépôt part dans l'autre chambre", () => {
+    // PLFSS 2027 (DLR5L17N54951) : rejeté par l'Assemblée en 1re lecture, puis transmis au Sénat.
+    const premiere = { projet: true, premiereLectureChambreDeDepot: true };
+    expect(etatApresDecision('en_cours', 'rejeté', premiere)).toBe('en_cours');
+    expect(etatApresDecision('en_cours', 'rejet du texte par la commission', premiere)).toBe('en_cours');
+  });
+
+  it('les autres rejets restent des rejets', () => {
+    // Approbation des comptes de la sécurité sociale 2024 (DLR5L17N52133) :
+    // adoptée par l'Assemblée, rejetée par le Sénat, jamais reprise.
+    expect(etatApresDecision('adopte', 'rejeté', { projet: true, premiereLectureChambreDeDepot: false })).toBe('rejete');
+    // Une proposition de loi rejetée par sa première chambre n'est pas transmise.
+    expect(etatApresDecision('en_cours', 'rejeté', { projet: false, premiereLectureChambreDeDepot: true })).toBe('rejete');
+    expect(etatApresDecision('en_cours', 'rejeté')).toBe('rejete');
+  });
+
   it("laisse l'état inchangé sur une conclusion qui n'est pas une décision sur le texte", () => {
     expect(etatApresDecision('adopte', 'Accord')).toBe('adopte');
     expect(etatApresDecision('en_cours', '')).toBe('en_cours');
+  });
+});
+
+describe('lectureDeDepot', () => {
+  it("lit la chambre de l'acte de dépôt", () => {
+    expect(lectureDeDepot([{ codeActe: 'AN1' }, { codeActe: 'AN1-DEPOT' }, { codeActe: 'SN1-DEBATS-DEC' }])).toBe('AN1');
+    // Projet déposé au Sénat : son dossier AN commence par la lecture du Sénat.
+    expect(lectureDeDepot([{ codeActe: 'SN1' }, { codeActe: 'SN1-DEPOT' }, { codeActe: 'AN1-DEPOT' }])).toBe('SN1');
+  });
+
+  it('se rabat sur la première lecture rencontrée, ou rien', () => {
+    expect(lectureDeDepot([{ codeActe: 'SN1' }, { codeActe: 'AN1' }])).toBe('SN1');
+    expect(lectureDeDepot([{ codeActe: 'CMP' }])).toBeNull();
   });
 });
 

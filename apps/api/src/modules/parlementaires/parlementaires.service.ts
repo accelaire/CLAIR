@@ -21,6 +21,8 @@ import {
 import { fuzzySearchCandidates, FuzzyCandidate } from '../../utils/fuzzy-search';
 import { INTERVENTIONS_DE_FOND } from '../../utils/interventions';
 import { METADONNEES_AMENDEMENT_SELECT, avecNombreDeSousAmendements } from '../../utils/amendements';
+import { RENVOIS_SELECT, avecRenvois } from '../../utils/renvois-legi';
+import { GouvernementsService } from '../gouvernements/gouvernements.service';
 
 // =============================================================================
 // SESSIONS SÉNAT — l'axe temporel de la chambre haute
@@ -60,6 +62,19 @@ function parseSessionWindow(session: string): SessionWindow | null {
 }
 
 /**
+ * Chambre d'une liste ou d'un rang. Un classement de présence toutes chambres
+ * confondues ne compare que les députés : au Sénat, le taux tous scrutins ne
+ * mesure pas la présence (les bulletins sont déposés par le groupe, présents ou
+ * non) et la présence aux votes solennels ne se compare pas à celle de
+ * l'Assemblée (ticket #108). Les sénateurs ont leur classement, sur la chambre
+ * Sénat.
+ */
+export function chambreDuClassement(sort: string, chambre?: Chambre): Chambre | undefined {
+  if (chambre) return chambre;
+  return sort === 'presence' ? 'assemblee' : undefined;
+}
+
+/**
  * Filtre `MandatParlementaire` correspondant à la période demandée, quel que soit
  * l'axe : `legislature` (AN) ou `session` (Sénat, par chevauchement d'intervalle).
  * Renvoie `null` si aucune période n'est demandée.
@@ -95,7 +110,7 @@ const AMENDEMENT_SELECT = {
   chambre: true,
   texteRef: true,
   articleVise: true,
-  dispositif: true,
+  ...RENVOIS_SELECT,
   exposeSommaire: true,
   auteurLibelle: true,
   sort: true,
@@ -169,6 +184,11 @@ const PARLEMENTAIRE_LIST_SELECT = {
   statsCarriereParticipation: true,
   statsCarriereInterventions: true,
   statsCarriereAmendements: true,
+  statsCarrierePresenceSolennel: true,
+  statsCarriereScrutins: true,
+  statsCarriereClassable: true,
+  statsScrutins: true,
+  statsClassable: true,
   resumeIA: true,
   parcoursIA: true,
   positionsClesIA: true,
@@ -232,25 +252,51 @@ export class ParlementairesService {
   private buildParlementaireOrderBy(
     sort: string,
     order: 'asc' | 'desc',
-    periode: 'mandat' | 'carriere' = 'mandat'
+    periode: 'mandat' | 'carriere' = 'mandat',
+    chambre?: Chambre,
   ): Prisma.ParlementaireOrderByWithRelationInput[] {
     const carriere = periode === 'carriere';
     const primaryMap: Record<string, Prisma.ParlementaireOrderByWithRelationInput> = {
       nom: { nom: order },
       prenom: { prenom: order },
-      presence: carriere ? { statsCarrierePresence: order } : { statsPresence: order },
-      loyaute: carriere ? { statsCarriereLoyaute: order } : { statsLoyaute: order },
+      // Au Sénat, la présence se mesure sur les votes personnels (scrutins
+      // solennels) : le taux tous scrutins compte des bulletins déposés par le
+      // groupe, présents ou non (ticket #108).
+      // Un taux null (aucun scrutin à évaluer) n'est ni le meilleur ni le pire :
+      // il va en fin de classement dans les deux sens. Postgres le mettrait en
+      // tête d'un tri décroissant.
+      presence:
+        chambre === 'senat'
+          ? carriere
+            ? { statsCarrierePresenceSolennel: { sort: order, nulls: 'last' } }
+            : { statsPresenceSolennel: { sort: order, nulls: 'last' } }
+          : carriere
+            ? { statsCarrierePresence: { sort: order, nulls: 'last' } }
+            : { statsPresence: { sort: order, nulls: 'last' } },
+      loyaute: carriere
+        ? { statsCarriereLoyaute: { sort: order, nulls: 'last' } }
+        : { statsLoyaute: { sort: order, nulls: 'last' } },
       activite: { statsInterventions: order },
       amendements: { statsAmendements: order },
       interventions: { statsInterventions: order },
     };
     const primary = primaryMap[sort] || { nom: order };
+    // Un taux calculé sur trop peu de scrutins (SEUIL_SCRUTINS_CLASSEMENT,
+    // côté ingestion) ne se compare pas aux autres : ses titulaires passent
+    // après les classables, dans les deux sens de tri. Sans cela, 179 sénateurs
+    // élus en septembre 2026, notés sur 28 scrutins, tenaient la tête à 100 %.
+    // Le seuil compte tous les scrutins : il ne vaut pas pour la présence des
+    // sénateurs, mesurée sur les seuls scrutins solennels, peu nombreux.
+    const taux = sort === 'loyaute' || (sort === 'presence' && chambre !== 'senat');
+    const classable: Prisma.ParlementaireOrderByWithRelationInput[] = taux
+      ? [carriere ? { statsCarriereClassable: 'desc' } : { statsClassable: 'desc' }]
+      : [];
     // Tiebreakers déterministes : indispensables pour que la liste paginée et le
     // calcul du rang ordonnent les ex æquo (ex. 0 amendement / 0 intervention,
     // ou stats null) de façon strictement identique. Sans cela, page =
     // ceil(rank / size) peut tomber sur la mauvaise page dans les gros paquets
     // d'égalités. `id` (unique) garantit un ordre total stable.
-    return [primary, { nom: 'asc' }, { id: 'asc' }];
+    return [...classable, primary, { nom: 'asc' }, { id: 'asc' }];
   }
 
   // ===========================================================================
@@ -281,15 +327,16 @@ export class ParlementairesService {
       return JSON.parse(cached);
     }
 
+    const chambreClassement = chambreDuClassement(sort, chambre);
     const where: Prisma.ParlementaireWhereInput = {
       actif: true,
-      ...(chambre && { chambre }),
+      ...(chambreClassement && { chambre: chambreClassement }),
       ...(groupe && { groupe: { slug: groupe } }),
     };
 
     const rows = await this.prisma.parlementaire.findMany({
       where,
-      orderBy: this.buildParlementaireOrderBy(sort, order, periode),
+      orderBy: this.buildParlementaireOrderBy(sort, order, periode, chambreClassement),
       select: { slug: true },
     });
 
@@ -371,6 +418,7 @@ export class ParlementairesService {
     // Dans les deux cas, le groupe/circonscription de la période sont réinjectés au
     // shaping. Sans filtre de période : comportement courant (parlementaires actifs).
     const periodMandatWhere = buildPeriodMandatWhere(legislature, session);
+    const chambreClassement = chambreDuClassement(sort, chambre);
 
     const where: Prisma.ParlementaireWhereInput = {
       ...(periodMandatWhere
@@ -388,11 +436,11 @@ export class ParlementairesService {
             ...(groupe && { groupe: { slug: groupe } }),
             ...(departement && { circonscription: { departement } }),
           }),
-      ...(chambre && { chambre }),
+      ...(chambreClassement && { chambre: chambreClassement }),
       ...(search && buildParlementaireSearchCondition(search)),
     };
 
-    const orderBy = this.buildParlementaireOrderBy(sort, order, periode);
+    const orderBy = this.buildParlementaireOrderBy(sort, order, periode, chambreClassement);
 
     let [parlementaires, total]: [ParlementaireListRow[], number] = await Promise.all([
       this.prisma.parlementaire.findMany({
@@ -465,16 +513,39 @@ export class ParlementairesService {
         votesCount: votesCount.get(p.id) ?? 0,
         interventionsCount: interventionsCount.get(p.id) ?? 0,
         amendementsCount: amendementsCount.get(p.id) ?? 0,
+        // Les taux de la période demandée : en `periode=carriere`, la liste
+        // était triée sur la carrière mais affichait le mandat en cours, et ne
+        // montrait donc pas les chiffres de la fiche (#108).
         stats: p.statsCalculatedAt
-          ? {
-              presence: p.statsPresence ?? 0,
-              loyaute: p.statsLoyaute ?? 0,
-              participation: p.statsParticipation ?? 0,
-              interventions: p.statsInterventions ?? 0,
-              amendements: p.statsAmendements ?? 0,
-            }
+          ? periode === 'carriere'
+            ? {
+                presence: p.statsCarrierePresence ?? null,
+                presenceSolennel: p.statsCarrierePresenceSolennel ?? null,
+                loyaute: p.statsCarriereLoyaute ?? null,
+                participation: p.statsCarriereParticipation ?? 0,
+                interventions: p.statsInterventions ?? 0,
+                amendements: p.statsAmendements ?? 0,
+                scrutins: p.statsCarriereScrutins,
+                classable: p.statsCarriereClassable,
+              }
+            : {
+                presence: p.statsPresence ?? null,
+                presenceSolennel: p.statsPresenceSolennel ?? null,
+                loyaute: p.statsLoyaute ?? null,
+                participation: p.statsParticipation ?? 0,
+                interventions: p.statsInterventions ?? 0,
+                amendements: p.statsAmendements ?? 0,
+                // Scrutins du mandat en cours sur lesquels porte la présence, et
+                // s'ils suffisent à figurer dans les classements (50 au moins).
+                // Le seuil ne vaut pas pour la présence des sénateurs, mesurée
+                // sur les scrutins solennels (presenceSolennel).
+                scrutins: p.statsScrutins,
+                classable: p.statsClassable,
+              }
           : null,
         // Retirer les champs stats bruts
+        statsScrutins: undefined,
+        statsClassable: undefined,
         statsPresence: undefined,
         statsPresenceSolennel: undefined,
         statsLoyaute: undefined,
@@ -522,11 +593,27 @@ export class ParlementairesService {
         },
         mandats: {
           where: {
-            // Exclut les orphelins (actifs sans organe_ref = stale PM sans fermeture)
-            OR: [{ dateFin: { not: null } }, { organeRef: { not: null } }],
+            AND: [
+              // Exclut les orphelins (actifs sans organe_ref = stale PM sans fermeture)
+              { OR: [{ dateFin: { not: null } }, { organeRef: { not: null } }] },
+              // Les fonctions gouvernementales et présidentielles viennent de
+              // `fonctionsGouvernementales` : celles que l'enrichissement écrivait
+              // ici sont fausses (appartenances jamais closes, présidence ouverte
+              // sur l'organe d'un prédécesseur). Les missions restent des mandats.
+              {
+                NOT: {
+                  OR: [
+                    { typeOrgane: { in: ['GOUVERNEMENT', 'PRESREP'] } },
+                    { typeOrgane: 'MINISTERE', OR: [{ qualite: null }, { NOT: { qualite: 'en mission' } }] },
+                  ],
+                },
+              },
+            ],
           },
           orderBy: { dateDebut: 'desc' },
-          take: 50,
+          // Les fonctions datées du Sénat (ticket #118) remontent à 1986 : jusqu'à
+          // 70 lignes pour un sénateur, que 50 coupaient.
+          take: 150,
           include: {
             commission: {
               select: { slug: true, nom: true, chambre: true },
@@ -586,7 +673,48 @@ export class ParlementairesService {
       stats = await this.getParlementaireStats(parlementaire.id, parlementaire.chambre as Chambre);
     }
 
-    const result = { ...parlementaire, stats };
+    const [fonctionsGouvernementales, presidencesAssemblee] = await Promise.all([
+      new GouvernementsService(this.prisma, this.redis).getFonctionsGouvernementales(parlementaire.id),
+      this.prisma.presidenceChambre.findMany({
+        where: { parlementaireId: parlementaire.id, chambre: 'assemblee' },
+        orderBy: { dateDebut: 'desc' },
+      }),
+    ]);
+
+    // Une présidence de l'Assemblée est une fonction exercée PENDANT le mandat :
+    // elle se range sous lui, avec les commissions. Elle vient de
+    // `presidences_chambre` (AMO30), complète et datée ; l'enrichissement
+    // (AMO10) n'écrit que celle de la législature en cours : sa ligne est
+    // remplacée, pas doublée. Celle du Sénat est déjà un mandat du bureau daté
+    // (senat-fonctions), de même uid que sa ligne de `presidences_chambre`.
+    const presidences = presidencesAssemblee.map((p) => ({
+      id: `presidence-assemblee-${p.uid}`,
+      parlementaireId: parlementaire.id,
+      typeOrgane: 'BUREAU',
+      institution: 'Bureau de l’Assemblée nationale',
+      qualite: `${parlementaire.sexe === 'F' ? 'Présidente' : 'Président'} de l’Assemblée nationale`,
+      dateDebut: p.dateDebut,
+      dateFin: p.dateFin,
+      commissionId: null,
+      commission: null,
+      // `PM…` range la fonction sous un mandat de l'Assemblée
+      // (lib/fonctions-par-mandat côté web).
+      sourceUid: p.uid,
+      organeRef: null,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    }));
+    const mandats =
+      presidences.length === 0
+        ? parlementaire.mandats
+        : [
+            ...presidences,
+            ...parlementaire.mandats.filter(
+              (m) => !(m.typeOrgane === 'BUREAU' && /^Présidente? de l['’]Assemblée nationale$/.test(m.qualite ?? '')),
+            ),
+          ].sort((a, b) => b.dateDebut.getTime() - a.dateDebut.getTime());
+
+    const result = { ...parlementaire, mandats, stats, fonctionsGouvernementales };
 
     await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
 
@@ -624,12 +752,15 @@ export class ParlementairesService {
         statsLoyaute: true,
         statsParticipation: true,
         statsCarrierePresence: true,
+        statsCarrierePresenceSolennel: true,
         statsCarriereLoyaute: true,
         statsCarriereParticipation: true,
         statsInterventions: true,
         statsAmendements: true,
         statsAmendementsAdoptes: true,
         statsQuestions: true,
+        statsCarriereScrutins: true,
+        statsScrutins: true,
         statsCalculatedAt: true,
       },
     });
@@ -642,9 +773,13 @@ export class ParlementairesService {
     // encore rempli les colonnes de carrière (déploiement, base fraîche).
     if (parlementaire?.statsCalculatedAt) {
       const stats = {
-        presence: parlementaire.statsCarrierePresence ?? parlementaire.statsPresence ?? 0,
-        presenceSolennel: parlementaire.statsPresenceSolennel ?? null,
-        loyaute: parlementaire.statsCarriereLoyaute ?? parlementaire.statsLoyaute ?? 0,
+        // null = aucun scrutin où il pouvait voter (président de l'assemblée,
+        // mandat passé au Gouvernement), pas 0 % (cf. stats-calculator).
+        presence: parlementaire.statsCarrierePresence ?? parlementaire.statsPresence ?? null,
+        // Carrière elle aussi : le dernier mandat seul donnait 0 % à Gérard
+        // Collomb, sur un scrutin pendant un mois au Sénat en 2018 (#108).
+        presenceSolennel: parlementaire.statsCarrierePresenceSolennel ?? parlementaire.statsPresenceSolennel ?? null,
+        loyaute: parlementaire.statsCarriereLoyaute ?? parlementaire.statsLoyaute ?? null,
         participation:
           parlementaire.statsCarriereParticipation ?? parlementaire.statsParticipation ?? 0,
         interventions: parlementaire.statsInterventions ?? 0,
@@ -653,6 +788,8 @@ export class ParlementairesService {
           adoptes: parlementaire.statsAmendementsAdoptes ?? 0,
         },
         questions: parlementaire.statsQuestions ?? 0,
+        // Scrutins sur lesquels porte la présence de carrière.
+        scrutins: parlementaire.statsCarriereScrutins ?? parlementaire.statsScrutins ?? null,
       };
 
       // Cache court
@@ -1227,7 +1364,7 @@ export class ParlementairesService {
         select: AMENDEMENT_SELECT,
       });
       // `IN` ne garantit aucun ordre : on rétablit celui décidé par le tri SQL.
-      const parId = new Map((await avecNombreDeSousAmendements(this.prisma, charges)).map((a) => [a.id, a]));
+      const parId = new Map((await avecNombreDeSousAmendements(this.prisma, charges.map(avecRenvois))).map((a) => [a.id, a]));
       amendements = ids.map((id) => parId.get(id)).filter(Boolean);
     }
 
@@ -1280,9 +1417,9 @@ export class ParlementairesService {
       sourceData: undefined,
       stats: p.statsCalculatedAt
         ? {
-            presence: p.statsPresence ?? 0,
+            presence: p.statsPresence,
             presenceSolennel: p.statsPresenceSolennel ?? null,
-            loyaute: p.statsLoyaute ?? 0,
+            loyaute: p.statsLoyaute,
             participation: p.statsParticipation ?? 0,
             interventions: p.statsInterventions ?? 0,
             amendements: {

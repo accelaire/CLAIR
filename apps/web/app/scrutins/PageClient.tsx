@@ -93,9 +93,10 @@ function ScrutinsPageContent({ initialScrutins, initialPage = 1 }: PageClientPro
     type: string;
     nature: string;
     tag: string;
+    censure: string;
     dateFrom: string;
     dateTo: string;
-  }>(['search', 'chambre', 'type', 'nature', 'tag']);
+  }>(['search', 'chambre', 'type', 'nature', 'tag', 'censure']);
 
   const [dateRange, setDateRange] = useUrlDateRange();
   const dateParams = dateRangeToParams(dateRange);
@@ -118,6 +119,7 @@ function ScrutinsPageContent({ initialScrutins, initialPage = 1 }: PageClientPro
           type: filters.type || undefined,
           nature: filters.nature || undefined,
           tag: filters.tag || undefined,
+          censure: filters.censure || undefined,
           page: pageParam,
           limit: 20,
           ...dateParams,
@@ -129,7 +131,7 @@ function ScrutinsPageContent({ initialScrutins, initialPage = 1 }: PageClientPro
     // La donnée du rendu serveur ne vaut que pour la vue canonique : dès qu'un
     // filtre est actif, on repart sur un chargement client.
     initialData:
-      initialScrutins && aucunFiltre([filters.search, filters.chambre, filters.type, filters.nature, filters.tag]) &&
+      initialScrutins && aucunFiltre([filters.search, filters.chambre, filters.type, filters.nature, filters.tag, filters.censure]) &&
       Object.keys(dateParams).length === 0
         ? { pages: [initialScrutins], pageParams: [initialPage] }
         : undefined,
@@ -181,9 +183,10 @@ function ScrutinsPageContent({ initialScrutins, initialPage = 1 }: PageClientPro
     if (filters.type) count++;
     if (filters.nature) count++;
     if (filters.tag) count++;
+    if (filters.censure) count++;
     if (dateRange.from || dateRange.to) count++;
     return count;
-  }, [filters.chambre, filters.type, filters.nature, filters.tag, dateRange.from, dateRange.to]);
+  }, [filters.chambre, filters.type, filters.nature, filters.tag, filters.censure, dateRange.from, dateRange.to]);
 
   const handleClearFilters = () => {
     clearAll(['dateFrom', 'dateTo']);
@@ -309,6 +312,23 @@ function ScrutinsPageContent({ initialScrutins, initialPage = 1 }: PageClientPro
                 {natureLabelsCourts[n]}
               </option>
             ))}
+          </select>
+          <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+        </div>
+
+        {/* Motions de censure : celles qu'on cherche quand on suit un 49.3 ou la
+            survie d'un gouvernement (table `motions_censure`, AN depuis 2017). */}
+        <div className={FILTRE_SELECT_WRAPPER}>
+          <select
+            value={filters.censure}
+            onChange={(e) => setFilter('censure', e.target.value)}
+            aria-label="Motions de censure"
+            className="w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="">Motions de censure</option>
+            <option value="toutes">Toutes les motions de censure</option>
+            <option value="alinea3">En réponse à un 49.3</option>
+            <option value="alinea2">Motions spontanées (49.2)</option>
           </select>
           <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         </div>

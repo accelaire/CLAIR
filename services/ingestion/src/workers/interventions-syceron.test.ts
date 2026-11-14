@@ -2,12 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
   regrouperPrises,
-  estMembreDuGouvernement,
   repartirSeances,
   empreinteDesLignes,
   RELECTURE_JOURS,
 } from './interventions-syceron';
-import { TYPE_INTERRUPTION, TYPE_REPONSE } from '../utils/interventions';
+import { TYPE_INTERRUPTION, TYPE_REPONSE, estMembreDuGouvernement, typeSelonOrateur } from '../utils/interventions';
 import type { PriseDeParoleSyceron } from '../sources/assemblee-nationale/syceron-parser';
 
 function prise(p: Partial<PriseDeParoleSyceron> & { ordreAbsolu: number }): PriseDeParoleSyceron {
@@ -214,6 +213,22 @@ describe('estMembreDuGouvernement', () => {
 
   it('traite une qualité absente comme non gouvernementale', () => {
     expect(estMembreDuGouvernement(null)).toBe(false);
+  });
+});
+
+describe('typeSelonOrateur', () => {
+  it('fait d’une question prononcée au banc du Gouvernement une réponse, au Sénat comme à l’Assemblée', () => {
+    // Qualités telles que le compte rendu du Sénat les imprime.
+    for (const qualite of ['Premier ministre', 'Ministre déléguée', 'Ministre d’État', 'Secrétaire d’État']) {
+      expect(typeSelonOrateur('question', qualite)).toBe(TYPE_REPONSE);
+    }
+  });
+
+  it('laisse la question d’un parlementaire, et tout autre type, en l’état', () => {
+    expect(typeSelonOrateur('question', null)).toBe('question');
+    expect(typeSelonOrateur('question', 'Rapporteur de la commission des lois constitutionnelles')).toBe('question');
+    expect(typeSelonOrateur('intervention', 'Ministre')).toBe('intervention');
+    expect(typeSelonOrateur('explication_vote', 'Ministre')).toBe('explication_vote');
   });
 });
 

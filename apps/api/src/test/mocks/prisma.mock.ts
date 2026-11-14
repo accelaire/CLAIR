@@ -55,6 +55,9 @@ export interface MockPrismaClient {
   favori: MockPrismaModel;
   sourceState: MockPrismaModel;
   dossierLegislatif: MockPrismaModel;
+  posteMinisteriel: MockPrismaModel;
+  presidence: MockPrismaModel;
+  presidenceChambre: MockPrismaModel;
   $connect: Mock;
   $disconnect: Mock;
   $transaction: Mock;
@@ -79,6 +82,13 @@ export function createMockPrismaClient(): MockPrismaClient {
     favori: createMockModel(),
     sourceState: createMockModel(),
     dossierLegislatif: createMockModel(),
+    // Lus par chaque fiche parlementaire : vides par défaut, comme pour un
+    // parlementaire qui n'a jamais été au gouvernement. Implémentation passée au
+    // constructeur, que `vi.restoreAllMocks()` (setup.ts) conserve, et non par
+    // `mockResolvedValue`, qu'il efface.
+    posteMinisteriel: { ...createMockModel(), findMany: vi.fn(async () => []) },
+    presidence: { ...createMockModel(), findMany: vi.fn(async () => []) },
+    presidenceChambre: { ...createMockModel(), findMany: vi.fn(async () => []) },
     $connect: vi.fn(),
     $disconnect: vi.fn(),
     $transaction: vi.fn(),

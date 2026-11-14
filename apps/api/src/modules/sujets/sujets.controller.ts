@@ -4,6 +4,7 @@
 
 import { FastifyPluginAsync } from 'fastify';
 import { SujetsService } from './sujets.service';
+import { GouvernementsService } from '../gouvernements/gouvernements.service';
 import {
   sujetsListQuerySchema,
   sujetParamsSchema,
@@ -140,7 +141,14 @@ export const sujetsRoutes: FastifyPluginAsync = async (fastify) => {
       const sujet = await service.getBySlug(slug);
       if (!sujet) throw new ApiError(404, 'Sujet non trouvé');
 
-      const result = { data: sujet };
+      // Projet(s) de loi du Gouvernement parmi les dossiers du sujet, recours au
+      // 49.3 et motions de censure qu'ils ont suscitées (null s'il n'y en a pas).
+      const dossiers = await fastify.prisma.dossierLegislatif.findMany({ where: { sujetId: sujet.id }, select: { id: true } });
+      const gouvernement = await new GouvernementsService(fastify.prisma, fastify.redis).contexteDesDossiers(
+        dossiers.map((d) => d.id),
+      );
+
+      const result = { data: { ...sujet, gouvernement } };
 
       await fastify.redis.setex(cacheKey, CACHE_TTL_1H, JSON.stringify(result));
       return result;

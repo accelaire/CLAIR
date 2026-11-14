@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
+import { useOngletAncre } from '@/lib/use-onglet-ancre';
 import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
 import { FilterBar } from '@/components/FilterBar';
 import { ScrutinsByDossier } from '@/components/scrutins/ScrutinsByDossier';
@@ -759,7 +760,6 @@ function CommissionDetailContent({
 }) {
   const commission_type_init = initialData?.type;
   const defaultTab: Tab = commission_type_init === 'hemicycle' ? 'historique' : 'membres';
-  const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
   const router = useRouter();
 
   const { data: fetchedData, isLoading } = useQuery<{ data: CommissionDetail }>({
@@ -770,6 +770,17 @@ function CommissionDetailContent({
   });
 
   const commission = fetchedData?.data ?? initialData;
+
+  // L'onglet ouvert suit l'ancre de l'URL (`#historique`) : un lien peut y
+  // mener. Les onglets disponibles dépendent du type d'organe et des données.
+  const hemicycle = (commission?.type ?? commission_type_init) === 'hemicycle';
+  const ongletsDisponibles: Tab[] = [
+    ...(!hemicycle ? ['membres' as const] : []),
+    'agenda',
+    'historique',
+    ...(!hemicycle && (commission?.nbDossiers ?? 0) > 0 ? ['dossiers' as const] : []),
+  ];
+  const { actif: activeTab, choisir: setActiveTab, barre: barreOnglets } = useOngletAncre(ongletsDisponibles, defaultTab);
 
   if (isLoading && !commission) {
     return (
@@ -894,7 +905,7 @@ function CommissionDetailContent({
       </div>
 
       {/* Tabs */}
-      <div className='mb-6 border-b overflow-x-auto scrollbar-none'>
+      <div ref={barreOnglets} className='mb-6 scroll-mt-20 border-b overflow-x-auto scrollbar-none'>
         <div className='flex gap-0 -mb-px min-w-max'>
           {tabs.map((tab) => (
             <button

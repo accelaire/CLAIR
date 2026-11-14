@@ -42,6 +42,14 @@ export interface DoslegVote {
   scrnum: number;
   senmat: string;        // Matricule sénateur
   posvotcod: string;     // Position: 1=pour, 2=contre, 3=abstention, 4=non votant
+  stavotidt: string;     // Statut particulier du votant (table stavot), '0' = sans statut
+  /**
+   * Matricule du délégant, porté par la ligne du DÉLÉGATAIRE (celui qui vote pour
+   * un absent), pas par celle de l'absent. Budget 2025 (2024-175), « Pascal
+   * Allizard à Laurent Duplomb » : la ligne de Duplomb porte `14133K`
+   * (Allizard), celle d'Allizard est vide.
+   */
+  senmatdel: string | null;
 }
 
 export interface DoslegAmendementLink {
@@ -77,7 +85,65 @@ export interface TransformedDoslegVote {
   scrutinNumero: number;
   senmatricule: string;
   position: 'pour' | 'contre' | 'abstention' | 'absent';
+  /** Voté par un collègue (délégation personnelle) : il n'était pas là. */
+  parDelegation: boolean;
+  statutVotant: StatutVotant | null;
 }
+
+export type StatutVotant =
+  | 'conge' | 'excuse' | 'haute_cour' | 'president_seance'
+  | 'gouvernement' | 'depute' | 'depute_europeen' | 'deport';
+
+/**
+ * Statuts particuliers de `stavot` qui expliquent qu'un sénateur ne vote pas.
+ * Les codes 1 à 4 (« position de vote systématique ») ne disent rien de la
+ * présence : ils restent sans statut, comme 0.
+ */
+const STATUTS_VOTANT: Record<string, StatutVotant> = {
+  '5': 'conge',
+  '6': 'excuse',
+  '7': 'haute_cour',
+  '8': 'president_seance',
+  '9': 'gouvernement',
+  '10': 'depute',
+  '11': 'depute_europeen',
+  '12': 'deport',
+};
+
+/**
+ * Délégants de chaque scrutin (`sesann-scrnum` → matricules) : un sénateur a voté
+ * par délégation quand un collègue le nomme comme délégant (`senmatdel`).
+ */
+export function delegantsDesScrutins(
+  votes: Pick<DoslegVote, 'sesann' | 'scrnum' | 'senmatdel'>[],
+): Map<string, Set<string>> {
+  const parScrutin = new Map<string, Set<string>>();
+  for (const v of votes) {
+    if (!v.senmatdel) continue;
+    const cle = `${v.sesann}-${v.scrnum}`;
+    let delegants = parScrutin.get(cle);
+    if (!delegants) {
+      delegants = new Set();
+      parScrutin.set(cle, delegants);
+    }
+    delegants.add(v.senmatdel);
+  }
+  return parScrutin;
+}
+
+export function statutVotant(stavotidt: string | null | undefined): StatutVotant | null {
+  return STATUTS_VOTANT[(stavotidt ?? '').trim()] ?? null;
+}
+
+/**
+ * La délégation n'est publiée qu'aux votes personnels (scrutins solennels et à la
+ * tribune) : une ligne `votsen` avec un délégant. Vérifié sur les 88 comptes
+ * rendus de 2024-2025 : les 11 scrutins avec délégations sont exactement les 10
+ * scrutins publics solennels et le scrutin à la tribune de la session. Avant la
+ * session 2014-2015, DOSLEG n'en publie aucune alors que de tels scrutins ont
+ * eu lieu (budget 2012, n° 61 du 06/12/2011) : on ne déduit rien avant.
+ */
+export const SESSION_DELEGATIONS_MIN = 2014;
 
 // =============================================================================
 // HELPERS
@@ -357,9 +423,13 @@ export class DoslegClient {
 
             const senmat = (fields[2] || '').trim();
             const posvotcod = (fields[3] || '').trim();
+            // Colonnes : sesann, scrnum, senmat, posvotcod, titsencod, stavotidt, senmatdel, votsenmar
+            const stavotidt = (fields[5] || '').trim();
+            const delegant = (fields[6] || '').trim();
+            const senmatdel = delegant && delegant !== '\\N' ? delegant : null;
 
             if (senmat && posvotcod && votes.length < MAX_VOTES) {
-              votes.push({ sesann, scrnum, senmat, posvotcod });
+              votes.push({ sesann, scrnum, senmat, posvotcod, stavotidt, senmatdel });
               voteCount++;
             }
           }
@@ -442,6 +512,10 @@ export class DoslegClient {
         });
       }
 
+      // Délégants de chaque scrutin : les sénateurs qui ont confié leur vote. Leur
+      // propre ligne ne le dit pas, c'est celle du délégataire qui les nomme.
+      const delegantsParScrutin = delegantsDesScrutins(votes);
+
       // Transform votes
       const transformedVotes: TransformedDoslegVote[] = votes.map(v => {
         let position: 'pour' | 'contre' | 'abstention' | 'absent';
@@ -457,6 +531,8 @@ export class DoslegClient {
           scrutinNumero: v.scrnum,
           senmatricule: v.senmat,
           position,
+          parDelegation: delegantsParScrutin.get(`${v.sesann}-${v.scrnum}`)?.has(v.senmat) ?? false,
+          statutVotant: statutVotant(v.stavotidt),
         };
       });
 

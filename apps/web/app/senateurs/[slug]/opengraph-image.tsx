@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og';
 import { fetchFromApi } from '@/lib/api-server';
-import { OgLayout, OgStat, OG_SIZE, loadFont } from '@/lib/og';
+import { OgLayout, OgStat, OG_SIZE, loadFont, pourcent } from '@/lib/og';
 import { couleurFamille } from '@/lib/senatoriales/familles';
 import { nomComplet, type FicheEluProvisoire } from '@/lib/senatoriales/resultats';
 
@@ -16,7 +16,7 @@ interface SenateurOg {
   photoUrl: string | null;
   groupe: { nom: string; couleur: string | null } | null;
   circonscription: { departement: string; numero: number; nom: string } | null;
-  stats?: { presence: number; loyaute: number; participation: number };
+  stats?: { presence: number | null; presenceSolennel?: number | null; loyaute: number | null; participation: number };
 }
 
 export default async function Image({
@@ -100,9 +100,16 @@ export default async function Image({
 
         {data.stats && (
           <div style={{ display: 'flex', gap: '16px', marginTop: '16px' }}>
-            <OgStat label="Présence" value={`${data.stats.presence}%`} />
-            <OgStat label="Loyauté" value={`${data.stats.loyaute}%`} />
-            <OgStat label="Participation" value={`${data.stats.participation}%`} />
+            {/* Présence aux votes solennels : au Sénat, les scrutins ordinaires
+                sont votés par groupe (#108). `participation` est un nombre de
+                votes, pas un pourcentage. */}
+            {data.stats.presenceSolennel != null ? (
+              <OgStat label="Présence (solennels)" value={`${data.stats.presenceSolennel}%`} />
+            ) : data.stats.presence != null ? (
+              <OgStat label="Participation" value={`${data.stats.presence}%`} />
+            ) : null}
+            <OgStat label="Loyauté" value={pourcent(data.stats.loyaute)} />
+            <OgStat label="Votes" value={data.stats.participation.toLocaleString('fr-FR')} />
           </div>
         )}
       </OgLayout>

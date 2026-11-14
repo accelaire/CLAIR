@@ -17,6 +17,8 @@ import { DOSSIER_ETAT_CONFIG } from '@/lib/dossiers';
 import { LegislativeStep } from '@/lib/legislative-steps';
 import { LegislativeTimeline } from '@/components/LegislativeTimeline';
 import { LoiPromulgueeCard } from '@/components/LoiPromulgueeCard';
+import { ContexteGouvernementalBandeau } from '@/components/gouvernements/contexte-gouvernemental';
+import type { ContexteGouvernemental } from '@/lib/gouvernements';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,6 +50,8 @@ export interface SujetDetail {
   dateDernierVote: string | null;
   resume: string | null;
   enjeux: string | null;
+  /** Projet de loi du Gouvernement, 49.3 et motions de censure parmi ses dossiers ; absent d'une réponse antérieure. */
+  gouvernement?: ContexteGouvernemental | null;
   featured: boolean;
   liens?: {
     construction: SujetLien[];
@@ -1281,6 +1285,9 @@ export default function PageClient({ initialData }: { initialData?: { data: Suje
           )}
         </div>
       </div>
+
+      {/* Le Gouvernement et ce texte : qui l'a porté, 49.3, motions de censure. */}
+      <ContexteGouvernementalBandeau contexte={sujet.gouvernement} />
 
       {/* Parcours parlementaire : la frise des étapes, et dessous, dans la même
           carte, les séances et réunions qui s'y sont réellement tenues. */}

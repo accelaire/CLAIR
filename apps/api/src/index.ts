@@ -24,6 +24,7 @@ import { healthRoutes } from './modules/health/health.controller';
 import { analyticsRoutes } from './modules/analytics/analytics.controller';
 import { groupesRoutes } from './modules/groupes/groupes.controller';
 import { commissionsRoutes } from './modules/commissions/commissions.controller';
+import { gouvernementsRoutes } from './modules/gouvernements/gouvernements.controller';
 import { agendaRoutes } from './modules/agenda/agenda.controller';
 import { senatorialesRoutes } from './modules/senatoriales/senatoriales.controller';
 import { homepageRoutes } from './modules/homepage/homepage.controller';
@@ -150,6 +151,7 @@ async function buildApp() {
       await api.register(senateursRoutes, { prefix: '/senateurs' });
       await api.register(groupesRoutes, { prefix: '/groupes' });
       await api.register(commissionsRoutes, { prefix: '/commissions' });
+      await api.register(gouvernementsRoutes, { prefix: '/gouvernements' });
       await api.register(agendaRoutes, { prefix: '/agenda' });
       await api.register(senatorialesRoutes, { prefix: '/senatoriales' });
       await api.register(scrutinsRoutes, { prefix: '/scrutins' });
