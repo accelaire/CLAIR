@@ -86,7 +86,7 @@ Référence complète : `docs/02-donnees/modele-prisma.mdx` (dont « Ce que l'AP
 - **`sourceData`** (blob brut de la source) ne sort jamais dans une réponse de liste.
 - **IA** : le prompt ne reçoit que des faits sourcés ; aucun calcul (âge, durée) n'est demandé au modèle ; une abstention en bloc est une position ; un champ réécrit par le modèle n'entre pas dans le hash de contenu, sinon tout le corpus est régénéré à chaque passage.
 - `pnpm db:migrate` ne fonctionne pas sur ce dépôt : une migration s'écrit à partir d'un `prisma migrate diff` relu, et une nouvelle table reçoit son trigger `updated_at` (`apps/api/prisma/triggers.sql`). `pnpm db:push` (qui enchaîne `db:triggers`) sert à créer une base locale **vide** ; sur une base existante, ne lancer ni `db:push` ni `db:migrate` sans demande explicite.
-- Le type-check est désactivé en CI (erreurs préexistantes dans `apps/web` et `services/ingestion`) : ne pas en ajouter de nouvelles ; le lancer quand même sur le workspace touché.
+- Le type-check tourne en CI (`pnpm type-check` : api, web, ingestion et scripts) et doit rester à zéro erreur. Installé avec `node-linker=hoisted`, `apps/web` voit deux `@types/react` (18 pour le site, 19 pour la doc) et signale de fausses erreurs : vérifier avec l'installation par défaut de pnpm, celle de la CI.
 - `apps/web` n'a pas de tests : vérifier une modification de l'interface par un build et dans le navigateur.
 - Le thème de `docs/zudoku.config.tsx` est une copie manuelle de `apps/web/app/globals.css` : un changement de couleur se fait aux deux endroits.
 - Le build du web prérend `/sitemap.xml` contre l'API (`API_URL`, `CLAIR_INTERNAL_SECRET`).
@@ -95,7 +95,7 @@ Référence complète : `docs/02-donnees/modele-prisma.mdx` (dont « Ce que l'AP
 
 ```bash
 pnpm lint
-pnpm --filter <workspace touché> type-check
+pnpm type-check                                 # api, web, ingestion et scripts, comme la CI
 pnpm test                                       # api + ingestion
 pnpm --filter @clair/web build                  # si apps/web change
 pnpm docs:validate                              # si docs/ change (après pnpm docs:nav)

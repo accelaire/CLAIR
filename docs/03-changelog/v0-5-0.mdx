@@ -21,7 +21,7 @@ La v0.5.0 est la plus grosse version à ce jour. Elle couvre les **sénatoriales
 | Réutilisateurs | module `senatoriales`, filtre `?legislature=`, groupe « d'époque » porté par le mandat, réponses compressées et mises en cache |
 | Contributeurs | types et lint presque propres (voir la précision ci-dessous), contrôles qualité sur les débats et les candidatures |
 
-_Précision, relue le 14/11/2026 : les notes du tag annoncent « zéro erreur de type et zéro warning de lint ». Mesuré sur le tag, c'est vrai pour le code, pas pour deux tests : `tsc` ne signale rien dans api, web et scripts mais une erreur dans un test d'ingestion (`slug-stabilite.test.ts`), et ESLint un avertissement dans un test de l'API (`sujets.service.test.ts`). Le type-check n'est toujours pas exécuté en CI ; ces notes sont reprises sans retouche plus bas._
+_Précision, relue le 14/11/2026 : les notes du tag annoncent « zéro erreur de type et zéro warning de lint ». Mesuré sur le tag, c'est vrai pour le code, pas pour deux tests : `tsc` ne signale rien dans api, web et scripts mais une erreur dans un test d'ingestion (`slug-stabilite.test.ts`), et ESLint un avertissement dans un test de l'API (`sujets.service.test.ts`). Le type-check tourne en CI depuis la PR #114, qui a corrigé l'erreur d'ingestion ; ces notes sont reprises sans retouche plus bas._
 
 ## Sénatoriales 2026, de la candidature au résultat
 
