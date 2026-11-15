@@ -40,7 +40,6 @@
     "xml2js": "^0.6.2"
   },
   "devDependencies": {
-    "@clair/config": "workspace:*",
     "@types/node": "^24.11.0",
     "@types/node-cron": "^3.0.11",
     "@types/tar-stream": "3.1.3",

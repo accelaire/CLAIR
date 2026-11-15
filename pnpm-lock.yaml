@@ -69,12 +69,6 @@ importers:
         specifier: ^3.22.4
         version: 3.25.76
     devDependencies:
-      '@clair/config':
-        specifier: workspace:*
-        version: link:../../packages/config
-      '@clair/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@types/node':
         specifier: ^24.11.0
         version: 24.19.1
@@ -148,9 +142,6 @@ importers:
         specifier: ^4.4.7
         version: 4.5.7(@types/react@18.3.27)(react@18.3.1)
     devDependencies:
-      '@clair/config':
-        specifier: workspace:*
-        version: link:../../packages/config
       '@types/node':
         specifier: ^24.11.0
         version: 24.19.1
@@ -219,10 +210,6 @@ importers:
         specifier: ^8.3.2
         version: 8.3.2(@types/node@24.19.1)
 
-  packages/config: {}
-
-  packages/shared: {}
-
   services/ingestion:
     dependencies:
       '@prisma/client':
@@ -274,9 +261,6 @@ importers:
         specifier: ^0.6.2
         version: 0.6.2
     devDependencies:
-      '@clair/config':
-        specifier: workspace:*
-        version: link:../../packages/config
       '@types/node':
         specifier: ^24.11.0
         version: 24.19.1

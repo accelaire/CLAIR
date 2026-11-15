@@ -12,8 +12,6 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json ./apps/api/
 COPY services/ingestion/package.json ./services/ingestion/
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/config/package.json ./packages/config/
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
@@ -21,7 +19,6 @@ RUN pnpm install --frozen-lockfile
 # Copy source code
 COPY apps/api/prisma ./apps/api/prisma
 COPY services/ingestion ./services/ingestion
-COPY packages ./packages
 
 # Generate Prisma client
 RUN pnpm --filter @clair/api db:generate
@@ -48,8 +45,6 @@ ENV TZ=Europe/Paris
 COPY --from=builder /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
 COPY --from=builder /app/services/ingestion/package.json ./services/ingestion/
 COPY --from=builder /app/apps/api/package.json ./apps/api/
-COPY --from=builder /app/packages/shared/package.json ./packages/shared/
-COPY --from=builder /app/packages/config/package.json ./packages/config/
 
 # Dépendances de production seules ; aucun script d'installation n'est utile ici,
 # le client Prisma est copié depuis le builder juste après.

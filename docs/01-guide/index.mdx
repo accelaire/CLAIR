@@ -42,7 +42,7 @@ description: Présentation de CLAIR, organisation du monorepo, pages du site, st
 
 ## 🏢 Organisation du monorepo
 
-Monorepo pnpm géré par [Turborepo](https://turbo.build/repo). Quatre workspaces portent le code ; les deux paquets de `packages/` sont aujourd'hui des coquilles vides.
+Monorepo pnpm géré par [Turborepo](https://turbo.build/repo). Quatre workspaces : `apps/web`, `apps/api`, `services/ingestion` et `docs`.
 
 ```text
 CLAIR/
@@ -54,9 +54,6 @@ CLAIR/
 │   └── ingestion/        # CLI d'ingestion : sources publiques → PostgreSQL,
 │                         # rattachements, statistiques, enrichissement IA
 ├── docs/                 # Cette documentation (Zudoku), docs.clair.vote
-├── packages/
-│   ├── config/           # Vide (module.exports = {})
-│   └── shared/           # Vide (export {})
 ├── scripts/              # Scripts ponctuels (audits, logos de groupes, géographie)
 ├── Dockerfile            # Image de l'API
 ├── docker-compose.yml    # PostgreSQL + Redis pour le développement local
