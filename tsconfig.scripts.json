@@ -1,5 +1,5 @@
 {
-  // Scripts utilitaires hors workspace (audits ponctuels, seed de logos) + seed Prisma.
+  // Scripts utilitaires hors workspace (seed des logos de groupes) + seed Prisma.
   // Ils ne sont pas buildés : ce projet sert uniquement à les type-checker. Sans lui
   // ils dérivent silencieusement du schéma — c'est ainsi que seed.ts avait gardé une
   // clé unique `numero_chambre` qui n'existe plus.
