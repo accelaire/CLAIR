@@ -66,6 +66,7 @@ export const DOMAINES = [
 ] as const;
 
 const selectionPersonne = {
+  slug: true,
   acteurUid: true,
   civilite: true,
   prenom: true,
@@ -74,6 +75,7 @@ const selectionPersonne = {
 } as const;
 
 interface PersonneLue {
+  slug: string;
   acteurUid: string;
   civilite: string | null;
   prenom: string;
@@ -81,9 +83,13 @@ interface PersonneLue {
   parlementaire: { slug: string; chambre: string; photoUrl: string | null } | null;
 }
 
-/** Une personne : nom seul, et sa fiche (avec sa photo) quand elle en a une. */
+/**
+ * Une personne : son slug de membre (`/gouvernements/membres/:slug`), et sa
+ * fiche (avec sa photo) quand elle en a une.
+ */
 function personne(p: PersonneLue) {
   return {
+    slug: p.slug,
     acteurUid: p.acteurUid,
     civilite: p.civilite,
     prenom: p.prenom,
@@ -177,9 +183,26 @@ export class GouvernementsService {
       }),
       this.prisma.presidence.findMany({
         orderBy: [{ dateDebut: 'asc' }, { id: 'asc' }],
-        select: { uid: true, civilite: true, prenom: true, nom: true, dateDebut: true, dateFin: true },
+        select: {
+          uid: true,
+          civilite: true,
+          prenom: true,
+          nom: true,
+          dateDebut: true,
+          dateFin: true,
+          acteurUid: true,
+          parlementaire: { select: { slug: true, chambre: true, photoUrl: true } },
+        },
       }),
     ]);
+    // La page d'un président : sa fiche (François Hollande, député), sinon sa
+    // page de membre du Gouvernement (Emmanuel Macron, ministre de 2014 à 2016),
+    // par l'acteur de la source ; aucune pour Nicolas Sarkozy, publié sans.
+    const acteurs = presidences.flatMap((p) => (p.acteurUid ? [p.acteurUid] : []));
+    const membresPresidents = acteurs.length
+      ? await this.prisma.membreGouvernement.findMany({ where: { acteurUid: { in: acteurs } }, select: { acteurUid: true, slug: true } })
+      : [];
+    const slugMembre = new Map(membresPresidents.map((m) => [m.acteurUid, m.slug]));
 
     return nommerGouvernements(
       gouvernements.map((g) => {
@@ -205,7 +228,21 @@ export class GouvernementsService {
           enCours: g.dateFin === null,
           premierMinistre: pm ? personne(pm) : null,
           presidence: presidence
-            ? { uid: presidence.uid, civilite: presidence.civilite, prenom: presidence.prenom, nom: presidence.nom }
+            ? {
+                uid: presidence.uid,
+                civilite: presidence.civilite,
+                prenom: presidence.prenom,
+                nom: presidence.nom,
+                // Slug de membre et fiche, comme pour une personne du Gouvernement : null sans page.
+                slug: (presidence.acteurUid && slugMembre.get(presidence.acteurUid)) ?? null,
+                parlementaire: presidence.parlementaire
+                  ? {
+                      slug: presidence.parlementaire.slug,
+                      chambre: presidence.parlementaire.chambre,
+                      photoUrl: presidence.parlementaire.photoUrl,
+                    }
+                  : null,
+              }
             : null,
           nbPostes: g.postes.length,
           nbMembres: new Set(g.postes.map((p) => p.membreId)).size,
@@ -304,6 +341,43 @@ export class GouvernementsService {
   }
 
   /**
+   * Tous les membres du Gouvernement depuis 2007, par ordre alphabétique : leur
+   * fiche quand ils en ont une, sinon leur page de membre. Sert au sitemap et
+   * aux réutilisateurs qui veulent la liste sans parcourir chaque gouvernement.
+   */
+  async getMembres() {
+    const cacheKey = 'gouvernement:membres';
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
+    const membres = await this.prisma.membreGouvernement.findMany({
+      orderBy: [{ nom: 'asc' }, { prenom: 'asc' }, { slug: 'asc' }],
+      select: {
+        ...selectionPersonne,
+        postes: { select: { dateDebut: true, dateFin: true } },
+      },
+    });
+    const result = {
+      data: membres.map(({ postes, ...identite }) => {
+        const enFonction = postes.some((p) => p.dateFin === null);
+        const debuts = postes.map((p) => jour(p.dateDebut)).sort();
+        const fins = postes.flatMap((p) => (p.dateFin ? [jour(p.dateFin)] : [])).sort();
+        return {
+          ...personne(identite),
+          nbPostes: postes.length,
+          enFonction,
+          dateDebut: debuts[0] ?? null,
+          // null tant qu'un poste est en cours.
+          dateFin: enFonction ? null : fins.at(-1) ?? null,
+        };
+      }),
+      source: SOURCE_GOUVERNEMENTS,
+    };
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+    return result;
+  }
+
+  /**
    * Un membre du Gouvernement, fiche parlementaire ou non : ses postes et le
    * bilan de chacun (textes signés, réponses en séance ; 49.3 et motions pour
    * un Premier ministre). Donne une API aux membres sans fiche.
@@ -316,8 +390,8 @@ export class GouvernementsService {
     const membre = await this.prisma.membreGouvernement.findUnique({
       where: { slug },
       select: {
-        slug: true,
         ...selectionPersonne,
+        dateNaissance: true,
         postes: {
           orderBy: [{ dateDebut: 'desc' }, { uid: 'asc' }],
           select: {
@@ -338,16 +412,24 @@ export class GouvernementsService {
     });
     if (!membre) return null;
 
-    const [gouvernements, bilans] = await Promise.all([
+    const [gouvernements, bilans, presidences] = await Promise.all([
       this.gouvernementsNommes(),
       this.bilan.desPostes(membre.postes.map((p) => p.id), true),
+      // La présidence de la République, rattachée par l'acteur de la source
+      // (Emmanuel Macron, ministre puis président, n'a pas de fiche).
+      this.prisma.presidence.findMany({
+        where: { acteurUid: membre.acteurUid },
+        orderBy: [{ dateDebut: 'desc' }, { uid: 'asc' }],
+        select: { uid: true, dateDebut: true, dateFin: true },
+      }),
     ]);
     const parId = new Map(gouvernements.map((g) => [g.id, g]));
-    const { postes, slug: slugMembre, ...identite } = membre;
+    const { postes, dateNaissance, ...identite } = membre;
     const result = {
       data: {
-        slug: slugMembre,
         ...personne(identite),
+        dateNaissance: jourOuNull(dateNaissance),
+        presidences: presidences.map((p) => ({ uid: p.uid, dateDebut: jour(p.dateDebut), dateFin: jourOuNull(p.dateFin) })),
         postes: postes.map((p) => {
           const g = parId.get(p.gouvernementId);
           return {
@@ -391,7 +473,6 @@ export class GouvernementsService {
       this.prisma.membreGouvernement.findMany({
         where,
         select: {
-          slug: true,
           ...selectionPersonne,
           postes: {
             orderBy: [{ dateDebut: 'desc' }, { uid: 'asc' }],
@@ -411,10 +492,9 @@ export class GouvernementsService {
       this.reperesGouvernements(),
     ]);
     return membres
-      .map(({ slug, postes, ...identite }) => {
+      .map(({ postes, ...identite }) => {
         const p = postes[0];
         return {
-          slug,
           ...personne(identite),
           dernierPoste: p
             ? {

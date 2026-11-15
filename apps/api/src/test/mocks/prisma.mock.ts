@@ -59,6 +59,7 @@ export interface MockPrismaClient {
   presidence: MockPrismaModel;
   presidenceChambre: MockPrismaModel;
   membreGouvernement: MockPrismaModel;
+  gouvernement: MockPrismaModel;
   $connect: Mock;
   $disconnect: Mock;
   $transaction: Mock;
@@ -91,6 +92,7 @@ export function createMockPrismaClient(): MockPrismaClient {
     presidence: { ...createMockModel(), findMany: vi.fn(async () => []) },
     presidenceChambre: { ...createMockModel(), findMany: vi.fn(async () => []) },
     membreGouvernement: { ...createMockModel(), findMany: vi.fn(async () => []) },
+    gouvernement: { ...createMockModel(), findMany: vi.fn(async () => []) },
     $connect: vi.fn(),
     $disconnect: vi.fn(),
     $transaction: vi.fn(),
