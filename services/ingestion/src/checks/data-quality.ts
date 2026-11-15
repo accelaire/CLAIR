@@ -807,6 +807,30 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     query: `SELECT COUNT(*)::int AS value FROM mandats
       WHERE type_organe = 'BUREAU' AND qualite ~* 'd''âge' AND date_fin IS NULL`,
   },
+  interventions_gouvernement_comptees: {
+    type: 'invariant',
+    label: 'Fiches dont les interventions comptent des prises de parole au banc du Gouvernement',
+    min: 0,
+    max: 0,
+    // stats_interventions ne compte que les prises de parole de parlementaire
+    // (PRISE_DE_PAROLE_PARLEMENTAIRE, stats-calculator) : Sébastien Lecornu
+    // affichait 167 interventions, toutes de ministre (#129). Recompte limité
+    // aux personnes qui ont été au Gouvernement, les seules concernées.
+    query: `SELECT COUNT(*)::int AS value
+      FROM parlementaires p
+      JOIN membres_gouvernement mg ON mg.parlementaire_id = p.id
+      WHERE p.stats_calculated_at IS NOT NULL
+        AND p.stats_interventions <> (
+          SELECT COUNT(*) FROM interventions i
+          WHERE i.parlementaire_id = p.id
+            AND i.est_presidence = false AND i.type <> 'interruption' AND i.reunion_id IS NULL
+            AND i.type <> 'reponse_gouvernement'
+            AND NOT EXISTS (
+              SELECT 1 FROM postes_ministeriels pm
+              WHERE pm.membre_id = mg.id
+                AND i.date::date >= pm.date_debut
+                AND (pm.date_fin IS NULL OR i.date::date <= pm.date_fin)))`,
+  },
   // --- Bilan des gouvernements (SPEC-BILAN-MINISTRE.md, §9) ------------------
   projets_loi_manquants: {
     type: 'invariant',
