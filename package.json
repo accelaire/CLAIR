@@ -3,11 +3,6 @@
   "version": "0.5.0",
   "private": true,
   "license": "AGPL-3.0",
-  "workspaces": [
-    "apps/*",
-    "packages/*",
-    "services/*"
-  ],
   "scripts": {
     "dev": "turbo run dev",
     "dev:web": "turbo run dev --filter=@clair/web",
@@ -30,7 +25,6 @@
     "type-check": "turbo run type-check && pnpm type-check:scripts",
     "type-check:scripts": "tsc -p tsconfig.scripts.json",
     "test": "turbo run test",
-    "test:e2e": "turbo run test:e2e",
     "db:generate": "pnpm --filter @clair/api db:generate",
     "db:migrate": "pnpm --filter @clair/api db:migrate",
     "db:push": "pnpm --filter @clair/api db:push",

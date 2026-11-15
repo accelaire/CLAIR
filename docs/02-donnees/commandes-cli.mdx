@@ -46,8 +46,6 @@ pnpm docs:validate        # syntaxe MDX et liens internes
 pnpm docs:erd             # régénère les diagrammes de la base depuis le schéma Prisma
 ```
 
-`pnpm test:e2e` est déclaré dans `turbo.json`, mais aucun workspace ne définit de script `test:e2e` : la commande ne lance rien.
-
 `pnpm db:migrate` lance `prisma migrate dev`, qui rejoue l'historique des migrations dans une base fantôme : il échoue (erreur P3006 sur `20260313_add_sujets`), car cet historique ne se rejoue pas depuis une base vide. Pour créer ou appliquer une migration, voir [Modèle Prisma](/donnees/modele-prisma#migrations).
 
 ---
