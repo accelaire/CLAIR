@@ -11,6 +11,28 @@ export interface PersonneGouvernement {
   nom: string;
   /** Fiche CLAIR de la personne, quand elle en a une. Sinon, son nom seul. */
   parlementaire: { slug: string; chambre: string; photoUrl: string | null } | null;
+  /** Sans fiche : photo de Wikidata et son crédit. Absente d'une réponse ancienne. */
+  photo?: PhotoCommons | null;
+}
+
+/** Photo de Wikimedia Commons, toujours affichée avec son crédit. */
+export interface PhotoCommons {
+  url: string;
+  auteur: string | null;
+  licence: string;
+  licenceUrl: string | null;
+  /** Page du fichier sur Commons */
+  source: string;
+}
+
+/** La photo de la fiche, sinon celle de Wikidata. */
+export function photoDe(p: { parlementaire?: { photoUrl: string | null } | null; photo?: PhotoCommons | null }): string | null {
+  return p.parlementaire?.photoUrl ?? p.photo?.url ?? null;
+}
+
+/** Crédit d'une photo de Commons en une ligne : « Photo : Auteur, CC BY-SA 4.0, Wikimedia Commons ». */
+export function creditPhoto(photo: PhotoCommons): string {
+  return `Photo : ${photo.auteur ? `${photo.auteur}, ` : ''}${photo.licence}, Wikimedia Commons`;
 }
 
 export interface GouvernementResume {
@@ -31,6 +53,7 @@ export interface GouvernementResume {
     nom: string;
     slug?: string | null;
     parlementaire?: PersonneGouvernement['parlementaire'];
+    photo?: PhotoCommons | null;
   } | null;
   nbPostes: number;
   nbMembres: number;
@@ -430,6 +453,33 @@ export interface MembreGouvernement extends PersonneGouvernement {
     /** null : poste fini avant juin 2017. */
     bilan: BilanPoste | null;
   }>;
+}
+
+/**
+ * Où ranger un membre dans le fil d'Ariane de sa page : sous sa fonction la
+ * plus récente. Un ministre sous son dernier gouvernement ; un président de la
+ * République sous la présidence (sa section de `/gouvernements`, qui regroupe
+ * ses gouvernements). « Gouvernements / Philippe Baptiste » se lisait comme le
+ * gouvernement de Philippe Baptiste, et Emmanuel Macron se retrouvait sous
+ * « Gouvernement Valls II ».
+ */
+export function rattachementDuMembre(
+  m: Pick<MembreGouvernement, 'postes' | 'presidences'>,
+): { nom: string; href: string } | null {
+  let poste: MembreGouvernement['postes'][number] | null = null;
+  for (const p of m.postes) {
+    if (p.gouvernement && (!poste || p.dateDebut > poste.dateDebut)) poste = p;
+  }
+  let presidence: NonNullable<MembreGouvernement['presidences']>[number] | null = null;
+  for (const p of m.presidences ?? []) {
+    if (!presidence || p.dateDebut > presidence.dateDebut) presidence = p;
+  }
+  if (presidence && (!poste || presidence.dateDebut > poste.dateDebut)) {
+    return { nom: 'Présidence de la République', href: `/gouvernements#${presidence.uid}` };
+  }
+  return poste?.gouvernement
+    ? { nom: `Gouvernement ${poste.gouvernement.nom}`, href: `/gouvernements/${poste.gouvernement.slug}` }
+    : null;
 }
 
 /**

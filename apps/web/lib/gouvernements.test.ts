@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  creditPhoto,
   cumulerBilans,
+  rattachementDuMembre,
   fonctionEnCours,
   fonctionsDuMembre,
   lienPersonne,
+  photoDe,
   regrouperPostes,
   type BilanPoste,
   type FonctionGouvernementale,
@@ -183,5 +186,45 @@ describe('fonctionsDuMembre', () => {
 
   it('accorde la présidence à la civilité', () => {
     expect(fonctionsDuMembre({ ...membre, civilite: 'Mme' })[0]!.qualite).toBe('Présidente de la République');
+  });
+});
+
+describe('photoDe et creditPhoto', () => {
+  const photo = {
+    url: 'https://upload.wikimedia.org/x.jpg',
+    auteur: 'LurKin',
+    licence: 'CC BY-SA 4.0',
+    licenceUrl: 'https://creativecommons.org/licenses/by-sa/4.0',
+    source: 'https://commons.wikimedia.org/wiki/File:X.jpg',
+  };
+
+  it('prend la photo de la fiche, sinon celle de Wikidata', () => {
+    expect(photoDe({ parlementaire: { photoUrl: 'https://www.senat.fr/a.jpg' }, photo })).toBe('https://www.senat.fr/a.jpg');
+    expect(photoDe({ parlementaire: null, photo })).toBe(photo.url);
+    expect(photoDe({ parlementaire: null })).toBeNull();
+  });
+
+  it("crédite l'auteur quand il est connu", () => {
+    expect(creditPhoto(photo)).toBe('Photo : LurKin, CC BY-SA 4.0, Wikimedia Commons');
+    expect(creditPhoto({ ...photo, auteur: null, licence: 'Public domain' })).toBe('Photo : Public domain, Wikimedia Commons');
+  });
+});
+
+describe('rattachementDuMembre', () => {
+  const poste = (dateDebut: string, slug: string | null) =>
+    ({ dateDebut, gouvernement: slug ? { uid: slug, slug, nom: slug } : null }) as MembreGouvernement['postes'][number];
+  it('range un ministre sous le gouvernement de son poste le plus récent', () => {
+    expect(
+      rattachementDuMembre({ postes: [poste('2024-12-23', 'bayrou'), poste('2025-10-12', 'lecornu-2'), poste('2025-10-13', null)] }),
+    ).toEqual({ nom: 'Gouvernement lecornu-2', href: '/gouvernements/lecornu-2' });
+    expect(rattachementDuMembre({ postes: [] })).toBeNull();
+  });
+  it('range un président sous la présidence quand elle est sa fonction la plus récente', () => {
+    expect(
+      rattachementDuMembre({
+        postes: [poste('2014-08-26', 'valls-2')],
+        presidences: [{ uid: 'PO739', dateDebut: '2017-05-14', dateFin: null }],
+      }),
+    ).toEqual({ nom: 'Présidence de la République', href: '/gouvernements#PO739' });
   });
 });

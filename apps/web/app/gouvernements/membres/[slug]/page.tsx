@@ -15,8 +15,10 @@ import {
   lienFiche,
   nombre,
   nomComplet,
+  rattachementDuMembre,
   regrouperPostes,
   type MembreGouvernement,
+  type PhotoCommons,
   type SourceGouvernements,
 } from '@/lib/gouvernements';
 
@@ -75,6 +77,9 @@ export default async function MembrePage({ params }: { params: { slug: string } 
   const { fonctions, entrees, enCours, ancien, nbGouvernements } = lecture(m);
   const nom = nomComplet(m);
   const url = `${BASE_URL}/gouvernements/membres/${m.slug}`;
+  // Fil d'Ariane : la personne sous sa fonction la plus récente.
+  const rattachement = rattachementDuMembre(m);
+  const parent = rattachement ?? { nom: 'Gouvernements', href: '/gouvernements' };
   const bilanAvant2017 = m.postes.some((p) => !p.bilan);
   const unBilan = m.postes.some((p) => p.bilan);
 
@@ -84,22 +89,32 @@ export default async function MembrePage({ params }: { params: { slug: string } 
         items={[
           { name: 'Accueil', url: BASE_URL },
           { name: 'Gouvernements', url: `${BASE_URL}/gouvernements` },
+          ...(rattachement ? [{ name: parent.nom, url: `${BASE_URL}${parent.href}` }] : []),
           { name: nom, url },
         ]}
       />
-      <PersonJsonLd name={nom} givenName={m.prenom} familyName={m.nom} jobTitle={enCours?.titre} url={url} />
+      <PersonJsonLd name={nom} givenName={m.prenom} familyName={m.nom} jobTitle={enCours?.titre} image={m.photo?.url} url={url} />
 
       {/* Fil d'Ariane, comme sur une fiche */}
       <nav className="mb-6 flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
         <Link
-          href="/gouvernements"
+          href={parent.href}
           className="inline-flex flex-shrink-0 items-center justify-center rounded-lg p-1.5 transition-colors hover:bg-muted"
-          aria-label="Retour aux gouvernements"
+          aria-label={`Retour : ${parent.nom}`}
         >
           <ArrowLeft className="h-4 w-4" />
         </Link>
-        <Link href="/gouvernements" className="flex-shrink-0 transition-colors hover:text-foreground">
-          Gouvernements
+        {rattachement && (
+          // Masqué sur mobile pour laisser la place au nom : la flèche ramène au niveau parent.
+          <span className="hidden flex-shrink-0 items-center gap-2 sm:flex">
+            <Link href="/gouvernements" className="transition-colors hover:text-foreground">
+              Gouvernements
+            </Link>
+            <span>/</span>
+          </span>
+        )}
+        <Link href={parent.href} className="flex-shrink-0 transition-colors hover:text-foreground">
+          {parent.nom}
         </Link>
         <span className="flex-shrink-0">/</span>
         <span className="truncate font-medium text-foreground">{nom}</span>
@@ -182,7 +197,33 @@ export default async function MembrePage({ params }: { params: { slug: string } 
             {bilanAvant2017 && ' Pas de données de bilan avant juin 2017.'}
           </p>
         )}
+        {m.photo && <CreditPhoto photo={m.photo} />}
       </div>
     </div>
+  );
+}
+
+/**
+ * Crédit d'une photo de Wikimedia Commons, exigé par la plupart de ses
+ * licences : avec les notes de bas de page, comme les autres sources.
+ */
+function CreditPhoto({ photo }: { photo: PhotoCommons }) {
+  const lien = 'underline hover:text-foreground';
+  return (
+    <p>
+      Photo : {photo.auteur && <>{photo.auteur}, </>}
+      {photo.licenceUrl ? (
+        <a href={photo.licenceUrl} target="_blank" rel="noopener noreferrer license" className={lien}>
+          {photo.licence}
+        </a>
+      ) : (
+        photo.licence
+      )}
+      , via{' '}
+      <a href={photo.source} target="_blank" rel="noopener noreferrer" className={lien}>
+        Wikimedia Commons
+      </a>{' '}
+      (image principale de la personne sur Wikidata).
+    </p>
   );
 }

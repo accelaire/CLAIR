@@ -190,7 +190,8 @@ export default async function GouvernementsPage() {
           const plusLong = Math.max(1, ...groupe.gouvernements.map((g) => jours(g, jour)));
           const reference = groupe.gouvernements.find((g) => jours(g, jour) === plusLong);
           return (
-            <section key={groupe.cle}>
+            // Ancre de la présidence : le fil d'Ariane de la page d'un président y mène.
+            <section key={groupe.cle} id={groupe.cle} className="scroll-mt-24">
               <h2 className="text-xl font-semibold">
                 <TitrePresidence titre={groupe.titre} presidence={groupe.presidence} />
               </h2>
