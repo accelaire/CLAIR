@@ -46,15 +46,13 @@
     "ingestion:schedule": "pnpm --filter @clair/ingestion schedule",
     "ingestion:backfill": "pnpm --filter @clair/ingestion backfill",
     "ingestion:calculate-stats": "pnpm --filter @clair/ingestion calculate-stats",
-    "clean": "turbo run clean && rm -rf node_modules",
-    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\""
+    "clean": "turbo run clean && rm -rf node_modules"
   },
   "devDependencies": {
     "@types/node": "^24.11.0",
     "@typescript-eslint/eslint-plugin": "^6.15.0",
     "@typescript-eslint/parser": "^6.15.0",
     "eslint": "^8.55.0",
-    "prettier": "^3.1.0",
     "turbo": "^2.0.0",
     "typescript": "^5.3.0"
   },

@@ -70,7 +70,7 @@ Types : `feat` (fonctionnalité), `fix` (correction), `docs` (documentation), `s
 ### Code
 
 - **TypeScript** strict, sans `any`.
-- **ESLint** (`pnpm lint`) et **Prettier** (`pnpm format`).
+- **ESLint** (`pnpm lint`). Le dépôt n'a pas de configuration Prettier : ne pas reformater un fichier en entier.
 - **Nommage** : `camelCase` pour les variables et fonctions, `PascalCase` pour les types, `kebab-case` pour les fichiers.
 - **API** : un module par domaine dans `apps/api/src/modules/<domaine>/` (`.controller.ts`, `.service.ts`, `.schema.ts` en Zod, tests à côté).
 - **Ingestion** : un client par source dans `services/ingestion/src/sources/`, des tests pour chaque parser, et le respect des limites de débit des sources.
