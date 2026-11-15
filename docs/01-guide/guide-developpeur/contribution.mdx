@@ -49,6 +49,8 @@ pnpm --filter @clair/ingestion exec tsx src/cli.ts check-ia-quality   # si l'IA 
 
 6. **Si une route de l'API change**, modifier son schéma dans `apps/api` : la référence de l'API de cette documentation est générée depuis lui, jamais écrite à la main.
 
+7. **Si le changement est notable** (site, API, données, méthodologie, outillage), ajouter un fragment `.changelog/<sujet>.md` qui alimentera la prochaine version ; sinon, demander le label `changelog:aucun`. Format et règles : [Journal des versions](/changelog).
+
 ---
 
 ## ✍️ Conventions

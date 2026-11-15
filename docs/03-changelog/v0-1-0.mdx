@@ -1,0 +1,41 @@
+---
+title: "Version v0.1.0"
+sidebar_label: "Version v0.1.0"
+date: 2026-01-07
+version: 0.1.0
+description: "Première version publique : parlementaires, scrutins, lobbying"
+---
+
+**Publiée le 07/01/2026** · [Code de la version](https://github.com/accelaire/CLAIR/tree/v0.1.0)
+
+## En bref
+
+La première version publique de CLAIR, posée le 7 janvier 2026 en un seul commit. Elle réunit déjà les trois piliers du projet : **qui sont les parlementaires**, **comment ils votent** et **qui cherche à les influencer**, à partir des données ouvertes de l'Assemblée nationale, du Sénat et de la HATVP.
+
+| Pour qui | Ce qui arrive |
+|---|---|
+| Citoyens | fiches des députés et des sénateurs, groupes politiques, scrutins, lobbying, recherche, explorateur |
+| Réutilisateurs | une API qui expose parlementaires, groupes, scrutins et lobbying |
+| Contributeurs | le monorepo : site, API, ingestion des sources ouvertes |
+
+## Ce que contenait le socle
+
+<Mermaid
+  title="Le socle de la v0.1.0"
+  chart={`flowchart LR
+    AN["Assemblée nationale"] --> I["Ingestion"]
+    SE["Sénat"] --> I
+    HA["HATVP<br/>(lobbying)"] --> I
+    DI["DILA, Légifrance"] --> I
+    I --> DB[("Base PostgreSQL")]
+    DB --> API["API"]
+    API --> W["Site<br/>députés, sénateurs, groupes,<br/>scrutins, lobbying, recherche"]`}
+/>
+
+Le simulateur présent dans cette version a été retiré en [v0.3.0](/changelog/v0-3-0), avec l'authentification qui l'accompagnait.
+
+## Notes complètes
+
+_Reprises telles quelles du tag annoté `v0.1.0`._
+
+Le tag de cette version ne détaille pas son contenu.

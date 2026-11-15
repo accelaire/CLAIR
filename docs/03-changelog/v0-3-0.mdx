@@ -1,0 +1,137 @@
+---
+title: "Version v0.3.0"
+sidebar_label: "Version v0.3.0"
+date: 2026-04-19
+version: 0.3.0
+description: "IA enrichment, sujets, classements, fiches parlementaires"
+commits: 93
+prs: 10
+depuis: v0.2.0
+---
+
+**Publiée le 19/04/2026** · 93 commits et 10 pull requests depuis [v0.2.0](/changelog/v0-2-0) · [Comparer avec v0.2.0](https://github.com/accelaire/CLAIR/compare/v0.2.0...v0.3.0) · [Code de la version](https://github.com/accelaire/CLAIR/tree/v0.3.0)
+
+## En bref
+
+La v0.3.0 introduit l'**enrichissement par IA** (Mistral) : des résumés de scrutins, de dossiers et de sujets, toujours signalés comme tels. Elle crée les **sujets**, qui regroupent les dossiers d'une même question, une page de **classements**, des secteurs normalisés pour le **lobbying**, et simplifie l'architecture en retirant Meilisearch, BullMQ et le simulateur.
+
+| Pour qui | Ce qui change |
+|---|---|
+| Citoyens | résumés IA avec avertissement, pages [sujets](https://clair.vote/sujets) et [classements](https://clair.vote/classements), fiches enrichies (mandats, déclarations HATVP), mode sombre, pages pédagogiques |
+| Réutilisateurs | module `sujets`, secteurs du lobbying, Swagger public et page [/api](https://clair.vote/api) |
+| Contributeurs | commande `enrich-ia`, contrôles qualité de l'IA, architecture simplifiée |
+
+## Des résumés IA, signalés et contrôlés
+
+<Mermaid
+  title="Enrichissement IA pendant la synchronisation"
+  chart={`flowchart LR
+    SY["smart-sync"] --> HC{"Contenu changé ?<br/>(hash)"}
+    HC -->|non| SKIP["Résumé conservé"]
+    HC -->|oui| LLM["Mistral<br/>prompts en français"]
+    LLM --> COL["Colonnes IA<br/>scrutin, dossier, sujet"]
+    COL --> QA["Contrôles qualité IA<br/>(inversions de sens)"]
+    QA --> UI["Carte « résumé IA »<br/>avec avertissement"]`}
+/>
+
+Le hash du contenu évite de redemander un résumé quand rien n'a changé ; un contrôle dédié détecte les résumés qui inversent le sens d'un vote.
+
+## Les sujets et les secteurs dans l'API
+
+```bash
+# Les sujets suivis (regroupements de dossiers)
+curl "https://api.clair.vote/api/v1/sujets?limit=5"
+
+# Les secteurs du lobbying, avec le nombre de lobbyistes et d'actions
+curl "https://api.clair.vote/api/v1/lobbying/secteurs"
+```
+
+Les sujets sont produits par un générateur déterministe (Union-Find) : les mêmes dossiers donnent toujours les mêmes sujets.
+
+## Notes complètes
+
+_Reprises telles quelles du tag annoté `v0.3.0`._
+
+### IA enrichment (Mistral)
+
+- Module LLM avec client Mistral, content hash et prompts FR
+- Colonnes IA sur Scrutin, DossierLegislatif et Sujet (schema)
+- Worker d'enrichissement IA + CLI enrich-ia
+- Intégration de la cascade IA dans smart-sync
+- Pagination de l'enrichissement IA pour éviter l'OOM en prod
+- Cartes de résumé IA sur pages scrutin/dossier + disclaimer IA sur sujets
+- Descriptions d'amendements par groupe (groupe_amendement_descriptions + hash)
+- Checks qualité IA + CLI de détection des inversions
+- Prompt dossier enrichi avec chambre
+
+### Sujets (nouveau module)
+
+- Modèle Sujet avec relation dossier (schema)
+- Générateur déterministe de sujets avec Union-Find
+- Module API sujets read-only, enrichi avec status, dates et stats amendements
+- Pages liste et détail sujets (frontend) + refonte
+- Status, dates et labels nettoyés calculés dans le générateur
+- Filtre groupe et lien sujet sur la page dossier
+- Refresh des statuts de sujets post-sync dossier (évite les états stale)
+
+### Fiches parlementaires enrichies
+
+- Modèles Mandat et DeclarationHATVP + champs IA + clients sources
+- Worker d'enrichissement parlementaire et sync déclarations HATVP
+- Affichage des profils enrichis avec mandats et déclarations HATVP
+
+### Classements (nouvelle page)
+
+- Page /classements avec tableau triable, Top/Flop et onglet groupes (#9)
+- Tri des membres par présence/loyauté dans les pages groupes (#32)
+- ShareButton intégré aux pages de classement
+- Correction du tri par stats et exposition des stats dans la liste parlementaires
+- Icône loyauté harmonisée (ShieldCheck)
+
+### Secteurs normalisés (lobbying)
+
+- Table Secteur + pivots M2M (LobbyisteSecteur, ActionSecteur)
+- Endpoint secteurs et filtres M2M côté API
+- Multi-select secteurs + filtre texte visé côté frontend
+- Lookup tables pour descriptions d'actions et types de cibles
+- Cache des actions de lobbying avec filtrage par date
+
+### Recherche
+
+- Recherche floue / fuzzy-search sur parlementaires
+- Suppression de Meilisearch et BullMQ (simplification de l'architecture)
+- Suppression du module simulateur et de l'auth associée
+- Sync ciblant uniquement la chambre sélectionnée
+
+### Frontend
+
+- Refonte homepage (specs Figma), cache 27h + endpoint de warm
+- Redesign page scrutin avec sidebar et tabs
+- Dark mode avec toggle dans le header
+- Design tokens et container width harmonisé
+- Breadcrumb harmonisé sur toutes les pages de détail
+- Timeline législative (composant + parsing)
+- Pagination et groupement des interventions par session + preview
+- Filtres amendements (type, tri) enrichis sur la page dossier
+- Pages éducatives (Parlement, rôles, processus de vote, guides)
+- Page /soutenir mise à jour (HelloAsso, Leetchi, équipe, statut d'intérêt général reconnu)
+- Format abrégé pour stats > 1M (ex: 1,2M)
+
+### API publique
+
+- Swagger public + amélioration de la config environnement
+- Page /api détaillant les endpoints et exemples d'usage
+- Lien API dans le footer
+
+### SEO (saison 2)
+
+- Génération dynamique des Open Graph images (députés, dossiers, groupes, lobbyistes, votes, sénateurs, sujets)
+- Twitter card summary_large_image
+- Titres de pages harmonisés (suppression des suffixes CLAIR redondants)
+- Refactor du fetch API pour meilleur handling du base URL
+
+### Docs
+
+- README et CONTRIBUTING mis à jour (naming des branches, instructions d'ingestion)
+- Documentation migrée vers le wiki
+- Ingest unifié

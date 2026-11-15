@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
 /**
  * Stabilité des slugs qui servent d'URL publique.
@@ -21,7 +20,7 @@ import { dirname, join } from 'node:path';
  * texte source. L'invariant vit dans la forme du payload de mise à jour, c'est
  * donc là qu'on le vérifie.
  */
-const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'sync.ts'), 'utf-8');
+const src = readFileSync(join(__dirname, 'sync.ts'), 'utf-8');
 
 /**
  * Renvoie l'argument d'un appel, accolades équilibrées.

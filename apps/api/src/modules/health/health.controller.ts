@@ -3,6 +3,7 @@
 // =============================================================================
 
 import { FastifyPluginAsync } from 'fastify';
+import { VERSION } from '../../version';
 
 export const healthRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /health - Health check basique
@@ -18,6 +19,10 @@ export const healthRoutes: FastifyPluginAsync = async (fastify) => {
             status: { type: 'string' },
             timestamp: { type: 'string' },
             uptime: { type: 'number' },
+            version: {
+              type: 'string',
+              description: 'Version de CLAIR (docs.clair.vote/changelog), dernier palier publié',
+            },
             commit: {
               type: 'string',
               nullable: true,
@@ -32,6 +37,7 @@ export const healthRoutes: FastifyPluginAsync = async (fastify) => {
         status: 'ok',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
+        version: VERSION,
         // Le build de la documentation l'attend pour ne pas embarquer la
         // spécification OpenAPI de la version précédente
         // (docs/scripts/export-openapi-spec.mjs).
