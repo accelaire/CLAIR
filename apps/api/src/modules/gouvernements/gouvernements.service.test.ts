@@ -81,7 +81,16 @@ describe('GouvernementsService, membres', () => {
     prenom,
     nom,
     parlementaire: fiche ? { slug: fiche, chambre: 'senat', photoUrl: null } : null,
+    ...SANS_PHOTO,
   });
+  const SANS_PHOTO = { photoUrl: null, photoAuteur: null, photoLicence: null, photoLicenceUrl: null, photoSource: null };
+  const PHOTO = {
+    photoUrl: 'https://upload.wikimedia.org/x/500px-P.jpg',
+    photoAuteur: 'Auteur',
+    photoLicence: 'CC BY-SA 4.0',
+    photoLicenceUrl: 'https://creativecommons.org/licenses/by-sa/4.0',
+    photoSource: 'https://commons.wikimedia.org/wiki/File:P.jpg',
+  };
 
   beforeEach(() => {
     prisma = createMockPrismaClient();
@@ -117,8 +126,29 @@ describe('GouvernementsService, membres', () => {
       dateFin: null,
     });
     expect(data[1]).toMatchObject({ slug: 'jean-dupont', parlementaire: null, enFonction: false, dateDebut: '2012-05-16', dateFin: '2018-10-16' });
+    expect(data[1].photo).toBeNull();
     // Ordre alphabétique total : le slug départage les homonymes.
     expect(prisma.membreGouvernement.findMany.mock.calls[0]![0].orderBy).toEqual([{ nom: 'asc' }, { prenom: 'asc' }, { slug: 'asc' }]);
+  });
+
+  it('donne la photo de Wikidata et son crédit au membre sans fiche, jamais à celui qui en a une', async () => {
+    prisma.membreGouvernement.findMany.mockResolvedValueOnce([
+      { ...identite('rima-abdul-malak', 'Rima', 'Abdul-Malak', null), ...PHOTO, postes: [{ dateDebut: d('2022-05-20'), dateFin: d('2024-01-11') }] },
+      // Colonnes restées remplies d'avant la fiche : la photo de la fiche prime.
+      { ...identite('sebastien-lecornu', 'Sébastien', 'Lecornu', 'sebastien-lecornu'), ...PHOTO, postes: [{ dateDebut: d('2022-05-20'), dateFin: null }] },
+      // Sans crédit, pas de photo.
+      { ...identite('jean-dupont', 'Jean', 'Dupont', null), ...PHOTO, photoLicence: null, postes: [{ dateDebut: d('2012-05-16'), dateFin: d('2014-03-31') }] },
+    ]);
+    const { data } = await service.getMembres();
+    expect(data[0].photo).toEqual({
+      url: PHOTO.photoUrl,
+      auteur: 'Auteur',
+      licence: 'CC BY-SA 4.0',
+      licenceUrl: PHOTO.photoLicenceUrl,
+      source: PHOTO.photoSource,
+    });
+    expect(data[1].photo).toBeNull();
+    expect(data[2].photo).toBeNull();
   });
 
   it('lie la présidence à la fiche du président, sinon à sa page de membre, sinon à rien', async () => {
@@ -151,12 +181,16 @@ describe('GouvernementsService, membres', () => {
       presidence('PR2', 'Hollande', '2012-05-15', '2017-05-14', 'PA1654', 'francois-hollande'),
       presidence('PR3', 'Macron', '2017-05-14', null, 'PA702992', null),
     ]);
-    prisma.membreGouvernement.findMany.mockResolvedValueOnce([{ acteurUid: 'PA702992', slug: 'emmanuel-macron' }]);
+    prisma.membreGouvernement.findMany.mockResolvedValueOnce([
+      { acteurUid: 'PA702992', slug: 'emmanuel-macron', ...PHOTO },
+    ]);
     const { data } = await service.getGouvernements();
     const parNom = Object.fromEntries(data.map((g: { presidence: { nom: string } }) => [g.presidence.nom, g.presidence]));
     expect(parNom.Sarkozy).toMatchObject({ slug: null, parlementaire: null });
     expect(parNom.Hollande).toMatchObject({ slug: null, parlementaire: { slug: 'francois-hollande', chambre: 'assemblee' } });
-    expect(parNom.Macron).toMatchObject({ slug: 'emmanuel-macron', parlementaire: null });
+    expect(parNom.Macron).toMatchObject({ slug: 'emmanuel-macron', parlementaire: null, photo: { url: PHOTO.photoUrl } });
+    expect(parNom.Hollande.photo).toBeNull();
+    expect(parNom.Sarkozy.photo).toBeNull();
     expect(prisma.membreGouvernement.findMany.mock.calls[0]![0].where).toEqual({ acteurUid: { in: ['PA1654', 'PA702992'] } });
   });
 

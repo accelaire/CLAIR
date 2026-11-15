@@ -1,6 +1,7 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { Redis } from 'ioredis';
 import { BilanGouvernements, SOURCE_BILAN, couvertureBilan } from './gouvernements-bilan';
+import { photoMembre, selectionPhotoMembre, type PhotoMembreLue } from './photo-membre';
 
 // =============================================================================
 // Gouvernements depuis 2007, postes ministériels et présidences de la
@@ -71,10 +72,11 @@ const selectionPersonne = {
   civilite: true,
   prenom: true,
   nom: true,
+  ...selectionPhotoMembre,
   parlementaire: { select: { slug: true, chambre: true, photoUrl: true } },
 } as const;
 
-interface PersonneLue {
+interface PersonneLue extends PhotoMembreLue {
   slug: string;
   acteurUid: string;
   civilite: string | null;
@@ -85,7 +87,8 @@ interface PersonneLue {
 
 /**
  * Une personne : son slug de membre (`/gouvernements/membres/:slug`), et sa
- * fiche (avec sa photo) quand elle en a une.
+ * fiche (avec sa photo) quand elle en a une ; sinon la photo de Wikidata et
+ * son crédit, s'il y en a une (`photo`).
  */
 function personne(p: PersonneLue) {
   return {
@@ -97,6 +100,7 @@ function personne(p: PersonneLue) {
     parlementaire: p.parlementaire
       ? { slug: p.parlementaire.slug, chambre: p.parlementaire.chambre, photoUrl: p.parlementaire.photoUrl }
       : null,
+    photo: photoMembre(p, p.parlementaire !== null),
   };
 }
 
@@ -200,9 +204,12 @@ export class GouvernementsService {
     // par l'acteur de la source ; aucune pour Nicolas Sarkozy, publié sans.
     const acteurs = presidences.flatMap((p) => (p.acteurUid ? [p.acteurUid] : []));
     const membresPresidents = acteurs.length
-      ? await this.prisma.membreGouvernement.findMany({ where: { acteurUid: { in: acteurs } }, select: { acteurUid: true, slug: true } })
+      ? await this.prisma.membreGouvernement.findMany({
+          where: { acteurUid: { in: acteurs } },
+          select: { acteurUid: true, slug: true, ...selectionPhotoMembre },
+        })
       : [];
-    const slugMembre = new Map(membresPresidents.map((m) => [m.acteurUid, m.slug]));
+    const membrePresident = new Map(membresPresidents.map((m) => [m.acteurUid, m]));
 
     return nommerGouvernements(
       gouvernements.map((g) => {
@@ -234,7 +241,7 @@ export class GouvernementsService {
                 prenom: presidence.prenom,
                 nom: presidence.nom,
                 // Slug de membre et fiche, comme pour une personne du Gouvernement : null sans page.
-                slug: (presidence.acteurUid && slugMembre.get(presidence.acteurUid)) ?? null,
+                slug: (presidence.acteurUid && membrePresident.get(presidence.acteurUid)?.slug) ?? null,
                 parlementaire: presidence.parlementaire
                   ? {
                       slug: presidence.parlementaire.slug,
@@ -242,6 +249,10 @@ export class GouvernementsService {
                       photoUrl: presidence.parlementaire.photoUrl,
                     }
                   : null,
+                photo: (() => {
+                  const m = presidence.acteurUid ? membrePresident.get(presidence.acteurUid) : undefined;
+                  return m ? photoMembre(m, presidence.parlementaire !== null) : null;
+                })(),
               }
             : null,
           nbPostes: g.postes.length,

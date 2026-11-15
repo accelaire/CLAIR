@@ -57,6 +57,8 @@ export interface Personne {
   nom: string;
   sexe: string | null;
   photoUrl: string | null;
+  /** Crédit de la photo quand elle vient de Wikimedia Commons (membre du Gouvernement sans fiche) */
+  photoCredit: { auteur: string | null; licence: string; licenceUrl: string | null; source: string } | null;
   /** En exercice au Parlement ou au Gouvernement aujourd'hui. */
   enFonction: boolean;
   /** Sa fiche, s'il en a une : mandat en cours ou dernier mandat. */
@@ -82,6 +84,7 @@ function personneDeFiche(p: ParlementaireLu): Personne {
     nom: p.nom,
     sexe: p.sexe,
     photoUrl: p.photoUrl,
+    photoCredit: null,
     enFonction: p.actif,
     parlementaire: {
       slug: p.slug,
@@ -117,7 +120,8 @@ function avecGouvernement(personne: Personne | undefined, m: MembreLu): Personne
     prenom: m.prenom,
     nom: m.nom,
     sexe: m.civilite === 'Mme' ? 'F' : m.civilite === 'M.' ? 'M' : null,
-    photoUrl: m.parlementaire?.photoUrl ?? null,
+    photoUrl: m.parlementaire?.photoUrl ?? m.photo?.url ?? null,
+    photoCredit: m.photo ? { auteur: m.photo.auteur, licence: m.photo.licence, licenceUrl: m.photo.licenceUrl, source: m.photo.source } : null,
     enFonction: enPoste,
     parlementaire: null,
     gouvernement,
