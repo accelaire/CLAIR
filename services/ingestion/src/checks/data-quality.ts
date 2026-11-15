@@ -3,6 +3,7 @@
 // =============================================================================
 
 import { cleMotion, dossierMotionSansReferences } from '../utils/motions-censure';
+import pLimit from 'p-limit';
 import { PrismaClient } from '@prisma/client';
 import { LEGISLATURE_AN_COURANTE } from '../workers/mandats';
 import { ORGANES_AN_HORS_MANDAT } from '../workers/mandats-an-sortants';
@@ -124,6 +125,8 @@ export interface QualityReport {
   results: CheckResult[];
   multiAmendment: MultiAmendmentReport;
   sujetLiens: SujetLiensReport;
+  /** null si la vérification HTTP des photos n'a pas été demandée */
+  photos: PhotosHttpReport | null;
   passed: boolean;
   invariantsPassed: boolean;
   thresholdsPassed: boolean;
@@ -807,6 +810,17 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     query: `SELECT COUNT(*)::int AS value FROM mandats
       WHERE type_organe = 'BUREAU' AND qualite ~* 'd''âge' AND date_fin IS NULL`,
   },
+  photos_membres_sans_credit: {
+    type: 'invariant',
+    label: 'Photos de membres du Gouvernement sans crédit (licence, page Commons, personne Wikidata)',
+    min: 0,
+    max: 0,
+    // Les photos de Wikimedia Commons ne s'affichent qu'avec leur crédit : la
+    // plupart des licences l'exigent (#136).
+    query: `SELECT COUNT(*)::int AS value FROM membres_gouvernement
+      WHERE photo_url IS NOT NULL
+        AND (photo_licence IS NULL OR photo_source IS NULL OR wikidata_id IS NULL)`,
+  },
   interventions_gouvernement_comptees: {
     type: 'invariant',
     label: 'Fiches dont les interventions comptent des prises de parole au banc du Gouvernement',
@@ -958,6 +972,25 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     label: 'Nombre de parlementaires',
     min: 900,
     query: `SELECT COUNT(*)::int AS value FROM parlementaires`,
+  },
+  membres_gouvernement_photo_rate: {
+    type: 'threshold',
+    // Membres sans fiche : photo de Wikidata (#136). 149 sur 166 le
+    // 15/11/2026 (89 %) ; les autres n'ont pas de rapprochement sûr, pas
+    // d'image sur Wikidata, ou une image au crédit inexploitable.
+    label: 'Taux de membres du Gouvernement sans fiche avec photo (%)',
+    min: 85,
+    query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (avec * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(photo_url) AS avec FROM membres_gouvernement WHERE parlementaire_id IS NULL) sub`,
+  },
+  senat_photo_rate: {
+    type: 'threshold',
+    // L'annuaire du Sénat ne donne l'avatar que des sénateurs en exercice :
+    // 619 anciens sur 692 n'avaient pas de photo le 15/11/2026, Sébastien
+    // Lecornu compris. `sync-photos-senat` la prend sur senat.fr (#136) ;
+    // il n'en reste que 6, que le Sénat ne publie pas (99 %).
+    label: 'Taux de fiches du Sénat avec photo (%)',
+    min: 98,
+    query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (avec * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(photo_url) AS avec FROM parlementaires WHERE chambre = 'senat') sub`,
   },
   groupes_count: {
     type: 'threshold',
@@ -1629,12 +1662,83 @@ export async function runSujetLiensCheck(
 }
 
 // =============================================================================
+// Photos : adresses qui ne répondent plus (#136)
+// =============================================================================
+//
+// Une adresse de photo est écrite une fois puis n'est plus revérifiée : les
+// photos des membres du Gouvernement sont figées, celles des anciens
+// parlementaires ne sont plus relues par aucun annuaire. Si la source retire
+// ou renomme l'image, la page affiche une image cassée sans que rien ne le
+// signale. Mesure du 15/11/2026 : 6 adresses mortes sur 2 348 (5 photos de
+// députés de la 15e retirées par l'Assemblée, 1 avatar du Sénat).
+//
+// HEAD sur chaque adresse. Morte : 404 ou 410, ou 200 qui n'est pas une
+// image. Une erreur réseau, un 5xx ou un 429 ne prouve rien : l'adresse est
+// comptée « non vérifiée », pas morte, pour ne pas lever de fausse alerte.
+
+export interface PhotosHttpReport {
+  verifiees: number;
+  nonVerifiees: number;
+  mortes: Array<{ table: string; url: string; statut: number | string }>;
+}
+
+const PHOTO_TIMEOUT_MS = 10_000;
+const PHOTO_CONCURRENCE = 6;
+const PHOTO_USER_AGENT = 'CLAIR/1.0 (+https://clair.vote)';
+
+/** Verdict d'une réponse à un HEAD sur une adresse de photo. */
+export function verdictPhoto(statut: number, contentType: string | null): 'image' | 'morte' | 'inconnue' {
+  if (statut === 200) return (contentType ?? '').startsWith('image/') ? 'image' : 'morte';
+  if (statut === 404 || statut === 410) return 'morte';
+  return 'inconnue';
+}
+
+export async function runPhotosHttpCheck(
+  prisma: PrismaClient,
+  options: { fetch?: typeof fetch } = {},
+): Promise<PhotosHttpReport> {
+  const fetcher = options.fetch ?? fetch;
+  const adresses: Array<{ table: string; url: string }> = await prisma.$queryRawUnsafe(
+    `SELECT 'parlementaires' AS table, photo_url AS url FROM parlementaires WHERE photo_url IS NOT NULL
+     UNION ALL
+     SELECT 'membres_gouvernement', photo_url FROM membres_gouvernement WHERE photo_url IS NOT NULL`,
+  );
+  const rapport: PhotosHttpReport = { verifiees: 0, nonVerifiees: 0, mortes: [] };
+  const limite = pLimit(PHOTO_CONCURRENCE);
+  await Promise.all(
+    adresses.map((a) =>
+      limite(async () => {
+        try {
+          const res = await fetcher(a.url, {
+            method: 'HEAD',
+            redirect: 'follow',
+            headers: { 'User-Agent': PHOTO_USER_AGENT },
+            signal: AbortSignal.timeout(PHOTO_TIMEOUT_MS),
+          });
+          const v = verdictPhoto(res.status, res.headers.get('content-type'));
+          if (v === 'inconnue') {
+            rapport.nonVerifiees++;
+            return;
+          }
+          rapport.verifiees++;
+          if (v === 'morte') rapport.mortes.push({ table: a.table, url: a.url, statut: res.status });
+        } catch {
+          rapport.nonVerifiees++;
+        }
+      }),
+    ),
+  );
+  rapport.mortes.sort((x, y) => x.url.localeCompare(y.url));
+  return rapport;
+}
+
+// =============================================================================
 // Runner
 // =============================================================================
 
 export async function runDataQualityChecks(
   prisma: PrismaClient,
-  opts: { checkSujetLinksHttp?: boolean } = {},
+  opts: { checkSujetLinksHttp?: boolean; checkPhotosHttp?: boolean } = {},
 ): Promise<QualityReport> {
   const start = Date.now();
   const results: CheckResult[] = [];
@@ -1669,6 +1773,19 @@ export async function runDataQualityChecks(
     checkDeadLinks: opts.checkSujetLinksHttp ?? false,
   });
 
+  // Photos : invariant compté avec les autres (une image cassée est visible).
+  const photos = opts.checkPhotosHttp ? await runPhotosHttpCheck(prisma) : null;
+  if (photos) {
+    results.push({
+      key: 'photos_adresses_mortes',
+      label: 'Adresses de photo qui ne répondent plus (HEAD : 404, 410 ou autre chose qu’une image)',
+      type: 'invariant',
+      expected: '= 0',
+      actual: photos.mortes.length,
+      passed: photos.mortes.length === 0,
+    });
+  }
+
   const invariantResults = results.filter((r) => r.type === 'invariant');
   const thresholdResults = results.filter((r) => r.type === 'threshold');
 
@@ -1678,6 +1795,7 @@ export async function runDataQualityChecks(
     results,
     multiAmendment,
     sujetLiens,
+    photos,
     passed: results.every((r) => r.passed),
     invariantsPassed: invariantResults.every((r) => r.passed),
     thresholdsPassed: thresholdResults.every((r) => r.passed),
@@ -1779,6 +1897,19 @@ export function printReport(report: QualityReport): void {
         console.log(`       \x1b[31m✗\x1b[0m ${url}`);
       }
     }
+    console.log();
+  }
+
+  // Photos : détail de l'invariant photos_adresses_mortes
+  if (report.photos) {
+    const ph = report.photos;
+    console.log('--- Adresses des photos (HEAD) ---\n');
+    const icon = ph.mortes.length === 0 ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m';
+    console.log(`  ${icon}  ${ph.mortes.length} morte(s) sur ${ph.verifiees} vérifiée(s), ${ph.nonVerifiees} non vérifiée(s) (réseau, 5xx, 429)`);
+    for (const m of ph.mortes.slice(0, 20)) {
+      console.log(`       \x1b[31m✗\x1b[0m [${m.table}] ${m.statut} ${m.url}`);
+    }
+    if (ph.mortes.length > 20) console.log(`       ... et ${ph.mortes.length - 20} autres`);
     console.log();
   }
 

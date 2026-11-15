@@ -66,14 +66,33 @@ interface WbEntity {
   claims?: Record<string, WbClaimValue[]>;
 }
 
-async function wikidataGet<T>(params: Record<string, string>): Promise<T | null> {
+/** Attente maximale demandée par `Retry-After` que l'on accepte de respecter. */
+const ATTENTE_MAX_MS = 30_000;
+
+/**
+ * Appel à l'API de Wikidata ; `null` si la réponse n'est pas un succès.
+ *
+ * `reprises` : nombre de nouvelles tentatives après un 429 ou un 5xx, en
+ * respectant `Retry-After` (Wikidata freine une rafale de requêtes par un 429
+ * de quelques secondes). Zéro par défaut, le comportement d'origine.
+ */
+export async function wikidataGet<T>(
+  params: Record<string, string>,
+  options: { reprises?: number } = {},
+): Promise<T | null> {
   const search = new URLSearchParams({ ...params, format: 'json', origin: '*' });
-  const res = await fetch(`${WIKIDATA_API_URL}?${search}`, {
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    headers: { 'User-Agent': USER_AGENT },
-  });
-  if (!res.ok) return null;
-  return (await res.json()) as T;
+  for (let tentative = 0; ; tentative++) {
+    const res = await fetch(`${WIKIDATA_API_URL}?${search}`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      headers: { 'User-Agent': USER_AGENT },
+    });
+    if (res.ok) return (await res.json()) as T;
+    const reessayable = res.status === 429 || res.status >= 500;
+    if (!reessayable || tentative >= (options.reprises ?? 0)) return null;
+    const retryAfter = Number(res.headers.get('retry-after'));
+    const attente = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2000 * 2 ** tentative;
+    await new Promise((r) => setTimeout(r, Math.min(attente, ATTENTE_MAX_MS)));
+  }
 }
 
 /** Année (YYYY) extraite d'un timestamp Wikidata (+2022-06-22T00:00:00Z). */

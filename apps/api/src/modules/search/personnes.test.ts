@@ -7,6 +7,7 @@ const personne = (prenom: string, nom: string, o: Partial<Personne> = {}): Perso
   nom,
   sexe: null,
   photoUrl: null,
+  photoCredit: null,
   enFonction: true,
   parlementaire: null,
   gouvernement: null,

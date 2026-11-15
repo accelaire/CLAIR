@@ -376,6 +376,16 @@ model MembreGouvernement {
   parlementaire   Parlementaire? @relation(fields: [parlementaireId], references: [id], onDelete: SetNull)
   liaison         String? // 'source_id' | 'identifiant' | 'etat_civil' : comment la fiche a été trouvée
 
+  // Photo des membres sans fiche (#136) : image principale (P18) de la personne
+  // sur Wikidata, hébergée sur Wikimedia Commons. Écrite par `sync-photos-gouvernement`
+  // avec son crédit, obligatoire pour la plupart des licences de Commons.
+  wikidataId      String? @map("wikidata_id") // Q112079659 : la personne retenue, rapprochement vérifié
+  photoUrl        String? @map("photo_url") // vignette sur upload.wikimedia.org
+  photoAuteur     String? @map("photo_auteur") // texte, sans balise
+  photoLicence    String? @map("photo_licence") // « CC BY-SA 4.0 », « CC0 », « Public domain »…
+  photoLicenceUrl String? @map("photo_licence_url")
+  photoSource     String? @map("photo_source") // page du fichier sur Commons
+
   postes PosteMinisteriel[]
 
   createdAt DateTime @default(now()) @map("created_at")

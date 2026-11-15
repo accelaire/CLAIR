@@ -57,6 +57,7 @@ import {
 import { backfillMandatsParlementaires } from './workers/backfill-mandats.js';
 import { backfillNatureVote } from './workers/backfill-nature-vote.js';
 import { syncSenateursHistoriques } from './workers/senat-histo.js';
+import { completerPhotosSenateurs, type ResultatPhotosSenat } from './workers/photos-senat.js';
 import { syncSenatFonctions } from './workers/senat-fonctions.js';
 import { syncBilanGouvernement } from './workers/bilan-gouvernement.js';
 import { syncGouvernements } from './workers/gouvernements.js';
@@ -816,11 +817,93 @@ program
       console.log(`   Mandats créés               : ${result.mandatsCrees}`);
       console.log(`   Mandats mis à jour          : ${result.mandatsMisAJour}`);
       console.log(`   Sénateurs hors périmètre    : ${result.senateursIgnores}`);
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+      try {
+        afficherPhotosSenat(await completerPhotosSenateurs(prisma));
+      } finally {
+        await prisma.$disconnect();
+      }
       process.exit(0);
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'sync-senateurs-histo failed');
       process.exit(1);
     }
+  });
+
+function afficherPhotosSenat(r: ResultatPhotosSenat): void {
+  console.log('\n📷 Photos des sénateurs (senat.fr) :');
+  console.log(`   Fiches sans photo examinées : ${r.candidates}`);
+  console.log(`   Photos renseignées          : ${r.renseignees}`);
+  console.log(`   Sans photo publiée (404)    : ${r.absentes}`);
+  console.log(`   Non vérifiées (retentées)   : ${r.erreurs}`);
+}
+
+// =============================================================================
+// COMMANDE: sync-photos-gouvernement
+// =============================================================================
+program
+  .command('sync-photos-gouvernement')
+  .description(
+    'Photos des membres du Gouvernement sans fiche : image principale de Wikidata, avec son crédit (Wikimedia Commons)',
+  )
+  .option('--dry-run', 'Compter sans rien écrire')
+  .option('--details', 'Afficher le rapprochement de chaque membre')
+  .option('--rapprocher-de-nouveau', 'Refaire la recherche Wikidata des membres déjà rapprochés (dégèle leurs photos)')
+  .option('--actualiser', 'Relire image et crédit des photos figées (résultat à relire avant publication)')
+  .action(async (options: { dryRun?: boolean; details?: boolean; rapprocherDeNouveau?: boolean; actualiser?: boolean }) => {
+    const { PrismaClient } = await import('@prisma/client');
+    const { syncPhotosGouvernement } = await import('./workers/photos-gouvernement.js');
+    const prisma = new PrismaClient();
+    let code = 0;
+    try {
+      const lignes: string[] = [];
+      const r = await syncPhotosGouvernement(prisma, {
+        dryRun: options.dryRun,
+        rapprocherDeNouveau: options.rapprocherDeNouveau,
+        actualiser: options.actualiser,
+        journal: (l) => lignes.push(l),
+      });
+      if (options.details) for (const l of lignes.sort((a, b) => a.localeCompare(b, 'fr'))) console.log(`   ${l}`);
+      console.log(`\n📷 Photos des membres du Gouvernement sans fiche${options.dryRun ? ' (DRY RUN)' : ''} :`);
+      console.log(`   Membres sans fiche            : ${r.membres}`);
+      console.log(`   Rapprochés à ce passage       : ${r.rapproches}`);
+      console.log(`   Sans rapprochement sûr        : ${r.sansRapprochement} (dont ambigus : ${r.ambigus})`);
+      console.log(`   Sans image sur Wikidata       : ${r.sansImage}`);
+      console.log(`   Photos écartées (licence)     : ${r.creditsRefuses}`);
+      console.log(`   Avec photo                    : ${r.avecPhoto} (dont figées, inchangées : ${r.figees})`);
+      console.log(`   Nouvelles photos différées    : ${r.adoptionsDifferees} (image absente de Wikidata il y a 7 jours)`);
+      console.log(`   Retirées (fichier supprimé)   : ${r.fichiersSupprimes}`);
+      console.log(`   Lignes modifiées              : ${r.modifies}`);
+      console.log(`   Lectures ratées (retentées)   : ${r.erreurs}`);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-photos-gouvernement failed');
+      code = 1;
+    } finally {
+      await prisma.$disconnect();
+    }
+    process.exit(code);
+  });
+
+// =============================================================================
+// COMMANDE: sync-photos-senat
+// =============================================================================
+program
+  .command('sync-photos-senat')
+  .description('Photos des fiches du Sénat qui n\'en ont pas (anciens sénateurs), depuis senat.fr, adresse vérifiée')
+  .action(async () => {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+    let code = 0;
+    try {
+      afficherPhotosSenat(await completerPhotosSenateurs(prisma));
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-photos-senat failed');
+      code = 1;
+    } finally {
+      await prisma.$disconnect();
+    }
+    process.exit(code);
   });
 
 // =============================================================================
@@ -1452,7 +1535,7 @@ program
       try {
         console.log('\n🔍 Vérification de la qualité des données...\n');
         const { runDataQualityChecks, printReport } = await import('./checks/data-quality.js');
-        const report = await runDataQualityChecks(prisma, { checkSujetLinksHttp: true });
+        const report = await runDataQualityChecks(prisma, { checkSujetLinksHttp: true, checkPhotosHttp: true });
         printReport(report);
         process.exit(report.passed ? 0 : 1);
       } finally {

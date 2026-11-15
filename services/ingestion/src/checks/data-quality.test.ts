@@ -3,7 +3,15 @@
 // =============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { THRESHOLDS, extractAmendmentNumbers, normalizeNumero, runDataQualityChecks } from './data-quality';
+import type { PrismaClient } from '@prisma/client';
+import {
+  THRESHOLDS,
+  extractAmendmentNumbers,
+  normalizeNumero,
+  runDataQualityChecks,
+  runPhotosHttpCheck,
+  verdictPhoto,
+} from './data-quality';
 
 // =============================================================================
 // Layer A — Unit tests (toujours, sans DB)
@@ -285,5 +293,44 @@ describe('resume_contredit_statut — motif', () => {
     ]) {
       expect(motif.test(resume), resume).toBe(false);
     }
+  });
+});
+
+describe('photos_adresses_mortes', () => {
+  it('ne déclare morte qu’une adresse absente (404, 410) ou qui ne renvoie pas une image', () => {
+    expect(verdictPhoto(200, 'image/jpeg')).toBe('image');
+    expect(verdictPhoto(200, 'text/html')).toBe('morte');
+    expect(verdictPhoto(404, 'text/html')).toBe('morte');
+    expect(verdictPhoto(410, null)).toBe('morte');
+    // Rien ne prouve que l'image a disparu : pas de fausse alerte.
+    expect(verdictPhoto(503, 'text/html')).toBe('inconnue');
+    expect(verdictPhoto(429, null)).toBe('inconnue');
+  });
+
+  it('compte les mortes et met à part les adresses non vérifiables', async () => {
+    const adresses = [
+      { table: 'parlementaires', url: 'https://a/ok.jpg' },
+      { table: 'parlementaires', url: 'https://a/morte.jpg' },
+      { table: 'membres_gouvernement', url: 'https://b/panne.jpg' },
+      { table: 'membres_gouvernement', url: 'https://b/reseau.jpg' },
+    ];
+    const prisma = { $queryRawUnsafe: async () => adresses } as unknown as PrismaClient;
+    const reponses: Record<string, Response | Error> = {
+      'https://a/ok.jpg': new Response(null, { status: 200, headers: { 'content-type': 'image/jpeg' } }),
+      'https://a/morte.jpg': new Response(null, { status: 404, headers: { 'content-type': 'text/html' } }),
+      'https://b/panne.jpg': new Response(null, { status: 503 }),
+      'https://b/reseau.jpg': new Error('ECONNRESET'),
+    };
+    const faux = (async (url: string) => {
+      const r = reponses[url]!;
+      if (r instanceof Error) throw r;
+      return r;
+    }) as unknown as typeof fetch;
+
+    expect(await runPhotosHttpCheck(prisma, { fetch: faux })).toEqual({
+      verifiees: 2,
+      nonVerifiees: 2,
+      mortes: [{ table: 'parlementaires', url: 'https://a/morte.jpg', statut: 404 }],
+    });
   });
 });

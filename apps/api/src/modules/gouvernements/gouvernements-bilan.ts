@@ -1,4 +1,5 @@
 import { Prisma, PrismaClient } from '@prisma/client';
+import { photoMembre, selectionPhotoMembre } from './photo-membre';
 
 // =============================================================================
 // Bilan des gouvernements (SPEC-BILAN-MINISTRE.md) : projets de loi et leurs
@@ -59,6 +60,7 @@ const selectionPersonne = {
   civilite: true,
   prenom: true,
   nom: true,
+  ...selectionPhotoMembre,
   parlementaire: { select: { slug: true, chambre: true, photoUrl: true } },
 } as const;
 
@@ -72,6 +74,7 @@ function personne(p: PersonneLue) {
     prenom: p.prenom,
     nom: p.nom,
     parlementaire: p.parlementaire ? { slug: p.parlementaire.slug, chambre: p.parlementaire.chambre, photoUrl: p.parlementaire.photoUrl } : null,
+    photo: photoMembre(p, p.parlementaire !== null),
   };
 }
 

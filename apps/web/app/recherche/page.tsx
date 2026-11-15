@@ -16,7 +16,7 @@ import { formatDossierTitre, getDossierEtat } from '@/lib/dossiers';
 import { useDebouncedCallback } from 'use-debounce';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { legislatureLabel, mandatureLabel } from '@/lib/periodes';
-import { libellePoste, moisAnnee, type PersonneGouvernement } from '@/lib/gouvernements';
+import { creditPhoto, libellePoste, moisAnnee, photoDe, type PersonneGouvernement, type PhotoCommons } from '@/lib/gouvernements';
 
 // La recherche présente des personnes, pas des tables : un parlementaire et
 // le membre du Gouvernement qu'il a été font un seul résultat, anciens compris
@@ -37,6 +37,8 @@ interface Personne {
   nom: string;
   sexe: string | null;
   photoUrl: string | null;
+  /** Photo de Wikimedia Commons (membre du Gouvernement sans fiche) : son crédit. Absent d'une réponse ancienne. */
+  photoCredit?: Omit<PhotoCommons, 'url'> | null;
   enFonction: boolean;
   parlementaire: {
     slug: string;
@@ -209,6 +211,8 @@ interface Carte {
   pastille?: string | null;
   detail?: string;
   photo?: string | null;
+  /** Crédit de la photo, en infobulle, quand elle vient de Wikimedia Commons */
+  credit?: string;
   icone: LucideIcon;
   teinte: string;
 }
@@ -276,6 +280,7 @@ function cartePersonne(p: Personne): Carte {
     pastille: gouvernementEnPremier ? null : (parlement?.pastille ?? null),
     detail: (gouvernementEnPremier ? parlement?.texte : gouvernement) ?? undefined,
     photo: p.photoUrl,
+    credit: p.photoCredit && p.photoUrl ? creditPhoto({ ...p.photoCredit, url: p.photoUrl }) : undefined,
     icone: Users,
     teinte: LIBELLES.personnes.teinte,
   };
@@ -293,7 +298,11 @@ function carteDe(r: Resultat): Carte {
         badges: r.enCours ? [{ texte: 'En cours', classe: 'badge-en-cours' }] : [],
         contexte: r.premierMinistre ? `Premier ministre : ${r.premierMinistre.prenom} ${r.premierMinistre.nom}` : undefined,
         detail: `${moisAnnee(r.dateDebut)} → ${r.dateFin ? moisAnnee(r.dateFin) : 'en cours'}`,
-        photo: r.premierMinistre?.parlementaire?.photoUrl ?? null,
+        photo: r.premierMinistre ? photoDe(r.premierMinistre) : null,
+        credit:
+          r.premierMinistre && !r.premierMinistre.parlementaire?.photoUrl && r.premierMinistre.photo
+            ? creditPhoto(r.premierMinistre.photo)
+            : undefined,
         icone,
         teinte,
       };
@@ -390,8 +399,8 @@ function CarteResultat({ resultat, enAvant = false }: { resultat: Resultat; enAv
     >
       <div className="flex items-start gap-4">
         {c.photo ? (
-          <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-full bg-muted">
-            <Image src={c.photo} alt={c.titre} fill className="object-cover" unoptimized />
+          <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-full bg-muted" title={c.credit}>
+            <Image src={c.photo} alt={c.titre} fill className="object-cover object-[50%_20%]" unoptimized />
           </div>
         ) : (
           <div className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg ${c.teinte}`}>

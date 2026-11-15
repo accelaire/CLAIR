@@ -54,6 +54,8 @@ Les fonctions gouvernementales n'y sont **pas** : elles ont leurs propres tables
 
 Un membre du gouvernement n'est pas un parlementaire : `membres_gouvernement.parlementaire_id` le rattache à sa fiche quand elle existe, par son identifiant AN ou, pour un sénateur, par son état civil (`liaison` dit comment). Ce rattachement est recalculé à chaque synchronisation.
 
+Un membre sans fiche peut avoir une photo (`photo_url`) : l'image principale de la personne sur Wikidata, hébergée sur Wikimedia Commons, avec son crédit (`photo_auteur`, `photo_licence`, `photo_licence_url`, `photo_source`, la page du fichier). `wikidata_id` est la personne de Wikidata retenue : rapprochée par son nom et au moins une preuve (identifiant de l'Assemblée, date de naissance, ou début d'une fonction qui coïncide avec un poste), sans contradiction, et seule dans ce cas. Wikidata étant modifiable par tous, une image n'est adoptée que si c'était déjà l'image principale de la personne il y a 7 jours (un vandalisme récent en donne une autre), puis elle est figée : la synchronisation ne la remplace plus, elle ne la retire que si le fichier disparaît de Commons. Les anciens sénateurs, eux, ont la photo publiée par senat.fr dans `parlementaires.photo_url`.
+
 `presidences_chambre` porte les présidences des deux chambres, une ligne par mandat de président publié par la source, que le président ait une fiche ou non (`chambre` vaut `assemblee` ou `senat`). Celles de l'Assemblée viennent de l'AMO30 (mandats BUREAU « Président », depuis 2007 ; l'AMO10 ne date que celle de la législature en cours), celles du Sénat du dump de la base des sénateurs (`senbur`, depuis 1959). `source_id` est l'identifiant de la personne dans sa chambre, comme `parlementaires.source_id` (`PA…` ou matricule du Sénat) ; `parlementaire_id` la rattache à sa fiche. Au Sénat, la même présidence est aussi une ligne du bureau dans `mandats`, sous le même identifiant (`SENBUR-…`), pour l'affichage de la fiche. Ces périodes, comme les postes ministériels, sortent de la présence de la personne : un membre du Gouvernement ne vote pas, un président d'assemblée seulement par exception.
 
 ### 6 bis. Bilan des gouvernements
@@ -263,7 +265,7 @@ L'API renvoie l'essentiel de la base, souvent la ligne entière sur les routes d
 | `candidatures_listes` | `numero_depot` | |
 | `candidats_mandats_locaux` | `date_naissance`, `confiance` | Même règle pour la date de naissance |
 | `gouvernements` | `libelle_source` | Libellé brut de la source (« VALLS 2 », « LECORNU II »), incohérent ; l'API renvoie à la place `nom` (« Valls II ») |
-| `membres_gouvernement` | `slug`, `date_naissance`, `liaison` | La date de naissance ne sert qu'au rattachement des sénateurs |
+| `membres_gouvernement` | `liaison`, `wikidata_id` | Les colonnes `photo_*` sont exposées ensemble sous `photo`, et seulement pour un membre sans fiche |
 | `postes_ministeriels` | `qualite` quand `qualite_accordee` existe | L'API renvoie la qualité accordée au titulaire (« Ministre déléguée ») sous le nom `qualite` |
 | `presidences` | `acteur_uid`, `liaison` | |
 | `presidences_chambre` | toutes | Sert au calcul de la présence ; la fiche affiche la présidence parmi les fonctions du mandat |
