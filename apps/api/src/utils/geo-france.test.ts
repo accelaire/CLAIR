@@ -158,6 +158,23 @@ describe('findDepartementCodesBySearchTerm', () => {
     });
   });
 
+  describe('Mots entiers, pas de sous-chaîne (#129)', () => {
+    it('ne voit pas un département dans un nom de personne', () => {
+      expect(findDepartementCodesBySearchTerm('alain')).toEqual([]); // Ain
+      expect(findDepartementCodesBySearchTerm('borne')).toEqual([]); // Orne
+      expect(findDepartementCodesBySearchTerm('lecornu')).toEqual([]);
+    });
+
+    it('trouve un département nommé dans une phrase', () => {
+      expect(findDepartementCodesBySearchTerm("députés de l'Eure")).toContain('27');
+      expect(findDepartementCodesBySearchTerm('ain')).toContain('01');
+    });
+
+    it('suit la saisie en cours par le début du nom', () => {
+      expect(findDepartementCodesBySearchTerm('haute-sa')).toEqual(expect.arrayContaining(['70', '74']));
+    });
+  });
+
   describe('Cas limites', () => {
     it('devrait retourner un tableau vide pour une recherche invalide', () => {
       const results = findDepartementCodesBySearchTerm('xyz123');

@@ -245,18 +245,37 @@ function normalizeForSearch(str: string): string {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
+const mots = (s: string): string[] => normalizeForSearch(s).split(/[^a-z0-9]+/).filter(Boolean);
+
+/**
+ * Un nom de département ou de région répond-il à la recherche ? En mots
+ * entiers, jamais en sous-chaîne : « Alain » contenait « Ain » et ramenait les
+ * élus de l'Ain, « Borne » contenait « Orne » (#129). Il répond si la recherche
+ * commence le nom (saisie en cours, « haute-sa »), commence l'un de ses mots
+ * (« bouches », « rhone », dès 4 lettres), ou le contient en entier
+ * (« députés de l'Eure »).
+ */
+function nomGeographiqueCorrespond(nom: string, recherche: string): boolean {
+  const n = mots(nom);
+  const r = mots(recherche);
+  if (r.length === 0) return false;
+  const nomJoint = n.join(' ');
+  const rechercheJointe = r.join(' ');
+  if (rechercheJointe.length >= 3 && nomJoint.startsWith(rechercheJointe)) return true;
+  if (r.length === 1 && r[0]!.length >= 4 && n.some((m) => m.startsWith(r[0]!))) return true;
+  return ` ${rechercheJointe} `.includes(` ${nomJoint} `);
+}
+
 /**
  * Recherche les codes de départements correspondant à un terme de recherche
  * Cherche dans les noms de départements et de régions
  */
 export function findDepartementCodesBySearchTerm(searchTerm: string): string[] {
-  const normalizedSearch = normalizeForSearch(searchTerm);
   const matchingCodes = new Set<string>();
 
   // Chercher dans les départements
   for (const dept of DEPARTEMENTS) {
-    const normalizedNom = normalizeForSearch(dept.nom);
-    if (normalizedNom.includes(normalizedSearch) || normalizedSearch.includes(normalizedNom)) {
+    if (nomGeographiqueCorrespond(dept.nom, searchTerm)) {
       matchingCodes.add(dept.code);
     }
     // Chercher aussi par code département (ex: "75", "13")
@@ -267,8 +286,7 @@ export function findDepartementCodesBySearchTerm(searchTerm: string): string[] {
 
   // Chercher dans les régions
   for (const region of REGIONS) {
-    const normalizedNom = normalizeForSearch(region.nom);
-    if (normalizedNom.includes(normalizedSearch) || normalizedSearch.includes(normalizedNom)) {
+    if (nomGeographiqueCorrespond(region.nom, searchTerm)) {
       // Ajouter tous les départements de la région
       for (const deptCode of region.departements) {
         matchingCodes.add(deptCode);
