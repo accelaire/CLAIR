@@ -102,6 +102,33 @@ const EMPECHEMENTS = Prisma.sql`
   WHERE mg.parlementaire_id IS NOT NULL`;
 
 /**
+ * Prise de parole d'un parlementaire, et non d'un membre du Gouvernement
+ * (ticket #129) : condition sur une ligne `interventions` d'alias `i`.
+ *
+ * Nommé ministre, un parlementaire parle au banc du Gouvernement : il répond
+ * aux questions et défend ses textes. Ses statistiques parlementaires
+ * comptaient ces prises de parole : Sébastien Lecornu, sénateur un mois en
+ * 2020, affichait 167 « interventions », toutes de ministre. Mesuré en prod le
+ * 13/11/2026 : 44 776 prises de parole de fond tenues pendant un poste
+ * ministériel (103 personnes), dont 8 647 réponses ; les réponses seules n'en
+ * sont donc qu'une part. Même règle que pour les votes (EMPECHEMENTS) : les
+ * dates des postes, bornes incluses. Le type `reponse_gouvernement` est écarté
+ * en plus, pour une réponse datée hors de tout poste connu. Ces prises de
+ * parole restent dans la liste des interventions de la fiche ; elles sont
+ * comptées dans le bilan au Gouvernement (`reponses_gouvernement`).
+ */
+const PRISE_DE_PAROLE_PARLEMENTAIRE = Prisma.sql`
+  i.type <> 'reponse_gouvernement'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM postes_ministeriels pm
+    JOIN membres_gouvernement mg ON mg.id = pm.membre_id
+    WHERE mg.parlementaire_id = i.parlementaire_id
+      AND i.date::date >= pm.date_debut
+      AND (pm.date_fin IS NULL OR i.date::date <= pm.date_fin)
+  )`;
+
+/**
  * Nombre de scrutins sous lequel un taux n'entre pas dans les classements : la
  * fiche le montre, avec son nombre de scrutins, mais le comparer à celui d'un
  * élu noté sur des milliers n'a pas de sens. Mesuré en prod le 25/10/2026 :
@@ -300,6 +327,7 @@ export async function calculateAllStats(
           AND i.type <> 'interruption'
           -- Séance publique seulement, même raison qu'intervention_stats plus haut.
           AND i.reunion_id IS NULL
+          AND ${PRISE_DE_PAROLE_PARLEMENTAIRE}
         GROUP BY m.id
       ),
       -- Amendements du mandat : AN par législature (plus fiable que la date de dépôt) ;
@@ -483,6 +511,8 @@ export async function calculateAllStats(
           -- en réunion de commission (reunion_id renseigné) gonflent ce total
           -- alors que l'API ne les liste pas (cf. reunionId: null ligne ~737).
           AND i.reunion_id IS NULL
+          -- Pas au banc du Gouvernement (cf. PRISE_DE_PAROLE_PARLEMENTAIRE).
+          AND ${PRISE_DE_PAROLE_PARLEMENTAIRE}
         GROUP BY i.parlementaire_id
       ),
       amendement_stats AS (

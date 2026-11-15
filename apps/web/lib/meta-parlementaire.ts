@@ -146,6 +146,21 @@ export function fonctionParlementaire({
 }
 
 /**
+ * La mention posée au-dessus du dernier groupe d'un mandat terminé.
+ *
+ * Sous un titre au Gouvernement, « Mandat terminé » ne disait pas quel mandat :
+ * la fiche de Sébastien Lecornu, Premier ministre, enchaînait avec « Mandat
+ * terminé · dernier groupe ». Elle dit alors « Ancien sénateur » (#129).
+ * Ailleurs, la mention ne change pas.
+ *
+ * @param libelle `fonctionParlementaire(…).libelle` d'un mandat terminé (« ancien sénateur »).
+ */
+export function mentionFinDeMandat(libelle: string, auGouvernement: boolean, aUnGroupe: boolean): string {
+  const tete = auGouvernement ? libelle.charAt(0).toUpperCase() + libelle.slice(1) : 'Mandat terminé';
+  return aUnGroupe ? `${tete} · dernier groupe :` : tete;
+}
+
+/**
  * « Bilan de son mandat » ou « Bilan de ses mandats ».
  *
  * La fiche présente la carrière, tous les mandats cumulés (cf.

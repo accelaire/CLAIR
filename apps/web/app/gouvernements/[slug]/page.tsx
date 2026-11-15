@@ -12,11 +12,12 @@ import {
   RANGS,
   aujourdhui,
   dateLongue,
+  de,
   duree,
   etapes,
   intituleAffiche,
   libellePoste,
-  lienFiche,
+  lienPersonne,
   nombre,
   nomComplet,
   titreDuRang,
@@ -56,15 +57,36 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   return { title, description, alternates: { canonical: url }, openGraph: { title, description, url } };
 }
 
-/** Le nom, lié à la fiche quand la personne en a une. */
+/** Le nom, lié à la fiche de la personne, sinon à sa page de membre ; dans la couleur du texte, souligné au survol. */
 function Nom({ p, className = '' }: { p: PersonneGouvernement; className?: string }) {
-  const fiche = lienFiche(p);
-  return fiche ? (
-    <Link href={fiche} className={`text-primary hover:underline ${className}`}>
+  const lien = lienPersonne(p);
+  return lien ? (
+    <Link href={lien} className={`hover:text-primary hover:underline ${className}`}>
       {nomComplet(p)}
     </Link>
   ) : (
     <span className={className}>{nomComplet(p)}</span>
+  );
+}
+
+/** Le Premier ministre en tête de la colonne : tout le bloc mène à sa page, comme une ligne de membre. */
+function PremierMinistre({ pm }: { pm: PersonneGouvernement }) {
+  const lien = lienPersonne(pm);
+  const contenu = (
+    <>
+      <Portrait personne={pm} taille="lg" />
+      <div className="min-w-0">
+        <p className="text-xs text-muted-foreground">{pm.civilite === 'Mme' ? 'Première ministre' : 'Premier ministre'}</p>
+        <p className="font-semibold transition-colors group-hover:text-primary">{nomComplet(pm)}</p>
+      </div>
+    </>
+  );
+  return lien ? (
+    <Link href={lien} className="group -m-2 flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-muted/50">
+      {contenu}
+    </Link>
+  ) : (
+    <div className="flex items-center gap-3">{contenu}</div>
   );
 }
 
@@ -184,7 +206,19 @@ export default async function GouvernementPage({ params }: { params: { slug: str
         </div>
         <p className="mt-1 text-muted-foreground">
           {g.dateFin ? `Du ${dateLongue(g.dateDebut)} au ${dateLongue(g.dateFin)}` : `Depuis le ${dateLongue(g.dateDebut)}`}
-          {g.presidence && <> · présidence de {nomComplet(g.presidence)}</>}
+          {g.presidence && (
+            <>
+              {' · présidence '}
+              {de(nomComplet(g.presidence)).slice(0, -nomComplet(g.presidence).length)}
+              {lienPersonne(g.presidence) ? (
+                <Link href={lienPersonne(g.presidence)!} className="hover:text-foreground hover:underline">
+                  {nomComplet(g.presidence)}
+                </Link>
+              ) : (
+                nomComplet(g.presidence)
+              )}
+            </>
+          )}
         </p>
       </header>
 
@@ -192,17 +226,7 @@ export default async function GouvernementPage({ params }: { params: { slug: str
         {/* Les faits du gouvernement, fixes à côté des onglets en grand écran, au-dessus en petit. */}
         <aside className="lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-xl border bg-card p-5">
-            {pm && (
-              <div className="flex items-center gap-3">
-                <Portrait personne={pm} taille="lg" />
-                <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground">{pm.civilite === 'Mme' ? 'Première ministre' : 'Premier ministre'}</p>
-                  <p className="font-semibold">
-                    <Nom p={pm} />
-                  </p>
-                </div>
-              </div>
-            )}
+            {pm && <PremierMinistre pm={pm} />}
 
             <dl className="mt-4 divide-y">
               <Fait libelle={g.enCours ? 'En fonction depuis' : 'Durée'}>{duree(g.dateDebut, jour)}</Fait>

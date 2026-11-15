@@ -43,7 +43,7 @@ const stats = [
     icon: MessageSquare,
     title: 'Interventions',
     description:
-      'Nombre de prises de parole en séance publique : questions au gouvernement, interventions dans les débats, explications de vote.',
+      'Nombre de prises de parole en séance publique : questions au gouvernement, interventions dans les débats, explications de vote. Ce qu’un élu dit comme membre du Gouvernement est compté à part.',
   },
 ];
 

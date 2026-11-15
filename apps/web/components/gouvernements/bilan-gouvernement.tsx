@@ -3,7 +3,7 @@ import { scrutinHref } from '@/lib/scrutin-url';
 import {
   LIBELLES_STADE,
   dateLongue,
-  lienFiche,
+  lienPersonne,
   nombre,
   nomComplet,
   type BilanGouvernement,
@@ -14,10 +14,15 @@ import {
   type StadeProjet,
 } from '@/lib/gouvernements';
 
+/**
+ * Le nom d'une personne dans une ligne de texte : dans la couleur du texte,
+ * souligné au survol, comme les autres noms du site. Lié à sa fiche, sinon à
+ * sa page de membre.
+ */
 export function Nom({ p }: { p: PersonneGouvernement }) {
-  const fiche = lienFiche(p);
-  return fiche ? (
-    <Link href={fiche} className="text-primary hover:underline">
+  const lien = lienPersonne(p);
+  return lien ? (
+    <Link href={lien} className="font-medium text-foreground hover:text-primary hover:underline">
       {nomComplet(p)}
     </Link>
   ) : (

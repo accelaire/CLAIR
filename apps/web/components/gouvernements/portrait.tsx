@@ -1,7 +1,7 @@
 import Image from 'next/image';
 import { initiales, nomComplet, type PersonneGouvernement } from '@/lib/gouvernements';
 
-const TAILLES = { sm: 'h-9 w-9 text-xs', md: 'h-12 w-12 text-sm', lg: 'h-20 w-20 text-xl' } as const;
+const TAILLES = { sm: 'h-9 w-9 text-xs', md: 'h-12 w-12 text-sm', lg: 'h-20 w-20 text-xl', xl: 'h-48 w-48 text-5xl' } as const;
 
 /**
  * La photo de la fiche quand la personne en a une, ses initiales sinon : les

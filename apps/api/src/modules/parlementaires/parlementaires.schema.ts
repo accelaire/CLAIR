@@ -162,7 +162,17 @@ export const parlementaireStatsSchema = z.object({
     ),
   loyaute: z.number().min(0).max(100).nullable().describe('Taux de loyauté au groupe en %. Null sans vote exprimé dans un groupe'),
   participation: z.number().describe('Nombre de votes'),
-  interventions: z.number().describe("Nombre d'interventions"),
+  interventions: z
+    .number()
+    .describe(
+      "Nombre de prises de parole en séance publique comme parlementaire : hors interruptions et présidence de séance, hors réponses et prises de parole tenues pendant un poste au Gouvernement (voir interventionsGouvernement)",
+    ),
+  interventionsGouvernement: z
+    .number()
+    .optional()
+    .describe(
+      "Prises de parole en séance publique au banc du Gouvernement : réponses de ministre et toute prise de parole tenue pendant un poste ministériel. 0 pour qui n'a jamais été membre du Gouvernement. Additionné à interventions, donne le total de la liste des interventions",
+    ),
   amendements: z.object({
     proposes: z.number(),
     adoptes: z.number(),
@@ -173,6 +183,14 @@ export const parlementaireStatsSchema = z.object({
 
 export const parlementaireDetailSchema = parlementaireSchema.extend({
   stats: parlementaireStatsSchema.optional(),
+  listes: z
+    .object({
+      votes: z.number().describe('Lignes de la liste des votes : hors scrutins où il ne pouvait pas voter'),
+      interventions: z.number().describe('Interventions de la liste, au banc du Gouvernement comprises'),
+      amendements: z.number().describe('Amendements déposés ou cosignés'),
+    })
+    .optional()
+    .describe('Taille des listes de la fiche, avec leurs filtres par défaut : une liste vide n’a pas d’onglet'),
   votes: z.array(z.object({
     id: z.string().uuid(),
     position: z.string(),

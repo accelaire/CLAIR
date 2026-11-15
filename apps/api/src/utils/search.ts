@@ -96,6 +96,32 @@ export function buildParlementaireSearchCondition(search: string) {
 }
 
 /**
+ * Condition Prisma pour rechercher un membre du Gouvernement par son nom :
+ * mêmes règles que `buildParlementaireSearchCondition` (prénom et nom dans les
+ * deux ordres, slug), sans la recherche géographique, qu'un membre n'a pas.
+ */
+export function buildMembreGouvernementSearchCondition(search: string): Prisma.MembreGouvernementWhereInput {
+  const searchTerm = search.toLowerCase().trim();
+  const words = searchTerm.split(/\s+/).filter((w) => w.length > 0);
+  const contient = (valeur: string) => ({ contains: valeur, mode: 'insensitive' as const });
+
+  if (words.length <= 1) {
+    return { OR: [{ nom: contient(searchTerm) }, { prenom: contient(searchTerm) }, { slug: contient(searchTerm) }] };
+  }
+
+  const orConditions: Prisma.MembreGouvernementWhereInput[] = [];
+  for (let i = 1; i < words.length; i++) {
+    const premier = words.slice(0, i).join(' ');
+    const second = words.slice(i).join(' ');
+    orConditions.push({ AND: [{ prenom: contient(premier) }, { nom: contient(second) }] });
+    orConditions.push({ AND: [{ nom: contient(premier) }, { prenom: contient(second) }] });
+  }
+  orConditions.push({ slug: contient(searchTerm.replace(/\s+/g, '-')) });
+  orConditions.push({ AND: words.map((w) => ({ OR: [{ nom: contient(w) }, { prenom: contient(w) }] })) });
+  return { OR: orConditions };
+}
+
+/**
  * Construit une condition Prisma pour rechercher dans un champ texte
  * Gère les recherches multi-mots en cherchant tous les mots
  * @param field - Nom du champ à rechercher (ex: 'nom', 'titre')

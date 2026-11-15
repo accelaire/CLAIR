@@ -5,354 +5,417 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useSearchParams, useRouter } from 'next/navigation';
+import type { LucideIcon } from 'lucide-react';
 import {
   Search, Users, Vote, Building2, FileText, Loader2, X,
-  Landmark, BookOpen, Tag, ChevronRight, History,
+  Landmark, BookOpen, Tag, ChevronRight, Flag, Star,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { scrutinHref } from '@/lib/scrutin-url';
-import { getDossierEtat } from '@/lib/dossiers';
+import { formatDossierTitre, getDossierEtat } from '@/lib/dossiers';
 import { useDebouncedCallback } from 'use-debounce';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
-import { legislatureLabel } from '@/lib/periodes';
+import { legislatureLabel, mandatureLabel } from '@/lib/periodes';
+import { libellePoste, moisAnnee, type PersonneGouvernement } from '@/lib/gouvernements';
+
+// La recherche présente des personnes, pas des tables : un parlementaire et
+// le membre du Gouvernement qu'il a été font un seul résultat, anciens compris
+// et classés après les personnes en fonction (#129). Toutes les cartes ont la
+// même forme : vignette, titre et badges, une ligne de contexte, une ligne de
+// détail.
 
 // =============================================================================
-// Types
+// Types (réponse de /search)
 // =============================================================================
 
-interface SearchResult {
-  _type: 'depute' | 'senateur' | 'scrutin' | 'lobbyiste' | 'dossier' | 'groupe' | 'commission' | 'sujet';
-  id?: string;
-  slug?: string;
-  nom?: string;
-  chambre?: 'assemblee' | 'senat';
-  prenom?: string;
-  nomComplet?: string;
-  photoUrl?: string;
-  groupe?: string;
-  groupeCouleur?: string;
-  circonscription?: string;
-  departement?: string;
-  numero?: number;
-  date?: string;
-  titre?: string;
-  sort?: string;
-  typeVote?: string;
-  importance?: number;
-  session?: string;
-  type?: string;
-  secteur?: string;
-  uid?: string;
-  etat?: string;
-  procedureLibelle?: string;
-  loiNumero?: string;
-  couleur?: string;
-  actif?: boolean;
-  statsMembresActifs?: number;
-  nomCourt?: string;
-  label?: string;
-  description?: string;
-  category?: string;
-  status?: string;
-  dossierCount?: number;
-  scrutinCount?: number;
-  // Parlementaires : mandat clos + contexte du dernier mandat (groupe d'époque).
-  ancien?: boolean;
-  sexe?: string | null;
-  dernierMandat?: {
-    chambre?: string;
-    legislature?: number | null;
-    mandature?: number | null;
-    dateDebut?: string;
-    dateFin?: string | null;
+type RolePersonne = 'deputes' | 'senateurs' | 'gouvernement';
+
+interface Personne {
+  _type: 'personne';
+  cle: string;
+  prenom: string;
+  nom: string;
+  sexe: string | null;
+  photoUrl: string | null;
+  enFonction: boolean;
+  parlementaire: {
+    slug: string;
+    chambre: string;
+    actif: boolean;
+    groupe: { nom: string; couleur: string | null } | null;
+    circonscription: { nom: string; departement: string } | null;
+    dernierMandat: { chambre: string; legislature: number | null; mandature: number | null; dateFin: string | null } | null;
   } | null;
+  gouvernement: {
+    membreSlug: string;
+    civilite: string | null;
+    dernierPoste: {
+      qualite: string;
+      intitule: string;
+      intituleCourt: string | null;
+      dateDebut: string;
+      dateFin: string | null;
+      gouvernement: { slug: string; nom: string } | null;
+    } | null;
+  } | null;
+  roles: RolePersonne[];
 }
 
-interface SearchCounts {
-  deputes: number;
-  senateurs: number;
-  scrutins: number;
-  lobbyistes: number;
-  dossiers: number;
-  groupes: number;
-  commissions: number;
-  sujets: number;
-  total: number;
+interface Gouvernement {
+  _type: 'gouvernement';
+  slug: string;
+  nom: string;
+  dateDebut: string;
+  dateFin: string | null;
+  enCours: boolean;
+  premierMinistre: PersonneGouvernement | null;
 }
 
-interface AllSearchResponse {
-  sections: Record<string, SearchResult[]>;
-  meta: {
-    query: string;
-    counts: SearchCounts;
-    inclureAnciens?: boolean;
-    anciensDisponibles?: number;
-  };
+interface Groupe {
+  _type: 'groupe';
+  id: string;
+  slug: string;
+  nom: string;
+  nomComplet: string | null;
+  couleur: string | null;
+  chambre: string;
+  statsMembresActifs: number | null;
 }
 
-interface FilteredSearchResponse {
-  data: SearchResult[];
-  meta: {
-    query: string;
-    counts: SearchCounts;
-    inclureAnciens?: boolean;
-    anciensDisponibles?: number;
-    hasNext?: boolean;
-    page?: number;
-    total?: number;
-  };
+interface Commission {
+  _type: 'commission';
+  id: string;
+  slug: string;
+  nom: string;
+  nomCourt: string | null;
+  chambre: string;
+  type: string | null;
+  actif: boolean;
 }
 
-type FilterType = 'all' | 'deputes' | 'senateurs' | 'scrutins' | 'lobbyistes' | 'dossiers' | 'groupes' | 'commissions' | 'sujets';
+interface Scrutin {
+  _type: 'scrutin';
+  id: string;
+  numero: number;
+  chambre: 'assemblee' | 'senat';
+  session: string | null;
+  date: string;
+  titre: string;
+  sort: string;
+}
+
+interface Sujet {
+  _type: 'sujet';
+  id: string;
+  slug: string;
+  label: string;
+  category: string | null;
+  dossierCount: number | null;
+  scrutinCount: number | null;
+}
+
+interface Lobbyiste {
+  _type: 'lobbyiste';
+  id: string;
+  nom: string;
+  type: string | null;
+  secteur: string | null;
+}
+
+interface Dossier {
+  _type: 'dossier';
+  id: string;
+  uid: string;
+  titre: string;
+  etat: string | null;
+  procedureLibelle: string | null;
+  loiNumero: string | null;
+}
+
+type Resultat = Personne | Gouvernement | Groupe | Commission | Scrutin | Sujet | Lobbyiste | Dossier;
+
+const CATEGORIES = ['personnes', 'gouvernements', 'groupes', 'commissions', 'scrutins', 'sujets', 'lobbyistes', 'dossiers'] as const;
+type Categorie = (typeof CATEGORIES)[number];
+type Filtre = 'all' | Categorie;
+
+interface Meta {
+  query: string;
+  counts: Record<Categorie, number> & { total: number; personnesParRole: Record<RolePersonne, number> };
+  /** Aucune correspondance exacte : ce sont des noms approchants. */
+  approximatif: boolean;
+  meilleurResultat: { categorie: 'personnes' | 'gouvernements'; cle: string } | null;
+}
+
+interface ReponseTout {
+  sections: Record<Categorie, Resultat[]>;
+  meta: Meta;
+}
+
+interface ReponseFiltree {
+  data: Resultat[];
+  meta: Meta & { hasNext: boolean; page: number };
+}
 
 const PAGE_SIZE = 30;
 
-// =============================================================================
-// Config
-// =============================================================================
-
-const typeConfig: Record<string, { label: string; labelPlural: string; icon: typeof Users; color: string; filterKey: FilterType }> = {
-  depute:     { label: 'Député',      labelPlural: 'Députés',      icon: Users,    color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',       filterKey: 'deputes' },
-  senateur:   { label: 'Sénateur',    labelPlural: 'Sénateurs',    icon: Users,    color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',     filterKey: 'senateurs' },
-  scrutin:    { label: 'Scrutin',     labelPlural: 'Scrutins',     icon: Vote,     color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400', filterKey: 'scrutins' },
-  lobbyiste:  { label: 'Lobbyiste',   labelPlural: 'Lobbyistes',   icon: Building2, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',   filterKey: 'lobbyistes' },
-  dossier:    { label: 'Dossier',     labelPlural: 'Dossiers',     icon: FileText, color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',     filterKey: 'dossiers' },
-  groupe:     { label: 'Groupe',      labelPlural: 'Groupes',      icon: Landmark, color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400', filterKey: 'groupes' },
-  commission: { label: 'Commission',  labelPlural: 'Commissions',  icon: BookOpen, color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',       filterKey: 'commissions' },
-  sujet:      { label: 'Sujet',       labelPlural: 'Sujets',       icon: Tag,      color: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',       filterKey: 'sujets' },
+const LIBELLES: Record<Categorie, { pluriel: string; icone: LucideIcon; teinte: string }> = {
+  personnes:     { pluriel: 'Personnes',     icone: Users,     teinte: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+  gouvernements: { pluriel: 'Gouvernements', icone: Flag,      teinte: 'bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-300' },
+  groupes:       { pluriel: 'Groupes',       icone: Landmark,  teinte: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' },
+  commissions:   { pluriel: 'Commissions',   icone: BookOpen,  teinte: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400' },
+  scrutins:      { pluriel: 'Scrutins',      icone: Vote,      teinte: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
+  sujets:        { pluriel: 'Sujets',        icone: Tag,       teinte: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' },
+  lobbyistes:    { pluriel: 'Lobbyistes',    icone: Building2, teinte: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  dossiers:      { pluriel: 'Dossiers',      icone: FileText,  teinte: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
 };
 
-const SECTION_ORDER: { key: string; type: string }[] = [
-  { key: 'deputes',     type: 'depute' },
-  { key: 'senateurs',   type: 'senateur' },
-  { key: 'groupes',     type: 'groupe' },
-  { key: 'commissions', type: 'commission' },
-  { key: 'scrutins',    type: 'scrutin' },
-  { key: 'sujets',      type: 'sujet' },
-  { key: 'lobbyistes',  type: 'lobbyiste' },
-  { key: 'dossiers',    type: 'dossier' },
+const CATEGORIE_DU_TYPE: Record<Resultat['_type'], Categorie> = {
+  personne: 'personnes',
+  gouvernement: 'gouvernements',
+  groupe: 'groupes',
+  commission: 'commissions',
+  scrutin: 'scrutins',
+  sujet: 'sujets',
+  lobbyiste: 'lobbyistes',
+  dossier: 'dossiers',
+};
+
+const ROLES: { valeur: RolePersonne | null; libelle: string }[] = [
+  { valeur: null, libelle: 'Toutes' },
+  { valeur: 'deputes', libelle: 'Députés' },
+  { valeur: 'senateurs', libelle: 'Sénateurs' },
+  { valeur: 'gouvernement', libelle: 'Gouvernement' },
 ];
 
-const FILTER_OPTIONS: { value: FilterType; label: string }[] = [
-  { value: 'all',         label: 'Tout' },
-  { value: 'deputes',     label: 'Députés' },
-  { value: 'senateurs',   label: 'Sénateurs' },
-  { value: 'groupes',     label: 'Groupes' },
-  { value: 'commissions', label: 'Commissions' },
-  { value: 'scrutins',    label: 'Scrutins' },
-  { value: 'sujets',      label: 'Sujets' },
-  { value: 'lobbyistes',  label: 'Lobbyistes' },
-  { value: 'dossiers',    label: 'Dossiers' },
-];
+const chambreLibelle = (c: string) => (c === 'senat' ? 'Sénat' : 'Assemblée nationale');
 
 // =============================================================================
-// Helpers
+// Une carte, quel que soit le type
 // =============================================================================
 
-const formatDossierTitre = (titre: string, procedureLibelle?: string | null): string => {
-  const firstChar = titre.charAt(0);
-  if (firstChar !== firstChar.toUpperCase() && procedureLibelle) {
-    return `${procedureLibelle} ${titre}`;
+interface Badge {
+  texte: string;
+  classe: string;
+}
+
+interface Carte {
+  href: string;
+  titre: string;
+  /** Titres longs (scrutins, dossiers) : coupés à deux lignes. */
+  titreLong?: boolean;
+  badges: Badge[];
+  contexte?: string;
+  /** Pastille de couleur devant le contexte (groupe politique). */
+  pastille?: string | null;
+  detail?: string;
+  photo?: string | null;
+  icone: LucideIcon;
+  teinte: string;
+}
+
+const BADGE_NEUTRE = 'bg-muted text-muted-foreground';
+
+/** « Ancien député · XVIe législature », « Sénatrice », « Ancienne sénatrice · jusqu'en 2020 ». */
+function ligneParlement(p: Personne): { texte: string; pastille: string | null } | null {
+  const f = p.parlementaire;
+  if (!f) return null;
+  const senat = f.chambre === 'senat';
+  const femme = p.sexe === 'F';
+  const fonction = senat ? (femme ? 'sénatrice' : 'sénateur') : femme ? 'députée' : 'député';
+  const morceaux: string[] = [];
+  if (f.actif) {
+    morceaux.push(fonction.charAt(0).toUpperCase() + fonction.slice(1));
+  } else {
+    const titre = `${femme ? 'Ancienne' : 'Ancien'} ${fonction}`;
+    const m = f.dernierMandat;
+    const periode =
+      m?.legislature != null
+        ? legislatureLabel(m.legislature)
+        : m?.mandature != null
+          ? mandatureLabel(m.mandature)
+          : m?.dateFin
+            ? `jusqu’en ${new Date(m.dateFin).getUTCFullYear()}`
+            : null;
+    morceaux.push(periode ? `${titre} · ${periode}` : titre);
   }
-  return titre;
-};
+  if (f.groupe) morceaux.push(f.groupe.nom);
+  if (f.circonscription) morceaux.push(f.circonscription.nom);
+  return { texte: morceaux.join(' · '), pastille: f.groupe?.couleur ?? null };
+}
 
-function getResultLink(result: SearchResult): string {
-  switch (result._type) {
-    case 'depute':
-    case 'senateur':
-      return result.chambre === 'senat'
-        ? `/senateurs/${result.slug}`
-        : `/deputes/${result.slug}`;
+/** « Premier ministre · Gouvernement Lecornu II », « Ministre · Culture · Gouvernement Lecornu II, jusqu'en févr. 2026 ». */
+function ligneGouvernement(p: Personne): string | null {
+  const poste = p.gouvernement?.dernierPoste;
+  if (!poste) return null;
+  const morceaux = [libellePoste(poste.qualite, poste.intituleCourt, poste.intitule)];
+  if (poste.gouvernement) morceaux.push(`Gouvernement ${poste.gouvernement.nom}`);
+  const texte = morceaux.join(' · ');
+  return poste.dateFin === null ? texte : `${texte}, jusqu’en ${moisAnnee(poste.dateFin)}`;
+}
+
+function cartePersonne(p: Personne): Carte {
+  const parlement = ligneParlement(p);
+  const gouvernement = ligneGouvernement(p);
+  // La fonction en cours d'abord ; à défaut, la plus récente.
+  const gouvernementEnPremier =
+    !!gouvernement &&
+    (p.gouvernement?.dernierPoste?.dateFin === null ||
+      (!p.parlementaire?.actif &&
+        (p.gouvernement?.dernierPoste?.dateFin ?? '') >= (p.parlementaire?.dernierMandat?.dateFin ?? '').slice(0, 10)));
+  const f = p.parlementaire;
+  return {
+    // Sa fiche s'il en a une, sinon sa page de membre du Gouvernement.
+    href: f
+      ? `/${f.chambre === 'senat' ? 'senateurs' : 'deputes'}/${f.slug}`
+      : p.gouvernement
+        ? `/gouvernements/membres/${p.gouvernement.membreSlug}`
+        : '/gouvernements',
+    titre: `${p.prenom} ${p.nom}`,
+    badges: [],
+    contexte: (gouvernementEnPremier ? gouvernement : parlement?.texte) ?? undefined,
+    pastille: gouvernementEnPremier ? null : (parlement?.pastille ?? null),
+    detail: (gouvernementEnPremier ? parlement?.texte : gouvernement) ?? undefined,
+    photo: p.photoUrl,
+    icone: Users,
+    teinte: LIBELLES.personnes.teinte,
+  };
+}
+
+function carteDe(r: Resultat): Carte {
+  const { icone, teinte } = LIBELLES[CATEGORIE_DU_TYPE[r._type]];
+  switch (r._type) {
+    case 'personne':
+      return cartePersonne(r);
+    case 'gouvernement':
+      return {
+        href: `/gouvernements/${r.slug}`,
+        titre: `Gouvernement ${r.nom}`,
+        badges: r.enCours ? [{ texte: 'En cours', classe: 'badge-en-cours' }] : [],
+        contexte: r.premierMinistre ? `Premier ministre : ${r.premierMinistre.prenom} ${r.premierMinistre.nom}` : undefined,
+        detail: `${moisAnnee(r.dateDebut)} → ${r.dateFin ? moisAnnee(r.dateFin) : 'en cours'}`,
+        photo: r.premierMinistre?.parlementaire?.photoUrl ?? null,
+        icone,
+        teinte,
+      };
+    case 'groupe':
+      return {
+        href: `/groupes/${r.chambre || 'assemblee'}/${r.slug}`,
+        titre: r.nom,
+        badges: [],
+        contexte: r.nomComplet && r.nomComplet !== r.nom ? r.nomComplet : undefined,
+        pastille: r.couleur,
+        detail: [chambreLibelle(r.chambre), r.statsMembresActifs ? `${r.statsMembresActifs} membres` : null].filter(Boolean).join(' · '),
+        icone,
+        teinte,
+      };
+    case 'commission':
+      return {
+        href: `/commissions/${r.slug}`,
+        titre: r.nomCourt || r.nom,
+        badges: r.actif ? [] : [{ texte: 'Dissoute', classe: BADGE_NEUTRE }],
+        contexte: r.nomCourt && r.nomCourt !== r.nom ? r.nom : undefined,
+        detail: [chambreLibelle(r.chambre), r.type ? r.type.replace(/_/g, ' ') : null].filter(Boolean).join(' · '),
+        icone,
+        teinte,
+      };
     case 'scrutin':
-      return scrutinHref({
-        numero: result.numero!,
-        chambre: result.chambre,
-        session: result.session,
-      });
-    case 'lobbyiste':  return `/lobbying/${result.id}`;
-    case 'dossier':    return `/dossiers/${result.uid}`;
-    case 'groupe':     return `/groupes/${result.chambre || 'assemblee'}/${result.slug}`;
-    case 'commission': return `/commissions/${result.slug}`;
-    case 'sujet':      return `/sujets/${result.slug}`;
-    default:           return '#';
+      return {
+        href: scrutinHref({ numero: r.numero, chambre: r.chambre, session: r.session ?? undefined }),
+        titre: r.titre,
+        titreLong: true,
+        badges: [r.sort === 'adopte' ? { texte: 'Adopté', classe: 'badge-adopte' } : { texte: 'Rejeté', classe: 'badge-rejete' }],
+        detail: [
+          `Scrutin n° ${r.numero}`,
+          new Date(r.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }),
+          chambreLibelle(r.chambre),
+        ].join(' · '),
+        icone,
+        teinte,
+      };
+    case 'sujet':
+      return {
+        href: `/sujets/${r.slug}`,
+        titre: r.label,
+        titreLong: true,
+        badges: [],
+        contexte: r.category ? r.category.charAt(0).toUpperCase() + r.category.slice(1) : undefined,
+        detail: [
+          r.scrutinCount ? `${r.scrutinCount} scrutin${r.scrutinCount > 1 ? 's' : ''}` : null,
+          r.dossierCount ? `${r.dossierCount} dossier${r.dossierCount > 1 ? 's' : ''}` : null,
+        ].filter(Boolean).join(' · ') || undefined,
+        icone,
+        teinte,
+      };
+    case 'lobbyiste':
+      return {
+        href: `/lobbying/${r.id}`,
+        titre: r.nom,
+        badges: [],
+        contexte: r.secteur ?? undefined,
+        detail: r.type ?? undefined,
+        icone,
+        teinte,
+      };
+    case 'dossier': {
+      const etat = getDossierEtat(r.etat);
+      return {
+        href: `/dossiers/${r.uid}`,
+        titre: formatDossierTitre(r.titre, r.procedureLibelle),
+        titreLong: true,
+        badges: etat ? [{ texte: etat.label, classe: etat.color }] : [],
+        detail: r.loiNumero ? `Loi n° ${r.loiNumero}` : undefined,
+        icone,
+        teinte,
+      };
+    }
   }
 }
 
-/**
- * Libellé d'un mandat clos. L'AN se date par sa législature, le Sénat n'a pas de
- * cohorte équivalente : on s'y rabat sur l'année de fin de mandat.
- * Voir SPEC-MULTI-LEGISLATURES.md (ticket #13).
- */
-function ancienLabel(result: SearchResult): string {
-  const senat = result.chambre === 'senat';
-  // Accord en genre : `sexe` est renseigné pour l'intégralité du corpus. Sans lui,
-  // on retombe sur une formule neutre plutôt que sur un masculin par défaut.
-  const titre =
-    result.sexe === 'F'
-      ? (senat ? 'Ancienne sénatrice' : 'Ancienne députée')
-      : result.sexe === 'M'
-        ? (senat ? 'Ancien sénateur' : 'Ancien député')
-        : 'Mandat clos';
-  const mandat = result.dernierMandat;
-  if (!mandat) return titre;
+const cleDe = (r: Resultat): string =>
+  r._type === 'personne' ? r.cle : r._type === 'gouvernement' || r._type === 'groupe' || r._type === 'commission' || r._type === 'sujet'
+    ? `${r._type}-${r.slug}`
+    : r._type === 'dossier'
+      ? `dossier-${r.uid}`
+      : `${r._type}-${r.id}`;
 
-  if (mandat.legislature != null) {
-    return `${titre} · ${legislatureLabel(mandat.legislature)}`;
-  }
-  if (mandat.dateFin) {
-    const annee = new Date(mandat.dateFin).getUTCFullYear();
-    if (Number.isFinite(annee)) return `${titre} · jusqu'en ${annee}`;
-  }
-  return titre;
-}
-
-function getDisplayType(result: SearchResult): string {
-  if (result._type === 'depute' || result._type === 'senateur') {
-    return result.chambre === 'senat' ? 'senateur' : 'depute';
-  }
-  return result._type;
-}
-
-// =============================================================================
-// Result card
-// =============================================================================
-
-function ResultCard({ result }: { result: SearchResult }) {
-  const displayType = getDisplayType(result);
-  const config = typeConfig[displayType]!;
-  const Icon = config.icon;
-  const isParlementaire = displayType === 'depute' || displayType === 'senateur';
-
+function CarteResultat({ resultat, enAvant = false }: { resultat: Resultat; enAvant?: boolean }) {
+  const c = carteDe(resultat);
+  const Icone = c.icone;
   return (
     <Link
-      href={getResultLink(result)}
-      className="block rounded-lg border bg-card p-4 transition-all hover:border-primary hover:shadow-md"
+      href={c.href}
+      className={`block rounded-lg border p-4 transition-all hover:border-primary hover:shadow-md ${
+        enAvant ? 'border-primary/40 bg-primary/5' : 'bg-card'
+      }`}
     >
       <div className="flex items-start gap-4">
-        {isParlementaire && result.photoUrl ? (
+        {c.photo ? (
           <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-full bg-muted">
-            <Image
-              src={result.photoUrl}
-              alt={result.nomComplet || `${result.prenom} ${result.nom}`}
-              fill
-              className="object-cover"
-              unoptimized
-            />
+            <Image src={c.photo} alt={c.titre} fill className="object-cover" unoptimized />
           </div>
         ) : (
-          <div className={`p-3 rounded-lg ${config.color}`}>
-            <Icon className="h-5 w-5" />
+          <div className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg ${c.teinte}`}>
+            <Icone className="h-5 w-5" />
           </div>
         )}
-
-        <div className="flex-1 min-w-0">
-          {isParlementaire && (
-            <>
-              <h3 className="font-semibold flex flex-wrap items-center gap-2">
-                {result.nomComplet || `${result.prenom} ${result.nom}`}
-                {result.ancien && (
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                    {ancienLabel(result)}
-                  </span>
-                )}
-              </h3>
-              {result.groupe && (
-                <p className="text-sm text-muted-foreground flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: result.groupeCouleur || '#888' }} />
-                  {result.groupe}
-                </p>
+        <div className="min-w-0 flex-1">
+          <h3 className="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold">
+            <span className={c.titreLong ? 'line-clamp-2' : ''}>{c.titre}</span>
+            {c.badges.map((b) => (
+              <span key={b.texte} className={`rounded-full px-2 py-0.5 text-xs font-medium ${b.classe}`}>
+                {b.texte}
+              </span>
+            ))}
+          </h3>
+          {c.contexte && (
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {c.pastille && (
+                <span className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ backgroundColor: c.pastille }} />
               )}
-              {result.circonscription && (
-                <p className="text-xs text-muted-foreground">
-                  {result.circonscription} {result.departement && `(${result.departement})`}
-                </p>
-              )}
-            </>
+              {c.contexte}
+            </p>
           )}
-
-          {result._type === 'scrutin' && (
-            <>
-              <h3 className="font-semibold line-clamp-2">{result.titre}</h3>
-              <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-                <span>Scrutin n&deg;{result.numero}</span>
-                <span>&bull;</span>
-                <span className={result.sort === 'adopte' ? 'text-adopte' : 'text-rejete'}>
-                  {result.sort === 'adopte' ? 'Adopté' : 'Rejeté'}
-                </span>
-              </div>
-            </>
-          )}
-
-          {result._type === 'lobbyiste' && (
-            <>
-              <h3 className="font-semibold">{result.nom}</h3>
-              <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-                {result.type && <span>{result.type}</span>}
-                {result.secteur && (<><span>&bull;</span><span>{result.secteur}</span></>)}
-              </div>
-            </>
-          )}
-
-          {result._type === 'dossier' && (
-            <>
-              <h3 className="font-semibold line-clamp-2">{formatDossierTitre(result.titre || '', result.procedureLibelle)}</h3>
-              <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-                {(() => {
-                  const etatInfo = getDossierEtat(result.etat);
-                  return etatInfo ? <span className={etatInfo.color}>{etatInfo.label}</span> : null;
-                })()}
-                {result.loiNumero && (<><span>&bull;</span><span className="text-green-700 font-medium">Loi n&deg;{result.loiNumero}</span></>)}
-              </div>
-            </>
-          )}
-
-          {result._type === 'groupe' && (
-            <>
-              <h3 className="font-semibold flex items-center gap-2">
-                {result.couleur && <span className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: result.couleur }} />}
-                {result.nom}
-              </h3>
-              <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-                <span>{result.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale'}</span>
-                {result.statsMembresActifs != null && result.statsMembresActifs > 0 && (
-                  <><span>&bull;</span><span>{result.statsMembresActifs} membres</span></>
-                )}
-              </div>
-            </>
-          )}
-
-          {result._type === 'commission' && (
-            <>
-              <h3 className="font-semibold line-clamp-2 flex flex-wrap items-center gap-2">
-                {result.nomCourt || result.nom}
-                {result.actif === false && (
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                    Dissoute
-                  </span>
-                )}
-              </h3>
-              <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-                <span>{result.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale'}</span>
-                {result.type && (<><span>&bull;</span><span className="capitalize">{result.type.replace(/_/g, ' ')}</span></>)}
-              </div>
-            </>
-          )}
-
-          {result._type === 'sujet' && (
-            <>
-              <h3 className="font-semibold line-clamp-2">{result.label}</h3>
-              <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-                {result.category && <span className="capitalize">{result.category}</span>}
-                {result.scrutinCount != null && result.scrutinCount > 0 && (
-                  <><span>&bull;</span><span>{result.scrutinCount} scrutin{result.scrutinCount > 1 ? 's' : ''}</span></>
-                )}
-                {result.dossierCount != null && result.dossierCount > 0 && (
-                  <><span>&bull;</span><span>{result.dossierCount} dossier{result.dossierCount > 1 ? 's' : ''}</span></>
-                )}
-              </div>
-            </>
-          )}
+          {c.detail && <p className="mt-0.5 text-xs text-muted-foreground">{c.detail}</p>}
         </div>
       </div>
     </Link>
@@ -363,6 +426,22 @@ function ResultCard({ result }: { result: SearchResult }) {
 // Page
 // =============================================================================
 
+function Puce({ actif, onClick, children }: { actif: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+        actif ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+const compte = (n: number | undefined) =>
+  n != null ? <span className="ml-1 opacity-70">({n.toLocaleString('fr-FR')})</span> : null;
+
 export default function RecherchePage() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -370,108 +449,100 @@ export default function RecherchePage() {
 
   const [query, setQuery] = useState(initialQuery);
   const [debouncedQuery, setDebouncedQuery] = useState(initialQuery);
-  const [filter, setFilter] = useState<FilterType>('all');
-  // Défaut : la recherche décrit le Parlement d'aujourd'hui. Les mandats clos
-  // s'ajoutent sur demande et l'état reste partageable via l'URL.
-  const [inclureAnciens, setInclureAnciens] = useState(
-    searchParams.get('anciens') === '1',
-  );
-
-  const buildUrl = (value: string, anciens: boolean) => {
-    const params = new URLSearchParams();
-    if (value) params.set('q', value);
-    if (anciens) params.set('anciens', '1');
-    const qs = params.toString();
-    return qs ? `/recherche?${qs}` : '/recherche';
-  };
+  const [filtre, setFiltre] = useState<Filtre>('all');
+  const [role, setRole] = useState<RolePersonne | null>(null);
 
   const debouncedSetQuery = useDebouncedCallback((value: string) => {
     setDebouncedQuery(value);
-    router.replace(buildUrl(value, inclureAnciens), { scroll: false });
+    router.replace(value ? `/recherche?q=${encodeURIComponent(value)}` : '/recherche', { scroll: false });
   }, 300);
 
   useEffect(() => {
     debouncedSetQuery(query);
   }, [query, debouncedSetQuery]);
 
-  const toggleAnciens = (next: boolean) => {
-    setInclureAnciens(next);
-    router.replace(buildUrl(debouncedQuery, next), { scroll: false });
+  const choisirFiltre = (f: Filtre) => {
+    setFiltre(f);
+    setRole(null);
   };
 
   const enabled = debouncedQuery.length >= 2;
+  const tout = filtre === 'all';
 
-  // ---- Query: type=all (sections preview) ----
-  const allQuery = useQuery<AllSearchResponse>({
-    queryKey: ['search', debouncedQuery, 'all', inclureAnciens],
-    queryFn: () =>
-      api
-        .get('/search', {
-          params: { q: debouncedQuery, type: 'all', inclureAnciens: String(inclureAnciens) },
-        })
-        .then(r => r.data),
-    enabled: enabled && filter === 'all',
+  const requeteTout = useQuery<ReponseTout>({
+    queryKey: ['search', debouncedQuery, 'all'],
+    queryFn: () => api.get('/search', { params: { q: debouncedQuery, type: 'all' } }).then((r) => r.data),
+    enabled: enabled && tout,
   });
 
-  // ---- Query: specific filter (paginated) ----
-  const filteredQuery = useInfiniteQuery<FilteredSearchResponse>({
-    queryKey: ['search-filtered', debouncedQuery, filter, inclureAnciens],
+  const requeteFiltree = useInfiniteQuery<ReponseFiltree>({
+    queryKey: ['search-filtered', debouncedQuery, filtre, role],
     queryFn: ({ pageParam = 1 }) =>
-      api.get('/search', {
-        params: {
-          q: debouncedQuery,
-          type: filter,
-          limit: PAGE_SIZE,
-          page: pageParam,
-          inclureAnciens: String(inclureAnciens),
-        },
-      }).then(r => r.data),
-    getNextPageParam: (lastPage) =>
-      lastPage.meta.hasNext ? (lastPage.meta.page ?? 1) + 1 : undefined,
+      api
+        .get('/search', {
+          params: {
+            q: debouncedQuery,
+            type: filtre,
+            limit: PAGE_SIZE,
+            page: pageParam,
+            ...(filtre === 'personnes' && role ? { role } : {}),
+          },
+        })
+        .then((r) => r.data),
+    getNextPageParam: (derniere) => (derniere.meta.hasNext ? (derniere.meta.page ?? 1) + 1 : undefined),
     initialPageParam: 1,
-    enabled: enabled && filter !== 'all',
+    enabled: enabled && !tout,
   });
 
   const { loadMoreRef } = useInfiniteScroll({
-    hasNextPage: filteredQuery.hasNextPage,
-    isFetchingNextPage: filteredQuery.isFetchingNextPage,
-    fetchNextPage: filteredQuery.fetchNextPage,
+    hasNextPage: requeteFiltree.hasNextPage,
+    isFetchingNextPage: requeteFiltree.isFetchingNextPage,
+    fetchNextPage: requeteFiltree.fetchNextPage,
   });
 
-  // ---- Derived state ----
-  const isAll = filter === 'all';
-  const isLoading = isAll ? allQuery.isLoading : filteredQuery.isLoading;
-  const isFetching = isAll ? allQuery.isFetching : (filteredQuery.isFetching && !filteredQuery.isFetchingNextPage);
-  const error = isAll ? allQuery.error : filteredQuery.error;
-  const hasData = isAll ? !!allQuery.data : !!filteredQuery.data;
+  const isLoading = tout ? requeteTout.isLoading : requeteFiltree.isLoading;
+  const isFetching = tout ? requeteTout.isFetching : requeteFiltree.isFetching && !requeteFiltree.isFetchingNextPage;
+  const error = tout ? requeteTout.error : requeteFiltree.error;
+  const meta: Meta | undefined = requeteTout.data?.meta ?? requeteFiltree.data?.pages[0]?.meta;
+  const counts = meta?.counts;
+  const resultatsFiltres = requeteFiltree.data?.pages.flatMap((p) => p.data) ?? [];
 
-  const counts: SearchCounts | undefined =
-    allQuery.data?.meta.counts ?? filteredQuery.data?.pages[0]?.meta.counts;
+  // Le meilleur résultat, en tête, et retiré de sa section.
+  const sections = requeteTout.data?.sections;
+  const meilleur = (() => {
+    const m = requeteTout.data?.meta.meilleurResultat;
+    if (!m || !sections) return null;
+    return (
+      sections[m.categorie].find((r) => (r._type === 'personne' ? r.cle : r._type === 'gouvernement' ? r.slug : null) === m.cle) ??
+      null
+    );
+  })();
 
-  const filteredResults = filteredQuery.data?.pages.flatMap(p => p.data) ?? [];
+  const Approximatif = () =>
+    meta?.approximatif ? (
+      <p className="mb-4 text-sm text-muted-foreground">
+        Aucun résultat exact pour « {debouncedQuery} ». Vous cherchiez peut-être :
+      </p>
+    ) : null;
 
-  const anciensDisponibles =
-    allQuery.data?.meta.anciensDisponibles ??
-    filteredQuery.data?.pages[0]?.meta.anciensDisponibles ??
-    0;
+  const Vide = () => (
+    <div className="py-12 text-center text-muted-foreground">
+      <Search className="mx-auto mb-4 h-12 w-12 opacity-50" />
+      <p>Aucun résultat trouvé</p>
+      <p className="mt-1 text-sm">Essayez avec d&apos;autres termes</p>
+    </div>
+  );
 
-  const getChipCount = (value: FilterType): number | undefined => {
-    if (!counts) return undefined;
-    if (value === 'all') return counts.total;
-    return counts[value as keyof SearchCounts] as number;
-  };
-
-  // ---- Render ----
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold">Recherche</h1>
         <p className="mt-2 text-muted-foreground">
-          Trouvez des parlementaires, groupes, commissions, scrutins, sujets, lobbyistes et dossiers
+          Trouvez des parlementaires et des membres du Gouvernement, d’hier et d’aujourd’hui, des gouvernements, groupes,
+          commissions, scrutins, sujets, lobbyistes et dossiers
         </p>
       </div>
 
-      {/* Search input */}
       <div className="mb-6">
         <div className="relative">
           <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
@@ -486,96 +557,67 @@ export default function RecherchePage() {
           {query && (
             <button
               onClick={() => setQuery('')}
-              className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-muted"
+              className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full p-1 hover:bg-muted"
+              aria-label="Effacer la recherche"
             >
               <X className="h-5 w-5 text-muted-foreground" />
             </button>
           )}
           {isFetching && (
-            <Loader2 className="absolute right-12 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground animate-spin" />
+            <Loader2 className="absolute right-12 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin text-muted-foreground" />
           )}
         </div>
       </div>
 
-      {/* Anciens parlementaires — hors des chips de type, c'est un axe orthogonal */}
-      {enabled && (
-        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={inclureAnciens}
-            onClick={() => toggleAnciens(!inclureAnciens)}
-            className="group inline-flex items-center gap-2.5 text-sm"
-          >
-            <span
-              className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${
-                inclureAnciens ? 'bg-primary' : 'bg-muted-foreground/30 group-hover:bg-muted-foreground/40'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
-                  inclureAnciens ? 'translate-x-4' : 'translate-x-0.5'
+      <div className="mb-3 flex gap-2 overflow-x-auto pb-2">
+        <Puce actif={tout} onClick={() => choisirFiltre('all')}>
+          Tout{compte(counts?.total)}
+        </Puce>
+        {CATEGORIES.map((c) => (
+          <Puce key={c} actif={filtre === c} onClick={() => choisirFiltre(c)}>
+            {LIBELLES[c].pluriel}
+            {compte(counts?.[c])}
+          </Puce>
+        ))}
+      </div>
+
+      {/* Sous-filtres des personnes : une personne passée par plusieurs rôles est dans chacun. */}
+      {filtre === 'personnes' && (
+        <div className="mb-6 flex flex-wrap gap-2">
+          {ROLES.map((r) => {
+            const actif = role === r.valeur;
+            const n = r.valeur ? counts?.personnesParRole[r.valeur] : counts?.personnes;
+            return (
+              <button
+                key={r.libelle}
+                onClick={() => setRole(r.valeur)}
+                className={`rounded-full border px-3 py-1 text-sm transition-colors ${
+                  actif ? 'border-primary bg-primary/10 font-medium text-primary' : 'hover:bg-muted'
                 }`}
-              />
-            </span>
-            <span className="flex items-center gap-1.5">
-              <History className="h-3.5 w-3.5 text-muted-foreground" />
-              Inclure les anciens parlementaires et commissions
-            </span>
-          </button>
-          {!inclureAnciens && anciensDisponibles > 0 && (
-            <button
-              onClick={() => toggleAnciens(true)}
-              className="text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground"
-            >
-              {anciensDisponibles.toLocaleString('fr-FR')} résultat
-              {anciensDisponibles > 1 ? 's' : ''} archivé
-              {anciensDisponibles > 1 ? 's' : ''} correspond
-              {anciensDisponibles > 1 ? 'ent' : ''} aussi
-            </button>
-          )}
+              >
+                {r.libelle}
+                {compte(n)}
+              </button>
+            );
+          })}
         </div>
       )}
+      {filtre !== 'personnes' && <div className="mb-3" />}
 
-      {/* Filters */}
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-        {FILTER_OPTIONS.map((f) => {
-          const chipCount = getChipCount(f.value);
-          return (
-            <button
-              key={f.value}
-              onClick={() => setFilter(f.value)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-                filter === f.value
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted hover:bg-muted/80'
-              }`}
-            >
-              {f.label}
-              {chipCount != null && (
-                <span className="ml-1 opacity-70">({chipCount.toLocaleString('fr-FR')})</span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Empty / min chars states */}
       {!debouncedQuery && (
-        <div className="text-center py-12 text-muted-foreground">
-          <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
+        <div className="py-12 text-center text-muted-foreground">
+          <Search className="mx-auto mb-4 h-12 w-12 opacity-50" />
           <p>Commencez à taper pour rechercher</p>
-          <p className="text-sm mt-1">Minimum 2 caractères</p>
+          <p className="mt-1 text-sm">Minimum 2 caractères</p>
         </div>
       )}
 
       {debouncedQuery && debouncedQuery.length < 2 && (
-        <div className="text-center py-12 text-muted-foreground">
+        <div className="py-12 text-center text-muted-foreground">
           <p>Minimum 2 caractères requis</p>
         </div>
       )}
 
-      {/* Loading */}
       {isLoading && enabled && (
         <div className="space-y-4">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -592,94 +634,86 @@ export default function RecherchePage() {
         </div>
       )}
 
-      {/* Error */}
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
           Une erreur est survenue lors de la recherche.
         </div>
       )}
 
-      {/* ===================== type=all: grouped sections ===================== */}
-      {isAll && allQuery.data && !isLoading && (
-        <>
-          {counts?.total === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>Aucun résultat trouvé</p>
-              <p className="text-sm mt-1">Essayez avec d&apos;autres termes</p>
-            </div>
-          ) : (
-            <div className="space-y-8">
-              {SECTION_ORDER.map(({ key, type: sectionType }) => {
-                const items = allQuery.data!.sections[key];
-                if (!items || items.length === 0) return null;
-                const config = typeConfig[sectionType]!;
-                const Icon = config.icon;
-                const total = counts?.[key as keyof SearchCounts] as number | undefined;
-
-                return (
-                  <section key={key}>
-                    <div className="flex items-center justify-between mb-3">
-                      <h2 className="flex items-center gap-2 text-lg font-semibold">
-                        <div className={`p-1.5 rounded-md ${config.color}`}>
-                          <Icon className="h-4 w-4" />
-                        </div>
-                        {config.labelPlural}
-                        {total != null && (
-                          <span className="text-sm font-normal text-muted-foreground">({total.toLocaleString('fr-FR')})</span>
-                        )}
-                      </h2>
-                      {total != null && total > items.length && (
-                        <button
-                          onClick={() => setFilter(config.filterKey)}
-                          className="flex items-center gap-1 text-sm text-primary hover:underline"
-                        >
-                          Voir les {total.toLocaleString('fr-FR')} résultats
-                          <ChevronRight className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      {items.map((result) => (
-                        <ResultCard key={`${result._type}-${result.id || result.numero}`} result={result} />
-                      ))}
-                    </div>
-                  </section>
-                );
-              })}
-            </div>
-          )}
-        </>
+      {/* Tout : le meilleur résultat, puis un aperçu par catégorie */}
+      {tout && sections && !isLoading && (
+        counts?.total === 0 ? (
+          <Vide />
+        ) : (
+          <div className="space-y-8">
+            <Approximatif />
+            {meilleur && (
+              <section>
+                <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold">
+                  <Star className="h-4 w-4 text-primary" />
+                  Meilleur résultat
+                </h2>
+                <CarteResultat resultat={meilleur} enAvant />
+              </section>
+            )}
+            {CATEGORIES.map((c) => {
+              const items = (sections[c] ?? []).filter((r) => r !== meilleur);
+              if (items.length === 0) return null;
+              const { pluriel, icone: Icone, teinte } = LIBELLES[c];
+              const total = counts?.[c] ?? items.length;
+              return (
+                <section key={c}>
+                  <div className="mb-3 flex items-center justify-between">
+                    <h2 className="flex items-center gap-2 text-lg font-semibold">
+                      <span className={`rounded-md p-1.5 ${teinte}`}>
+                        <Icone className="h-4 w-4" />
+                      </span>
+                      {pluriel}
+                      <span className="text-sm font-normal text-muted-foreground">({total.toLocaleString('fr-FR')})</span>
+                    </h2>
+                    {total > items.length + (meilleur && CATEGORIE_DU_TYPE[meilleur._type] === c ? 1 : 0) && (
+                      <button onClick={() => choisirFiltre(c)} className="flex items-center gap-1 text-sm text-primary hover:underline">
+                        Voir les {total.toLocaleString('fr-FR')} résultats
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    {items.map((r) => (
+                      <CarteResultat key={cleDe(r)} resultat={r} />
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        )
       )}
 
-      {/* ============= specific filter: paginated infinite scroll ============= */}
-      {!isAll && hasData && !isLoading && (
+      {/* Une catégorie : toute la liste, page après page */}
+      {!tout && requeteFiltree.data && !isLoading && (
         <>
-          {filteredResults.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>Aucun résultat trouvé</p>
-              <p className="text-sm mt-1">Essayez avec d&apos;autres termes</p>
-            </div>
+          {resultatsFiltres.length === 0 ? (
+            <Vide />
           ) : (
-            <div className="space-y-3">
-              {filteredResults.map((result) => (
-                <ResultCard key={`${result._type}-${result.id || result.numero}`} result={result} />
-              ))}
-            </div>
+            <>
+              <Approximatif />
+              <div className="space-y-3">
+                {resultatsFiltres.map((r) => (
+                  <CarteResultat key={cleDe(r)} resultat={r} />
+                ))}
+              </div>
+            </>
           )}
-
           <div ref={loadMoreRef} className="mt-8 flex justify-center py-4">
-            {filteredQuery.isFetchingNextPage && (
+            {requeteFiltree.isFetchingNextPage && (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin" />
                 <span>Chargement...</span>
               </div>
             )}
-            {!filteredQuery.hasNextPage && filteredResults.length > 0 && (
-              <p className="text-sm text-muted-foreground">
-                Tous les résultats ont été chargés
-              </p>
+            {!requeteFiltree.hasNextPage && resultatsFiltres.length > 0 && (
+              <p className="text-sm text-muted-foreground">Tous les résultats ont été chargés</p>
             )}
           </div>
         </>

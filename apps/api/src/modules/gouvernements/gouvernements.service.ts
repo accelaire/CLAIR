@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { Redis } from 'ioredis';
 import { BilanGouvernements, SOURCE_BILAN, couvertureBilan } from './gouvernements-bilan';
 
@@ -21,6 +21,21 @@ const jour = (d: Date): string => d.toISOString().slice(0, 10);
 const jourOuNull = (d: Date | null): string | null => (d ? jour(d) : null);
 
 const ROMAINS = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+
+const sansAccents = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
+/** Les mots d'une recherche, sans accents ni casse. */
+const motsDeRecherche = (terme: string): string[] => sansAccents(terme).split(/[\s'’-]+/).filter(Boolean);
+
+/**
+ * Un mot de la recherche retrouvé dans un nom : en préfixe (« lec » trouve
+ * « Lecornu »), sauf un numéro, qui doit être exact quand il suit un autre mot
+ * (« lecornu i » ne trouve pas « Lecornu II », « valls 2 » pas un « 12 »).
+ */
+function motRetrouve(mot: string, mots: readonly string[], botte: readonly string[]): boolean {
+  const numero = /^\d+$/.test(mot) || (mots.length > 1 && /^[ivx]+$/.test(mot));
+  return botte.some((b) => (numero ? b === mot : b.startsWith(mot)));
+}
 
 /**
  * Les domaines des portefeuilles, dans l'ordre où l'on présente un
@@ -51,6 +66,7 @@ export const DOMAINES = [
 ] as const;
 
 const selectionPersonne = {
+  slug: true,
   acteurUid: true,
   civilite: true,
   prenom: true,
@@ -59,6 +75,7 @@ const selectionPersonne = {
 } as const;
 
 interface PersonneLue {
+  slug: string;
   acteurUid: string;
   civilite: string | null;
   prenom: string;
@@ -66,9 +83,13 @@ interface PersonneLue {
   parlementaire: { slug: string; chambre: string; photoUrl: string | null } | null;
 }
 
-/** Une personne : nom seul, et sa fiche (avec sa photo) quand elle en a une. */
+/**
+ * Une personne : son slug de membre (`/gouvernements/membres/:slug`), et sa
+ * fiche (avec sa photo) quand elle en a une.
+ */
 function personne(p: PersonneLue) {
   return {
+    slug: p.slug,
     acteurUid: p.acteurUid,
     civilite: p.civilite,
     prenom: p.prenom,
@@ -113,6 +134,24 @@ export function presidenceAuDebut<P extends { dateDebut: Date; dateFin: Date | n
   return candidates.sort((a, b) => b.dateDebut.getTime() - a.dateDebut.getTime())[0] ?? null;
 }
 
+/**
+ * Les gouvernements dont le nom usuel ou le Premier ministre répond à la
+ * recherche (« Borne », « gouvernement Lecornu II », « lecornu 2 ») : chaque
+ * mot doit s'y retrouver, sans accents ni casse. Ordre d'entrée conservé.
+ */
+export function gouvernementsRecherches<
+  G extends { nom: string; slug: string; premierMinistre: { prenom: string; nom: string } | null },
+>(gouvernements: readonly G[], terme: string): G[] {
+  const mots = motsDeRecherche(terme).filter((m) => m !== 'gouvernement' && m !== 'gouvernements');
+  if (mots.length === 0) return [];
+  return gouvernements.filter((g) => {
+    const pm = g.premierMinistre;
+    // Le slug porte le numéro en chiffres (« lecornu-2 »), le nom en romains.
+    const botte = motsDeRecherche([g.nom, g.slug, pm ? `${pm.prenom} ${pm.nom}` : ''].join(' '));
+    return mots.every((m) => motRetrouve(m, mots, botte));
+  });
+}
+
 export class GouvernementsService {
   // Données relues une fois par nuit.
   private readonly CACHE_TTL = 3600;
@@ -144,9 +183,26 @@ export class GouvernementsService {
       }),
       this.prisma.presidence.findMany({
         orderBy: [{ dateDebut: 'asc' }, { id: 'asc' }],
-        select: { uid: true, civilite: true, prenom: true, nom: true, dateDebut: true, dateFin: true },
+        select: {
+          uid: true,
+          civilite: true,
+          prenom: true,
+          nom: true,
+          dateDebut: true,
+          dateFin: true,
+          acteurUid: true,
+          parlementaire: { select: { slug: true, chambre: true, photoUrl: true } },
+        },
       }),
     ]);
+    // La page d'un président : sa fiche (François Hollande, député), sinon sa
+    // page de membre du Gouvernement (Emmanuel Macron, ministre de 2014 à 2016),
+    // par l'acteur de la source ; aucune pour Nicolas Sarkozy, publié sans.
+    const acteurs = presidences.flatMap((p) => (p.acteurUid ? [p.acteurUid] : []));
+    const membresPresidents = acteurs.length
+      ? await this.prisma.membreGouvernement.findMany({ where: { acteurUid: { in: acteurs } }, select: { acteurUid: true, slug: true } })
+      : [];
+    const slugMembre = new Map(membresPresidents.map((m) => [m.acteurUid, m.slug]));
 
     return nommerGouvernements(
       gouvernements.map((g) => {
@@ -172,7 +228,21 @@ export class GouvernementsService {
           enCours: g.dateFin === null,
           premierMinistre: pm ? personne(pm) : null,
           presidence: presidence
-            ? { uid: presidence.uid, civilite: presidence.civilite, prenom: presidence.prenom, nom: presidence.nom }
+            ? {
+                uid: presidence.uid,
+                civilite: presidence.civilite,
+                prenom: presidence.prenom,
+                nom: presidence.nom,
+                // Slug de membre et fiche, comme pour une personne du Gouvernement : null sans page.
+                slug: (presidence.acteurUid && slugMembre.get(presidence.acteurUid)) ?? null,
+                parlementaire: presidence.parlementaire
+                  ? {
+                      slug: presidence.parlementaire.slug,
+                      chambre: presidence.parlementaire.chambre,
+                      photoUrl: presidence.parlementaire.photoUrl,
+                    }
+                  : null,
+              }
             : null,
           nbPostes: g.postes.length,
           nbMembres: new Set(g.postes.map((p) => p.membreId)).size,
@@ -271,6 +341,43 @@ export class GouvernementsService {
   }
 
   /**
+   * Tous les membres du Gouvernement depuis 2007, par ordre alphabétique : leur
+   * fiche quand ils en ont une, sinon leur page de membre. Sert au sitemap et
+   * aux réutilisateurs qui veulent la liste sans parcourir chaque gouvernement.
+   */
+  async getMembres() {
+    const cacheKey = 'gouvernement:membres';
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
+    const membres = await this.prisma.membreGouvernement.findMany({
+      orderBy: [{ nom: 'asc' }, { prenom: 'asc' }, { slug: 'asc' }],
+      select: {
+        ...selectionPersonne,
+        postes: { select: { dateDebut: true, dateFin: true } },
+      },
+    });
+    const result = {
+      data: membres.map(({ postes, ...identite }) => {
+        const enFonction = postes.some((p) => p.dateFin === null);
+        const debuts = postes.map((p) => jour(p.dateDebut)).sort();
+        const fins = postes.flatMap((p) => (p.dateFin ? [jour(p.dateFin)] : [])).sort();
+        return {
+          ...personne(identite),
+          nbPostes: postes.length,
+          enFonction,
+          dateDebut: debuts[0] ?? null,
+          // null tant qu'un poste est en cours.
+          dateFin: enFonction ? null : fins.at(-1) ?? null,
+        };
+      }),
+      source: SOURCE_GOUVERNEMENTS,
+    };
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+    return result;
+  }
+
+  /**
    * Un membre du Gouvernement, fiche parlementaire ou non : ses postes et le
    * bilan de chacun (textes signés, réponses en séance ; 49.3 et motions pour
    * un Premier ministre). Donne une API aux membres sans fiche.
@@ -283,8 +390,8 @@ export class GouvernementsService {
     const membre = await this.prisma.membreGouvernement.findUnique({
       where: { slug },
       select: {
-        slug: true,
         ...selectionPersonne,
+        dateNaissance: true,
         postes: {
           orderBy: [{ dateDebut: 'desc' }, { uid: 'asc' }],
           select: {
@@ -305,16 +412,24 @@ export class GouvernementsService {
     });
     if (!membre) return null;
 
-    const [gouvernements, bilans] = await Promise.all([
+    const [gouvernements, bilans, presidences] = await Promise.all([
       this.gouvernementsNommes(),
       this.bilan.desPostes(membre.postes.map((p) => p.id), true),
+      // La présidence de la République, rattachée par l'acteur de la source
+      // (Emmanuel Macron, ministre puis président, n'a pas de fiche).
+      this.prisma.presidence.findMany({
+        where: { acteurUid: membre.acteurUid },
+        orderBy: [{ dateDebut: 'desc' }, { uid: 'asc' }],
+        select: { uid: true, dateDebut: true, dateFin: true },
+      }),
     ]);
     const parId = new Map(gouvernements.map((g) => [g.id, g]));
-    const { postes, slug: slugMembre, ...identite } = membre;
+    const { postes, dateNaissance, ...identite } = membre;
     const result = {
       data: {
-        slug: slugMembre,
         ...personne(identite),
+        dateNaissance: jourOuNull(dateNaissance),
+        presidences: presidences.map((p) => ({ uid: p.uid, dateDebut: jour(p.dateDebut), dateFin: jourOuNull(p.dateFin) })),
         postes: postes.map((p) => {
           const g = parId.get(p.gouvernementId);
           return {
@@ -337,6 +452,69 @@ export class GouvernementsService {
     };
     await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
     return result;
+  }
+
+  /** Les gouvernements qui répondent à la recherche (cf. `gouvernementsRecherches`), le plus récent d'abord. */
+  async rechercherGouvernements(terme: string) {
+    return gouvernementsRecherches(await this.gouvernementsNommes(), terme)
+      .reverse()
+      .map(({ id: _id, nbPostes: _p, nbMembres: _m, nbFemmes: _f, ...g }) => g);
+  }
+
+  /**
+   * Les membres du Gouvernement, depuis 2007, dont le nom répond à la
+   * recherche, avec leur poste le plus récent : les membres en fonction
+   * d'abord, puis du départ le plus récent au plus ancien. Un membre sans
+   * fiche parlementaire (166 sur 311) n'a pas d'autre accès dans la
+   * recherche.
+   */
+  async rechercherMembres(where: Prisma.MembreGouvernementWhereInput) {
+    const [membres, gouvernements] = await Promise.all([
+      this.prisma.membreGouvernement.findMany({
+        where,
+        select: {
+          ...selectionPersonne,
+          postes: {
+            orderBy: [{ dateDebut: 'desc' }, { uid: 'asc' }],
+            take: 1,
+            select: {
+              qualite: true,
+              qualiteAccordee: true,
+              intitule: true,
+              intituleCourt: true,
+              dateDebut: true,
+              dateFin: true,
+              gouvernementId: true,
+            },
+          },
+        },
+      }),
+      this.reperesGouvernements(),
+    ]);
+    return membres
+      .map(({ postes, ...identite }) => {
+        const p = postes[0];
+        return {
+          ...personne(identite),
+          dernierPoste: p
+            ? {
+                qualite: p.qualiteAccordee ?? p.qualite,
+                intitule: p.intitule,
+                intituleCourt: p.intituleCourt,
+                dateDebut: jour(p.dateDebut),
+                dateFin: jourOuNull(p.dateFin),
+                gouvernement: gouvernements.get(p.gouvernementId) ?? null,
+              }
+            : null,
+        };
+      })
+      .sort(
+        (a, b) =>
+          Number(b.dernierPoste?.dateFin === null) - Number(a.dernierPoste?.dateFin === null) ||
+          (b.dernierPoste?.dateFin ?? '').localeCompare(a.dernierPoste?.dateFin ?? '') ||
+          a.nom.localeCompare(b.nom, 'fr') ||
+          a.prenom.localeCompare(b.prenom, 'fr'),
+      );
   }
 
   /** Le nom usuel et le slug de chaque gouvernement, par id. */
@@ -387,8 +565,10 @@ export class GouvernementsService {
           uid: true,
           qualite: true,
           qualiteAccordee: true,
+          rangProtocolaire: true,
           intitule: true,
           intituleCourt: true,
+          domaine: true,
           dateDebut: true,
           dateFin: true,
           gouvernementId: true,
@@ -414,6 +594,8 @@ export class GouvernementsService {
         qualite: 'Président de la République',
         intitule: 'Présidence de la République',
         intituleCourt: null,
+        rangProtocolaire: null,
+        domaine: null,
         dateDebut: jour(p.dateDebut),
         dateFin: jourOuNull(p.dateFin),
         gouvernement: null,
@@ -428,6 +610,10 @@ export class GouvernementsService {
           qualite: p.qualiteAccordee ?? p.qualite,
           intitule: p.intitule,
           intituleCourt: p.intituleCourt,
+          // Rang et domaine : la fiche regroupe les postes reconduits d'un
+          // gouvernement à l'autre (même domaine, même rang, sans interruption).
+          rangProtocolaire: p.rangProtocolaire,
+          domaine: p.domaine,
           dateDebut: jour(p.dateDebut),
           dateFin: jourOuNull(p.dateFin),
           gouvernement: g ? { uid: g.uid, slug: g.slug, nom: g.nom } : null,

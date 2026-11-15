@@ -328,6 +328,26 @@ describe('ParlementairesService', () => {
       );
     });
 
+    it('donne la taille de ses listes, votes empêchés exclus (#129)', async () => {
+      mockPrisma.parlementaire.findUnique.mockResolvedValue(mockParlementaireWithRelations);
+      mockPrisma.intervention.count.mockResolvedValue(167);
+      const sql: string[] = [];
+      mockPrisma.$queryRawUnsafe.mockImplementation((q: string) => {
+        sql.push(q);
+        return Promise.resolve([{ n: q.includes('FROM votes v') ? 0 : 12 }]);
+      });
+
+      const result = await service.getParlementaireBySlug(mockParlementaireWithRelations.slug);
+
+      expect(result.listes).toEqual({ votes: 0, interventions: 167, amendements: 12 });
+      const votes = sql.find((q) => q.includes('FROM votes v'))!;
+      expect(votes).toContain("v.position = 'absent'");
+      expect(sql.find((q) => q.includes('_AmendementCosignataires'))).toContain('UNION');
+      expect(mockPrisma.intervention.count).toHaveBeenCalledWith({
+        where: { parlementaireId: mockParlementaireWithRelations.id, seanceId: { not: null }, ...INTERVENTIONS_DE_FOND },
+      });
+    });
+
     it('devrait retourner null si non trouvé', async () => {
       mockPrisma.parlementaire.findUnique.mockResolvedValue(null);
 
@@ -442,6 +462,26 @@ describe('ParlementairesService', () => {
       expect(result.questions).toBe(15);
     });
 
+    it('donne à part les prises de parole au banc du Gouvernement (#129)', async () => {
+      mockPrisma.parlementaire.findUnique.mockResolvedValue({
+        statsInterventions: 62,
+        statsCalculatedAt: new Date(),
+      });
+      const sql: string[] = [];
+      mockPrisma.$queryRawUnsafe.mockImplementation((q: string) => {
+        sql.push(q);
+        return Promise.resolve([{ n: 1025 }]);
+      });
+
+      const result = await service.getParlementaireStats('parl-1', 'assemblee');
+
+      expect(result.interventions).toBe(62);
+      expect(result.interventionsGouvernement).toBe(1025);
+      expect(sql[0]).toContain("i.type = 'reponse_gouvernement'");
+      expect(sql[0]).toContain('FROM postes_ministeriels pm');
+      expect(sql[0]).toContain('i.reunion_id IS NULL');
+    });
+
     it('devrait retourner les stats du cache si disponibles', async () => {
       const cachedStats = {
         presence: 80,
@@ -554,6 +594,22 @@ describe('ParlementairesService', () => {
 
       // null ⇒ le front n'affiche pas de badge « dissident ».
       expect(result.data[0].groupePosition).toBeNull();
+    });
+
+    it('écarte des deux requêtes les absences d’un élu qui ne pouvait pas voter (#129)', async () => {
+      for (const dissidentOnly of [false, true]) {
+        const sql = mockQueries([voteRow()], 1);
+        mockRedis._clear();
+        await service.getParlementaireVotes(PARL, GROUPE, { ...baseQuery, dissidentOnly });
+        expect(sql).toHaveLength(2);
+        for (const q of sql) {
+          // Seules les lignes « absent » sont visées, sur les trois sources d'EMPECHEMENTS.
+          expect(q).toContain("NOT (\n    v.position = 'absent'");
+          expect(q).toContain("v.statut_votant IN ('president_seance', 'gouvernement', 'president_assemblee')");
+          expect(q).toContain('FROM presidences_chambre pc');
+          expect(q).toContain('FROM postes_ministeriels pm');
+        }
+      }
     });
 
     it('retourne vide sans requête SQL si dissidentOnly et pas de groupe', async () => {

@@ -9,7 +9,7 @@ import {
   de,
   dateLongue,
   duree,
-  lienFiche,
+  lienPersonne,
   nombre,
   nomComplet,
   type GouvernementResume,
@@ -35,7 +35,7 @@ export const metadata: Metadata = {
  * commencé, dans l'ordre reçu (le plus récent d'abord).
  */
 function parPresidence(gouvernements: GouvernementResume[]) {
-  const groupes: { cle: string; titre: string; gouvernements: GouvernementResume[] }[] = [];
+  const groupes: { cle: string; titre: string; presidence: GouvernementResume['presidence']; gouvernements: GouvernementResume[] }[] = [];
   for (const g of gouvernements) {
     const cle = g.presidence?.uid ?? 'sans';
     let groupe = groupes.find((x) => x.cle === cle);
@@ -43,6 +43,7 @@ function parPresidence(gouvernements: GouvernementResume[]) {
       groupe = {
         cle,
         titre: g.presidence ? `Présidence ${de(nomComplet(g.presidence))}` : 'Présidence non renseignée',
+        presidence: g.presidence,
         gouvernements: [],
       };
       groupes.push(groupe);
@@ -52,6 +53,24 @@ function parPresidence(gouvernements: GouvernementResume[]) {
   return groupes;
 }
 
+/**
+ * « Présidence d’Emmanuel Macron », le nom lié à la page du président quand il
+ * en a une (sa fiche, sinon sa page de membre du Gouvernement).
+ */
+function TitrePresidence({ titre, presidence }: { titre: string; presidence: GouvernementResume['presidence'] }) {
+  const lien = presidence ? lienPersonne(presidence) : null;
+  if (!presidence || !lien) return <>{titre}</>;
+  const nom = nomComplet(presidence);
+  return (
+    <>
+      {titre.slice(0, titre.length - nom.length)}
+      <Link href={lien} className="hover:text-primary hover:underline">
+        {nom}
+      </Link>
+    </>
+  );
+}
+
 /** Durée en jours, pour la barre qui compare les gouvernements entre eux. */
 function jours(g: GouvernementResume, jour: string): number {
   return Math.max(1, (Date.parse(g.dateFin ?? jour) - Date.parse(g.dateDebut)) / 86_400_000);
@@ -59,7 +78,7 @@ function jours(g: GouvernementResume, jour: string): number {
 
 /**
  * Toute la carte mène au gouvernement : le lien du titre la recouvre
- * (`after:absolute after:inset-0`). Le lien vers la fiche du Premier ministre
+ * (`after:absolute after:inset-0`). Le lien vers la page du Premier ministre
  * passe au-dessus (`relative z-10`) et reste cliquable, sans lien imbriqué.
  */
 function CarteGouvernement({ g, plusLong, jour }: { g: GouvernementResume; plusLong: number; jour: string }) {
@@ -88,8 +107,8 @@ function CarteGouvernement({ g, plusLong, jour }: { g: GouvernementResume; plusL
           {pm && (
             <p className="text-sm">
               {pm.civilite === 'Mme' ? 'Première ministre' : 'Premier ministre'} :{' '}
-              {lienFiche(pm) ? (
-                <Link href={lienFiche(pm)!} className="relative z-10 font-medium text-primary hover:underline">
+              {lienPersonne(pm) ? (
+                <Link href={lienPersonne(pm)!} className="relative z-10 font-medium hover:text-primary hover:underline">
                   {nomComplet(pm)}
                 </Link>
               ) : (
@@ -172,7 +191,9 @@ export default async function GouvernementsPage() {
           const reference = groupe.gouvernements.find((g) => jours(g, jour) === plusLong);
           return (
             <section key={groupe.cle}>
-              <h2 className="text-xl font-semibold">{groupe.titre}</h2>
+              <h2 className="text-xl font-semibold">
+                <TitrePresidence titre={groupe.titre} presidence={groupe.presidence} />
+              </h2>
               {reference && groupe.gouvernements.length > 1 && (
                 <p className="mb-3 mt-1 flex items-center gap-2 text-sm text-muted-foreground">
                   <span className="inline-block h-1.5 w-10 shrink-0 rounded-full bg-primary/60" aria-hidden />

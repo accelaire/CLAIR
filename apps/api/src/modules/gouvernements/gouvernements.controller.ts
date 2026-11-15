@@ -12,11 +12,24 @@ export const gouvernementsRoutes: FastifyPluginAsync = async (fastify) => {
       summary: 'Liste des gouvernements depuis 2007',
       description:
         'Les gouvernements de la Ve République publiés par l’Assemblée nationale (depuis Fillon I, mai 2007), ' +
-        'du plus récent au plus ancien : Premier ministre, présidence de la République au début du gouvernement, ' +
+        'du plus récent au plus ancien : Premier ministre, présidence de la République au début du gouvernement ' +
+        '(avec la fiche parlementaire ou le slug de membre du président, null sans page), ' +
         'dates telles que publiées par la source, nombre de postes et de membres, nombre de recours au 49.3 et de ' +
         'motions de censure (`bilan`, null avant juin 2017).',
     },
     handler: async () => service.getGouvernements(),
+  });
+
+  fastify.get('/membres', {
+    schema: {
+      tags: ['Gouvernements'],
+      summary: 'Liste des membres du Gouvernement depuis 2007',
+      description:
+        'Toutes les personnes qui ont occupé au moins un poste ministériel depuis mai 2007, par ordre alphabétique : ' +
+        'slug de membre (`/gouvernements/membres/:slug`), fiche parlementaire quand elles en ont une (`parlementaire`), ' +
+        'nombre de postes, date du premier poste et fin du dernier (`dateFin` null pour un membre en fonction).',
+    },
+    handler: async () => service.getMembres(),
   });
 
   fastify.get('/membres/:slug', {
@@ -25,7 +38,7 @@ export const gouvernementsRoutes: FastifyPluginAsync = async (fastify) => {
       summary: "Un membre du Gouvernement et son bilan",
       description:
         'Une personne qui a occupé au moins un poste ministériel depuis 2007, qu’elle ait une fiche parlementaire ou non : ' +
-        'ses postes, et pour chaque poste depuis juin 2017 les projets de loi signés (chef de file ou cosignataire, avec leur ' +
+        'sa date de naissance, ses présidences de la République (`presidences`), ses postes, et pour chaque poste depuis juin 2017 les projets de loi signés (chef de file ou cosignataire, avec leur ' +
         'stade), le nombre de réponses en séance par chambre et, pour un Premier ministre, ses recours au 49.3 et les ' +
         'motions de censure votées contre son gouvernement. `bilan` vaut null pour un poste fini avant juin 2017.',
       params: {
@@ -48,7 +61,7 @@ export const gouvernementsRoutes: FastifyPluginAsync = async (fastify) => {
       summary: "Détail d'un gouvernement",
       description:
         'Les postes ministériels dans l’ordre protocolaire, avec les dates de chaque titulaire (remaniements compris) ' +
-        'et le lien vers la fiche parlementaire quand la personne en a une. `bilan` (depuis juin 2017) : les projets de ' +
+        'avec le slug de membre de chaque titulaire et le lien vers sa fiche parlementaire quand il en a une. `bilan` (depuis juin 2017) : les projets de ' +
         'loi déposés, leur nature et leur stade (promulgué, adopté, examiné, déposé sans examen), les recours au 49.3 et ' +
         'les motions de censure. Pour un gouvernement fini avant juin 2017, `bilan` vaut null et `couverture` ' +
         '« avant_2017 » : pas de données, et non zéro.',

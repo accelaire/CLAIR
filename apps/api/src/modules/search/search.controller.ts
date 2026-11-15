@@ -3,18 +3,26 @@ import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { buildParlementaireSearchCondition } from '../../utils/search';
 import { fuzzySearchCandidates, FuzzyCandidate, fuzzySearchGeneric, GenericFuzzyCandidate } from '../../utils/fuzzy-search';
+import { GouvernementsService } from '../gouvernements/gouvernements.service';
+import { ROLES_PERSONNE, comptesParRole, meilleur, rechercherPersonnes } from './personnes';
 
-const SEARCH_TYPES = ['all', 'deputes', 'senateurs', 'scrutins', 'lobbyistes', 'dossiers', 'groupes', 'commissions', 'sujets'] as const;
+// `deputes` et `senateurs` : la recherche par chambre d'avant les personnes,
+// gardée telle quelle pour les clients de l'API (anciens sur `inclureAnciens`).
+const SEARCH_TYPES = [
+  'all', 'personnes', 'gouvernements', 'deputes', 'senateurs', 'scrutins', 'lobbyistes', 'dossiers', 'groupes', 'commissions', 'sujets',
+] as const;
 
 const searchQuerySchema = z.object({
   q: z.string().min(2, 'La recherche doit contenir au moins 2 caractères'),
   type: z.enum(SEARCH_TYPES).default('all'),
   limit: z.coerce.number().int().min(1).max(50).default(30),
   page: z.coerce.number().int().min(1).default(1),
-  // Élargit la recherche aux parlementaires dont le mandat est clos (législatures
-  // antérieures). Défaut `false` : la recherche décrit la chambre telle qu'elle est
-  // aujourd'hui, les anciens ne remontent que sur demande explicite.
-  // NB : pas de `z.coerce.boolean()` — il rendrait `"false"` truthy.
+  /** Sous-filtre des personnes : la chambre de sa fiche, ou le Gouvernement. */
+  role: z.enum(ROLES_PERSONNE).optional(),
+  // Sections `deputes` et `senateurs` seulement : y ajoute les parlementaires
+  // dont le mandat est clos. Les personnes et les commissions comprennent
+  // toujours les anciens, classés après. NB : pas de `z.coerce.boolean()` —
+  // il rendrait `"false"` truthy.
   inclureAnciens: z
     .union([z.boolean(), z.enum(['true', 'false', '1', '0'])])
     .default(false)
@@ -24,6 +32,8 @@ const searchQuerySchema = z.object({
 interface CategorySearchResult {
   data: unknown[];
   total: number;
+  /** Noms proches seulement (Jaro-Winkler), aucune correspondance exacte. */
+  approximatif?: boolean;
 }
 
 /** Rangée d'un `select` Prisma dont la forme n'est pas connue statiquement. */
@@ -65,7 +75,8 @@ export const searchRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       tags: ['Search'],
       summary: 'Recherche globale',
-      description: 'Recherche dans les parlementaires, scrutins, lobbyistes, dossiers, groupes, commissions et sujets',
+      description:
+        "Recherche dans les personnes (parlementaires et membres du Gouvernement depuis 2007, un résultat par personne, anciens compris), les gouvernements (par leur Premier ministre), les scrutins, lobbyistes, dossiers, groupes, commissions et sujets. Les noms approchants ne sont proposés que si rien ne correspond exactement (`meta.approximatif`).",
       querystring: {
         type: 'object',
         required: ['q'],
@@ -74,18 +85,23 @@ export const searchRoutes: FastifyPluginAsync = async (fastify) => {
           type: { type: 'string', enum: [...SEARCH_TYPES], default: 'all' },
           limit: { type: 'integer', minimum: 1, maximum: 50, default: 30 },
           page: { type: 'integer', minimum: 1, default: 1, description: 'Page (ignoré pour type=all)' },
+          role: {
+            type: 'string',
+            enum: [...ROLES_PERSONNE],
+            description: 'Avec type=personnes : seulement les fiches de députés, de sénateurs, ou les membres du Gouvernement',
+          },
           inclureAnciens: {
             type: 'string',
             enum: ['true', 'false', '1', '0'],
             default: 'false',
-            description: 'Inclut les parlementaires dont le mandat est clos (législatures antérieures)',
+            description: 'Sections deputes et senateurs seulement : inclut les parlementaires dont le mandat est clos',
           },
         },
       },
     },
     handler: async (request) => {
-      const { q, type, limit, page, inclureAnciens } = searchQuerySchema.parse(request.query);
-      return searchWithDatabase(fastify, q, type, limit, page, inclureAnciens);
+      const { q, type, limit, page, role, inclureAnciens } = searchQuerySchema.parse(request.query);
+      return searchWithDatabase(fastify, q, type, limit, page, inclureAnciens, role);
     },
   });
 
@@ -178,6 +194,10 @@ const sujetSelect = {
   category: true, status: true, dossierCount: true, scrutinCount: true,
 };
 
+/** Les catégories de la recherche, dans l'ordre de la page ; `deputes` et `senateurs` à part (compatibilité). */
+const CATEGORIES = ['personnes', 'gouvernements', 'groupes', 'commissions', 'scrutins', 'sujets', 'lobbyistes', 'dossiers'] as const;
+type Categorie = (typeof CATEGORIES)[number];
+
 async function searchWithDatabase(
   fastify: FastifyInstance,
   q: string,
@@ -185,6 +205,7 @@ async function searchWithDatabase(
   limit: number,
   page: number,
   inclureAnciens: boolean,
+  role?: (typeof ROLES_PERSONNE)[number],
 ) {
   const searchTerm = q.toLowerCase().trim();
   const skip = (page - 1) * limit;
@@ -198,6 +219,8 @@ async function searchWithDatabase(
     : { skip: 0, take: PREVIEW_LIMIT };
 
   const searchResults: Partial<Record<string, CategorySearchResult>> = {};
+  const personnesTask = rechercherPersonnes(fastify, searchTerm);
+  const gouvernementsTask = new GouvernementsService(fastify.prisma, fastify.redis).rechercherGouvernements(searchTerm);
   const tasks: Promise<void>[] = [
     searchParlementaires(fastify, searchTerm, 'assemblee', pg('deputes').skip, pg('deputes').take, inclureAnciens)
       .then(r => { searchResults.deputes = r; }),
@@ -244,61 +267,87 @@ async function searchWithDatabase(
     ).then(r => { searchResults.dossiers = r; }),
     searchGroupes(fastify, searchTerm, pg('groupes').take, pg('groupes').skip)
       .then(r => { searchResults.groupes = r; }),
-    searchCommissions(fastify, searchTerm, pg('commissions').take, pg('commissions').skip, inclureAnciens)
+    searchCommissions(fastify, searchTerm, pg('commissions').take, pg('commissions').skip)
       .then(r => { searchResults.commissions = r; }),
     searchSujets(fastify, searchTerm, pg('sujets').take, pg('sujets').skip)
       .then(r => { searchResults.sujets = r; }),
   ];
 
-  // Sans le toggle, l'utilisateur ne peut pas deviner que des enregistrements clos
-  // correspondent aussi. On compte ce qu'il ne voit pas (parlementaires + organes
-  // dissous) pour le lui proposer d'un clic.
+  // Compatibilité : ce que les sections deputes/senateurs ne montrent pas sans
+  // `inclureAnciens` (les personnes et les commissions comprennent les anciens).
   const anciensDisponiblesTask: Promise<number> = inclureAnciens
     ? Promise.resolve(0)
-    : Promise.all([
-        fastify.prisma.parlementaire.count({
-          where: { ...buildParlementaireSearchCondition(searchTerm), actif: false },
-        }),
-        fastify.prisma.commission.count({
-          where: {
-            actif: false,
-            OR: [
-              { nom: { contains: searchTerm, mode: 'insensitive' as const } },
-              { nomCourt: { contains: searchTerm, mode: 'insensitive' as const } },
-            ],
-          },
-        }),
-      ]).then(([p, c]) => p + c);
+    : fastify.prisma.parlementaire.count({
+        where: { ...buildParlementaireSearchCondition(searchTerm), actif: false },
+      });
 
-  const [, anciensDisponibles] = await Promise.all([Promise.all(tasks), anciensDisponiblesTask]);
+  const [, anciensDisponibles, personnes, gouvernements] = await Promise.all([
+    Promise.all(tasks), anciensDisponiblesTask, personnesTask, gouvernementsTask,
+  ]);
 
+  const personnesFiltrees = role ? personnes.personnes.filter((p) => p.roles.includes(role)) : personnes.personnes;
+  const pp = pg('personnes');
+  searchResults.personnes = {
+    data: personnesFiltrees.slice(pp.skip, pp.skip + pp.take).map((p) => ({ ...p, _type: 'personne' as const })),
+    total: personnesFiltrees.length,
+    approximatif: personnes.approximatif,
+  };
+  const pgv = pg('gouvernements');
+  searchResults.gouvernements = {
+    data: gouvernements.slice(pgv.skip, pgv.skip + pgv.take).map((g) => ({ ...g, _type: 'gouvernement' as const })),
+    total: gouvernements.length,
+  };
+
+  // Les noms approchants ne servent qu'en dernier recours : dès qu'une
+  // catégorie a une correspondance exacte, ceux des autres n'apparaissent pas
+  // (« lecornu » ne remonte plus Karine Lebon et Jean-Paul Lecoq à côté de
+  // Sébastien Lecornu).
+  const exact = CATEGORIES.some((c) => (searchResults[c]?.total ?? 0) > 0 && !searchResults[c]?.approximatif);
+  for (const c of CATEGORIES) {
+    if (exact && searchResults[c]?.approximatif) searchResults[c] = { data: [], total: 0 };
+  }
+  const approximatif = !exact && CATEGORIES.some((c) => (searchResults[c]?.total ?? 0) > 0);
+
+  const total = (c: Categorie) => searchResults[c]?.total ?? 0;
+  // Toutes les personnes, sous-filtre ou non : c'est ce que comptent la puce
+  // « Personnes » et ses sous-filtres.
+  const personnesVisibles = exact && personnes.approximatif ? [] : personnes.personnes;
   const counts = {
+    personnes: personnesVisibles.length,
+    // Les rôles d'une même personne se recoupent : ces comptes ne s'additionnent pas.
+    personnesParRole: comptesParRole(personnesVisibles),
+    gouvernements: total('gouvernements'),
+    groupes: total('groupes'),
+    commissions: total('commissions'),
+    scrutins: total('scrutins'),
+    sujets: total('sujets'),
+    lobbyistes: total('lobbyistes'),
+    dossiers: total('dossiers'),
     deputes: searchResults.deputes?.total ?? 0,
     senateurs: searchResults.senateurs?.total ?? 0,
-    scrutins: searchResults.scrutins?.total ?? 0,
-    lobbyistes: searchResults.lobbyistes?.total ?? 0,
-    dossiers: searchResults.dossiers?.total ?? 0,
-    groupes: searchResults.groupes?.total ?? 0,
-    commissions: searchResults.commissions?.total ?? 0,
-    sujets: searchResults.sujets?.total ?? 0,
     total: 0,
   };
-  counts.total = counts.deputes + counts.senateurs + counts.scrutins + counts.lobbyistes
-    + counts.dossiers + counts.groupes + counts.commissions + counts.sujets;
+  // Chaque personne une fois : les sections deputes/senateurs n'y entrent pas.
+  counts.total = CATEGORIES.reduce((n, c) => n + (c === 'personnes' ? personnesVisibles.length : total(c)), 0);
+
+  const meilleurResultat = meilleur(personnes, gouvernements, searchTerm, exact);
+  const meta = { query: q, counts, approximatif, meilleurResultat, inclureAnciens, anciensDisponibles };
 
   if (isAll) {
     return {
       sections: {
-        deputes: searchResults.deputes?.data ?? [],
-        senateurs: searchResults.senateurs?.data ?? [],
-        scrutins: searchResults.scrutins?.data ?? [],
-        lobbyistes: searchResults.lobbyistes?.data ?? [],
-        dossiers: searchResults.dossiers?.data ?? [],
+        personnes: searchResults.personnes?.data ?? [],
+        gouvernements: searchResults.gouvernements?.data ?? [],
         groupes: searchResults.groupes?.data ?? [],
         commissions: searchResults.commissions?.data ?? [],
+        scrutins: searchResults.scrutins?.data ?? [],
         sujets: searchResults.sujets?.data ?? [],
+        lobbyistes: searchResults.lobbyistes?.data ?? [],
+        dossiers: searchResults.dossiers?.data ?? [],
+        deputes: searchResults.deputes?.data ?? [],
+        senateurs: searchResults.senateurs?.data ?? [],
       },
-      meta: { query: q, counts, inclureAnciens, anciensDisponibles },
+      meta,
     };
   }
 
@@ -307,8 +356,9 @@ async function searchWithDatabase(
   return {
     data: result?.data ?? [],
     meta: {
-      query: q, type, counts,
-      inclureAnciens, anciensDisponibles,
+      ...meta,
+      type,
+      role: role ?? null,
       page, limit,
       total: typeTotal,
       totalPages: Math.ceil(typeTotal / limit),
@@ -477,7 +527,7 @@ async function searchGroupes(fastify: FastifyInstance, searchTerm: string, limit
     (g) => [g.nom, g.nomComplet].filter(Boolean) as string[],
     groupeSelect, limit, skip,
   );
-  return { data: fuzzy.data.map((g) => ({ ...(g as SearchRow), _type: 'groupe' as const })), total: fuzzy.total };
+  return { data: fuzzy.data.map((g) => ({ ...(g as SearchRow), _type: 'groupe' as const })), total: fuzzy.total, approximatif: fuzzy.total > 0 };
 }
 
 // =============================================================================
@@ -485,71 +535,47 @@ async function searchGroupes(fastify: FastifyInstance, searchTerm: string, limit
 // =============================================================================
 
 /**
- * Enregistrements d'une cohorte de commissions (`actif` fixé), exact d'abord puis
- * fuzzy en dernier recours. Symétrique de `matchParlementaireRecords`.
+ * Les commissions qui répondent à la recherche, en cours puis dissoutes
+ * (enquêtes, missions, CMP), chacune par ordre alphabétique. Les noms
+ * approchants seulement si aucune ne correspond.
  */
-async function matchCommissionRecords(
-  fastify: FastifyInstance,
-  searchTerm: string,
-  actif: boolean,
-): Promise<Array<{ id: string; nom: string }>> {
-  const exact: Array<{ id: string; nom: string }> = await fastify.prisma.commission.findMany({
-    where: {
-      actif,
-      OR: [
-        { nom: { contains: searchTerm, mode: 'insensitive' as const } },
-        { nomCourt: { contains: searchTerm, mode: 'insensitive' as const } },
-      ],
-    },
-    select: { id: true, nom: true },
-  });
-  if (exact.length > 0) return exact;
-
-  const rows: Array<{ id: string; nom: string; nomCourt: string | null }> =
-    await fastify.prisma.commission.findMany({
-      where: { actif },
-      select: { id: true, nom: true, nomCourt: true },
-    });
-  const byId = new Map(rows.map((c) => [c.id, c]));
-  const candidates: GenericFuzzyCandidate[] = rows.map((c) => ({
-    id: c.id,
-    labels: [c.nom, c.nomCourt].filter(Boolean) as string[],
-  }));
-  return fuzzySearchGeneric(searchTerm, candidates, candidates.length)
-    .map((r) => byId.get(r.id))
-    .filter((c): c is { id: string; nom: string; nomCourt: string | null } => Boolean(c))
-    .map((c) => ({ id: c.id, nom: c.nom }));
-}
-
 async function searchCommissions(
   fastify: FastifyInstance,
   searchTerm: string,
   limit: number,
   skip: number,
-  inclureAnciens: boolean,
 ): Promise<CategorySearchResult> {
-  // Additif comme les parlementaires : les commissions en cours PLUS les organes
-  // clos (enquêtes, missions, CMP dissoutes), fusionnés et triés alphabétiquement —
-  // entremêlés, pas en deux blocs.
-  const actifs = await matchCommissionRecords(fastify, searchTerm, true);
-  const closes = inclureAnciens
-    ? await matchCommissionRecords(fastify, searchTerm, false)
-    : [];
-  const merged = [...actifs, ...closes];
-  merged.sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
-  const total = merged.length;
-
-  const pageIds = merged.slice(skip, skip + limit).map((r) => r.id);
-  if (pageIds.length === 0) return { data: [], total };
+  let approximatif = false;
+  let trouvees: Array<{ id: string; nom: string; actif: boolean }> = await fastify.prisma.commission.findMany({
+    where: {
+      OR: [
+        { nom: { contains: searchTerm, mode: 'insensitive' as const } },
+        { nomCourt: { contains: searchTerm, mode: 'insensitive' as const } },
+      ],
+    },
+    select: { id: true, nom: true, actif: true },
+  });
+  if (trouvees.length > 0) {
+    trouvees.sort((a, b) => Number(b.actif) - Number(a.actif) || a.nom.localeCompare(b.nom, 'fr'));
+  } else {
+    const toutes = await fastify.prisma.commission.findMany({ select: { id: true, nom: true, nomCourt: true, actif: true } });
+    const parId = new Map(toutes.map((c) => [c.id, c]));
+    const candidats: GenericFuzzyCandidate[] = toutes.map((c) => ({ id: c.id, labels: [c.nom, c.nomCourt].filter(Boolean) as string[] }));
+    trouvees = fuzzySearchGeneric(searchTerm, candidats, candidats.length)
+      .map((r) => parId.get(r.id))
+      .filter((c): c is (typeof toutes)[number] => Boolean(c));
+    approximatif = trouvees.length > 0;
+  }
+  const total = trouvees.length;
+  const pageIds = trouvees.slice(skip, skip + limit).map((r) => r.id);
+  if (pageIds.length === 0) return { data: [], total, approximatif };
 
   const rows = await fastify.prisma.commission.findMany({
     where: { id: { in: pageIds } },
     select: commissionSelect,
   });
-  const order = new Map(pageIds.map((id: string, idx: number) => [id, idx]));
-  sortByIdOrder(rows, order);
-
-  return { data: rows.map((c) => ({ ...c, _type: 'commission' as const })), total };
+  sortByIdOrder(rows, new Map(pageIds.map((id: string, idx: number) => [id, idx])));
+  return { data: rows.map((c) => ({ ...c, _type: 'commission' as const })), total, approximatif };
 }
 
 // =============================================================================
@@ -580,7 +606,7 @@ async function searchSujets(fastify: FastifyInstance, searchTerm: string, limit:
     (s) => [s.label, s.description].filter(Boolean) as string[],
     sujetSelect, limit, skip,
   );
-  return { data: fuzzy.data.map((s) => ({ ...(s as SearchRow), _type: 'sujet' as const })), total: fuzzy.total };
+  return { data: fuzzy.data.map((s) => ({ ...(s as SearchRow), _type: 'sujet' as const })), total: fuzzy.total, approximatif: fuzzy.total > 0 };
 }
 
 // =============================================================================
