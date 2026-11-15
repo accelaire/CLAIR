@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { Redis } from 'ioredis';
 import { BilanGouvernements, SOURCE_BILAN, couvertureBilan } from './gouvernements-bilan';
 
@@ -21,6 +21,21 @@ const jour = (d: Date): string => d.toISOString().slice(0, 10);
 const jourOuNull = (d: Date | null): string | null => (d ? jour(d) : null);
 
 const ROMAINS = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+
+const sansAccents = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
+/** Les mots d'une recherche, sans accents ni casse. */
+const motsDeRecherche = (terme: string): string[] => sansAccents(terme).split(/[\s'’-]+/).filter(Boolean);
+
+/**
+ * Un mot de la recherche retrouvé dans un nom : en préfixe (« lec » trouve
+ * « Lecornu »), sauf un numéro, qui doit être exact quand il suit un autre mot
+ * (« lecornu i » ne trouve pas « Lecornu II », « valls 2 » pas un « 12 »).
+ */
+function motRetrouve(mot: string, mots: readonly string[], botte: readonly string[]): boolean {
+  const numero = /^\d+$/.test(mot) || (mots.length > 1 && /^[ivx]+$/.test(mot));
+  return botte.some((b) => (numero ? b === mot : b.startsWith(mot)));
+}
 
 /**
  * Les domaines des portefeuilles, dans l'ordre où l'on présente un
@@ -111,6 +126,24 @@ export function presidenceAuDebut<P extends { dateDebut: Date; dateFin: Date | n
 ): P | null {
   const candidates = presidences.filter((p) => p.dateDebut <= debut && (p.dateFin === null || debut <= p.dateFin));
   return candidates.sort((a, b) => b.dateDebut.getTime() - a.dateDebut.getTime())[0] ?? null;
+}
+
+/**
+ * Les gouvernements dont le nom usuel ou le Premier ministre répond à la
+ * recherche (« Borne », « gouvernement Lecornu II », « lecornu 2 ») : chaque
+ * mot doit s'y retrouver, sans accents ni casse. Ordre d'entrée conservé.
+ */
+export function gouvernementsRecherches<
+  G extends { nom: string; slug: string; premierMinistre: { prenom: string; nom: string } | null },
+>(gouvernements: readonly G[], terme: string): G[] {
+  const mots = motsDeRecherche(terme).filter((m) => m !== 'gouvernement' && m !== 'gouvernements');
+  if (mots.length === 0) return [];
+  return gouvernements.filter((g) => {
+    const pm = g.premierMinistre;
+    // Le slug porte le numéro en chiffres (« lecornu-2 »), le nom en romains.
+    const botte = motsDeRecherche([g.nom, g.slug, pm ? `${pm.prenom} ${pm.nom}` : ''].join(' '));
+    return mots.every((m) => motRetrouve(m, mots, botte));
+  });
 }
 
 export class GouvernementsService {
@@ -337,6 +370,71 @@ export class GouvernementsService {
     };
     await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
     return result;
+  }
+
+  /** Les gouvernements qui répondent à la recherche (cf. `gouvernementsRecherches`), le plus récent d'abord. */
+  async rechercherGouvernements(terme: string) {
+    return gouvernementsRecherches(await this.gouvernementsNommes(), terme)
+      .reverse()
+      .map(({ id: _id, nbPostes: _p, nbMembres: _m, nbFemmes: _f, ...g }) => g);
+  }
+
+  /**
+   * Les membres du Gouvernement, depuis 2007, dont le nom répond à la
+   * recherche, avec leur poste le plus récent : les membres en fonction
+   * d'abord, puis du départ le plus récent au plus ancien. Un membre sans
+   * fiche parlementaire (166 sur 311) n'a pas d'autre accès dans la
+   * recherche.
+   */
+  async rechercherMembres(where: Prisma.MembreGouvernementWhereInput) {
+    const [membres, gouvernements] = await Promise.all([
+      this.prisma.membreGouvernement.findMany({
+        where,
+        select: {
+          slug: true,
+          ...selectionPersonne,
+          postes: {
+            orderBy: [{ dateDebut: 'desc' }, { uid: 'asc' }],
+            take: 1,
+            select: {
+              qualite: true,
+              qualiteAccordee: true,
+              intitule: true,
+              intituleCourt: true,
+              dateDebut: true,
+              dateFin: true,
+              gouvernementId: true,
+            },
+          },
+        },
+      }),
+      this.reperesGouvernements(),
+    ]);
+    return membres
+      .map(({ slug, postes, ...identite }) => {
+        const p = postes[0];
+        return {
+          slug,
+          ...personne(identite),
+          dernierPoste: p
+            ? {
+                qualite: p.qualiteAccordee ?? p.qualite,
+                intitule: p.intitule,
+                intituleCourt: p.intituleCourt,
+                dateDebut: jour(p.dateDebut),
+                dateFin: jourOuNull(p.dateFin),
+                gouvernement: gouvernements.get(p.gouvernementId) ?? null,
+              }
+            : null,
+        };
+      })
+      .sort(
+        (a, b) =>
+          Number(b.dernierPoste?.dateFin === null) - Number(a.dernierPoste?.dateFin === null) ||
+          (b.dernierPoste?.dateFin ?? '').localeCompare(a.dernierPoste?.dateFin ?? '') ||
+          a.nom.localeCompare(b.nom, 'fr') ||
+          a.prenom.localeCompare(b.prenom, 'fr'),
+      );
   }
 
   /** Le nom usuel et le slug de chaque gouvernement, par id. */

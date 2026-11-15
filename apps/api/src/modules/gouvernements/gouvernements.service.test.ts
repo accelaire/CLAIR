@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nommerGouvernements, presidenceAuDebut } from './gouvernements.service';
+import { gouvernementsRecherches, nommerGouvernements, presidenceAuDebut } from './gouvernements.service';
 
 const pm = (acteurUid: string, nom: string) => ({ acteurUid, nom });
 
@@ -35,5 +35,34 @@ describe('presidenceAuDebut', () => {
 
   it('ne retient rien avant 2007', () => {
     expect(presidenceAuDebut(presidences, d('2005-06-02'))).toBeNull();
+  });
+});
+
+describe('gouvernementsRecherches', () => {
+  const g = (nom: string, slug: string, prenom: string, nomPm: string) => ({ nom, slug, premierMinistre: { prenom, nom: nomPm } });
+  const gouvernements = [
+    g('Borne', 'borne', 'Élisabeth', 'Borne'),
+    g('Attal', 'attal', 'Gabriel', 'Attal'),
+    g('Lecornu I', 'lecornu', 'Sébastien', 'Lecornu'),
+    g('Lecornu II', 'lecornu-2', 'Sébastien', 'Lecornu'),
+  ];
+  const slugs = (terme: string) => gouvernementsRecherches(gouvernements, terme).map((x) => x.slug);
+
+  it('trouve par le nom du Premier ministre, sans accents ni casse, en préfixe', () => {
+    expect(slugs('borne')).toEqual(['borne']);
+    expect(slugs('ELISABETH')).toEqual(['borne']);
+    expect(slugs('lec')).toEqual(['lecornu', 'lecornu-2']);
+  });
+
+  it('ignore le mot « gouvernement »', () => {
+    expect(slugs('gouvernement Attal')).toEqual(['attal']);
+    expect(slugs('gouvernement')).toEqual([]);
+  });
+
+  it('lit le numéro en chiffres ou en romains, et exige le numéro exact', () => {
+    expect(slugs('lecornu 2')).toEqual(['lecornu-2']);
+    expect(slugs('lecornu ii')).toEqual(['lecornu-2']);
+    // « i » ne doit pas trouver « II » par préfixe.
+    expect(slugs('lecornu i')).toEqual(['lecornu']);
   });
 });

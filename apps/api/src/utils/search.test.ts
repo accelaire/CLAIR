@@ -4,6 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  buildMembreGouvernementSearchCondition,
   buildParlementaireSearchCondition,
   buildTextSearchCondition,
   buildMultiFieldSearchCondition,
@@ -270,5 +271,28 @@ describe('buildMultiFieldSearchCondition', () => {
 
       expect(branches(result)).toHaveLength(3);
     });
+  });
+});
+
+describe('buildMembreGouvernementSearchCondition', () => {
+  it('cherche un mot dans le nom, le prénom et le slug, sans géographie', () => {
+    const b = branches(buildMembreGouvernementSearchCondition('Dati'));
+    expect(b).toEqual([
+      { nom: { contains: 'dati', mode: 'insensitive' } },
+      { prenom: { contains: 'dati', mode: 'insensitive' } },
+      { slug: { contains: 'dati', mode: 'insensitive' } },
+    ]);
+  });
+
+  it('essaie prénom puis nom dans les deux ordres pour plusieurs mots', () => {
+    const b = branches(buildMembreGouvernementSearchCondition('Rachida Dati'));
+    expect(b).toContainEqual({
+      AND: [{ prenom: { contains: 'rachida', mode: 'insensitive' } }, { nom: { contains: 'dati', mode: 'insensitive' } }],
+    });
+    expect(b).toContainEqual({
+      AND: [{ nom: { contains: 'rachida', mode: 'insensitive' } }, { prenom: { contains: 'dati', mode: 'insensitive' } }],
+    });
+    expect(b).toContainEqual({ slug: { contains: 'rachida-dati', mode: 'insensitive' } });
+    expect(JSON.stringify(b)).not.toContain('circonscription');
   });
 });
