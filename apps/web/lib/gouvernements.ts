@@ -192,6 +192,9 @@ export interface FonctionGouvernementale {
   qualite: string;
   intitule: string;
   intituleCourt: string | null;
+  /** Rang protocolaire et domaine du portefeuille ; null pour une présidence, absents d'une réponse ancienne. */
+  rangProtocolaire?: number | null;
+  domaine?: string | null;
   dateDebut: string;
   dateFin: string | null;
   gouvernement: { uid: string; slug: string; nom: string } | null;
@@ -199,6 +202,127 @@ export interface FonctionGouvernementale {
   membreSlug?: string | null;
   /** Comptes du poste ; null avant juin 2017 ou pour une présidence. */
   bilan?: BilanPoste | null;
+}
+
+/**
+ * Une entrée de la frise d'une fiche : un poste, ou plusieurs postes
+ * reconduits d'un gouvernement à l'autre (cf. `regrouperPostes`).
+ */
+export interface EntreeGouvernementale {
+  /** Du plus récent au plus ancien ; le premier donne le libellé. */
+  postes: FonctionGouvernementale[];
+  dateDebut: string;
+  dateFin: string | null;
+  /** Les gouvernements traversés, du plus ancien au plus récent, sans doublon. */
+  gouvernements: Array<{ slug: string; nom: string }>;
+  /** Somme des bilans des postes ; null si aucun n'en a (avant juin 2017, présidence). */
+  bilan: BilanPoste | null;
+}
+
+const JOUR_MS = 86_400_000;
+
+/**
+ * Écart maximal entre la fin d'un poste et le début du suivant pour y voir une
+ * reconduction : la source clôt un poste à la démission du gouvernement et
+ * date le suivant de la nomination des ministres, jusqu'à 26 jours après
+ * (Lecornu I). Mesuré en prod le 13/11/2026 : aucun poste consécutif sans
+ * domaine.
+ */
+const ECART_RECONDUCTION_JOURS = 45;
+
+/**
+ * Les fonctions gouvernementales d'une fiche, avec les postes reconduits
+ * regroupés : même domaine et même rang protocolaire, sans interruption de
+ * plus de 45 jours. Sébastien Lecornu, ministre des Armées dans quatre
+ * gouvernements (dont un intitulé « Armées et anciens combattants »), avait
+ * quatre entrées avant d'atteindre ses mandats ; il en a une. Une présidence
+ * n'est jamais regroupée. Les entrées vont du plus récent au plus ancien.
+ */
+export function regrouperPostes(fonctions: readonly FonctionGouvernementale[]): EntreeGouvernementale[] {
+  const tries = [...fonctions].sort((a, b) => b.dateDebut.localeCompare(a.dateDebut) || a.uid.localeCompare(b.uid));
+  const groupes: FonctionGouvernementale[][] = [];
+  for (const f of tries) {
+    const groupe = groupes[groupes.length - 1];
+    // Le plus ancien poste du groupe en cours, qui suit `f` dans le temps.
+    const suivant = groupe?.[groupe.length - 1];
+    if (groupe && suivant && seProlongeDans(f, suivant)) groupe.push(f);
+    else groupes.push([f]);
+  }
+  return groupes.map((postes) => {
+    const gouvernements: Array<{ slug: string; nom: string }> = [];
+    for (const p of [...postes].reverse()) {
+      if (p.gouvernement && !gouvernements.some((g) => g.slug === p.gouvernement!.slug)) {
+        gouvernements.push({ slug: p.gouvernement.slug, nom: p.gouvernement.nom });
+      }
+    }
+    return {
+      postes,
+      dateDebut: postes[postes.length - 1]!.dateDebut,
+      dateFin: postes[0]!.dateFin,
+      gouvernements,
+      bilan: cumulerBilans(postes.map((p) => p.bilan)),
+    };
+  });
+}
+
+/** Le poste `ancien` est reconduit dans `suivant`, qui commence après sa fin. */
+function seProlongeDans(ancien: FonctionGouvernementale, suivant: FonctionGouvernementale): boolean {
+  if (suivant.type !== 'poste_ministeriel' || ancien.type !== 'poste_ministeriel') return false;
+  if (!suivant.domaine || suivant.domaine !== ancien.domaine) return false;
+  if (suivant.rangProtocolaire == null || suivant.rangProtocolaire !== ancien.rangProtocolaire) return false;
+  if (ancien.dateFin === null) return false;
+  const ecart = (dateCivile(suivant.dateDebut).getTime() - dateCivile(ancien.dateFin).getTime()) / JOUR_MS;
+  return ecart >= 0 && ecart <= ECART_RECONDUCTION_JOURS;
+}
+
+function sommeParCle<K extends string>(a: Record<K, number>, b: Record<K, number>): Record<K, number> {
+  const somme = { ...a };
+  for (const cle of Object.keys(b) as K[]) somme[cle] = (somme[cle] ?? 0) + b[cle];
+  return somme;
+}
+
+function cumulerComptes(a: ComptesProjets, b: ComptesProjets): ComptesProjets {
+  return {
+    total: a.total + b.total,
+    portes: a.portes + b.portes,
+    parNature: sommeParCle(a.parNature, b.parNature),
+    parStadePortes: sommeParCle(a.parStadePortes, b.parStadePortes),
+  };
+}
+
+const concatener = <T>(a: T[] | undefined, b: T[] | undefined): T[] | undefined =>
+  a === undefined && b === undefined ? undefined : [...(a ?? []), ...(b ?? [])];
+
+/**
+ * La somme de bilans de postes : comptes additionnés, listes mises bout à
+ * bout. Un projet de loi n'est signé que dans un poste à la fois (celui
+ * qu'occupe le ministre à son dépôt) : la somme ne le compte pas deux fois.
+ * Null si aucun poste n'a de bilan.
+ */
+export function cumulerBilans(bilans: ReadonlyArray<BilanPoste | null | undefined>): BilanPoste | null {
+  const presents = bilans.filter((b): b is BilanPoste => !!b);
+  if (presents.length === 0) return null;
+  return presents.reduce((a, b) => ({
+    textes:
+      a.textes && b.textes
+        ? {
+            chefDeFile: cumulerComptes(a.textes.chefDeFile, b.textes.chefDeFile),
+            cosignataire: a.textes.cosignataire + b.textes.cosignataire,
+            liste: concatener(a.textes.liste, b.textes.liste),
+          }
+        : (a.textes ?? b.textes),
+    reponses: { assemblee: a.reponses.assemblee + b.reponses.assemblee, senat: a.reponses.senat + b.reponses.senat },
+    premierMinistre:
+      a.premierMinistre && b.premierMinistre
+        ? {
+            engagements: a.premierMinistre.engagements + b.premierMinistre.engagements,
+            motions: a.premierMinistre.motions + b.premierMinistre.motions,
+            motionsAdoptees: a.premierMinistre.motionsAdoptees + b.premierMinistre.motionsAdoptees,
+            listeEngagements: concatener(a.premierMinistre.listeEngagements, b.premierMinistre.listeEngagements),
+            listeMotions: concatener(a.premierMinistre.listeMotions, b.premierMinistre.listeMotions),
+          }
+        : (a.premierMinistre ?? b.premierMinistre),
+  }));
 }
 
 /** Une date civile de la source affichée sans décalage de fuseau. */

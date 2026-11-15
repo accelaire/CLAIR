@@ -2,7 +2,13 @@ import Link from 'next/link';
 import { ScrollText } from 'lucide-react';
 import { legislatureLabel, mandatureLabel, sessionForDate } from '@/lib/periodes';
 import { mandatDeChaqueFonction } from '@/lib/fonctions-par-mandat';
-import { libellePoste, moisAnnee as moisAnneeCivil, type FonctionGouvernementale } from '@/lib/gouvernements';
+import {
+  libellePoste,
+  moisAnnee as moisAnneeCivil,
+  regrouperPostes,
+  type EntreeGouvernementale as Entree,
+  type FonctionGouvernementale,
+} from '@/lib/gouvernements';
 import { FonctionsMandat, type FonctionItem } from './fonctions-mandat';
 import { BilanPosteLigne } from './bilan-poste';
 
@@ -47,13 +53,32 @@ function moisAnnee(date: string): string {
 // se distinguer des pastilles rondes aux couleurs des groupes.
 const COULEUR_GOUVERNEMENT = '#000091';
 
+/** « Gouvernements Borne, Attal, Barnier et Bayrou », chacun lié à sa page. */
+function Gouvernements({ gouvernements }: { gouvernements: Entree['gouvernements'] }) {
+  return (
+    <>
+      {gouvernements.length > 1 ? 'Gouvernements ' : 'Gouvernement '}
+      {gouvernements.map((g, i) => (
+        <span key={g.slug}>
+          {i > 0 && (i === gouvernements.length - 1 ? ' et ' : ', ')}
+          <Link href={`/gouvernements/${g.slug}`} className="hover:text-foreground hover:underline">
+            {g.nom}
+          </Link>
+        </span>
+      ))}
+    </>
+  );
+}
+
 /**
- * Un poste ministériel ou une présidence de la République, entrée de la frise
- * au même rang qu'un mandat : un député nommé ministre cède son siège, ce n'est
- * pas une fonction exercée pendant son mandat.
+ * Un poste ministériel (ou des postes reconduits d'un gouvernement à l'autre)
+ * ou une présidence de la République, entrée de la frise au même rang qu'un
+ * mandat : un député nommé ministre cède son siège, ce n'est pas une fonction
+ * exercée pendant son mandat. Le libellé est celui du poste le plus récent.
  */
-function EntreeGouvernementale({ f }: { f: FonctionGouvernementale }) {
-  const enCours = !f.dateFin;
+function EntreeGouvernementale({ entree }: { entree: Entree }) {
+  const f = entree.postes[0]!;
+  const enCours = !entree.dateFin;
   return (
     <li className="relative">
       <span
@@ -66,17 +91,15 @@ function EntreeGouvernementale({ f }: { f: FonctionGouvernementale }) {
             {f.type === 'presidence' ? f.qualite : libellePoste(f.qualite, f.intituleCourt, f.intitule)}
           </span>
           <span className="text-xs text-muted-foreground">
-            {moisAnneeCivil(f.dateDebut)} → {enCours ? 'en cours' : moisAnneeCivil(f.dateFin!)}
+            {moisAnneeCivil(entree.dateDebut)} → {enCours ? 'en cours' : moisAnneeCivil(entree.dateFin!)}
           </span>
         </div>
-        {f.gouvernement && (
+        {entree.gouvernements.length > 0 && (
           <div className="mt-1 text-sm text-muted-foreground">
-            <Link href={`/gouvernements/${f.gouvernement.slug}`} className="hover:text-foreground hover:underline">
-              Gouvernement {f.gouvernement.nom}
-            </Link>
+            <Gouvernements gouvernements={entree.gouvernements} />
           </div>
         )}
-        <BilanPosteLigne f={f} />
+        <BilanPosteLigne entree={entree} />
       </div>
     </li>
   );
@@ -140,9 +163,10 @@ export function MandatsBlock({
   // Mandats et fonctions gouvernementales dans une seule frise, du plus récent
   // au plus ancien. Les dates des mandats sont des horodatages ISO, celles des
   // postes des dates civiles : la comparaison de chaînes reste juste.
+  // Les postes reconduits d'un gouvernement à l'autre font une seule entrée.
   const entrees = [
     ...mandats.map((m, i) => ({ type: 'mandat' as const, debut: m.dateDebut, m, i })),
-    ...fonctionsGouvernementales.map((f) => ({ type: 'gouvernement' as const, debut: f.dateDebut, f })),
+    ...regrouperPostes(fonctionsGouvernementales).map((g) => ({ type: 'gouvernement' as const, debut: g.dateDebut, g })),
   ].sort((a, b) => b.debut.localeCompare(a.debut));
 
   return (
@@ -151,7 +175,7 @@ export function MandatsBlock({
 
       <ol className="relative space-y-5 border-l-2 border-muted pl-6">
         {entrees.map((e) => {
-          if (e.type === 'gouvernement') return <EntreeGouvernementale key={e.f.uid} f={e.f} />;
+          if (e.type === 'gouvernement') return <EntreeGouvernementale key={e.g.postes[0]!.uid} entree={e.g} />;
           const { m, i } = e;
           const couleur = m.groupe?.couleur || '#888';
           const enCours = !m.dateFin;

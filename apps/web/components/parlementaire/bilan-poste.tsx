@@ -7,10 +7,11 @@ import { fetcher } from '@/lib/api';
 import { Motion } from '@/components/gouvernements/bilan-gouvernement';
 import {
   LIBELLES_STADE,
+  cumulerBilans,
   dateLongue,
   nombre,
   type BilanPoste,
-  type FonctionGouvernementale,
+  type EntreeGouvernementale,
   type ProjetLoi,
 } from '@/lib/gouvernements';
 
@@ -59,22 +60,26 @@ function Projet({ p, role }: { p: ProjetLoi; role: string }) {
 }
 
 /**
- * Bilan d'un poste ministériel sur la fiche d'un parlementaire : le résumé
- * vient avec la fiche, la liste des textes et des 49.3 se charge à l'ouverture
- * (`/gouvernements/membres/:slug`).
+ * Bilan d'une entrée de la frise (un poste, ou des postes reconduits) sur la
+ * fiche d'un parlementaire : le résumé vient avec la fiche, la liste des
+ * textes et des 49.3 se charge à l'ouverture (`/gouvernements/membres/:slug`).
  */
-export function BilanPosteLigne({ f }: { f: FonctionGouvernementale }) {
+export function BilanPosteLigne({ entree }: { entree: EntreeGouvernementale }) {
   const [ouvert, setOuvert] = useState(false);
+  const membreSlug = entree.postes[0]?.membreSlug ?? null;
   const membre = useQuery({
-    queryKey: ['gouvernement-membre', f.membreSlug],
-    queryFn: () => fetcher<MembreReponse>(`/gouvernements/membres/${f.membreSlug}`),
-    enabled: ouvert && !!f.membreSlug,
+    queryKey: ['gouvernement-membre', membreSlug],
+    queryFn: () => fetcher<MembreReponse>(`/gouvernements/membres/${membreSlug}`),
+    enabled: ouvert && !!membreSlug,
     staleTime: 3_600_000,
   });
-  if (!f.bilan) return null;
-  const morceaux = resumeBilanPoste(f.bilan);
+  if (!entree.bilan) return null;
+  const morceaux = resumeBilanPoste(entree.bilan);
   if (morceaux.length === 0) return null;
-  const detail = membre.data?.data.postes.find((p) => p.uid === f.uid)?.bilan;
+  const uids = new Set(entree.postes.map((p) => p.uid));
+  const detail = membre.data
+    ? cumulerBilans(membre.data.data.postes.filter((p) => uids.has(p.uid)).map((p) => p.bilan))
+    : null;
   const textes = detail?.textes?.liste ?? [];
   const engagements = detail?.premierMinistre?.listeEngagements ?? [];
   const motions = detail?.premierMinistre?.listeMotions ?? [];
@@ -82,7 +87,7 @@ export function BilanPosteLigne({ f }: { f: FonctionGouvernementale }) {
   return (
     <div className="mt-1 text-sm text-muted-foreground">
       <p>{morceaux.join(' · ')}</p>
-      {f.membreSlug && (
+      {membreSlug && (
         <button
           type="button"
           onClick={() => setOuvert((o) => !o)}
@@ -103,7 +108,7 @@ export function BilanPosteLigne({ f }: { f: FonctionGouvernementale }) {
                   <p className="text-xs font-semibold">Recours au 49.3</p>
                   <ul className="text-sm">
                     {engagements.map((e) => (
-                      <li key={e.dossier.uid} className="py-0.5">
+                      <li key={`${e.date}-${e.dossier.uid}`} className="py-0.5">
                         {dateLongue(e.date)} ·{' '}
                         <Link href={`/dossiers/${(e.texte ?? e.dossier).uid}`} className="hover:text-primary hover:underline">
                           {(e.texte ?? e.dossier).titre}
@@ -128,7 +133,7 @@ export function BilanPosteLigne({ f }: { f: FonctionGouvernementale }) {
                   <p className="text-xs font-semibold">Projets de loi signés</p>
                   <ul className="text-sm">
                     {textes.map((t) => (
-                      <Projet key={t.dossier.uid} p={t} role={t.role} />
+                      <Projet key={`${t.dossier.uid}-${t.role}`} p={t} role={t.role} />
                     ))}
                   </ul>
                 </>

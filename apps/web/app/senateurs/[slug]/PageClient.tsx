@@ -7,7 +7,7 @@ import { AmendementSortBadge } from '@/components/AmendementSortBadge';
 import { DiscussionsEtSousAmendements, SousAmendementDe } from '@/components/AmendementSeance';
 import { amendementHref, libelleAlinea, type MetadonneesAmendement } from '@/lib/amendements';
 import { FicheCompareCallout } from '@/components/FicheCompareCallout';
-import { bilanMandats, fonctionParlementaire } from '@/lib/meta-parlementaire';
+import { bilanMandats, fonctionParlementaire, mentionFinDeMandat } from '@/lib/meta-parlementaire';
 import { StatsParlementaire } from '@/components/parlementaire/stats-parlementaire';
 import { SoutenirCallout } from '@/components/donations/SoutenirCallout';
 import { aucunFiltre, STALE_TIME_LISTE_MS } from '@/lib/liste-ssr';
@@ -15,6 +15,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useOngletAncre } from '@/lib/use-onglet-ancre';
+import { BarreOngletsFiche, ongletsVisibles, type ListesFiche } from '@/components/parlementaire/onglets-fiche';
 import {
   Users,
   MapPin,
@@ -92,10 +93,13 @@ export interface SenateurDetail {
     loyaute: number | null;
     participation: number;
     interventions: number;
+    interventionsGouvernement?: number;
     amendements: { proposes: number; adoptes: number };
     questions: number;
     scrutins?: number | null;
   };
+  /** Taille des listes de la fiche : une liste vide n'a pas d'onglet. */
+  listes?: ListesFiche;
   // Enrichissement IA
   resumeIA?: string | null;
   parcoursIA?: string | null;
@@ -632,11 +636,6 @@ export default function PageClient({
   const params = useParams();
   const router = useRouter();
   const slug = params.slug as string;
-  // L'onglet ouvert suit l'ancre de l'URL (`#interventions`) : un lien peut y mener.
-  const { actif: activeTab, choisir: setActiveTab, barre: barreOnglets } = useOngletAncre(
-    ['votes', 'interventions', 'amendements'] as const,
-    'votes',
-  );
   const [showAllDeclarations, setShowAllDeclarations] = useState(false);
 
   const { data, isLoading, error } = useQuery({
@@ -648,6 +647,14 @@ export default function PageClient({
     enabled: !!slug,
     initialData,
   });
+
+  // L'onglet ouvert suit l'ancre de l'URL (`#interventions`) : un lien peut y
+  // mener. Une liste vide n'a pas d'onglet ; s'il n'en reste aucun, pas de barre.
+  const onglets = ongletsVisibles(data?.listes);
+  const { actif: activeTab, choisir: setActiveTab, barre: barreOnglets } = useOngletAncre(
+    onglets,
+    onglets[0] ?? 'votes',
+  );
 
   if (isLoading && !initialData) {
     return (
@@ -760,7 +767,7 @@ export default function PageClient({
               députés « terminés » le 22 juillet 2026), pas la date réelle. */}
           {!fonction.enCours && (
             <p className="mt-2 text-sm text-muted-foreground">
-              {senateur.groupe ? 'Mandat terminé · dernier groupe :' : 'Mandat terminé'}
+              {mentionFinDeMandat(fonction.libelle, !!gouvernementEnCours, !!senateur.groupe)}
             </p>
           )}
           {/* La ligne du groupe reste la même que pour un élu en exercice : le
@@ -878,9 +885,11 @@ export default function PageClient({
       {senateur.stats && (
         <StatsParlementaire
           stats={senateur.stats}
-          titre={fonction.enCours ? 'Statistiques' : bilanMandats(fonction.plusieursMandats)}
+          titre={fonction.enCours || gouvernementEnCours ? 'Statistiques' : bilanMandats(fonction.plusieursMandats)}
           preside={presideUneAssemblee(senateur.mandats ?? [])}
           chambre="senat"
+          fonctionsGouvernementales={senateur.fonctionsGouvernementales ?? []}
+          gouvernementEnCours={!!gouvernementEnCours}
         />
       )}
 
@@ -1028,38 +1037,21 @@ export default function PageClient({
           il n'y a pas de pied de page à atteindre. */}
       <SoutenirCallout spaced={false} className="mb-8" />
 
-      {/* Onglets */}
-      <div ref={barreOnglets} className="scroll-mt-20 border-b">
-        <nav className="flex gap-8 overflow-x-auto scrollbar-none">
-          <button
-            onClick={() => setActiveTab('votes')}
-            className={`shrink-0 whitespace-nowrap pb-4 ${activeTab === 'votes' ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            Votes récents
-          </button>
-          <button
-            onClick={() => setActiveTab('interventions')}
-            className={`shrink-0 whitespace-nowrap pb-4 ${activeTab === 'interventions' ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            Interventions
-          </button>
-          <button
-            onClick={() => setActiveTab('amendements')}
-            className={`shrink-0 whitespace-nowrap pb-4 ${activeTab === 'amendements' ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            Amendements
-          </button>
-        </nav>
-      </div>
+      {/* Onglets : seulement ceux dont la liste n'est pas vide */}
+      {onglets.length > 0 && (
+        <>
+          <BarreOngletsFiche onglets={onglets} actif={activeTab} choisir={setActiveTab} barre={barreOnglets} />
 
-      {/* Contenu */}
-      <div className="mt-8">
-        {activeTab === 'votes' && <VotesList slug={senateur.slug} initialVotes={initialVotes} parcours={parcours} />}
-        {activeTab === 'interventions' && (
-          <InterventionsList slug={senateur.slug} chambre="senat" parcours={parcours} />
-        )}
-        {activeTab === 'amendements' && <AmendementsList slug={senateur.slug} parcours={parcours} />}
-      </div>
+          {/* Contenu */}
+          <div className="mt-8">
+            {activeTab === 'votes' && <VotesList slug={senateur.slug} initialVotes={initialVotes} parcours={parcours} />}
+            {activeTab === 'interventions' && (
+              <InterventionsList slug={senateur.slug} chambre="senat" parcours={parcours} />
+            )}
+            {activeTab === 'amendements' && <AmendementsList slug={senateur.slug} parcours={parcours} />}
+          </div>
+        </>
+      )}
     </div>
   );
 }
