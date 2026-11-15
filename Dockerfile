@@ -44,5 +44,5 @@ WORKDIR /app/apps/api
 
 EXPOSE 3001
 
-# Match the memory configuration from railway.toml
+# Tas de 4 Go. Railway ne surcharge pas cette commande (aucune « start command » sur le service).
 CMD ["node", "--max-old-space-size=4096", "dist/index.js"]

@@ -87,7 +87,7 @@ Variables lues par le code de l'API :
 | `API_URL` | Hors production seulement : adresse annoncée par la spécification OpenAPI (défaut `http://localhost:3001`). En production, elle annonce toujours `https://api.clair.vote` |
 | `SENATORIALES_HORLOGE` | Rejouer une soirée électorale à une heure simulée ; ignorée en production |
 
-`apps/api/railway.toml` décrit ce déploiement mais n'est pas lu par Railway : la configuration fait foi dans le tableau de bord.
+La configuration du service (sonde `/health`, politique de redémarrage) vit dans le tableau de bord Railway : le dépôt ne contient aucun fichier de configuration Railway. L'image est construite par le `Dockerfile` racine, dont le `CMD` lance l'API.
 
 ---
 
@@ -104,7 +104,7 @@ Ni l'un ni l'autre n'est relancé en cas d'échec (politique de redémarrage `NE
 
 Variables lues par le code de l'ingestion : `DATABASE_URL`, `LOG_LEVEL`, `NODE_ENV`, `MISTRAL_API_KEY`, `TAVILY_API_KEY`, `API_URL` et `CLAIR_INTERNAL_SECRET` (pour reconstruire le cache de la page d'accueil en fin de batch). Le service intraday n'utilise que `DATABASE_URL`, `LOG_LEVEL` et `NODE_ENV`.
 
-`services/ingestion/railway.toml` et `railway.intraday.toml` recopient la configuration du tableau de bord pour la documenter ; Railway ne les lit pas.
+Crons, commandes et politique de redémarrage vivent dans le tableau de bord Railway, seule source qui fasse foi ; les valeurs ci-dessus y ont été relevées le 15/11/2026.
 
 ---
 
