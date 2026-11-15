@@ -234,7 +234,9 @@ Détail des contrôles : [Qualité des données](/donnees/qualite-des-donnees).
 | `reconcile-actif` | Réaligne `parlementaires.actif` sur « a un mandat en cours » |
 | `backfill-mandats` | Initialisation des mandats parlementaires multi-législatures (idempotent) |
 | `backfill-nature-vote` | Classe la nature des scrutins (`--force` pour tout reclasser) |
-| `sync-senateurs-histo` | Anciens sénateurs depuis l'open data ODSEN (`--depuis <date>`) |
+| `sync-senateurs-histo` | Anciens sénateurs depuis l'open data ODSEN (`--depuis <date>`), puis leurs photos (comme `sync-photos-senat`) |
+| `sync-photos-gouvernement` | Photos des membres du Gouvernement sans fiche, depuis Wikidata et Wikimedia Commons, avec leur crédit. Options : `--dry-run`, `--details` (le rapprochement de chaque membre), `--rapprocher-de-nouveau` (refaire la recherche des membres déjà rapprochés), `--actualiser` (relire image et crédit des photos figées, que le passage de nuit ne touche jamais ; résultat à relire) |
+| `sync-photos-senat` | Photos des fiches du Sénat qui n'en ont pas, prises sur senat.fr après vérification de l'adresse ; une fiche dont la photo n'est pas publiée reste sans photo |
 | `sync-senat-fonctions` | Fonctions datées des sénateurs et présidences du Sénat depuis `export_sens.zip` (`--archive <chemin>` pour un zip déjà téléchargé) |
 | `sync-gouvernements` | Gouvernements depuis 2007, postes ministériels, présidences de la République et de l'Assemblée, lus dans l'archive AMO30 de l'Assemblée ; rattache chacun à sa fiche parlementaire |
 | `sync-bilan-gouvernement` | Bilan des gouvernements depuis juin 2017 : projets de loi et leurs signataires, recours au 49.3, motions de censure, réponses en séance. Recalculé en entier, écrit par différence. Option : `--archive-dosleg <chemin>` (un `dosleg.zip` déjà téléchargé) |
