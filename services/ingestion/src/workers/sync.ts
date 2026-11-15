@@ -21,6 +21,8 @@ import {
 } from '../sources/senat/interventions-client';
 import { SenatDossiersClient } from '../sources/senat/dossiers-client';
 import { syncSenateursHistoriques } from './senat-histo';
+import { completerPhotosSenateurs } from './photos-senat';
+import { syncPhotosGouvernement, type RapportPhotosGouvernement } from './photos-gouvernement';
 import { syncSenatFonctions } from './senat-fonctions';
 import { syncBilanGouvernement } from './bilan-gouvernement';
 import { syncGouvernements } from './gouvernements';
@@ -3743,9 +3745,13 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
             const histoResult = await syncSenateursHistoriques({
               perimetreDebut: new Date(Date.UTC(senatSessionQuotidienDepuis(), 9, 1)),
             });
+            // Les anciens créés n'ont pas de photo : senat.fr la publie (#136).
+            // Après le premier rattrapage, ne reste à examiner chaque nuit que
+            // la poignée de fiches sans photo publiée.
+            const photos = await completerPhotosSenateurs(prisma);
             syncResult = {
               created: histoResult.personnesCreees + histoResult.mandatsCrees,
-              updated: histoResult.personnesEnrichies + histoResult.mandatsMisAJour,
+              updated: histoResult.personnesEnrichies + histoResult.mandatsMisAJour + photos.renseignees,
             };
             break;
           }
@@ -3761,10 +3767,23 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
             const somme = (k: 'crees' | 'modifies') =>
               rapport.gouvernements[k] + rapport.membres[k] + rapport.postes[k] + rapport.presidences[k] +
               rapport.presidencesAssemblee[k];
-            syncResult = { created: somme('crees'), updated: somme('modifies') };
+            // Photos des membres sans fiche (Wikidata, #136). Une panne de
+            // Wikidata ou de Commons ne fait pas échouer la source : rien n'est
+            // effacé sur une lecture ratée, le passage suivant reprend.
+            let photos: RapportPhotosGouvernement | { erreur: string };
+            try {
+              photos = await syncPhotosGouvernement(prisma);
+            } catch (error) {
+              photos = { erreur: errorMessage(error) };
+              logger.warn({ error: photos.erreur }, 'Photos des membres du Gouvernement non synchronisées');
+            }
+            syncResult = {
+              created: somme('crees'),
+              updated: somme('modifies') + ('modifies' in photos ? photos.modifies : 0),
+            };
             await prisma.syncLog.update({
               where: { id: syncLog.id },
-              data: { metadata: rapport as unknown as Prisma.InputJsonValue },
+              data: { metadata: { ...rapport, photos } as unknown as Prisma.InputJsonValue },
             });
             break;
           }
