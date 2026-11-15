@@ -51,7 +51,8 @@ COPY --from=builder /app/apps/api/package.json ./apps/api/
 COPY --from=builder /app/packages/shared/package.json ./packages/shared/
 COPY --from=builder /app/packages/config/package.json ./packages/config/
 
-# Install production dependencies only (ignore-scripts to skip husky)
+# Dépendances de production seules ; aucun script d'installation n'est utile ici,
+# le client Prisma est copié depuis le builder juste après.
 RUN pnpm install --prod --frozen-lockfile --ignore-scripts
 
 # Copy built artifacts and prisma schema
