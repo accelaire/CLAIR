@@ -20,6 +20,7 @@ import {
 } from '../../utils/groupe-epoque';
 import { fuzzySearchCandidates, FuzzyCandidate } from '../../utils/fuzzy-search';
 import { INTERVENTIONS_DE_FOND } from '../../utils/interventions';
+import { priseDeParoleAuGouvernement, voteAbsentEmpeche } from '../../utils/empechements';
 import { METADONNEES_AMENDEMENT_SELECT, avecNombreDeSousAmendements } from '../../utils/amendements';
 import { RENVOIS_SELECT, avecRenvois } from '../../utils/renvois-legi';
 import { GouvernementsService } from '../gouvernements/gouvernements.service';
@@ -673,12 +674,13 @@ export class ParlementairesService {
       stats = await this.getParlementaireStats(parlementaire.id, parlementaire.chambre as Chambre);
     }
 
-    const [fonctionsGouvernementales, presidencesAssemblee] = await Promise.all([
+    const [fonctionsGouvernementales, presidencesAssemblee, listes] = await Promise.all([
       new GouvernementsService(this.prisma, this.redis).getFonctionsGouvernementales(parlementaire.id),
       this.prisma.presidenceChambre.findMany({
         where: { parlementaireId: parlementaire.id, chambre: 'assemblee' },
         orderBy: { dateDebut: 'desc' },
       }),
+      this.taillesDesListes(parlementaire.id),
     ]);
 
     // Une présidence de l'Assemblée est une fonction exercée PENDANT le mandat :
@@ -714,7 +716,7 @@ export class ParlementairesService {
             ),
           ].sort((a, b) => b.dateDebut.getTime() - a.dateDebut.getTime());
 
-    const result = { ...parlementaire, mandats, stats, fonctionsGouvernementales };
+    const result = { ...parlementaire, mandats, stats, fonctionsGouvernementales, listes };
 
     await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
 
@@ -783,6 +785,7 @@ export class ParlementairesService {
         participation:
           parlementaire.statsCarriereParticipation ?? parlementaire.statsParticipation ?? 0,
         interventions: parlementaire.statsInterventions ?? 0,
+        interventionsGouvernement: await this.compterInterventionsGouvernement(parlementaireId),
         amendements: {
           proposes: parlementaire.statsAmendements ?? 0,
           adoptes: parlementaire.statsAmendementsAdoptes ?? 0,
@@ -803,13 +806,66 @@ export class ParlementairesService {
   }
 
   /**
+   * Prises de parole de fond au banc du Gouvernement (réponses, et tout ce qui
+   * est dit pendant un poste ministériel) : la part des interventions que
+   * `stats_interventions` n'a pas comptée (PRISE_DE_PAROLE_PARLEMENTAIRE,
+   * stats-calculator). Comptée à la demande : seuls une centaine de fiches en
+   * ont, et la requête est indexée par personne.
+   */
+  private async compterInterventionsGouvernement(parlementaireId: string): Promise<number> {
+    const [ligne] = await this.prisma.$queryRawUnsafe<{ n: number }[]>(
+      `SELECT COUNT(*)::int AS n
+       FROM interventions i
+       WHERE i.parlementaire_id = $1
+         AND i.est_presidence = false
+         AND i.type <> 'interruption'
+         AND i.reunion_id IS NULL
+         AND ${priseDeParoleAuGouvernement('i')}`,
+      parlementaireId,
+    );
+    return ligne?.n ?? 0;
+  }
+
+  /**
+   * Taille des listes de la fiche, avec les filtres par défaut de chacune : la
+   * fiche n'ouvre pas d'onglet sur une liste vide (ticket #129). Les votes
+   * d'un ministre ou d'un président d'assemblée sont souvent tous des
+   * scrutins où il ne pouvait pas voter : sans eux, il ne reste rien.
+   */
+  private async taillesDesListes(parlementaireId: string) {
+    const [votes, interventions, amendements] = await Promise.all([
+      this.prisma.$queryRawUnsafe<{ n: number }[]>(
+        `SELECT COUNT(*)::int AS n
+         FROM votes v
+         JOIN scrutins s ON s.id = v.scrutin_id
+         WHERE v.parlementaire_id = $1 AND NOT ${voteAbsentEmpeche('v', 's')}`,
+        parlementaireId,
+      ),
+      // Même filtre que GET /:slug/interventions.
+      this.prisma.intervention.count({
+        where: { parlementaireId, seanceId: { not: null }, ...INTERVENTIONS_DE_FOND },
+      }),
+      // Même périmètre que getParlementaireAmendements : déposés ou cosignés.
+      this.prisma.$queryRawUnsafe<{ n: number }[]>(
+        `SELECT COUNT(*)::int AS n FROM (
+           SELECT id FROM amendements WHERE parlementaire_id = $1
+           UNION
+           SELECT "A" FROM "_AmendementCosignataires" WHERE "B" = $1
+         ) c`,
+        parlementaireId,
+      ),
+    ]);
+    return { votes: votes[0]?.n ?? 0, interventions, amendements: amendements[0]?.n ?? 0 };
+  }
+
+  /**
    * Calcul à la volée des stats (fallback si pas de stats pré-calculées)
    */
   private async calculateStatsOnTheFly(parlementaireId: string, chambre: Chambre): Promise<ParlementaireStats> {
     const cacheKey = `parlementaire:stats:${parlementaireId}`;
     const since = await this.getOldestScrutinDate(chambre);
 
-    const [presence, loyaute, votesCount, interventionsCount, amendementsStats, questionsCount] =
+    const [presence, loyaute, votesCount, interventionsCount, amendementsStats, questionsCount, interventionsGouvernement] =
       await Promise.all([
         this.calculatePresence(parlementaireId, chambre, since),
         this.calculateLoyaute(parlementaireId, chambre, since),
@@ -828,6 +884,7 @@ export class ParlementairesService {
           // INTERVENTIONS_DE_FOND ici, il écraserait le type demandé.
           where: { parlementaireId, type: 'question', estPresidence: false },
         }),
+        this.compterInterventionsGouvernement(parlementaireId),
       ]);
 
     const stats = {
@@ -835,7 +892,9 @@ export class ParlementairesService {
       presenceSolennel: null, // Calculé lors du batch d'ingestion
       loyaute,
       participation: votesCount,
-      interventions: interventionsCount,
+      // Même partage que le batch : la part au banc du Gouvernement à côté.
+      interventions: interventionsCount - interventionsGouvernement,
+      interventionsGouvernement,
       amendements: amendementsStats,
       questions: questionsCount,
     };
@@ -1029,9 +1088,11 @@ export class ParlementairesService {
       return JSON.parse(cached);
     }
 
-    // Build dynamic WHERE conditions
-    const conditions: string[] = ['v.parlementaire_id = $1'];
-    const countConditions: string[] = ['v.parlementaire_id = $1'];
+    // Build dynamic WHERE conditions. Un scrutin où l'élu ne pouvait pas voter
+    // (présidence, Gouvernement) n'est pas une absence : sa ligne « absent »
+    // sort de la liste, comme elle sort du calcul de la présence.
+    const conditions: string[] = ['v.parlementaire_id = $1', `NOT ${voteAbsentEmpeche('v', 's')}`];
+    const countConditions: string[] = ['v.parlementaire_id = $1', `NOT ${voteAbsentEmpeche('v', 's')}`];
     const params: (string | Date)[] = [parlementaireId];
     let paramIndex = 2;
 
