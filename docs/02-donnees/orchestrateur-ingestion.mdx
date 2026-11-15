@@ -11,12 +11,12 @@ L'ingestion est une CLI Node.js (`services/ingestion/src/cli.ts`, bâtie sur com
 
 ## ⏱️ Deux passages planifiés en production
 
-| Service Railway | Planification (UTC) | Heure de Paris | Commande |
+| Service Railway | Cron | Heure (UTC) | Commande |
 | :--- | :--- | :--- | :--- |
-| Ingestion nightly | `0 3 * * *` | 5 h en heure d'été, 4 h en heure d'hiver | `node --max-old-space-size=6144 services/ingestion/dist/cli.js smart-sync --all` |
-| Ingestion intraday | `0 6-21/2 * * *` | toutes les deux heures, de 8 h à 22 h en été (de 7 h à 21 h en hiver) | `node services/ingestion/dist/cli.js sync-intraday` |
+| Ingestion nightly | `0 4 * * *` | 4 h, tous les jours ; fin vers 6 h | `node --max-old-space-size=6144 services/ingestion/dist/cli.js smart-sync --all` |
+| Ingestion intraday | `0 6-21/2 * * *` | toutes les deux heures, de 6 h à 20 h | `node services/ingestion/dist/cli.js sync-intraday` |
 
-Railway exprime ses crons en UTC : l'heure locale glisse donc d'une heure au changement d'heure. Les deux services sont construits depuis `services/ingestion/Dockerfile`, seul à installer `pdftotext`.
+Railway exprime ses crons en UTC, sans changement d'heure : à Paris, ajouter une heure en hiver et deux en été. Les deux services sont construits depuis `services/ingestion/Dockerfile`, seul à installer `pdftotext`.
 
 Le passage **intraday** ne rafraîchit que ce qui change dans la journée : l'agenda du Sénat (de J-2 à J+2), les vidéos du Sénat (séances et commissions) et celles de l'Assemblée. Il ne touche ni aux scrutins, ni aux amendements, ni aux dossiers, ni aux statistiques.
 

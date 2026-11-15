@@ -36,8 +36,6 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@clair/config": "workspace:*",
-    "@clair/shared": "workspace:*",
     "@types/node": "^24.11.0",
     "@vitest/coverage-v8": "^1.1.0",
     "fastify-plugin": "^5.0.0",

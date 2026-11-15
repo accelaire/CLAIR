@@ -11,15 +11,12 @@ WORKDIR /app
 # Copy package files
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json ./apps/api/
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/config/package.json ./packages/config/
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
 
 # Copy source code
 COPY apps/api ./apps/api
-COPY packages ./packages
 
 # Generate Prisma client and build
 RUN pnpm --filter @clair/api db:generate
@@ -47,5 +44,5 @@ WORKDIR /app/apps/api
 
 EXPOSE 3001
 
-# Match the memory configuration from railway.toml
+# Tas de 4 Go. Railway ne surcharge pas cette commande (aucune « start command » sur le service).
 CMD ["node", "--max-old-space-size=4096", "dist/index.js"]

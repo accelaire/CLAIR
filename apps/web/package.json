@@ -33,7 +33,6 @@
     "zustand": "^4.4.7"
   },
   "devDependencies": {
-    "@clair/config": "workspace:*",
     "@types/node": "^24.11.0",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
