@@ -201,6 +201,27 @@ async function fetchGouvernements(): Promise<string[]> {
 }
 
 /**
+ * Les membres du Gouvernement sans fiche parlementaire, qui ont leur propre
+ * page (ceux qui ont une fiche y sont redirigés). Comme les groupes, un échec
+ * ne fait qu'omettre ces pages.
+ */
+async function fetchMembresSansFiche(): Promise<string[]> {
+  const url = `${API_URL}/api/v1/gouvernements/membres`;
+  try {
+    const response = await fetch(url, { headers: SITEMAP_HEADERS });
+    if (!response.ok) {
+      console.error(`[sitemap] ${response.status} ${response.statusText} — ${url}`);
+      return [];
+    }
+    const body = (await response.json()) as { data?: { slug: string; parlementaire: unknown }[] };
+    return Array.isArray(body.data) ? body.data.filter((m) => !m.parlementaire).map((m) => m.slug) : [];
+  } catch (error) {
+    console.error(`[sitemap] fetch failed — ${url}`, error);
+    return [];
+  }
+}
+
+/**
  * Sénateurs élus le 27 septembre qui ont une fiche provisoire. Comme les
  * groupes, un échec ne fait qu'omettre ces pages : la fiche définitive entrera
  * dans le sitemap avec l'annuaire du Sénat.
@@ -258,11 +279,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Les données sont chargées avant les pages statiques : c'est d'elles qu'on
   // déduit la date de la dernière ingestion, qui date les pages de liste.
-  const [data, groupes, elusProvisoires, gouvernements] = await Promise.all([
+  const [data, groupes, elusProvisoires, gouvernements, membresSansFiche] = await Promise.all([
     fetchSitemapData(),
     fetchGroupes(),
     fetchElusProvisoires(),
     fetchGouvernements(),
+    fetchMembresSansFiche(),
   ]);
   const { deputes, senateurs, scrutins, lobbyistes, dossiers, sujets } = data;
   // Une fiche provisoire s'efface devant la définitive : jamais deux entrées
@@ -340,6 +362,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       url: `${BASE_URL}/gouvernements/${slug}`,
       changeFrequency: 'weekly' as const,
       priority: 0.7,
+    })),
+    // Sans `lastmod`, comme les gouvernements.
+    ...membresSansFiche.map((slug) => ({
+      url: `${BASE_URL}/gouvernements/membres/${slug}`,
+      changeFrequency: 'monthly' as const,
+      priority: 0.5,
     })),
     {
       url: `${BASE_URL}/recherche`,

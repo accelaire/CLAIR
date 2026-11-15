@@ -7,7 +7,7 @@ import {
   dateLongue,
   etapes as etapesDuGouvernement,
   libellePoste,
-  lienFiche,
+  lienPersonne,
   nomComplet,
   parDomaine,
   type Domaine,
@@ -17,15 +17,24 @@ import {
   type PosteMinisteriel,
 } from '@/lib/gouvernements';
 
-function Nom({ p, className = '' }: { p: PersonneGouvernement; className?: string }) {
-  const fiche = lienFiche(p);
-  return fiche ? (
-    <Link href={fiche} className={`text-primary hover:underline ${className}`}>
-      {nomComplet(p)}
+/**
+ * Une ligne qui mène à la page de la personne, comme une ligne de membre
+ * ailleurs sur le site : toute la ligne est le lien, le nom reste dans la
+ * couleur du texte et prend celle des liens au survol.
+ */
+function LignePersonne({ p, className, children }: { p: PersonneGouvernement; className: string; children: React.ReactNode }) {
+  const lien = lienPersonne(p);
+  return lien ? (
+    <Link href={lien} className={`group rounded-md transition-colors hover:bg-muted/50 ${className}`}>
+      {children}
     </Link>
   ) : (
-    <span className={className}>{nomComplet(p)}</span>
+    <div className={className}>{children}</div>
   );
+}
+
+function Nom({ p }: { p: PersonneGouvernement }) {
+  return <span className="transition-colors group-hover:text-primary">{nomComplet(p)}</span>;
 }
 
 /** « 27 févr. 2026 » : la date d'une étape, assez courte pour la frise. */
@@ -60,17 +69,19 @@ const MARQUE = {
 function Poste({ p, marque }: { p: PosteMinisteriel; marque: keyof typeof MARQUE | null }) {
   const delegue = p.rangProtocolaire >= 40;
   return (
-    <li className="flex items-center gap-3 py-2">
-      <Portrait personne={p.membre} />
-      <div className="min-w-0">
-        <p className={`flex flex-wrap items-center gap-x-2 ${delegue ? 'text-sm' : 'font-medium'}`}>
-          <Nom p={p.membre} />
-          {marque && (
-            <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ${MARQUE[marque].classe}`}>{MARQUE[marque].texte}</span>
-          )}
-        </p>
-        <p className="text-sm text-muted-foreground">{libellePoste(p.qualite, p.intituleCourt, p.intitule)}</p>
-      </div>
+    <li className="py-1">
+      <LignePersonne p={p.membre} className="-mx-2 flex items-center gap-3 px-2 py-1">
+        <Portrait personne={p.membre} />
+        <div className="min-w-0">
+          <p className={`flex flex-wrap items-center gap-x-2 ${delegue ? 'text-sm' : 'font-medium'}`}>
+            <Nom p={p.membre} />
+            {marque && (
+              <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ${MARQUE[marque].classe}`}>{MARQUE[marque].texte}</span>
+            )}
+          </p>
+          <p className="text-sm text-muted-foreground">{libellePoste(p.qualite, p.intituleCourt, p.intitule)}</p>
+        </div>
+      </LignePersonne>
     </li>
   );
 }
@@ -178,8 +189,12 @@ export function CompositionGouvernement({
             <ul className="mt-1 space-y-1">
               {e.sorties.map((p) => (
                 <li key={p.uid} className="text-sm">
-                  <Nom p={p.membre} className="font-medium" />{' '}
-                  <span className="text-muted-foreground">{libellePoste(p.qualite, p.intituleCourt, p.intitule)}</span>
+                  <LignePersonne p={p.membre} className="-mx-1 inline-block px-1">
+                    <span className="font-medium">
+                      <Nom p={p.membre} />
+                    </span>{' '}
+                    <span className="text-muted-foreground">{libellePoste(p.qualite, p.intituleCourt, p.intitule)}</span>
+                  </LignePersonne>
                 </li>
               ))}
             </ul>

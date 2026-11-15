@@ -263,14 +263,12 @@ function cartePersonne(p: Personne): Carte {
       (!p.parlementaire?.actif &&
         (p.gouvernement?.dernierPoste?.dateFin ?? '') >= (p.parlementaire?.dernierMandat?.dateFin ?? '').slice(0, 10)));
   const f = p.parlementaire;
-  const poste = p.gouvernement?.dernierPoste;
   return {
-    // Sa fiche s'il en a une ; sinon le gouvernement de son dernier poste, où il
-    // figure dans la composition (les membres sans fiche n'ont pas encore de page).
+    // Sa fiche s'il en a une, sinon sa page de membre du Gouvernement.
     href: f
       ? `/${f.chambre === 'senat' ? 'senateurs' : 'deputes'}/${f.slug}`
-      : poste?.gouvernement
-        ? `/gouvernements/${poste.gouvernement.slug}`
+      : p.gouvernement
+        ? `/gouvernements/membres/${p.gouvernement.membreSlug}`
         : '/gouvernements',
     titre: `${p.prenom} ${p.nom}`,
     badges: [],

@@ -2,13 +2,8 @@ import Link from 'next/link';
 import { ScrollText } from 'lucide-react';
 import { legislatureLabel, mandatureLabel, sessionForDate } from '@/lib/periodes';
 import { mandatDeChaqueFonction } from '@/lib/fonctions-par-mandat';
-import {
-  libellePoste,
-  moisAnnee as moisAnneeCivil,
-  regrouperPostes,
-  type EntreeGouvernementale as Entree,
-  type FonctionGouvernementale,
-} from '@/lib/gouvernements';
+import { regrouperPostes, type FonctionGouvernementale } from '@/lib/gouvernements';
+import { EntreeParcours } from '@/components/gouvernements/parcours';
 import { FonctionsMandat, type FonctionItem } from './fonctions-mandat';
 import { BilanPosteLigne } from './bilan-poste';
 
@@ -47,62 +42,6 @@ function periodeLabel(m: MandatParlementaireItem, chambre: Chambre): string {
 
 function moisAnnee(date: string): string {
   return new Date(date).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
-}
-
-// Pastille des fonctions gouvernementales : bleu de la République, carrée pour
-// se distinguer des pastilles rondes aux couleurs des groupes.
-const COULEUR_GOUVERNEMENT = '#000091';
-
-/** « Gouvernements Borne, Attal, Barnier et Bayrou », chacun lié à sa page. */
-function Gouvernements({ gouvernements }: { gouvernements: Entree['gouvernements'] }) {
-  return (
-    <>
-      {gouvernements.length > 1 ? 'Gouvernements ' : 'Gouvernement '}
-      {gouvernements.map((g, i) => (
-        <span key={g.slug}>
-          {i > 0 && (i === gouvernements.length - 1 ? ' et ' : ', ')}
-          <Link href={`/gouvernements/${g.slug}`} className="hover:text-foreground hover:underline">
-            {g.nom}
-          </Link>
-        </span>
-      ))}
-    </>
-  );
-}
-
-/**
- * Un poste ministériel (ou des postes reconduits d'un gouvernement à l'autre)
- * ou une présidence de la République, entrée de la frise au même rang qu'un
- * mandat : un député nommé ministre cède son siège, ce n'est pas une fonction
- * exercée pendant son mandat. Le libellé est celui du poste le plus récent.
- */
-function EntreeGouvernementale({ entree }: { entree: Entree }) {
-  const f = entree.postes[0]!;
-  const enCours = !entree.dateFin;
-  return (
-    <li className="relative">
-      <span
-        className={`absolute -left-[1.85rem] top-1.5 h-3 w-3 rounded-sm ring-2 ring-background ${enCours ? '' : 'opacity-60'}`}
-        style={{ backgroundColor: COULEUR_GOUVERNEMENT }}
-      />
-      <div className={enCours ? '' : 'opacity-75'}>
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="font-medium">
-            {f.type === 'presidence' ? f.qualite : libellePoste(f.qualite, f.intituleCourt, f.intitule)}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {moisAnneeCivil(entree.dateDebut)} → {enCours ? 'en cours' : moisAnneeCivil(entree.dateFin!)}
-          </span>
-        </div>
-        {entree.gouvernements.length > 0 && (
-          <div className="mt-1 text-sm text-muted-foreground">
-            <Gouvernements gouvernements={entree.gouvernements} />
-          </div>
-        )}
-        <BilanPosteLigne entree={entree} />
-      </div>
-    </li>
-  );
 }
 
 /**
@@ -175,7 +114,15 @@ export function MandatsBlock({
 
       <ol className="relative space-y-5 border-l-2 border-muted pl-6">
         {entrees.map((e) => {
-          if (e.type === 'gouvernement') return <EntreeGouvernementale key={e.g.postes[0]!.uid} entree={e.g} />;
+          if (e.type === 'gouvernement') {
+            // Un député nommé ministre cède son siège : le poste est une entrée de
+            // la frise au même rang qu'un mandat, pas une fonction exercée pendant lui.
+            return (
+              <EntreeParcours key={e.g.postes[0]!.uid} entree={e.g}>
+                <BilanPosteLigne entree={e.g} />
+              </EntreeParcours>
+            );
+          }
           const { m, i } = e;
           const couleur = m.groupe?.couleur || '#888';
           const enCours = !m.dateFin;

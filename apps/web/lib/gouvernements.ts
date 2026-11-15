@@ -3,6 +3,8 @@
 // civiles de la source (`YYYY-MM-DD`), sans heure ni fuseau.
 
 export interface PersonneGouvernement {
+  /** Slug de membre (`/gouvernements/membres/:slug`) ; absent d'une réponse mise en cache avant la page des membres. */
+  slug?: string;
   acteurUid: string;
   civilite: string | null;
   prenom: string;
@@ -21,7 +23,15 @@ export interface GouvernementResume {
   dateFin: string | null;
   enCours: boolean;
   premierMinistre: PersonneGouvernement | null;
-  presidence: { uid: string; civilite: string | null; prenom: string; nom: string } | null;
+  /** `slug` et `parlementaire` : sa page de membre ou sa fiche, null sans page ; absents d'une réponse ancienne. */
+  presidence: {
+    uid: string;
+    civilite: string | null;
+    prenom: string;
+    nom: string;
+    slug?: string | null;
+    parlementaire?: PersonneGouvernement['parlementaire'];
+  } | null;
   nbPostes: number;
   nbMembres: number;
   /** Membres dont la civilité publiée est « Mme ». */
@@ -387,9 +397,82 @@ export function nomComplet(p: { prenom: string; nom: string }): string {
   return `${p.prenom} ${p.nom}`;
 }
 
-export function lienFiche(p: PersonneGouvernement): string | null {
+/** Ce qu'il faut pour trouver la page d'une personne : sa fiche, sinon son slug de membre. */
+type AvecPage = { parlementaire?: PersonneGouvernement['parlementaire']; slug?: string | null };
+
+export function lienFiche(p: AvecPage): string | null {
   if (!p.parlementaire) return null;
   return `/${p.parlementaire.chambre === 'senat' ? 'senateurs' : 'deputes'}/${p.parlementaire.slug}`;
+}
+
+/** La page d'une personne : sa fiche quand elle en a une, sinon sa page de membre du Gouvernement. */
+export function lienPersonne(p: AvecPage): string | null {
+  return lienFiche(p) ?? (p.slug ? `/gouvernements/membres/${p.slug}` : null);
+}
+
+/** Un membre du Gouvernement, fiche ou non (`/gouvernements/membres/:slug`). */
+export interface MembreGouvernement extends PersonneGouvernement {
+  slug: string;
+  /** Absente d'une réponse mise en cache avant la page des membres. */
+  dateNaissance?: string | null;
+  /** Absent d'une réponse mise en cache avant la page des membres. */
+  presidences?: Array<{ uid: string; dateDebut: string; dateFin: string | null }>;
+  postes: Array<{
+    uid: string;
+    qualite: string;
+    rangProtocolaire: number;
+    intitule: string;
+    intituleCourt: string | null;
+    domaine: string | null;
+    dateDebut: string;
+    dateFin: string | null;
+    gouvernement: { uid: string; slug: string; nom: string } | null;
+    /** null : poste fini avant juin 2017. */
+    bilan: BilanPoste | null;
+  }>;
+}
+
+/**
+ * Les postes et présidences d'un membre, sous la forme des fonctions d'une
+ * fiche : la page d'un membre sans fiche reprend la frise et ses regroupements
+ * (`regrouperPostes`, `fonctionEnCours`).
+ */
+export function fonctionsDuMembre(m: MembreGouvernement): FonctionGouvernementale[] {
+  const president = m.civilite === 'Mme' ? 'Présidente de la République' : 'Président de la République';
+  return [
+    ...(m.presidences ?? []).map(
+      (p): FonctionGouvernementale => ({
+        type: 'presidence',
+        uid: p.uid,
+        qualite: president,
+        intitule: 'Présidence de la République',
+        intituleCourt: null,
+        rangProtocolaire: null,
+        domaine: null,
+        dateDebut: p.dateDebut,
+        dateFin: p.dateFin,
+        gouvernement: null,
+        membreSlug: m.slug,
+        bilan: null,
+      }),
+    ),
+    ...m.postes.map(
+      (p): FonctionGouvernementale => ({
+        type: 'poste_ministeriel',
+        uid: p.uid,
+        qualite: p.qualite,
+        intitule: p.intitule,
+        intituleCourt: p.intituleCourt,
+        rangProtocolaire: p.rangProtocolaire,
+        domaine: p.domaine,
+        dateDebut: p.dateDebut,
+        dateFin: p.dateFin,
+        gouvernement: p.gouvernement,
+        membreSlug: m.slug,
+        bilan: p.bilan,
+      }),
+    ),
+  ];
 }
 
 // =============================================================================

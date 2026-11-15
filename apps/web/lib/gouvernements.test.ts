@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { cumulerBilans, regrouperPostes, type BilanPoste, type FonctionGouvernementale } from './gouvernements';
+import {
+  cumulerBilans,
+  fonctionEnCours,
+  fonctionsDuMembre,
+  lienPersonne,
+  regrouperPostes,
+  type BilanPoste,
+  type FonctionGouvernementale,
+  type MembreGouvernement,
+} from './gouvernements';
 
 const poste = (
   uid: string,
@@ -122,5 +131,57 @@ describe('cumulerBilans', () => {
     expect(somme.premierMinistre?.listeMotions).toBeUndefined();
     expect(somme.textes).toBeNull();
     expect(somme.reponses).toEqual({ assemblee: 2, senat: 0 });
+  });
+});
+
+describe('lienPersonne', () => {
+  const p = { acteurUid: 'PA1', civilite: 'M.', prenom: 'Jean', nom: 'Dupont' };
+  it('mène à la fiche quand la personne en a une, sinon à sa page de membre', () => {
+    expect(lienPersonne({ ...p, slug: 'jean-dupont', parlementaire: { slug: 'jean-dupont-1', chambre: 'senat', photoUrl: null } })).toBe(
+      '/senateurs/jean-dupont-1',
+    );
+    expect(lienPersonne({ ...p, slug: 'jean-dupont', parlementaire: null })).toBe('/gouvernements/membres/jean-dupont');
+    // Réponse mise en cache avant la page des membres : pas de lien inventé.
+    expect(lienPersonne({ ...p, parlementaire: null })).toBeNull();
+  });
+});
+
+describe('fonctionsDuMembre', () => {
+  const membre: MembreGouvernement = {
+    slug: 'emmanuel-macron',
+    acteurUid: 'PA1',
+    civilite: 'M.',
+    prenom: 'Emmanuel',
+    nom: 'Macron',
+    parlementaire: null,
+    presidences: [{ uid: 'PO1', dateDebut: '2017-05-14', dateFin: null }],
+    postes: [
+      {
+        uid: 'PM1',
+        qualite: 'Ministre',
+        rangProtocolaire: 6,
+        intitule: 'Économie, industrie et numérique',
+        intituleCourt: 'Économie',
+        domaine: 'economie',
+        dateDebut: '2014-08-26',
+        dateFin: '2016-08-30',
+        gouvernement: { uid: 'PO2', slug: 'valls-2', nom: 'Valls II' },
+        bilan: null,
+      },
+    ],
+  };
+
+  it('fait des postes et des présidences les fonctions d’une frise, la présidence en cours en avant', () => {
+    const fonctions = fonctionsDuMembre(membre);
+    expect(fonctions.map((f) => [f.type, f.uid, f.membreSlug])).toEqual([
+      ['presidence', 'PO1', 'emmanuel-macron'],
+      ['poste_ministeriel', 'PM1', 'emmanuel-macron'],
+    ]);
+    expect(regrouperPostes(fonctions)).toHaveLength(2);
+    expect(fonctionEnCours(fonctions, null)?.titre).toBe('Président de la République');
+  });
+
+  it('accorde la présidence à la civilité', () => {
+    expect(fonctionsDuMembre({ ...membre, civilite: 'Mme' })[0]!.qualite).toBe('Présidente de la République');
   });
 });

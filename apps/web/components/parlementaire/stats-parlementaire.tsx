@@ -383,3 +383,19 @@ export function StatsParlementaire({
     </div>
   );
 }
+
+/**
+ * Le bilan au Gouvernement seul, avec les cartes de la rangée « Au
+ * gouvernement » d'une fiche : la page d'un membre sans fiche parlementaire.
+ */
+export function StatsGouvernement({ fonctions }: { fonctions: readonly FonctionGouvernementale[] }) {
+  const bilan = cumulerBilans(fonctions.filter((f) => f.type === 'poste_ministeriel').map((f) => f.bilan));
+  const cartes = bilan ? cartesGouvernement(bilan) : [];
+  if (cartes.length === 0) return null;
+  return (
+    <div className="mb-8">
+      <h2 className="mb-4 text-xl font-semibold">Bilan au Gouvernement</h2>
+      <Grille cartes={cartes} />
+    </div>
+  );
+}
