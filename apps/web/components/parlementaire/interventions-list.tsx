@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { Vote, Calendar, Loader2, ChevronDown, ArrowRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
+import { FilterBar } from '@/components/FilterBar';
 import {
   FiltreChambre,
   paramChambre,
@@ -16,7 +17,7 @@ import {
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { ExpandableText } from '@/components/ui/expandable-text';
 import { scrutinHref } from '@/lib/scrutin-url';
-import { grouperParSujet, libelleDeSeance, annoterOrdreDuJour } from '@/lib/debats';
+import { grouperParSujet, jourDeSeance, heureDeSeance, annoterOrdreDuJour } from '@/lib/debats';
 
 interface SeanceGroup {
   seanceId: string;
@@ -161,7 +162,15 @@ export function InterventionsList({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
+      <FilterBar
+        className=""
+        activeFilterCount={(dateRange.from || dateRange.to ? 1 : 0) + (chambreFiltre ? 1 : 0) + (typeFiltre ? 1 : 0)}
+        onClear={() => {
+          setDateRange({ from: null, to: null });
+          setChambreFiltre('');
+          setTypeFiltre('');
+        }}
+      >
         <DateRangePicker
           value={dateRange}
           onChange={setDateRange}
@@ -182,7 +191,7 @@ export function InterventionsList({
           <option value="explication_vote">Explications de vote</option>
           <option value="interruption">Interruptions en séance</option>
         </select>
-      </div>
+      </FilterBar>
 
       {typeFiltre === 'interruption' && (
         <p className="rounded-lg border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
@@ -210,46 +219,59 @@ export function InterventionsList({
             : 'Aucune intervention trouvée pour cette période.'}
         </p>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-3">
           {seances.map((seance, rang) => {
             // Les prises de parole ne portent que l'identifiant de leurs votes ;
             // le détail arrive une fois par séance.
             const scrutinsParId = new Map(seance.scrutins.map((s) => [s.id, s]));
             const ouverte = estOuverte(seance.seanceId, rang);
             const pageDeLaSeance = `/reunions/${encodeURIComponent(seance.seanceId)}`;
+            // Les textes dont l'élu a parlé, dans l'ordre de la séance : ce
+            // qu'on cherche avant de déplier.
+            const textes = Array.from(
+              new Map(
+                seance.interventions
+                  .filter((i) => i.dossier)
+                  .map((i) => [i.dossier!.uid, i.dossier!.titre] as const),
+              ).values(),
+            );
             return (
-            <div key={seance.seanceId} className="rounded-lg border bg-card overflow-hidden">
-              {/* En-tête de séance. Le bandeau gris plein a disparu : il
-                  empilait des blocs opaques là où une simple ligne de date
-                  suffit à séparer. Le titre mène à la séance entière — cette
-                  page n'existait pas quand ce composant a été écrit. */}
-              <div className="flex items-center gap-2 border-b px-4 py-3">
-                <button
-                  onClick={() => basculer(seance.seanceId, rang)}
-                  aria-expanded={ouverte}
-                  aria-label={ouverte ? 'Replier la séance' : 'Déplier la séance'}
-                  className="-ml-1 flex-shrink-0 rounded p-1 transition-colors hover:bg-muted"
-                >
-                  <ChevronDown
-                    className={`h-4 w-4 text-muted-foreground transition-transform ${ouverte ? '' : '-rotate-90'}`}
-                  />
-                </button>
-                <Calendar className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">
-                  <Link href={pageDeLaSeance} className="transition-colors hover:text-primary hover:underline">
-                    Séance du {libelleDeSeance(seance.date)}
-                  </Link>
-                </h3>
-                <span className="whitespace-nowrap text-xs text-muted-foreground">
-                  {seance.interventions.length} intervention{seance.interventions.length > 1 ? 's' : ''}
-                  {seance.scrutins.length > 0 && (
-                    <> · {seance.scrutins.length} vote{seance.scrutins.length > 1 ? 's' : ''}</>
+            <section key={seance.seanceId} className="rounded-lg border bg-card overflow-hidden">
+              {/* En-tête au modèle des blocs des onglets Votes et Amendements :
+                  la date sur toute la largeur, les compteurs dessous. Sur une
+                  ligne, les compteurs tronquaient la date à « Séance du lundi
+                  20 j… » sur un téléphone. */}
+              <button
+                type="button"
+                onClick={() => basculer(seance.seanceId, rang)}
+                aria-expanded={ouverte}
+                className="flex w-full items-start justify-between gap-3 p-4 text-left"
+              >
+                <div className="min-w-0 flex-1">
+                  <h3 className="flex items-start gap-2 font-medium leading-snug">
+                    <Calendar className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="line-clamp-2 first-letter:uppercase">{jourDeSeance(seance.date)}</span>
+                  </h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {heureDeSeance(seance.date) && <>{heureDeSeance(seance.date)} · </>}
+                    {seance.interventions.length} intervention{seance.interventions.length > 1 ? 's' : ''}
+                    {seance.scrutins.length > 0 && (
+                      <> · {seance.scrutins.length} vote{seance.scrutins.length > 1 ? 's' : ''}</>
+                    )}
+                  </p>
+                  {textes.length > 0 && (
+                    <p className="mt-1.5 text-xs leading-relaxed text-foreground/80 line-clamp-2">
+                      {textes.join(' · ')}
+                    </p>
                   )}
-                </span>
-              </div>
+                </div>
+                <ChevronDown
+                  className={`mt-0.5 h-5 w-5 flex-shrink-0 text-muted-foreground transition-transform ${ouverte ? 'rotate-180' : ''}`}
+                />
+              </button>
 
               {ouverte && (
-                <>
+                <div className="border-t">
 
                   {/* Interventions, groupées comme la séance les a menées :
                       une séance passe d'un texte à l'autre et d'un article au
@@ -267,7 +289,7 @@ export function InterventionsList({
                         {ouverture && (
                           <p
                             title={ouverture}
-                            className="border-l-2 border-primary/40 bg-primary/5 px-4 py-2 text-xs font-medium leading-relaxed text-foreground/80"
+                            className="mx-4 mt-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs font-medium leading-relaxed text-foreground/80"
                           >
                             {ouverture}
                           </p>
@@ -275,7 +297,7 @@ export function InterventionsList({
                         {(groupe.titre || groupe.scrutinIds.length > 0) && (
                           <div className="flex flex-wrap items-center justify-between gap-2 bg-muted/40 px-4 py-1.5">
                             {groupe.titre && (
-                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              <p className="text-xs font-semibold leading-snug text-muted-foreground">
                                 {/* Le texte renvoie à son dossier : c'est là qu'on
                                     lit ce dont il s'agit et où il en est. */}
                                 {groupe.dossier ? (
@@ -283,7 +305,7 @@ export function InterventionsList({
                                     <Link
                                       href={`/dossiers/${groupe.dossier.uid}`}
                                       title={groupe.dossier.titre}
-                                      className="inline-block max-w-[26rem] truncate align-bottom text-primary hover:underline"
+                                      className="text-primary hover:underline"
                                     >
                                       {groupe.dossier.titre}
                                     </Link>
@@ -376,9 +398,9 @@ export function InterventionsList({
                     <span>Voir la séance complète</span>
                     <ArrowRight className="h-3.5 w-3.5 flex-shrink-0" />
                   </Link>
-                </>
+                </div>
               )}
-            </div>
+            </section>
             );
           })}
 

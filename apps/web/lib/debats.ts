@@ -181,26 +181,37 @@ function libelleTexte(i: InterventionSituee): string | null {
  * et on n'annonce donc rien plutôt que « 0 heure ».
  */
 export function libelleDeSeance(date: string | Date): string {
+  const jour = jourDeSeance(date);
+  const heure = heureDeSeance(date);
+  return heure ? `${jour}, ${heure}` : jour;
+}
+
+/** « lundi 20 juillet 2026 » ; vide pour une date invalide. */
+export function jourDeSeance(date: string | Date): string {
   const quand = typeof date === 'string' ? new Date(date) : date;
   if (Number.isNaN(quand.getTime())) return '';
-
-  const jour = quand.toLocaleDateString('fr-FR', {
+  return quand.toLocaleDateString('fr-FR', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric',
     timeZone: 'UTC',
   });
+}
 
+/**
+ * « 21 h 30 », « 15 heures » ; vide à minuit pile, qui veut dire « heure
+ * inconnue ». Espaces insécables : l'heure ne se coupe pas en fin de ligne.
+ */
+export function heureDeSeance(date: string | Date): string {
+  const quand = typeof date === 'string' ? new Date(date) : date;
+  if (Number.isNaN(quand.getTime())) return '';
   const heures = quand.getUTCHours();
   const minutes = quand.getUTCMinutes();
-  if (heures === 0 && minutes === 0) return jour;
-
-  const heure =
-    minutes === 0
-      ? `${heures} heure${heures > 1 ? 's' : ''}`
-      : `${heures} h ${String(minutes).padStart(2, '0')}`;
-  return `${jour}, ${heure}`;
+  if (heures === 0 && minutes === 0) return '';
+  return minutes === 0
+    ? `${heures}\u00a0heure${heures > 1 ? 's' : ''}`
+    : `${heures}\u00a0h\u00a0${String(minutes).padStart(2, '0')}`;
 }
 
 /**
