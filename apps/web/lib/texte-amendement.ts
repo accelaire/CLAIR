@@ -38,7 +38,11 @@ export function nettoyerTexteAmendement(texte: string): string {
  * nettoyé ensuite. Un renvoi qui ne tombe pas dans le texte, ou en chevauche
  * un autre, est ignoré.
  */
-export function segmenterTexteAmendement(texte: string, renvois: RenvoiDispositif[] = []): SegmentTexte[] {
+export function segmenterTexteAmendement(
+  texte: string,
+  renvois: RenvoiDispositif[] = [],
+  { compact = false }: { compact?: boolean } = {},
+): SegmentTexte[] {
   const bruts: SegmentTexte[] = [];
   let curseur = 0;
   for (const r of [...renvois].sort((a, b) => a.debut - b.debut)) {
@@ -49,7 +53,12 @@ export function segmenterTexteAmendement(texte: string, renvois: RenvoiDispositi
   }
   if (curseur < texte.length) bruts.push({ texte: texte.slice(curseur) });
 
-  const segments = bruts.map((s) => ({ ...s, texte: nettoyerTexteAmendement(s.texte) }));
+  // Compact (carte repliée, coupée à trois lignes) : sans les lignes vides
+  // entre paragraphes, qui prenaient une des trois lignes pour rien.
+  const segments = bruts.map((s) => {
+    const net = nettoyerTexteAmendement(s.texte);
+    return { ...s, texte: compact ? net.replace(/\n\s*\n/g, '\n') : net };
+  });
   if (segments.length > 0) {
     segments[0]!.texte = segments[0]!.texte.trimStart();
     segments[segments.length - 1]!.texte = segments[segments.length - 1]!.texte.trimEnd();

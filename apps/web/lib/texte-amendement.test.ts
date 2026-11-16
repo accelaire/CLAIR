@@ -48,4 +48,12 @@ describe('segmenterTexteAmendement', () => {
     expect(segments.filter((s) => s.renvoi)).toHaveLength(1);
     expect(segments.map((s) => s.texte).join('')).toBe(texte.trim());
   });
+
+  it('compact : retire les lignes vides, garde les retours à la ligne et les renvois', () => {
+    const brut = 'Rétablir cet article :\n\n \nL’article 4 est abrogé.\nFin.';
+    const debut = brut.indexOf('L’article 4');
+    const segments = segmenterTexteAmendement(brut, [renvoi(debut, debut + 'L’article 4'.length)], { compact: true });
+    expect(segments.map((s) => s.texte)).toEqual(['Rétablir cet article :\n', 'L’article 4', ' est abrogé.\nFin.']);
+    expect(segments[1]!.renvoi).toBeDefined();
+  });
 });

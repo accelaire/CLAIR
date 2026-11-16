@@ -7,6 +7,8 @@ interface TexteAmendementProps {
   /** Renvois au droit en vigueur, en positions dans `texte` (dispositif seulement). */
   renvois?: RenvoiDispositif[];
   className?: string;
+  /** Sans lignes vides : pour un texte coupé à quelques lignes. */
+  compact?: boolean;
 }
 
 const TITRE_LIEN = "Sur Légifrance, dans la version en vigueur au dépôt de l'amendement";
@@ -16,8 +18,8 @@ const TITRE_LIEN = "Sur Légifrance, dans la version en vigueur au dépôt de l'
  * gardés. Les articles et textes de loi cités par le dispositif mènent à
  * Légifrance.
  */
-export function TexteAmendement({ texte, renvois, className }: TexteAmendementProps) {
-  const segments = segmenterTexteAmendement(texte, renvois);
+export function TexteAmendement({ texte, renvois, className, compact }: TexteAmendementProps) {
+  const segments = segmenterTexteAmendement(texte, renvois, { compact });
   return (
     <p className={`whitespace-pre-line break-words ${className ?? ''}`}>
       {segments.map((s, i) =>

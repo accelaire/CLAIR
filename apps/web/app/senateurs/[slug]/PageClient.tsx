@@ -3,9 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
-import { AmendementSortBadge } from '@/components/AmendementSortBadge';
-import { DiscussionsEtSousAmendements, SousAmendementDe } from '@/components/AmendementSeance';
-import { amendementHref, libelleAlinea, type MetadonneesAmendement } from '@/lib/amendements';
+import { type MetadonneesAmendement } from '@/lib/amendements';
 import { FicheCompareCallout } from '@/components/FicheCompareCallout';
 import { bilanMandats, fonctionParlementaire, mentionFinDeMandat } from '@/lib/meta-parlementaire';
 import { StatsParlementaire } from '@/components/parlementaire/stats-parlementaire';
@@ -25,7 +23,6 @@ import {
   Mail,
   Globe,
   Vote,
-  FileText,
   ArrowLeft,
   ThumbsUp,
   ThumbsDown,
@@ -56,8 +53,8 @@ import {
   type ParcoursFiche,
 } from '@/components/parlementaire/filtre-chambre';
 import { SiegeRenouvelableCallout } from '@/components/SiegeRenouvelableCallout';
-import { TexteAmendement } from '@/components/TexteAmendement';
 import type { RenvoiDispositif } from '@/lib/texte-amendement';
+import { ExpandableAmendementCard } from '@/components/ExpandableAmendementCard';
 
 export interface SenateurDetail {
   id: string;
@@ -208,135 +205,6 @@ interface AmendementItem extends MetadonneesAmendement {
     titre: string;
     titreCourt: string | null;
   } | null;
-}
-
-/** Formate un titreCourt slug-like en texte lisible, sinon fallback sur titre */
-function formatDossierLabel(dossier: { titre: string; titreCourt: string | null }): string {
-  const short = dossier.titreCourt;
-  if (!short) return dossier.titre;
-  // UID technique → fallback titre
-  if (/^[A-Z0-9]{5,}/.test(short)) return dossier.titre;
-  // Slug avec underscores → humanize
-  if (short.includes('_')) {
-    const humanized = short.replace(/_/g, ' ').replace(/\d+e?$/, '').trim();
-    return humanized.charAt(0).toUpperCase() + humanized.slice(1);
-  }
-  return short;
-}
-
-function ExpandableAmendementCard({ amendement }: { amendement: AmendementItem }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  const hasLongContent =
-    (amendement.exposeSommaire && amendement.exposeSommaire.length > 200) ||
-    amendement.dispositif;
-
-  return (
-    <div className="rounded-lg border bg-card p-4">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="font-mono text-sm font-medium">
-              {amendement.numero}
-            </span>
-            {(amendement.articleVise || libelleAlinea(amendement)) && (
-              <span className="text-sm text-muted-foreground">
-                • {[amendement.articleVise, libelleAlinea(amendement)].filter(Boolean).join(', ')}
-              </span>
-            )}
-          </div>
-          <SousAmendementDe amendement={amendement} dossierUid={amendement.dossier?.uid} />
-
-          {/* Exposé sommaire */}
-          {amendement.exposeSommaire && (
-            <div className="mb-2">
-              <p className={`text-sm leading-relaxed ${!isExpanded ? 'line-clamp-3' : ''}`}>
-                {amendement.exposeSommaire}
-              </p>
-            </div>
-          )}
-
-          {/* Dispositif (visible uniquement si expanded) */}
-          {isExpanded && amendement.dispositif && (
-            <div className="mt-3 rounded bg-muted/50 p-3">
-              <p className="text-xs font-medium text-muted-foreground mb-1">Dispositif :</p>
-              <TexteAmendement
-                texte={amendement.dispositif}
-                renvois={amendement.renvois}
-                className="text-sm leading-relaxed"
-              />
-            </div>
-          )}
-
-          {/* Sous le texte qu'il déplie, comme sur les cartes des dossiers. */}
-          {hasLongContent && (
-            <button
-              type="button"
-              onClick={() => setIsExpanded(!isExpanded)}
-              aria-expanded={isExpanded}
-              className="mt-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-            >
-              {isExpanded ? (
-                <>
-                  <ChevronUp className="h-3 w-3" />
-                  Réduire
-                </>
-              ) : (
-                <>
-                  <ChevronDown className="h-3 w-3" />
-                  Voir plus
-                </>
-              )}
-            </button>
-          )}
-
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mt-2">
-            {amendement.dateDepot && (
-              <span>
-                Déposé le {new Date(amendement.dateDepot).toLocaleDateString('fr-FR', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                })}
-              </span>
-            )}
-            {amendement.texteRef && (
-              <>
-                <span>•</span>
-                <span className="font-mono">{amendement.texteRef}</span>
-              </>
-            )}
-          </div>
-          <DiscussionsEtSousAmendements amendement={amendement} dossierUid={amendement.dossier?.uid} />
-        </div>
-        <AmendementSortBadge sort={amendement.sort} />
-      </div>
-
-      {/* Liens dossier / scrutin */}
-      {(amendement.dossier || amendement.scrutins.length > 0) && (
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          {amendement.dossier && (
-            <Link
-              href={amendementHref(amendement.dossier.uid, amendement.uid)}
-              className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 hover:underline bg-blue-50 px-2.5 py-1 rounded-md transition-colors"
-            >
-              <FileText className="h-3 w-3" />
-              <span className="line-clamp-1">{formatDossierLabel(amendement.dossier)}</span>
-            </Link>
-          )}
-          {amendement.scrutins && amendement.scrutins.length > 0 && (
-            <Link
-              href={scrutinHref(amendement.scrutins[0])}
-              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-            >
-              <Vote className="h-3 w-3" />
-              Voir le scrutin n°{amendement.scrutins[0].numero} →
-            </Link>
-          )}
-        </div>
-      )}
-    </div>
-  );
 }
 
 function AmendementsList({ slug, parcours }: { slug: string; parcours: ParcoursFiche }) {

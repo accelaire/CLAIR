@@ -3,6 +3,7 @@
 import { ReactNode, useState } from 'react';
 import { SlidersHorizontal, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { DateRangePickerEnLigne } from '@/components/DateRangePicker';
 
 interface FilterBarProps {
   search: ReactNode;
@@ -100,7 +101,7 @@ export function FilterBar({ search, children, activeFilterCount = 0, onClear }: 
 
               {/* Filter content — date dropdown rendered inline so the sheet can scroll */}
               <div className="flex-1 space-y-4 overflow-y-auto p-6 pb-2 [&_[data-date-dropdown]]:static [&_[data-date-dropdown]]:shadow-none [&_[data-date-dropdown]]:border-0 [&_[data-date-dropdown]]:mt-2 [&_[data-multiselect-dropdown]]:static [&_[data-multiselect-dropdown]]:shadow-none [&_[data-multiselect-dropdown]]:border-0 [&_[data-multiselect-dropdown]]:mt-2">
-                {children}
+                <DateRangePickerEnLigne.Provider value={true}>{children}</DateRangePickerEnLigne.Provider>
               </div>
 
               {/* Apply button */}

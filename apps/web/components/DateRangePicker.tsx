@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { createContext, useContext, useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Calendar, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { PeriodePreset } from '@/lib/periodes';
 
@@ -46,6 +47,19 @@ export interface DateRangePickerProps {
    */
   onPeriodSelect?: (periode: PeriodePreset) => void;
 }
+
+/**
+ * Vrai quand le sélecteur est déjà dans un panneau (la feuille « Filtres » de
+ * `FilterBar` sur mobile) : il s'y déplie en place au lieu d'ouvrir son propre
+ * panneau par-dessus.
+ */
+export const DateRangePickerEnLigne = createContext(false);
+
+/** Sous `sm` (640 px), le calendrier s'ouvre en panneau bas, pleine largeur. */
+const REQUETE_MOBILE = '(max-width: 639px)';
+
+/** Marge gardée entre le menu déroulant et le bord de l'écran. */
+const MARGE_ECRAN = 8;
 
 interface PresetOption {
   label: string;
@@ -152,6 +166,47 @@ export function DateRangePicker({
   const [tempFrom, setTempFrom] = useState<Date | null>(value.from);
   const [tempTo, setTempTo] = useState<Date | null>(value.to);
   const containerRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const enLigne = useContext(DateRangePickerEnLigne);
+  const [mobile, setMobile] = useState(false);
+  // Le menu s'ancre au bord droit du bouton, ou au gauche quand il sortirait
+  // de l'écran de ce côté (bouton en début de ligne).
+  const [alignement, setAlignement] = useState<'gauche' | 'droite'>('droite');
+  // Sur mobile, hors d'un panneau qui l'accueille déjà : panneau bas.
+  const panneau = mobile && !enLigne;
+
+  useEffect(() => {
+    const mq = window.matchMedia(REQUETE_MOBILE);
+    const maj = () => setMobile(mq.matches);
+    maj();
+    mq.addEventListener('change', maj);
+    return () => mq.removeEventListener('change', maj);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isOpen || panneau) return;
+    const bouton = containerRef.current?.getBoundingClientRect();
+    const largeur = dropdownRef.current?.offsetWidth;
+    if (!bouton || !largeur) return;
+    const debordeAGauche = bouton.right - largeur < MARGE_ECRAN;
+    const tientAGauche = bouton.left + largeur <= window.innerWidth - MARGE_ECRAN;
+    setAlignement(debordeAGauche && tientAGauche ? 'gauche' : 'droite');
+  }, [isOpen, panneau]);
+
+  // Échap ferme ; le panneau bas bloque le défilement de la page dessous.
+  useEffect(() => {
+    if (!isOpen) return;
+    const surTouche = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
+    document.addEventListener('keydown', surTouche);
+    const overflowAvant = document.body.style.overflow;
+    if (panneau) document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', surTouche);
+      if (panneau) document.body.style.overflow = overflowAvant;
+    };
+  }, [isOpen, panneau]);
 
   const today = useMemo(() => startOfDay(new Date()), []);
   const effectiveMax = useMemo(
@@ -165,12 +220,12 @@ export function DateRangePicker({
   // Raccourcis « par année » : depuis le début du mandat si connu, sinon 3 ans récents.
   const yearPresetMinYear = minDate ? minDate.getFullYear() : maxYear - 2;
 
-  // Close on outside click
+  // Close on outside click (le panneau bas est rendu hors du conteneur)
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
+      const cible = event.target as Node;
+      if (containerRef.current?.contains(cible) || dropdownRef.current?.contains(cible)) return;
+      setIsOpen(false);
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -349,6 +404,213 @@ export function DateRangePicker({
     return null;
   }, [value, startLabel, minDate, effectiveMax, activePeriod]);
 
+  // Sur mobile, les raccourcis passent en puces au-dessus du calendrier : côte
+  // à côte, raccourcis et calendrier dépassaient de l'écran.
+  const classeRaccourci = (actif = false) =>
+    mobile
+      ? `inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+          actif ? 'border-primary/30 bg-primary/10 text-primary font-medium' : 'hover:bg-muted'
+        }`
+      : `flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm rounded hover:bg-muted transition-colors ${
+          actif ? 'bg-primary/10 text-primary font-medium' : ''
+        }`;
+  const classeIntertitre = (premier = false) =>
+    mobile
+      ? 'mb-1.5 px-2 text-xs font-medium text-muted-foreground'
+      : `text-xs font-medium text-muted-foreground px-2 py-1 mb-1 ${premier ? '' : 'mt-2 border-t pt-2'}`;
+  const classeGroupe = mobile ? 'flex flex-wrap gap-2 px-2' : '';
+
+  const raccourcis = showPresets && (
+    <div
+      className={
+        mobile ? 'space-y-3' : 'border-r bg-muted/30 p-2 min-w-[175px] max-h-[340px] overflow-y-auto'
+      }
+    >
+      <div>
+        <div className={classeIntertitre(true)}>Raccourcis</div>
+        <div className={classeGroupe}>
+          {quickPresets.map((preset) => (
+            <button
+              key={preset.label}
+              type="button"
+              onClick={() => handlePresetClick(preset)}
+              className={classeRaccourci()}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {periodGroups.map(([groupe, periodes]) => (
+        <div key={groupe}>
+          <div className={classeIntertitre()}>{groupe}</div>
+          <div className={classeGroupe}>
+            {periodes.map((periode) => (
+              <button
+                key={periode.key}
+                type="button"
+                onClick={() => {
+                  if (onPeriodSelect) onPeriodSelect(periode);
+                  else onChange({ from: periode.from, to: periode.to });
+                  setIsOpen(false);
+                }}
+                className={classeRaccourci(activePeriod?.key === periode.key)}
+              >
+                <span className="truncate">{periode.label}</span>
+                <span className="text-xs text-muted-foreground flex-shrink-0">
+                  {periode.count.toLocaleString('fr-FR')}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      {yearPresets.length > 0 && (
+        <div>
+          <div className={classeIntertitre()}>Par année</div>
+          <div className={classeGroupe}>
+            {yearPresets.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => handlePresetClick(preset)}
+                className={classeRaccourci()}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // Cases de 40 px sur mobile, à la taille du doigt ; 32 px à la souris.
+  const tailleCase = mobile ? 'h-10 w-full' : 'h-8 w-8';
+
+  const calendrier = (
+    <div className={mobile ? 'border-t px-2 pt-3' : 'p-3'}>
+      {mobile && <div className="mb-2 text-xs font-medium text-muted-foreground">Ou choisir les dates</div>}
+      {/* Header with selection state */}
+      <div className="flex items-center gap-2 mb-3 text-sm">
+        <button
+          type="button"
+          className={`flex-1 px-3 py-1.5 rounded border text-center transition-colors ${
+            selecting === 'from'
+              ? 'border-primary bg-primary/10 text-primary'
+              : 'border-transparent hover:bg-muted'
+          }`}
+          onClick={() => setSelecting('from')}
+        >
+          {tempFrom ? formatDay(tempFrom) : 'Début'}
+        </button>
+        <span className="text-muted-foreground">→</span>
+        <button
+          type="button"
+          className={`flex-1 px-3 py-1.5 rounded border text-center transition-colors ${
+            selecting === 'to'
+              ? 'border-primary bg-primary/10 text-primary'
+              : 'border-transparent hover:bg-muted'
+          }`}
+          onClick={() => setSelecting('to')}
+        >
+          {tempTo ? formatDay(tempTo) : 'Fin'}
+        </button>
+      </div>
+
+      {/* Month / year navigation */}
+      <div className="flex items-center justify-between gap-1 mb-3">
+        <button
+          type="button"
+          onClick={prevMonth}
+          disabled={!canPrev}
+          aria-label="Mois précédent"
+          className="p-1 hover:bg-muted rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <div className="flex items-center gap-1">
+          <select
+            value={viewDate.getMonth()}
+            onChange={(e) => clampView(viewDate.getFullYear(), Number(e.target.value))}
+            className="text-sm font-medium bg-transparent rounded px-1 py-0.5 hover:bg-muted focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+            aria-label="Mois"
+          >
+            {MONTHS_FR.map((m, i) => (
+              <option key={m} value={i}>{m}</option>
+            ))}
+          </select>
+          <select
+            value={viewDate.getFullYear()}
+            onChange={(e) => clampView(Number(e.target.value), viewDate.getMonth())}
+            className="text-sm font-medium bg-transparent rounded px-1 py-0.5 hover:bg-muted focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+            aria-label="Année"
+          >
+            {yearOptions.map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="button"
+          onClick={nextMonth}
+          disabled={!canNext}
+          aria-label="Mois suivant"
+          className="p-1 hover:bg-muted rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Day names */}
+      <div className="grid grid-cols-7 gap-1 mb-1">
+        {DAYS_FR.map((day) => (
+          <div
+            key={day}
+            className={`${tailleCase} flex items-center justify-center text-xs font-medium text-muted-foreground`}
+          >
+            {day}
+          </div>
+        ))}
+      </div>
+
+      {/* Days grid */}
+      <div className="grid grid-cols-7 gap-1">
+        {days.map((day, i) => {
+          const isCurrentMonth = day.getMonth() === viewDate.getMonth();
+          const isFuture = startOfDay(day) > effectiveMax;
+          const isDisabled = !isCurrentMonth || isFuture;
+          const isToday = isSameDay(day, today);
+          const isSelected = isSameDay(day, tempFrom) || isSameDay(day, tempTo);
+          const isRangeStart = isSameDay(day, tempFrom);
+          const isRangeEnd = isSameDay(day, tempTo);
+          const inRange = isInRange(day, tempFrom, tempTo);
+
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => handleDayClick(day)}
+              disabled={isDisabled}
+              className={`
+                ${tailleCase} flex items-center justify-center text-sm rounded transition-colors
+                ${isDisabled ? 'text-muted-foreground/30 cursor-default' : 'hover:bg-muted'}
+                ${isToday && !isSelected ? 'font-bold text-primary' : ''}
+                ${isSelected ? 'bg-primary text-primary-foreground font-medium' : ''}
+                ${inRange && !isSelected ? 'bg-primary/10' : ''}
+                ${isRangeStart && tempTo ? 'rounded-r-none' : ''}
+                ${isRangeEnd && tempFrom ? 'rounded-l-none' : ''}
+                ${inRange && !isRangeStart && !isRangeEnd ? 'rounded-none' : ''}
+              `}
+            >
+              {day.getDate()}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   return (
     <div className="relative" ref={containerRef}>
       {/* Trigger button */}
@@ -390,191 +652,59 @@ export function DateRangePicker({
         )}
       </button>
 
-      {/* Dropdown */}
-      {isOpen && (
-        <div data-date-dropdown className="absolute top-full right-0 mt-2 z-50 rounded-lg border bg-background shadow-lg overflow-hidden">
-          <div className="flex">
-            {/* Presets */}
-            {showPresets && (
-              <div className="border-r bg-muted/30 p-2 min-w-[175px] max-h-[340px] overflow-y-auto">
-                <div className="text-xs font-medium text-muted-foreground px-2 py-1 mb-1">
-                  Raccourcis
-                </div>
-                {quickPresets.map((preset) => (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() => handlePresetClick(preset)}
-                    className="block w-full text-left px-3 py-1.5 text-sm rounded hover:bg-muted transition-colors"
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-                {periodGroups.map(([groupe, periodes]) => (
-                  <div key={groupe}>
-                    <div className="text-xs font-medium text-muted-foreground px-2 py-1 mb-1 mt-2 border-t pt-2">
-                      {groupe}
-                    </div>
-                    {periodes.map((periode) => (
-                      <button
-                        key={periode.key}
-                        type="button"
-                        onClick={() => {
-                          if (onPeriodSelect) onPeriodSelect(periode);
-                          else onChange({ from: periode.from, to: periode.to });
-                          setIsOpen(false);
-                        }}
-                        className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-sm rounded hover:bg-muted transition-colors ${
-                          activePeriod?.key === periode.key ? 'bg-primary/10 text-primary font-medium' : ''
-                        }`}
-                      >
-                        <span className="truncate">{periode.label}</span>
-                        <span className="text-xs text-muted-foreground flex-shrink-0">
-                          {periode.count.toLocaleString('fr-FR')}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                ))}
-                {yearPresets.length > 0 && (
-                  <>
-                    <div className="text-xs font-medium text-muted-foreground px-2 py-1 mb-1 mt-2 border-t pt-2">
-                      Par année
-                    </div>
-                    {yearPresets.map((preset) => (
-                      <button
-                        key={preset.label}
-                        type="button"
-                        onClick={() => handlePresetClick(preset)}
-                        className="block w-full text-left px-3 py-1.5 text-sm rounded hover:bg-muted transition-colors"
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* Calendar */}
-            <div className="p-3">
-              {/* Header with selection state */}
-              <div className="flex items-center gap-2 mb-3 text-sm">
-                <div
-                  className={`flex-1 px-3 py-1.5 rounded border text-center cursor-pointer transition-colors ${
-                    selecting === 'from'
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-transparent hover:bg-muted'
-                  }`}
-                  onClick={() => setSelecting('from')}
-                >
-                  {tempFrom ? formatDay(tempFrom) : 'Début'}
-                </div>
-                <span className="text-muted-foreground">→</span>
-                <div
-                  className={`flex-1 px-3 py-1.5 rounded border text-center cursor-pointer transition-colors ${
-                    selecting === 'to'
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-transparent hover:bg-muted'
-                  }`}
-                  onClick={() => setSelecting('to')}
-                >
-                  {tempTo ? formatDay(tempTo) : 'Fin'}
-                </div>
-              </div>
-
-              {/* Month / year navigation */}
-              <div className="flex items-center justify-between gap-1 mb-3">
-                <button
-                  type="button"
-                  onClick={prevMonth}
-                  disabled={!canPrev}
-                  className="p-1 hover:bg-muted rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <div className="flex items-center gap-1">
-                  <select
-                    value={viewDate.getMonth()}
-                    onChange={(e) => clampView(viewDate.getFullYear(), Number(e.target.value))}
-                    className="text-sm font-medium bg-transparent rounded px-1 py-0.5 hover:bg-muted focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-                    aria-label="Mois"
-                  >
-                    {MONTHS_FR.map((m, i) => (
-                      <option key={m} value={i}>{m}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={viewDate.getFullYear()}
-                    onChange={(e) => clampView(Number(e.target.value), viewDate.getMonth())}
-                    className="text-sm font-medium bg-transparent rounded px-1 py-0.5 hover:bg-muted focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
-                    aria-label="Année"
-                  >
-                    {yearOptions.map((y) => (
-                      <option key={y} value={y}>{y}</option>
-                    ))}
-                  </select>
-                </div>
-                <button
-                  type="button"
-                  onClick={nextMonth}
-                  disabled={!canNext}
-                  className="p-1 hover:bg-muted rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-
-              {/* Day names */}
-              <div className="grid grid-cols-7 gap-1 mb-1">
-                {DAYS_FR.map((day) => (
-                  <div
-                    key={day}
-                    className="h-8 w-8 flex items-center justify-center text-xs font-medium text-muted-foreground"
-                  >
-                    {day}
-                  </div>
-                ))}
-              </div>
-
-              {/* Days grid */}
-              <div className="grid grid-cols-7 gap-1">
-                {days.map((day, i) => {
-                  const isCurrentMonth = day.getMonth() === viewDate.getMonth();
-                  const isFuture = startOfDay(day) > effectiveMax;
-                  const isDisabled = !isCurrentMonth || isFuture;
-                  const isToday = isSameDay(day, today);
-                  const isSelected = isSameDay(day, tempFrom) || isSameDay(day, tempTo);
-                  const isRangeStart = isSameDay(day, tempFrom);
-                  const isRangeEnd = isSameDay(day, tempTo);
-                  const inRange = isInRange(day, tempFrom, tempTo);
-
-                  return (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => handleDayClick(day)}
-                      disabled={isDisabled}
-                      className={`
-                        h-8 w-8 flex items-center justify-center text-sm rounded transition-colors
-                        ${isDisabled ? 'text-muted-foreground/30 cursor-default' : 'hover:bg-muted'}
-                        ${isToday && !isSelected ? 'font-bold text-primary' : ''}
-                        ${isSelected ? 'bg-primary text-primary-foreground font-medium' : ''}
-                        ${inRange && !isSelected ? 'bg-primary/10' : ''}
-                        ${isRangeStart && tempTo ? 'rounded-r-none' : ''}
-                        ${isRangeEnd && tempFrom ? 'rounded-l-none' : ''}
-                        ${inRange && !isRangeStart && !isRangeEnd ? 'rounded-none' : ''}
-                      `}
-                    >
-                      {day.getDate()}
-                    </button>
-                  );
-                })}
-              </div>
+      {isOpen && !panneau && (
+        <div
+          ref={dropdownRef}
+          data-date-dropdown
+          className={`absolute top-full mt-2 z-50 rounded-lg border bg-background shadow-lg overflow-hidden ${
+            alignement === 'gauche' ? 'left-0' : 'right-0'
+          }`}
+        >
+          {mobile ? (
+            // Dans la feuille « Filtres » sur mobile : empilé, pleine largeur.
+            <div className="space-y-3 py-2">
+              {raccourcis}
+              {calendrier}
             </div>
-          </div>
+          ) : (
+            <div className="flex">
+              {raccourcis}
+              {calendrier}
+            </div>
+          )}
         </div>
       )}
+
+      {isOpen && panneau &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-50 bg-black/50" aria-hidden="true" />
+            <div
+              ref={dropdownRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Choisir une période"
+              className="fixed inset-x-0 bottom-0 z-50 flex max-h-[85dvh] flex-col rounded-t-2xl bg-background shadow-xl"
+            >
+              <div className="flex items-center justify-between border-b px-4 py-3">
+                <h3 className="text-base font-semibold">Période</h3>
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  aria-label="Fermer"
+                  className="rounded-full p-1.5 hover:bg-muted transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="flex-1 space-y-3 overflow-y-auto overscroll-contain px-2 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                {raccourcis}
+                {calendrier}
+              </div>
+            </div>
+          </>,
+          document.body
+        )}
     </div>
   );
 }
