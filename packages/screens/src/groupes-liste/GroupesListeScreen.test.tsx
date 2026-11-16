@@ -49,6 +49,21 @@ describe("GroupesListeScreen", () => {
     );
   });
 
+  it("montre le logo d'un groupe, décoratif, quand l'API en donne un", () => {
+    const logoUrl = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
+    const { getByRole } = renderScreen(
+      <GroupesListeScreen
+        initialData={groupesExemple([{ ...groupeExemple, logoUrl }, groupeExempleBis])}
+      />,
+      { routes: routes(), pathname: "/groupes" },
+    );
+    const cartes = within(getByRole("list", { name: "Groupes, Assemblée nationale" }));
+    const lien = cartes.getByRole("link", { name: "Groupe d'exemple" });
+    expect(lien.querySelector("img")).toHaveAttribute("src", logoUrl);
+    expect(lien.querySelector("img")).toHaveAttribute("alt", "");
+    expect(cartes.getByRole("link", { name: /Groupe bis/ }).querySelector("img")).toBeNull();
+  });
+
   it("reprend les données du serveur sans attendre", () => {
     const { getByRole } = renderScreen(<GroupesListeScreen initialData={groupesExemple()} />, {
       routes: routes(),

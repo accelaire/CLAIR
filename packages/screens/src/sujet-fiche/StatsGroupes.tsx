@@ -3,6 +3,7 @@
 import { useApiQuery } from "@clair/api-client";
 import type { SujetDossier, SujetStatsGroupe, SujetStatsResponse } from "@clair/data";
 import {
+  Button,
   ChambreBadge,
   ChambreSwitch,
   type ChambreSwitchValue,
@@ -14,6 +15,7 @@ import {
   ProvenanceLabel,
   SortSelect,
 } from "@clair/ui";
+import { useId, useState } from "react";
 import type { TriGroupes } from "./params.ts";
 import classes from "./SujetFicheScreen.module.css";
 
@@ -22,6 +24,9 @@ const TRIS: { value: TriGroupes; label: string }[] = [
   { value: "votes", label: "Par votes" },
   { value: "chambre", label: "Par chambre" },
 ];
+
+/** Groupes montrés d'abord ; les autres derrière « Afficher » (apps/web : cadre de 600 px). */
+const GROUPES_VISIBLES = 6;
 
 const totalVotes = ({ votes }: SujetStatsGroupe) =>
   votes.pour + votes.contre + votes.abstention + votes.absent;
@@ -47,6 +52,8 @@ type StatsGroupesProps = {
  * de sa chambre.
  */
 export const StatsGroupes = ({ slug, dossiers, chambre, tri, onChange }: StatsGroupesProps) => {
+  const [tous, setTous] = useState(false);
+  const listeId = useId();
   const { data, isPending, isError, refetch } = useApiQuery<SujetStatsResponse>(
     `/sujets/${encodeURIComponent(slug)}/stats`,
   );
@@ -55,6 +62,9 @@ export const StatsGroupes = ({ slug, dossiers, chambre, tri, onChange }: StatsGr
     (data?.data ?? []).filter((g) => chambre === "" || g.chambre === chambre),
     tri,
   );
+
+  const visibles = tous ? groupes : groupes.slice(0, GROUPES_VISIBLES);
+  const caches = groupes.length - GROUPES_VISIBLES;
 
   return (
     <section className={classes.panel} aria-labelledby="groupes-sujet">
@@ -90,8 +100,8 @@ export const StatsGroupes = ({ slug, dossiers, chambre, tri, onChange }: StatsGr
       ) : null}
       {data && groupes.length === 0 ? <EmptyState title="Aucune statistique disponible" /> : null}
       {groupes.length > 0 ? (
-        <ul className={classes.rows}>
-          {groupes.map((groupe) => {
+        <ul id={listeId} className={classes.rows}>
+          {visibles.map((groupe) => {
             const cle = `${groupe.slug}-${groupe.chambre}`;
             const dossier =
               groupe.amendements > 0
@@ -123,6 +133,22 @@ export const StatsGroupes = ({ slug, dossiers, chambre, tri, onChange }: StatsGr
             );
           })}
         </ul>
+      ) : null}
+      {caches > 0 ? (
+        <div className={classes.more}>
+          <Button
+            variant="secondaire"
+            aria-expanded={tous}
+            aria-controls={listeId}
+            onClick={() => setTous((valeur) => !valeur)}
+          >
+            {tous
+              ? "Réduire la liste des groupes"
+              : caches > 1
+                ? `Afficher les ${caches} autres groupes`
+                : "Afficher l'autre groupe"}
+          </Button>
+        </div>
       ) : null}
       {Object.keys(descriptions).length > 0 ? (
         <p className={classes.mention}>

@@ -19,17 +19,17 @@ export const suivreUnSujet: GuideArticle = {
     {
       title: "Suivre son parcours",
       description:
-        "La chronologie législative montre où en est le texte : dépôt, examen à l'Assemblée nationale et au Sénat, adoption ou rejet, puis promulgation.",
+        "La frise du parcours, de haut en bas, montre où en est le texte : dépôt, examen à l'Assemblée nationale et au Sénat, adoption ou rejet, puis promulgation. Sous chaque étape, les séances et réunions qui s'y sont tenues, avec leurs votes à déplier.",
     },
     {
       title: "Voir qui a voté quoi",
       description:
-        "Les scrutins liés et les statistiques par groupe politique montrent comment chaque camp s'est positionné, à l'Assemblée comme au Sénat.",
+        "La liste des scrutins liés se filtre par chambre et par objet du vote. Le bloc « Groupes politiques » montre comment chaque groupe s'est positionné, à l'Assemblée comme au Sénat, et se trie par amendements, par votes ou par chambre.",
     },
     {
       title: "Remonter à la source",
       description:
-        "Les liens vers Légifrance et les dossiers officiels de l'Assemblée et du Sénat permettent de vérifier chaque information directement à la source.",
+        "Les liens vers Légifrance et les dossiers officiels de l'Assemblée et du Sénat, puis les documents officiels du texte, permettent de vérifier chaque information directement à la source.",
     },
   ],
   start: { label: "Voir les sujets", href: "/sujets" },

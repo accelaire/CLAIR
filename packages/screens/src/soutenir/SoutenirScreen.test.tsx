@@ -32,6 +32,16 @@ describe("SoutenirScreen", () => {
     );
   });
 
+  it("présente les quatre personnes derrière le projet, LinkedIn seulement quand il existe", () => {
+    const { getByRole, getAllByRole, queryByRole } = renderScreen(<SoutenirScreen />);
+    expect(getByRole("img", { name: "Victor, contributeur CLAIR" })).toHaveAttribute(
+      "src",
+      "/images/victor.jpg",
+    );
+    expect(getAllByRole("link", { name: /^LinkedIn de / })).toHaveLength(3);
+    expect(queryByRole("link", { name: "LinkedIn de Victor" })).toBeNull();
+  });
+
   it("reste utilisable sans les chiffres (API indisponible)", () => {
     const { queryByRole, queryByText, getByRole } = renderScreen(<SoutenirScreen />);
     expect(queryByRole("heading", { name: "Ce que vous trouvez déjà sur CLAIR" })).toBeNull();

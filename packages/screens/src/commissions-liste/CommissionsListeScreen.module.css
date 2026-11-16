@@ -40,6 +40,57 @@
   color: var(--clair-texte-titre);
 }
 
+/* Sommaire des types d'organes : liens vers chaque section, qui l'ouvrent. */
+.sommaire {
+  margin-bottom: var(--clair-espacement-8v);
+  padding: var(--clair-espacement-4v) var(--clair-espacement-6v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-neutre);
+}
+
+.sommaireTitre {
+  margin: 0 0 var(--clair-espacement-2v);
+  font-size: var(--clair-texte-md-taille);
+  line-height: var(--clair-texte-md-interligne);
+  color: var(--clair-texte-titre);
+}
+
+.sommaireListe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-2v) var(--clair-espacement-6v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+/* Titre de section qui replie ou déplie sa grille. */
+.bascule {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.chevron {
+  flex: none;
+  width: var(--clair-texte-h4-taille);
+  height: var(--clair-texte-h4-taille);
+}
+
+.bascule[aria-expanded="false"] .chevron {
+  transform: rotate(-90deg);
+}
+
 .sectionCompte {
   font-size: var(--clair-texte-md-taille);
   font-weight: var(--clair-texte-md-graisse);
@@ -53,6 +104,10 @@
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.grille[hidden] {
+  display: none;
 }
 
 @media (min-width: 640px) {
@@ -77,4 +132,14 @@
 .mention {
   font-size: var(--clair-texte-xs-taille);
   color: var(--clair-texte-mention);
+}
+
+/* Nom court de la commission, souvent un code de la source (« CION-SOC ») : chasse fixe. */
+.nomCourt {
+  margin: 0 0 var(--clair-espacement-1v);
+  font-family: var(--clair-police-code);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  color: var(--clair-texte-mention);
+  overflow-wrap: anywhere;
 }

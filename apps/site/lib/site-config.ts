@@ -1,35 +1,42 @@
 import type { FooterProps, HeaderProps } from "@clair/ui";
 
-/** Rubriques de l'en-tête (mêmes rubriques que apps/web components/layout/header.tsx). */
+/**
+ * Rubriques de l'en-tête, par rôle comme dans apps/web (components/layout/header.tsx, master) :
+ * qui décide, les lois et les votes, les élections, le lobbying, les outils.
+ */
 export const navigation: HeaderProps["navigation"] = [
   {
-    label: "Parlementaires",
+    label: "Qui décide",
     items: [
-      { label: "Groupes politiques", href: "/groupes" },
       { label: "Députés", href: "/deputes" },
       { label: "Sénateurs", href: "/senateurs" },
+      { label: "Gouvernements", href: "/gouvernements" },
+      { label: "Groupes politiques", href: "/groupes" },
       { label: "Commissions", href: "/commissions" },
-      { label: "Sénatoriales 2026", href: "/senatoriales-2026" },
     ],
   },
   {
-    label: "Activité",
+    label: "Lois et votes",
     items: [
-      { label: "Sujets parlementaires", href: "/sujets" },
+      { label: "Sujets", href: "/sujets" },
       { label: "Dossiers législatifs", href: "/dossiers" },
       { label: "Scrutins", href: "/scrutins" },
-      { label: "Agenda parlementaire", href: "/agenda" },
+      { label: "Agenda", href: "/agenda" },
     ],
+  },
+  {
+    label: "Élections",
+    items: [{ label: "Sénatoriales 2026", href: "/senatoriales-2026" }],
   },
   { label: "Lobbying", href: "/lobbying" },
   {
     label: "Outils",
     items: [
-      { label: "Comprendre", href: "/comprendre" },
-      { label: "Guide pratique", href: "/guide" },
       { label: "Classements", href: "/classements" },
       { label: "Comparer des députés", href: "/deputes/comparer" },
       { label: "Comparer des sénateurs", href: "/senateurs/comparer" },
+      { label: "Comprendre", href: "/comprendre" },
+      { label: "Guide pratique", href: "/guide" },
     ],
   },
 ];
@@ -48,6 +55,7 @@ export const footer: Omit<FooterProps, "social"> = {
       links: [
         { label: "Députés", href: "/deputes" },
         { label: "Sénateurs", href: "/senateurs" },
+        { label: "Gouvernements", href: "/gouvernements" },
         { label: "Groupes politiques", href: "/groupes" },
         { label: "Sujets", href: "/sujets" },
         { label: "Dossiers législatifs", href: "/dossiers" },

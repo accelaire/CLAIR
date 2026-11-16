@@ -29,7 +29,8 @@ const isOnglet = (value: string): value is OngletDossier =>
   (ONGLETS_DOSSIER as readonly string[]).includes(value);
 
 export const parseDossierFicheParams = (params: QueryParams = {}): DossierFicheParams => {
-  const tab = asString(params.tab);
+  // `onglet` : la clé des autres fiches de la bêta, acceptée en repli de `tab` (clé d'apps/web).
+  const tab = asString(params.tab) || asString(params.onglet);
   const page = Number.parseInt(asString(params.page), 10);
   return {
     tab: isOnglet(tab) ? tab : null,

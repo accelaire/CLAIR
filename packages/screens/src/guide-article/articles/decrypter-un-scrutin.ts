@@ -12,27 +12,27 @@ export const decrypterUnScrutin: GuideArticle = {
     {
       title: "Choisir un scrutin",
       description:
-        "Sur la page Scrutins, parcourez les votes récents ou utilisez les filtres : thématique, chambre (Assemblée ou Sénat), résultat (adopté/rejeté), période.",
+        "Sur la page Scrutins, parcourez les votes récents, recherchez un texte ou utilisez les filtres : chambre (Assemblée ou Sénat), mode de scrutin, objet du vote, motions de censure, thématique, période.",
     },
     {
-      title: "Lire la sidebar",
+      title: "Lire les informations",
       description:
-        "À droite (ou en haut sur mobile), la sidebar affiche les informations essentielles : date, chambre, type de vote (solennel, ordinaire ou motion), résultat, et le dossier législatif associé.",
+        "À côté du détail (au-dessus sur mobile), le bloc « Informations » donne l'essentiel : date et lien vers la séance, chambre, mode de scrutin (solennel, ordinaire…), objet du vote, résultat et thématiques. Le dossier législatif associé est rappelé en tête de page, avec, quand il existe, un résumé « En clair » généré par IA.",
     },
     {
-      title: "Analyser les votes",
+      title: "Analyser le vote",
       description:
-        "L'onglet « Votes » montre la répartition pour/contre/abstention/absent, avec le décompte total et les suffrages exprimés (pour + contre).",
+        "L'onglet « Vote » montre la répartition pour/contre/abstention, avec le nombre de votants et de non-votants. Selon le scrutin, les onglets « Amendements » et « Débats » complètent la lecture.",
     },
     {
       title: "Voir la répartition par groupe",
       description:
-        "Chaque groupe politique est affiché avec sa position majoritaire et le détail des votes de ses membres. Repérez les groupes divisés ou unanimes.",
+        "Le tableau « Par groupe politique » donne, pour chaque groupe, ses voix pour, contre, abstention et ses non-votants ; triez-le en cliquant sur une colonne. Repérez les groupes divisés ou unanimes.",
     },
     {
       title: "Explorer un parlementaire",
       description:
-        "Cliquez sur le nom d'un parlementaire pour accéder à sa fiche complète et voir l'ensemble de ses votes, interventions et amendements.",
+        "Sous le tableau, la liste « Par élu » se filtre par groupe et par position. Cliquez sur le nom d'un parlementaire pour accéder à sa fiche complète : ses votes, interventions et amendements.",
     },
   ],
   start: { label: "Parcourir les scrutins", href: "/scrutins" },

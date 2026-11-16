@@ -23,6 +23,9 @@ import {
 } from "@clair/ui";
 import { FileText, MessageSquare, Vote } from "lucide-react";
 import { titreCourtLisible } from "../dossier-fiche/titres.ts";
+import { MotionCensureBandeau } from "../shared/contexte-gouvernemental/ContexteGouvernemental.tsx";
+import { EncartSoutien } from "../shared/encart-soutien/EncartSoutien.tsx";
+import { useOngletAncre } from "../shared/onglet-ancre.ts";
 import { periodeScrutin } from "../shared/scrutins.ts";
 import type { ScreenProps } from "../shared/types.ts";
 import { AmendementsOnglet } from "./AmendementsOnglet.tsx";
@@ -70,6 +73,8 @@ export const ScrutinFicheScreen = ({
     buildHref(pathname, scrutinFicheParamsOf({ ...params, ...patch }));
   /** Un filtre change : la page des débats revient à 1. */
   const update = (patch: Partial<ScrutinFicheParams>) => navigate(href({ page: 1, ...patch }));
+  // Anciens liens d'apps/web : `#amendements`, `#debats`, `#vote`.
+  const barreOnglets = useOngletAncre(ONGLETS, (onglet) => href({ onglet, page: 1 }));
 
   if (query.isPending) {
     return (
@@ -122,7 +127,14 @@ export const ScrutinFicheScreen = ({
             label: "Amendements",
             count: amendementsCount,
             icon: <FileText />,
-            content: <AmendementsOnglet scrutin={scrutin} />,
+            content: (
+              <AmendementsOnglet
+                scrutin={scrutin}
+                debatHref={
+                  scrutin.totalInterventions > 0 ? href({ onglet: "debats", page: 1 }) : null
+                }
+              />
+            ),
           },
         ]
       : []),
@@ -175,7 +187,7 @@ export const ScrutinFicheScreen = ({
     <Container className={classes.page}>
       <PageHeader
         breadcrumb={breadcrumb}
-        title={majuscule(scrutin.titre)}
+        title={<span className={classes.titre}>{majuscule(scrutin.titre)}</span>}
         badges={
           <>
             <Badge tone="neutre">Scrutin n° {scrutin.numero}</Badge>
@@ -186,6 +198,7 @@ export const ScrutinFicheScreen = ({
         }
       />
 
+      <MotionCensureBandeau motion={scrutin.motionCensure} />
       {scrutin.dossier ? <DossierBandeau dossier={scrutin.dossier} /> : null}
 
       {scrutin.resumeIA ? (
@@ -204,7 +217,7 @@ export const ScrutinFicheScreen = ({
         <aside className={classes.aside} aria-label="Informations sur le scrutin">
           <ScrutinInfos scrutin={scrutin} />
         </aside>
-        <section className={classes.contenu} aria-labelledby="detail-scrutin">
+        <section ref={barreOnglets} className={classes.contenu} aria-labelledby="detail-scrutin">
           <h2 id="detail-scrutin" className="clair-visually-hidden">
             Détail du scrutin
           </h2>
@@ -219,6 +232,7 @@ export const ScrutinFicheScreen = ({
           />
         </section>
       </div>
+      <EncartSoutien />
     </Container>
   );
 };

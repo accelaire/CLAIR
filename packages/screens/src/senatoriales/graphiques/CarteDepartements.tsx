@@ -1,5 +1,6 @@
 "use client";
 
+import { useIntertitre } from "../composants/CadreGraphique.tsx";
 import { useInfobulle } from "../composants/Infobulle.tsx";
 import { TableauDonnees } from "../composants/TableauDonnees.tsx";
 import { CHEMINS_DEPARTEMENTS, VIEWBOX_DEPARTEMENTS } from "../lib/geo-departements.ts";
@@ -29,6 +30,7 @@ const sRenouveles = (n: number) => `siège${n > 1 ? "s" : ""} renouvelé${n > 1 
  * classes sans effectif sont écartées.
  */
 const Legende = ({ maxSieges }: { maxSieges: number }) => {
+  const Intertitre = useIntertitre();
   const parClasse = new Map<number, number[]>();
   for (let sieges = 1; sieges <= maxSieges; sieges++) {
     const classe = classeCarte(sieges, maxSieges);
@@ -44,7 +46,7 @@ const Legende = ({ maxSieges }: { maxSieges: number }) => {
 
   return (
     <div className={classes.pileSerree}>
-      <h4 className={classes.sousTitre}>Sièges renouvelés</h4>
+      <Intertitre className={classes.sousTitre}>Sièges renouvelés</Intertitre>
       <ul className={classes.legende}>
         {bornes.map((borne) => (
           <li key={borne.label} className={classes.legendeEntree}>
@@ -71,6 +73,7 @@ const Legende = ({ maxSieges }: { maxSieges: number }) => {
  */
 export const CarteDepartements = ({ sieges, selection, onSelect }: CarteDepartementsProps) => {
   const { infobulle, gestionnaires } = useInfobulle();
+  const Intertitre = useIntertitre();
   const parCode = new Map(sieges.map((s) => [s.code, s]));
   const maxSieges = sieges.reduce((max, s) => Math.max(max, s.sieges), 0);
   const horsMetropole = sieges.filter((s) => !estMetropole(s.code));
@@ -122,10 +125,10 @@ export const CarteDepartements = ({ sieges, selection, onSelect }: CarteDepartem
           <Legende maxSieges={maxSieges} />
           {horsMetropole.length > 0 ? (
             <div className={classes.pileSerree}>
-              <h4 className={classes.sousTitre}>
+              <Intertitre className={classes.sousTitre}>
                 Hors métropole · {totalHorsMetropole} siège{totalHorsMetropole > 1 ? "s" : ""}{" "}
                 <span className={classes.mentionNormale}>— échelles non comparables</span>
-              </h4>
+              </Intertitre>
               <ul className={classes.vignettes}>
                 {horsMetropole.map((circo) => {
                   const selectionne = selection === circo.code;
@@ -148,7 +151,7 @@ export const CarteDepartements = ({ sieges, selection, onSelect }: CarteDepartem
                           aria-hidden="true"
                         />
                       )}
-                      <span className={classes.libelleTronque}>{circo.nom}</span>
+                      <span className={classes.vignetteNom}>{circo.nom}</span>
                       <span className={`${classes.vignetteSieges} clair-chiffres`}>
                         {circo.sieges}
                         <span className="clair-visually-hidden"> {sRenouveles(circo.sieges)}</span>

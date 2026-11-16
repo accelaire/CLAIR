@@ -26,6 +26,22 @@
   background-color: var(--clair-fond-surface);
 }
 
+/* Poste au Gouvernement : pastille carrée, bleu de l'action (la nature est aussi écrite). */
+.timeline .item[data-poste] {
+  --groupe-couleur: var(--clair-fond-action);
+}
+
+.timeline .item[data-poste] .bullet {
+  border-radius: var(--clair-rayon-sm);
+}
+
+.details {
+  margin-top: var(--clair-espacement-1v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
 .itemTitle {
   margin-bottom: var(--clair-espacement-1v);
 }

@@ -1,7 +1,7 @@
 import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { renderWithProviders } from "../../test-utils.tsx";
-import { amendementAdopte, sousAmendement } from "../fixtures.ts";
+import { amendementAdopte, amendementAvecRenvoi, sousAmendement } from "../fixtures.ts";
 import { AmendementCard } from "./AmendementCard.tsx";
 
 describe("AmendementCard", () => {
@@ -27,6 +27,35 @@ describe("AmendementCard", () => {
   it("retire le HTML de la source", () => {
     const { container } = renderWithProviders(<AmendementCard amendement={amendementAdopte} />);
     expect(container.textContent).not.toContain("<p>");
+  });
+
+  it("lie à Légifrance les articles cités par le dispositif, en texte", () => {
+    const { getByRole, container } = renderWithProviders(
+      <AmendementCard amendement={amendementAvecRenvoi} />,
+    );
+    const lien = getByRole("link", { name: /l'article L\. 123-4 du code de l'exemple/ });
+    expect(lien).toHaveAttribute(
+      "href",
+      "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000000000001/2026-01-12",
+    );
+    expect(lien).toHaveAttribute("target", "_blank");
+    expect(lien).toHaveAccessibleName(/Légifrance, nouvel onglet/);
+    expect(container.textContent).toContain("À l'article L. 123-4");
+    expect(container.textContent).not.toContain("<p>");
+  });
+
+  it("résume une longue liste d'auteurs en « X et N cosignataires »", () => {
+    const { getByText } = renderWithProviders(
+      <AmendementCard
+        amendement={{
+          ...amendementAdopte,
+          auteurLibelle:
+            "Mme Camille Exemple, M. Alex Fictif, Mme Claude Modèle et M. Dominique Test",
+        }}
+      />,
+    );
+    expect(getByText("Mme Camille Exemple et 3 cosignataires")).toBeInTheDocument();
+    expect(getByText(/M\. Dominique Test/)).toBeInTheDocument();
   });
 
   it("mène à l'amendement parent d'un sous-amendement", () => {
@@ -56,5 +85,17 @@ describe("AmendementCard", () => {
       "href",
       "/dossier",
     );
+  });
+
+  it("dans une liste, est lui-même l'élément de liste", () => {
+    const { container } = renderWithProviders(
+      <ul>
+        <AmendementCard amendement={amendementAdopte} as="li" />
+      </ul>,
+    );
+    const liste = container.querySelector("ul");
+    expect(liste?.children).toHaveLength(1);
+    expect(liste?.firstElementChild?.tagName).toBe("LI");
+    expect(container.querySelectorAll("li li")).toHaveLength(0);
   });
 });

@@ -71,6 +71,23 @@ describe("ScrutinsListeScreen", () => {
     await waitFor(() => expect(visited).toEqual(["/scrutins?nature=ensemble"]));
   });
 
+  it("applique et affiche le filtre des motions de censure (?censure=)", async () => {
+    const { findByLabelText, getByRole, visited } = renderScreen(
+      <ScrutinsListeScreen params={{ censure: "alinea3" }} />,
+      {
+        routes: { ...routesDeBase, "/scrutins": pageScrutins(scrutinsExemples) },
+        pathname: "/scrutins",
+      },
+    );
+    const select = await findByLabelText("Motions de censure");
+    expect(select).toHaveValue("alinea3");
+    expect(
+      getByRole("button", { name: /Motions de censure : En réponse à un 49\.3/ }),
+    ).toBeInTheDocument();
+    fireEvent.change(select, { target: { value: "toutes" } });
+    await waitFor(() => expect(visited).toEqual(["/scrutins?censure=toutes"]));
+  });
+
   it("affiche une erreur récupérable", async () => {
     const { findByRole } = renderScreen(<ScrutinsListeScreen />, {
       routes: {

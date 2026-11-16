@@ -83,7 +83,7 @@ const slugDe = (valeur: unknown) =>
     : [];
 
 const sitemap = async (): Promise<MetadataRoute.Sitemap> => {
-  const [data, groupes, elusProvisoires] = await Promise.all([
+  const [data, groupes, elusProvisoires, gouvernements] = await Promise.all([
     chargerDonnees(),
     // Les groupes de la période courante, par leur liste publique (logique non dupliquée).
     facultatif("/groupes", { page: "1", limit: "100" }, (corps) =>
@@ -91,12 +91,15 @@ const sitemap = async (): Promise<MetadataRoute.Sitemap> => {
     ),
     // Élus du 27 septembre 2026 dont la fiche du Sénat n'existe pas encore.
     facultatif("/senatoriales/2026/elus", {}, (corps) => donneesDe(corps).flatMap(slugDe)),
+    // Les gouvernements depuis 2007, par leur liste publique (une vingtaine d'entrées).
+    facultatif("/gouvernements", {}, (corps) => donneesDe(corps).flatMap(slugDe)),
   ]);
   return construirePlanDuSite({
     base: SITE_URL,
     data,
     groupes,
     elusProvisoires,
+    gouvernements,
     maintenant: new Date().toISOString(),
   });
 };

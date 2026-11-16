@@ -2,15 +2,18 @@
 
 import type { DecompteGroupe, PositionVote, ScrutinDetail, VoteParlementaire } from "@clair/data";
 import {
+  Button,
   DataTable,
   type DataTableColumn,
   GroupeBadge,
   Link,
+  ParlementaireAvatar,
   ResultatVote,
   VotePosition,
   type VotePositionValue,
 } from "@clair/ui";
-import { NativeSelect } from "@mantine/core";
+import { NativeSelect, Progress } from "@mantine/core";
+import { useId, useState } from "react";
 import { parlementaireHref, pluriel } from "../shared/scrutins.ts";
 import { POSITIONS, type ScrutinFicheParams } from "./params.ts";
 import classes from "./ScrutinFicheScreen.module.css";
@@ -33,6 +36,27 @@ const LIBELLES: Record<PositionVote, string> = {
 type GroupeInfo = { slug: string; couleur: string | null; chambre: string };
 
 type LigneGroupe = DecompteGroupe & { sigle: string; total: number };
+
+/**
+ * Barre de répartition d'un groupe (pour, contre, abstention), comme dans apps/web : décorative,
+ * les nombres de la ligne portent l'information.
+ */
+const RepartitionGroupe = ({ ligne }: { ligne: LigneGroupe }) => {
+  const exprimes = ligne.pour + ligne.contre + ligne.abstention;
+  if (exprimes === 0) return null;
+  return (
+    <Progress.Root aria-hidden="true" size="sm" radius="xl" className={classes.repartition}>
+      {(["pour", "contre", "abstention"] as const).map((position) => (
+        <Progress.Section
+          key={position}
+          value={(ligne[position] / exprimes) * 100}
+          color={`var(--clair-graphique-vote-${position})`}
+          withAria={false}
+        />
+      ))}
+    </Progress.Root>
+  );
+};
 
 /** Groupes présents dans les votes, par sigle : adresse et couleur. */
 const groupesDesVotes = (votes: Record<PositionVote, VoteParlementaire[]>) => {
@@ -64,6 +88,75 @@ const groupeHref = (info: GroupeInfo, scrutin: ScrutinDetail) => {
         ? `?legislature=${scrutin.legislature}`
         : "";
   return `/groupes/${info.chambre}/${info.slug}${periode}`;
+};
+
+/** Élus montrés d'abord par position (apps/web : un cadre de 400 px de haut, défilant). */
+const ELUS_VISIBLES = 16;
+
+/**
+ * Élus d'une position : les premiers, puis tous derrière « Afficher les N autres »
+ * (`aria-expanded`). Le repli n'est qu'un confort de lecture : il ne change pas l'adresse.
+ */
+const PositionElus = ({
+  position,
+  votes,
+}: {
+  position: PositionVote;
+  votes: VoteParlementaire[];
+}) => {
+  const [tous, setTous] = useState(false);
+  const listeId = useId();
+  const visibles = tous ? votes : votes.slice(0, ELUS_VISIBLES);
+  const caches = votes.length - ELUS_VISIBLES;
+  return (
+    <section aria-labelledby={`position-${position}`} className={classes.position}>
+      <h4 id={`position-${position}`} className={classes.h4}>
+        {LIBELLES[position]} <span className="clair-chiffres">({votes.length})</span>
+      </h4>
+      <ul id={listeId} className={classes.elus}>
+        {visibles.map((vote) => (
+          <li key={vote.id} className={classes.elu}>
+            <span className={classes.eluNom}>
+              <ParlementaireAvatar
+                nom={`${vote.parlementaire.prenom} ${vote.parlementaire.nom}`}
+                photoUrl={vote.parlementaire.photoUrl}
+                size="sm"
+                decorative
+              />
+              <Link href={parlementaireHref(vote.parlementaire.chambre, vote.parlementaire.slug)}>
+                {vote.parlementaire.prenom} {vote.parlementaire.nom}
+              </Link>
+            </span>
+            <span className={classes.eluMeta}>
+              {vote.parlementaire.groupe ? (
+                <GroupeBadge
+                  sigle={vote.parlementaire.groupe.nom}
+                  couleur={vote.parlementaire.groupe.couleur}
+                  size="sm"
+                />
+              ) : null}
+              <VotePosition position={POSITION_AFFICHEE[position]} size="sm" />
+            </span>
+          </li>
+        ))}
+      </ul>
+      {caches > 0 ? (
+        <div className={classes.plus}>
+          <Button
+            variant="secondaire"
+            size="sm"
+            aria-expanded={tous}
+            aria-controls={listeId}
+            onClick={() => setTous((valeur) => !valeur)}
+          >
+            {tous
+              ? `Réduire la liste (${LIBELLES[position].toLowerCase()})`
+              : `Afficher les ${caches} autres (${LIBELLES[position].toLowerCase()})`}
+          </Button>
+        </div>
+      ) : null}
+    </section>
+  );
 };
 
 type VotesOngletProps = {
@@ -104,13 +197,18 @@ export const VotesOnglet = ({ scrutin, params, update }: VotesOngletProps) => {
       cell: (ligne) => {
         const info = groupes.get(ligne.sigle);
         const badge = <GroupeBadge sigle={ligne.sigle} couleur={info?.couleur} size="sm" />;
-        return info ? (
-          <Link href={groupeHref(info, scrutin)}>
-            {badge}
-            <span className="clair-visually-hidden"> : composition du groupe</span>
-          </Link>
-        ) : (
-          badge
+        return (
+          <div className={classes.groupeCellule}>
+            {info ? (
+              <Link href={groupeHref(info, scrutin)}>
+                {badge}
+                <span className="clair-visually-hidden"> : composition du groupe</span>
+              </Link>
+            ) : (
+              badge
+            )}
+            <RepartitionGroupe ligne={ligne} />
+          </div>
         );
       },
     },
@@ -196,37 +294,7 @@ export const VotesOnglet = ({ scrutin, params, update }: VotesOngletProps) => {
           <p className={classes.mention}>Aucun vote pour ces critères.</p>
         ) : (
           positionsAffichees.map((position) => (
-            <section
-              key={position}
-              aria-labelledby={`position-${position}`}
-              className={classes.position}
-            >
-              <h4 id={`position-${position}`} className={classes.h4}>
-                {LIBELLES[position]}{" "}
-                <span className="clair-chiffres">({filtres(position).length})</span>
-              </h4>
-              <ul className={classes.elus}>
-                {filtres(position).map((vote) => (
-                  <li key={vote.id} className={classes.elu}>
-                    <Link
-                      href={parlementaireHref(vote.parlementaire.chambre, vote.parlementaire.slug)}
-                    >
-                      {vote.parlementaire.prenom} {vote.parlementaire.nom}
-                    </Link>
-                    <span className={classes.eluMeta}>
-                      {vote.parlementaire.groupe ? (
-                        <GroupeBadge
-                          sigle={vote.parlementaire.groupe.nom}
-                          couleur={vote.parlementaire.groupe.couleur}
-                          size="sm"
-                        />
-                      ) : null}
-                      <VotePosition position={POSITION_AFFICHEE[position]} size="sm" />
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
+            <PositionElus key={position} position={position} votes={filtres(position)} />
           ))
         )}
       </section>

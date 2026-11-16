@@ -117,6 +117,8 @@ export const cssVariablesResolver: CSSVariablesResolver = () => ({
     "--mantine-color-body": colors.clair["fond-page"],
     "--mantine-color-text": colors.clair["texte-defaut"],
     "--mantine-color-dimmed": colors.clair["texte-mention"],
+    // Texte indicatif des champs : contraste AA (le gris pâle de Mantine ne l'atteint pas).
+    "--mantine-color-placeholder": colors.clair["texte-mention"],
     "--mantine-color-default-border": colors.clair["bordure-defaut"],
     "--mantine-color-anchor": colors.clair["texte-action"],
   },
@@ -124,6 +126,8 @@ export const cssVariablesResolver: CSSVariablesResolver = () => ({
     "--mantine-color-body": colors.sombre["fond-page"],
     "--mantine-color-text": colors.sombre["texte-defaut"],
     "--mantine-color-dimmed": colors.sombre["texte-mention"],
+    // Texte indicatif des champs : contraste AA (le gris pâle de Mantine ne l'atteint pas).
+    "--mantine-color-placeholder": colors.sombre["texte-mention"],
     "--mantine-color-default-border": colors.sombre["bordure-defaut"],
     "--mantine-color-anchor": colors.sombre["texte-action"],
   },

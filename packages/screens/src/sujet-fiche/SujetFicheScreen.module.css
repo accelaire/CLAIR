@@ -96,7 +96,6 @@
 .links,
 .rows,
 .etapes,
-.votes,
 .columns {
   display: flex;
   flex-direction: column;
@@ -228,22 +227,21 @@
   font-weight: var(--clair-texte-h6-graisse);
 }
 
-.votes {
-  gap: var(--clair-espacement-1v);
-  margin-top: var(--clair-espacement-2v);
-}
-
-.vote {
+.votesEtape {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
   gap: var(--clair-espacement-2v);
-  font-size: var(--clair-texte-sm-taille);
-  line-height: var(--clair-texte-sm-interligne);
+  margin-top: var(--clair-espacement-2v);
 }
 
 .icon {
   width: var(--clair-espacement-4v);
   height: var(--clair-espacement-4v);
   flex-shrink: 0;
+}
+
+/* « Afficher les N autres groupes ». */
+.more {
+  display: flex;
+  justify-content: center;
 }

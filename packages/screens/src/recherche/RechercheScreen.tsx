@@ -97,7 +97,7 @@ const Apercu = ({
             </div>
             <ul className={classes.liste}>
               {resultats.map((resultat) => (
-                <ResultatCard key={cleDe(resultat)} resultat={resultat} />
+                <ResultatCard key={cleDe(resultat)} resultat={resultat} nature={false} />
               ))}
             </ul>
           </section>

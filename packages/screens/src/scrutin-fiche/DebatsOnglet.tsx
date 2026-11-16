@@ -19,8 +19,8 @@ import { NATURES_PAROLE, type NatureDebat, type ScrutinFicheParams } from "./par
 import classes from "./ScrutinFicheScreen.module.css";
 import { seanceHref } from "./ScrutinInfos.tsx";
 
-/** Prises de parole par page. */
-const PAR_PAGE = 10;
+/** Prises de parole par page (apps/web en montrait dix dans un cadre de 600 px de haut). */
+const PAR_PAGE = 5;
 
 type DebatsOngletProps = {
   scrutin: ScrutinDetail;

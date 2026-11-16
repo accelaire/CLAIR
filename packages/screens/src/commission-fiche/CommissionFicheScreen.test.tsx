@@ -44,6 +44,8 @@ describe("CommissionFicheScreen", () => {
     const panneau = getByRole("tabpanel");
     const cartes = within(panneau).getAllByRole("heading", { level: 3 });
     expect(cartes[0]).toHaveTextContent("Camille Fictive");
+    // La qualité est un badge à côté du nom, dans le titre de la carte.
+    expect(cartes[0]).toHaveTextContent("Présidente");
     expect(getAllByRole("tab")).toHaveLength(4);
   });
 

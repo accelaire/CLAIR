@@ -20,6 +20,7 @@ import {
   useNavigation,
 } from "@clair/ui";
 import { ArrowRight, CalendarClock, FileText, Vote } from "lucide-react";
+import { useOngletAncre } from "../shared/onglet-ancre.ts";
 import type { ScreenProps } from "../shared/types.ts";
 import { AmendementsDossier } from "./AmendementsDossier.tsx";
 import { DossierContexte } from "./DossierContexte.tsx";
@@ -28,6 +29,7 @@ import { ParcoursDossier } from "./ParcoursDossier.tsx";
 import {
   type DossierFicheParams,
   dossierFicheParamsOf,
+  ONGLETS_DOSSIER,
   type OngletDossier,
   parseDossierFicheParams,
 } from "./params.ts";
@@ -146,6 +148,10 @@ export const DossierFicheScreen = ({
     {},
     { initialData: initialData?.parcours ? { data: initialData.parcours } : undefined },
   );
+  // Anciens liens d'apps/web : `#parcours`, `#amendements`, `#scrutins`.
+  const barreOnglets = useOngletAncre(ONGLETS_DOSSIER, (tab) =>
+    buildHref(pathname, dossierFicheParamsOf({ ...params, tab, amendement: "", page: 1 })),
+  );
 
   if (query.isPending) {
     return (
@@ -240,7 +246,7 @@ export const DossierFicheScreen = ({
     <Container className={classes.page}>
       <EnTete dossier={dossier} />
       <DossierContexte dossier={dossier} />
-      <section className={classes.section} aria-label="Détail du dossier">
+      <section ref={barreOnglets} className={classes.section} aria-label="Détail du dossier">
         <Tabs
           label="Détail du dossier"
           items={items}

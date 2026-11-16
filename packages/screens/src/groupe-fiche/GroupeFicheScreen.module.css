@@ -163,3 +163,10 @@
   font-variant-numeric: tabular-nums;
   color: var(--clair-texte-titre);
 }
+
+/* Photo et nom d'un membre, dans la première colonne du tableau. */
+.membre {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+}

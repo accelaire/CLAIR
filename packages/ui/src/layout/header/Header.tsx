@@ -163,7 +163,16 @@ export const Header = ({
         </div>
       </div>
 
-      <Drawer opened={opened} onClose={close} title="Menu" position="right" size="xs">
+      <Drawer
+        opened={opened}
+        onClose={close}
+        title="Menu"
+        position="right"
+        size="xs"
+        closeButtonProps={{ "aria-label": "Fermer le menu" }}
+        // Le `<header>` du tiroir, rendu hors de l'en-tête du site, serait un second « banner ».
+        attributes={{ header: { role: "none" } }}
+      >
         <nav aria-label="Navigation principale (mobile)">
           {navigation.map((item) =>
             isGroup(item) ? (

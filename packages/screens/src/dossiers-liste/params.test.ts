@@ -7,6 +7,7 @@ describe("paramètres de la liste des dossiers", () => {
     const params = parseDossiersListeParams({
       search: " narcotrafic ",
       etat: "promulgue",
+      gouvernement: "49-3",
       chambre: "senat",
       procedureLibelle: "Proposition de loi ordinaire",
       dateFrom: "2025-01-01",
@@ -16,6 +17,7 @@ describe("paramètres de la liste des dossiers", () => {
     expect(params).toEqual({
       search: "narcotrafic",
       etat: "promulgue",
+      gouvernement: "49-3",
       chambre: "senat",
       procedureCode: "",
       procedureLibelle: "Proposition de loi ordinaire",
@@ -23,11 +25,22 @@ describe("paramètres de la liste des dossiers", () => {
       dateTo: "",
       page: 3,
     });
-    expect(parseDossiersListeParams({ etat: "inconnu", chambre: "x", page: "0" })).toMatchObject({
+    expect(
+      parseDossiersListeParams({ etat: "inconnu", gouvernement: "49.3", chambre: "x", page: "0" }),
+    ).toMatchObject({
       etat: "",
+      gouvernement: "",
       chambre: "",
       page: 1,
     });
+  });
+
+  it("écrit l'origine du texte comme apps/web (?gouvernement=projets|49-3)", () => {
+    const params = parseDossiersListeParams({ gouvernement: "projets" });
+    expect(buildHref("/dossiers", dossiersListeParamsOf(params))).toBe(
+      "/dossiers?gouvernement=projets",
+    );
+    expect(aDesFiltres(params)).toBe(true);
   });
 
   it("réécrit l'URL sans les valeurs par défaut", () => {

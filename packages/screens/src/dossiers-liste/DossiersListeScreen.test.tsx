@@ -49,6 +49,18 @@ describe("DossiersListeScreen", () => {
     expect(visited).toEqual(["/dossiers?etat=promulgue&chambre=senat"]);
   });
 
+  it("applique et affiche le filtre d'origine du texte (?gouvernement=)", async () => {
+    const { findByLabelText, getByRole, visited } = renderScreen(
+      <DossiersListeScreen params={{ gouvernement: "49-3" }} />,
+      { routes: routes(), pathname: "/dossiers" },
+    );
+    const origine = await findByLabelText("Origine du texte");
+    expect(origine).toHaveValue("49-3");
+    expect(getByRole("button", { name: /Origine du texte : Passés au 49\.3/ })).toBeInTheDocument();
+    fireEvent.change(origine, { target: { value: "projets" } });
+    expect(visited).toEqual(["/dossiers?gouvernement=projets"]);
+  });
+
   it("transmet la recherche à l'URL", async () => {
     const { getByRole, visited } = renderScreen(<DossiersListeScreen />, {
       routes: routes(),

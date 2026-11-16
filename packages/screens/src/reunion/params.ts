@@ -1,7 +1,11 @@
 import { asString, type QueryParams } from "@clair/ui";
 
-/** Prises de parole par page du débat (le plafond de l'API). */
-export const PRISES_PAR_PAGE = 200;
+/**
+ * Prises de parole par page du débat : cinquante, le lot que chargeait apps/web
+ * (`DebatDeReunion.tsx`, `PRISES_PAR_PAGE`). Deux cents (le plafond de l'API) faisaient une page
+ * de plus de 30 000 px pour une séance de questions au Gouvernement.
+ */
+export const PRISES_PAR_PAGE = 50;
 
 /**
  * État de la page d'une réunion dans l'URL. `vote` et `rang` sont ceux de apps/web (lien

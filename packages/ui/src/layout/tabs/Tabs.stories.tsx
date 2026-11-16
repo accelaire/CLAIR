@@ -34,7 +34,8 @@ const meta = {
   args: { items, label: "Détail du scrutin" },
   argTypes: {
     items: {
-      description: "Onglets : valeur, libellé, compteur et icône optionnels, contenu du panneau.",
+      description:
+        "Onglets : valeur, libellé, compteur (nombre ou texte, avec son libellé complet `countLabel`) et icône optionnels, contenu du panneau.",
       control: false,
       table: { category: "Contenu" },
     },
@@ -111,6 +112,32 @@ export const SansCompteur: Story = {
       { value: "mandats", label: "Mandats", content: <p>Mandats de Camille Exemple.</p> },
     ],
     label: "Fiche de Camille Exemple",
+  },
+};
+
+/**
+ * Compteur en texte qui réunit deux comptes (« 3 · 13 ») : `countLabel` le dit en toutes
+ * lettres aux lecteurs d'écran. Données fictives.
+ */
+export const CompteurTexte: Story = {
+  args: {
+    items: [
+      { value: "composition", label: "Composition", count: 35, content: <p>Les 35 membres.</p> },
+      {
+        value: "censure",
+        label: "49.3 et censure",
+        count: "3 · 13",
+        countLabel: "3 recours au 49.3, 13 motions de censure",
+        content: <p>Les recours au 49.3 et les motions de censure (exemple fictif).</p>,
+      },
+    ],
+    label: "Bilan d'un gouvernement fictif",
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const onglet = canvas.getByRole("tab", { name: /49\.3 et censure/ });
+    await expect(onglet).toHaveTextContent("3 · 13");
+    await expect(onglet).toHaveAccessibleName(/3 recours au 49\.3, 13 motions de censure/);
   },
 };
 

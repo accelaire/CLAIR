@@ -84,9 +84,13 @@ describe("SenatorialesScreen", () => {
     expect(
       getByRole("heading", { level: 2, name: "Présence et loyauté des sortants" }),
     ).toBeVisible();
-    expect(getByRole("table", { name: "Sortants par tranche de présence en séance" })).toBeTruthy();
+    expect(
+      getByRole("table", { name: "Sortants par tranche de présence aux votes solennels" }),
+    ).toBeTruthy();
     fireEvent.click(
-      getByRole("button", { name: /Surligner les sortants : présence en séance moins de 50 %/ }),
+      getByRole("button", {
+        name: /Surligner les sortants : présence aux votes solennels moins de 50 %/,
+      }),
     );
     expect(await findByRole("status")).toHaveTextContent("moins de 50 % — 1 sortant surligné");
     expect(getByRole("link", { name: /Camille Fictif \(surligné\)/ })).toBeInTheDocument();

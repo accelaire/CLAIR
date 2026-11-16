@@ -6,7 +6,7 @@ import { Container, ErrorState, LoadingState, useNavigation } from "@clair/ui";
 import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ScreenProps } from "../shared/types.ts";
-import { CadreGraphique } from "./composants/CadreGraphique.tsx";
+import { CadreGraphique, SousSectionGraphique } from "./composants/CadreGraphique.tsx";
 import { PastillesLecture } from "./composants/PastillesLecture.tsx";
 import { BarresComptage } from "./graphiques/BarresComptage.tsx";
 import { CarteDepartements } from "./graphiques/CarteDepartements.tsx";
@@ -40,19 +40,24 @@ const contenuGraphique = (
     case "groupes":
       return apercu ? <PartRemiseEnJeu parGroupe={apercu.sortants.parGroupe} /> : null;
     case "presence":
+      // Le cadre porte le `h1` de la page : les deux sections sont des `h2`.
       return (
         <div className={classes.sections}>
           <section className={classes.pileSerree} aria-labelledby="graphique-presence">
-            <h3 id="graphique-presence" className={classes.h3Petit}>
-              Présence en séance
-            </h3>
-            <DistributionBilan sortants={sortants} metrique="presence" />
+            <h2 id="graphique-presence" className={classes.h3Petit}>
+              Présence aux votes solennels
+            </h2>
+            <SousSectionGraphique>
+              <DistributionBilan sortants={sortants} metrique="presence" />
+            </SousSectionGraphique>
           </section>
           <section className={classes.pileSerree} aria-labelledby="graphique-loyaute">
-            <h3 id="graphique-loyaute" className={classes.h3Petit}>
+            <h2 id="graphique-loyaute" className={classes.h3Petit}>
               Loyauté au groupe
-            </h3>
-            <DistributionBilan sortants={sortants} metrique="loyaute" />
+            </h2>
+            <SousSectionGraphique>
+              <DistributionBilan sortants={sortants} metrique="loyaute" />
+            </SousSectionGraphique>
           </section>
         </div>
       );

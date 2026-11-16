@@ -1,0 +1,868 @@
+{
+  "01-accueil": {
+    "titre": "Accueil",
+    "statut": "parite",
+    "modifie": [
+      "La page est rendue côté serveur et affiche huit chiffres clés en grille, avec la mention « calculée par CLAIR ».",
+      "Le carrousel horizontal des chiffres et des dossiers devient une grille : tout est visible sans faire défiler de côté.",
+      "« Prochainement au Parlement » montre de nouveau les badges « En cours » et « En direct » d'une séance, corrigés pendant l'audit.",
+      "Les textes éditoriaux (open source, usages, FAQ, appel au don) sont repris sans perte.",
+      "Sur mobile, le bouton « Rechercher » revient sur la ligne du champ (corrigé le 16/11).",
+      "L'icône du menu mobile est réalignée sur la recherche et le thème (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Huit tuiles de chiffres empilées sur mobile repoussent l'agenda loin sous la ligne de flottaison ; quatre suffiraient en tête."
+    ]
+  },
+  "02-recherche": {
+    "titre": "Recherche",
+    "statut": "mieux",
+    "modifie": [
+      "Les résultats sont rendus côté serveur, avec un titre et une description propres à la page.",
+      "Le type de résultat choisi entre dans l'adresse (?type=), ce qui rend une recherche filtrée partageable.",
+      "Le défilement infini laisse place à un bouton « Afficher plus », plus accessible.",
+      "Les filtres sont des boutons à état annoncé aux lecteurs d'écran, et le nombre de résultats est lu à chaque changement.",
+      "Les cartes de résultats sont resserrées (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "10-deputes-liste": {
+    "titre": "Liste des députés",
+    "statut": "mieux",
+    "modifie": [
+      "Un même écran sert aux deux chambres, avec un sélecteur AN / Sénat en haut à droite.",
+      "Un tri apparaît (nom, présence, loyauté, amendements, interventions) et chaque filtre a un libellé visible.",
+      "La sélection du comparateur se fait par une case sur chaque carte et reste dans l'adresse ; « ?compare=true » est de nouveau compris.",
+      "Le défilement infini devient une pagination par liens de 24 fiches.",
+      "La case « Comparer » passe sous le nom, qui tient de nouveau sur une ligne (corrigé le 16/11).",
+      "Le lien « Voir les archives » vers la législature précédente est rétabli (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Les photos sont plus petites que dans l'ancien et la grille paraît moins dense : agrandir la photo, réduire la marge des cartes."
+    ]
+  },
+  "11-depute-fiche-votes": {
+    "titre": "Fiche d'un député (votes)",
+    "statut": "parite",
+    "modifie": [
+      "Les fonctions au Gouvernement et les présidences s'affichent de nouveau sous le nom, et dans le titre de la page.",
+      "La carte de présence suit la règle de l'ancien (votes solennels en tête, « Ne vote pas », « — » si non mesurable), et explique la période.",
+      "Une carte « Amendements déposés (adoptés) » s'ajoute, et la synthèse est signalée « Générée par IA, à vérifier ».",
+      "Mandats et déclarations HATVP passent dans des onglets ; les postes ministériels et leur bilan sont dans la frise des mandats.",
+      "L'encart « Soutenir » et les anciens liens à ancre (#votes…) ont été rétablis pendant l'audit.",
+      "Le lien « Situer dans le classement » revient à côté du bouton « Comparer » (corrigé le 16/11).",
+      "Les thématiques des scrutins s'affichent de nouveau dans la liste des votes (corrigé le 16/11).",
+      "Un bloc d'aperçu montre sans clic le mandat et les fonctions en cours, les deux dernières déclarations HATVP et des liens vers les onglets (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Le texte d'aide de la carte Présence, en très petit corps sur dix lignes, alourdit la grille : le replier derrière une infobulle.",
+      "Les thématiques s'affichent sans accents (« Securite, Sante ») : reprendre les libellés accentués."
+    ]
+  },
+  "12-depute-fiche-interventions": {
+    "titre": "Fiche d'un député (interventions)",
+    "statut": "parite",
+    "modifie": [
+      "L'onglet s'ouvre par ?onglet=interventions, et l'ancienne ancre #interventions est de nouveau lue.",
+      "Le filtre par type d'intervention, le filtre de chambre et le lien vers la page de la séance ont été rétablis pendant l'audit.",
+      "Une seule séance est ouverte à la fois, ce qui ramène la page à une hauteur proche de l'ancienne."
+    ],
+    "ameliorer": [
+      "Sur mobile, l'en-tête de la fiche (photo, badges empilés, contacts) occupe tout le premier écran avant les interventions.",
+      "Rappeler en tête de l'onglet le nombre total d'interventions et la période filtrée."
+    ]
+  },
+  "13-depute-fiche-amendements": {
+    "titre": "Fiche d'un député (amendements)",
+    "statut": "parite",
+    "modifie": [
+      "Les amendements utilisent la carte commune du nouveau site, avec dispositif et exposé des motifs.",
+      "Les renvois au droit en vigueur sont de nouveau liés à Légifrance, sans HTML injecté (corrigé pendant l'audit).",
+      "Le filtre de chambre et le filtre « votés en séance » sont repris ; l'état de l'onglet est dans l'adresse."
+    ],
+    "ameliorer": [
+      "La page est plus haute que l'ancienne (11 300 px contre 9 500 px) : replier le dispositif par défaut au-delà de quelques lignes.",
+      "Afficher le sort de l'amendement (adopté, rejeté…) en tête de carte, pour lire la liste d'un coup d'œil."
+    ]
+  },
+  "14-deputes-comparer": {
+    "titre": "Comparateur de députés",
+    "statut": "parite",
+    "modifie": [
+      "Les données sont chargées côté serveur et le filtre « votes divergents » entre dans l'adresse.",
+      "Les statistiques sont présentées sans couleur de meilleur ou de pire, un choix plus neutre, avec la mention « calculée ».",
+      "Le bloc des amendements comparés (déposés, adoptés, derniers amendements) a été rétabli pendant l'audit."
+    ],
+    "ameliorer": [
+      "Sans élu sélectionné, la page est presque vide : proposer une recherche directe pour ajouter un premier élu.",
+      "Le signal envoyé au formulaire de retour après une comparaison aboutie n'est pas repris."
+    ]
+  },
+  "15-senateurs-liste": {
+    "titre": "Liste des sénateurs",
+    "statut": "mieux",
+    "modifie": [
+      "Même écran que pour les députés, avec le sélecteur de chambre et le tri.",
+      "Le filtre de groupe est borné à la session choisie, ce qui corrige un décalage de session de l'ancien.",
+      "La sélection du comparateur survit au changement de page et de filtre.",
+      "La case « Comparer » passe sous le nom (corrigé le 16/11).",
+      "Un lien « Voir les archives » mène à la session précédente (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "16-senateur-fiche-votes": {
+    "titre": "Fiche d'un sénateur (votes)",
+    "statut": "parite",
+    "modifie": [
+      "La présence d'un sénateur se lit désormais aux votes solennels, ou « Participation » sans solennel, comme dans l'ancien.",
+      "Fonctions et présidences reviennent sous le nom ; l'image de partage n'affiche plus « null % ».",
+      "Mandats et déclarations HATVP passent dans des onglets ; une carte « Amendements déposés » s'ajoute.",
+      "L'encart « Soutenir », le filtre de chambre et les anciens liens à ancre ont été rétablis pendant l'audit.",
+      "L'explication de la participation au Sénat passe sous la grille des chiffres (corrigé le 16/11).",
+      "Un bloc d'aperçu montre sans clic le mandat et les fonctions en cours et les deux dernières déclarations HATVP (corrigé le 16/11).",
+      "Le lien « Situer dans le classement » et les thématiques des scrutins dans la liste des votes sont rétablis (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Les thématiques s'affichent sans accents (« Securite, Sante ») : reprendre les libellés accentués."
+    ]
+  },
+  "17-senateur-fiche-interventions": {
+    "titre": "Fiche d'un sénateur (interventions)",
+    "statut": "parite",
+    "modifie": [
+      "L'onglet est porté par l'adresse, et l'ancienne ancre #interventions fonctionne de nouveau.",
+      "Filtre par type, filtre de chambre et lien interne vers la séance ont été rétablis pendant l'audit.",
+      "Les séances sont repliées sauf une, ce qui garde la page à la hauteur de l'ancienne."
+    ],
+    "ameliorer": [
+      "Sur mobile, réduire l'en-tête de fiche pour que la première intervention apparaisse plus tôt.",
+      "Rien d'autre à signaler."
+    ]
+  },
+  "18-senateurs-comparer": {
+    "titre": "Comparateur de sénateurs",
+    "statut": "parite",
+    "modifie": [
+      "Au Sénat, la ligne « Participation » et la présence solennelle sont affichées selon la règle de l'ancien (corrigé pendant l'audit).",
+      "Le bloc des amendements comparés a été rétabli ; le filtre des votes divergents entre dans l'adresse.",
+      "Les chiffres sont présentés sans couleur de jugement."
+    ],
+    "ameliorer": [
+      "Sans sélection, la page est presque vide : proposer d'ajouter un sénateur directement depuis la page.",
+      "Rien d'autre à signaler."
+    ]
+  },
+  "19-groupes-liste": {
+    "titre": "Groupes politiques",
+    "statut": "parite",
+    "modifie": [
+      "Les mêmes sections par chambre, avec hémicycle cliquable, période et lien vers la liste des élus.",
+      "Les cartes sont triées par position déclarée et portent une pastille de couleur avec le nom du groupe.",
+      "La page est plus haute que l'ancienne (4 100 px contre 3 000 px sur ordinateur).",
+      "Le logo de chaque groupe revient sur les cartes (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Resserrer les cartes de groupe pour retrouver la densité de l'ancienne page."
+    ]
+  },
+  "20-groupe-fiche-assemblee": {
+    "titre": "Fiche d'un groupe",
+    "statut": "parite",
+    "modifie": [
+      "Le filtre « scrutins demandés par le groupe » et le tri des membres entrent dans l'adresse.",
+      "Le camembert devient une barre empilée, le radar un histogramme, chacun avec un tableau de données à déplier.",
+      "Les alliances deviennent « Proximité de vote », un vocabulaire plus neutre ; la présence au Sénat suit la règle des votes solennels.",
+      "Les membres passent de cartes avec photo à un tableau triable.",
+      "L'axe de l'histogramme de cohésion est resserré (à partir de 90 %) et expliqué sous le titre (corrigé le 16/11).",
+      "Les libellés des thèmes n'ont plus de « % » collé (corrigé le 16/11).",
+      "Les photos des membres s'affichent dans le tableau (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "21-classements": {
+    "titre": "Classements",
+    "statut": "parite",
+    "modifie": [
+      "Au Sénat, le tableau et le top / flop affichent la présence aux votes solennels, la même valeur que celle du tri.",
+      "Les élus sous 50 scrutins sont marqués « n.c. », et une note explique le Sénat et la période (corrigé pendant l'audit).",
+      "« Top / Flop » devient « Les plus élevés / Les moins élevés », sans couleur verte ou rouge sur les taux.",
+      "L'image de partage des classements existe de nouveau, et les anciennes adresses d'image redirigent.",
+      "La colonne « Chambre » est masquée quand une seule chambre est filtrée, côté groupes aussi (corrigé le 16/11).",
+      "Sur mobile, le critère choisi s'affiche à côté du bouton des filtres (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Les petites barres de taux et les photos de l'ancien tableau ont disparu : la lecture d'un rang demande plus d'effort."
+    ]
+  },
+  "22-gouvernements-liste": {
+    "titre": "Gouvernements",
+    "statut": "parite",
+    "modifie": [
+      "Page absente de la bêta au début de l'audit, portée depuis : sections par présidence, cartes, barres de durée.",
+      "Chaque carte donne les membres, la part de femmes et les recours au 49.3 et motions de censure depuis 2017.",
+      "La page entre dans le menu « Qui décide », le pied de page et le plan du site.",
+      "La légende des barres de durée est agrandie (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "23-gouvernement-fiche": {
+    "titre": "Fiche d'un gouvernement",
+    "statut": "parite",
+    "modifie": [
+      "Page portée pendant l'audit : colonne de faits, frise des remaniements et quatre onglets (composition, textes, censure, postes).",
+      "Le compteur de l'onglet « 49.3 et censure » s'écrit « 3 · 13 », avec un libellé pour les lecteurs d'écran.",
+      "La source officielle et le bilan calculé par CLAIR sont distingués, et les anciennes ancres d'onglet sont lues.",
+      "Les domaines de la composition ne sont plus encadrés en cartes, mais listés sur deux colonnes.",
+      "La colonne des faits est élargie (corrigé le 16/11).",
+      "Un séparateur léger distingue les domaines, et les bordures effacées par un token invalide sont rétablies (corrigé le 16/11).",
+      "Les notes de source sont découpées en listes (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "30-scrutins-liste": {
+    "titre": "Scrutins",
+    "statut": "parite",
+    "modifie": [
+      "Les filtres ont des libellés visibles, et une puce retirable s'affiche par filtre actif.",
+      "Le filtre « Motions de censure » et les thématiques sur les cartes ont été rétablis pendant l'audit.",
+      "Le défilement infini devient une pagination par liens de 20 scrutins, avec un état vide qui propose d'effacer les filtres.",
+      "Le décompte des voix s'écrit en texte (« Pour : 41, Contre : 60 ») au lieu de pictogrammes colorés.",
+      "Le résultat (Adopté, Rejeté) remonte près du titre, sur une carte plus compacte (corrigé le 16/11).",
+      "La recherche rejoint la rangée des filtres (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Une petite barre de répartition des voix sur chaque carte aiderait la lecture rapide de la liste."
+    ]
+  },
+  "31-scrutin-fiche-vote": {
+    "titre": "Fiche d'un scrutin (vote)",
+    "statut": "parite",
+    "modifie": [
+      "Les votes par groupe passent dans un tableau triable, et les élus sont filtrables par groupe et position dans l'adresse.",
+      "Le bandeau de motion de censure, l'image de partage du scrutin et l'encart « Soutenir » ont été rétablis pendant l'audit.",
+      "Les photos des votants, les liens dans « Vote demandé par » et l'ancre #vote sont revenus.",
+      "Seuls 16 élus par position s'affichent, puis « Afficher les autres ».",
+      "Sur mobile, le fil d'Ariane est tronqué à une ligne, le titre est plus petit et l'en-tête resserré (corrigé le 16/11).",
+      "Le tableau par groupe de l'onglet Vote retrouve une barre de répartition par ligne (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "32-scrutin-fiche-debats": {
+    "titre": "Fiche d'un scrutin (débats)",
+    "statut": "mieux",
+    "modifie": [
+      "Le tri, la recherche et la nature des prises de parole entrent dans l'adresse : une vue filtrée se partage.",
+      "Les explications de vote viennent d'abord, avec le même message de rattachement que l'ancien.",
+      "Les débats sont paginés par cinq prises de parole, comme l'ancien, et l'ancre #debats est lue.",
+      "Sur mobile, l'en-tête du scrutin est resserré (titre plus petit, fil d'Ariane sur une ligne) (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "33-votes-archives": {
+    "titre": "Archives des votes",
+    "statut": "parite",
+    "modifie": [
+      "Même grille des années avec leur nombre de scrutins, même lien vers la liste des scrutins.",
+      "Un fil d'Ariane s'ajoute ; la carte de partage Twitter n'est pas déclarée."
+    ],
+    "ameliorer": [
+      "Ajouter la carte de partage Twitter, comme l'ancien.",
+      "Rien d'autre à signaler."
+    ]
+  },
+  "34-votes-annee": {
+    "titre": "Votes d'une année",
+    "statut": "parite",
+    "modifie": [
+      "Mêmes bornes d'années, mêmes liens vers les douze mois, même pagination par 50.",
+      "Le total passe sous la liste des mois.",
+      "Les cartes de scrutin sont plus compactes, ce qui raccourcit la page (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "35-votes-mois": {
+    "titre": "Votes d'un mois",
+    "statut": "parite",
+    "modifie": [
+      "Même navigation entre mois voisins, bornée à 2006 et au mois en cours.",
+      "Même fil d'Ariane à quatre niveaux et même pagination.",
+      "Les cartes de scrutin sont plus compactes, ce qui raccourcit la page (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "36-dossiers-liste": {
+    "titre": "Dossiers législatifs",
+    "statut": "parite",
+    "modifie": [
+      "Le filtre d'état ne garde que les quatre valeurs acceptées par l'API, au lieu de sept dont trois étaient refusées.",
+      "Le filtre « Origine du texte » (projets du Gouvernement, 49.3) a été rétabli pendant l'audit.",
+      "La carte de dossier ajoute la chambre, la date de dépôt, le dernier vote et le numéro de loi.",
+      "La pagination par liens remplace le défilement infini, et la page est plus courte que l'ancienne."
+    ],
+    "ameliorer": [
+      "Le libellé « Date de dépôt » est plus clair que « Période » : faire de même sur les autres listes filtrées par date.",
+      "Rien d'autre à signaler."
+    ]
+  },
+  "37-dossier-fiche-parcours": {
+    "titre": "Fiche d'un dossier (parcours)",
+    "statut": "parite",
+    "modifie": [
+      "Le bandeau « Le Gouvernement et ce texte » (projet, 49.3, motions) a été rétabli pendant l'audit.",
+      "Le résumé IA est replié avec « Lire la suite » ; liens vers l'Assemblée et le Sénat quand les deux existent.",
+      "Le parcours devient une frise verticale ; les votes de chaque étape sont repliés (la page faisait 47 000 px avant correction).",
+      "La barre adoptés / rejetés sous les chiffres a disparu.",
+      "Une liste dense des étapes remplace la frise (corrigé le 16/11).",
+      "Les commissions saisies sont resserrées (corrigé le 16/11).",
+      "Les scrutins adoptés et rejetés retrouvent icône, barre et légende (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "38-dossier-fiche-amendements": {
+    "titre": "Fiche d'un dossier (amendements)",
+    "statut": "mieux",
+    "modifie": [
+      "Tous les filtres (votes publics, groupe, tri, amendement épinglé, page) sont dans l'adresse.",
+      "Les renvois Légifrance du dispositif ont été rétablis pendant l'audit, et l'ancre #amendements est lue.",
+      "La page est presque deux fois plus courte que l'ancienne (9 000 px contre 16 300 px).",
+      "Le nombre d'amendements affiché suit les filtres (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "39-dossier-fiche-scrutins": {
+    "titre": "Fiche d'un dossier (scrutins)",
+    "statut": "mieux",
+    "modifie": [
+      "Le filtre par objet du vote passe en liste déroulante avec décompte, gardé dans l'adresse avec la page.",
+      "La pagination remplace le chargement continu : la page est plus courte que l'ancienne.",
+      "L'ancre #scrutins est lue de nouveau.",
+      "Les puces avec décompte reviennent à partir de 640 px de large (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "40-sujets-liste": {
+    "titre": "Sujets",
+    "statut": "parite",
+    "modifie": [
+      "Mêmes sections (à la une, en discussion, promulgués…), avec « Voir plus » au-delà de douze sujets.",
+      "La recherche reste dans l'adresse ; le chargement se fait par lots comme l'ancien.",
+      "Les cartes des sujets sont resserrées (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "41-sujet-fiche": {
+    "titre": "Fiche d'un sujet",
+    "statut": "parite",
+    "modifie": [
+      "Le bandeau « Le Gouvernement et ce texte » a été rétabli pendant l'audit.",
+      "La frise horizontale du parcours devient une liste verticale d'étapes, plus lisible sur mobile mais plus longue.",
+      "Les statistiques par groupe et les scrutins du sujet gardent leurs filtres dans l'adresse.",
+      "Les ressources sont rangées en trois cartes : documents officiels, pour aller plus loin, médias.",
+      "Sur ordinateur, la frise redevient horizontale (corrigé le 16/11).",
+      "Le bloc de la loi reprend son libellé complet (corrigé le 16/11).",
+      "Le bouton « Afficher l'autre groupe » est accordé (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Les statistiques par groupe arrivent tard dans la page : les remonter, ou ajouter un sommaire en tête."
+    ]
+  },
+  "50-commissions-liste": {
+    "titre": "Commissions",
+    "statut": "mieux",
+    "modifie": [
+      "Les sources citent l'Assemblée et le Sénat, et la recherche entre dans l'adresse.",
+      "Le filtre de type a un libellé visible, et une liste vide propose d'effacer les filtres.",
+      "Le nom court des commissions est de nouveau affiché, comme l'a décidé le mainteneur.",
+      "Un sommaire des types ouvre la page, et chaque section se replie : seules les commissions permanentes sont ouvertes par défaut (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "51-commission-fiche": {
+    "titre": "Fiche d'une commission",
+    "statut": "mieux",
+    "modifie": [
+      "L'en-tête ajoute la date de création, la présidence avec un lien et la source selon la chambre.",
+      "Les membres passent d'une liste à une grille de trois colonnes, dédoublonnée (73 au lieu de 80).",
+      "Les filtres des textes examinés et la page de l'historique sont dans l'adresse ; les anciennes ancres d'onglet sont lues.",
+      "Une réunion annulée est signalée comme telle.",
+      "Le badge de fonction revient à côté du nom (corrigé le 16/11).",
+      "Les membres s'affichent en liste compacte (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Expliquer pourquoi le nombre de membres affiché diffère du total officiel (doublons retirés)."
+    ]
+  },
+  "52-reunion-seance": {
+    "titre": "Séance ou réunion",
+    "statut": "parite",
+    "modifie": [
+      "Le débat se lit par pages numérotées de 50 prises de parole, comme l'ancien, au lieu d'un défilement continu.",
+      "Le sommaire devient une liste de vrais liens vers chaque passage, et l'arrivée depuis un vote défile jusqu'à la bonne prise.",
+      "La provenance « donnée officielle » est indiquée ; le bouton Retour laisse place au fil d'Ariane.",
+      "Les avis sur les amendements passent dans un tableau, sans la couleur du sens de l'avis.",
+      "Le sens de l'avis (favorable, défavorable) porte une couleur et un pictogramme en plus du texte (déjà en place, vérifié le 16/11)."
+    ],
+    "ameliorer": [
+      "Un lien partagé avec ?debat=N depuis la bêta ne tombe plus sur la même page depuis le passage à 50 prises : le signaler.",
+      "Garder le sommaire visible pendant la lecture sur ordinateur, dans une colonne fixe."
+    ]
+  },
+  "53-agenda": {
+    "titre": "Agenda",
+    "statut": "mieux",
+    "modifie": [
+      "Le mois est rendu côté serveur et entre dans l'adresse, avec une légende et les sources sous le titre.",
+      "Le direct est rétabli : badges « En direct » et lien « Suivre en direct » sur les séances en cours.",
+      "L'ancre #event-<id> des anciens liens de l'accueil défile de nouveau jusqu'à la réunion.",
+      "Chaque réunion montre l'ordre du jour, les participants et les scrutins sans les replier.",
+      "Le libellé « Sénat (5ème République) » est nettoyé (corrigé le 16/11).",
+      "L'ordre du jour des jours chargés est coupé, avec « Lire tout l'ordre du jour » (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Le calendrier est plus haut que l'ancien : réduire les cases pour garder le détail du jour à côté sans défiler."
+    ]
+  },
+  "60-lobbying": {
+    "titre": "Lobbying",
+    "statut": "parite",
+    "modifie": [
+      "Les quatre chiffres ont chacun une phrase d'aide, dont la nature du budget (tranches, ordre de grandeur).",
+      "Les dernières actions montrent le texte visé et les responsables visés.",
+      "La pagination par liens remplace le défilement infini ; les logos tirés d'un service tiers laissent place à des initiales.",
+      "Budget, actions et personnes tiennent sur une ligne (corrigé le 16/11).",
+      "Le texte indicatif « Tous les secteurs » gagne en contraste (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Les initiales remplacent les logos sans aider à distinguer les organisations : héberger des logos chez CLAIR ou les retirer."
+    ]
+  },
+  "61-lobbyiste-fiche": {
+    "titre": "Fiche d'un représentant d'intérêts",
+    "statut": "mieux",
+    "modifie": [
+      "Le parlementaire rencontré s'affiche enfin : l'ancien lisait un champ que l'API ne renvoie pas.",
+      "Un sénateur rencontré mène désormais à sa fiche de sénateur (corrigé pendant l'audit).",
+      "Un bloc « Informations » ajoute l'adresse avec code postal et le SIREN ; une adresse invalide donne une page 404.",
+      "La provenance « donnée officielle, répertoire de la HATVP » est indiquée.",
+      "L'avatar d'initiales affiche « 10 » pour 1001PACT (corrigé le 16/11).",
+      "La ville n'est plus répétée sur la fiche (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "62-lobbying-actions": {
+    "titre": "Actions de lobbying",
+    "statut": "mieux",
+    "modifie": [
+      "La page est rendue côté serveur, avec un titre, une description et une adresse canonique propres.",
+      "La pagination par liens et le nombre de résultats annoncé remplacent le défilement infini.",
+      "Le texte visé est validé contre la liste de la HATVP ; les anciens liens filtrés restent valides.",
+      "Les filtres actifs s'affichent en puces retirables (déjà en place, vérifié le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "70-senatoriales-2026": {
+    "titre": "Sénatoriales 2026",
+    "statut": "parite",
+    "modifie": [
+      "Portage presque ligne à ligne : mêmes blocs, mêmes textes, mêmes ancres de département.",
+      "La présence des sortants est nommée « Présence (solennels) », et l'affirmation « dépasse 95 % » a été retirée (corrigé pendant l'audit).",
+      "Chaque graphique porte la mention « calculée par CLAIR » et un tableau de données à déplier.",
+      "Le cache CDN de la page a été repris.",
+      "Sur mobile, l'index des circonscriptions est replié (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "La page reste très longue (27 000 px) : un sommaire collant vers les blocs (carte, graphiques, liste) aiderait."
+    ]
+  },
+  "71-senatoriales-departement": {
+    "titre": "Sénatoriales : une circonscription",
+    "statut": "parite",
+    "modifie": [
+      "Même ordre des blocs selon la phase, mêmes mentions de source du ministère de l'Intérieur.",
+      "Une panne de l'API donne une page d'erreur au lieu d'un faux 404, avec « Réessayer » pour les listes.",
+      "Le libellé de présence des cartes de sortants suit la correction de la page principale."
+    ],
+    "ameliorer": [
+      "La page est rendue à la première visite plutôt qu'au build : le premier visiteur attend un peu plus.",
+      "Rien d'autre à signaler."
+    ]
+  },
+  "72-senatoriales-graphique-carte": {
+    "titre": "Sénatoriales : carte",
+    "statut": "parite",
+    "modifie": [
+      "Même carte, avec des boutons à état pour chaque département et un tableau de données sous le graphique.",
+      "La mention « calculée par CLAIR » s'ajoute au cadre.",
+      "Les libellés des vignettes hors métropole passent sur deux lignes (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "73-senatoriales-graphique-groupes": {
+    "titre": "Sénatoriales : groupes",
+    "statut": "parite",
+    "modifie": [
+      "Même graphique, même téléchargement et même partage.",
+      "Un tableau de données s'ajoute sous le graphique, pour les lecteurs d'écran."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "74-senatoriales-graphique-presence": {
+    "titre": "Sénatoriales : présence",
+    "statut": "parite",
+    "modifie": [
+      "Le titre est devenu « Présence aux votes solennels », avec le sous-titre et l'image de partage corrigés pendant l'audit.",
+      "Un tableau de données s'ajoute sous le graphique.",
+      "Une phrase sous le titre explique pourquoi la présence au Sénat se mesure aux votes solennels (déjà en place, vérifié le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "75-senatoriales-graphique-activite": {
+    "titre": "Sénatoriales : activité",
+    "statut": "parite",
+    "modifie": [
+      "Même graphique et mêmes pastilles « Voir aussi ».",
+      "Un tableau de données et la mention « calculée » s'ajoutent."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "76-senatoriales-graphique-ages": {
+    "titre": "Sénatoriales : âges",
+    "statut": "parite",
+    "modifie": [
+      "Même graphique, même image téléchargeable.",
+      "Un tableau de données s'ajoute sous le graphique."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "77-senatoriales-graphique-commissions": {
+    "titre": "Sénatoriales : commissions",
+    "statut": "parite",
+    "modifie": [
+      "Même graphique et mêmes liens vers les autres graphiques.",
+      "Un tableau de données s'ajoute sous le graphique."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "78-senatoriales-graphique-professions": {
+    "titre": "Sénatoriales : professions",
+    "statut": "parite",
+    "modifie": [
+      "Même graphique, même téléchargement et même partage.",
+      "Un tableau de données s'ajoute sous le graphique."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "80-a-propos": {
+    "titre": "À propos",
+    "statut": "parite",
+    "modifie": [
+      "Textes repris sans phrase manquante, mêmes titre et description.",
+      "Mise en page du nouveau design system (typographie, espacements).",
+      "La page entre dans le plan du site (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "81-methodologie": {
+    "titre": "Méthodologie",
+    "statut": "parite",
+    "modifie": [
+      "Textes repris, y compris le passage sur le vote par groupe des scrutins ordinaires au Sénat.",
+      "Les sections gardent leurs ancres, dont celle sur l'enrichissement par IA citée depuis les fiches.",
+      "Un sommaire ouvre la page (corrigé le 16/11).",
+      "La page entre dans le plan du site (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "82-api": {
+    "titre": "API ouverte",
+    "statut": "parite",
+    "modifie": [
+      "Mêmes exemples d'appels, mêmes points d'accès et même lien vers data.gouv.",
+      "La page est un peu plus courte sur ordinateur.",
+      "Les blocs de code ont un bouton « Copier » (corrigé le 16/11).",
+      "La page entre dans le plan du site (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "83-comprendre": {
+    "titre": "Comprendre (index)",
+    "statut": "parite",
+    "modifie": [
+      "Même index des sept articles, mêmes métadonnées.",
+      "Cartes au style du nouveau design system.",
+      "Les pages « Comprendre » entrent dans le plan du site (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "84-comprendre-parlement": {
+    "titre": "Comprendre : le Parlement",
+    "statut": "parite",
+    "modifie": [
+      "Article repris à l'identique, métadonnées comprises.",
+      "Mise en page du nouveau design system."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "85-comprendre-parlementaire": {
+    "titre": "Comprendre : le parlementaire",
+    "statut": "parite",
+    "modifie": [
+      "Les trois passages ajoutés à l'ancien sur la présence (solennels, Sénat, fiche et classements) ont été repris pendant l'audit.",
+      "La méthode publiée correspond de nouveau aux chiffres affichés sur les fiches."
+    ],
+    "ameliorer": [
+      "Lier depuis la carte Présence des fiches directement vers le passage sur la présence au Sénat.",
+      "Rien d'autre à signaler."
+    ]
+  },
+  "86-comprendre-scrutin": {
+    "titre": "Comprendre : le scrutin",
+    "statut": "parite",
+    "modifie": [
+      "Article repris à l'identique.",
+      "Il est lié depuis la colonne d'informations de chaque fiche de scrutin."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "87-comprendre-dossier-legislatif": {
+    "titre": "Comprendre : le dossier législatif",
+    "statut": "parite",
+    "modifie": [
+      "Article repris à l'identique, métadonnées comprises.",
+      "Mise en page du nouveau design system."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "88-comprendre-groupes-politiques": {
+    "titre": "Comprendre : les groupes politiques",
+    "statut": "parite",
+    "modifie": [
+      "Article repris à l'identique.",
+      "Mise en page du nouveau design system."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "89-comprendre-commissions": {
+    "titre": "Comprendre : les commissions",
+    "statut": "parite",
+    "modifie": [
+      "Article repris à l'identique.",
+      "Il est lié depuis l'en-tête des fiches de commission."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "90-comprendre-lobbying": {
+    "titre": "Comprendre : le lobbying",
+    "statut": "parite",
+    "modifie": [
+      "Article repris à l'identique.",
+      "Il est lié depuis l'en-tête de la page Lobbying."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "91-guide": {
+    "titre": "Guide pratique (index)",
+    "statut": "parite",
+    "modifie": [
+      "Même index des cinq guides, mêmes métadonnées.",
+      "Mise en page du nouveau design system.",
+      "Les pages du guide entrent dans le plan du site (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "92-guide-decouvrir-mon-depute": {
+    "titre": "Guide : découvrir mon député",
+    "statut": "parite",
+    "modifie": [
+      "Étapes, textes et lien « Commencer » repris à l'identique.",
+      "Mise en page du nouveau design system."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "93-guide-decrypter-un-scrutin": {
+    "titre": "Guide : décrypter un scrutin",
+    "statut": "parite",
+    "modifie": [
+      "Étapes et textes repris à l'identique.",
+      "Mise en page du nouveau design system.",
+      "Le guide est réécrit pour la nouvelle fiche de scrutin (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "94-guide-suivre-un-sujet": {
+    "titre": "Guide : suivre un sujet",
+    "statut": "parite",
+    "modifie": [
+      "Étapes et textes repris à l'identique.",
+      "Mise en page du nouveau design system.",
+      "Le guide est réécrit pour le parcours d'un sujet de la bêta (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "95-guide-comparer-des-elus": {
+    "titre": "Guide : comparer des élus",
+    "statut": "parite",
+    "modifie": [
+      "Étapes et textes repris à l'identique.",
+      "Mise en page du nouveau design system.",
+      "Le guide est réécrit pour la case « Comparer » des cartes (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "96-guide-comprendre-le-lobbying": {
+    "titre": "Guide : comprendre le lobbying",
+    "statut": "parite",
+    "modifie": [
+      "Étapes et textes repris à l'identique.",
+      "Mise en page du nouveau design system."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "97-soutenir": {
+    "titre": "Nous soutenir",
+    "statut": "parite",
+    "modifie": [
+      "Formulaire HelloAsso, FAQ fiscale et chiffres repris.",
+      "La carte du nouveau contributeur et la grille de l'équipe à quatre colonnes ont été ajoutées pendant l'audit."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "98-contact": {
+    "titre": "Contact",
+    "statut": "parite",
+    "modifie": [
+      "Textes et coordonnées repris sans phrase manquante.",
+      "Mise en page du nouveau design system.",
+      "Le pied de page retrouve le lien vers le serveur Discord (corrigé le 16/11).",
+      "La page entre dans le plan du site (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "99-cgu": {
+    "titre": "Conditions générales d'utilisation",
+    "statut": "parite",
+    "modifie": [
+      "Articles et date de mise à jour repris à l'identique.",
+      "Les sections déjà commentées dans l'ancien (compte, simulateur) restent absentes, à juste titre."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "99b-confidentialite": {
+    "titre": "Confidentialité",
+    "statut": "parite",
+    "modifie": [
+      "Texte et date de mise à jour repris à l'identique.",
+      "Les logos de lobbyistes ne passent plus par un service tiers, ce qui va dans le sens de la politique publiée."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "99c-mentions-legales": {
+    "titre": "Mentions légales",
+    "statut": "parite",
+    "modifie": [
+      "Texte et date de mise à jour repris à l'identique.",
+      "Mise en page du nouveau design system."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  },
+  "99d-page-introuvable": {
+    "titre": "Page introuvable",
+    "statut": "mieux",
+    "modifie": [
+      "Le titre « Page introuvable » est déclaré dans les métadonnées, et l'erreur est journalisée.",
+      "Une page d'erreur autonome couvre aussi la panne du gabarit général, absente de l'ancien.",
+      "Un champ de recherche est proposé sur la page (corrigé le 16/11)."
+    ],
+    "ameliorer": [
+      "Rien à signaler."
+    ]
+  }
+}

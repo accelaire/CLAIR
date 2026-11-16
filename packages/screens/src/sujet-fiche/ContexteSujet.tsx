@@ -31,6 +31,14 @@ const liensOfficiels = (dossiers: SujetDossier[]) => {
  * Contexte du sujet : résumé et enjeux générés par IA (signalés comme tels), loi promulguée,
  * ou texte en cours d'examen avec ses liens officiels.
  */
+
+/**
+ * Intitulé complet de la loi : la source donne la suite du nom (« de finances pour 2026 »), que
+ * l'on fait précéder de « Loi », comme la fiche d'un dossier.
+ */
+const libelleLoi = (loiTitre: string | null | undefined) =>
+  loiTitre ? (/^loi\b/i.test(loiTitre) ? loiTitre : `Loi ${loiTitre}`) : null;
+
 export const ContexteSujet = ({
   sujet,
   dossiers,
@@ -73,7 +81,7 @@ export const ContexteSujet = ({
           as="div"
           titleAs="h2"
           dossier={{
-            titre: premier(dossiers, "loiTitre") ?? sujet.label,
+            titre: libelleLoi(premier(dossiers, "loiTitre")) ?? sujet.label,
             etat: "promulgue",
             loiNumero,
             loiDateJO: premier(dossiers, "loiDateJO"),

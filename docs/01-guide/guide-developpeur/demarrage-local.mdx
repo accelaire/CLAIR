@@ -32,7 +32,7 @@ ln -s ../../.env services/ingestion/.env
 pnpm docker:up        # PostgreSQL 16 (port 5432) + Redis 7 (port 6379)
 pnpm db:generate      # client Prisma
 pnpm db:push          # crée le schéma dans la base locale, puis ses triggers
-pnpm dev              # tout : web :3000, API :3001, doc :3002, nouveau site :3010, Storybook :6006
+pnpm dev              # tout : web :3000, API :3001, doc :3002, nouveau site :3010, Storybook :3050
 ```
 
 Les valeurs par défaut de `.env.example` pointent déjà vers les conteneurs locaux (`postgresql://clair:clair_dev@localhost:5432/clair`, `redis://localhost:6379`). Le frontend n'a besoin d'aucune variable en local : `NEXT_PUBLIC_API_URL` vaut `http://localhost:3001` par défaut.
@@ -46,7 +46,7 @@ Pour ne lancer qu'une partie :
 ```bash
 pnpm dev:api                          # API seule (port 3001)
 pnpm --filter @clair/site dev         # nouveau site (port 3010), branché sur l'API locale
-pnpm storybook                        # atelier des composants (port 6006), sans API
+pnpm storybook                        # atelier des composants (port 3050), sans API
 pnpm dev:docs                         # documentation (port 3002)
 ```
 
@@ -77,7 +77,7 @@ Sans `MISTRAL_API_KEY`, l'enrichissement IA est sauté avec un avertissement ; l
 
 - Site actuel : [http://localhost:3000](http://localhost:3000)
 - Nouveau site : [http://localhost:3010](http://localhost:3010)
-- Storybook : [http://localhost:6006](http://localhost:6006)
+- Storybook : [http://localhost:3050](http://localhost:3050)
 - API : [http://localhost:3001/health](http://localhost:3001/health)
 - Swagger UI de l'API : [http://localhost:3001/docs](http://localhost:3001/docs)
 - Documentation : [http://localhost:3002](http://localhost:3002)

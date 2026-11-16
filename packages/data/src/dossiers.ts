@@ -1,4 +1,6 @@
+import type { RenvoiDispositif } from "./amendements.ts";
 import type { Chambre } from "./common.ts";
+import type { ContexteGouvernemental } from "./gouvernements.ts";
 
 /**
  * Dossiers législatifs, tels que les renvoie l'API (apps/api, module dossiers) : liste
@@ -80,6 +82,8 @@ export type AmendementDuDossier = {
   alinea?: string | null;
   alineaNumero?: number | null;
   dispositif: string | null;
+  /** Liens Légifrance du dispositif (absents d'une réponse ancienne en cache). */
+  renvois?: RenvoiDispositif[];
   exposeSommaire: string | null;
   texteRef: string | null;
   sort: string | null;
@@ -144,6 +148,8 @@ export type DossierDetail = {
   /** Groupes des auteurs d'amendements, au moment du dépôt. */
   amendementsGroupes: Array<{ slug: string; nom: string; couleur: string | null; count: number }>;
   stats: { totalAdopte: number; totalRejete: number };
+  /** Projet de loi du Gouvernement, recours au 49.3 et motions (null s'il n'y en a pas). */
+  gouvernement?: ContexteGouvernemental | null;
   /** Nombre de scrutins par objet du vote, sur tout le dossier. */
   naturesCount?: Record<string, number>;
   /** Rapports et missions d'application citant la loi de ce dossier. */

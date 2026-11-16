@@ -133,7 +133,7 @@ export const votesExemple: PageVotes = page(
         titre: "l'ensemble du projet de loi exemple",
         sort: "adopte",
         typeVote: "ordinaire",
-        tags: [],
+        tags: ["santé", "budget"],
         importance: 1,
         nombrePour: 10,
         nombreContre: 5,

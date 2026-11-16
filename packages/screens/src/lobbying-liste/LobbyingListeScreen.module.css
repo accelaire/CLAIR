@@ -79,6 +79,13 @@
   line-height: var(--clair-texte-sm-interligne);
 }
 
+/* Chaque chiffre tient sur une ligne avec son libellé : « Budget déclaré 25 k € ». */
+.chiffres > div {
+  display: flex;
+  align-items: baseline;
+  gap: var(--clair-espacement-1v);
+}
+
 .chiffres dt {
   color: var(--clair-texte-mention);
 }

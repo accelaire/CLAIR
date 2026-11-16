@@ -1,5 +1,5 @@
 import type { InterventionScrutin } from "@clair/data";
-import { Badge, ExpandableText, GroupeBadge, Link } from "@clair/ui";
+import { Badge, ExpandableText, GroupeBadge, Link, ParlementaireAvatar } from "@clair/ui";
 import { parlementaireHref } from "../shared/scrutins.ts";
 import classes from "./ScrutinFicheScreen.module.css";
 
@@ -29,7 +29,7 @@ type InterventionProps = {
 };
 
 /**
- * Prise de parole en séance : orateur (lien vers sa fiche), groupe ou qualité, extrait repliable
+ * Prise de parole en séance : photo et orateur (lien vers sa fiche), groupe ou qualité, extrait repliable
  * et lien vers le compte rendu officiel quand l'extrait est tronqué.
  */
 export const Intervention = ({ intervention, chambre, defend }: InterventionProps) => {
@@ -37,6 +37,14 @@ export const Intervention = ({ intervention, chambre, defend }: InterventionProp
   return (
     <article className={classes.intervention} data-defense={defend ? "" : undefined}>
       <p className={classes.orateur}>
+        {p ? (
+          <ParlementaireAvatar
+            nom={nomOrateur(intervention)}
+            photoUrl={p.photoUrl}
+            size="sm"
+            decorative
+          />
+        ) : null}
         {p ? (
           <Link href={parlementaireHref(chambre, p.slug)}>{nomOrateur(intervention)}</Link>
         ) : (

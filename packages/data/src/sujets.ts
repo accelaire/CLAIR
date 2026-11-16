@@ -1,4 +1,5 @@
 import type { Chambre } from "./common.ts";
+import type { ContexteGouvernemental } from "./gouvernements.ts";
 
 /**
  * Sujets (grands textes suivis de bout en bout), tels que les renvoie l'API (apps/api, module
@@ -48,6 +49,8 @@ export type SujetDetail = SujetListItem & {
   /** Enjeux générés par IA : à signaler comme tels. */
   enjeux: string | null;
   liens?: { construction: SujetLien[]; contexte: SujetLien[] };
+  /** Projets de loi du Gouvernement, recours au 49.3 et motions sur ses dossiers (null sinon). */
+  gouvernement?: ContexteGouvernemental | null;
 };
 
 /** Étape officielle du parcours d'un dossier (actes législatifs). */

@@ -113,6 +113,7 @@ export const MultiSelectFilter = ({
         description={announcement}
         descriptionProps={{ className: "clair-visually-hidden" }}
         placeholder={value.length === 0 ? placeholder : undefined}
+        classNames={{ input: classes.input }}
         searchable
         filter={accentInsensitiveFilter}
         nothingFoundMessage="Aucun résultat"

@@ -20,6 +20,7 @@ import {
   MAX_COMPARAISON,
 } from "../shared/parlementaires/chambre.ts";
 import type { ScreenProps } from "../shared/types.ts";
+import { AmendementsCompares } from "./AmendementsCompares.tsx";
 import classes from "./ComparateurScreen.module.css";
 import {
   type ComparateurFiltres,
@@ -39,7 +40,7 @@ const MIN = 2;
 
 /**
  * Comparateur de deux à quatre députés ou sénateurs, choisis dans l'URL (`?slugs=a,b`) :
- * profils, statistiques côte à côte et votes comparés. Fusionne /deputes/comparer et
+ * profils, statistiques côte à côte, votes et amendements comparés. Fusionne /deputes/comparer et
  * /senateurs/comparer de apps/web.
  */
 export const ComparateurScreen = ({
@@ -80,7 +81,7 @@ export const ComparateurScreen = ({
           { label: config.titre, href: config.chemin },
           { label: "Comparer" },
         ]}
-        description="Statistiques et votes de deux à quatre élus, côte à côte."
+        description="Statistiques, votes et amendements de deux à quatre élus, côte à côte."
       />
 
       {!assez ? (
@@ -141,13 +142,14 @@ export const ComparateurScreen = ({
               </div>
             ) : null}
           </section>
-          <StatsComparees elus={elus} />
+          <StatsComparees elus={elus} chambre={chambre} />
           <VotesCompares
             chemin={config.chemin}
             elus={elus}
             divergents={filtres.divergents}
             onDivergentsChange={(divergents) => aller({ ...filtres, divergents })}
           />
+          <AmendementsCompares chemin={config.chemin} elus={elus} />
         </>
       )}
     </Container>

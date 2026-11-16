@@ -78,6 +78,23 @@ describe("ClassementsScreen", () => {
     expect(lignes[1]).toHaveTextContent("Groupe d'exemple numéro 2");
   });
 
+  it("masque la colonne « Chambre » des groupes quand une seule chambre est choisie", async () => {
+    const { findByRole } = renderScreen(
+      <ClassementsScreen params={{ tab: "groupes", chambre: "assemblee" }} />,
+      { routes: routes(), pathname: "/classements" },
+    );
+    const tableau = await findByRole("table", { name: /groupes politiques par présence/ });
+    expect(within(tableau).queryByRole("columnheader", { name: "Chambre" })).toBeNull();
+  });
+
+  it("rappelle le critère choisi à côté du bouton des filtres (mobile)", async () => {
+    const { findByText } = renderScreen(<ClassementsScreen params={{ sort: "loyaute" }} />, {
+      routes: routes(),
+      pathname: "/classements",
+    });
+    expect(await findByText("Critère : Loyauté")).toBeInTheDocument();
+  });
+
   it("retrouve la page d'un parlementaire mis en avant grâce à son rang", async () => {
     const pages: unknown[] = [];
     const { findByText } = renderScreen(
@@ -104,5 +121,64 @@ describe("ClassementsScreen", () => {
       pathname: "/classements",
     });
     expect(await findByRole("button", { name: "Réessayer" })).toBeInTheDocument();
+  });
+
+  it("affiche au Sénat la présence aux votes solennels, celle qui sert au tri (#108)", async () => {
+    const senateur = {
+      ...parlementaireClasse(1),
+      chambre: "senat" as const,
+      stats: {
+        presence: 100,
+        presenceSolennel: 73,
+        loyaute: 80,
+        participation: 10,
+        interventions: 2,
+        amendements: 3,
+        scrutins: 28,
+        classable: false,
+      },
+    };
+    const { findByRole, getByText } = renderScreen(
+      <ClassementsScreen params={{ chambre: "senat" }} />,
+      {
+        routes: {
+          ...routes([senateur]),
+          "/senateurs/groupes": { data: [] },
+          "/senateurs/historique-carriere": { data: { present: false } },
+        },
+        pathname: "/classements",
+      },
+    );
+    const tableau = await findByRole("table", { name: /Classement des parlementaires/ });
+    const ligne = within(tableau).getByRole("row", { name: /Camille Exemple1/ });
+    expect(ligne).toHaveTextContent(/73\s%/);
+    expect(ligne).not.toHaveTextContent(/100\s%/);
+    // La présence d'un sénateur n'a pas de seuil : il garde son rang.
+    expect(ligne).not.toHaveTextContent("n.c.");
+    expect(
+      getByText(/Sénateurs classés sur leur présence aux votes solennels/),
+    ).toBeInTheDocument();
+  });
+
+  it("écrit « n.c. » à la place du rang d'un député sous 50 scrutins", async () => {
+    const depute = {
+      ...parlementaireClasse(1),
+      stats: {
+        presence: 89,
+        loyaute: 80,
+        participation: 10,
+        interventions: 2,
+        amendements: 3,
+        scrutins: 28,
+        classable: false,
+      },
+    };
+    const { findByRole } = renderScreen(<ClassementsScreen />, {
+      routes: routes([depute]),
+      pathname: "/classements",
+    });
+    const tableau = await findByRole("table", { name: /Classement des parlementaires/ });
+    const ligne = within(tableau).getByRole("row", { name: /Camille Exemple1/ });
+    expect(ligne).toHaveTextContent("n.c.");
   });
 });

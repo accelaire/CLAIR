@@ -1,7 +1,7 @@
 import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { renderWithProviders } from "../../test-utils.tsx";
-import { mandatsExemple, mandatUnique } from "../timeline-fixtures.ts";
+import { mandatsExemple, mandatUnique, postesExemple } from "../timeline-fixtures.ts";
 import { MandatsTimeline } from "./MandatsTimeline.tsx";
 
 describe("MandatsTimeline", () => {
@@ -43,6 +43,49 @@ describe("MandatsTimeline", () => {
   it("n'indique pas la fonction pour une seule chambre", () => {
     const { getByRole } = renderWithProviders(<MandatsTimeline mandats={mandatUnique} />);
     expect(getByRole("list", { name: "Mandats" })).not.toHaveTextContent("Député ·");
+  });
+
+  it("insère les postes au Gouvernement à leur date, avec leur nature en texte", () => {
+    const { getByRole } = renderWithProviders(
+      <MandatsTimeline mandats={mandatsExemple} postes={postesExemple} sexe="F" />,
+    );
+    const entrees = getByRole("list", { name: "Mandats" }).querySelectorAll(
+      ":scope > [role='listitem']",
+    );
+    expect(entrees).toHaveLength(4);
+    expect(entrees[0]).toHaveTextContent("Sénatrice · Mandature 2023");
+    expect(entrees[1]).toHaveTextContent("Députée · XVIe législature");
+    expect(entrees[2]).toHaveTextContent("Ministre déléguée · Exemples numériques");
+    expect(entrees[2]).toHaveTextContent("Gouvernement");
+    expect(entrees[2]).toHaveTextContent("juillet 2020 – mai 2022");
+    expect(entrees[2]).toHaveTextContent("2 textes portés, dont 1 promulgué");
+    expect(entrees[2]).toHaveAttribute("data-poste", "gouvernement");
+    expect(entrees[3]).toHaveTextContent("Secrétaire d'État · Modèles");
+    expect(entrees[3]).toHaveTextContent("Gouvernement Exemple I");
+    expect(getByRole("link", { name: "Gouvernement Exemple II" })).toHaveAttribute(
+      "href",
+      "#gouvernement",
+    );
+  });
+
+  it("dit la présidence de la République et un poste en cours", () => {
+    const { getByRole } = renderWithProviders(
+      <MandatsTimeline
+        mandats={[]}
+        postes={[
+          {
+            id: "pr",
+            nature: "presidence",
+            libelle: "Président de la République",
+            dateDebut: "2030-05-14",
+          },
+        ]}
+      />,
+    );
+    const entree = getByRole("listitem");
+    expect(entree).toHaveTextContent("Présidence de la République");
+    expect(entree).toHaveTextContent("En cours");
+    expect(entree).toHaveTextContent("mai 2030 – en cours");
   });
 
   it("affiche un état vide sans mandat", () => {

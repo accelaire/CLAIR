@@ -157,9 +157,15 @@ const Details = ({ resultat }: { resultat: SearchResult }) => {
 export const ResultatCard = ({
   resultat,
   titleAs = "h3",
+  nature = true,
 }: {
   resultat: SearchResult;
   titleAs?: CardHeading;
+  /**
+   * Nature du résultat au-dessus du titre. Inutile dans une section déjà titrée par sa
+   * catégorie (« Députés ») : la carte y gagne une ligne.
+   */
+  nature?: boolean;
 }) => {
   const { singulier, icone: Icone } = CATEGORIE[categorieDe(resultat)];
   return (
@@ -170,10 +176,12 @@ export const ResultatCard = ({
       href={lienDe(resultat)}
       title={titreDe(resultat)}
       eyebrow={
-        <span className={classes.nature}>
-          <Icone className={classes.icone} aria-hidden="true" />
-          {singulier}
-        </span>
+        nature ? (
+          <span className={classes.nature}>
+            <Icone className={classes.icone} aria-hidden="true" />
+            {singulier}
+          </span>
+        ) : undefined
       }
     >
       <Details resultat={resultat} />

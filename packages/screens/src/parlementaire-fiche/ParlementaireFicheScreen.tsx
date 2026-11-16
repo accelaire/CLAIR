@@ -11,8 +11,11 @@ import {
   Tabs,
   useNavigation,
 } from "@clair/ui";
+import { EncartSoutien } from "../shared/encart-soutien/EncartSoutien.tsx";
+import { useOngletAncre } from "../shared/onglet-ancre.ts";
 import { CHAMBRE_CONFIG } from "../shared/parlementaires/chambre.ts";
 import type { ScreenProps } from "../shared/types.ts";
+import { FicheApercu } from "./FicheApercu.tsx";
 import { FicheEnTete } from "./FicheEnTete.tsx";
 import { FicheResumeIA } from "./FicheResumeIA.tsx";
 import { FicheStatistiques } from "./FicheStatistiques.tsx";
@@ -26,6 +29,7 @@ import { OngletVotes } from "./OngletVotes.tsx";
 import classes from "./ParlementaireFicheScreen.module.css";
 import {
   FICHE_QUERY,
+  ONGLETS,
   type OngletFiche,
   type ParlementaireFicheFiltres,
   parlementaireFicheParamsOf,
@@ -43,14 +47,20 @@ export type ParlementaireFicheScreenProps = ScreenProps<ParlementaireFicheInitia
   slug: string;
 };
 
-const ONGLET_PAR_DEFAUT: Pick<ParlementaireFicheFiltres, "page" | "dissidents" | "votesPublics"> = {
+/** Filtres propres à un onglet, remis à zéro quand on en change (période et chambre restent). */
+const ONGLET_PAR_DEFAUT: Pick<
+  ParlementaireFicheFiltres,
+  "page" | "dissidents" | "votesPublics" | "type"
+> = {
   page: 1,
   dissidents: false,
   votesPublics: false,
+  type: "",
 };
 
 /**
- * Fiche d'un député ou d'un sénateur : en-tête, statistiques (calculées), synthèse (IA), puis
+ * Fiche d'un député ou d'un sénateur : en-tête, statistiques (calculées), aperçu du mandat et des
+ * déclarations HATVP, synthèse (IA), puis
  * onglets votes, amendements, interventions, mandats et déclarations HATVP (s'il y en a).
  * L'onglet actif, sa page et ses filtres vivent dans l'URL. Fusionne les fiches député et
  * sénateur de apps/web.
@@ -71,6 +81,10 @@ export const ParlementaireFicheScreen = ({
       initialData: initialData.fiche,
     },
   );
+  // Anciens liens d'apps/web : `#votes`, `#interventions`, `#amendements`.
+  const ongletHref = (onglet: OngletFiche) =>
+    buildHref(pathname, parlementaireFicheParamsOf({ ...filtres, ...ONGLET_PAR_DEFAUT, onglet }));
+  const barreOnglets = useOngletAncre(ONGLETS, ongletHref);
 
   if (query.isPending) {
     return (
@@ -93,16 +107,20 @@ export const ParlementaireFicheScreen = ({
   const fiche = query.data.data;
   const aller = (suivants: ParlementaireFicheFiltres) =>
     navigate(buildHref(pathname, parlementaireFicheParamsOf(suivants)));
+  const deuxChambres =
+    new Set(fiche.mandatsParlementaires.map((mandat) => mandat.chambre)).size > 1;
   const ongletProps: OngletProps = {
     chemin,
     slug,
-    filtres,
+    // Le filtre de chambre ne vaut que pour un élu passé par les deux chambres.
+    filtres: deuxChambres ? filtres : { ...filtres, chambre: "" },
     changer: (changement) => aller({ ...filtres, ...changement, page: 1 }),
     pageHref: (page) => buildHref(pathname, parlementaireFicheParamsOf({ ...filtres, page })),
     dateMin: fiche.mandatsParlementaires
       .map((mandat) => mandat.dateDebut.slice(0, 10))
       .sort()
       .at(0),
+    deuxChambres,
   };
 
   const items: Array<TabItem & { value: OngletFiche }> = [
@@ -137,7 +155,11 @@ export const ParlementaireFicheScreen = ({
           <OngletVotes
             {...ongletProps}
             initialData={
-              filtres.page === 1 && !filtres.dissidents && !filtres.dateFrom && !filtres.dateTo
+              filtres.page === 1 &&
+              !filtres.dissidents &&
+              !filtres.dateFrom &&
+              !filtres.dateTo &&
+              !filtres.chambre
                 ? initialData.votes
                 : undefined
             }
@@ -162,10 +184,17 @@ export const ParlementaireFicheScreen = ({
           stats={fiche.stats}
           titre={fiche.actif ? "Statistiques" : titreBilan(nombreMandats(fiche, chambre) > 1)}
           calculeLe={fiche.statsCalculatedAt}
+          chambre={chambre}
+          fonctions={fiche.mandats}
         />
       ) : null}
+      <FicheApercu
+        fiche={fiche}
+        mandatsHref={ongletHref("mandats")}
+        declarationsHref={ongletHref("declarations")}
+      />
       <FicheResumeIA {...fiche} />
-      <section className={classes.section} aria-label="Activité et mandats">
+      <section ref={barreOnglets} className={classes.section} aria-label="Activité et mandats">
         <Tabs
           label={`Activité de ${fiche.prenom} ${fiche.nom}`}
           value={onglet}
@@ -176,6 +205,7 @@ export const ParlementaireFicheScreen = ({
           items={items.map((item) => ({ ...item, content: contenu(item.value) }))}
         />
       </section>
+      <EncartSoutien espace={false} />
     </Container>
   );
 };

@@ -2,22 +2,15 @@
 
 import { useApiQuery } from "@clair/api-client";
 import type { SujetDetail, SujetDossier, SujetEtapeParcours } from "@clair/data";
-import {
-  Badge,
-  ChambreBadge,
-  LegislativeTimeline,
-  Link,
-  parseStatut,
-  StatutBadge,
-} from "@clair/ui";
+import { ChambreBadge, LegislativeTimeline, Link } from "@clair/ui";
 import { ChevronDown, Landmark, Users } from "lucide-react";
 import { useId, useState } from "react";
-import { scrutinHref } from "../shared/scrutins.ts";
+import { VotesDeLEtape } from "../shared/parcours/VotesDeLEtape.tsx";
 import { compte, formatDate } from "../sujets-liste/format.ts";
 import { etapesDuSujet } from "./parcours.ts";
 import classes from "./SujetFicheScreen.module.css";
 
-/** Une séance ou réunion : date, chambre, volume, objet et votes. */
+/** Une séance ou réunion : date, chambre, volume, objet et votes (repliés). */
 const Etape = ({ etape }: { etape: SujetEtapeParcours }) => {
   const nom =
     etape.commission?.nom ??
@@ -43,27 +36,9 @@ const Etape = ({ etape }: { etape: SujetEtapeParcours }) => {
         <p className={classes.mention}>{etape.textes.map((t) => t.titre).join(" · ")}</p>
       ) : null}
       {etape.scrutins.length > 0 ? (
-        <ul
-          className={classes.votes}
-          aria-label={`Votes de cette étape (${etape.scrutins.length})`}
-        >
-          {etape.scrutins.map((scrutin) => {
-            const statut = parseStatut(scrutin.sort);
-            return (
-              <li key={scrutin.id} className={classes.vote}>
-                {statut ? (
-                  <StatutBadge statut={statut} size="sm" />
-                ) : (
-                  <Badge size="sm">{scrutin.sort}</Badge>
-                )}
-                <Link href={scrutinHref(scrutin)}>{scrutin.titre}</Link>
-                <span className="clair-chiffres">
-                  {scrutin.nombrePour} pour, {scrutin.nombreContre} contre
-                </span>
-              </li>
-            );
-          })}
-        </ul>
+        <div className={classes.votesEtape}>
+          <VotesDeLEtape scrutins={etape.scrutins} date={formatDate(etape.date)} />
+        </div>
       ) : null}
     </li>
   );
@@ -120,7 +95,10 @@ const SeancesDuSujet = ({ slug }: { slug: string }) => {
   );
 };
 
-/** Parcours parlementaire : frise des étapes, puis les séances qui s'y sont tenues. */
+/**
+ * Parcours parlementaire : frise des étapes (horizontale sur grand écran, comme dans apps/web ;
+ * liste sur mobile), puis les séances qui s'y sont tenues.
+ */
 export const ParcoursSujet = ({
   slug,
   sujet,
@@ -132,7 +110,7 @@ export const ParcoursSujet = ({
 }) =>
   dossiers.length === 0 ? null : (
     <div className={classes.block}>
-      <LegislativeTimeline steps={etapesDuSujet(dossiers, sujet)}>
+      <LegislativeTimeline steps={etapesDuSujet(dossiers, sujet)} orientation="responsive">
         <SeancesDuSujet slug={slug} />
       </LegislativeTimeline>
     </div>

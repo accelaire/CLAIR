@@ -42,13 +42,27 @@ export type Circonscription = {
   type: string;
 };
 
-/** Statistiques calculées par CLAIR (pourcentages ou nombres). Donnée calculée, pas officielle. */
+/**
+ * Statistiques calculées par CLAIR (pourcentages ou nombres), sur la période demandée (mandat en
+ * cours, ou carrière avec `periode=carriere`). Donnée calculée, pas officielle. Relu sur l'API
+ * (`parlementaires.service.ts`, `getParlementaires`) le 2026-11-14.
+ */
 export type StatsParlementaire = {
+  /** Participation aux scrutins publics, en % ; au Sénat, ce n'est pas une présence. */
   presence: number | null;
+  /** Présence aux scrutins solennels, en % ; seule mesure de la présence au Sénat. */
+  presenceSolennel?: number | null;
   loyaute: number | null;
   participation: number | null;
   interventions: number | null;
   amendements: number | null;
+  /** Scrutins sur lesquels porte la présence. */
+  scrutins?: number | null;
+  /**
+   * Faux sous 50 scrutins : l'élu ne figure pas dans les classements (loyauté, présence des
+   * députés). Le seuil ne vaut pas pour la présence des sénateurs, mesurée aux solennels.
+   */
+  classable?: boolean | null;
 };
 
 /** Parlementaire dans une liste (`/deputes`, `/senateurs`). */

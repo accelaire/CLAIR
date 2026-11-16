@@ -119,8 +119,12 @@
   }
 }
 
+/* Les traits du Burger de Mantine sont centrés dans le bouton, à la hauteur de la recherche et du
+   thème (sans `align-items`, le flex les collait en haut). */
 .burger {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 @media (min-width: 768px) {

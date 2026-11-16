@@ -18,6 +18,13 @@ describe("paramètres de la fiche d'un dossier", () => {
     expect(parseDossierFicheParams({ tab: "inconnu" }).tab).toBeNull();
   });
 
+  it("accepte `onglet`, la clé des autres fiches, en repli de `tab`", () => {
+    expect(parseDossierFicheParams({ onglet: "scrutins" }).tab).toBe("scrutins");
+    expect(parseDossierFicheParams({ tab: "amendements", onglet: "scrutins" }).tab).toBe(
+      "amendements",
+    );
+  });
+
   it("réécrit l'URL sans les valeurs par défaut", () => {
     const params = parseDossierFicheParams({ tab: "scrutins", nature: "ensemble" });
     expect(buildHref("/dossiers/DLEXEMPLE1", dossierFicheParamsOf(params))).toBe(

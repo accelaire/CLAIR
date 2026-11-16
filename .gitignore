@@ -57,3 +57,10 @@ scripts/.cache-contours-outre-mer.json
 # Tests e2e (Playwright)
 playwright-report/
 test-results/
+
+# Captures de l'audit : générées en local (voir screenshots/README.md), trop lourdes pour le dépôt
+screenshots/**/*.png
+screenshots/**/*.svg
+screenshots/*.excalidraw
+screenshots/figma/
+screenshots/index.html

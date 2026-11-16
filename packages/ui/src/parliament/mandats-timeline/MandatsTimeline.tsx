@@ -2,7 +2,7 @@
 
 import { Timeline } from "@mantine/core";
 import { ChevronDown } from "lucide-react";
-import { type CSSProperties, useId, useState } from "react";
+import { type CSSProperties, type ReactNode, useId, useState } from "react";
 import { Badge } from "../../core/badge/Badge.tsx";
 import { type Chambre, ChambreBadge } from "../../core/chambre-badge/ChambreBadge.tsx";
 import { Link } from "../../core/link/Link.tsx";
@@ -42,9 +42,34 @@ export type Mandat = {
   fonctions?: MandatFonction[];
 };
 
+/**
+ * Poste au Gouvernement ou présidence de la République : une entrée de la frise au même rang
+ * qu'un mandat (un député nommé ministre cède son siège : ce n'est pas une fonction exercée
+ * pendant son mandat).
+ */
+export type PosteGouvernemental = {
+  id: string;
+  /** Nature du poste, dite en texte dans l'entrée ; « gouvernement » par défaut. */
+  nature?: "gouvernement" | "presidence";
+  /** Libellé du poste (« Ministre · Armées », « Premier ministre »). */
+  libelle: string;
+  /** Dates ISO ; sans fin, le poste est en cours. */
+  dateDebut: string;
+  dateFin?: string | null;
+  /** Gouvernement du poste : « Gouvernement <nom> », lien vers sa page s'il y en a une. */
+  gouvernement?: { nom: string; href?: string } | null;
+  /** Contenu ajouté sous l'entrée, par exemple le bilan du poste. */
+  details?: ReactNode;
+};
+
 export type MandatsTimelineProps = {
   /** Mandats, dans n'importe quel ordre : ils sont affichés du plus récent au plus ancien. */
   mandats: Mandat[];
+  /**
+   * Postes au Gouvernement et présidence de la République, insérés dans la frise à leur date
+   * parmi les mandats. Pastille carrée, et nature du poste écrite en toutes lettres.
+   */
+  postes?: PosteGouvernemental[];
   /** Accord de la fonction (« Députée », « Sénateur ») quand les deux chambres se suivent. */
   sexe?: "F" | "M" | null;
   /** Titre du bloc. */
@@ -121,14 +146,59 @@ const Fonctions = ({ fonctions, enCours }: { fonctions: MandatFonction[]; enCour
   );
 };
 
+const NATURES: Record<NonNullable<PosteGouvernemental["nature"]>, string> = {
+  gouvernement: "Gouvernement",
+  presidence: "Présidence de la République",
+};
+
+/** Entrée d'un poste au Gouvernement : libellé, nature, dates, gouvernement, détails. */
+const posteItem = (poste: PosteGouvernemental) => {
+  const enCours = !poste.dateFin;
+  return (
+    <Timeline.Item
+      key={`poste-${poste.id}`}
+      role="listitem"
+      data-poste={poste.nature ?? "gouvernement"}
+      data-current={enCours || undefined}
+      title={
+        <span className={classes.heading}>
+          <span>{poste.libelle}</span>
+          {enCours ? (
+            <Badge tone="info" size="sm">
+              En cours
+            </Badge>
+          ) : null}
+        </span>
+      }
+    >
+      <div className={classes.meta}>
+        <Badge size="sm">{NATURES[poste.nature ?? "gouvernement"]}</Badge>
+        <Periode debut={poste.dateDebut} fin={poste.dateFin} />
+      </div>
+      {poste.gouvernement ? (
+        <div className={classes.meta}>
+          {poste.gouvernement.href ? (
+            <Link href={poste.gouvernement.href}>Gouvernement {poste.gouvernement.nom}</Link>
+          ) : (
+            <span>Gouvernement {poste.gouvernement.nom}</span>
+          )}
+        </div>
+      ) : null}
+      {poste.details ? <div className={classes.details}>{poste.details}</div> : null}
+    </Timeline.Item>
+  );
+};
+
 /**
  * Frise des mandats d'un parlementaire, du plus récent au plus ancien : chambre, période,
  * dates, groupe d'époque (couleur toujours doublée du sigle et du nom), circonscription et
- * fonctions exercées. Le mandat en cours est signalé en texte. Base : `Timeline` de Mantine.
- * Fusionne `MandatsBlock` et `FonctionsMandat` de apps/web.
+ * fonctions exercées. Le mandat en cours est signalé en texte. Les postes au Gouvernement
+ * s'insèrent à leur date (pastille carrée, nature du poste en texte). Base : `Timeline` de
+ * Mantine. Fusionne `MandatsBlock`, `EntreeGouvernementale` et `FonctionsMandat` de apps/web.
  */
 export const MandatsTimeline = ({
   mandats,
+  postes = [],
   sexe,
   title = "Mandats",
   headingLevel = 2,
@@ -137,13 +207,19 @@ export const MandatsTimeline = ({
   const Heading = `h${headingLevel}` as const;
   const sorted = [...mandats].sort((a, b) => b.dateDebut.localeCompare(a.dateDebut));
   const deuxChambres = new Set(sorted.map((mandat) => mandat.chambre)).size > 1;
+  // Mandats et postes dans une seule frise : les dates ISO (jour seul ou horodatage) se
+  // comparent comme des chaînes.
+  const entrees = [
+    ...sorted.map((mandat) => ({ type: "mandat" as const, debut: mandat.dateDebut, mandat })),
+    ...postes.map((poste) => ({ type: "poste" as const, debut: poste.dateDebut, poste })),
+  ].sort((a, b) => b.debut.localeCompare(a.debut));
 
   return (
     <section className={classes.root} aria-labelledby={titleId}>
       <Heading id={titleId} className={classes.title}>
         {title}
       </Heading>
-      {sorted.length === 0 ? (
+      {entrees.length === 0 ? (
         <EmptyState title="Aucun mandat connu" />
       ) : (
         <Timeline
@@ -158,7 +234,9 @@ export const MandatsTimeline = ({
             itemTitle: classes.itemTitle,
           }}
         >
-          {sorted.map((mandat) => {
+          {entrees.map((entree) => {
+            if (entree.type === "poste") return posteItem(entree.poste);
+            const { mandat } = entree;
             const enCours = !mandat.dateFin;
             const style: CustomProperties | undefined = mandat.groupe
               ? { "--groupe-couleur": couleurGroupe(mandat.groupe.sigle, mandat.groupe.couleur) }

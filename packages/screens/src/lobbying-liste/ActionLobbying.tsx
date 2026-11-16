@@ -1,6 +1,7 @@
 import type { LobbyingAction, LobbyingActionListItem } from "@clair/data";
 import { Badge, Card, type CardHeading, Link, LobbyisteLogo } from "@clair/ui";
 import { CalendarDays } from "lucide-react";
+import { parlementaireHref } from "../shared/scrutins.ts";
 import classes from "./ActionLobbying.module.css";
 import { cibleLibelle, formatJour, objetEtSecteurs, typeLibelle } from "./format.ts";
 
@@ -102,7 +103,12 @@ export const ActionLobbying = ({
             <div className={classes.detail}>
               <dt>Parlementaire rencontré</dt>
               <dd className={classes.parlementaire}>
-                <Link href={`/deputes/${encodeURIComponent(parlementaire.slug)}`}>
+                <Link
+                  href={parlementaireHref(
+                    parlementaire.chambre,
+                    encodeURIComponent(parlementaire.slug),
+                  )}
+                >
                   {parlementaire.prenom} {parlementaire.nom}
                 </Link>
                 {parlementaire.groupe ? (

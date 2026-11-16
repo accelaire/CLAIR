@@ -113,7 +113,7 @@ export const ListeEnTete = ({
           {autres.map((a, i) => (
             <span key={a.sourceUid}>
               {i > 0 ? ", " : null}
-              <strong className={classes.fort}>{a.libelle}</strong> {a.sieges}{" "}
+              <strong className={classes.fort}>{a.libelle}</strong> {a.sieges ?? 0}{" "}
               {pluriel(a.sieges ?? 0, "siège")}
             </span>
           ))}

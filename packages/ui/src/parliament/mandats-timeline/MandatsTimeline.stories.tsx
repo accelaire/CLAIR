@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within } from "storybook/test";
-import { mandatsExemple, mandatUnique } from "../timeline-fixtures.ts";
+import { mandatsExemple, mandatUnique, postesExemple } from "../timeline-fixtures.ts";
 import { MandatsTimeline } from "./MandatsTimeline.tsx";
 
 const meta = {
@@ -10,6 +10,11 @@ const meta = {
   argTypes: {
     mandats: {
       description: "Mandats (législature ou mandature), avec groupe d'époque et fonctions.",
+      table: { category: "Données" },
+    },
+    postes: {
+      description:
+        "Postes au Gouvernement et présidence de la République, insérés à leur date parmi les mandats (pastille carrée, nature écrite en texte).",
       table: { category: "Données" },
     },
     sexe: {
@@ -51,6 +56,23 @@ export const FonctionsDepliees: Story = {
     await userEvent.click(bouton);
     await expect(bouton).toHaveAttribute("aria-expanded", "true");
     await expect(canvas.getByText("Mission d'information sur les mobilités")).toBeVisible();
+  },
+};
+
+/**
+ * Postes au Gouvernement entre deux mandats (personne et gouvernements fictifs) : pastille
+ * carrée, nature du poste en toutes lettres, lien vers le gouvernement, bilan sous l'entrée.
+ */
+export const AvecPostesMinisteriels: Story = {
+  args: { postes: postesExemple },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const poste = canvas
+      .getAllByRole("listitem")
+      .find((entree) => entree.getAttribute("data-poste") === "gouvernement");
+    await expect(poste).toHaveTextContent("Ministre déléguée · Exemples numériques");
+    await expect(poste).toHaveTextContent("Gouvernement");
+    await expect(canvas.getByRole("link", { name: "Gouvernement Exemple II" })).toBeVisible();
   },
 };
 

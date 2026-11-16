@@ -10,6 +10,8 @@
  * personne ne prend jamais `updatedAt`, que la synchronisation nocturne réécrit sur chaque ligne.
  */
 
+import { COMPRENDRE_ARTICLES } from "../comprendre-article/articles/index.ts";
+import { GUIDE_ARTICLES } from "../guide-article/articles/index.ts";
 import { SLUGS_DEPARTEMENTS } from "../senatoriales/lib/departements.ts";
 import { SLUGS_GRAPHIQUES } from "../senatoriales/lib/graphiques.ts";
 import { scrutinHref } from "../shared/scrutins.ts";
@@ -61,6 +63,22 @@ export const DONNEES_PLAN_VIDES: DonneesPlan = {
  */
 export const SLUGS_DEPARTEMENTS_SENATORIALES: readonly string[] = SLUGS_DEPARTEMENTS;
 export const SLUGS_GRAPHIQUES_SENATORIALES: readonly string[] = SLUGS_GRAPHIQUES;
+
+/**
+ * Pages éditoriales (à propos, méthodologie, API, rubriques « Comprendre » et « Guide »,
+ * contact) : les articles viennent des mêmes listes que leurs routes, une seule source. Absentes
+ * du plan de apps/web.
+ */
+export const CHEMINS_EDITORIAUX: readonly string[] = [
+  "/a-propos",
+  "/methodologie",
+  "/api",
+  "/comprendre",
+  ...Object.keys(COMPRENDRE_ARTICLES).map((slug) => `/comprendre/${slug}`),
+  "/guide",
+  ...Object.keys(GUIDE_ARTICLES).map((slug) => `/guide/${slug}`),
+  "/contact",
+];
 
 /**
  * Échappe les caractères réservés de XML : Next (16 compris) écrit `<loc>` tel quel, et les
@@ -119,6 +137,8 @@ export type EntreesPlan = {
   groupes: GroupePlan[];
   /** Slugs des sénateurs élus en 2026 qui ont une fiche provisoire. */
   elusProvisoires: string[];
+  /** Slugs des gouvernements (`/gouvernements`) ; absents si la liste n'a pas pu être lue. */
+  gouvernements?: string[];
   /** Horodatage de repli pour la dernière ingestion (maintenant). */
   maintenant: string;
 };
@@ -129,6 +149,7 @@ export const construirePlanDuSite = ({
   data,
   groupes,
   elusProvisoires,
+  gouvernements = [],
   maintenant,
 }: EntreesPlan): EntreePlan[] => {
   const url = (chemin: string) => `${base}${chemin}`;
@@ -156,6 +177,7 @@ export const construirePlanDuSite = ({
     liste("/lobbying", "weekly", 0.8),
     liste("/lobbying/actions", "weekly", 0.7),
     liste("/groupes", "weekly", 0.8),
+    liste("/gouvernements", "weekly", 0.8),
     outil("/recherche", "weekly", 0.7),
     outil("/explorateur", "weekly", 0.7),
     liste("/senatoriales-2026", "daily", 0.9),
@@ -177,6 +199,8 @@ export const construirePlanDuSite = ({
     outil("/senateurs/comparer", "weekly", 0.6),
     liste("/dossiers", "daily", 0.9),
     liste("/sujets", "weekly", 0.8),
+    // Textes rédigés à la main : sans date, faute d'une date de mise à jour fiable.
+    ...CHEMINS_EDITORIAUX.map((chemin) => outil(chemin, "monthly", 0.5)),
   ];
 
   const parlementaire =
@@ -232,6 +256,14 @@ export const construirePlanDuSite = ({
       (g): EntreePlan => ({
         url: url(`/groupes/${g.chambre}/${g.slug}`),
         ...(g.updatedAt ? { lastModified: g.updatedAt } : {}),
+        changeFrequency: "weekly",
+        priority: 0.7,
+      }),
+    ),
+    // Sans `lastModified` : la liste ne date pas le dernier changement de chaque gouvernement.
+    ...gouvernements.map(
+      (slug): EntreePlan => ({
+        url: url(`/gouvernements/${slug}`),
         changeFrequency: "weekly",
         priority: 0.7,
       }),

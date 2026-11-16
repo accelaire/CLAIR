@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, within } from "storybook/test";
 import { Container } from "./Container.tsx";
 
 const Contenu = () => (
@@ -51,11 +52,57 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Defaut: Story = {};
+/** Conteneur rendu par la story : le parent du titre de la page. */
+const conteneurDe = (canvasElement: HTMLElement) => {
+  const titre = within(canvasElement).getByRole("heading", { level: 1, name: "Titre de la page" });
+  const conteneur = titre.parentElement?.parentElement;
+  if (!conteneur) throw new Error("Conteneur introuvable");
+  return conteneur;
+};
+
+/** Largeur du site (`--clair-largeur-contenu`), centrée, sans sémantique propre. */
+export const Defaut: Story = {
+  play: async ({ canvasElement }) => {
+    const conteneur = conteneurDe(canvasElement);
+    await expect(conteneur.tagName).toBe("DIV");
+    await expect(conteneur).toHaveAttribute("data-size", "normal");
+    const style = getComputedStyle(conteneur);
+    const largeur = getComputedStyle(document.documentElement)
+      .getPropertyValue("--clair-largeur-contenu")
+      .trim();
+    await expect(style.maxWidth).toBe(largeur);
+    await expect(style.marginLeft).toBe(style.marginRight);
+  },
+};
 
 /** Colonne de lecture pour les textes longs (méthodologie, mentions). */
-export const Etroit: Story = { args: { size: "etroit" } };
+export const Etroit: Story = {
+  args: { size: "etroit" },
+  play: async ({ canvasElement }) => {
+    const conteneur = conteneurDe(canvasElement);
+    await expect(conteneur).toHaveAttribute("data-size", "etroit");
+    await expect(getComputedStyle(conteneur).maxWidth).toBe("768px");
+  },
+};
 
-export const Mobile: Story = { globals: { viewport: { value: "xs" } } };
+/** Zone nommée : `as="section"` et `aria-labelledby` en font une région de la page. */
+export const Section: Story = {
+  args: {
+    as: "section",
+    "aria-labelledby": "titre-section",
+    children: (
+      <>
+        <h2 id="titre-section">Titre de la section</h2>
+        <p>Contenu de la section.</p>
+      </>
+    ),
+  },
+  play: async ({ canvasElement }) => {
+    const region = within(canvasElement).getByRole("region", { name: "Titre de la section" });
+    await expect(region.tagName).toBe("SECTION");
+  },
+};
+
+export const Mobile: Story = { ...Defaut, globals: { viewport: { value: "xs" } } };
 
 export const Sombre: Story = { globals: { theme: "dark" } };

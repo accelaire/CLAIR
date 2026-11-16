@@ -1,14 +1,26 @@
-import type { FonctionParlementaire, MandatParlementaire, ParlementaireDetail } from "@clair/data";
-import { type Mandat, type MandatFonction, MandatsTimeline } from "@clair/ui";
+import type {
+  FonctionGouvernementale,
+  FonctionParlementaire,
+  MandatParlementaire,
+  ParlementaireDetail,
+} from "@clair/data";
+import {
+  type Mandat,
+  type MandatFonction,
+  MandatsTimeline,
+  type PosteGouvernemental,
+} from "@clair/ui";
+import { libellePoste } from "../shared/gouvernements/gouvernements.ts";
 import { groupeHref, libelleLegislature } from "../shared/parlementaires/chambre.ts";
+import { aUnBilan, BilanPosteLigne, ProvenanceBilanPostes } from "./BilanPoste.tsx";
 
-const periodeDe = (mandat: MandatParlementaire) => {
+export const periodeDe = (mandat: MandatParlementaire) => {
   if (mandat.legislature !== null) return libelleLegislature(mandat.legislature);
   if (mandat.mandature !== null) return `Mandature ${mandat.mandature}`;
   return mandat.chambre === "senat" ? "Mandat de sénateur" : "Mandat de député";
 };
 
-const versFonction = (fonction: FonctionParlementaire): MandatFonction => ({
+export const versFonction = (fonction: FonctionParlementaire): MandatFonction => ({
   id: fonction.id,
   qualite: fonction.qualite,
   organe: fonction.commission?.nom ?? fonction.institution ?? fonction.typeOrgane,
@@ -57,14 +69,44 @@ export const mandatsDeLaFiche = (fiche: ParlementaireDetail): Mandat[] => {
   }));
 };
 
+/**
+ * Postes au Gouvernement et présidence de la République pour la frise (reprise
+ * d'`EntreeGouvernementale`, apps/web) : libellé du poste, gouvernement lié, bilan dessous.
+ */
+export const postesDeLaFiche = (
+  fonctions: readonly FonctionGouvernementale[],
+): PosteGouvernemental[] =>
+  fonctions.map((f) => ({
+    id: f.uid,
+    nature: f.type === "presidence" ? "presidence" : "gouvernement",
+    libelle:
+      f.type === "presidence" ? f.qualite : libellePoste(f.qualite, f.intituleCourt, f.intitule),
+    dateDebut: f.dateDebut,
+    dateFin: f.dateFin,
+    gouvernement: f.gouvernement
+      ? { nom: f.gouvernement.nom, href: `/gouvernements/${f.gouvernement.slug}` }
+      : null,
+    details: aUnBilan(f) ? <BilanPosteLigne f={f} /> : undefined,
+  }));
+
 const sexeDe = (sexe: string | null): "F" | "M" | null =>
   sexe === "F" || sexe === "M" ? sexe : null;
 
-/** Onglet « Mandats » : frise des mandats et des fonctions exercées. */
-export const OngletMandats = ({ fiche }: { fiche: ParlementaireDetail }) => (
-  <MandatsTimeline
-    mandats={mandatsDeLaFiche(fiche)}
-    sexe={sexeDe(fiche.sexe)}
-    title="Mandats et fonctions"
-  />
-);
+/**
+ * Onglet « Mandats » : une seule frise, du plus récent au plus ancien, des mandats (avec leurs
+ * fonctions) et des postes au Gouvernement (avec leur bilan), comme `MandatsBlock` d'apps/web.
+ */
+export const OngletMandats = ({ fiche }: { fiche: ParlementaireDetail }) => {
+  const fonctions = fiche.fonctionsGouvernementales ?? [];
+  return (
+    <>
+      <MandatsTimeline
+        mandats={mandatsDeLaFiche(fiche)}
+        postes={postesDeLaFiche(fonctions)}
+        sexe={sexeDe(fiche.sexe)}
+        title="Mandats et fonctions"
+      />
+      {fonctions.some(aUnBilan) ? <ProvenanceBilanPostes /> : null}
+    </>
+  );
+};

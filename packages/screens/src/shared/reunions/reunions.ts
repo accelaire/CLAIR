@@ -5,6 +5,25 @@
  */
 
 /**
+ * Nom d'un organe tel qu'il s'affiche : les espaces parasites de la source (« Sénat ( 5ème
+ * République ) ») sont retirés à l'affichage, la donnée reste telle quelle.
+ */
+export const nomAffiche = (nom: string) =>
+  nom
+    .replace(/\(\s+/gu, "(")
+    .replace(/\s+\)/gu, ")")
+    .replace(/\s{2,}/gu, " ")
+    .trim();
+
+/** Coupe un texte au dernier mot entier avant `max` caractères, avec des points de suspension. */
+export const tronquer = (texte: string, max: number) => {
+  if (texte.length <= max) return texte;
+  const coupe = texte.slice(0, max);
+  const dernierEspace = coupe.search(/\s\S*$/u);
+  return `${(dernierEspace > 0 ? coupe.slice(0, dernierEspace) : coupe).trimEnd()}…`;
+};
+
+/**
  * Points de l'ordre du jour, un par entrée, sans ponctuation de liste. `odjComplet` d'abord :
  * `odjResume` est plafonné à 500 caractères et son dernier point est souvent coupé.
  */

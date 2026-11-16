@@ -1,5 +1,6 @@
 .root {
   scroll-margin-top: var(--clair-espacement-16v);
+  list-style: none;
 }
 
 /* La mise en évidence est aussi portée par l'ancre de l'adresse, pas seulement par la couleur. */
@@ -40,6 +41,21 @@
   align-items: center;
   gap: var(--clair-espacement-2v);
   margin: 0;
+}
+
+.cosignataires > summary {
+  cursor: pointer;
+}
+
+.cosignataires > summary:focus-visible {
+  outline: var(--clair-focus-contour);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+.liste {
+  margin: var(--clair-espacement-1v) 0 0;
+  font-size: var(--clair-texte-sm-taille);
+  color: var(--clair-texte-mention);
 }
 
 .section {

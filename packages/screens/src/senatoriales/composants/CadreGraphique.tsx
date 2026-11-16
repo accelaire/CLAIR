@@ -2,9 +2,32 @@
 
 import { Link, ProvenanceLabel, ShareButton } from "@clair/ui";
 import { Download, Maximize2 } from "lucide-react";
-import type { ReactNode } from "react";
+import { createContext, type ReactNode, useContext } from "react";
 import { GRAPHIQUES, type SlugGraphique } from "../lib/graphiques.ts";
 import classes from "./CadreGraphique.module.css";
+
+type Niveau = 1 | 2 | 3 | 4 | 5;
+
+/**
+ * Niveau du titre de la section qui contient un graphique : `CadreGraphique` le fixe (1 sur la
+ * page dédiée, 2 sur la page mère), et les intertitres d'un graphique prennent le niveau suivant,
+ * pour ne jamais sauter de niveau de titre (WCAG 1.3.1, règle axe `heading-order`).
+ */
+const NiveauTitreContext = createContext<Niveau>(2);
+
+/** Section imbriquée dans un graphique : ses intertitres descendent d'un niveau. */
+export const SousSectionGraphique = ({ children }: { children: ReactNode }) => {
+  const niveau = useContext(NiveauTitreContext);
+  return (
+    <NiveauTitreContext.Provider value={Math.min(niveau + 1, 5) as Niveau}>
+      {children}
+    </NiveauTitreContext.Provider>
+  );
+};
+
+/** Balise de l'intertitre d'un graphique : un niveau sous la section qui le contient. */
+export const useIntertitre = () =>
+  `h${Math.min(useContext(NiveauTitreContext) + 1, 6)}` as "h2" | "h3" | "h4" | "h5" | "h6";
 
 type CadreGraphiqueProps = {
   slug: SlugGraphique;
@@ -69,7 +92,9 @@ export const CadreGraphique = ({
           />
         </div>
       </div>
-      {children}
+      <NiveauTitreContext.Provider value={niveauTitre === "h1" ? 1 : 2}>
+        {children}
+      </NiveauTitreContext.Provider>
     </section>
   );
 };

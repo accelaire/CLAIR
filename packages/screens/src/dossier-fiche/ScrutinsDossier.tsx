@@ -19,7 +19,8 @@ export type ScrutinsDossierProps = {
 
 /**
  * Scrutins du dossier, du plus récent au plus ancien, filtrables par objet du vote (les
- * compteurs portent sur tout le dossier). La première page sans filtre vient du détail du
+ * compteurs portent sur tout le dossier) : puces avec décompte sur grand écran, comme dans
+ * apps/web, liste déroulante sur mobile. La première page sans filtre vient du détail du
  * dossier ; les suivantes de `/dossiers/:uid/scrutins`.
  */
 export const ScrutinsDossier = ({
@@ -54,9 +55,36 @@ export const ScrutinsDossier = ({
   return (
     <div className={classes.onglet}>
       {natures.length > 1 ? (
+        <fieldset className={classes.puces}>
+          <legend className="clair-visually-hidden">Filtrer par objet du vote</legend>
+          {[
+            { cle: "", label: "Tous les votes", nombre: dossier.scrutinsCount },
+            ...natures.map((cle) => ({
+              cle,
+              label: NATURES_VOTE[cle] ?? cle,
+              nombre: naturesCount[cle] ?? 0,
+            })),
+          ].map((puce) => (
+            <button
+              key={puce.cle || "tous"}
+              type="button"
+              className={classes.puce}
+              aria-pressed={nature === puce.cle}
+              onClick={() => onNatureChange(puce.cle)}
+            >
+              {puce.label}
+              <span className={`${classes.puceCompte} clair-chiffres`}>
+                {" "}
+                ({puce.nombre.toLocaleString("fr-FR")})
+              </span>
+            </button>
+          ))}
+        </fieldset>
+      ) : null}
+      {natures.length > 1 ? (
         <NativeSelect
           label="Objet du vote"
-          className={classes.filtre}
+          className={`${classes.filtre} ${classes.filtreMobile}`}
           value={nature}
           onChange={(event) => onNatureChange(event.currentTarget.value)}
           data={[

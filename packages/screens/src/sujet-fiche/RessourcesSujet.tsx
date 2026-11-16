@@ -27,7 +27,7 @@ const ListeRepliable = <T,>({
       <ul className={classes.links}>{(deplie ? items : items.slice(0, visibles)).map(rendu)}</ul>
       {caches > 0 ? (
         <Button variant="tertiaire" size="sm" onClick={() => setDeplie((v) => !v)}>
-          {deplie ? "Voir moins" : `Voir les ${caches} autres`}
+          {deplie ? "Voir moins" : caches > 1 ? `Voir les ${caches} autres` : "Voir l'autre"}
         </Button>
       ) : null}
     </>

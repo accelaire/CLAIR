@@ -1,9 +1,14 @@
 import type { AgendaEvenement, AgendaReunion } from "@clair/data";
-import { EmptyState, EvenementCard, Link } from "@clair/ui";
+import { EmptyState, EvenementCard, isHappeningNow, Link } from "@clair/ui";
+import { ChevronDown } from "lucide-react";
+import { useEffect, useState } from "react";
+import { lienDuDirect, useDirects, useHeureCourante } from "../shared/reunions/directs.ts";
 import {
   lienSur,
+  nomAffiche,
   pluriel,
   pointsDeLOrdreDuJour,
+  tronquer,
   urlDuCompteRendu,
 } from "../shared/reunions/reunions.ts";
 import { ScrutinsDeSeance } from "../shared/reunions/ScrutinsDeSeance.tsx";
@@ -21,23 +26,48 @@ const titreDuJour = (jour: string) => {
   return texte.charAt(0).toUpperCase() + texte.slice(1);
 };
 
-/** Titre d'une réunion : l'organe réuni, sinon la nature de la réunion. */
-const titreDeReunion = (reunion: AgendaReunion) =>
-  reunion.commission?.nom ||
-  reunion.commission?.nomCourt ||
-  (reunion.type === "seance" ? "Séance publique" : "Réunion de commission");
+/** Titre d'une réunion : l'organe réuni (nettoyé à l'affichage), sinon sa nature. */
+const titreDeReunion = (reunion: AgendaReunion) => {
+  const organe = reunion.commission?.nom || reunion.commission?.nomCourt;
+  if (organe) return nomAffiche(organe);
+  return reunion.type === "seance" ? "Séance publique" : "Réunion de commission";
+};
 
-const Reunion = ({ reunion, maintenant }: { reunion: AgendaReunion; maintenant: Date }) => {
+/**
+ * Longueur de l'ordre du jour replié, environ deux lignes de carte : apps/web le coupait à deux
+ * lignes, avec un bouton pour le déplier. La coupe au caractère rend la même chose côté serveur.
+ */
+const ODJ_REPLIE = 180;
+
+const Reunion = ({
+  reunion,
+  maintenant,
+  enCours,
+  direct,
+}: {
+  reunion: AgendaReunion;
+  maintenant: Date;
+  /** La réunion a lieu maintenant (fenêtre début → fin, ou 4 h). */
+  enCours: boolean;
+  /** Lien de la retransmission en direct, s'il est connu. */
+  direct?: string;
+}) => {
   const passee = new Date(reunion.dateDebut) < maintenant;
   const compteRendu = passee ? urlDuCompteRendu(reunion.compteRenduRef) : null;
-  const video = lienSur(reunion.urlVideo);
+  // Pendant le direct, « Suivre en direct » suffit : la vidéo mènerait à un enregistrement que la
+  // séance n'a pas fini d'écrire (règle de apps/web).
+  const video = enCours && direct ? null : lienSur(reunion.urlVideo);
   const points = pointsDeLOrdreDuJour(reunion.odjResume, null);
+  const ordreDuJour = points.join(" · ");
+  const odjLong = ordreDuJour.length > ODJ_REPLIE;
+  const [odjDeplie, setOdjDeplie] = useState(false);
   const liens = [
     video ? { label: "Vidéo", href: video } : null,
     compteRendu ? { label: "Compte rendu", href: compteRendu } : null,
   ].filter((lien): lien is { label: string; href: string } => lien !== null);
   return (
-    <li className={classes.reunion}>
+    // `event-<id>` : l'ancre des liens de l'accueil de apps/web (`/agenda?date=…#event-<id>`).
+    <li id={`event-${reunion.id}`} className={classes.reunion}>
       <EvenementCard
         titleAs="h3"
         type={reunion.type === "seance" ? "seance" : "commission"}
@@ -46,11 +76,31 @@ const Reunion = ({ reunion, maintenant }: { reunion: AgendaReunion; maintenant: 
         chambre={chambreDeReunion(reunion)}
         start={reunion.dateDebut}
         end={reunion.dateFin}
-        description={points.length > 0 ? points.join(" · ") : null}
+        description={
+          ordreDuJour ? (odjDeplie ? ordreDuJour : tronquer(ordreDuJour, ODJ_REPLIE)) : null
+        }
         lieu={reunion.lieu}
+        live={enCours}
+        liveHref={enCours ? direct : undefined}
       />
-      {liens.length > 0 || reunion.nbParticipants > 0 || (reunion.scrutins?.length ?? 0) > 0 ? (
+      {odjLong ||
+      liens.length > 0 ||
+      reunion.nbParticipants > 0 ||
+      (reunion.scrutins?.length ?? 0) > 0 ? (
         <div className={classes.complements}>
+          {odjLong ? (
+            <button
+              type="button"
+              className={classes.deplier}
+              aria-expanded={odjDeplie}
+              aria-controls={`event-${reunion.id}`}
+              onClick={() => setOdjDeplie((deplie) => !deplie)}
+            >
+              {odjDeplie ? "Réduire l'ordre du jour" : "Lire tout l'ordre du jour"}
+              <span className="clair-visually-hidden"> : {titreDeReunion(reunion)}</span>
+              <ChevronDown className={classes.chevron} aria-hidden="true" />
+            </button>
+          ) : null}
           {liens.length > 0 || reunion.nbParticipants > 0 ? (
             <p className={classes.liensReunion}>
               {reunion.nbParticipants > 0 ? (
@@ -103,7 +153,8 @@ const Evenement = ({ evenement }: { evenement: AgendaEvenement }) => {
 /**
  * Détail du jour choisi : repères institutionnels d'abord (ils donnent le contexte), puis les
  * réunions par heure. Chaque réunion mène à sa page ; vidéo et compte rendu restent des liens
- * distincts.
+ * distincts. Une réunion en cours porte « En direct », et le lien de la retransmission quand les
+ * chaînes des chambres en diffusent une (relu toutes les cinq minutes).
  */
 export const DetailDuJour = ({
   jour,
@@ -116,6 +167,32 @@ export const DetailDuJour = ({
   evenements: AgendaEvenement[];
   maintenant: Date;
 }) => {
+  const triees = [...reunions].sort(
+    (a, b) => new Date(a.dateDebut).getTime() - new Date(b.dateDebut).getTime(),
+  );
+  const heureCourante = useHeureCourante();
+  const enCours = new Set(
+    heureCourante
+      ? triees
+          .filter((reunion) => isHappeningNow(reunion.dateDebut, reunion.dateFin, heureCourante))
+          .map((reunion) => reunion.id)
+      : [],
+  );
+  const directs = useDirects(Boolean(jour) && enCours.size > 0);
+  // Un lien vers une réunion (`#event-<id>`) amène sa carte à l'écran, une fois la liste rendue
+  // (comme `DayDetail` de apps/web).
+  useEffect(() => {
+    if (reunions.length === 0) return;
+    const ancre = window.location.hash.slice(1);
+    if (!ancre.startsWith("event-")) return;
+    const carte = document.getElementById(ancre);
+    if (carte && typeof carte.scrollIntoView === "function") {
+      const reduit =
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      carte.scrollIntoView({ behavior: reduit ? "auto" : "smooth", block: "center" });
+    }
+  }, [reunions.length]);
   if (!jour) {
     return (
       <EmptyState
@@ -124,9 +201,6 @@ export const DetailDuJour = ({
       />
     );
   }
-  const triees = [...reunions].sort(
-    (a, b) => new Date(a.dateDebut).getTime() - new Date(b.dateDebut).getTime(),
-  );
   return (
     <section aria-labelledby="jour-choisi" className={classes.detail}>
       <div className={classes.enteteDetail}>
@@ -151,7 +225,17 @@ export const DetailDuJour = ({
           {triees.length > 0 ? (
             <ul className={classes.liste} aria-label="Réunions du jour">
               {triees.map((reunion) => (
-                <Reunion key={reunion.id} reunion={reunion} maintenant={maintenant} />
+                <Reunion
+                  key={reunion.id}
+                  reunion={reunion}
+                  maintenant={maintenant}
+                  enCours={enCours.has(reunion.id)}
+                  direct={
+                    enCours.has(reunion.id)
+                      ? lienDuDirect(reunion, chambreDeReunion(reunion), directs)
+                      : undefined
+                  }
+                />
               ))}
             </ul>
           ) : null}

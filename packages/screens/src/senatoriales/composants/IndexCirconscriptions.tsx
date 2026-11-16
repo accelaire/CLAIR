@@ -2,6 +2,8 @@
 
 import type { ApercuSenatoriales } from "@clair/data";
 import { useNavigation } from "@clair/ui";
+import { ChevronDown } from "lucide-react";
+import { useId, useState } from "react";
 import { libelleCirconscription } from "../lib/circonscription.ts";
 import { slugDepuisCode } from "../lib/departements.ts";
 import classes from "./Cartes.module.css";
@@ -10,7 +12,8 @@ type Circonscription = ApercuSenatoriales["circonscriptions"][number];
 
 /**
  * Index des 64 circonscriptions, toujours rendu quel que soit le tri : le chemin le plus court
- * vers « et chez moi ? », et le maillage interne des pages départementales.
+ * vers « et chez moi ? », et le maillage interne des pages départementales. En mobile, la liste
+ * est repliée derrière un bouton (elle occupait plusieurs écrans) ; les liens restent dans la page.
  */
 export const IndexCirconscriptions = ({
   circonscriptions,
@@ -18,6 +21,8 @@ export const IndexCirconscriptions = ({
   circonscriptions: Circonscription[];
 }) => {
   const { Link } = useNavigation();
+  const [deplie, setDeplie] = useState(false);
+  const idListe = useId();
   if (circonscriptions.length === 0) return null;
 
   const triees = [...circonscriptions].sort((a, b) =>
@@ -38,7 +43,19 @@ export const IndexCirconscriptions = ({
             : "Le mode de scrutin et le bilan des sortants, circonscription par circonscription."}
         </p>
       </div>
-      <ul className={classes.index}>
+      <button
+        type="button"
+        className={classes.indexBascule}
+        aria-expanded={deplie}
+        aria-controls={idListe}
+        onClick={() => setDeplie((etat) => !etat)}
+      >
+        {deplie
+          ? "Masquer la liste des circonscriptions"
+          : `Afficher les ${circonscriptions.length} circonscriptions`}
+        <ChevronDown className={classes.indexChevron} aria-hidden="true" />
+      </button>
+      <ul id={idListe} className={classes.index} data-replie={deplie ? undefined : true}>
         {triees.map((circo) => (
           <li key={circo.departement}>
             <Link

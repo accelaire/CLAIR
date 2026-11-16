@@ -288,6 +288,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
                 select: {
                   id: true,
                   slug: true,
+                  chambre: true,
                   nom: true,
                   prenom: true,
                   photoUrl: true,
@@ -392,6 +393,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
               select: {
                 id: true,
                 slug: true,
+                chambre: true,
                 nom: true,
                 prenom: true,
                 groupe: { select: { nom: true, couleur: true } },
@@ -565,6 +567,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
               select: {
                 id: true,
                 slug: true,
+                chambre: true,
                 nom: true,
                 prenom: true,
                 photoUrl: true,
@@ -666,6 +669,7 @@ export const lobbyingRoutes: FastifyPluginAsync = async (fastify) => {
             select: {
               id: true,
               slug: true,
+              chambre: true,
               nom: true,
               prenom: true,
               photoUrl: true,

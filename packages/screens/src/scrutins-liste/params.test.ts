@@ -10,6 +10,7 @@ describe("paramètres de la liste des scrutins", () => {
         type: "inconnu",
         nature: "amendement",
         tag: "sante",
+        censure: "alinea3",
         dateFrom: "2026-01-01",
         dateTo: "pas-une-date",
         page: "3",
@@ -20,6 +21,7 @@ describe("paramètres de la liste des scrutins", () => {
       type: "",
       nature: "amendement",
       tag: "sante",
+      censure: "alinea3",
       dateFrom: "2026-01-01",
       dateTo: "",
       page: 3,
@@ -35,6 +37,17 @@ describe("paramètres de la liste des scrutins", () => {
     const params = parseScrutinsListeParams({ chambre: "assemblee" });
     expect(scrutinsListeParamsOf(params).page).toBeNull();
     expect(scrutinsQueryOf(params)).toEqual({ chambre: "assemblee", page: "1", limit: "20" });
+  });
+
+  it("lit le filtre des motions de censure de apps/web et le transmet à l'API", () => {
+    expect(parseScrutinsListeParams({ censure: "toutes" }).censure).toBe("toutes");
+    expect(parseScrutinsListeParams({ censure: "alinea2" }).censure).toBe("alinea2");
+    expect(parseScrutinsListeParams({ censure: "alinea4" }).censure).toBe("");
+    expect(scrutinsQueryOf(parseScrutinsListeParams({ censure: "alinea3" }))).toEqual({
+      censure: "alinea3",
+      page: "1",
+      limit: "20",
+    });
   });
 
   it("relit ce qu'il écrit", () => {

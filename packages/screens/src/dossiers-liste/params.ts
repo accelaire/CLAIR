@@ -4,10 +4,24 @@ import { asString, type QueryParams } from "@clair/ui";
 export const ETATS_FILTRABLES = ["en_cours", "adopte", "rejete", "promulgue"] as const;
 export type EtatFiltrable = (typeof ETATS_FILTRABLES)[number];
 
+/**
+ * Origine du texte (`gouvernement`, mêmes valeurs que apps/web et que l'API) : projets de loi du
+ * Gouvernement, ou textes sur lesquels il a engagé sa responsabilité (49.3, depuis juin 2017).
+ */
+export const ORIGINES_FILTRABLES = ["projets", "49-3"] as const;
+export type OrigineFiltrable = (typeof ORIGINES_FILTRABLES)[number];
+
+/** Libellés du filtre (ceux de apps/web). */
+export const ORIGINE_LIBELLES: Record<OrigineFiltrable, string> = {
+  projets: "Projets du Gouvernement",
+  "49-3": "Passés au 49.3",
+};
+
 /** État de la liste des dossiers, tel qu'il s'écrit dans l'URL (mêmes clés que apps/web). */
 export type DossiersListeParams = {
   search: string;
   etat: EtatFiltrable | "";
+  gouvernement: OrigineFiltrable | "";
   chambre: "assemblee" | "senat" | "";
   procedureCode: string;
   procedureLibelle: string;
@@ -25,6 +39,7 @@ const isEtat = (value: string): value is EtatFiltrable =>
 /** Lit l'URL ; une valeur inconnue ou mal formée est ignorée. */
 export const parseDossiersListeParams = (params: QueryParams = {}): DossiersListeParams => {
   const etat = asString(params.etat);
+  const gouvernement = asString(params.gouvernement);
   const chambre = asString(params.chambre);
   const dateFrom = asString(params.dateFrom);
   const dateTo = asString(params.dateTo);
@@ -32,6 +47,7 @@ export const parseDossiersListeParams = (params: QueryParams = {}): DossiersList
   return {
     search: asString(params.search).trim(),
     etat: isEtat(etat) ? etat : "",
+    gouvernement: ORIGINES_FILTRABLES.find((origine) => origine === gouvernement) ?? "",
     chambre: chambre === "assemblee" || chambre === "senat" ? chambre : "",
     procedureCode: asString(params.procedureCode),
     procedureLibelle: asString(params.procedureLibelle),
@@ -45,6 +61,7 @@ export const parseDossiersListeParams = (params: QueryParams = {}): DossiersList
 export const dossiersListeParamsOf = (params: DossiersListeParams) => ({
   search: params.search,
   etat: params.etat,
+  gouvernement: params.gouvernement,
   chambre: params.chambre,
   procedureCode: params.procedureCode,
   procedureLibelle: params.procedureLibelle,
@@ -65,6 +82,7 @@ export const aDesFiltres = (params: DossiersListeParams) =>
   Boolean(
     params.search ||
       params.etat ||
+      params.gouvernement ||
       params.chambre ||
       params.procedureCode ||
       params.procedureLibelle ||

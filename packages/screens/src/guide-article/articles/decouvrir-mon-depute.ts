@@ -33,7 +33,7 @@ export const decouvrirMonDepute: GuideArticle = {
     {
       title: "Comparer",
       description:
-        "Cliquez sur « Comparer avec un autre député » pour mettre en regard deux fiches côte à côte : statistiques, votes, et positionnement politique.",
+        "Cliquez sur « Comparer avec d'autres députés », puis cochez « Comparer » sur les cartes de la liste pour mettre leurs fiches côte à côte : statistiques et votes.",
     },
   ],
   start: { label: "Explorer les députés", href: "/deputes" },

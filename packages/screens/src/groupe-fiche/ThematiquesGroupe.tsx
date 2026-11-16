@@ -38,8 +38,18 @@ const MIN_SCRUTINS = 3;
 const libelle = (thematique: string) => LIBELLES[thematique] ?? thematique;
 
 /**
+ * Début de l'axe : à la dizaine sous la plus faible cohésion, moins une marge, pour que des
+ * valeurs serrées (97 à 100 %) ne donnent pas des barres égales. Zéro si l'écart est large.
+ */
+export const debutAxeCohesion = (valeurs: readonly number[]) => {
+  const minimum = Math.min(...valeurs);
+  if (!Number.isFinite(minimum) || minimum < 50) return 0;
+  return Math.floor((minimum - 5) / 10) * 10;
+};
+
+/**
  * Cohésion du groupe par thématique de scrutins (calculée par CLAIR) : barres horizontales
- * triées, avec le tableau des données. Remplace le radar Recharts de apps/web.
+ * triées, sur un axe resserré quand les valeurs sont proches, avec le tableau des données. Remplace le radar Recharts de apps/web.
  */
 export const ThematiquesGroupe = ({
   chambre,
@@ -59,6 +69,7 @@ export const ThematiquesGroupe = ({
   const thematiques = [...(query.data?.data.thematiques ?? [])]
     .filter((item) => item.votesTotaux >= MIN_SCRUTINS)
     .sort((a, b) => b.cohesion - a.cohesion);
+  const debutAxe = debutAxeCohesion(thematiques.map((item) => item.cohesion));
   return (
     <section aria-labelledby="thematiques" className={classes.section}>
       <SectionHeader
@@ -76,7 +87,7 @@ export const ThematiquesGroupe = ({
       ) : thematiques.length > 0 ? (
         <ChartFrame
           title="Cohésion du groupe par thème"
-          subtitle={`Thèmes comptant au moins ${MIN_SCRUTINS} scrutins, en %`}
+          subtitle={`Thèmes comptant au moins ${MIN_SCRUTINS} scrutins, en %${debutAxe > 0 ? ` ; l'axe commence à ${debutAxe} %` : ""}`}
           headingLevel={3}
           provenance="calculee"
           methodologyHref={METHODOLOGIE_INDICATEURS}
@@ -109,6 +120,7 @@ export const ThematiquesGroupe = ({
             series={[{ key: "cohesion", label: "Cohésion" }]}
             horizontal
             unit="%"
+            valueDomain={[debutAxe, 100]}
             height={Math.max(160, thematiques.length * 32)}
           />
         </ChartFrame>

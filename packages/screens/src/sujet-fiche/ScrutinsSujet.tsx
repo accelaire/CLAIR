@@ -15,7 +15,8 @@ import {
 import { NATURES_VOTE, periodeScrutin, scrutinHref } from "../shared/scrutins.ts";
 import classes from "./SujetFicheScreen.module.css";
 
-const PAR_PAGE = 20;
+/** Dix par page : apps/web les tenait dans un cadre de 600 px de haut, défilant. */
+const PAR_PAGE = 10;
 
 const NATURES = Object.entries(NATURES_VOTE).map(([value, label]) => ({ value, label }));
 

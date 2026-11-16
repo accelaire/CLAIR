@@ -23,6 +23,15 @@ describe("ScrutinCard", () => {
     expect(getByText("18 novembre 2025")).toBeInTheDocument();
   });
 
+  it("place le sort près du titre, avec le numéro, et garde le titre entier dans le lien", () => {
+    const { getByText, getByRole } = renderWithProviders(
+      <ScrutinCard scrutin={scrutinAdopte} href="/scrutin" />,
+    );
+    const surtitre = getByText(`Scrutin n° ${scrutinAdopte.numero}`).parentElement;
+    expect(surtitre).toContainElement(getByText("Adopté"));
+    expect(getByRole("heading", { level: 3 })).toHaveTextContent(scrutinAdopte.titre);
+  });
+
   it("annonce un scrutin rejeté et sa chambre", () => {
     const { getByText } = renderWithProviders(
       <ScrutinCard scrutin={scrutinRejete} href="/scrutin" />,
@@ -48,6 +57,22 @@ describe("ScrutinCard", () => {
     );
     // Visible, pas seulement lu : un classement automatique ne doit pas passer pour une donnée officielle.
     expect(getByText("Important · calculé par CLAIR")).toBeVisible();
+  });
+
+  it("montre trois thématiques au plus et compte les autres", () => {
+    const { getByText } = renderWithProviders(
+      <ScrutinCard scrutin={scrutinAdopte} href="/scrutin" />,
+    );
+    const tags = getByText(/Budget, Santé, Travail/);
+    expect(tags).toHaveTextContent("Thématiques : Budget, Santé, Travail +2 et 2 autres");
+    expect(tags).not.toHaveTextContent("Europe");
+  });
+
+  it("n'annonce aucune thématique quand le scrutin n'en a pas", () => {
+    const { queryByText } = renderWithProviders(
+      <ScrutinCard scrutin={{ ...scrutinRejete, tags: [] }} href="/scrutin" />,
+    );
+    expect(queryByText(/Thématiques/)).toBeNull();
   });
 
   it("survit à une date invalide venue des données", () => {

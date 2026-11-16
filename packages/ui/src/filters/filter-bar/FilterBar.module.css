@@ -21,7 +21,17 @@
 }
 
 .mobileOnly {
-  display: block;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-2v) var(--clair-espacement-3v);
+}
+
+.summary {
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
 }
 
 .desktopOnly {
@@ -43,6 +53,15 @@
 
   .desktopOnly {
     display: block;
+  }
+
+  /* Recherche dans la rangée des filtres : les filtres deviennent des éléments de la barre. */
+  .bar[data-search-inline] .filters {
+    display: contents;
+  }
+
+  .bar[data-search-inline] .search {
+    flex: 1 1 calc(var(--clair-espacement-16v) * 3);
   }
 }
 

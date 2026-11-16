@@ -19,13 +19,18 @@
   gap: var(--clair-espacement-3v);
 }
 
-.root[data-selectable] .identity {
-  padding-right: var(--clair-espacement-16v);
+/* Nom et badge de fonction sur une ligne, le badge passe dessous si la place manque. */
+.nom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-2v);
 }
 
-/* Le nom ne passe jamais sous la case « Comparer », même long. */
-.root[data-selectable] :is(h2, h3, h4) {
-  padding-right: var(--clair-espacement-12v);
+.contenu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
 }
 
 .details {
@@ -35,16 +40,22 @@
   gap: var(--clair-espacement-2v);
 }
 
+/* Carte resserrée : groupe et statut sur une seule ligne. */
+.root[data-compact] .details {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .circonscription {
   margin: 0;
   color: var(--clair-texte-mention);
 }
 
-/* Au-dessus de la zone cliquable du lien bloc : la case reste une cible distincte. */
+/* Sous le nom, au-dessus de la zone cliquable du lien bloc : la case reste une cible distincte. */
 .selection {
-  position: absolute;
-  top: var(--clair-espacement-3v);
-  right: var(--clair-espacement-3v);
+  position: relative;
   z-index: 1;
+  align-self: flex-start;
   font-size: var(--clair-texte-xs-taille);
 }

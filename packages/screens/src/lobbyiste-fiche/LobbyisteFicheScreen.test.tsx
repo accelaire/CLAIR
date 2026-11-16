@@ -18,10 +18,13 @@ describe("LobbyisteFicheScreen", () => {
   });
 
   it("affiche l'identité, les chiffres et les actions déclarées", async () => {
-    const { findByRole, getByRole, getByText } = renderScreen(<LobbyisteFicheScreen id={ID} />, {
-      routes: { [CHEMIN]: { data: lobbyisteDetailExemple } },
-      pathname: CHEMIN,
-    });
+    const { findByRole, getAllByText, getByRole, getByText } = renderScreen(
+      <LobbyisteFicheScreen id={ID} />,
+      {
+        routes: { [CHEMIN]: { data: lobbyisteDetailExemple } },
+        pathname: CHEMIN,
+      },
+    );
     expect(await findByRole("heading", { level: 1 })).toHaveTextContent(
       "Fédération d'exemple des jardins partagés",
     );
@@ -37,6 +40,24 @@ describe("LobbyisteFicheScreen", () => {
     expect(getByRole("link", { name: /exemple\.invalid/ })).toHaveAttribute(
       "href",
       "https://exemple.invalid/",
+    );
+    // La ville n'est écrite qu'une fois, dans l'adresse.
+    expect(getAllByText(/EXEMPLE-SUR-MER/)).toHaveLength(1);
+  });
+
+  it("mène à la fiche sénateur d'un sénateur rencontré", async () => {
+    const actions = lobbyisteDetailExemple.actions.map((action) =>
+      action.parlementaire
+        ? { ...action, parlementaire: { ...action.parlementaire, chambre: "senat" as const } }
+        : action,
+    );
+    const { findByRole } = renderScreen(<LobbyisteFicheScreen id={ID} />, {
+      routes: { [CHEMIN]: { data: { ...lobbyisteDetailExemple, actions } } },
+      pathname: CHEMIN,
+    });
+    expect(await findByRole("link", { name: "Camille Exemple" })).toHaveAttribute(
+      "href",
+      "/senateurs/camille-exemple",
     );
   });
 

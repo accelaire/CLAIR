@@ -9,8 +9,8 @@ const config: StorybookConfig = {
   stories: [
     "../src/**/*.mdx",
     "../../../packages/ui/src/**/*.stories.@(ts|tsx)",
-    // Les écrans n'ont pas encore de stories (testés par Vitest et Playwright) : ajouter
-    // "../../../packages/screens/src/**/*.stories.@(ts|tsx)" avec la première.
+    // Écrans rendus sur leurs fixtures (`parameters.api`, voir preview.tsx), sans réseau.
+    "../../../packages/screens/src/**/*.stories.@(ts|tsx)",
   ],
   addons: [
     "@storybook/addon-docs",

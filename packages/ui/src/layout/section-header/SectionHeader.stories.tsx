@@ -1,4 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, userEvent, within } from "storybook/test";
+import { attendreFocusVisible } from "../../story-utils.ts";
 import { SectionHeader } from "./SectionHeader.tsx";
 
 const meta = {
@@ -34,20 +36,45 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Defaut: Story = {};
+/** Titre de niveau 2, sans lien. */
+export const Defaut: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole("heading", { level: 2, name: "Scrutins récents" })).toBeVisible();
+    await expect(canvas.queryByRole("link")).toBeNull();
+  },
+};
 
 export const AvecDescription: Story = {
   args: { description: "Les derniers votes publics de l'Assemblée nationale et du Sénat." },
 };
 
+/** Le lien « Voir tout » est nommé par le titre, et atteint à la tabulation. */
 export const AvecLienVoirTout: Story = {
   args: {
     description: "Les derniers votes publics de l'Assemblée nationale et du Sénat.",
     seeAllHref: "/scrutins",
   },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      canvas.getByText("Les derniers votes publics de l'Assemblée nationale et du Sénat."),
+    ).toBeVisible();
+    const lien = canvas.getByRole("link", { name: "Voir tout : Scrutins récents" });
+    await expect(lien).toHaveAttribute("href", "/scrutins");
+    await userEvent.tab();
+    await attendreFocusVisible(lien);
+  },
 };
 
-export const NiveauTrois: Story = { args: { title: "Amendements déposés", level: 3 } };
+export const NiveauTrois: Story = {
+  args: { title: "Amendements déposés", level: 3 },
+  play: async ({ canvasElement }) => {
+    await expect(
+      within(canvasElement).getByRole("heading", { level: 3, name: "Amendements déposés" }),
+    ).toBeVisible();
+  },
+};
 
 export const Mobile: Story = { ...AvecLienVoirTout, globals: { viewport: { value: "xs" } } };
 

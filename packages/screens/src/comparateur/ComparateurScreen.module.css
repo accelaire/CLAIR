@@ -48,3 +48,73 @@
   line-height: var(--clair-texte-sm-interligne);
   color: var(--clair-texte-mention);
 }
+
+/* Amendements comparés : un bloc par élu. */
+.amendements {
+  display: grid;
+  gap: var(--clair-espacement-4v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 1024px) {
+  .amendements {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.amendementsElu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
+  min-width: 0;
+  padding: var(--clair-espacement-4v);
+  border: var(--clair-trait-epaisseur) solid var(--clair-bordure-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+}
+
+.amendementsNom {
+  margin: 0;
+  color: var(--clair-texte-titre);
+  font-size: var(--clair-texte-h5-taille);
+  line-height: var(--clair-texte-h5-interligne);
+  font-weight: var(--clair-texte-h5-graisse);
+}
+
+.amendementsChiffres {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-4v);
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.amendementsBarre {
+  block-size: var(--clair-espacement-2v);
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--clair-fond-neutre);
+  overflow: hidden;
+}
+
+.amendementsTaux {
+  block-size: 100%;
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--clair-statut-succes);
+}
+
+.amendementsListe {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.amendementsEtat {
+  list-style: none;
+}

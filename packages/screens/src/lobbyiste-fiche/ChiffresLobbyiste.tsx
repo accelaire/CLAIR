@@ -6,7 +6,10 @@ import classes from "./LobbyisteFicheScreen.module.css";
 /** Nombre d'actions renvoyées au plus par `/lobbying/:id`. */
 export const ACTIONS_MAX = 50;
 
-/** Chiffres déclarés d'un représentant d'intérêts : budget, personnes, actions. */
+/**
+ * Chiffres déclarés d'un représentant d'intérêts : budget, personnes, actions. La ville n'y est
+ * pas répétée : elle figure dans l'adresse du bloc « Informations ».
+ */
 export const ChiffresLobbyiste = ({ lobbyiste }: { lobbyiste: LobbyisteDetail }) => {
   const nbActions = lobbyiste.actions.length;
   return (
@@ -35,7 +38,6 @@ export const ChiffresLobbyiste = ({ lobbyiste }: { lobbyiste: LobbyisteDetail })
           value={nbActions.toLocaleString("fr-FR")}
           detail={nbActions >= ACTIONS_MAX ? `Les ${ACTIONS_MAX} plus récentes` : undefined}
         />
-        {lobbyiste.ville ? <StatCard as="li" label="Ville" value={lobbyiste.ville} /> : null}
       </ul>
     </section>
   );

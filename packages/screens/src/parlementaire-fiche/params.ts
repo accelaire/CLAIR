@@ -1,3 +1,4 @@
+import type { Chambre } from "@clair/data";
 import { asString, type QueryParams } from "@clair/ui";
 
 export const ONGLETS = [
@@ -26,7 +27,31 @@ export type ParlementaireFicheFiltres = {
   dissidents: boolean;
   /** `votesPublics=1` : amendements mis aux voix par scrutin public. */
   votesPublics: boolean;
+  /** `type` : nature des prises de parole (onglet Interventions) ; vide : toutes. */
+  type: TypeIntervention | "";
+  /** `chambre` : chambre des listes, pour un élu passé par les deux ; vide : les deux. */
+  chambre: Chambre | "";
 };
+
+/**
+ * Natures de prise de parole proposées en filtre, dans l'ordre et avec les libellés de
+ * apps/web (`interventions-list.tsx`) ; ce sont les valeurs qu'accepte l'API (`type`).
+ */
+export const TYPES_INTERVENTION = [
+  { valeur: "intervention", libelle: "Interventions" },
+  { valeur: "question", libelle: "Questions posées" },
+  { valeur: "reponse_gouvernement", libelle: "Réponses du Gouvernement" },
+  { valeur: "explication_vote", libelle: "Explications de vote" },
+  { valeur: "interruption", libelle: "Interruptions en séance" },
+] as const;
+
+export type TypeIntervention = (typeof TYPES_INTERVENTION)[number]["valeur"];
+
+const typeDe = (valeur: string): TypeIntervention | "" =>
+  TYPES_INTERVENTION.find((type) => type.valeur === valeur)?.valeur ?? "";
+
+const chambreDe = (valeur: string): Chambre | "" =>
+  valeur === "assemblee" || valeur === "senat" ? valeur : "";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -48,6 +73,8 @@ export const parseParlementaireFicheParams = (params: QueryParams): Parlementair
     dateTo: dateDe(asString(params.dateTo)),
     dissidents: vrai(asString(params.dissidents)),
     votesPublics: vrai(asString(params.votesPublics)),
+    type: typeDe(asString(params.type)),
+    chambre: chambreDe(asString(params.chambre)),
   };
 };
 
@@ -62,13 +89,17 @@ export const parlementaireFicheParamsOf = (
   if (filtres.dateTo) params.dateTo = filtres.dateTo;
   if (filtres.dissidents) params.dissidents = "1";
   if (filtres.votesPublics) params.votesPublics = "1";
+  if (filtres.type) params.type = filtres.type;
+  if (filtres.chambre) params.chambre = filtres.chambre;
   return params;
 };
 
+/** Période et chambre : filtres communs aux trois listes. */
 const periodeOf = (filtres: ParlementaireFicheFiltres) => {
   const query: Record<string, string> = {};
   if (filtres.dateFrom) query.dateFrom = filtres.dateFrom;
   if (filtres.dateTo) query.dateTo = filtres.dateTo;
+  if (filtres.chambre) query.chambre = filtres.chambre;
   return query;
 };
 
@@ -99,4 +130,5 @@ export const interventionsQueryOf = (
   page: String(filtres.page),
   limit: "10",
   ...periodeOf(filtres),
+  ...(filtres.type ? { type: filtres.type } : {}),
 });

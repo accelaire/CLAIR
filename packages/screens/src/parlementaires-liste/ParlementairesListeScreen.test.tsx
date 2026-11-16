@@ -33,6 +33,31 @@ describe("ParlementairesListeScreen", () => {
     expect(getByRole("link", { name: /Suivant/ })).toHaveAttribute("href", "/deputes?page=2");
   });
 
+  it("mène aux archives (législature précédente) depuis la période en cours", async () => {
+    const { findByRole, queryByRole } = renderScreen(
+      <ParlementairesListeScreen chambre="assemblee" />,
+      {
+        pathname: "/deputes",
+        routes: {
+          ...routes,
+          "/deputes/legislatures": {
+            data: [
+              { legislature: 17, count: 30 },
+              { legislature: 16, count: 600 },
+            ],
+          },
+        },
+      },
+    );
+    expect(await findByRole("link", { name: /Voir les archives/ })).toHaveAttribute(
+      "href",
+      "/deputes?legislature=16",
+    );
+    expect(queryByRole("link", { name: /Voir les archives/ })).toHaveAccessibleName(
+      "Voir les archives (XVIe législature)",
+    );
+  });
+
   it("reprend les données du serveur sans attendre l'API", () => {
     const { getByRole } = renderScreen(
       <ParlementairesListeScreen chambre="assemblee" initialData={{ liste: listeExemple }} />,

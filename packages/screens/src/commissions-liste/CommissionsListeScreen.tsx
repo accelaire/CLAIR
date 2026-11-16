@@ -26,6 +26,8 @@ import {
   useNavigation,
 } from "@clair/ui";
 import { Checkbox, NativeSelect } from "@mantine/core";
+import { ChevronDown } from "lucide-react";
+import { useState } from "react";
 import type { ScreenProps } from "../shared/types.ts";
 import classes from "./CommissionsListeScreen.module.css";
 import { TYPES_COMMISSION, typeCommission } from "./libelles.ts";
@@ -85,6 +87,8 @@ const CommissionCarte = ({ commission }: { commission: CommissionListItem }) => 
       ) : undefined
     }
   >
+    {/* Toujours affiché, comme apps/web (décision du 14/11/2026), même quand c'est un code. */}
+    {commission.nomCourt ? <p className={classes.nomCourt}>{commission.nomCourt}</p> : null}
     <p className={classes.chiffres}>
       <span className="clair-chiffres">{commission.nbMembres.toLocaleString("fr-FR")}</span> membre
       {commission.nbMembres > 1 ? "s" : ""} ·{" "}
@@ -140,6 +144,14 @@ export const CommissionsListeScreen = ({
 
   const commissions = query.data ? filtrer(pageOf(query.data).items, params.search) : [];
   const sections = parType(commissions);
+
+  // Sections repliées : seule la première (les commissions permanentes, quand il y en a) est
+  // ouverte par défaut ; une recherche ou un filtre de type ouvre tout ce qu'il reste.
+  const [choix, setChoix] = useState<Record<string, boolean>>({});
+  const toutOuvrir = params.search !== "" || params.type !== "";
+  const estOuvert = (type: string) => choix[type] ?? (toutOuvrir || sections[0]?.type === type);
+  const ouvrir = (type: string, ouvert: boolean) =>
+    setChoix((avant) => ({ ...avant, [type]: ouvert }));
 
   return (
     <Container className={classes.page}>
@@ -227,19 +239,48 @@ export const CommissionsListeScreen = ({
               {params.historique ? " (actifs et passés)" : " actifs"}
               {aDesFiltres(params) ? " correspondant aux filtres" : ""}
             </p>
-            {sections.map(({ type, items }) => (
-              <section key={type} className={classes.section} aria-labelledby={`type-${type}`}>
-                <h2 id={`type-${type}`} className={classes.sectionTitre}>
-                  {typeCommission(type).section}{" "}
-                  <span className={classes.sectionCompte}>({items.length})</span>
+            {sections.length > 1 ? (
+              <nav aria-labelledby="sommaire-types" className={classes.sommaire}>
+                <h2 id="sommaire-types" className={classes.sommaireTitre}>
+                  Types d'organes
                 </h2>
-                <ul className={classes.grille}>
-                  {items.map((commission) => (
-                    <CommissionCarte key={commission.id} commission={commission} />
+                <ul className={classes.sommaireListe}>
+                  {sections.map(({ type, items }) => (
+                    <li key={type}>
+                      <a href={`#type-${type}`} onClick={() => ouvrir(type, true)}>
+                        {typeCommission(type).section}
+                      </a>{" "}
+                      <span className={classes.sectionCompte}>({items.length})</span>
+                    </li>
                   ))}
                 </ul>
-              </section>
-            ))}
+              </nav>
+            ) : null}
+            {sections.map(({ type, items }) => {
+              const ouvert = estOuvert(type);
+              return (
+                <section key={type} className={classes.section} aria-labelledby={`type-${type}`}>
+                  <h2 id={`type-${type}`} className={classes.sectionTitre}>
+                    <button
+                      type="button"
+                      className={classes.bascule}
+                      aria-expanded={ouvert}
+                      aria-controls={`liste-${type}`}
+                      onClick={() => ouvrir(type, !ouvert)}
+                    >
+                      <ChevronDown className={classes.chevron} aria-hidden="true" />
+                      {typeCommission(type).section}{" "}
+                      <span className={classes.sectionCompte}>({items.length})</span>
+                    </button>
+                  </h2>
+                  <ul id={`liste-${type}`} className={classes.grille} hidden={!ouvert}>
+                    {items.map((commission) => (
+                      <CommissionCarte key={commission.id} commission={commission} />
+                    ))}
+                  </ul>
+                </section>
+              );
+            })}
           </>
         ) : (
           <EmptyState

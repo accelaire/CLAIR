@@ -14,6 +14,20 @@ export const NATURES_FILTRABLES = [
 ] as const;
 export type NatureFiltrable = (typeof NATURES_FILTRABLES)[number];
 
+/**
+ * Motions de censure (`censure`, mêmes valeurs que apps/web et que l'API) : toutes, en réponse
+ * à un 49.3 (article 49, alinéa 3) ou spontanées (alinéa 2).
+ */
+export const CENSURES_FILTRABLES = ["toutes", "alinea3", "alinea2"] as const;
+export type CensureFiltrable = (typeof CENSURES_FILTRABLES)[number];
+
+/** Libellés du filtre (ceux de apps/web). */
+export const CENSURE_LIBELLES: Record<CensureFiltrable, string> = {
+  toutes: "Toutes les motions de censure",
+  alinea3: "En réponse à un 49.3",
+  alinea2: "Motions spontanées (49.2)",
+};
+
 /** État de la liste des scrutins, tel qu'il s'écrit dans l'URL (mêmes clés que apps/web). */
 export type ScrutinsListeParams = {
   search: string;
@@ -21,6 +35,7 @@ export type ScrutinsListeParams = {
   type: TypeFiltrable | "";
   nature: NatureFiltrable | "";
   tag: string;
+  censure: CensureFiltrable | "";
   /** Jour `YYYY-MM-DD`. */
   dateFrom: string;
   dateTo: string;
@@ -54,6 +69,7 @@ export const parseScrutinsListeParams = (params: QueryParams = {}): ScrutinsList
     type: parmi(TYPES_FILTRABLES, asString(params.type)),
     nature: parmi(NATURES_FILTRABLES, asString(params.nature)),
     tag: asString(params.tag),
+    censure: parmi(CENSURES_FILTRABLES, asString(params.censure)),
     dateFrom: JOUR.test(dateFrom) ? dateFrom : "",
     dateTo: JOUR.test(dateTo) ? dateTo : "",
     page: parsePage(params.page),
@@ -67,6 +83,7 @@ export const scrutinsListeParamsOf = (params: ScrutinsListeParams) => ({
   type: params.type,
   nature: params.nature,
   tag: params.tag,
+  censure: params.censure,
   dateFrom: params.dateFrom,
   dateTo: params.dateTo,
   page: params.page > 1 ? params.page : null,
@@ -92,6 +109,7 @@ export const aDesFiltres = (params: ScrutinsListeParams) =>
       params.type ||
       params.nature ||
       params.tag ||
+      params.censure ||
       params.dateFrom ||
       params.dateTo,
   );

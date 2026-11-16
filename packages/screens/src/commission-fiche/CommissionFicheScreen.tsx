@@ -18,6 +18,7 @@ import {
 } from "@clair/ui";
 import { typeCommission } from "../commissions-liste/libelles.ts";
 import { useMaintenant } from "../shared/maintenant.ts";
+import { useOngletAncre } from "../shared/onglet-ancre.ts";
 import { pluriel } from "../shared/reunions/reunions.ts";
 import { parlementaireHref } from "../shared/scrutins.ts";
 import type { ScreenProps } from "../shared/types.ts";
@@ -28,6 +29,7 @@ import { MembresCommission, membresUniques } from "./MembresCommission.tsx";
 import {
   type CommissionFicheParams,
   commissionFicheParamsOf,
+  ONGLETS_COMMISSION,
   ongletEffectif,
   ongletsDisponibles,
   parseCommissionFicheParams,
@@ -135,6 +137,21 @@ export const CommissionFicheScreen = ({
     {},
     { initialData },
   );
+  // Anciens liens d'apps/web : `#membres`, `#agenda`, `#historique`, `#dossiers`.
+  const barreOnglets = useOngletAncre(ONGLETS_COMMISSION, (tab) =>
+    buildHref(
+      pathname,
+      commissionFicheParamsOf({
+        ...params,
+        tab,
+        role: "",
+        etat: "",
+        dateFrom: "",
+        dateTo: "",
+        page: 1,
+      }),
+    ),
+  );
 
   if (query.isPending) {
     return (
@@ -239,7 +256,11 @@ export const CommissionFicheScreen = ({
   return (
     <Container className={classes.page}>
       <EnTete commission={commission} />
-      <section className={classes.onglets} aria-label="Activité de la commission">
+      <section ref={barreOnglets} className={classes.onglets} aria-labelledby="activite-commission">
+        {/* Titre de niveau 2 : les cartes des onglets sont des titres de niveau 3. */}
+        <h2 id="activite-commission" className="clair-visually-hidden">
+          Activité de la commission
+        </h2>
         <Tabs
           label="Activité de la commission"
           value={onglet}

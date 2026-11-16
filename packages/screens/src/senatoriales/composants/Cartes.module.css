@@ -328,7 +328,43 @@
   list-style: none;
 }
 
+/* En mobile, l'index se replie derrière un bouton ; à partir de 640 px, il est toujours ouvert. */
+.indexBascule {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  padding: var(--clair-espacement-2v) var(--clair-espacement-4v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-md);
+  background: var(--clair-fond-surface);
+  color: var(--clair-texte-action);
+  font: inherit;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  cursor: pointer;
+}
+
+.indexChevron {
+  width: var(--clair-texte-md-taille);
+  height: var(--clair-texte-md-taille);
+}
+
+.indexBascule[aria-expanded="true"] .indexChevron {
+  transform: rotate(180deg);
+}
+
+@media (max-width: 639.98px) {
+  .index[data-replie] {
+    display: none;
+  }
+}
+
 @media (min-width: 640px) {
+  .indexBascule {
+    display: none;
+  }
+
   .index {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

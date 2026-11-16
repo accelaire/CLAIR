@@ -2,6 +2,11 @@
   min-width: 0;
 }
 
+/* Le gris de Mantine pour l'invite (« Tous les secteurs ») n'atteint pas le contraste 4,5:1. */
+.input {
+  --input-placeholder-color: var(--clair-texte-mention);
+}
+
 .label {
   display: inline-flex;
   align-items: center;

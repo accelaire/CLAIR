@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Share2 } from "lucide-react";
+import { expect, within } from "storybook/test";
 import { Badge } from "../../core/badge/Badge.tsx";
 import { PageHeader } from "./PageHeader.tsx";
 
@@ -73,6 +74,27 @@ export const AvecFilDAriane: Story = {
       { label: "Scrutins", href: "/scrutins" },
       { label: "Scrutin n° 1234" },
     ],
+  },
+};
+
+const TITRE_LONG =
+  "Motion de censure déposée en application de l'article 49, alinéa 2, de la Constitution par des députés d'exemple";
+
+/** Une étape longue (titre de dossier) tient sur une ligne ; son lien garde l'intitulé entier. */
+export const FilDArianeLong: Story = {
+  args: {
+    title: "Scrutin n° 1234",
+    breadcrumb: [
+      { label: "Accueil", href: "/" },
+      { label: "Scrutins", href: "/scrutins" },
+      { label: TITRE_LONG, href: "/dossiers/exemple" },
+      { label: "Scrutin n° 1234" },
+    ],
+  },
+  globals: { viewport: { value: "xs" } },
+  play: async ({ canvasElement }) => {
+    const lien = within(canvasElement).getByRole("link", { name: TITRE_LONG });
+    await expect(lien).toHaveStyle({ whiteSpace: "nowrap", textOverflow: "ellipsis" });
   },
 };
 

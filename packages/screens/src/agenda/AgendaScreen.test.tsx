@@ -2,7 +2,7 @@ import { fireEvent, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { renderScreen } from "../test-utils.tsx";
 import { AgendaScreen } from "./AgendaScreen.tsx";
-import { agendaExemple } from "./fixtures.ts";
+import { agendaExemple, reunionAgendaExemple } from "./fixtures.ts";
 
 const AUJOURDHUI = "2026-03-03";
 
@@ -58,6 +58,30 @@ describe("AgendaScreen", () => {
       "/reunions/RUSNREXEMPLE3",
     );
     expect(within(reunions).getByRole("link", { name: /Scrutin n° 42/ })).toBeInTheDocument();
+  });
+
+  it("nettoie le nom de l'organe et replie un long ordre du jour", async () => {
+    const longue = {
+      ...reunionAgendaExemple,
+      odjResume: Array.from(
+        { length: 6 },
+        (_, i) => `Point fictif numéro ${i + 1} d'un exemple`,
+      ).join("|"),
+      commission: reunionAgendaExemple.commission
+        ? { ...reunionAgendaExemple.commission, nom: "Organe  ( fictif )" }
+        : null,
+    };
+    const { findByRole, getByRole, getByText, queryByText } = renderScreen(
+      <AgendaScreen aujourdhui={AUJOURDHUI} />,
+      { routes: { "/agenda": agendaExemple({ "2026-03-03": [longue] }) }, pathname: "/agenda" },
+    );
+    expect(await findByRole("heading", { level: 3, name: "Organe (fictif)" })).toBeInTheDocument();
+    expect(queryByText(/numéro 6/)).not.toBeInTheDocument();
+    const bouton = getByRole("button", { name: /Lire tout l'ordre du jour/ });
+    expect(bouton).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(bouton);
+    expect(getByText(/numéro 6/)).toBeInTheDocument();
+    expect(bouton).toHaveAttribute("aria-expanded", "true");
   });
 
   it("écrit le jour choisi et le mois dans l'URL", () => {

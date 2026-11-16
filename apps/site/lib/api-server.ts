@@ -1,18 +1,26 @@
 import "server-only";
-import { ApiError, createHttpClient } from "@clair/api-client";
+import { type ApiClient, ApiError, createHttpClient, type Query } from "@clair/api-client";
+import { sansDonneesSource } from "./donnees-source.ts";
 import { API_URL } from "./env.ts";
 import { internalHeaders } from "./internal-headers.ts";
 
 /**
  * Client de l'API pour les routes (rendu serveur, métadonnées, sitemap) : secret interne et
  * cache de Next (une heure par défaut, la base n'étant réécrite qu'une fois par jour).
+ * Toute réponse perd `sourceData`, à toute profondeur (`sansDonneesSource`) : les données lues
+ * ici partent dans le HTML dès qu'un écran client les reçoit.
  */
-export const serverApi = (revalidate = 3600) =>
-  createHttpClient({
+export const serverApi = (revalidate = 3600): ApiClient => {
+  const client = createHttpClient({
     baseUrl: `${API_URL}/api/v1`,
     headers: internalHeaders("CLAIR-Site-SSR/1.0"),
     init: { next: { revalidate } },
   });
+  return {
+    get: async <T>(path: string, query?: Query) =>
+      sansDonneesSource(await client.get<T>(path, query)),
+  };
+};
 
 /**
  * Ressource ou `null` si l'API répond 404 (la page appellera `notFound()`).

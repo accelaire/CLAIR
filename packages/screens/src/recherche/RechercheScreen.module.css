@@ -166,13 +166,15 @@
 .parlementaire {
   display: flex;
   gap: var(--clair-espacement-3v);
-  align-items: flex-start;
+  align-items: center;
 }
 
+/* Groupe et circonscription sur une ligne, qui se replie au besoin : la carte reste basse. */
 .details {
   display: flex;
-  flex-direction: column;
-  gap: var(--clair-espacement-1v);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-2v);
   min-width: 0;
 }
 

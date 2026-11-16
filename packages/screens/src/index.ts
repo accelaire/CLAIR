@@ -8,6 +8,11 @@ export {
   type ClassementsScreenProps,
 } from "./classements/ClassementsScreen.tsx";
 export {
+  type CritereGroupe,
+  PAR_PAGE as CLASSEMENT_PAR_PAGE,
+  parseClassementsParams,
+} from "./classements/params.ts";
+export {
   CommissionFicheScreen,
   type CommissionFicheScreenProps,
 } from "./commission-fiche/CommissionFicheScreen.tsx";
@@ -46,6 +51,14 @@ export {
   type RetourVisiteur,
 } from "./feedback/FeedbackWidget.tsx";
 export { signalerActionForte } from "./feedback/relance.ts";
+export {
+  GouvernementFicheScreen,
+  type GouvernementFicheScreenProps,
+} from "./gouvernement-fiche/GouvernementFicheScreen.tsx";
+export {
+  GouvernementsListeScreen,
+  type GouvernementsListeScreenProps,
+} from "./gouvernements-liste/GouvernementsListeScreen.tsx";
 export {
   GroupeFicheScreen,
   type GroupeFicheScreenProps,
@@ -155,6 +168,11 @@ export {
   type EntreePlan,
   type GroupePlan,
 } from "./seo/sitemap.ts";
+export {
+  dateLongue as dateGouvernement,
+  fonctionEnCours,
+  nomPersonne as nomMembreGouvernement,
+} from "./shared/gouvernements/gouvernements.ts";
 export { libelleDeSeance, pointsDeLOrdreDuJour } from "./shared/reunions/reunions.ts";
 export { periodeScrutin, scrutinHref } from "./shared/scrutins.ts";
 export type { ScreenProps } from "./shared/types.ts";

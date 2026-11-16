@@ -45,6 +45,13 @@ const load = async ({ params, searchParams }: Props) => {
   return loadScrutin(numero, query.chambre, query.session);
 };
 
+/**
+ * Version du rendu de l'image de partage, reportée dans son adresse (`v`) : les réseaux gardent une
+ * image par adresse. À incrémenter seulement quand l'image déjà diffusée devient fausse (même
+ * valeur que `OG_CARD_VERSION` de apps/web, pour garder les caches existants).
+ */
+const OG_SCRUTIN_VERSION = "2";
+
 const sortLabel = (sort: string) =>
   /adopt/i.test(sort) ? "Adopté" : /rejet/i.test(sort) ? "Rejeté" : sort;
 
@@ -56,12 +63,20 @@ export const generateMetadata = async (props: Props): Promise<Metadata> => {
   const description = `${chambre} — ${sortLabel(scrutin.sort)} (${scrutin.nombrePour} pour, ${scrutin.nombreContre} contre, ${scrutin.nombreAbstention} abstentions). ${scrutin.titre}`;
   // Adresse canonique : toujours la chambre et la session, le numéro n'étant unique nulle part.
   const canonical = scrutinHref(scrutin);
+  // Image propre au scrutin (og/route.tsx) : elle reçoit la chambre et la session.
+  const [chemin, query] = canonical.split("?");
+  const image = {
+    url: `${chemin}/og?${query}&v=${OG_SCRUTIN_VERSION}`,
+    width: 1200,
+    height: 630,
+    type: "image/png",
+  };
   return {
     title,
     description,
     alternates: { canonical },
-    openGraph: { title, description, url: canonical, type: "article" },
-    twitter: { card: "summary_large_image", title, description },
+    openGraph: { title, description, url: canonical, type: "article", images: [image] },
+    twitter: { card: "summary_large_image", title, description, images: [image] },
   };
 };
 

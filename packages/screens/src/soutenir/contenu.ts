@@ -115,7 +115,17 @@ export const helpTracks: readonly HelpTrack[] = [
   },
 ];
 
-export const team = [
+/** Une personne de l'équipe ; le lien LinkedIn est facultatif (Victor n'en a pas). */
+export type MembreEquipe = {
+  name: string;
+  photo: string;
+  alt: string;
+  role: string;
+  quote: string;
+  linkedin?: string;
+};
+
+export const team: MembreEquipe[] = [
   {
     name: "Axel",
     photo: "/images/axel.jpg",
@@ -143,7 +153,15 @@ export const team = [
       "Avec CLAIR, je souhaite rendre la politique institutionnelle lisible au plus grand nombre.",
     linkedin: "https://www.linkedin.com/in/paul-albagli",
   },
-] as const;
+  {
+    name: "Victor",
+    photo: "/images/victor.jpg",
+    alt: "Victor, contributeur CLAIR",
+    role: "Architecte logiciel",
+    quote:
+      "Je contribue à CLAIR pour rassembler et normaliser les données publiques, les rendre plus accessibles et faciliter leur intégration dans d'autres outils. Une façon de contribuer à l'open data et à la transparence de la vie publique.",
+  },
+];
 
 export const faq: FaqItem[] = [
   {

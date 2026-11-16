@@ -3,7 +3,7 @@ import { Card, Link, ProvenanceLabel, SectionHeader } from "@clair/ui";
 import { formatDate } from "../shared/parlementaires/chambre.ts";
 import classes from "./ParlementaireFicheScreen.module.css";
 
-const TYPES: Record<string, string> = {
+export const TYPES_DECLARATION: Record<string, string> = {
   di: "Déclaration d'intérêts",
   dia: "Déclaration d'intérêts et d'activités",
   diam: "Déclaration d'intérêts (modification)",
@@ -30,7 +30,7 @@ export const OngletDeclarations = ({ declarations }: { declarations: Declaration
         <Card
           key={declaration.id}
           as="li"
-          title={TYPES[declaration.typeDocument] ?? declaration.typeDocument}
+          title={TYPES_DECLARATION[declaration.typeDocument] ?? declaration.typeDocument}
           footer={
             declaration.urlDossier ? (
               <Link href={declaration.urlDossier} external>

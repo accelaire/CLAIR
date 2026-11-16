@@ -19,6 +19,28 @@ describe("Tabs", () => {
     expect(getByRole("tabpanel")).toHaveTextContent("Liste des amendements");
   });
 
+  it("accepte un compteur en texte, annoncé en toutes lettres", () => {
+    const { getByRole } = renderWithProviders(
+      <Tabs
+        items={[
+          ...items,
+          {
+            value: "censure",
+            label: "49.3 et censure",
+            count: "3 · 13",
+            countLabel: "3 recours au 49.3, 13 motions de censure",
+            content: <p>Recours et motions</p>,
+          },
+        ]}
+        label="Bilan du gouvernement"
+      />,
+    );
+    const onglet = getByRole("tab", { name: /49\.3 et censure/ });
+    expect(onglet).toHaveTextContent("3 · 13");
+    expect(onglet).toHaveTextContent("(3 recours au 49.3, 13 motions de censure)");
+    expect(onglet.querySelector("[aria-hidden='true']")).toHaveTextContent("3 · 13");
+  });
+
   it("change d'onglet au clic et aux flèches du clavier", async () => {
     const { getByRole } = renderWithProviders(<Tabs items={items} label="Détail du scrutin" />);
     await userEvent.click(getByRole("tab", { name: /Débats/ }));

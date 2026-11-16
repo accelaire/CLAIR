@@ -1,0 +1,163 @@
+.page {
+  padding-block: var(--clair-espacement-6v) var(--clair-espacement-16v);
+}
+
+.chapo,
+.source {
+  margin: 0;
+}
+
+.source {
+  margin-top: var(--clair-espacement-2v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-10v);
+  margin-top: var(--clair-espacement-8v);
+}
+
+.presidence {
+  margin: 0;
+  font-size: var(--clair-texte-h3-taille);
+  line-height: var(--clair-texte-h3-interligne);
+  font-weight: var(--clair-texte-h3-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.legende {
+  display: flex;
+  gap: var(--clair-espacement-2v);
+  align-items: center;
+  margin: var(--clair-espacement-1v) 0 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.legendeBarre {
+  flex-shrink: 0;
+  inline-size: var(--clair-espacement-10v);
+  block-size: var(--clair-espacement-1v);
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--clair-fond-action);
+}
+
+.grille {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--clair-espacement-3v);
+  margin: var(--clair-espacement-3v) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 768px) {
+  .grille {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.carte {
+  position: relative;
+  display: flex;
+  gap: var(--clair-espacement-3v);
+  align-items: flex-start;
+  padding: var(--clair-espacement-4v);
+  border: var(--clair-trait-epaisseur) solid var(--clair-bordure-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+}
+
+.carte[data-en-cours] {
+  border-color: var(--clair-statut-info);
+  background: var(--clair-statut-info-fond);
+}
+
+.carte:hover,
+.carte:focus-within {
+  border-color: var(--clair-bordure-forte);
+}
+
+.corps {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--clair-espacement-1v);
+  min-inline-size: 0;
+}
+
+.titreLigne {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-2v);
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.titre {
+  margin: 0;
+  font-size: var(--clair-texte-h5-taille);
+  line-height: var(--clair-texte-h5-interligne);
+  font-weight: var(--clair-texte-h5-graisse);
+}
+
+/* Le lien du titre recouvre toute la carte. */
+.lienCarte::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+/* Le lien vers la fiche du Premier ministre passe au-dessus du lien de la carte. */
+.auDessus {
+  position: relative;
+  z-index: 1;
+}
+
+.ligne,
+.mention {
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.mention {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-1v);
+  align-items: center;
+  color: var(--clair-texte-mention);
+}
+
+.duree {
+  display: flex;
+  gap: var(--clair-espacement-2v);
+  align-items: center;
+}
+
+.barre {
+  flex: 1;
+  block-size: var(--clair-espacement-1v);
+  overflow: hidden;
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--clair-fond-neutre);
+}
+
+.barreRemplie {
+  block-size: 100%;
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--clair-fond-action);
+}
+
+/* Durée lisible à côté de sa barre, au corps des autres mentions de la carte. */
+.dureeTexte {
+  flex-shrink: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  font-weight: var(--clair-texte-h6-graisse);
+}

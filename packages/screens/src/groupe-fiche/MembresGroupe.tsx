@@ -1,10 +1,11 @@
-import type { Chambre, GroupeMembre } from "@clair/data";
+import { type Chambre, type GroupeMembre, presenceDe } from "@clair/data";
 import {
   DataTable,
   type DataTableColumn,
   type DataTableSort,
   EmptyState,
   Link,
+  ParlementaireAvatar,
   SectionHeader,
 } from "@clair/ui";
 import { formatNombre, formatPourcent } from "../groupes-liste/format.ts";
@@ -28,12 +29,20 @@ const circonscription = (chambre: Chambre, membre: GroupeMembre) => {
 
 const pourcent = (valeur: number | null) => (valeur === null ? "—" : formatPourcent(valeur));
 
+/** Présence d'un membre : aux votes solennels au Sénat, où les scrutins ordinaires se votent par groupe (#108). */
+const presenceMembre = (chambre: Chambre, membre: GroupeMembre) =>
+  presenceDe(chambre, {
+    presence: membre.statsPresence,
+    presenceSolennel: membre.statsPresenceSolennel,
+  });
+
 /** Clés de tri reconnues dans l'URL. */
 export const estTriMembres = (key: string): key is TriMembres =>
   key === "nom" || key === "presence" || key === "loyaute";
 
 /**
- * Membres actifs du groupe en tableau triable (nom, présence, loyauté) ; le tri vit dans l'URL.
+ * Membres actifs du groupe en tableau triable (photo et nom, présence, loyauté) ; le tri vit dans
+ * l'URL.
  * Les statistiques sont calculées par CLAIR.
  */
 export const MembresGroupe = ({ chambre, membres, sort, onSortChange }: MembresGroupeProps) => {
@@ -43,9 +52,17 @@ export const MembresGroupe = ({ chambre, membres, sort, onSortChange }: MembresG
       header: "Nom",
       rowHeader: true,
       cell: (membre) => (
-        <Link href={`${ELUS[chambre]}/${membre.slug}`}>
-          {membre.prenom} {membre.nom}
-        </Link>
+        <span className={classes.membre}>
+          <ParlementaireAvatar
+            nom={`${membre.prenom} ${membre.nom}`}
+            photoUrl={membre.photoUrl}
+            size="sm"
+            decorative
+          />
+          <Link href={`${ELUS[chambre]}/${membre.slug}`}>
+            {membre.prenom} {membre.nom}
+          </Link>
+        </span>
       ),
       sortValue: (membre) => `${membre.nom} ${membre.prenom}`,
     },
@@ -56,11 +73,11 @@ export const MembresGroupe = ({ chambre, membres, sort, onSortChange }: MembresG
     },
     {
       key: "presence",
-      header: "Présence",
+      header: chambre === "senat" ? "Présence (votes solennels)" : "Présence",
       align: "end",
       firstDirection: "descending",
-      cell: (membre) => pourcent(membre.statsPresence),
-      sortValue: (membre) => membre.statsPresence,
+      cell: (membre) => pourcent(presenceMembre(chambre, membre)),
+      sortValue: (membre) => presenceMembre(chambre, membre),
     },
     {
       key: "loyaute",
@@ -76,7 +93,11 @@ export const MembresGroupe = ({ chambre, membres, sort, onSortChange }: MembresG
       <SectionHeader id="membres" title={`Membres du groupe (${formatNombre(membres.length)})`} />
       {membres.length > 0 ? (
         <DataTable
-          caption="Membres actifs du groupe, présence et loyauté calculées par CLAIR"
+          caption={
+            chambre === "senat"
+              ? "Membres actifs du groupe, présence aux votes solennels et loyauté calculées par CLAIR"
+              : "Membres actifs du groupe, présence et loyauté calculées par CLAIR"
+          }
           columns={columns}
           rows={membres}
           getRowKey={(membre) => membre.id}

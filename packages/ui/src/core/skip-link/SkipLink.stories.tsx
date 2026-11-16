@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within } from "storybook/test";
+import { attendreFocusVisible } from "../../story-utils.ts";
 import { SkipLink } from "./SkipLink.tsx";
 
 const meta = {
@@ -28,11 +29,17 @@ type Story = StoryObj<typeof meta>;
 
 export const Defaut: Story = {};
 
-/** La première tabulation affiche le lien. */
+/** La première tabulation affiche le lien, avec son contour de focus, vers le contenu. */
 export const AuFocus: Story = {
   play: async ({ canvasElement }) => {
     await userEvent.tab();
     const link = within(canvasElement).getByRole("link", { name: "Aller au contenu" });
-    await expect(link).toHaveFocus();
+    await attendreFocusVisible(link);
+    await expect(link).toHaveAttribute("href", "#contenu");
+    await expect(link).toBeVisible();
   },
 };
+
+export const Mobile: Story = { ...AuFocus, globals: { viewport: { value: "xs" } } };
+
+export const Sombre: Story = { ...AuFocus, globals: { theme: "dark" } };

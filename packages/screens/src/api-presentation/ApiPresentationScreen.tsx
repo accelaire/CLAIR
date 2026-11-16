@@ -11,6 +11,7 @@ import {
 import { Code, Database, FileText } from "lucide-react";
 import editorial from "../shared/editorial/Editorial.module.css";
 import classes from "./ApiPresentationScreen.module.css";
+import { CopierCode } from "./CopierCode.tsx";
 import {
   curlExample,
   DATAGOUV_URL,
@@ -131,6 +132,7 @@ export const ApiPresentationScreen = () => (
         <figcaption className={classes.terminalCaption}>
           <Code aria-hidden="true" className={classes.terminalIcon} />
           Terminal
+          <CopierCode code={curlExample} />
         </figcaption>
         <pre className={classes.code}>
           <code>{curlExample}</code>

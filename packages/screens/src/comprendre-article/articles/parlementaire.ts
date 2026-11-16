@@ -72,7 +72,21 @@ export const parlementaire: ComprendreArticle = {
             {
               ...textCard(
                 "Présence solennelle",
-                "Pourcentage de scrutins solennels auxquels le parlementaire a participé (voté pour, contre ou abstention). Les scrutins solennels portent sur l'ensemble d'un texte de loi et sont les plus importants.",
+                "Pourcentage de scrutins solennels auxquels le parlementaire a participé (voté pour, contre ou abstention). Les scrutins solennels portent sur l'ensemble d'un texte de loi et sont les plus importants. Les scrutins tenus pendant qu'il était membre du Gouvernement ou président de sa chambre n'y comptent pas : un ministre ne vote pas, un président de chambre seulement par exception. Sans aucun scrutin publié sur ses périodes de mandat, le taux n'est pas calculé et s'affiche « — », jamais 0 %.",
+              ),
+              icon: TrendingUp,
+            },
+            {
+              ...textCard(
+                "Présence au Sénat",
+                "Au Sénat, un scrutin ordinaire se vote par groupe : un délégué dépose les bulletins de tous les membres, présents ou non. Seuls les scrutins solennels, où chacun vote en personne ou confie son vote à un collègue, mesurent la présence. Un vote confié compte comme une absence ; le président du Sénat, le président de séance et les membres du gouvernement, qui ne votent pas, sont hors calcul. Le taux sur tous les scrutins est affiché comme une participation.",
+              ),
+              icon: TrendingUp,
+            },
+            {
+              ...textCard(
+                "Fiche et classements",
+                "La fiche d'un élu présente sa carrière parlementaire entière, Assemblée et Sénat. Les classements comparent par défaut le mandat en cours, pour mettre tous les élus sur la même période : le chiffre peut donc différer de celui de la fiche. Choisissez « Carrière complète » dans un classement pour retrouver les chiffres des fiches.",
               ),
               icon: TrendingUp,
             },

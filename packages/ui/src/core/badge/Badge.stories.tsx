@@ -73,4 +73,6 @@ export const AvecIcone: Story = {
   args: { tone: "succes", icon: <Check />, children: "Promulgué" },
 };
 
+export const Mobile: Story = { ...Tons, globals: { viewport: { value: "xs" } } };
+
 export const Sombre: Story = { ...Tons, globals: { theme: "dark" } };

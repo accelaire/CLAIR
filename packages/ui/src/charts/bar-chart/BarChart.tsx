@@ -44,6 +44,11 @@ export type BarChartProps = {
    * graphiques : sinon toutes leurs légendes s'appellent « Légende ».
    */
   legendLabel?: string;
+  /**
+   * Bornes de l'axe des valeurs (`[90, 100]`), pour des valeurs serrées. L'axe ne part alors plus
+   * de zéro : le dire dans le sous-titre du `ChartFrame`.
+   */
+  valueDomain?: [number, number];
 };
 
 type CustomProperties = CSSProperties & Record<`--${string}`, string>;
@@ -80,6 +85,7 @@ export const BarChart = ({
   withLegend = series.length > 1,
   emptyLabel = "Aucune donnée à représenter",
   legendLabel = "Légende",
+  valueDomain,
 }: BarChartProps) => {
   if (data.length === 0) return <EmptyState title={emptyLabel} />;
   const mantineSeries = series.map((item, index) => ({
@@ -103,7 +109,14 @@ export const BarChart = ({
           textColor="var(--clair-texte-mention)"
           gridColor="var(--clair-bordure-defaut)"
           cursorFill="var(--clair-fond-neutre)"
-          yAxisProps={horizontal ? { width: largeurAxe(data, categoryKey) } : undefined}
+          // Mantine pose l'unité sur l'axe Y, qui porte les catégories en barres horizontales
+          // (« Santé% ») : elle va sur l'axe des valeurs.
+          xAxisProps={horizontal ? { unit, domain: valueDomain } : undefined}
+          yAxisProps={
+            horizontal
+              ? { width: largeurAxe(data, categoryKey), unit: undefined }
+              : { domain: valueDomain }
+          }
           tooltipAnimationDuration={0}
         />
       </div>

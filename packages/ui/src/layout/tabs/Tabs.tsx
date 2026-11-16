@@ -9,8 +9,17 @@ export type TabItem = {
   value: string;
   /** Libellé visible de l'onglet. */
   label: string;
-  /** Nombre d'éléments du panneau, affiché à côté du libellé. */
-  count?: number;
+  /**
+   * Compteur affiché dans une pastille à côté du libellé : un nombre (mis en forme à la
+   * française) ou un texte déjà composé (« 3 · 13 » pour deux comptes).
+   */
+  count?: number | string;
+  /**
+   * Libellé complet du compteur pour les lecteurs d'écran (« 3 recours au 49.3, 13 motions de
+   * censure »). Indispensable quand `count` est un texte qui réunit plusieurs comptes ; sans
+   * lui, le compteur est annoncé tel qu'affiché.
+   */
+  countLabel?: string;
   /** Icône décorative placée avant le libellé. */
   icon?: ReactNode;
   /** Contenu du panneau. */
@@ -31,12 +40,14 @@ export type TabsProps = {
   onChange?: (value: string) => void;
 };
 
-const formatCount = (count: number) => count.toLocaleString("fr-FR");
+const formatCount = (count: number | string) =>
+  typeof count === "number" ? count.toLocaleString("fr-FR") : count;
 
 /**
  * Onglets accessibles (motif « tabs » du W3C, via Mantine) : flèches pour passer d'un onglet à
  * l'autre, panneaux reliés à leur onglet. En mode contrôlé (`value` + `onChange`), l'onglet
- * actif peut vivre dans l'URL. Le compteur est annoncé entre parenthèses.
+ * actif peut vivre dans l'URL. Le compteur est annoncé entre parenthèses, en toutes lettres
+ * quand `countLabel` le précise.
  */
 export const Tabs = ({ items, label, value, defaultValue, onChange }: TabsProps) => (
   <MantineTabs
@@ -67,7 +78,10 @@ export const Tabs = ({ items, label, value, defaultValue, onChange }: TabsProps)
                 <span className={classes.count} aria-hidden="true">
                   {formatCount(item.count)}
                 </span>
-                <span className="clair-visually-hidden"> ({formatCount(item.count)})</span>
+                <span className="clair-visually-hidden">
+                  {" "}
+                  ({item.countLabel ?? formatCount(item.count)})
+                </span>
               </>
             )
           }

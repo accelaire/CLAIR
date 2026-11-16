@@ -30,6 +30,8 @@ import {
   dossiersListeParamsOf,
   dossiersQueryOf,
   ETATS_FILTRABLES,
+  ORIGINE_LIBELLES,
+  ORIGINES_FILTRABLES,
   parseDossiersListeParams,
 } from "./params.ts";
 
@@ -39,6 +41,7 @@ const CHAMBRE_LIBELLE = { assemblee: "Assemblée nationale", senat: "Sénat" } a
 
 const SANS_FILTRE: Partial<DossiersListeParams> = {
   etat: "",
+  gouvernement: "",
   chambre: "",
   procedureCode: "",
   procedureLibelle: "",
@@ -53,9 +56,9 @@ const formatJour = (jour: string) =>
 
 /**
  * Liste des dossiers législatifs (ceux qui ont au moins un scrutin) : recherche, filtres
- * (chambre, état, procédure, période de dépôt) et pagination en liens. Tout l'état vit dans
- * l'URL, avec les mêmes clés que apps/web (`search`, `etat`, `chambre`, `procedureLibelle`,
- * `dateFrom`, `dateTo`, `page`).
+ * (chambre, état, origine du texte, procédure, période de dépôt) et pagination en liens. Tout
+ * l'état vit dans l'URL, avec les mêmes clés que apps/web (`search`, `etat`, `gouvernement`,
+ * `chambre`, `procedureLibelle`, `dateFrom`, `dateTo`, `page`).
  */
 export const DossiersListeScreen = ({
   params: rawParams,
@@ -87,6 +90,13 @@ export const DossiersListeScreen = ({
           id: `etat=${params.etat}`,
           label: `État : ${STATUTS[params.etat].label}`,
           onRemove: () => update({ etat: "" }),
+        }
+      : null,
+    params.gouvernement
+      ? {
+          id: `gouvernement=${params.gouvernement}`,
+          label: `Origine du texte : ${ORIGINE_LIBELLES[params.gouvernement]}`,
+          onRemove: () => update({ gouvernement: "" }),
         }
       : null,
     params.procedureLibelle
@@ -179,6 +189,23 @@ export const DossiersListeScreen = ({
           data={[
             { value: "", label: "Tous les états" },
             ...ETATS_FILTRABLES.map((etat) => ({ value: etat, label: STATUTS[etat].label })),
+          ]}
+        />
+        <NativeSelect
+          label="Origine du texte"
+          value={params.gouvernement}
+          onChange={(event) => {
+            const origine = event.currentTarget.value;
+            update({
+              gouvernement: ORIGINES_FILTRABLES.find((valeur) => valeur === origine) ?? "",
+            });
+          }}
+          data={[
+            { value: "", label: "Toutes les origines" },
+            ...ORIGINES_FILTRABLES.map((origine) => ({
+              value: origine,
+              label: ORIGINE_LIBELLES[origine],
+            })),
           ]}
         />
         {procedures.length > 0 ? (

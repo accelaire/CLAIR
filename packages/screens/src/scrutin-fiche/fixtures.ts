@@ -4,7 +4,7 @@ import type { InterventionsScrutinResponse, ScrutinDetail, VoteParlementaire } f
  * Scrutin FICTIF pour les tests : élus (« Camille Exemple »…), groupes, amendement et débat
  * inventés, présentés comme des exemples. Aucune donnée parlementaire réelle.
  */
-const vote = (
+export const vote = (
   id: string,
   position: VoteParlementaire["position"],
   prenom: string,

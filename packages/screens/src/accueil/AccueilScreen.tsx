@@ -128,7 +128,8 @@ const Recherche = () => {
           />
         </div>
         <Button type="submit" icon={<ArrowRight />} iconPosition="end">
-          Rechercher
+          {/* En mobile, seule la flèche reste visible : le bouton tient sur la ligne du champ. */}
+          <span className={classes.rechercheLibelle}>Rechercher</span>
         </Button>
       </form>
     </search>

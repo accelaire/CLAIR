@@ -1,5 +1,6 @@
 import { ClassementsScreen } from "@clair/screens";
 import type { Metadata } from "next";
+import { queryImageClassements } from "@/lib/og-classements.ts";
 
 export const revalidate = 3600;
 
@@ -10,6 +11,14 @@ const CRITERES: Record<string, string> = {
   loyaute: "loyauté",
   amendements: "amendements",
   interventions: "interventions",
+};
+
+/** Critères de l'onglet Groupes (`groupeSort`), distincts de ceux des parlementaires (`sort`). */
+const CRITERES_GROUPE: Record<string, string> = {
+  presence: "présence",
+  loyaute: "loyauté",
+  cohesion: "cohésion",
+  membres: "nombre de membres",
 };
 
 const CHAMBRES: Record<string, string> = { assemblee: "Assemblée nationale", senat: "Sénat" };
@@ -31,18 +40,25 @@ export const generateMetadata = async ({ searchParams }: Props): Promise<Metadat
     : premier(params.tab) === "groupes"
       ? [
           "Classement des groupes politiques",
-          `Comparez les groupes politiques par ${critere}${entre}. Indicateurs calculés par CLAIR à partir des données officielles.`,
+          `Comparez les groupes politiques par ${CRITERES_GROUPE[premier(params.groupeSort)] ?? "présence"}${entre}. Indicateurs calculés par CLAIR à partir des données officielles.`,
         ]
       : [
           `Classement par ${critere}${chambre ? ` — ${chambre}` : ""}`,
           `Classement des parlementaires par ${critere}${entre}. Top et flop, indicateurs calculés par CLAIR à partir des données officielles.`,
         ];
+  // Image qui suit l'onglet, le critère et le parlementaire mis en avant (og/route.tsx).
+  const image = {
+    url: `/classements/og?${queryImageClassements(params)}`,
+    width: 1200,
+    height: 630,
+    type: "image/png",
+  };
   return {
     title,
     description,
     alternates: { canonical: "/classements" },
-    openGraph: { title, description },
-    twitter: { card: "summary_large_image", title, description },
+    openGraph: { title, description, images: [image] },
+    twitter: { card: "summary_large_image", title, description, images: [image] },
   };
 };
 

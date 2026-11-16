@@ -7,7 +7,7 @@ description: "Graphique en barres simples, groupées ou empilées (@mantine/char
 
 import { BarChart, ChartFrame } from "@clair/ui";
 
-Graphique en barres construit sur `BarChart` de `@mantine/charts`. Le dessin est masqué aux lecteurs d'écran : il se place toujours dans un `ChartFrame`, dont le tableau « Afficher les données » est l'alternative textuelle ; la légende des séries reste en texte. Les couleurs viennent des tokens (`--clair-graphique-vote-*`, `--clair-groupe-*`) ou, à défaut, de la palette des graphiques. L'application doit charger `@mantine/charts/styles.css`. Remplace `BarresComptage` et les graphiques Recharts du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-graphiques-barchart--docs)
+Graphique en barres construit sur `BarChart` de `@mantine/charts`. Le dessin est masqué aux lecteurs d'écran : il se place toujours dans un `ChartFrame`, dont le tableau « Afficher les données » est l'alternative textuelle ; la légende des séries reste en texte. Les couleurs viennent des tokens (`--clair-graphique-vote-*`, `--clair-groupe-*`) ou, à défaut, de la palette des graphiques. Pour des valeurs serrées, `valueDomain` borne l'axe des valeurs (`[90, 100]`) : le sous-titre du cadre doit alors dire où l'axe commence. L'application doit charger `@mantine/charts/styles.css`. Remplace `BarresComptage` et les graphiques Recharts du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-graphiques-barchart--docs)
 
 ## Import
 

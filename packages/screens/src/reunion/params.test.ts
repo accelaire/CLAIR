@@ -18,9 +18,9 @@ describe("paramètres de la page d'une réunion", () => {
 
   it("déduit la page du débat du rang suivi", () => {
     expect(pageDuRang(1)).toBe(1);
-    expect(pageDuRang(200)).toBe(1);
-    expect(pageDuRang(201)).toBe(2);
-    expect(pageDuDebat(parseReunionParams({ rang: "450" }))).toBe(3);
+    expect(pageDuRang(50)).toBe(1);
+    expect(pageDuRang(51)).toBe(2);
+    expect(pageDuDebat(parseReunionParams({ rang: "450" }))).toBe(9);
     expect(pageDuDebat(parseReunionParams({ rang: "450", debat: "1" }))).toBe(1);
     expect(pageDuDebat(parseReunionParams({}))).toBe(1);
   });

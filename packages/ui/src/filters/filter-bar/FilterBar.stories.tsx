@@ -33,7 +33,15 @@ type DemoState = { q: string; chambre: ChambreSwitchValue; groupes: string[]; tr
  * Écran d'exemple : l'état des filtres vivrait dans l'URL ; ici, un état local en tient lieu.
  * Les pastilles sont dérivées de cet état.
  */
-const Demo = ({ initial, onReset }: { initial: DemoState; onReset: FilterBarProps["onReset"] }) => {
+const Demo = ({
+  initial,
+  onReset,
+  searchInline,
+}: {
+  initial: DemoState;
+  onReset: FilterBarProps["onReset"];
+  searchInline?: boolean;
+}) => {
   const [state, setState] = useState(initial);
   const update = (patch: Partial<DemoState>) => setState((current) => ({ ...current, ...patch }));
   const activeFilters: ActiveFilter[] = [
@@ -58,6 +66,7 @@ const Demo = ({ initial, onReset }: { initial: DemoState; onReset: FilterBarProp
   ];
   return (
     <FilterBar
+      searchInline={searchInline}
       search={
         <SearchInput
           aria-label="Rechercher un parlementaire"
@@ -101,6 +110,10 @@ const meta = {
     },
     activeCount: { description: "Nombre de filtres actifs.", table: { category: "Valeur" } },
     label: { description: "Nom du groupe et titre du tiroir.", table: { category: "Contenu" } },
+    summary: {
+      description: "Résumé des choix en cours, à côté du bouton du tiroir sur mobile.",
+      table: { category: "Contenu" },
+    },
     onReset: { description: "Réinitialise les filtres.", table: { category: "Événements" } },
   },
   parameters: {
@@ -153,4 +166,19 @@ export const Mobile: Story = {
 export const Sombre: Story = {
   render: (args) => <Demo initial={actifs} onReset={args.onReset} />,
   globals: { theme: "dark" },
+};
+
+/** Recherche dans la rangée des filtres (liste des scrutins) : une ligne de gagnée. */
+export const RechercheEnLigne: Story = {
+  render: (args) => <Demo initial={vide} onReset={args.onReset} searchInline />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const recherche = canvas.getByRole("searchbox", { name: "Rechercher un parlementaire" });
+    const tri = canvas.getByRole("combobox", { name: /Trier/ });
+    // Même rangée : le bas de la recherche s'aligne sur celui du tri.
+    const ecart = Math.abs(
+      recherche.getBoundingClientRect().bottom - tri.getBoundingClientRect().bottom,
+    );
+    await expect(ecart).toBeLessThan(8);
+  },
 };

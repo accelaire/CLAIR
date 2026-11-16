@@ -98,10 +98,11 @@ export const BarresComptage = ({
                 selectionnable={interactif}
                 onSelect={() => onSelection?.(sortantsParLabel?.[entree.label] ?? [], entree.label)}
                 gestionnaires={gestionnaires(contenu)}
-                libelle={`Surligner les sortants : ${entree.label}, ${entree.valeur}`}
+                // Le nom reprend le texte visible (libellé, nombre, part) : WCAG 2.5.3.
+                libelle={`Surligner les sortants : ${entree.label}, ${entree.valeur} · ${pct(entree.valeur)} %`}
               >
                 <span className={classes.ligneTexte}>
-                  <span className={classes.libelleTronque}>{entree.label}</span>
+                  <span className={classes.libelleTronque}>{entree.label}</span>{" "}
                   <span className="clair-chiffres">
                     <strong>{entree.valeur}</strong>
                     <span className={classes.mention}> · {pct(entree.valeur)} %</span>

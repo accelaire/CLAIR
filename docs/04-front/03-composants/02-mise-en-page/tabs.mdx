@@ -63,6 +63,36 @@ import { Tabs } from "@clair/ui";
 />
 ```
 
+## Avec un compteur en texte
+
+Un compteur peut être un texte déjà composé, qui réunit deux comptes (« 3 · 13 »). `countLabel` le dit alors en toutes lettres aux lecteurs d'écran ; il peut aussi préciser un simple nombre.
+
+<Preview>
+  <Tabs
+    label="Bilan d'un gouvernement fictif"
+    items={[
+      { value: "composition", label: "Composition", count: 35, content: <p>Les 35 membres.</p> },
+      { value: "censure", label: "49.3 et censure", count: "3 · 13", countLabel: "3 recours au 49.3, 13 motions de censure", content: <p>Recours au 49.3 et motions de censure.</p> },
+    ]}
+  />
+</Preview>
+
+```tsx
+<Tabs
+  label="Bilan d'un gouvernement fictif"
+  items={[
+    { value: "composition", label: "Composition", count: 35, content: <p>Les 35 membres.</p> },
+    {
+      value: "censure",
+      label: "49.3 et censure",
+      count: "3 · 13",
+      countLabel: "3 recours au 49.3, 13 motions de censure",
+      content: <p>Recours au 49.3 et motions de censure.</p>,
+    },
+  ]}
+/>
+```
+
 ## Avec l'onglet actif dans l'URL
 
 L'écran lit l'onglet dans l'URL (`?onglet=vote`) et la met à jour à chaque changement ; l'aperçu ouvre directement l'onglet « Vote ».

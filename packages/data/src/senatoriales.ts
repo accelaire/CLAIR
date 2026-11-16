@@ -116,6 +116,10 @@ export type Sortant = {
   candidature?: CandidatureSortant | null;
   /** Statistiques de carrière, identiques à celles de la fiche du sénateur (calculées). */
   bilan: {
+    /**
+     * Présence aux votes solennels du mandat sortant (pas le taux tous scrutins, voté par groupe
+     * au Sénat) ; nulle sans scrutin solennel.
+     */
     presence: number | null;
     loyaute: number | null;
     participation: number | null;

@@ -16,10 +16,21 @@ import {
 } from "./contenu.ts";
 import classes from "./MethodologieScreen.module.css";
 
+/** Sections de la page, dans l'ordre : ancre et titre du sommaire. */
+const SOMMAIRE = [
+  { ancre: "sources", titre: "Sources de données" },
+  { ancre: "synchronisation", titre: "Synchronisation des données" },
+  { ancre: "enrichissement-ia", titre: "Enrichissement par intelligence artificielle" },
+  { ancre: "modele", titre: "Modèle de données" },
+  { ancre: "stack", titre: "Stack technique" },
+  { ancre: "limitations", titre: "Limitations et transparence" },
+];
+
 /**
  * Page « Méthodologie » : sources officielles, synchronisation, enrichissement par IA (donnée
  * générée, distinguée de la donnée officielle), modèle de données, stack et limites.
- * Les ancres `#hatvp` et `#enrichissement-ia` sont citées par d'autres pages.
+ * Un sommaire en tête mène à chaque section. Les ancres `#hatvp` et `#enrichissement-ia` sont
+ * citées par d'autres pages.
  */
 export const MethodologieScreen = () => (
   <Container size="etroit" className={editorial.page}>
@@ -27,6 +38,19 @@ export const MethodologieScreen = () => (
       title="Méthodologie"
       description="CLAIR agrège des données publiques provenant de sources officielles. Cette page explique comment nous collectons, structurons et présentons ces informations."
     />
+
+    <nav aria-labelledby="sommaire" className={classes.toc}>
+      <h2 id="sommaire" className={classes.tocTitle}>
+        Sommaire
+      </h2>
+      <ol className={classes.tocList}>
+        {SOMMAIRE.map((section) => (
+          <li key={section.ancre}>
+            <Link href={`#${section.ancre}`}>{section.titre}</Link>
+          </li>
+        ))}
+      </ol>
+    </nav>
 
     <section className={editorial.section} aria-labelledby="sources">
       <SectionHeader

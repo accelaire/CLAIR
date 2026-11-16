@@ -2,6 +2,7 @@
 
 import type { Sortant } from "@clair/data";
 import { couleurGroupe, Link } from "@clair/ui";
+import { useIntertitre } from "../composants/CadreGraphique.tsx";
 import { useInfobulle } from "../composants/Infobulle.tsx";
 import { TableauDonnees } from "../composants/TableauDonnees.tsx";
 import { COULEUR_PRINCIPALE, COULEUR_SECONDAIRE } from "../lib/couleurs.ts";
@@ -13,7 +14,7 @@ import classes from "./Graphiques.module.css";
 const SEUIL_EXTREMES = 15;
 
 const LIBELLES: Record<MetriqueBilan, { nom: string; couleur: string }> = {
-  presence: { nom: "présence en séance", couleur: COULEUR_PRINCIPALE },
+  presence: { nom: "présence aux votes solennels", couleur: COULEUR_PRINCIPALE },
   loyaute: { nom: "loyauté au groupe", couleur: COULEUR_SECONDAIRE },
 };
 
@@ -31,6 +32,7 @@ export const DistributionBilan = ({
   onSelection?: Selection;
 }) => {
   const { infobulle, gestionnaires } = useInfobulle();
+  const Intertitre = useIntertitre();
   const bandes = bandesBilan(sortants, metrique);
   const valeurs = sortants
     .map((s) => s.bilan[metrique])
@@ -68,7 +70,7 @@ export const DistributionBilan = ({
                   lignes: [{ label: "Sortants", valeur: String(bande.effectif) }],
                 })}
               >
-                <span className={classes.bandeLibelle}>{bande.label}</span>
+                <span className={classes.bandeLibelle}>{bande.label}</span>{" "}
                 <span className={classes.piste} data-taille="epaisse" data-forme="carree">
                   {bande.effectif > 0 ? (
                     <span
@@ -95,7 +97,7 @@ export const DistributionBilan = ({
 
       {mesures >= SEUIL_EXTREMES && extremes.length > 0 ? (
         <div className={classes.extremes}>
-          <h4 className={classes.sousTitre}>Les cinq taux les plus bas</h4>
+          <Intertitre className={classes.sousTitre}>Les cinq taux les plus bas</Intertitre>
           <ul className={classes.listeExtremes}>
             {extremes.map((point) => (
               <li key={point.slug}>

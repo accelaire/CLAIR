@@ -2,7 +2,7 @@
 
 import type { Circonscription, GroupeResume, ParlementaireListItem } from "@clair/data";
 import { Checkbox } from "@mantine/core";
-import { Badge } from "../../core/badge/Badge.tsx";
+import { Badge, type BadgeTone } from "../../core/badge/Badge.tsx";
 import { Card, type CardHeading } from "../../core/card/Card.tsx";
 import type { Chambre } from "../../core/chambre-badge/ChambreBadge.tsx";
 import { GroupeBadge } from "../groupe-badge/GroupeBadge.tsx";
@@ -28,6 +28,15 @@ export type ParlementaireCardProps = {
    * dont `actif` vaut `false` est présenté comme ancien élu de sa chambre.
    */
   statut?: string | null;
+  /**
+   * Fonction dans un organe (« Président », « Secrétaire »), en badge à côté du nom : elle fait
+   * partie du nom accessible du lien, comme dans apps/web.
+   */
+  fonction?: string | null;
+  /** Ton du badge de fonction (`info` par défaut ; la présidence peut ressortir davantage). */
+  fonctionTone?: BadgeTone;
+  /** Carte resserrée (marges, détails sur une ligne), pour les longues listes de membres. */
+  compact?: boolean;
   /** Ajoute une case à cocher « Comparer » (comparateur), distincte du lien de la fiche. */
   selectable?: boolean;
   selected?: boolean;
@@ -63,7 +72,8 @@ const statutParDefaut = (parlementaire: ParlementaireCardData, chambre: Chambre)
 
 /**
  * Carte d'un député ou d'un sénateur : photo, nom (lien vers la fiche), groupe, circonscription
- * et statut. En mode comparateur, une case à cocher distincte du lien sélectionne la personne.
+ * et statut. En mode comparateur, une case à cocher distincte du lien, sous le nom, sélectionne la
+ * personne.
  * Remplace `.depute-card`, les cartes des listes /deputes et /senateurs et `SortantCard`.
  */
 export const ParlementaireCard = ({
@@ -71,6 +81,9 @@ export const ParlementaireCard = ({
   chambre,
   href,
   statut,
+  fonction = null,
+  fonctionTone = "info",
+  compact = false,
   selectable = false,
   selected = false,
   onSelectedChange,
@@ -82,10 +95,49 @@ export const ParlementaireCard = ({
   const statutAffiche = statut === undefined ? statutParDefaut(parlementaire, chambre) : statut;
   const { groupe, circonscription } = parlementaire;
 
+  const details =
+    groupe || circonscription || statutAffiche ? (
+      <div className={classes.details}>
+        {groupe ? (
+          <GroupeBadge
+            sigle={groupe.nom}
+            nom={groupe.nomComplet}
+            couleur={groupe.couleur}
+            size="sm"
+          />
+        ) : null}
+        {circonscription ? (
+          <p className={classes.circonscription}>
+            {libelleCirconscription(circonscription, chambre)}
+          </p>
+        ) : null}
+        {statutAffiche ? (
+          <Badge tone="neutre" size="sm">
+            {statutAffiche}
+          </Badge>
+        ) : null}
+      </div>
+    ) : null;
+  // Sous le nom, et non à côté : le nom garde toute la largeur de la carte.
+  const selection = selectable ? (
+    <Checkbox
+      className={classes.selection}
+      checked={selected}
+      disabled={selectionDisabled}
+      onChange={(event) => onSelectedChange?.(event.currentTarget.checked)}
+      label={
+        <>
+          Comparer<span className="clair-visually-hidden"> {nomAffiche}</span>
+        </>
+      }
+    />
+  ) : null;
+
   return (
     <Root
       className={classes.root}
       data-chambre={chambre}
+      data-compact={compact || undefined}
       data-selectable={selectable || undefined}
       data-selected={(selectable && selected) || undefined}
     >
@@ -94,49 +146,33 @@ export const ParlementaireCard = ({
         titleAs={titleAs}
         href={href}
         className={classes.card}
+        padding={compact ? "sm" : "md"}
         title={
           <span className={classes.identity}>
-            <ParlementaireAvatar nom={nomAffiche} photoUrl={parlementaire.photoUrl} decorative />
-            <span>{nomAffiche}</span>
+            <ParlementaireAvatar
+              nom={nomAffiche}
+              photoUrl={parlementaire.photoUrl}
+              size={compact ? "sm" : "md"}
+              decorative
+            />
+            <span className={classes.nom}>
+              <span>{nomAffiche}</span>
+              {fonction ? (
+                <Badge tone={fonctionTone} size="sm">
+                  {fonction}
+                </Badge>
+              ) : null}
+            </span>
           </span>
         }
       >
-        {groupe || circonscription || statutAffiche ? (
-          <div className={classes.details}>
-            {groupe ? (
-              <GroupeBadge
-                sigle={groupe.nom}
-                nom={groupe.nomComplet}
-                couleur={groupe.couleur}
-                size="sm"
-              />
-            ) : null}
-            {circonscription ? (
-              <p className={classes.circonscription}>
-                {libelleCirconscription(circonscription, chambre)}
-              </p>
-            ) : null}
-            {statutAffiche ? (
-              <Badge tone="neutre" size="sm">
-                {statutAffiche}
-              </Badge>
-            ) : null}
+        {selection || details ? (
+          <div className={classes.contenu}>
+            {selection}
+            {details}
           </div>
-        ) : null}
+        ) : undefined}
       </Card>
-      {selectable ? (
-        <Checkbox
-          className={classes.selection}
-          checked={selected}
-          disabled={selectionDisabled}
-          onChange={(event) => onSelectedChange?.(event.currentTarget.checked)}
-          label={
-            <>
-              Comparer<span className="clair-visually-hidden"> {nomAffiche}</span>
-            </>
-          }
-        />
-      ) : null}
     </Root>
   );
 };

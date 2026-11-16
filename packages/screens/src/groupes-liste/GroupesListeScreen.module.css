@@ -97,3 +97,21 @@
   font-size: var(--clair-texte-sm-taille);
   color: var(--clair-texte-mention);
 }
+
+/* Logo du groupe à côté de son nom, comme apps/web et la fiche du groupe. */
+.carteTitre {
+  display: flex;
+  align-items: center;
+  gap: var(--clair-espacement-3v);
+}
+
+.logo {
+  flex-shrink: 0;
+  width: var(--clair-espacement-10v);
+  height: var(--clair-espacement-10v);
+  padding: var(--clair-espacement-1v);
+  object-fit: contain;
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-md);
+  background: var(--clair-fond-surface);
+}

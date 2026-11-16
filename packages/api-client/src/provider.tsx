@@ -45,12 +45,17 @@ export const useApiClient = () => {
 
 /**
  * Requête GET mise en cache. `initialData` : données chargées par la route côté serveur
- * (rendu et référencement), reprises sans nouvel appel.
+ * (rendu et référencement), reprises sans nouvel appel. `refetchInterval` (ms) : relecture
+ * périodique, pour une donnée qui change pendant la visite (les directs de l'agenda).
  */
 export const useApiQuery = <T,>(
   path: string,
   query: Query = {},
-  { initialData, enabled = true }: { initialData?: T; enabled?: boolean } = {},
+  {
+    initialData,
+    enabled = true,
+    refetchInterval,
+  }: { initialData?: T; enabled?: boolean; refetchInterval?: number } = {},
 ) => {
   const client = useApiClient();
   return useQuery<T>({
@@ -58,5 +63,6 @@ export const useApiQuery = <T,>(
     queryFn: () => client.get<T>(path, query),
     initialData,
     enabled,
+    ...(refetchInterval ? { refetchInterval, staleTime: refetchInterval } : {}),
   });
 };

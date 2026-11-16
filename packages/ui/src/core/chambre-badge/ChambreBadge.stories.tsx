@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, within } from "storybook/test";
 import { ChambreBadge } from "./ChambreBadge.tsx";
 
 const meta = {
@@ -51,8 +52,23 @@ const LesDeux: Story["render"] = (args) => (
 
 export const Chambres: Story = { render: LesDeux };
 
-export const Court: Story = { args: { short: true }, render: LesDeux };
+/** En version courte, le nom complet reste donné en infobulle et aux lecteurs d'écran. */
+export const Court: Story = {
+  args: { short: true },
+  render: LesDeux,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const court = canvas.getByText("AN");
+    await expect(court).toHaveAttribute("aria-hidden", "true");
+    await expect(court.parentElement).toHaveAttribute("title", "Assemblée nationale");
+    await expect(canvas.getByText("Assemblée nationale")).toHaveClass("clair-visually-hidden");
+    // « Sénat » n'a pas de forme courte : ni infobulle ni double libellé.
+    await expect(canvas.getByText("Sénat")).not.toHaveAttribute("title");
+  },
+};
 
 export const Petit: Story = { args: { size: "sm", short: true }, render: LesDeux };
+
+export const Mobile: Story = { render: LesDeux, globals: { viewport: { value: "xs" } } };
 
 export const Sombre: Story = { render: LesDeux, globals: { theme: "dark" } };

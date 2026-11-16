@@ -97,6 +97,8 @@ export const ParlementairesListeScreen = ({
   const periodeAffichee =
     optionsPeriode.find((periode) => periode.valeur === filtres.periode) ?? periodeCourante;
   const estPeriodeCourante = !filtres.periode || filtres.periode === periodeCourante?.valeur;
+  // Lien « Voir les archives » de apps/web : la législature (ou la session) précédente.
+  const periodePrecedente = optionsPeriode[1];
 
   const aller = (suivants: ParlementairesListeFiltres) =>
     navigate(buildHref(pathname, parlementairesListeParamsOf(suivants, chambre)));
@@ -118,10 +120,11 @@ export const ParlementairesListeScreen = ({
   const pageHref = (numero: number) =>
     buildHref(pathname, parlementairesListeParamsOf({ ...filtres, page: numero }, chambre));
 
+  const elus = (n: number) => `${formatNombre(n)} ${n > 1 ? config.pluriel : config.singulier}`;
   const effectif = page
     ? estPeriodeCourante && !filtres.recherche && !filtres.groupe
-      ? `${formatNombre(page.total)} ${config.pluriel} sur ${formatNombre(config.sieges)} sièges`
-      : `${formatNombre(page.total)} ${config.pluriel}${estPeriodeCourante ? "" : " ont siégé"}`
+      ? `${elus(page.total)} sur ${formatNombre(config.sieges)} sièges`
+      : `${elus(page.total)}${estPeriodeCourante ? "" : page.total > 1 ? " ont siégé" : " a siégé"}`
     : null;
 
   return (
@@ -146,6 +149,23 @@ export const ParlementairesListeScreen = ({
                 <>
                   <span aria-hidden="true"> · </span>
                   <Link href="/guide/decouvrir-mon-depute">Guide</Link>
+                </>
+              ) : null}
+              {estPeriodeCourante && periodePrecedente ? (
+                <>
+                  <span aria-hidden="true"> · </span>
+                  <Link
+                    href={buildHref(
+                      pathname,
+                      parlementairesListeParamsOf(
+                        { ...filtres, periode: periodePrecedente.valeur, groupe: "", page: 1 },
+                        chambre,
+                      ),
+                    )}
+                  >
+                    Voir les archives
+                    <span className="clair-visually-hidden"> ({periodePrecedente.label})</span>
+                  </Link>
                 </>
               ) : null}
             </p>

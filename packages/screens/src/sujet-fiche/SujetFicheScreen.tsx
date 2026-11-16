@@ -13,6 +13,7 @@ import {
   useNavigation,
 } from "@clair/ui";
 import { NotFoundScreen } from "../not-found/NotFoundScreen.tsx";
+import { ContexteGouvernementalBandeau } from "../shared/contexte-gouvernemental/ContexteGouvernemental.tsx";
 import type { ScreenProps } from "../shared/types.ts";
 import { formatDate, statutSujet } from "../sujets-liste/format.ts";
 import { ContexteSujet } from "./ContexteSujet.tsx";
@@ -109,6 +110,7 @@ export const SujetFicheScreen = ({ slug, params, initialData }: SujetFicheScreen
       />
 
       <div className={classes.content}>
+        <ContexteGouvernementalBandeau contexte={sujet.gouvernement} />
         <ParcoursSujet slug={slug} sujet={sujet} dossiers={dossiers} />
         <ContexteSujet sujet={sujet} dossiers={dossiers} />
         <RessourcesSujet slug={slug} liens={sujet.liens} />

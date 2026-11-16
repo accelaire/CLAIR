@@ -1,4 +1,4 @@
-import { fireEvent, waitFor } from "@testing-library/react";
+import { fireEvent, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { renderScreen } from "../test-utils.tsx";
 import { CommissionsListeScreen } from "./CommissionsListeScreen.tsx";
@@ -29,6 +29,38 @@ describe("CommissionsListeScreen", () => {
     );
     expect(getByRole("heading", { level: 2, name: /Commissions permanentes/ })).toBeInTheDocument();
     expect(getByRole("heading", { level: 2, name: /Groupes d'études/ })).toBeInTheDocument();
+  });
+
+  it("ouvre les permanentes, replie les autres types et les liste dans un sommaire", async () => {
+    const { findByRole, getByRole, queryByRole } = renderScreen(<CommissionsListeScreen />, {
+      routes: routes(),
+      pathname: "/commissions",
+    });
+    const sommaire = await findByRole("navigation", { name: "Types d'organes" });
+    const lien = within(sommaire).getByRole("link", { name: "Groupes d'études" });
+    expect(lien).toHaveAttribute("href", "#type-groupe_etudes");
+    expect(getByRole("button", { name: /Commissions permanentes/ })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(getByRole("button", { name: /Groupes d'études/ })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(queryByRole("link", { name: /bibliothèques/ })).not.toBeInTheDocument();
+    fireEvent.click(lien);
+    expect(getByRole("link", { name: /bibliothèques/ })).toBeInTheDocument();
+    fireEvent.click(getByRole("button", { name: /Groupes d'études/ }));
+    expect(queryByRole("link", { name: /bibliothèques/ })).not.toBeInTheDocument();
+  });
+
+  it("affiche le nom court de la commission, comme apps/web", async () => {
+    const { findByText } = renderScreen(<CommissionsListeScreen />, {
+      routes: routes(),
+      pathname: "/commissions",
+    });
+    // Fixture fictive : `nomCourt` « CION-JARD ».
+    expect(await findByText("CION-JARD")).toBeInTheDocument();
   });
 
   it("filtre sur la page avec la recherche de l'URL, sans tenir compte des accents", () => {

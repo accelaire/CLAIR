@@ -7,7 +7,7 @@ description: "Barre de filtres : recherche, filtres en ligne ou dans un tiroir s
 
 import { ChambreSwitch, FilterBar, SearchInput, SortSelect } from "@clair/ui";
 
-Barre de filtres d'une liste. Elle compose les autres filtres, passés en `children` : en ligne sur grand écran, dans un tiroir ouvert par le bouton « Filtres » sur mobile (fermeture par Échap, focus rendu au bouton). Les filtres actifs apparaissent en pastilles, chacune retirable par un bouton « Retirer le filtre … » ; leur nombre est annoncé et « Réinitialiser » les retire tous. La barre n'a pas d'état : l'écran dérive les pastilles de l'URL. Remplace `components/FilterBar.tsx` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-filtres-filterbar--docs)
+Barre de filtres d'une liste. Elle compose les autres filtres, passés en `children` : en ligne sur grand écran, dans un tiroir ouvert par le bouton « Filtres » sur mobile (fermeture par Échap, focus rendu au bouton) ; `summary` y rappelle à côté du bouton les choix en cours (« Critère : Présence »). Les filtres actifs apparaissent en pastilles, chacune retirable par un bouton « Retirer le filtre … » ; leur nombre est annoncé et « Réinitialiser » les retire tous. La barre n'a pas d'état : l'écran dérive les pastilles de l'URL. Remplace `components/FilterBar.tsx` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-filtres-filterbar--docs)
 
 ## Import
 

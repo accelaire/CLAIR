@@ -1,6 +1,18 @@
 import { Avatar } from "@mantine/core";
-import { initiales } from "../parlementaire-avatar/ParlementaireAvatar.tsx";
 import classes from "./LobbyisteLogo.module.css";
+
+/**
+ * Initiales d'un représentant d'intérêts, sur ses seuls caractères alphanumériques : première
+ * lettre du premier et du dernier mot, ou les deux premiers caractères d'un nom en un mot
+ * (« 1001PACT » donne « 10 », pas « 1 »).
+ */
+export const initialesLobbyiste = (nom: string): string => {
+  const mots = nom.match(/[\p{L}\p{N}]+/gu) ?? [];
+  const premier = mots[0] ?? "";
+  const dernier = mots.length > 1 ? (mots[mots.length - 1] ?? "") : "";
+  const lettres = dernier ? `${premier.charAt(0)}${dernier.charAt(0)}` : premier.slice(0, 2);
+  return lettres.toUpperCase();
+};
 
 export type LobbyisteLogoProps = {
   /** Nom du représentant d'intérêts (`nom` dans le répertoire de la HATVP). */
@@ -40,7 +52,7 @@ export const LobbyisteLogo = ({
       aria-hidden={decorative ? true : undefined}
       imageProps={{ loading: "lazy" }}
     >
-      <span aria-hidden="true">{initiales(nom)}</span>
+      <span aria-hidden="true">{initialesLobbyiste(nom)}</span>
     </Avatar>
   );
 };

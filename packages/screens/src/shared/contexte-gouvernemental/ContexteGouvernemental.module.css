@@ -1,0 +1,101 @@
+.bandeau {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+  margin-block: var(--clair-espacement-6v);
+  padding: var(--clair-espacement-4v);
+  border: var(--clair-trait-epaisseur) solid var(--clair-bordure-defaut);
+  border-left: var(--clair-espacement-1v) solid var(--clair-fond-action);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+}
+
+/* Motion adoptée : le gouvernement est renversé. Bordure complète et texte, pas la couleur seule. */
+.bandeau[data-adoptee] {
+  border: var(--clair-espacement-1v) solid var(--clair-statut-erreur);
+  background: var(--clair-statut-erreur-fond);
+}
+
+.bloc {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--clair-espacement-3v);
+}
+
+.icone {
+  flex-shrink: 0;
+  width: 1.25em;
+  height: 1.25em;
+  margin-top: var(--clair-espacement-1v);
+  color: var(--clair-texte-action);
+}
+
+.corps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-1v);
+  min-width: 0;
+  flex: 1;
+}
+
+.surtitre {
+  margin: 0;
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  font-weight: var(--clair-texte-h6-graisse);
+  text-transform: uppercase;
+  color: var(--clair-texte-action);
+}
+
+.bandeau[data-adoptee] .icone,
+.bandeau[data-adoptee] .surtitre {
+  color: var(--clair-statut-erreur);
+}
+
+.texte {
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-defaut);
+}
+
+.fort {
+  font-weight: 600;
+}
+
+.mention {
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  color: var(--clair-texte-mention);
+}
+
+.liste {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
+  margin: var(--clair-espacement-1v) 0 0;
+  padding-left: var(--clair-espacement-4v);
+}
+
+.motions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-1v);
+  margin: var(--clair-espacement-1v) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.motion {
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.motion[data-adoptee] {
+  padding: var(--clair-espacement-2v) var(--clair-espacement-3v);
+  border: var(--clair-trait-epaisseur) solid var(--clair-statut-erreur);
+  border-radius: var(--clair-rayon-md);
+  background: var(--clair-statut-erreur-fond);
+  color: var(--clair-texte-defaut);
+}

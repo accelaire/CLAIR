@@ -4,12 +4,19 @@ import "@mantine/charts/styles.css";
 import "dayjs/locale/fr";
 import "@clair/theme/styles.css";
 import "./preview.css";
+import {
+  ApiProvider,
+  createFixtureClient,
+  createQueryClient,
+  type FixtureRoutes,
+} from "@clair/api-client";
 import { cssVariablesResolver, theme } from "@clair/theme";
 import { type LinkProps, type Navigation, NavigationProvider } from "@clair/ui";
 import { MantineProvider } from "@mantine/core";
 import { DatesProvider } from "@mantine/dates";
 import { DecoratorHelpers } from "@storybook/addon-themes";
 import type { Decorator, Preview } from "@storybook/react-vite";
+import { useState } from "react";
 import { clairTheme, sombreTheme } from "./clair-theme.ts";
 
 const { initializeThemeState, pluckThemeFromContext, useThemeParameters } = DecoratorHelpers;
@@ -29,7 +36,43 @@ const StoryLink = ({ href, onClick, ...props }: LinkProps) => (
   />
 );
 
-const navigation: Navigation = { Link: StoryLink, navigate: () => {}, pathname: "/" };
+/**
+ * Paramètres de story lus par les décorateurs (écrans de `@clair/screens`).
+ * - `api` : réponses des chemins de l'API (`createFixtureClient`), jamais de réseau ; un chemin
+ *   absent répond 404.
+ * - `navigation.pathname` : adresse courante ; `navigation.navigate` : espion (`fn()` de
+ *   `storybook/test`) pour vérifier dans `play` l'URL visée par un filtre ou un onglet.
+ */
+export type ClairParameters = {
+  api?: FixtureRoutes;
+  navigation?: { pathname?: string; navigate?: Navigation["navigate"] };
+};
+
+/** Un client de requêtes par story : pas de cache partagé, pas de nouvel essai, pas de rechargement. */
+const nouveauQueryClient = () => {
+  const client = createQueryClient();
+  client.setDefaultOptions({
+    queries: { retry: false, staleTime: Number.POSITIVE_INFINITY, refetchInterval: false },
+  });
+  return client;
+};
+
+const withApi: Decorator = (Story, context) => {
+  const { api = {}, navigation: nav = {} } = context.parameters as ClairParameters;
+  const [queryClient] = useState(nouveauQueryClient);
+  const navigation: Navigation = {
+    Link: StoryLink,
+    navigate: nav.navigate ?? (() => {}),
+    pathname: nav.pathname ?? "/",
+  };
+  return (
+    <NavigationProvider value={navigation}>
+      <ApiProvider client={createFixtureClient(api)} queryClient={queryClient}>
+        <Story />
+      </ApiProvider>
+    </NavigationProvider>
+  );
+};
 
 /** Thème Mantine piloté par le sélecteur clair / sombre (équivalent du themeDecorator du DSFR). */
 const withMantine: Decorator = (Story, context) => {
@@ -43,9 +86,7 @@ const withMantine: Decorator = (Story, context) => {
       forceColorScheme={scheme}
     >
       <DatesProvider settings={{ locale: "fr" }}>
-        <NavigationProvider value={navigation}>
-          <Story />
-        </NavigationProvider>
+        <Story />
       </DatesProvider>
     </MantineProvider>
   );
@@ -61,7 +102,8 @@ const viewports = {
 };
 
 const preview: Preview = {
-  decorators: [withMantine],
+  // withApi s'applique d'abord (au plus près de la story), dans le thème de withMantine.
+  decorators: [withApi, withMantine],
   tags: ["autodocs"],
   parameters: {
     layout: "padded",

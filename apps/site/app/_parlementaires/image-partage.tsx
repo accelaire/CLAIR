@@ -1,5 +1,5 @@
 import "server-only";
-import type { Chambre } from "@clair/data";
+import { type Chambre, presenceCourte } from "@clair/data";
 import {
   chargerPourOg,
   imageOg,
@@ -17,6 +17,9 @@ const FONCTIONS: Record<Chambre, { F: string; M: string; rubrique: string }> = {
   assemblee: { F: "Députée", M: "Député", rubrique: "Députés" },
   senat: { F: "Sénatrice", M: "Sénateur", rubrique: "Sénateurs" },
 };
+
+/** « 73 % », ou « — » sans valeur : jamais « null % ». Espace simple, couverte par la police de l'image. */
+const pourcentOg = (valeur: number | null) => (valeur === null ? "—" : `${valeur} %`);
 
 /**
  * Image de partage d'une fiche de député ou de sénateur (reprise de apps/web) : photo, groupe,
@@ -43,6 +46,8 @@ export const imageParlementaire = async (chambre: Chambre, slug: string) => {
     : `${fiche.sexe === "F" ? "Ancienne" : "Ancien"} ${fonction.toLowerCase()}`;
   const photo = await photoOg(fiche.photoUrl);
   const stats = fiche.stats;
+  // Présence des sénateurs aux votes solennels (#108), comme master.
+  const presence = stats ? presenceCourte(chambre, stats) : null;
 
   return imageOg(
     <OgLayout badge={badge} badgeColor={fiche.groupe?.couleur || OG_COULEURS.marque}>
@@ -82,8 +87,10 @@ export const imageParlementaire = async (chambre: Chambre, slug: string) => {
       </div>
       {stats ? (
         <div style={{ display: "flex", gap: "16px", marginTop: "16px" }}>
-          <OgStat label="Présence" value={`${stats.presence} %`} />
-          <OgStat label="Loyauté" value={`${stats.loyaute} %`} />
+          {presence ? (
+            <OgStat label={presence.libelle} value={pourcentOg(presence.valeur)} />
+          ) : null}
+          <OgStat label="Loyauté" value={pourcentOg(stats.loyaute)} />
           <OgStat label="Votes" value={ogNombre(stats.participation)} />
         </div>
       ) : null}

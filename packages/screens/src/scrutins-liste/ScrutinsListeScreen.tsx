@@ -44,6 +44,8 @@ import {
 import type { ScreenProps } from "../shared/types.ts";
 import {
   aDesFiltres,
+  CENSURE_LIBELLES,
+  CENSURES_FILTRABLES,
   NATURES_FILTRABLES,
   parseScrutinsListeParams,
   type ScrutinsListeParams,
@@ -62,6 +64,7 @@ const SANS_FILTRE: Partial<ScrutinsListeParams> = {
   type: "",
   nature: "",
   tag: "",
+  censure: "",
   dateFrom: "",
   dateTo: "",
 };
@@ -89,9 +92,9 @@ const presetsPeriodes = (periodes: PeriodeScrutins[]): PresetPeriode[] =>
 
 /**
  * Liste des scrutins publics des deux chambres : dossiers en cours, recherche, filtres (chambre,
- * mode de scrutin, objet du vote, thématique, période) et pagination en liens. Tout l'état vit
+ * mode de scrutin, objet du vote, motions de censure, thématique, période) et pagination en liens. Tout l'état vit
  * dans l'URL, avec les mêmes clés que apps/web (`search`, `chambre`, `type`, `nature`, `tag`,
- * `dateFrom`, `dateTo`, `page`).
+ * `censure`, `dateFrom`, `dateTo`, `page`).
  */
 export const ScrutinsListeScreen = ({
   params: rawParams,
@@ -151,6 +154,13 @@ export const ScrutinsListeScreen = ({
           id: `tag=${params.tag}`,
           label: `Thématique : ${majuscule(params.tag)}`,
           onRemove: () => update({ tag: "" }),
+        }
+      : null,
+    params.censure
+      ? {
+          id: `censure=${params.censure}`,
+          label: `Motions de censure : ${CENSURE_LIBELLES[params.censure]}`,
+          onRemove: () => update({ censure: "" }),
         }
       : null,
     params.dateFrom || params.dateTo
@@ -231,6 +241,7 @@ export const ScrutinsListeScreen = ({
 
       <FilterBar
         label="Filtrer les scrutins"
+        searchInline
         search={
           <SearchInput
             aria-label="Rechercher un scrutin"
@@ -268,6 +279,21 @@ export const ScrutinsListeScreen = ({
             ...NATURES_FILTRABLES.map((nature) => ({
               value: nature,
               label: NATURES_VOTE[nature] ?? nature,
+            })),
+          ]}
+        />
+        <NativeSelect
+          label="Motions de censure"
+          value={params.censure}
+          onChange={(event) => {
+            const valeur = event.currentTarget.value;
+            update({ censure: CENSURES_FILTRABLES.find((censure) => censure === valeur) ?? "" });
+          }}
+          data={[
+            { value: "", label: "Tous les scrutins" },
+            ...CENSURES_FILTRABLES.map((censure) => ({
+              value: censure,
+              label: CENSURE_LIBELLES[censure],
             })),
           ]}
         />

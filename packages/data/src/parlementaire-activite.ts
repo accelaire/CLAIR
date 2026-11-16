@@ -1,4 +1,6 @@
+import type { RenvoiDispositif } from "./amendements.ts";
 import type { Chambre, PageMeta } from "./common.ts";
+import type { FonctionGouvernementale } from "./gouvernements.ts";
 import type {
   GroupePolitique,
   ParlementaireFiche,
@@ -27,19 +29,36 @@ export type GroupeOption = Pick<
   "id" | "slug" | "chambre" | "nom" | "nomComplet" | "couleur" | "membresCount"
 >;
 
-/** Statistiques d'une fiche (`?include=stats`) et du comparateur. Donnée calculée par CLAIR. */
+/**
+ * Statistiques d'une fiche (`?include=stats`) et du comparateur. Donnée calculée par CLAIR.
+ * La fiche porte sur toute la carrière parlementaire ; le comparateur sur le mandat en cours.
+ * Relu sur le schéma de l'API (`parlementaireStatsSchema`) le 2026-11-14.
+ */
 export type StatsParlementaireDetail = {
-  /** Taux de présence, en %, tous scrutins. */
-  presence: number;
-  /** Taux de présence aux scrutins solennels, en % ; nul au Sénat. */
+  /**
+   * Taux de participation aux scrutins publics, en %, hors scrutins où l'élu ne pouvait pas voter.
+   * Au Sénat, les scrutins ordinaires se votent par groupe : ce taux n'y mesure pas la présence
+   * (voir `presenceSolennel`). Nul sans aucun scrutin où il pouvait voter (président de
+   * l'assemblée, période passée au Gouvernement) : ce n'est pas 0 %.
+   */
+  presence: number | null;
+  /**
+   * Taux de présence aux scrutins solennels, en %. Au Sénat, seule mesure de la présence (vote en
+   * personne). Nul sans scrutin solennel sur la période.
+   */
   presenceSolennel: number | null;
-  /** Part des votes conformes à la position majoritaire du groupe, en %. */
-  loyaute: number;
+  /** Part des votes conformes à la position majoritaire du groupe, en % ; nul sans vote exprimé. */
+  loyaute: number | null;
   /** Nombre de votes. */
   participation: number;
   interventions: number;
   amendements: { proposes: number; adoptes: number };
   questions: number;
+  /**
+   * Scrutins sur lesquels porte la présence (fiche seulement). Sous 50, l'élu ne figure pas dans
+   * les classements de loyauté, ni dans celui de la présence des députés.
+   */
+  scrutins?: number | null;
 };
 
 /** Mandat parlementaire : une législature (Assemblée) ou une mandature (Sénat). */
@@ -89,6 +108,8 @@ export type ParlementaireDetail = ParlementaireFiche & {
   declarations: DeclarationHatvp[];
   /** Présentes avec `include=stats`. */
   stats?: StatsParlementaireDetail;
+  /** Postes ministériels et présidence de la République ; absent d'une réponse ancienne. */
+  fonctionsGouvernementales?: FonctionGouvernementale[];
 };
 
 /** Scrutin tel qu'il accompagne un vote d'un parlementaire. */
@@ -130,6 +151,8 @@ export type AmendementParlementaire = {
   articleVise: string | null;
   alinea: string | null;
   dispositif: string | null;
+  /** Liens Légifrance du dispositif (absents d'une réponse ancienne en cache). */
+  renvois?: RenvoiDispositif[];
   exposeSommaire: string | null;
   auteurLibelle: string | null;
   sort: string | null;

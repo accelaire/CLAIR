@@ -215,7 +215,9 @@ export const AmendementsDossier = ({
         <>
           <p className={classes.mention} aria-live="polite">
             {resultats.total.toLocaleString("fr-FR")} amendement{resultats.total > 1 ? "s" : ""}
-            {filtre ? " correspondant aux filtres" : ""}
+            {filtre
+              ? ` sur ${dossier.amendementsCount.toLocaleString("fr-FR")} correspondant aux filtres`
+              : ""}
           </p>
           <ul className={classes.liste}>
             {items.map((amendement) => (

@@ -82,6 +82,7 @@ export const scrutinAdopte: ScrutinCardData = {
   sort: "adopté",
   typeVote: "solennel",
   importance: 4,
+  tags: ["budget", "sante", "travail", "europe", "justice"],
   nombrePour: 312,
   nombreContre: 205,
   nombreAbstention: 41,
@@ -95,6 +96,7 @@ export const scrutinRejete: ScrutinCardData = {
   sort: "rejeté",
   typeVote: "ordinaire",
   importance: 2,
+  tags: ["environnement"],
   nombrePour: 98,
   nombreContre: 230,
   nombreAbstention: 15,
@@ -136,6 +138,31 @@ export const amendementAdopte: AmendementCardData = {
   dispositif: "<p>À l'alinéa 2, après le mot : « exemple », insérer les mots : « fictif ».</p>",
   dateDepot: "2026-01-12T00:00:00.000Z",
   texteRef: "PRJLANR5L17B0000",
+};
+
+const dispositifLie =
+  "<p>À l'article L. 123-4 du code de l'exemple, le mot : « fictif » est remplacé par le mot : « imaginaire ».</p>";
+const citation = "l'article L. 123-4 du code de l'exemple";
+
+/** Amendement dont le dispositif cite un article (renvoi et identifiant Légifrance fictifs). */
+export const amendementAvecRenvoi: AmendementCardData = {
+  numero: "57",
+  articleVise: "Article 5",
+  auteurLibelle: "M. Dominique Modèle",
+  sort: "Rejeté",
+  dispositif: dispositifLie,
+  renvois: [
+    {
+      debut: dispositifLie.indexOf(citation),
+      fin: dispositifLie.indexOf(citation) + citation.length,
+      type: "article",
+      article: "LEGIARTI000000000001",
+      texte: "LEGITEXT000000000001",
+      nature: "CODE",
+      url: "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000000000001/2026-01-12",
+    },
+  ],
+  dateDepot: "2026-01-12T00:00:00.000Z",
 };
 
 export const sousAmendement: AmendementCardData = {

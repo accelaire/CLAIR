@@ -39,19 +39,28 @@ const qualiteAffichee = (qualite: string | null) =>
 const chambreDe = (parlementaire: MembreParlementaire) =>
   parlementaire.chambre === "senat" ? "senat" : "assemblee";
 
+/**
+ * Carte resserrée d'un membre : la qualité en badge à côté du nom (présidence et
+ * vice-présidences mises en avant, comme apps/web), la période d'un ancien membre en statut.
+ */
 const CarteMembre = ({
   parlementaire,
-  statut,
+  qualite,
+  periode = null,
 }: {
   parlementaire: MembreParlementaire;
-  statut: string | null;
+  qualite: string | null;
+  periode?: string | null;
 }) => (
   <ParlementaireCard
     as="li"
     titleAs="h3"
+    compact
     chambre={chambreDe(parlementaire)}
     href={parlementaireHref(parlementaire.chambre, parlementaire.slug)}
-    statut={statut}
+    fonction={qualiteAffichee(qualite)}
+    fonctionTone={rangQualite(qualite) <= 1 ? "info" : "neutre"}
+    statut={periode}
     parlementaire={{
       prenom: parlementaire.prenom,
       nom: parlementaire.nom,
@@ -70,7 +79,7 @@ const CarteMembre = ({
 
 /**
  * Membres actuels (présidence d'abord), puis anciens membres repliés avec leur période. Chaque
- * carte mène à la fiche du parlementaire ; la qualité est écrite en badge.
+ * carte mène à la fiche du parlementaire ; la qualité est écrite en badge à côté du nom.
  */
 export const MembresCommission = ({
   membres,
@@ -92,11 +101,7 @@ export const MembresCommission = ({
       {tries.length > 0 ? (
         <ul className={classes.grille}>
           {tries.map(({ qualite, parlementaire }) => (
-            <CarteMembre
-              key={parlementaire.id}
-              parlementaire={parlementaire}
-              statut={qualiteAffichee(qualite)}
-            />
+            <CarteMembre key={parlementaire.id} parlementaire={parlementaire} qualite={qualite} />
           ))}
         </ul>
       ) : (
@@ -119,12 +124,8 @@ export const MembresCommission = ({
                   <CarteMembre
                     key={`${membre.parlementaire.id}-${membre.dateDebut}`}
                     parlementaire={membre.parlementaire}
-                    statut={[
-                      qualiteAffichee(membre.qualite),
-                      `${jourCourt(membre.dateDebut)}${membre.dateFin ? ` au ${jourCourt(membre.dateFin)}` : ""}`,
-                    ]
-                      .filter(Boolean)
-                      .join(", ")}
+                    qualite={membre.qualite}
+                    periode={`${jourCourt(membre.dateDebut)}${membre.dateFin ? ` au ${jourCourt(membre.dateFin)}` : ""}`}
                   />
                 ))}
               </ul>

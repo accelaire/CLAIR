@@ -84,6 +84,11 @@
   color: var(--clair-texte-mention);
 }
 
+.copier {
+  margin-inline-start: auto;
+  font-family: var(--clair-police-interface);
+}
+
 .terminalIcon {
   width: var(--clair-espacement-4v);
   height: var(--clair-espacement-4v);

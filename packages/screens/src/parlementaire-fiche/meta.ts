@@ -1,4 +1,5 @@
 import type { Chambre, ParlementaireDetail } from "@clair/data";
+import { fonctionEnCours } from "../shared/gouvernements/gouvernements.ts";
 import { fonctionDe, formatNombre } from "../shared/parlementaires/chambre.ts";
 
 /** Nombre de mandats distincts dans la chambre de la fiche (législatures ou mandatures). */
@@ -20,7 +21,11 @@ export const titreBilan = (plusieursMandats: boolean) =>
 /** Métadonnées d'une fiche (titre et description), pour la route. */
 export const metaFiche = (fiche: ParlementaireDetail, chambre: Chambre) => {
   const nom = `${fiche.prenom} ${fiche.nom}`;
-  const fonction = fonctionDe(chambre, fiche.sexe, fiche.actif);
+  // Une fonction au Gouvernement en cours passe avant le mandat : le lecteur qui cherche le
+  // Premier ministre doit le reconnaître dans le résultat (apps/web, master 6324908).
+  const gouvernement = fonctionEnCours(fiche.fonctionsGouvernementales, fiche.sexe);
+  const mandat = fonctionDe(chambre, fiche.sexe, fiche.actif);
+  const fonction = gouvernement ? `${gouvernement.dansUnTitre}, ${mandat}` : mandat;
   const tete = fiche.groupe ? `${nom} (${fiche.groupe.nom}), ${fonction}.` : `${nom}, ${fonction}.`;
   const stats = fiche.stats;
   // Les volumes d'abord (faits bruts) ; la loyauté, qui s'interprète, ferme la liste.

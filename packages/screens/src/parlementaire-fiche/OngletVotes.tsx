@@ -2,8 +2,9 @@
 
 import { useApiQuery } from "@clair/api-client";
 import type { PageVotes, VoteDuParlementaire } from "@clair/data";
-import { Badge, Card, parseStatut, StatutBadge, VotePosition } from "@clair/ui";
+import { Badge, Card, libelleThematique, parseStatut, StatutBadge, VotePosition } from "@clair/ui";
 import { Checkbox } from "@mantine/core";
+import { Tag } from "lucide-react";
 import {
   formatDate,
   libellePosition,
@@ -16,6 +17,9 @@ import { ListeOnglet } from "./ListeOnglet.tsx";
 import { type OngletProps, PeriodeFiltre } from "./OngletCommun.tsx";
 import classes from "./ParlementaireFicheScreen.module.css";
 import { votesQueryOf } from "./params.ts";
+
+/** Thématiques affichées par vote, comme apps/web (les deux premières). */
+const THEMATIQUES_MAX = 2;
 
 const VoteItem = ({ vote }: { vote: VoteDuParlementaire }) => {
   const position = positionDeVote(vote.position);
@@ -41,6 +45,13 @@ const VoteItem = ({ vote }: { vote: VoteDuParlementaire }) => {
           ) : (
             <span>{libelleSort(vote.scrutin.sort)}</span>
           )}
+          {vote.scrutin.tags.length > 0 ? (
+            <span className={classes.thematiques}>
+              <Tag className={classes.iconeThematique} aria-hidden="true" />
+              <span className="clair-visually-hidden">Thématiques : </span>
+              {vote.scrutin.tags.slice(0, THEMATIQUES_MAX).map(libelleThematique).join(", ")}
+            </span>
+          ) : null}
         </p>
       }
     >
@@ -63,6 +74,7 @@ export const OngletVotes = ({
   changer,
   pageHref,
   dateMin,
+  deuxChambres,
   initialData,
 }: OngletProps & { initialData?: PageVotes }) => {
   const query = useApiQuery<PageVotes>(
@@ -82,7 +94,12 @@ export const OngletVotes = ({
       renderItem={(vote) => <VoteItem vote={vote} />}
       filtres={
         <>
-          <PeriodeFiltre filtres={filtres} changer={changer} dateMin={dateMin} />
+          <PeriodeFiltre
+            filtres={filtres}
+            changer={changer}
+            dateMin={dateMin}
+            deuxChambres={deuxChambres}
+          />
           <Checkbox
             label="Uniquement les votes différents de la position du groupe"
             checked={filtres.dissidents}

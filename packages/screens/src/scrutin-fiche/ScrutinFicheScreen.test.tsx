@@ -1,8 +1,9 @@
 import { ApiError } from "@clair/api-client";
 import { fireEvent, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { motionAdopteeExemple } from "../shared/contexte-gouvernemental/fixtures.ts";
 import { renderScreen } from "../test-utils.tsx";
-import { interventionsExemple, scrutinDetailExemple } from "./fixtures.ts";
+import { interventionsExemple, scrutinDetailExemple, vote } from "./fixtures.ts";
 import { ScrutinFicheScreen } from "./ScrutinFicheScreen.tsx";
 
 const PATH = "/scrutins/101";
@@ -52,6 +53,20 @@ describe("ScrutinFicheScreen", () => {
     expect(getByText("Défendu en séance")).toBeInTheDocument();
   });
 
+  it("annonce une motion de censure avant le dossier", async () => {
+    const { findByRole, getByText } = renderScreen(
+      <ScrutinFicheScreen numero={101} params={{ chambre: "assemblee", session: "17" }} />,
+      {
+        routes: { [PATH]: { data: scrutinDetailExemple({ motionCensure: motionAdopteeExemple }) } },
+        pathname: PATH,
+      },
+    );
+    expect(
+      await findByRole("heading", { name: /Motion de censure · article 49, alinéa 3/ }),
+    ).toBeInTheDocument();
+    expect(getByText("adoptée, le gouvernement est renversé")).toBeInTheDocument();
+  });
+
   it("change d'onglet dans l'URL en gardant la chambre et la session", async () => {
     const { findByRole, visited } = renderScreen(
       <ScrutinFicheScreen numero={101} params={{ chambre: "assemblee", session: "17" }} />,
@@ -80,6 +95,32 @@ describe("ScrutinFicheScreen", () => {
     expect(visited).toEqual([
       `${PATH}?chambre=assemblee&session=17&onglet=vote&groupe=GPB&position=contre`,
     ]);
+  });
+
+  it("ne montre d'abord que seize élus par position, les autres derrière un bouton", async () => {
+    // Vingt votes fictifs.
+    const pour = Array.from({ length: 20 }, (_, i) =>
+      vote(`e${i}`, "pour", "Élu", `Fictif${i}`, "GPA"),
+    );
+    const scrutin = scrutinDetailExemple({
+      votesByPosition: { pour, contre: [], abstention: [], absent: [] },
+      votesByGroupe: { GPA: { pour: 20, contre: 0, abstention: 0, absent: 0 } },
+      totalVotes: 20,
+    });
+    const { findByRole, getAllByRole, queryByRole } = renderScreen(
+      <ScrutinFicheScreen
+        numero={101}
+        params={{ chambre: "assemblee", session: "17", onglet: "vote" }}
+      />,
+      { routes: { [PATH]: { data: scrutin } }, pathname: PATH },
+    );
+    const bouton = await findByRole("button", { name: "Afficher les 4 autres (pour)" });
+    expect(bouton).toHaveAttribute("aria-expanded", "false");
+    expect(getAllByRole("link", { name: /^Élu Fictif/ })).toHaveLength(16);
+    expect(queryByRole("link", { name: "Élu Fictif19" })).toBeNull();
+    fireEvent.click(bouton);
+    expect(bouton).toHaveAttribute("aria-expanded", "true");
+    expect(getAllByRole("link", { name: /^Élu Fictif/ })).toHaveLength(20);
   });
 
   it("charge les débats du vote", async () => {

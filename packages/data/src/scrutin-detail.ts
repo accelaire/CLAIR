@@ -1,4 +1,6 @@
+import type { RenvoiDispositif } from "./amendements.ts";
 import type { Chambre } from "./common.ts";
+import type { MotionDuScrutin } from "./gouvernements.ts";
 import type { ScrutinListItem } from "./scrutins.ts";
 
 /**
@@ -63,6 +65,8 @@ export type AmendementScrutin = {
   articleVise: string | null;
   alinea?: string | null;
   dispositif: string | null;
+  /** Liens Légifrance du dispositif (absents d'une réponse ancienne en cache). */
+  renvois?: RenvoiDispositif[];
   exposeSommaire: string | null;
   auteurLibelle: string | null;
   sort: string | null;
@@ -116,6 +120,8 @@ export type ScrutinDetail = Omit<ScrutinListItem, "votesCount" | "dossierId"> & 
   debatRattache?: boolean;
   seanceADesDebats?: boolean;
   seance?: SeanceDuVote | null;
+  /** Le scrutin est une motion de censure : gouvernement visé, 49.3 auquel elle répond. */
+  motionCensure?: MotionDuScrutin | null;
 };
 
 /** Finesse du rattachement d'un débat à son scrutin. */

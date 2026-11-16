@@ -24,3 +24,23 @@
   padding: 0;
   list-style: none;
 }
+
+.recherche {
+  display: block;
+  margin-top: var(--clair-espacement-6v);
+}
+
+/* Champ et bouton côte à côte, alignés en bas (le libellé est au-dessus du champ). */
+.formulaire {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: center;
+  gap: var(--clair-espacement-2v);
+  text-align: start;
+}
+
+.champ {
+  flex: 1 1 16rem;
+  min-width: 0;
+}

@@ -30,6 +30,16 @@ export type FilterBarProps = {
   onReset?: () => void;
   /** Nom du groupe de filtres et titre du tiroir. */
   label?: string;
+  /**
+   * Résumé des choix en cours (« Critère : Présence »), affiché sur mobile à côté du bouton qui
+   * ouvre le tiroir : les filtres repliés restent lisibles sans l'ouvrir.
+   */
+  summary?: ReactNode;
+  /**
+   * Sur grand écran, la recherche prend place dans la rangée des filtres au lieu d'occuper seule
+   * une ligne au-dessus (apps/web, liste des scrutins).
+   */
+  searchInline?: boolean;
 };
 
 /** « 1 filtre actif », « 3 filtres actifs ». */
@@ -49,6 +59,8 @@ export const FilterBar = ({
   activeCount,
   onReset,
   label = "Filtres",
+  summary,
+  searchInline = false,
 }: FilterBarProps) => {
   const [opened, { open, close }] = useDisclosure(false);
   const count = activeCount ?? activeFilters.length;
@@ -56,7 +68,7 @@ export const FilterBar = ({
 
   return (
     <section className={classes.root} aria-label={label}>
-      <div className={classes.bar}>
+      <div className={classes.bar} data-search-inline={searchInline || undefined}>
         {search ? <div className={classes.search}>{search}</div> : null}
         <div className={classes.filters}>{children}</div>
         <div className={classes.mobileOnly}>
@@ -77,6 +89,7 @@ export const FilterBar = ({
               </>
             ) : null}
           </Button>
+          {summary ? <p className={classes.summary}>{summary}</p> : null}
         </div>
         {canReset ? (
           <div className={classes.desktopOnly}>

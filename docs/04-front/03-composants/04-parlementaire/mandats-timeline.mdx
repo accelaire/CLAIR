@@ -105,6 +105,58 @@ import { MandatsTimeline } from "@clair/ui";
 />
 ```
 
+## Avec des postes au Gouvernement
+
+`postes` insère les postes ministériels (et la présidence de la République) à leur date parmi les mandats : un député nommé ministre cède son siège, ce n'est pas une fonction de son mandat. Pastille carrée, et la nature du poste est écrite en toutes lettres (« Gouvernement »), jamais portée par la seule couleur. `details` reçoit le contenu ajouté sous l'entrée, par exemple le bilan du poste.
+
+<Preview>
+  <MandatsTimeline
+    mandats={[
+      {
+        id: "an-17",
+        chambre: "assemblee",
+        periode: "XVIIe législature",
+        dateDebut: "2024-07-18",
+        groupe: { sigle: "ECO", nom: "Écologiste et social", couleur: "var(--clair-groupe-eco)" },
+      },
+    ]}
+    postes={[
+      {
+        id: "pm-1",
+        libelle: "Ministre déléguée · Exemples numériques",
+        dateDebut: "2020-07-26",
+        dateFin: "2022-05-20",
+        gouvernement: { nom: "Exemple II", href: "#gouvernement" },
+        details: "2 textes portés, dont 1 promulgué · 14 réponses en séance",
+      },
+    ]}
+  />
+</Preview>
+
+```tsx
+<MandatsTimeline
+  mandats={[
+    {
+      id: "an-17",
+      chambre: "assemblee",
+      periode: "XVIIe législature",
+      dateDebut: "2024-07-18",
+      groupe: { sigle: "ECO", nom: "Écologiste et social", couleur: "var(--clair-groupe-eco)" },
+    },
+  ]}
+  postes={[
+    {
+      id: "pm-1",
+      libelle: "Ministre déléguée · Exemples numériques",
+      dateDebut: "2020-07-26",
+      dateFin: "2022-05-20",
+      gouvernement: { nom: "Exemple II", href: "#gouvernement" },
+      details: "2 textes portés, dont 1 promulgué · 14 réponses en séance",
+    },
+  ]}
+/>
+```
+
 ## Avec aucun mandat
 
 <Preview>

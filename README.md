@@ -41,7 +41,7 @@ ln -s ../../.env services/ingestion/.env
 pnpm docker:up
 pnpm db:generate
 pnpm db:push          # initialise le schéma localement, puis ses triggers (voir note migrations ci-dessous)
-pnpm dev              # web :3000, API :3001, doc :3002, nouveau site :3010, Storybook :6006
+pnpm dev              # web :3000, API :3001, doc :3002, nouveau site :3010, Storybook :3050
 ```
 
 Le nouveau site (`apps/site`, Next 16 et Mantine 9) se construit à côté du site actuel (`apps/web`), sur les paquets `packages/*` ; son architecture, son design system et ses composants sont décrits dans la section [Front](https://docs.clair.vote/front) de la documentation. Avant une pull request :

@@ -91,7 +91,8 @@ pnpm check                                       # Biome (nouveau front, outilla
 pnpm lint                                        # ESLint (apps/web, apps/api, ingestion, scripts)
 pnpm --filter <workspace touché> type-check
 pnpm --filter <workspace touché> test            # api, ingestion, packages/* (pnpm test : tous)
-pnpm --filter @clair/storybook test:stories      # si packages/ui change
+pnpm --filter <workspace touché> test:coverage   # packages/* : couverture sous son seuil = échec
+pnpm --filter @clair/storybook test:stories      # si packages/ui ou packages/screens change
 pnpm --filter @clair/site build && pnpm test:e2e --project=site   # si apps/site ou packages/screens change
 pnpm --filter @clair/web build                   # si apps/web change
 pnpm docs:nav && pnpm docs:validate              # si docs/ change

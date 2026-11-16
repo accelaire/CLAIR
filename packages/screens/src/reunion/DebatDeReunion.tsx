@@ -12,7 +12,7 @@ import { ResultatDuVote } from "./ResultatDuVote.tsx";
 import classes from "./ReunionScreen.module.css";
 
 /**
- * Débat d'une réunion, page par page (200 prises de parole), découpé en passages de même sujet ;
+ * Débat d'une réunion, page par page (cinquante prises de parole), découpé en passages de même sujet ;
  * chaque vote apparaît à l'endroit où il est tombé. Avec `rangCible`, la page défile jusqu'à
  * la prise de ce rang une fois chargée.
  */

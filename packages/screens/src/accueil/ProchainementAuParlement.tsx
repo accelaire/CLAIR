@@ -1,6 +1,11 @@
 "use client";
 
-import type { AgendaEvenement, HomepageReunion, HomepageUpcoming } from "@clair/data";
+import type {
+  AgendaEvenement,
+  DirectsDuJour,
+  HomepageReunion,
+  HomepageUpcoming,
+} from "@clair/data";
 import {
   Badge,
   ChambreBadge,
@@ -12,6 +17,7 @@ import {
 } from "@clair/ui";
 import { useEffect, useState } from "react";
 import { libelleDateEvenement } from "../agenda/evenements.ts";
+import { lienDuDirect, useDirects } from "../shared/reunions/directs.ts";
 import classes from "./AccueilScreen.module.css";
 import {
   chambreDeReunion,
@@ -51,9 +57,20 @@ const Repere = ({ evenement, href }: { evenement: AgendaEvenement; href: string 
   );
 };
 
-const Reunion = ({ reunion, enCours }: { reunion: HomepageReunion; enCours: boolean }) => {
+const Reunion = ({
+  reunion,
+  enCours,
+  directs,
+}: {
+  reunion: HomepageReunion;
+  enCours: boolean;
+  directs: DirectsDuJour | undefined;
+}) => {
   const { Link: RouterLink } = useNavigation();
   const chambre = chambreDeReunion(reunion);
+  // Retransmise en ce moment par la chaîne de sa chambre ? (la carte entière est déjà un lien
+  // vers la réunion : la mention reste un texte, comme dans apps/web)
+  const enDirect = enCours && lienDuDirect(reunion, chambre, directs) !== undefined;
   const seance = reunion.type === "seance";
   const organe = reunion.commission?.nomCourt || reunion.commission?.nom;
   return (
@@ -72,7 +89,11 @@ const Reunion = ({ reunion, enCours }: { reunion: HomepageReunion; enCours: bool
             <Badge tone="neutre" size="sm">
               {seance ? "Séance" : "Commission"}
             </Badge>
-            {enCours ? (
+            {enDirect ? (
+              <Badge tone="erreur" size="sm">
+                En direct
+              </Badge>
+            ) : enCours ? (
               <Badge tone="info" size="sm">
                 En cours
               </Badge>
@@ -86,7 +107,15 @@ const Reunion = ({ reunion, enCours }: { reunion: HomepageReunion; enCours: bool
   );
 };
 
-const Jour = ({ jour, maintenant }: { jour: JourDuPlanning; maintenant: Date | null }) => {
+const Jour = ({
+  jour,
+  maintenant,
+  directs,
+}: {
+  jour: JourDuPlanning;
+  maintenant: Date | null;
+  directs: DirectsDuJour | undefined;
+}) => {
   const { Link: RouterLink } = useNavigation();
   const { visibles, restantes } = reunionsVisibles(jour.reunions, maintenant);
   const agendaDuJour = `/agenda?date=${jour.jour}`;
@@ -108,6 +137,7 @@ const Jour = ({ jour, maintenant }: { jour: JourDuPlanning; maintenant: Date | n
             key={reunion.id}
             reunion={reunion}
             enCours={reunionEnCours(reunion, maintenant)}
+            directs={directs}
           />
         ))}
       </ul>
@@ -149,7 +179,8 @@ export type ProchainementAuParlementProps = {
 /**
  * Planning des prochains jours de séance et de réunion : un jour par carte (défilement
  * horizontal, au clavier aussi), repères institutionnels en tête de chaque jour, puis les
- * prochaines grandes échéances. Une réunion en cours est signalée en texte.
+ * prochaines grandes échéances. Une réunion en cours est signalée en texte : « En direct » quand la
+ * chaîne de sa chambre la retransmet, « En cours » sinon.
  */
 export const ProchainementAuParlement = ({
   upcoming,
@@ -158,6 +189,10 @@ export const ProchainementAuParlement = ({
   onRetry,
 }: ProchainementAuParlementProps) => {
   const maintenant = useMaintenant();
+  // Les directs ne sont demandés que si une réunion affichée est en cours.
+  const directs = useDirects(
+    (upcoming?.events ?? []).some((reunion) => reunionEnCours(reunion, maintenant)),
+  );
 
   if (isPending) return <LoadingState label="Chargement de l'agenda…" variant="skeleton" />;
   if (isError) {
@@ -187,7 +222,7 @@ export const ProchainementAuParlement = ({
       <section className={classes.defilement} aria-label="Jours à venir" tabIndex={0}>
         <ol className={classes.jours}>
           {jours.map((jour) => (
-            <Jour key={jour.jour} jour={jour} maintenant={maintenant} />
+            <Jour key={jour.jour} jour={jour} maintenant={maintenant} directs={directs} />
           ))}
         </ol>
       </section>

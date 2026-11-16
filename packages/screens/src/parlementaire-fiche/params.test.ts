@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  interventionsQueryOf,
   parlementaireFicheParamsOf,
   parseParlementaireFicheParams,
   votesQueryOf,
@@ -14,6 +15,8 @@ describe("parseParlementaireFicheParams", () => {
       dateTo: "",
       dissidents: false,
       votesPublics: false,
+      type: "",
+      chambre: "",
     });
   });
 
@@ -34,6 +37,8 @@ describe("parlementaireFicheParamsOf", () => {
       dateTo: "2025-12-31",
       dissidents: false,
       votesPublics: true,
+      type: "" as const,
+      chambre: "senat" as const,
     };
     const params = parlementaireFicheParamsOf(filtres);
     expect(params).toEqual({
@@ -42,6 +47,7 @@ describe("parlementaireFicheParamsOf", () => {
       dateFrom: "2025-01-01",
       dateTo: "2025-12-31",
       votesPublics: "1",
+      chambre: "senat",
     });
     expect(parseParlementaireFicheParams(params)).toEqual(filtres);
     expect(parlementaireFicheParamsOf(parseParlementaireFicheParams({}))).toEqual({});
@@ -54,6 +60,30 @@ describe("votesQueryOf", () => {
       page: "2",
       limit: "20",
       dissidentOnly: "true",
+    });
+  });
+});
+
+describe("interventionsQueryOf", () => {
+  it("transmet la nature et la chambre à l'API, et ignore une nature inconnue", () => {
+    expect(
+      interventionsQueryOf(
+        parseParlementaireFicheParams({
+          type: "question",
+          chambre: "senat",
+          dateFrom: "2025-01-01",
+        }),
+      ),
+    ).toEqual({
+      page: "1",
+      limit: "10",
+      dateFrom: "2025-01-01",
+      chambre: "senat",
+      type: "question",
+    });
+    expect(parseParlementaireFicheParams({ type: "chahut", chambre: "x" })).toMatchObject({
+      type: "",
+      chambre: "",
     });
   });
 });

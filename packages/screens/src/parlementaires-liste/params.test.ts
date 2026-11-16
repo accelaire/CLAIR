@@ -35,6 +35,13 @@ describe("parseParlementairesListeParams", () => {
     expect(filtres.page).toBe(1);
     expect(filtres.comparer).toEqual(["a", "b", "c", "d"]);
   });
+
+  it("ne lit pas `?compare=true` (ancien menu d'apps/web) ni une valeur hors slug comme un élu", () => {
+    expect(parseParlementairesListeParams({ compare: "true" }, "assemblee").comparer).toEqual([]);
+    expect(
+      parseParlementairesListeParams({ compare: "1,jean-exemple,<b>,a b" }, "senat").comparer,
+    ).toEqual(["jean-exemple"]);
+  });
 });
 
 describe("parlementairesListeParamsOf", () => {

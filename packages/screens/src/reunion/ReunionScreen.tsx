@@ -19,6 +19,7 @@ import {
   StatutBadge,
   useNavigation,
 } from "@clair/ui";
+import { Check, X } from "lucide-react";
 import {
   libelleDeSeance,
   lienSur,
@@ -56,6 +57,24 @@ export const titreDeReunion = (reunion: ReunionDetail) =>
     ? "Séance publique"
     : (reunion.commission?.nom ?? "Réunion de commission");
 
+/**
+ * Avis d'une commission sur un amendement : le libellé du compte rendu, avec la couleur et un
+ * pictogramme du sens (favorable, défavorable), comme apps/web. Le libellé porte toujours
+ * l'information : la couleur et le pictogramme ne font que la doubler.
+ */
+const AvisBadge = ({ avis }: { avis: AvisCommission }) =>
+  avis.sens === "favorable" ? (
+    <Badge size="sm" tone="succes" icon={<Check />}>
+      {avis.position}
+    </Badge>
+  ) : avis.sens === "defavorable" ? (
+    <Badge size="sm" tone="erreur" icon={<X />}>
+      {avis.position}
+    </Badge>
+  ) : (
+    <Badge size="sm">{avis.position}</Badge>
+  );
+
 const colonnesAvis: DataTableColumn<AvisCommission>[] = [
   { key: "numero", header: "N°", cell: (avis) => avis.numero, rowHeader: true },
   { key: "place", header: "Place", cell: (avis) => avis.place || "—" },
@@ -64,7 +83,7 @@ const colonnesAvis: DataTableColumn<AvisCommission>[] = [
   {
     key: "position",
     header: "Avis de la commission",
-    cell: (avis) => <Badge size="sm">{avis.position}</Badge>,
+    cell: (avis) => <AvisBadge avis={avis} />,
   },
 ];
 

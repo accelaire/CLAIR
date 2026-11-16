@@ -1,4 +1,4 @@
-import type { GroupeDetail } from "@clair/data";
+import { type GroupeDetail, PRESENCE_SENAT_EXPLICATION } from "@clair/data";
 import { ProvenanceLabel, StatCard } from "@clair/ui";
 import { formatPourcent } from "../groupes-liste/format.ts";
 import classes from "./GroupeFicheScreen.module.css";
@@ -28,15 +28,34 @@ export const ChiffresGroupe = ({ groupe }: { groupe: GroupeDetail }) => {
               : undefined
           }
         />
-        <StatCard
-          as="li"
-          label={solennel === null ? "Présence moyenne" : "Présence aux scrutins solennels"}
-          value={solennel ?? stats.presenceMoyenne}
-          unit="%"
-          detail={
-            solennel === null ? undefined : `${formatPourcent(stats.presenceMoyenne)} tous scrutins`
-          }
-        />
+        {groupe.chambre === "senat" ? (
+          // Sénat : la présence ne se mesure qu'aux votes solennels ; le taux tous scrutins compte
+          // des bulletins déposés par le groupe (#108).
+          <StatCard
+            as="li"
+            label={solennel === null ? "Participation moyenne" : "Présence moyenne"}
+            value={solennel ?? stats.presenceMoyenne}
+            unit="%"
+            detail={
+              solennel === null
+                ? "Pas de scrutin solennel"
+                : `aux votes solennels ; ${formatPourcent(stats.presenceMoyenne)} tous scrutins`
+            }
+            help={PRESENCE_SENAT_EXPLICATION}
+          />
+        ) : (
+          <StatCard
+            as="li"
+            label="Présence moyenne"
+            value={solennel ?? stats.presenceMoyenne}
+            unit="%"
+            detail={
+              solennel === null
+                ? undefined
+                : `aux scrutins solennels ; ${formatPourcent(stats.presenceMoyenne)} tous scrutins`
+            }
+          />
+        )}
         <StatCard as="li" label="Loyauté moyenne" value={stats.loyauteMoyenne} unit="%" />
         <StatCard as="li" label="Amendements déposés" value={groupe.totauxAmendements} />
       </ul>

@@ -12,5 +12,20 @@ export const vitestFront = defineConfig({
     // dans `.pathname`, et sous Windows il commence par `/C:/`.
     setupFiles: [fileURLToPath(new URL("./vitest.setup.ts", import.meta.url))],
     css: true,
+    // `pnpm test:coverage` : couverture du code source, hors stories, tests et fixtures fictives.
+    // Les stories ont leur propre mesure, dans le navigateur (apps/storybook).
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/**/*.stories.tsx",
+        "src/**/*.test.{ts,tsx}",
+        "src/**/fixtures.ts",
+        "src/**/*.d.ts",
+        "src/test-utils.tsx",
+        "src/story-utils.ts",
+      ],
+      reporter: ["text-summary", "json-summary", "html"],
+    },
   },
 });

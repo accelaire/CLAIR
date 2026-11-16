@@ -1,4 +1,4 @@
-import type { PageMeta } from "./common.ts";
+import type { Chambre, PageMeta } from "./common.ts";
 
 /**
  * Lobbying (répertoire des représentants d'intérêts de la HATVP), tel que le renvoie l'API
@@ -91,6 +91,11 @@ export type LobbyingStats = {
 export type LobbyingParlementaire = {
   id: string;
   slug: string;
+  /**
+   * Chambre de l'élu rencontré, pour le lien vers sa fiche. Absente des réponses mises en cache
+   * avant son ajout à l'API : l'Assemblée par défaut (la fiche redirige un sénateur).
+   */
+  chambre?: Chambre;
   nom: string;
   prenom: string;
   photoUrl?: string | null;

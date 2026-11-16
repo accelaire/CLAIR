@@ -11,13 +11,14 @@ Lancer **dans cet ordre** et s'arrêter au premier échec pour corriger. Signale
 pnpm check                                   # Biome : format + lint
 pnpm --filter <workspace> type-check          # @clair/ui, @clair/screens, @clair/site…
 pnpm --filter <workspace> test               # Vitest (unitaires, composants, écrans)
-pnpm --filter @clair/storybook test:stories  # stories rendues dans le navigateur + a11y
+pnpm --filter <workspace> test:coverage      # couverture et seuils du paquet (packages/*)
+pnpm --filter @clair/storybook test:stories  # stories (composants et écrans) dans le navigateur + a11y
 pnpm docs:nav && pnpm docs:validate          # si une page de doc change
 ```
 
 ## Voir le rendu (obligatoire pour une interface)
 
-1. Storybook en fond : `pnpm --filter @clair/storybook dev` (port 6006).
+1. Storybook en fond : `pnpm --filter @clair/storybook dev` (port 3050).
 2. Captures d'une story, en clair, en sombre et en mobile :
    ```bash
    pnpm storybook:capture composants-fondations-badge--defaut

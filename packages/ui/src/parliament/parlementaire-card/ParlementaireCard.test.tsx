@@ -36,6 +36,23 @@ describe("ParlementaireCard", () => {
     expect(getByText("Ancien député")).toBeInTheDocument();
   });
 
+  it("écrit la fonction dans un organe à côté du nom, dans le lien", () => {
+    const { getByRole } = renderWithProviders(
+      <ParlementaireCard
+        parlementaire={deputeExemple}
+        chambre="assemblee"
+        href="/fiche"
+        fonction="Présidente"
+        compact
+      />,
+    );
+    expect(getByRole("heading", { name: "Camille Exemple Présidente" })).toBeInTheDocument();
+    expect(getByRole("link", { name: "Camille Exemple Présidente" })).toHaveAttribute(
+      "href",
+      "/fiche",
+    );
+  });
+
   it("sélectionne pour le comparateur par une case distincte du lien", async () => {
     const onSelectedChange = vi.fn();
     const { getByRole } = renderWithProviders(
@@ -48,6 +65,13 @@ describe("ParlementaireCard", () => {
       />,
     );
     const caseComparer = getByRole("checkbox", { name: "Comparer Camille Exemple" });
+    // Sous le nom, dans la carte : le nom garde toute la largeur.
+    const titre = getByRole("heading", { name: /Camille Exemple/ });
+    expect(
+      titre.compareDocumentPosition(caseComparer) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(caseComparer.closest("article")).toBe(titre.closest("article"));
+    expect(getByRole("link", { name: /Camille Exemple/ })).not.toContainElement(caseComparer);
     await userEvent.click(caseComparer);
     expect(onSelectedChange).toHaveBeenCalledWith(true);
   });

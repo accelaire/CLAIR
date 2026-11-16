@@ -15,7 +15,10 @@ export type GroupeMembre = {
   prenom: string;
   photoUrl: string | null;
   circonscription: { departement: string; numero: number; nom: string } | null;
+  /** Participation aux scrutins publics ; au Sénat, ce n'est pas une présence. */
   statsPresence: number | null;
+  /** Présence aux scrutins solennels : la présence d'un sénateur. */
+  statsPresenceSolennel?: number | null;
   statsLoyaute: number | null;
 };
 

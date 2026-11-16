@@ -50,6 +50,11 @@ export type LegislativeTimelineProps = {
   headingLevel?: 2 | 3 | 4;
   /** Contenu ajouté sous la frise (détail des séances de chaque étape). */
   children?: ReactNode;
+  /**
+   * `vertical` : liste verticale à toutes les tailles. `responsive` : frise horizontale sur grand
+   * écran, comme dans apps/web, et liste verticale sur mobile.
+   */
+  orientation?: "vertical" | "responsive";
 };
 
 export const LEGISLATIVE_OUTCOMES: Record<
@@ -93,6 +98,66 @@ const summaryOf = (steps: LegislativeStep[]) => {
   return `${done} étape${done > 1 ? "s" : ""} franchie${done > 1 ? "s" : ""} sur ${steps.length}.`;
 };
 
+/** Ce qui suit le libellé d'une étape : statut, chambre, date, issue officielle et précision. */
+const StepDetails = ({ step }: { step: LegislativeStep }) => {
+  const outcome = step.outcome ? LEGISLATIVE_OUTCOMES[step.outcome] : null;
+  return (
+    <>
+      <div className={classes.meta}>
+        {step.status === "active" ? (
+          <Badge tone="info" size="sm">
+            En cours
+          </Badge>
+        ) : null}
+        {step.status === "pending" ? <span className={classes.pending}>À venir</span> : null}
+        {chambreDe(step.chambre)}
+        {step.date ? <Quand className={classes.date} iso={step.date} /> : null}
+        {outcome ? (
+          <Badge tone={outcome.tone} size="sm">
+            {outcome.label}
+          </Badge>
+        ) : null}
+      </div>
+      {step.detail ? <p className={classes.detail}>{step.detail}</p> : null}
+    </>
+  );
+};
+
+/**
+ * Frise en liste simple (`ol`) : verticale sur mobile, horizontale sur grand écran. Les puces et
+ * les traits sont décoratifs ; le statut de chaque étape est écrit.
+ */
+const ResponsiveSteps = ({
+  steps,
+  labelledBy,
+}: {
+  steps: LegislativeStep[];
+  labelledBy: string;
+}) => (
+  <ol className={classes.frise} aria-labelledby={labelledBy}>
+    {steps.map((step, index) => (
+      <li
+        key={step.code}
+        className={classes.palier}
+        data-status={step.status}
+        data-next-pending={steps[index + 1]?.status === "pending" || undefined}
+        aria-current={step.status === "active" ? "step" : undefined}
+      >
+        <span className={classes.puce} aria-hidden="true">
+          {step.status === "done" ? <Check /> : null}
+        </span>
+        <div className={classes.palierCorps}>
+          <p className={classes.palierTitre}>
+            <span className="clair-visually-hidden">{STATUS_LABELS[step.status]} : </span>
+            {step.label}
+          </p>
+          <StepDetails step={step} />
+        </div>
+      </li>
+    ))}
+  </ol>
+);
+
 /**
  * Frise du parcours d'un dossier législatif : étapes franchies, en cours et à venir, avec leur
  * chambre, leur date et leur issue officielle. L'étape courante est annoncée en texte (phrase de
@@ -103,6 +168,7 @@ export const LegislativeTimeline = ({
   title = "Parcours législatif",
   headingLevel = 2,
   children,
+  orientation = "vertical",
 }: LegislativeTimelineProps) => {
   const titleId = useId();
   const Heading = `h${headingLevel}` as const;
@@ -121,59 +187,47 @@ export const LegislativeTimeline = ({
       ) : (
         <>
           <p className={classes.summary}>{summaryOf(steps)}</p>
-          <Timeline
-            active={lastReached}
-            bulletSize={20}
-            lineWidth={2}
-            role="list"
-            aria-labelledby={titleId}
-            classNames={{
-              root: classes.timeline,
-              item: classes.item,
-              itemBullet: classes.bullet,
-              itemTitle: classes.itemTitle,
-            }}
-          >
-            {steps.map((step, index) => {
-              const outcome = step.outcome ? LEGISLATIVE_OUTCOMES[step.outcome] : null;
-              const nextPending = steps[index + 1]?.status === "pending";
-              return (
-                <Timeline.Item
-                  key={step.code}
-                  role="listitem"
-                  data-status={step.status}
-                  aria-current={step.status === "active" ? "step" : undefined}
-                  lineVariant={nextPending ? "dashed" : "solid"}
-                  bullet={step.status === "done" ? <Check aria-hidden="true" /> : null}
-                  title={
-                    <>
-                      <span className="clair-visually-hidden">{STATUS_LABELS[step.status]} : </span>
-                      {step.label}
-                    </>
-                  }
-                >
-                  <div className={classes.meta}>
-                    {step.status === "active" ? (
-                      <Badge tone="info" size="sm">
-                        En cours
-                      </Badge>
-                    ) : null}
-                    {step.status === "pending" ? (
-                      <span className={classes.pending}>À venir</span>
-                    ) : null}
-                    {chambreDe(step.chambre)}
-                    {step.date ? <Quand className={classes.date} iso={step.date} /> : null}
-                    {outcome ? (
-                      <Badge tone={outcome.tone} size="sm">
-                        {outcome.label}
-                      </Badge>
-                    ) : null}
-                  </div>
-                  {step.detail ? <p className={classes.detail}>{step.detail}</p> : null}
-                </Timeline.Item>
-              );
-            })}
-          </Timeline>
+          {orientation === "responsive" ? (
+            <ResponsiveSteps steps={steps} labelledBy={titleId} />
+          ) : (
+            <Timeline
+              active={lastReached}
+              bulletSize={20}
+              lineWidth={2}
+              role="list"
+              aria-labelledby={titleId}
+              classNames={{
+                root: classes.timeline,
+                item: classes.item,
+                itemBullet: classes.bullet,
+                itemTitle: classes.itemTitle,
+              }}
+            >
+              {steps.map((step, index) => {
+                const nextPending = steps[index + 1]?.status === "pending";
+                return (
+                  <Timeline.Item
+                    key={step.code}
+                    role="listitem"
+                    data-status={step.status}
+                    aria-current={step.status === "active" ? "step" : undefined}
+                    lineVariant={nextPending ? "dashed" : "solid"}
+                    bullet={step.status === "done" ? <Check aria-hidden="true" /> : null}
+                    title={
+                      <>
+                        <span className="clair-visually-hidden">
+                          {STATUS_LABELS[step.status]} :{" "}
+                        </span>
+                        {step.label}
+                      </>
+                    }
+                  >
+                    <StepDetails step={step} />
+                  </Timeline.Item>
+                );
+              })}
+            </Timeline>
+          )}
         </>
       )}
       {children}

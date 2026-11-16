@@ -1,0 +1,388 @@
+.page {
+  padding-block: var(--clair-espacement-6v) var(--clair-espacement-16v);
+}
+
+.chapo {
+  margin: 0;
+}
+
+.grille {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--clair-espacement-8v);
+  margin-top: var(--clair-espacement-6v);
+}
+
+@media (min-width: 1024px) {
+  .grille {
+    /* Assez large pour « En fonction depuis » et sa durée sur une ligne. */
+    grid-template-columns: calc(5 * var(--clair-espacement-16v)) minmax(0, 1fr);
+  }
+
+  /* Les faits restent à côté des onglets en grand écran. */
+  .faits {
+    position: sticky;
+    top: var(--clair-espacement-16v);
+    align-self: start;
+  }
+}
+
+.carteFaits {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-3v);
+  padding: var(--clair-espacement-4v);
+  border: var(--clair-trait-epaisseur) solid var(--clair-bordure-defaut);
+  border-radius: var(--clair-rayon-xl);
+  background: var(--clair-fond-surface);
+}
+
+.pm {
+  display: flex;
+  gap: var(--clair-espacement-3v);
+  align-items: center;
+}
+
+.pm p {
+  margin: 0;
+}
+
+.listeFaits {
+  margin: 0;
+}
+
+.fait {
+  display: flex;
+  gap: var(--clair-espacement-3v);
+  align-items: baseline;
+  justify-content: space-between;
+  padding-block: var(--clair-espacement-2v);
+  border-bottom: var(--clair-trait-epaisseur) solid var(--clair-bordure-defaut);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.fait:last-child {
+  border-bottom: 0;
+}
+
+.fait dt {
+  color: var(--clair-texte-mention);
+}
+
+.fait dd {
+  margin: 0;
+  text-align: end;
+  font-weight: var(--clair-texte-h6-graisse);
+}
+
+.surtitre {
+  margin: var(--clair-espacement-2v) 0 0;
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  font-weight: var(--clair-texte-h6-graisse);
+  text-transform: uppercase;
+  color: var(--clair-texte-mention);
+}
+
+.adoptee {
+  color: var(--clair-statut-erreur);
+}
+
+.voisins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-3v);
+  justify-content: space-between;
+  margin-top: var(--clair-espacement-4v);
+  font-size: var(--clair-texte-sm-taille);
+}
+
+.onglets {
+  min-inline-size: 0;
+  scroll-margin-top: var(--clair-espacement-16v);
+}
+
+/* Notes de source découpées en listes, au corps des mentions. */
+.sources {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-2v);
+  max-inline-size: var(--clair-rupture-md);
+  margin-top: var(--clair-espacement-10v);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.sourceTitre {
+  margin: 0;
+}
+
+.sourceNotes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-1v);
+  margin: 0 0 var(--clair-espacement-2v);
+  padding-inline-start: var(--clair-espacement-6v);
+}
+
+.code {
+  margin: 0;
+  font-family: var(--clair-police-code);
+  font-size: var(--clair-texte-xs-taille);
+  color: var(--clair-texte-mention);
+}
+
+.pile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+}
+
+.titreSection {
+  margin: 0;
+  font-size: var(--clair-texte-h4-taille);
+  line-height: var(--clair-texte-h4-interligne);
+  font-weight: var(--clair-texte-h4-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.sousTitre {
+  margin: 0 0 var(--clair-espacement-1v);
+  font-size: var(--clair-texte-md-taille);
+  line-height: var(--clair-texte-md-interligne);
+  font-weight: var(--clair-texte-h6-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.ligne,
+.mention {
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.mention,
+.mentionEnLigne {
+  color: var(--clair-texte-mention);
+}
+
+.mentionEnLigne {
+  font-weight: normal;
+}
+
+.fort {
+  margin: 0;
+  font-weight: var(--clair-texte-h6-graisse);
+}
+
+.listeSimple {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bilanEtape [data-signe="plus"],
+.mention [data-signe="plus"] {
+  color: var(--clair-statut-succes);
+}
+
+.bilanEtape [data-signe="moins"],
+.mention [data-signe="moins"] {
+  color: var(--clair-statut-erreur);
+}
+
+.bilanEtape [data-signe="mutation"],
+.mention [data-signe="mutation"] {
+  color: var(--clair-statut-info);
+}
+
+.frise {
+  overflow-x: auto;
+  padding-bottom: var(--clair-espacement-2v);
+}
+
+.friseListe {
+  display: flex;
+  gap: var(--clair-espacement-2v);
+  min-inline-size: max-content;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.etape {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  inline-size: calc(2 * var(--clair-espacement-16v));
+  padding: var(--clair-espacement-2v) var(--clair-espacement-3v);
+  border: var(--clair-trait-epaisseur) solid var(--clair-bordure-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+  color: var(--clair-texte-defaut);
+  font: inherit;
+  font-size: var(--clair-texte-sm-taille);
+  text-align: start;
+  cursor: pointer;
+}
+
+.etape:hover {
+  border-color: var(--clair-bordure-forte);
+}
+
+.etape:focus-visible {
+  outline: var(--clair-focus-epaisseur) solid var(--clair-focus);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+.etape[aria-pressed="true"] {
+  border-color: var(--clair-statut-info);
+  background: var(--clair-statut-info-fond);
+}
+
+.etapeNature {
+  font-size: var(--clair-texte-xs-taille);
+  color: var(--clair-texte-mention);
+}
+
+.etapeDate {
+  font-weight: var(--clair-texte-h6-graisse);
+}
+
+.etapeBilan {
+  font-size: var(--clair-texte-xs-taille);
+  font-weight: var(--clair-texte-h6-graisse);
+}
+
+.bilanEtape {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-1v);
+}
+
+.sorties {
+  padding: var(--clair-espacement-3v) var(--clair-espacement-4v);
+  border: var(--clair-trait-epaisseur) solid var(--clair-statut-erreur);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-statut-erreur-fond);
+  font-size: var(--clair-texte-sm-taille);
+}
+
+.domaines {
+  columns: 1;
+  column-gap: var(--clair-espacement-4v);
+}
+
+@media (min-width: 768px) {
+  .domaines {
+    columns: 2;
+  }
+}
+
+/* Domaines sans cadre, séparés par un trait léger au-dessus de chacun. */
+.domaine {
+  break-inside: avoid;
+  margin-bottom: var(--clair-espacement-4v);
+  padding-top: var(--clair-espacement-3v);
+  border-top: var(--clair-trait-defaut);
+}
+
+.domaineTitre {
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  font-weight: var(--clair-texte-h6-graisse);
+  text-transform: uppercase;
+  color: var(--clair-texte-mention);
+}
+
+.poste {
+  display: flex;
+  gap: var(--clair-espacement-3v);
+  align-items: center;
+  padding-block: var(--clair-espacement-2v);
+}
+
+.posteCorps {
+  min-inline-size: 0;
+}
+
+.posteNom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-2v);
+  align-items: center;
+  margin: 0;
+  font-weight: var(--clair-texte-h6-graisse);
+}
+
+.posteNom[data-delegue] {
+  font-size: var(--clair-texte-sm-taille);
+  font-weight: normal;
+}
+
+.posteLigne {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-1v);
+  padding-block: var(--clair-espacement-2v);
+  border-bottom: var(--clair-trait-epaisseur) solid var(--clair-bordure-defaut);
+}
+
+.posteLigne:last-child {
+  border-bottom: 0;
+}
+
+@media (min-width: 640px) {
+  .posteLigne {
+    flex-direction: row;
+    justify-content: space-between;
+    gap: var(--clair-espacement-4v);
+  }
+
+  .posteDates {
+    flex-shrink: 0;
+    text-align: end;
+  }
+}
+
+.details {
+  padding: var(--clair-espacement-3v) var(--clair-espacement-4v);
+  border: var(--clair-trait-epaisseur) solid var(--clair-bordure-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
+}
+
+.details summary {
+  cursor: pointer;
+}
+
+.details > p {
+  margin-block: var(--clair-espacement-2v);
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-4v);
+  margin: 0;
+  padding: 0 0 0 var(--clair-espacement-6v);
+  border-left: calc(2 * var(--clair-trait-epaisseur)) solid var(--clair-bordure-defaut);
+  list-style: none;
+}
+
+.railEntree {
+  position: relative;
+}
+
+.railEntree::before {
+  content: "";
+  position: absolute;
+  top: var(--clair-espacement-1v);
+  left: calc(-1 * var(--clair-espacement-6v) - var(--clair-espacement-2v));
+  inline-size: var(--clair-espacement-3v);
+  block-size: var(--clair-espacement-3v);
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--clair-fond-action);
+}

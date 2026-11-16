@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { fireEvent, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { renderScreen } from "../test-utils.tsx";
 import { ApiPresentationScreen } from "./ApiPresentationScreen.tsx";
+import { curlExample } from "./contenu.ts";
 
 describe("ApiPresentationScreen", () => {
   it("présente l'API, ses ressources, un exemple et les conditions d'utilisation", () => {
@@ -27,5 +29,16 @@ describe("ApiPresentationScreen", () => {
     expect(
       getByText(/curl "https:\/\/api\.clair\.vote\/api\/v1\/scrutins\?limit=5"/),
     ).toBeInTheDocument();
+  });
+
+  it("copie la commande d'exemple et l'annonce", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const { getByRole } = renderScreen(<ApiPresentationScreen />);
+    fireEvent.click(getByRole("button", { name: "Copier la commande" }));
+    expect(writeText).toHaveBeenCalledWith(curlExample);
+    await waitFor(() =>
+      expect(getByRole("status")).toHaveTextContent("Commande copiée dans le presse-papier"),
+    );
   });
 });

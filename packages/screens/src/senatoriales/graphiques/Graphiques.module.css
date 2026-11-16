@@ -447,6 +447,18 @@ button.vignette:focus-visible {
   opacity: 0.6;
 }
 
+/* Nom d'une vignette hors métropole : deux lignes au plus (« Français établis hors de France »). */
+.vignetteNom {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  text-align: start;
+}
+
 .vignetteSieges {
   margin-left: auto;
   flex-shrink: 0;

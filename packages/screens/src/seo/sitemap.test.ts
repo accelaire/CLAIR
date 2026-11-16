@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CHEMINS_EDITORIAUX,
   construirePlanDuSite,
   DONNEES_PLAN_VIDES,
   type DonneesPlan,
@@ -83,9 +84,51 @@ describe("construirePlanDuSite", () => {
     expect(fiches.filter((u) => u.endsWith("/deja-senateur"))).toHaveLength(1);
     expect(fiches).toContain(`${BASE}/senateurs/nouvel-elu`);
   });
+
+  it("liste les gouvernements, sans date inventée pour chaque page", () => {
+    const entrees = construirePlanDuSite({
+      base: BASE,
+      data: DONNEES_PLAN_VIDES,
+      groupes: [],
+      elusProvisoires: [],
+      gouvernements: ["fictif-ii", "fictif-i"],
+      maintenant: MAINTENANT,
+    });
+    expect(urls(entrees)).toEqual(
+      expect.arrayContaining([
+        `${BASE}/gouvernements`,
+        `${BASE}/gouvernements/fictif-ii`,
+        `${BASE}/gouvernements/fictif-i`,
+      ]),
+    );
+    expect(entrees.find((e) => e.url === `${BASE}/gouvernements/fictif-ii`)).not.toHaveProperty(
+      "lastModified",
+    );
+  });
 });
 
 describe("echapperUrlXml", () => {
+  it("liste les pages éditoriales et chaque article des rubriques, sans date", () => {
+    const entrees = plan();
+    expect(urls(entrees)).toEqual(
+      expect.arrayContaining([
+        `${BASE}/a-propos`,
+        `${BASE}/methodologie`,
+        `${BASE}/api`,
+        `${BASE}/comprendre`,
+        `${BASE}/comprendre/scrutin`,
+        `${BASE}/comprendre/dossier-legislatif`,
+        `${BASE}/guide`,
+        `${BASE}/guide/comparer-des-elus`,
+        `${BASE}/contact`,
+      ]),
+    );
+    expect(CHEMINS_EDITORIAUX.filter((c) => c.startsWith("/comprendre/"))).toHaveLength(7);
+    expect(CHEMINS_EDITORIAUX.filter((c) => c.startsWith("/guide/"))).toHaveLength(5);
+    expect(entrees.find((e) => e.url === `${BASE}/a-propos`)?.lastModified).toBeUndefined();
+    expect(new Set(urls(entrees)).size).toBe(entrees.length);
+  });
+
   it("n'échappe pas deux fois une entité", () => {
     expect(echapperUrlXml("/a?b=1&amp;c=2&d=<x>")).toBe("/a?b=1&amp;c=2&amp;d=&lt;x&gt;");
   });

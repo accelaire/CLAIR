@@ -135,7 +135,7 @@ export { Pagination, type PaginationProps } from "./layout/pagination/index.ts";
 export { SectionHeader, type SectionHeaderProps } from "./layout/section-header/index.ts";
 export { ShareButton, type ShareButtonProps } from "./layout/share-button/index.ts";
 export { type TabItem, Tabs, type TabsProps } from "./layout/tabs/index.ts";
-export { GithubIcon, XIcon } from "./lib/brand-icons.tsx";
+export { DiscordIcon, GithubIcon, XIcon } from "./lib/brand-icons.tsx";
 export { asArray, asString, buildHref, type QueryParams, toggle } from "./lib/href.ts";
 export {
   type LinkProps as RouterLinkProps,
@@ -143,6 +143,7 @@ export {
   NavigationProvider,
   useNavigation,
 } from "./lib/navigation.tsx";
+export { libelleThematique } from "./lib/thematiques.ts";
 export {
   AmendementCard,
   type AmendementCardData,
@@ -189,6 +190,7 @@ export {
   type MandatFonction,
   MandatsTimeline,
   type MandatsTimelineProps,
+  type PosteGouvernemental,
 } from "./parliament/mandats-timeline/index.ts";
 export {
   initiales,

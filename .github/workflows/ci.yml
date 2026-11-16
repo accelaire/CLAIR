@@ -83,10 +83,10 @@ jobs:
       - name: Biome
         run: pnpm check
 
-      - name: Types et tests des packages
+      - name: Types, tests et couverture des packages
         run: |
           pnpm --filter "./packages/**" --filter @clair/storybook --filter @clair/site type-check
-          pnpm --filter "./packages/**" test
+          pnpm --filter "./packages/**" test:coverage
 
       - name: Navigateur des tests de stories
         run: pnpm --filter @clair/storybook exec playwright install --with-deps chromium

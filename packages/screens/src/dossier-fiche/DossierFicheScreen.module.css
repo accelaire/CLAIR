@@ -24,10 +24,10 @@
   color: var(--clair-texte-mention);
 }
 
-/* Commissions saisies : deux colonnes sur grand écran (une loi de finances en mobilise neuf). */
+/* Commissions saisies : liste dense, deux colonnes sur grand écran (une loi de finances en mobilise neuf). */
 .commissions {
   display: grid;
-  gap: var(--clair-espacement-3v) var(--clair-espacement-6v);
+  gap: var(--clair-espacement-1v) var(--clair-espacement-6v);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -46,13 +46,18 @@
   min-width: 0;
 }
 
+/* Nom puis chambre dans le fil du texte : la chambre suit le dernier mot, sans saut de ligne. */
 .commissionNom {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--clair-espacement-2v);
   min-width: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
   overflow-wrap: anywhere;
+}
+
+.commissionChambre {
+  display: inline-flex;
+  margin-inline-start: var(--clair-espacement-1v);
+  vertical-align: text-bottom;
 }
 
 .resume {
@@ -91,6 +96,31 @@
   }
 }
 
+/* Scrutins adoptés et rejetés : icône et légende en couleur, toujours avec leur libellé. */
+.adopte {
+  color: var(--clair-statut-succes);
+}
+
+.rejete {
+  color: var(--clair-statut-erreur);
+}
+
+.repartition {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-1v);
+}
+
+.repartitionLegende {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--clair-espacement-4v);
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  font-weight: var(--clair-texte-h6-graisse);
+}
+
 .liste {
   display: flex;
   flex-direction: column;
@@ -113,6 +143,59 @@
 @media (min-width: 640px) {
   .filtre {
     max-width: calc(var(--clair-espacement-16v) * 5);
+  }
+}
+
+/* Objet du vote : puces avec décompte (apps/web) sur grand écran, liste déroulante sur mobile. */
+.puces {
+  display: none;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-2v);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.puce {
+  padding: var(--clair-espacement-1v) var(--clair-espacement-3v);
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-md);
+  background: var(--clair-fond-surface);
+  color: var(--clair-texte-defaut);
+  font: inherit;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.puce:hover {
+  border-color: var(--clair-texte-action);
+}
+
+.puce[aria-pressed="true"] {
+  border-color: var(--clair-fond-action);
+  background: var(--clair-fond-action);
+  color: var(--clair-texte-sur-action);
+}
+
+.puce:focus-visible {
+  outline: var(--clair-focus-epaisseur) solid var(--clair-focus);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+.puceCompte {
+  font-weight: 400;
+}
+
+@media (min-width: 640px) {
+  .puces {
+    display: flex;
+  }
+
+  .filtreMobile {
+    display: none;
   }
 }
 
@@ -140,40 +223,68 @@
   font-weight: var(--clair-texte-h6-graisse);
 }
 
-.etapes {
+/* Parcours : une ligne dense par étape (apps/web), les votes repliés à droite. */
+.parcours {
   display: flex;
   flex-direction: column;
-  gap: var(--clair-espacement-3v);
-  margin: var(--clair-espacement-4v) 0 0;
+  gap: var(--clair-espacement-2v);
+}
+
+.parcoursTitre {
+  margin: 0;
+  font-size: var(--clair-texte-h5-taille);
+  font-weight: var(--clair-texte-h5-graisse);
+  line-height: var(--clair-texte-h5-interligne);
+}
+
+.etapes {
+  margin: var(--clair-espacement-2v) 0 0;
   padding: 0;
+  border: var(--clair-trait-defaut);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-fond-surface);
   list-style: none;
 }
 
 .etape {
-  padding-top: var(--clair-espacement-3v);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--clair-espacement-2v) var(--clair-espacement-3v);
+  padding: var(--clair-espacement-2v) var(--clair-espacement-3v);
+}
+
+.etape + .etape {
   border-top: var(--clair-trait-defaut);
 }
 
-.etapeTitre {
-  margin: 0;
-  font-size: var(--clair-texte-sm-taille);
-  overflow-wrap: anywhere;
+.etapeCorps {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
-.votesEtape {
-  display: flex;
-  flex-direction: column;
-  gap: var(--clair-espacement-2v);
-  margin: var(--clair-espacement-2v) 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.voteEtape {
+.etapeMeta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--clair-espacement-1v) var(--clair-espacement-2v);
+  margin: 0;
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.etapeIcone {
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+}
+
+.etapeTitre {
+  margin: var(--clair-espacement-1v) 0 0;
   font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  font-weight: var(--clair-texte-h6-graisse);
   overflow-wrap: anywhere;
 }

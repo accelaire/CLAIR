@@ -48,3 +48,11 @@ export const Sombre: Story = { globals: { theme: "dark" } };
 - **Interaction** : une fonction `play` (`userEvent`, `expect` de `storybook/test`) pour tout comportement (ouvrir, filtrer, naviguer au clavier).
 - **Données** : fixtures typées de `@clair/data` (jamais d'appel réseau, jamais de données inventées présentées comme réelles).
 - **Accessibilité** : l'addon a11y est en mode erreur ; une story ne doit produire aucune violation. Ne jamais désactiver une règle sans justification écrite dans `parameters.a11y`.
+
+## Écrans (`packages/screens`)
+
+- Un fichier `<Xxx>Screen.stories.tsx` par écran, titre `Écrans/<nom en français>`, `parameters.layout: "fullscreen"`. Le test du catalogue des écrans exige `Defaut`, `Mobile`, `Sombre` et au moins une fonction `play`.
+- Données : `parametresEcran(pathname, routes, navigate?)` de `src/story-utils.ts`. Les routes sont celles du test de l'écran (fixtures fictives). Le décorateur `withApi` de l'atelier les sert sans réseau ; un chemin absent répond 404.
+- États : `Chargement` (`jamais`), `Erreur` (`enErreur(500, chemin)`), `Introuvable` (`enErreur(404, chemin)`), `Vide`.
+- URL : passer un espion `fn()` comme `navigate`, puis `expect(navigate).toHaveBeenCalledWith(...)` dans `play` après un clic sur un filtre, un onglet ou un tri.
+- Modèle : `packages/screens/src/groupe-fiche/GroupeFicheScreen.stories.tsx`.

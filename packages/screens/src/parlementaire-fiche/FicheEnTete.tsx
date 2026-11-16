@@ -10,9 +10,10 @@ import {
   ParlementaireAvatar,
   ProvenanceLabel,
 } from "@clair/ui";
-import { GitCompareArrows } from "lucide-react";
+import { ChartNoAxesColumn, GitCompareArrows } from "lucide-react";
 import { CHAMBRE_CONFIG, formatDate, groupeHref } from "../shared/parlementaires/chambre.ts";
 import classes from "./ParlementaireFicheScreen.module.css";
+import { TitresFiche } from "./TitresFiche.tsx";
 
 const ordinal = (numero: number) => (numero === 1 ? "1re" : `${numero}e`);
 
@@ -30,7 +31,8 @@ const lienX = (identifiant: string) => `https://x.com/${identifiant.replace(/^@/
 
 /**
  * En-tête de la fiche : fil d'Ariane, photo, nom (unique `h1`), chambre, groupe, mandat terminé,
- * circonscription, profession, contacts, source officielle et accès au comparateur.
+ * circonscription, profession, contacts, source officielle, accès au classement (rang mis en
+ * avant, comme le « Voir son rang dans le classement » de apps/web) et au comparateur.
  */
 export const FicheEnTete = ({
   fiche,
@@ -96,6 +98,7 @@ export const FicheEnTete = ({
           }
           description={
             <>
+              <TitresFiche fiche={fiche} />
               {details.length > 0 ? (
                 <ul className={classes.details}>
                   {details.map((detail) => (
@@ -123,13 +126,22 @@ export const FicheEnTete = ({
             </>
           }
           actions={
-            <Button
-              href={`${config.chemin}?compare=${fiche.slug}`}
-              variant="secondaire"
-              icon={<GitCompareArrows />}
-            >
-              Comparer avec d'autres {config.pluriel}
-            </Button>
+            <>
+              <Button
+                href={`/classements?chambre=${chambre}&highlight=${fiche.slug}`}
+                variant="secondaire"
+                icon={<ChartNoAxesColumn />}
+              >
+                Situer dans le classement
+              </Button>
+              <Button
+                href={`${config.chemin}?compare=${fiche.slug}`}
+                variant="secondaire"
+                icon={<GitCompareArrows />}
+              >
+                Comparer avec d'autres {config.pluriel}
+              </Button>
+            </>
           }
         />
       </div>

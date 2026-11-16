@@ -7,27 +7,27 @@ export const comparerDesElus: GuideArticle = {
   title: "Comparer des élus",
   icon: GitCompareArrows,
   summary: "Mettre en regard l'activité de deux parlementaires",
-  intro: "En 4 étapes, apprenez à comparer l'activité de deux parlementaires sur CLAIR.",
+  intro: "En 4 étapes, apprenez à comparer l'activité de deux à quatre parlementaires sur CLAIR.",
   steps: [
     {
-      title: "Ouvrir une fiche",
+      title: "Ouvrir la liste des élus",
       description:
-        "Rendez-vous sur la fiche d'un député ou d'un sénateur depuis les pages Députés ou Sénateurs.",
+        "Rendez-vous sur la page Députés ou Sénateurs. Depuis la fiche d'un élu, le bouton « Comparer avec d'autres députés » (ou sénateurs) ouvre la même liste, cet élu déjà sélectionné.",
     },
     {
-      title: "Cliquer sur « Comparer »",
+      title: "Cocher « Comparer »",
       description:
-        "En haut de la fiche, cliquez sur le bouton « Comparer avec un autre député/sénateur ». Vous serez redirigé vers la liste avec le mode comparaison activé.",
+        "Chaque carte porte une case « Comparer ». Cochez-la sur deux à quatre élus : cherchez ou filtrez la liste pour les trouver. Votre sélection s'affiche dans la barre de comparaison.",
     },
     {
-      title: "Sélectionner un second élu",
+      title: "Lancer la comparaison",
       description:
-        "La liste des parlementaires s'affiche. Cherchez ou filtrez pour trouver l'élu que vous souhaitez comparer.",
+        "Dans la barre de comparaison, cliquez sur « Comparer ». Vous pouvez aussi y retirer un élu, ou tout retirer pour recommencer.",
     },
     {
       title: "Lire la comparaison",
       description:
-        "Les statistiques des deux élus sont mises côte à côte : présence, loyauté, participation, amendements. Identifiez les différences de comportement parlementaire.",
+        "Les statistiques des élus sont mises côte à côte (présence, loyauté, participation, calculées par CLAIR), puis leurs votes sur les mêmes scrutins et leurs derniers amendements. La case « Uniquement les scrutins où les positions diffèrent » isole les désaccords.",
     },
   ],
   start: { label: "Choisir un député", href: "/deputes" },

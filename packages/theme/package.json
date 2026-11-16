@@ -14,7 +14,8 @@
   "scripts": {
     "generate": "node scripts/generate-css.ts",
     "type-check": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@fontsource-variable/inter": "catalog:"

@@ -1,0 +1,29 @@
+.titres {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-1v);
+  margin: var(--clair-espacement-2v) 0 var(--clair-espacement-3v);
+  padding: var(--clair-espacement-2v) var(--clair-espacement-3v);
+  border: var(--clair-trait-epaisseur) solid var(--clair-statut-info);
+  border-radius: var(--clair-rayon-lg);
+  background: var(--clair-statut-info-fond);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  list-style: none;
+}
+
+.titre {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--clair-espacement-2v);
+  align-items: baseline;
+}
+
+.fort {
+  font-weight: var(--clair-texte-h6-graisse);
+  color: var(--clair-texte-titre);
+}
+
+.depuis {
+  color: var(--clair-texte-mention);
+}

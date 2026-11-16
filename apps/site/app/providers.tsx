@@ -19,7 +19,12 @@ export const Providers = ({ children }: { children: ReactNode }) => {
   const router = useRouter();
   const pathname = usePathname();
   const navigation = useMemo<Navigation>(
-    () => ({ Link: SiteLink, navigate: (href) => router.push(href, { scroll: false }), pathname }),
+    () => ({
+      Link: SiteLink,
+      navigate: (href) => router.push(href, { scroll: false }),
+      replace: (href) => router.replace(href, { scroll: false }),
+      pathname,
+    }),
     [router, pathname],
   );
   return (

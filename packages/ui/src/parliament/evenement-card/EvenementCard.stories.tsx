@@ -1,4 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, userEvent, within } from "storybook/test";
+import { attendreFocusVisible } from "../../story-utils.ts";
 import { EvenementCard } from "./EvenementCard.tsx";
 
 const meta = {
@@ -69,7 +71,25 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Defaut: Story = {};
+/** Type, chambre, date et heure de Paris en texte ; le titre mène à la page de l'événement. */
+export const Defaut: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const lien = canvas.getByRole("link", { name: "Commission des finances" });
+    await expect(lien).toHaveAttribute("href", "#reunion");
+    await expect(lien.closest("h3")).not.toBeNull();
+    await userEvent.tab();
+    await attendreFocusVisible(lien);
+    await expect(canvas.getByText("Réunion de commission")).toBeVisible();
+    await expect(canvas.getByText("Assemblée nationale")).toBeVisible();
+    const quand = canvas.getByText("mardi 3 mars 2026, 09:30 – 12:00");
+    await expect(quand).toHaveAttribute("dateTime", "2026-03-03T09:30:00+01:00");
+    await expect(canvas.getByText("Salle d'exemple").parentElement).toHaveTextContent(
+      "Lieu : Salle d'exemple",
+    );
+    await expect(canvas.queryByText("En direct")).toBeNull();
+  },
+};
 
 export const EnDirect: Story = {
   args: {
@@ -82,6 +102,19 @@ export const EnDirect: Story = {
     lieu: null,
     live: true,
     liveHref: "https://videos.senat.fr",
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText("En direct")).toBeVisible();
+    await expect(canvas.getByRole("heading", { level: 3, name: "Séance publique" })).toBeVisible();
+    // Le titre d'abord, puis la retransmission, lien externe annoncé.
+    await userEvent.tab();
+    await attendreFocusVisible(canvas.getByRole("link", { name: "Séance publique" }));
+    const direct = canvas.getByRole("link", { name: "Suivre en direct (nouvelle fenêtre)" });
+    await expect(direct).toHaveAttribute("href", "https://videos.senat.fr");
+    await expect(direct).toHaveAttribute("target", "_blank");
+    await userEvent.tab();
+    await attendreFocusVisible(direct);
   },
 };
 
@@ -98,8 +131,17 @@ export const Echeance: Story = {
     href: undefined,
     sources: [{ label: "Sénat", href: "https://www.senat.fr" }],
   },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText("Courant septembre 2026 (date non encore fixée)")).toBeVisible();
+    await expect(canvas.getByText(/^Source :/)).toBeVisible();
+    await expect(canvas.getByRole("link", { name: "Sénat (nouvelle fenêtre)" })).toHaveAttribute(
+      "href",
+      "https://www.senat.fr",
+    );
+  },
 };
 
-export const Mobile: Story = { globals: { viewport: { value: "xs" } } };
+export const Mobile: Story = { ...Defaut, globals: { viewport: { value: "xs" } } };
 
 export const Sombre: Story = { ...EnDirect, globals: { theme: "dark" } };

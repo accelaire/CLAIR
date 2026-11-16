@@ -7,7 +7,7 @@ description: "Carte d'un amendement : numéro, sort, article visé, auteur et gr
 
 import { AmendementCard } from "@clair/ui";
 
-Carte d'un amendement : numéro, sort en badge texte, article et alinéa visés, auteur et groupe, exposé sommaire et dispositif repliables (« Lire la suite », bouton `aria-expanded`), mention « Sous-amendement à… » et liens vers les scrutins et le dossier. Le HTML de la source est réduit à son texte. Fusionne `ExpandableAmendementCard`, son doublon de la fiche sénateur et `AmendementSeance` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-parlementaire-amendementcard--docs)
+Carte d'un amendement : numéro, sort en badge texte, article et alinéa visés, auteur et groupe, exposé sommaire et dispositif repliables (« Lire la suite », bouton `aria-expanded`), mention « Sous-amendement à… » et liens vers les scrutins et le dossier. Le HTML de la source est réduit à son texte. Les articles et textes de loi cités par le dispositif (`renvois` de l'API) deviennent des liens vers Légifrance, dans la version en vigueur au dépôt, annoncés « (Légifrance, nouvel onglet) » aux lecteurs d'écran : le texte est découpé aux positions des renvois, jamais injecté en HTML. Fusionne `ExpandableAmendementCard`, son doublon de la fiche sénateur et `AmendementSeance` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-parlementaire-amendementcard--docs)
 
 ## Import
 

@@ -38,3 +38,18 @@
   align-items: center;
   gap: var(--clair-espacement-2v);
 }
+
+/* Note sous un classement : ce que mesure le taux (Sénat) et sur quelle période. */
+.note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-1v);
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+.note p {
+  margin: 0;
+}

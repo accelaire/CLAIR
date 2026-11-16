@@ -90,7 +90,18 @@
   min-width: 0;
 }
 
+/*
+ * Une étape longue (titre d'un dossier) tient sur une ligne, coupée par des points de suspension :
+ * sur mobile, elle en prenait quatre. Le lien garde son intitulé entier, lu par les lecteurs d'écran.
+ */
 .breadcrumbLink {
+  display: inline-block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
   color: var(--clair-texte-mention);
 }
 

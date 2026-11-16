@@ -5,10 +5,28 @@
   color: var(--clair-texte-mention);
 }
 
+/* Sort du vote, poussé au bout de la ligne du numéro : près du titre, comme dans apps/web. */
+.sort {
+  display: inline-flex;
+  margin-inline-start: auto;
+}
+
+/* Titre coupé à deux lignes à l'écran (apps/web : `line-clamp-2`) ; le lien garde le titre entier. */
+.titre {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+/* Métadonnées et décompte sur une même ligne, qui se replie sur petit écran. */
 .content {
   display: flex;
-  flex-direction: column;
-  gap: var(--clair-espacement-3v);
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-4v);
 }
 
 .meta {
@@ -29,14 +47,6 @@
 .icon {
   width: 1em;
   height: 1em;
-}
-
-.result {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--clair-espacement-2v) var(--clair-espacement-4v);
 }
 
 .counts {

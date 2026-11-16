@@ -206,7 +206,7 @@ export const SoutenirScreen = ({ initialData }: SoutenirScreenProps) => (
 
     <section className={`${editorial.section} ${editorial.panel}`} aria-labelledby="equipe">
       <SectionHeader id="equipe" title="Derrière le projet" />
-      <ul className={editorial.grid} data-columns="3">
+      <ul className={editorial.grid} data-columns="4">
         {team.map((member) => (
           <Card
             key={member.name}
@@ -226,9 +226,11 @@ export const SoutenirScreen = ({ initialData }: SoutenirScreenProps) => (
           >
             <p className={classes.role}>{member.role}</p>
             <p className={classes.quote}>{member.quote}</p>
-            <Link href={member.linkedin} external>
-              LinkedIn<span className="clair-visually-hidden"> de {member.name}</span>
-            </Link>
+            {member.linkedin ? (
+              <Link href={member.linkedin} external>
+                LinkedIn<span className="clair-visually-hidden"> de {member.name}</span>
+              </Link>
+            ) : null}
           </Card>
         ))}
       </ul>

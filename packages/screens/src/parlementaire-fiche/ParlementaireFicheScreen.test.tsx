@@ -1,5 +1,5 @@
 import type { FixtureRoutes } from "@clair/api-client";
-import { fireEvent } from "@testing-library/react";
+import { fireEvent, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { renderScreen } from "../test-utils.tsx";
 import { ficheExemple, ficheReponse, page, votesExemple } from "./fixtures.ts";
@@ -67,6 +67,165 @@ describe("ParlementaireFicheScreen", () => {
     expect(
       getByRole("heading", { name: "Déclaration d'intérêts et d'activités" }),
     ).toBeInTheDocument();
+  });
+
+  it("ouvre l'onglet d'un ancien lien à ancre (#interventions) et le porte dans l'URL", async () => {
+    window.history.replaceState(null, "", "/deputes/camille-exemple#interventions");
+    // happy-dom signale le changement d'ancre (`hashchange`) après coup : on le laisse passer.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    try {
+      const { findByRole, visited } = rendre();
+      await findByRole("heading", { level: 1 });
+      expect(visited).toEqual(["/deputes/camille-exemple?onglet=interventions"]);
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  it("filtre les interventions par nature et mène à la page de la séance", async () => {
+    // Séance fictive, pour le test.
+    const seances = page([
+      {
+        seanceId: "RUANR5L17S2025IDS99999",
+        date: "2025-03-04T15:00:00.000Z",
+        interventions: [
+          {
+            id: "i1",
+            date: "2025-03-04T15:00:00.000Z",
+            type: "question",
+            contenu: "Texte fictif d'une question.",
+            hasMore: false,
+            motsCles: [],
+            sourceUrl: null,
+            ordre: 1,
+            articleVise: null,
+            dossier: null,
+            scrutinIds: [],
+          },
+        ],
+        scrutins: [],
+        ordreDuJour: [],
+      },
+    ]);
+    const { findAllByRole, getByLabelText, visited } = rendre(
+      { onglet: "interventions", type: "interruption" },
+      { ...routes, "/deputes/camille-exemple/interventions": seances },
+    );
+    const liens = await findAllByRole("link", { name: /Séance du|Voir la séance complète/ });
+    for (const lien of liens) {
+      expect(lien).toHaveAttribute("href", "/reunions/RUANR5L17S2025IDS99999");
+    }
+    expect(liens).toHaveLength(2);
+    fireEvent.change(getByLabelText("Nature des prises de parole"), {
+      target: { value: "question" },
+    });
+    expect(visited).toEqual(["/deputes/camille-exemple?onglet=interventions&type=question"]);
+  });
+
+  it("n'ouvre que la première séance des interventions, les autres se déplient au clavier", async () => {
+    // Séances fictives, pour le test.
+    const seance = (seanceId: string, date: string, contenu: string) => ({
+      seanceId,
+      date,
+      interventions: [
+        {
+          id: `${seanceId}-1`,
+          date,
+          type: "intervention",
+          contenu,
+          hasMore: false,
+          motsCles: [],
+          sourceUrl: null,
+          ordre: 1,
+          articleVise: null,
+          dossier: null,
+          scrutinIds: [],
+        },
+      ],
+      scrutins: [],
+      ordreDuJour: [],
+    });
+    const seances = page([
+      seance(
+        "RUANR5L17S2025IDS99998",
+        "2025-03-05T15:00:00.000Z",
+        "Première prise de parole fictive.",
+      ),
+      seance(
+        "RUANR5L17S2025IDS99997",
+        "2025-03-04T15:00:00.000Z",
+        "Seconde prise de parole fictive.",
+      ),
+    ]);
+    const { findByRole, getByRole, getByText, queryByText } = rendre(
+      { onglet: "interventions" },
+      { ...routes, "/deputes/camille-exemple/interventions": seances },
+    );
+    const premiere = await findByRole("button", { name: /^Masquer les prises de parole/ });
+    const seconde = getByRole("button", { name: /^Afficher les prises de parole/ });
+    expect(premiere).toHaveAttribute("aria-expanded", "true");
+    expect(getByText("Première prise de parole fictive.")).toBeVisible();
+    expect(seconde).toHaveAttribute("aria-expanded", "false");
+    expect(seconde).toHaveTextContent("1 intervention");
+    expect(queryByText("Seconde prise de parole fictive.")).not.toBeVisible();
+    fireEvent.click(seconde);
+    expect(seconde).toHaveAttribute("aria-expanded", "true");
+    expect(getByText("Seconde prise de parole fictive.")).toBeVisible();
+  });
+
+  it("ne propose le filtre de chambre qu'à un élu passé par les deux chambres", async () => {
+    const { findByRole, queryByRole } = rendre({ onglet: "amendements" });
+    await findByRole("heading", { level: 1 });
+    expect(queryByRole("group", { name: "Chambre" })).not.toBeInTheDocument();
+  });
+
+  it("propose de situer l'élu dans le classement, à côté du comparateur", async () => {
+    const { findByRole, getByRole } = rendre();
+    expect(await findByRole("link", { name: "Situer dans le classement" })).toHaveAttribute(
+      "href",
+      "/classements?chambre=assemblee&highlight=camille-exemple",
+    );
+    expect(getByRole("link", { name: /Comparer avec d'autres/ })).toBeInTheDocument();
+  });
+
+  it("montre les thématiques d'un scrutin dans la liste des votes (les deux premières)", async () => {
+    const [vote] = votesExemple.data;
+    if (!vote) throw new Error("vote d'exemple absent");
+    const { findByText } = rendre(
+      {},
+      {
+        ...routes,
+        "/deputes/camille-exemple/votes": page([
+          { ...vote, scrutin: { ...vote.scrutin, tags: ["santé", "budget", "europe"] } },
+        ]),
+      },
+    );
+    expect(await findByText(/Santé, Budget$/)).toHaveTextContent("Thématiques : Santé, Budget");
+  });
+
+  it("résume le mandat en cours et les déclarations HATVP hors des onglets", async () => {
+    const { findByRole } = rendre();
+    const bloc = async (titre: string) => {
+      const section = (await findByRole("heading", { name: titre })).closest("section");
+      if (!section) throw new Error(`bloc « ${titre} » absent`);
+      return section;
+    };
+    const mandat = await bloc("Mandat en cours");
+    expect(mandat).toHaveTextContent("XVIIe législature, depuis le 8 juillet 2024");
+    expect(within(mandat).getByRole("link", { name: "Commission des exemples" })).toHaveAttribute(
+      "href",
+      "/commissions/commission-exemple",
+    );
+    expect(within(mandat).getByRole("link", { name: /Voir 1 mandat/ })).toHaveAttribute(
+      "href",
+      "/deputes/camille-exemple?onglet=mandats",
+    );
+    const hatvp = await bloc("Déclarations HATVP");
+    expect(hatvp).toHaveTextContent("publiée le 1 octobre 2024");
+    expect(within(hatvp).getByRole("link", { name: "Voir 1 déclaration" })).toHaveAttribute(
+      "href",
+      "/deputes/camille-exemple?onglet=declarations",
+    );
   });
 
   it("signale une erreur récupérable", async () => {

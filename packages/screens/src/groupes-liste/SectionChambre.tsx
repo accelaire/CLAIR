@@ -40,7 +40,8 @@ const pluriel = (nombre: number, mot: string) =>
 
 /**
  * Une chambre dans la liste des groupes : titre, effectifs, choix de période, hémicycle et
- * cartes des groupes (chaque carte mène à la fiche, période comprise).
+ * cartes des groupes, avec leur logo quand l'API en donne un (chaque carte mène à la fiche, période
+ * comprise).
  */
 export const SectionChambre = ({
   chambre,
@@ -105,7 +106,17 @@ export const SectionChambre = ({
               as="li"
               titleAs="h3"
               href={`/groupes/${chambre}/${groupe.slug}${periodeQuery}`}
-              title={nomDuGroupe(groupe)}
+              title={
+                groupe.logoUrl ? (
+                  <span className={classes.carteTitre}>
+                    {/* Logo décoratif : le nom du groupe suit, dans le lien. */}
+                    <img src={groupe.logoUrl} alt="" className={classes.logo} loading="lazy" />
+                    <span>{nomDuGroupe(groupe)}</span>
+                  </span>
+                ) : (
+                  nomDuGroupe(groupe)
+                )
+              }
               eyebrow={
                 <span className={classes.eyebrow}>
                   <GroupeBadge sigle={groupe.nom} couleur={groupe.couleur} />

@@ -35,14 +35,26 @@ export type ParlementairesListeFiltres = {
   comparer: string[];
 };
 
-/** Slugs d'un paramètre `a,b` ou répété (`?compare=a&compare=b`), sans doublon. */
+/** Forme d'un slug d'élu (`jean-dupont`, `jean-dupont-1`). */
+const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/i;
+
+/**
+ * Valeurs d'interrupteur, qui ne sont pas des élus : le menu d'apps/web menait à
+ * `/deputes?compare=true` pour ouvrir le mode comparaison, toujours ouvert ici.
+ */
+const INTERRUPTEURS = new Set(["true", "false", "1", "0", "oui", "non"]);
+
+/**
+ * Slugs d'un paramètre `a,b` ou répété (`?compare=a&compare=b`), sans doublon. Une valeur qui
+ * n'a pas la forme d'un slug, ou un interrupteur (`?compare=true`), est ignorée.
+ */
 export const slugsDe = (valeur: string | string[] | undefined, max: number) =>
   [
     ...new Set(
       asArray(valeur)
         .flatMap((item) => item.split(","))
         .map((slug) => slug.trim())
-        .filter(Boolean),
+        .filter((slug) => SLUG.test(slug) && !INTERRUPTEURS.has(slug.toLowerCase())),
     ),
   ].slice(0, max);
 

@@ -53,6 +53,10 @@ describe("GroupeFicheScreen", () => {
       "href",
       "/deputes/camille-exemple",
     );
+    // Photo (ici les initiales, faute de photo) à côté du nom, décorative.
+    expect(within(membres).getByRole("rowheader", { name: /Camille Exemple/ })).toHaveTextContent(
+      /^CECamille Exemple$/,
+    );
   });
 
   it("garde le filtre des scrutins et le tri des membres dans l'URL", async () => {

@@ -1,7 +1,8 @@
 import { Link } from "@clair/ui";
 import classes from "./NotFoundScreen.module.css";
+import { RechercheIntrouvable } from "./RechercheIntrouvable.tsx";
 
-/** Page introuvable : message et chemins de repli. */
+/** Page introuvable : message, champ de recherche sur la page et chemins de repli. */
 export const NotFoundScreen = () => (
   <div className={classes.page}>
     <p className={classes.code}>404</p>
@@ -10,6 +11,7 @@ export const NotFoundScreen = () => (
       Cette page n'existe pas ou a été déplacée. Les données de CLAIR sont mises à jour chaque jour
       : un élu, un scrutin ou un texte a pu changer d'adresse.
     </p>
+    <RechercheIntrouvable />
     <ul className={classes.links}>
       <li>
         <Link href="/">Revenir à l'accueil</Link>

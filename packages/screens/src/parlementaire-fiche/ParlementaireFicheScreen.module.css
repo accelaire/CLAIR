@@ -69,6 +69,32 @@
   margin-top: var(--clair-espacement-3v);
 }
 
+/* Aperçu du mandat et des déclarations, hors des onglets. */
+.apercuListe {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-2v);
+  margin: var(--clair-espacement-3v) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  overflow-wrap: anywhere;
+}
+
+/* Thématiques d'un scrutin dans la liste des votes. */
+.thematiques {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+}
+
+.iconeThematique {
+  flex-shrink: 0;
+  width: var(--clair-espacement-4v);
+  height: var(--clair-espacement-4v);
+}
+
 .section {
   display: flex;
   flex-direction: column;
@@ -154,4 +180,66 @@
 .liensScrutins {
   gap: var(--clair-espacement-2v);
   font-size: var(--clair-texte-sm-taille);
+}
+
+/* Explication d'un filtre (interruptions), sur toute la largeur de la barre de filtres. */
+.note {
+  flex-basis: 100%;
+  margin: 0;
+  padding: var(--clair-espacement-2v) var(--clair-espacement-3v);
+  border: 1px dashed var(--clair-bordure-defaut);
+  border-radius: var(--clair-rayon-md);
+  background: var(--clair-fond-neutre);
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  color: var(--clair-texte-mention);
+}
+
+/* Repli d'une séance de l'onglet Interventions (seule la première est ouverte d'office). */
+.basculeSeance {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-self: flex-start;
+  gap: var(--clair-espacement-2v);
+  padding: var(--clair-espacement-1v);
+  border: 0;
+  border-radius: var(--clair-rayon-sm);
+  background: none;
+  color: var(--clair-texte-titre);
+  font: inherit;
+  font-size: var(--clair-texte-sm-taille);
+  font-weight: var(--clair-texte-h6-graisse);
+  text-align: start;
+  cursor: pointer;
+}
+
+.basculeSeance:focus-visible {
+  outline: var(--clair-focus-epaisseur) solid var(--clair-focus);
+  outline-offset: var(--clair-focus-decalage);
+}
+
+.chevron {
+  width: var(--clair-espacement-4v);
+  height: var(--clair-espacement-4v);
+  transition: transform 0.2s ease;
+}
+
+.chevron[data-ouvert="false"] {
+  transform: rotate(-90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}
+
+.volume {
+  font-weight: normal;
+  color: var(--clair-texte-mention);
+}
+
+.contenuSeance {
+  margin-top: var(--clair-espacement-3v);
 }

@@ -5,9 +5,13 @@ import {
   type ApiData,
   type GroupeOption,
   type HistoriqueCarriere,
+  NON_CLASSE_EXPLICATION,
+  nonClasse,
   type PageMeta,
   type ParlementaireListItem,
+  PRESENCE_SENAT_EXPLICATION,
   pageOf,
+  presenceDe,
   type RangClassement,
 } from "@clair/data";
 import {
@@ -68,14 +72,30 @@ const OPTIONS_PERIODE = [
 const estCritere = (key: string): key is CritereParlementaire =>
   key === "nom" || Object.hasOwn(CRITERES, key);
 
-const valeur = (item: ParlementaireListItem, critere: Statistique) => item.stats?.[critere] ?? null;
+/**
+ * Valeur affichée : celle sur laquelle l'API trie. Au Sénat, la présence est celle des votes
+ * solennels (#108) ; le taux tous scrutins compte des bulletins déposés par le groupe.
+ */
+const valeur = (item: ParlementaireListItem, critere: Statistique) =>
+  critere === "presence" ? presenceDe(item.chambre, item.stats) : (item.stats?.[critere] ?? null);
 
 /** Un parlementaire sans aucune statistique n'a pas sa place dans un top ou un flop. */
-const aDesDonnees = ({ stats }: ParlementaireListItem) =>
-  stats !== null &&
-  [stats.presence, stats.loyaute, stats.amendements, stats.interventions].some(
-    (nombre) => nombre !== null && nombre > 0,
-  );
+const aDesDonnees = (item: ParlementaireListItem) =>
+  item.stats !== null &&
+  [
+    presenceDe(item.chambre, item.stats),
+    item.stats.loyaute,
+    item.stats.amendements,
+    item.stats.interventions,
+  ].some((nombre) => nombre !== null && nombre > 0);
+
+/** Sous 50 scrutins, un taux ne se compare pas : « n.c. » à la place du rang. */
+const NonClasse = () => (
+  <span title={NON_CLASSE_EXPLICATION}>
+    <span aria-hidden="true">n.c.</span>
+    <span className="clair-visually-hidden">{NON_CLASSE_EXPLICATION}</span>
+  </span>
+);
 
 const ficheHref = (item: ParlementaireListItem) =>
   `${item.chambre === "assemblee" ? "/deputes" : "/senateurs"}/${item.slug}`;
@@ -157,11 +177,14 @@ export const OngletParlementaires = ({ params, update, hrefFor }: OngletParlemen
       key: "rang",
       header: "Rang",
       align: "end",
-      cell: (item) => (
-        <span className="clair-chiffres">
-          {premier + (resultats?.items.indexOf(item) ?? 0) + 1}
-        </span>
-      ),
+      cell: (item) =>
+        nonClasse(item.chambre, item.stats, params.sort) ? (
+          <NonClasse />
+        ) : (
+          <span className="clair-chiffres">
+            {premier + (resultats?.items.indexOf(item) ?? 0) + 1}
+          </span>
+        ),
     },
     {
       key: "nom",
@@ -206,7 +229,10 @@ export const OngletParlementaires = ({ params, update, hrefFor }: OngletParlemen
     ...(Object.keys(CRITERES) as Statistique[]).map(
       (cle): DataTableColumn<ParlementaireListItem> => ({
         key: cle,
-        header: CRITERES[cle].label,
+        header:
+          cle === "presence" && params.chambre === "senat"
+            ? "Présence (votes solennels)"
+            : CRITERES[cle].label,
         align: "end",
         firstDirection: "descending",
         sortValue: (item) => valeur(item, cle),
@@ -236,6 +262,14 @@ export const OngletParlementaires = ({ params, update, hrefFor }: OngletParlemen
             : []
         }
         onReset={() => update({ groupe: "", rank: null })}
+        summary={[
+          `Critère : ${OPTIONS_TRI.find((option) => option.value === params.sort)?.label ?? params.sort}`,
+          avecPeriode
+            ? OPTIONS_PERIODE.find((option) => option.value === params.periode)?.label
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
       >
         <ChambreSwitch
           value={params.chambre}
@@ -278,14 +312,18 @@ export const OngletParlementaires = ({ params, update, hrefFor }: OngletParlemen
 
       {avecTopFlop && critere && resultats && flopQuery.data ? (
         <TopFlop
-          criterion={CRITERES[critere].label}
+          criterion={
+            critere === "presence" && params.chambre === "senat"
+              ? "Présence aux votes solennels"
+              : CRITERES[critere].label
+          }
           top={resultats.items
             .filter(aDesDonnees)
             .slice(0, 5)
             .map((item) => versTopFlop(item, critere))}
           flop={flopQuery.data.data.filter(aDesDonnees).map((item) => versTopFlop(item, critere))}
           formatValue={CRITERES[critere].format}
-          headingLevel={3}
+          headingLevel={2}
           provenance="calculee"
           methodologyHref={METHODOLOGIE_INDICATEURS}
         />
@@ -323,6 +361,28 @@ export const OngletParlementaires = ({ params, update, hrefFor }: OngletParlemen
             }}
             emptyLabel="Aucun parlementaire ne correspond à ces filtres"
           />
+          {critere === "presence" || critere === "loyaute" ? (
+            <div className={classes.note}>
+              {critere === "presence" && params.chambre !== "assemblee" ? (
+                <p>
+                  {params.chambre === "senat"
+                    ? `Sénateurs classés sur leur présence aux votes solennels. ${PRESENCE_SENAT_EXPLICATION}`
+                    : "Classement des députés. Au Sénat, les scrutins ordinaires sont votés par groupe : choisissez le Sénat pour classer les sénateurs sur leur présence aux votes solennels."}
+                </p>
+              ) : null}
+              <p>
+                {params.periode === "carriere"
+                  ? "Taux calculés sur toute la carrière parlementaire : ce sont ceux de la fiche de chaque élu."
+                  : `Taux calculés sur le mandat en cours, pour comparer les élus sur la même période. La fiche d'un élu présente sa carrière entière${avecPeriode ? " : choisissez « Carrière complète » pour retrouver ses chiffres." : "."}`}
+              </p>
+              {params.chambre === "senat" && critere === "presence" ? null : (
+                <p>
+                  « n.c. » : non classé, moins de 50 scrutins sur la période, trop peu pour comparer
+                  ce taux.
+                </p>
+              )}
+            </div>
+          ) : null}
           <Pagination
             page={resultats.page}
             total={resultats.totalPages}

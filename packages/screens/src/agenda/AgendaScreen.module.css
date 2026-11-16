@@ -196,3 +196,32 @@
   font-size: var(--clair-texte-sm-taille);
   color: var(--clair-texte-mention);
 }
+
+/* Déplie l'ordre du jour coupé dans la carte (bouton texte, comme `ExpandableText`). */
+.deplier {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: var(--clair-espacement-1v);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--clair-texte-action);
+  font-family: inherit;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  cursor: pointer;
+}
+
+.deplier:hover {
+  text-decoration: underline;
+}
+
+.chevron {
+  width: var(--clair-texte-sm-taille);
+  height: var(--clair-texte-sm-taille);
+}
+
+.deplier[aria-expanded="true"] .chevron {
+  transform: rotate(180deg);
+}

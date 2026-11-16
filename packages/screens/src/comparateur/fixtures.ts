@@ -1,4 +1,11 @@
-import type { ApiData, PageVotes, ParlementaireCompare, VoteDuParlementaire } from "@clair/data";
+import type {
+  AmendementParlementaire,
+  ApiData,
+  PageAmendements,
+  PageVotes,
+  ParlementaireCompare,
+  VoteDuParlementaire,
+} from "@clair/data";
 
 /** Données FICTIVES (« Camille Exemple ») : jamais présentées comme réelles. */
 
@@ -79,3 +86,35 @@ export const votesDominique = page([
   vote("d", 2, "contre"),
   vote("d", 3, "pour"),
 ]);
+
+/** Amendement FICTIF de « Camille Exemple » (numéro et texte inventés). */
+const amendement = (numero: number): AmendementParlementaire => ({
+  id: `amendement-${numero}`,
+  uid: `AMANR5L17FICTIF${numero}`,
+  numero: String(numero),
+  legislature: 17,
+  chambre: "assemblee",
+  texteRef: null,
+  articleVise: "Article 1er",
+  alinea: null,
+  dispositif: "Texte fictif du dispositif.",
+  exposeSommaire: `Exposé fictif de l'amendement ${numero}.`,
+  auteurLibelle: "Mme Camille Exemple",
+  sort: numero % 2 === 0 ? "Adopté" : "Rejeté",
+  dateDepot: "2026-10-01T00:00:00.000Z",
+  dateSort: null,
+  amendementParent: null,
+  scrutins: [],
+  dossier: null,
+});
+
+/** Page `page` des amendements de Camille Exemple : douze au total, dix par page. */
+export const amendementsCamille = (query: Record<string, unknown>): PageAmendements => {
+  const page = Number(query.page ?? 1);
+  const tous = Array.from({ length: 12 }, (_, index) => amendement(index + 1));
+  const data = tous.slice((page - 1) * 10, page * 10);
+  return {
+    data,
+    meta: { total: 12, page, limit: 10, totalPages: 2, hasNext: page < 2, hasPrev: page > 1 },
+  };
+};

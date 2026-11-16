@@ -6,7 +6,11 @@ import { defineConfig } from "vitest/config";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
-/** Chaque story est rendue dans Chromium et vérifiée par axe (addon a11y en mode erreur). */
+/**
+ * Chaque story est rendue dans Chromium et vérifiée par axe (addon a11y en mode erreur). Depuis
+ * Storybook 10.3, le plugin applique lui-même les annotations du projet (preview.tsx, addons) :
+ * plus de fichier de setup.
+ */
 export default defineConfig({
   test: {
     projects: [
@@ -21,7 +25,6 @@ export default defineConfig({
             provider: playwright({}),
             instances: [{ browser: "chromium" }],
           },
-          setupFiles: [".storybook/vitest.setup.ts"],
         },
       },
     ],

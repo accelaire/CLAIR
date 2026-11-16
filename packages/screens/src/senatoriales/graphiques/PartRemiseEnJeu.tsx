@@ -41,7 +41,8 @@ export const PartRemiseEnJeu = ({
               <EntreeGraphique
                 selectionnable={interactif}
                 onSelect={() => onSelection?.(mandatIds, groupe.nom)}
-                libelle={`Surligner les sortants du groupe ${groupe.nom}, ${groupe.sieges} sur ${groupe.siegesSenat} sièges, ${part} %`}
+                // Le nom reprend le texte visible (« 2/10 sièges · 20 % ») : WCAG 2.5.3.
+                libelle={`Surligner les sortants du groupe ${groupe.nom} : ${groupe.sieges}/${groupe.siegesSenat} siège${groupe.siegesSenat > 1 ? "s" : ""} · ${part} %`}
                 gestionnaires={gestionnaires({
                   titre: groupe.nom,
                   lignes: [
@@ -60,7 +61,7 @@ export const PartRemiseEnJeu = ({
                       aria-hidden="true"
                     />
                     <strong className={classes.libelleTronque}>{groupe.nom}</strong>
-                  </span>
+                  </span>{" "}
                   <span className={`${classes.mention} clair-chiffres`}>
                     {groupe.sieges}/{groupe.siegesSenat} siège{groupe.siegesSenat > 1 ? "s" : ""} ·{" "}
                     <strong className={classes.fort}>{part} %</strong>

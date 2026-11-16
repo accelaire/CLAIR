@@ -7,7 +7,7 @@ description: "Carte d'un député ou d'un sénateur : photo, nom en lien vers la
 
 import { ParlementaireCard } from "@clair/ui";
 
-Carte d'un député ou d'un sénateur (paramètre `chambre`) : photo, nom (unique lien, vers la fiche, dont la zone couvre la carte), groupe, circonscription ou département, et statut (ancien élu). En mode comparateur, une case « Comparer » distincte du lien sélectionne la personne. Remplace `.depute-card`, les cartes des listes des députés et des sénateurs et `SortantCard` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-parlementaire-parlementairecard--docs)
+Carte d'un député ou d'un sénateur (paramètre `chambre`) : photo, nom (unique lien, vers la fiche, dont la zone couvre la carte), groupe, circonscription ou département, et statut (ancien élu). En mode comparateur, une case « Comparer » distincte du lien, placée sous le nom, sélectionne la personne. Remplace `.depute-card`, les cartes des listes des députés et des sénateurs et `SortantCard` du site actuel. [Toutes les variantes dans l'atelier Storybook](https://storybook.clair.vote/?path=/docs/composants-parlementaire-parlementairecard--docs)
 
 ## Import
 
@@ -153,6 +153,26 @@ import { ParlementaireCard } from "@clair/ui";
     actif: true,
     groupe: { nom: "ECO", nomComplet: "Écologiste et Social", couleur: null },
     circonscription: { nom: "Exemple-sur-Mer", departement: "99", numero: 1 },
+  }}
+/>
+```
+
+## Avec une fonction dans un organe
+
+`fonction` écrit la qualité d'un membre (« Présidente », « Secrétaire ») en badge à côté du nom, dans le lien ; `fonctionTone` en règle le ton (`info` par défaut). `compact` resserre la carte (marges, petite photo, détails sur une ligne) pour les longues listes, comme les membres d'une commission.
+
+```tsx
+<ParlementaireCard
+  chambre="assemblee"
+  href="#"
+  fonction="Présidente"
+  compact
+  parlementaire={{
+    prenom: "Camille",
+    nom: "Exemple",
+    photoUrl: null,
+    groupe: { nom: "ECO", nomComplet: "Écologiste et Social", couleur: null },
+    circonscription: null,
   }}
 />
 ```

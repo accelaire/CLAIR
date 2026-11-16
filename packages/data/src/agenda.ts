@@ -165,3 +165,29 @@ export type DebatDeReunionPage = {
 export type InterventionComplete = {
   data: { id: string; contenu: string; sourceUrl: string | null };
 };
+
+/**
+ * Retransmissions en direct du jour (`/agenda/direct`). Ce n'est pas une route de l'API : le site
+ * (`apps/site`) la sert lui-même, d'après les chaînes vidéo de l'Assemblée et du Sénat, comme
+ * `/api/live-now` dans apps/web. Liens officiels des chambres, rien de calculé.
+ */
+export type DirectCommission = {
+  /** Organe réuni (`PO59046`…), comme `AgendaCommission.organeRef`. */
+  organeRef: string;
+  directUrl: string;
+  chambre: Chambre;
+};
+
+export type DirectSeance = {
+  /** Jour de la séance (`YYYY-MM-DD`). */
+  isoDate: string;
+  /** Rang de la séance dans la journée (1re, 2e… ; au Sénat : matin, après-midi, soir). */
+  order: number;
+  directUrl: string;
+  chambre: Chambre;
+};
+
+export type DirectsDuJour = {
+  commissions: DirectCommission[];
+  seances: DirectSeance[];
+};

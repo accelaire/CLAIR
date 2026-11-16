@@ -20,7 +20,7 @@
 .list,
 .grid {
   display: grid;
-  gap: var(--clair-espacement-4v);
+  gap: var(--clair-espacement-3v);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -50,14 +50,15 @@
   line-height: var(--clair-texte-xs-interligne);
 }
 
+/* Cartes resserrées, comme dans apps/web : dates et décomptes en petit texte. */
 .meta {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--clair-espacement-1v) var(--clair-espacement-3v);
+  gap: 0 var(--clair-espacement-3v);
   margin: 0;
   color: var(--clair-texte-mention);
-  font-size: var(--clair-texte-sm-taille);
-  line-height: var(--clair-texte-sm-interligne);
+  font-size: var(--clair-texte-xs-taille);
+  line-height: var(--clair-texte-xs-interligne);
 }
 
 .metaItem {
@@ -67,8 +68,8 @@
 }
 
 .icon {
-  width: var(--clair-espacement-4v);
-  height: var(--clair-espacement-4v);
+  width: var(--clair-espacement-3v);
+  height: var(--clair-espacement-3v);
   flex-shrink: 0;
 }
 

@@ -15,7 +15,8 @@ type ListeOngletProps<T> = {
   /** Filtres de l'onglet, au-dessus de la liste. */
   filtres?: ReactNode;
   pageHref: (page: number) => string;
-  renderItem: (item: T) => ReactNode;
+  /** `rang` : position de l'élément dans la page (0 pour le premier). */
+  renderItem: (item: T, rang: number) => ReactNode;
   getKey: (item: T) => string;
 };
 
@@ -52,8 +53,8 @@ export const ListeOnglet = <T,>({
             {page.totalPages > 1 ? ` — page ${page.page} sur ${page.totalPages}` : null}
           </p>
           <ul className={classes.liste}>
-            {page.items.map((item) => (
-              <li key={getKey(item)}>{renderItem(item)}</li>
+            {page.items.map((item, rang) => (
+              <li key={getKey(item)}>{renderItem(item, rang)}</li>
             ))}
           </ul>
           <Pagination

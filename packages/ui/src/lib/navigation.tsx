@@ -17,12 +17,18 @@ export type LinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & { href: string
 export type Navigation = {
   Link: ComponentType<LinkProps>;
   navigate: (href: string) => void;
+  /**
+   * Remplace l'adresse courante sans ajouter d'entrée à l'historique (une ancre d'un ancien
+   * lien traduite en paramètre, par exemple). Absente : `navigate`.
+   */
+  replace?: (href: string) => void;
   pathname: string;
 };
 
 const defaultNavigation: Navigation = {
   Link: (props) => <a {...props} />,
   navigate: (href) => window.location.assign(href),
+  replace: (href) => window.location.replace(href),
   pathname: "/",
 };
 

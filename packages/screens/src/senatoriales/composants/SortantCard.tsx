@@ -132,7 +132,7 @@ export const SortantCard = ({
       <span className={classes.bilan}>
         {(
           [
-            [fmt(sortant.bilan.presence, " %"), "Présence"],
+            [fmt(sortant.bilan.presence, " %"), "Présence (solennels)"],
             [fmt(sortant.bilan.loyaute, " %"), "Loyauté"],
             [fmt(sortant.bilan.interventions), "Interventions"],
             [fmt(sortant.bilan.amendements), "Amendements"],

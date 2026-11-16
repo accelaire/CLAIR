@@ -17,6 +17,7 @@ export const OngletAmendements = ({
   changer,
   pageHref,
   dateMin,
+  deuxChambres,
 }: OngletProps) => {
   const query = useApiQuery<PageAmendements>(
     `${chemin}/${slug}/amendements`,
@@ -48,7 +49,12 @@ export const OngletAmendements = ({
       )}
       filtres={
         <>
-          <PeriodeFiltre filtres={filtres} changer={changer} dateMin={dateMin} />
+          <PeriodeFiltre
+            filtres={filtres}
+            changer={changer}
+            dateMin={dateMin}
+            deuxChambres={deuxChambres}
+          />
           <Checkbox
             label="Uniquement les amendements mis aux voix par scrutin public"
             checked={filtres.votesPublics}

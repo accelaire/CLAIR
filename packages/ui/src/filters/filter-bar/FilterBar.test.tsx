@@ -48,6 +48,13 @@ describe("FilterBar", () => {
     ).toHaveAttribute("aria-expanded", "false");
   });
 
+  it("résume les choix en cours à côté du bouton du tiroir", () => {
+    const { getByText } = renderWithProviders(
+      <FilterBar summary="Critère : Présence">{filtre}</FilterBar>,
+    );
+    expect(getByText("Critère : Présence")).toBeInTheDocument();
+  });
+
   it("ouvre le tiroir des filtres et le ferme avec Échap", async () => {
     const { getByRole, queryByRole } = renderWithProviders(<FilterBar>{filtre}</FilterBar>);
     const toggle = getByRole("button", { name: "Filtres", hidden: true });

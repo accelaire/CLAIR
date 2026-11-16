@@ -21,6 +21,21 @@ const meta = {
     },
     href: { description: "Adresse de la fiche (unique lien).", table: { category: "Contenu" } },
     statut: { description: "Statut affiché en badge.", table: { category: "Contenu" } },
+    fonction: {
+      description: "Fonction dans un organe, en badge à côté du nom.",
+      table: { category: "Contenu" },
+    },
+    fonctionTone: {
+      description: "Ton du badge de fonction.",
+      control: "select",
+      options: ["neutre", "info", "succes", "erreur", "avertissement"],
+      table: { category: "Apparence" },
+    },
+    compact: {
+      description: "Carte resserrée pour les longues listes.",
+      control: "boolean",
+      table: { category: "Apparence" },
+    },
     selectable: {
       description: "Ajoute la case « Comparer » du comparateur.",
       control: "boolean",
@@ -67,6 +82,16 @@ export const Senateur: Story = {
 
 export const AncienElu: Story = {
   args: { parlementaire: ancienDeputeExemple, href: "#alex-fictif" },
+};
+
+/** Membre d'un organe : la fonction en badge à côté du nom, carte resserrée. */
+export const FonctionCompacte: Story = {
+  args: { fonction: "Présidente", compact: true },
+  play: async ({ canvasElement }) => {
+    await expect(
+      within(canvasElement).getByRole("link", { name: "Camille Exemple Présidente" }),
+    ).toBeVisible();
+  },
 };
 
 const Selectionnable = (args: ParlementaireCardProps) => {

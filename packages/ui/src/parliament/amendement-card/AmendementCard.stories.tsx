@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within } from "storybook/test";
-import { amendementAdopte, sousAmendement } from "../fixtures.ts";
+import { amendementAdopte, amendementAvecRenvoi, sousAmendement } from "../fixtures.ts";
 import { AmendementCard } from "./AmendementCard.tsx";
 
 const meta = {
@@ -59,6 +59,17 @@ export const Deplie: Story = {
     await userEvent.click(bouton);
     await expect(bouton).toHaveAttribute("aria-expanded", "true");
     await expect(bouton).toHaveAccessibleName(/Réduire/);
+  },
+};
+
+/** Les articles cités par le dispositif mènent à Légifrance (renvoi fictif). */
+export const RenvoiLegifrance: Story = {
+  args: { amendement: amendementAvecRenvoi, scrutins: [], dossier: null },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const lien = canvas.getByRole("link", { name: /l'article L\. 123-4 du code de l'exemple/ });
+    await expect(lien).toHaveAttribute("target", "_blank");
+    await expect(lien).toHaveAccessibleName(/Légifrance, nouvel onglet/);
   },
 };
 

@@ -5,13 +5,16 @@
   "type": "module",
   "description": "Atelier de développement des composants de CLAIR (Storybook 10) : stories, tests, accessibilité, captures.",
   "scripts": {
-    "dev": "storybook dev -p 6006 --no-open",
+    "dev": "storybook dev -p 3050 --no-open",
     "build": "storybook build -o storybook-static",
     "type-check": "tsc --noEmit",
     "capture": "node scripts/capture.mjs",
     "test:stories": "vitest run"
   },
   "dependencies": {
+    "@clair/api-client": "workspace:*",
+    "@clair/data": "workspace:*",
+    "@clair/screens": "workspace:*",
     "@clair/theme": "workspace:*",
     "@clair/ui": "workspace:*",
     "@mantine/charts": "catalog:",
@@ -38,6 +41,7 @@
     "@vitejs/plugin-react": "catalog:",
     "@vitest/browser": "catalog:",
     "@vitest/browser-playwright": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
     "postcss": "catalog:",
     "postcss-preset-mantine": "catalog:",
     "postcss-simple-vars": "catalog:",

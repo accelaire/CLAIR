@@ -1,6 +1,6 @@
 import type { DataTableColumn } from "./data-table/DataTable.tsx";
 import type { LegislativeStep } from "./legislative-timeline/LegislativeTimeline.tsx";
-import type { Mandat } from "./mandats-timeline/MandatsTimeline.tsx";
+import type { Mandat, PosteGouvernemental } from "./mandats-timeline/MandatsTimeline.tsx";
 import type { TopFlopItem } from "./top-flop/TopFlop.tsx";
 
 /*
@@ -188,6 +188,25 @@ export const mandatUnique: Mandat[] = [
         dateDebut: "2024-07-20",
       },
     ],
+  },
+];
+
+/** Postes au Gouvernement de la même personne fictive, entre deux mandats. Gouvernements inventés. */
+export const postesExemple: PosteGouvernemental[] = [
+  {
+    id: "pm-2",
+    libelle: "Ministre déléguée · Exemples numériques",
+    dateDebut: "2020-07-26",
+    dateFin: "2022-05-20",
+    gouvernement: { nom: "Exemple II", href: "#gouvernement" },
+    details: "2 textes portés, dont 1 promulgué · 14 réponses en séance",
+  },
+  {
+    id: "pm-1",
+    libelle: "Secrétaire d'État · Modèles",
+    dateDebut: "2019-03-31",
+    dateFin: "2020-07-06",
+    gouvernement: { nom: "Exemple I" },
   },
 ];
 

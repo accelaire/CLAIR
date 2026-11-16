@@ -3,7 +3,7 @@
 //   pnpm storybook:capture <storyId> [--theme dark] [--viewport xs] [--width 1280]
 //
 // Sert le build statique (storybook-static, `pnpm --filter @clair/storybook build`) sur un port
-// libre, ou utilise un Storybook déjà lancé avec --url http://localhost:6006.
+// libre, ou utilise un Storybook déjà lancé avec --url http://localhost:3050.
 // Les PNG sont écrits dans apps/storybook/.captures/ (ignoré par git).
 import { createReadStream, existsSync, mkdirSync, statSync } from "node:fs";
 import { createServer } from "node:http";

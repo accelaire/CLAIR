@@ -1,7 +1,7 @@
 "use client";
 
 import { useApiQuery } from "@clair/api-client";
-import type { ApiData, GroupeClasse } from "@clair/data";
+import { type ApiData, type GroupeClasse, PRESENCE_SENAT_EXPLICATION } from "@clair/data";
 import {
   Badge,
   ChambreBadge,
@@ -31,7 +31,7 @@ const OPTIONS: { value: CritereGroupe; label: string }[] = [
 const valeur = (groupe: GroupeClasse, critere: CritereGroupe) => {
   switch (critere) {
     case "presence":
-      return groupe.statsPresenceMoyenne;
+      return presenceGroupe(groupe);
     case "loyaute":
       return groupe.statsLoyauteMoyenne;
     case "cohesion":
@@ -40,6 +40,13 @@ const valeur = (groupe: GroupeClasse, critere: CritereGroupe) => {
       return groupe.membresActifsCount;
   }
 };
+
+/**
+ * Présence moyenne d'un groupe : aux votes solennels au Sénat, où les scrutins ordinaires se votent
+ * par groupe (#108).
+ */
+const presenceGroupe = (groupe: GroupeClasse) =>
+  groupe.chambre === "senat" ? groupe.statsPresenceSolennelMoyenne : groupe.statsPresenceMoyenne;
 
 const pourcent = (nombre: number | null) => (nombre === null ? "—" : formatPourcent(nombre));
 
@@ -74,11 +81,18 @@ export const OngletGroupes = ({ params, update }: OngletGroupesProps) => {
         </span>
       ),
     },
-    {
-      key: "chambre",
-      header: "Chambre",
-      cell: (groupe) => <ChambreBadge chambre={groupe.chambre} short size="sm" />,
-    },
+    // Une seule chambre filtrée : la colonne répéterait la même valeur sur chaque ligne.
+    ...(params.chambre
+      ? []
+      : [
+          {
+            key: "chambre",
+            header: "Chambre",
+            cell: (groupe: GroupeClasse) => (
+              <ChambreBadge chambre={groupe.chambre} short size="sm" />
+            ),
+          },
+        ]),
     {
       key: "membres",
       header: "Membres",
@@ -89,7 +103,7 @@ export const OngletGroupes = ({ params, update }: OngletGroupesProps) => {
       key: "presence",
       header: "Présence",
       align: "end",
-      cell: (groupe) => pourcent(groupe.statsPresenceMoyenne),
+      cell: (groupe) => pourcent(presenceGroupe(groupe)),
     },
     {
       key: "loyaute",
@@ -107,7 +121,10 @@ export const OngletGroupes = ({ params, update }: OngletGroupesProps) => {
 
   return (
     <div className={classes.onglet}>
-      <FilterBar label="Filtrer le classement des groupes">
+      <FilterBar
+        label="Filtrer le classement des groupes"
+        summary={`Critère : ${OPTIONS.find((option) => option.value === params.groupeSort)?.label ?? params.groupeSort}`}
+      >
         <ChambreSwitch value={params.chambre} onChange={(chambre) => update({ chambre })} />
         <SortSelect
           label="Critère"
@@ -139,6 +156,12 @@ export const OngletGroupes = ({ params, update }: OngletGroupesProps) => {
           <p className={classes.provenance}>
             <ProvenanceLabel provenance="calculee" methodologyHref={METHODOLOGIE_INDICATEURS} />
           </p>
+          {params.chambre !== "assemblee" ? (
+            <p className={classes.note}>
+              Au Sénat, la présence moyenne d'un groupe est celle de ses membres aux votes
+              solennels. {PRESENCE_SENAT_EXPLICATION}
+            </p>
+          ) : null}
         </>
       )}
     </div>

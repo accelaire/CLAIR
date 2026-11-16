@@ -1,5 +1,6 @@
 "use client";
 
+import type { RenvoiDispositif } from "@clair/data";
 import { CornerDownRight } from "lucide-react";
 import { Badge } from "../../core/badge/Badge.tsx";
 import { Card, type CardHeading } from "../../core/card/Card.tsx";
@@ -10,6 +11,7 @@ import { parseStatut } from "../../core/statut-badge/statuts.ts";
 import { Quand } from "../../lib/dates.tsx";
 import { GroupeBadge, type GroupeBadgeProps } from "../groupe-badge/GroupeBadge.tsx";
 import classes from "./AmendementCard.module.css";
+import { TexteAmendement } from "./TexteAmendement.tsx";
 
 /** Ce qu'il faut d'un amendement (`/dossiers/:uid/amendements`, fiches) pour en faire une carte. */
 export type AmendementCardData = {
@@ -23,6 +25,8 @@ export type AmendementCardData = {
   /** Exposé sommaire (HTML de la source accepté : il est réduit à son texte). */
   exposeSommaire?: string | null;
   dispositif?: string | null;
+  /** Renvois au droit en vigueur cités par le dispositif : liens Légifrance. */
+  renvois?: readonly RenvoiDispositif[] | null;
   dateDepot?: string | null;
   texteRef?: string | null;
   /** Amendement que celui-ci sous-amende. */
@@ -67,9 +71,37 @@ const texteDe = (html: string) =>
 const premierAuteur = (libelle: string | null | undefined) =>
   libelle?.split(/,\s*|\s+et\s+/u)[0]?.trim() || null;
 
+/**
+ * L'auteur et le nombre de cosignataires plutôt que la liste entière (apps/web,
+ * `auteurEtCosignataires`) : un amendement de groupe porte jusqu'à 70 noms. Deux noms au plus :
+ * la liste telle quelle.
+ */
+const auteurEtCosignataires = (libelle: string) => {
+  const noms = libelle
+    .split(/,\s*|\s+et\s+/u)
+    .map((nom) => nom.trim())
+    .filter(Boolean);
+  if (noms.length <= 2) return { court: libelle, nbCosignataires: 0 };
+  return { court: noms[0] ?? libelle, nbCosignataires: noms.length - 1 };
+};
+
 /** « de M. X », mais « du Gouvernement ». */
 const deLAuteur = (auteur: string) =>
   /^le gouvernement$/iu.test(auteur) ? "du Gouvernement" : `de ${auteur}`;
+
+/** « Mme A et 12 cosignataires », la liste complète dépliable (`details`, natif au clavier). */
+const Auteurs = ({ libelle }: { libelle: string }) => {
+  const { court, nbCosignataires } = auteurEtCosignataires(libelle);
+  if (nbCosignataires === 0) return <span>{libelle}</span>;
+  return (
+    <details className={classes.cosignataires}>
+      <summary>
+        {court} et {nbCosignataires} cosignataire{nbCosignataires > 1 ? "s" : ""}
+      </summary>
+      <p className={classes.liste}>{libelle}</p>
+    </details>
+  );
+};
 
 const SOUS_TITRE: Record<CardHeading, CardHeading> = {
   h2: "h3",
@@ -81,7 +113,7 @@ const SOUS_TITRE: Record<CardHeading, CardHeading> = {
 
 /**
  * Carte d'un amendement : numéro, sort, article visé, auteur et groupe, exposé sommaire repliable
- * (« Lire la suite »), dispositif, mention de sous-amendement, liens vers les scrutins et le dossier.
+ * (« Lire la suite »), dispositif avec ses liens Légifrance (`renvois`), mention de sous-amendement, liens vers les scrutins et le dossier.
  * Fusionne `ExpandableAmendementCard.tsx`, son doublon de la fiche sénateur et `AmendementSeance.tsx`.
  */
 export const AmendementCard = ({
@@ -104,16 +136,22 @@ export const AmendementCard = ({
   const parent = amendement.amendementParent;
   const auteurParent = premierAuteur(parent?.auteurLibelle);
   const expose = amendement.exposeSommaire ? texteDe(amendement.exposeSommaire) : "";
-  const dispositif = amendement.dispositif ? texteDe(amendement.dispositif) : "";
+  /** Brut : les positions des renvois portent sur le texte tel que l'API le sert. */
+  const dispositif =
+    amendement.dispositif && texteDe(amendement.dispositif) ? amendement.dispositif : "";
 
   const libelleParent = parent
     ? `l'amendement n° ${parent.numero}${auteurParent ? ` ${deLAuteur(auteurParent)}` : ""}`
     : "";
 
+  // Dans une liste, l'enveloppe est l'élément de liste (`<li>` enfant direct du `<ul>`), et la
+  // carte un simple bloc à l'intérieur.
+  const Racine = as === "li" ? "li" : "div";
+
   return (
-    <div id={id} className={classes.root} data-highlighted={highlighted || undefined}>
+    <Racine id={id} className={classes.root} data-highlighted={highlighted || undefined}>
       <Card
-        as={as}
+        as={as === "li" ? "div" : as}
         titleAs={titleAs}
         title={`Amendement n° ${amendement.numero}`}
         eyebrow={
@@ -159,8 +197,8 @@ export const AmendementCard = ({
             </p>
           ) : null}
           {showAuteur && (amendement.auteurLibelle || groupe) ? (
-            <p className={classes.auteur}>
-              {amendement.auteurLibelle ? <span>{amendement.auteurLibelle}</span> : null}
+            <div className={classes.auteur}>
+              {amendement.auteurLibelle ? <Auteurs libelle={amendement.auteurLibelle} /> : null}
               {groupe ? (
                 <GroupeBadge
                   sigle={groupe.sigle}
@@ -169,7 +207,7 @@ export const AmendementCard = ({
                   size="sm"
                 />
               ) : null}
-            </p>
+            </div>
           ) : null}
           {expose ? (
             <section className={classes.section}>
@@ -180,7 +218,11 @@ export const AmendementCard = ({
           {dispositif ? (
             <section className={classes.section}>
               <SubHeading className={classes.sectionTitle}>Dispositif</SubHeading>
-              <ExpandableText maxLength={160}>{dispositif}</ExpandableText>
+              <TexteAmendement
+                texte={dispositif}
+                renvois={amendement.renvois ?? undefined}
+                maxLength={160}
+              />
             </section>
           ) : null}
           {scrutins.length > 0 || dossier ? (
@@ -202,6 +244,6 @@ export const AmendementCard = ({
           ) : null}
         </div>
       </Card>
-    </div>
+    </Racine>
   );
 };

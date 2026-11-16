@@ -23,7 +23,7 @@ export const SujetCard = ({ sujet, aLaUne = false, titleAs = "h3" }: SujetCardPr
       titleAs={titleAs}
       href={`/sujets/${sujet.slug}`}
       title={sujet.label}
-      padding={aLaUne ? "lg" : "md"}
+      padding={aLaUne ? "md" : "sm"}
       className={aLaUne ? classes.aLaUne : undefined}
       eyebrow={
         <>

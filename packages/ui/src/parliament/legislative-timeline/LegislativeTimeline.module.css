@@ -102,3 +102,147 @@
   line-height: var(--clair-texte-xs-interligne);
   color: var(--clair-texte-mention);
 }
+
+/*
+ * Frise « responsive » : liste verticale sur mobile, horizontale sur grand écran (apps/web).
+ * Puces et traits sont décoratifs : le statut de chaque étape est écrit.
+ */
+.frise {
+  --frise-puce: var(--clair-espacement-6v);
+  --frise-trait: calc(var(--clair-espacement-1v) / 2);
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.palier {
+  position: relative;
+  display: flex;
+  gap: var(--clair-espacement-3v);
+  padding-bottom: var(--clair-espacement-4v);
+}
+
+.palier:last-child {
+  padding-bottom: 0;
+}
+
+/* Trait vers l'étape suivante : plein jusqu'à la dernière étape atteinte, pointillé ensuite. */
+.palier:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: var(--frise-puce);
+  bottom: 0;
+  left: calc(var(--frise-puce) / 2 - var(--frise-trait) / 2);
+  border-inline-start: var(--frise-trait) solid var(--clair-bordure-defaut);
+}
+
+.palier[data-status="done"]:not(:last-child)::before {
+  border-color: var(--clair-statut-succes);
+}
+
+.palier[data-next-pending]:not(:last-child)::before {
+  border-style: dashed;
+  border-color: var(--clair-bordure-forte);
+}
+
+.puce {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--frise-puce);
+  height: var(--frise-puce);
+  border: var(--frise-trait) solid var(--clair-bordure-forte);
+  border-radius: var(--clair-rayon-pilule);
+  background: var(--clair-fond-surface);
+  color: var(--clair-fond-page);
+}
+
+.palier[data-status="done"] .puce {
+  border-color: var(--clair-statut-succes);
+  background: var(--clair-statut-succes);
+}
+
+.palier[data-status="active"] .puce {
+  border-width: var(--clair-espacement-1v);
+  border-color: var(--clair-statut-info);
+}
+
+.palier .puce svg {
+  width: var(--clair-espacement-4v);
+  height: var(--clair-espacement-4v);
+}
+
+.palierCorps {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: var(--clair-espacement-1v);
+  min-width: 0;
+}
+
+.palierTitre {
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+  font-weight: 600;
+  color: var(--clair-texte-defaut);
+}
+
+.palier[data-status="pending"] .palierTitre {
+  font-weight: 500;
+  color: var(--clair-texte-mention);
+}
+
+.palierCorps .detail {
+  margin: 0;
+}
+
+@media (min-width: 1024px) {
+  .frise {
+    flex-direction: row;
+    flex-wrap: wrap;
+    row-gap: var(--clair-espacement-6v);
+  }
+
+  .palier {
+    flex: 1 1 0;
+    flex-direction: column;
+    align-items: center;
+    min-width: calc(var(--clair-espacement-16v) + var(--clair-espacement-6v));
+    padding: 0 var(--clair-espacement-1v);
+    text-align: center;
+  }
+
+  /* Trait horizontal, du bord de cette puce à celui de la suivante (étapes de même largeur). */
+  .palier:not(:last-child)::before {
+    top: calc(var(--frise-puce) / 2 - var(--frise-trait) / 2);
+    right: calc(-50% + var(--frise-puce) / 2 + var(--clair-espacement-1v));
+    bottom: auto;
+    left: calc(50% + var(--frise-puce) / 2 + var(--clair-espacement-1v));
+    border-inline-start: 0;
+    border-top: var(--frise-trait) solid var(--clair-bordure-defaut);
+  }
+
+  .palier[data-status="done"]:not(:last-child)::before {
+    border-color: var(--clair-statut-succes);
+  }
+
+  .palier[data-next-pending]:not(:last-child)::before {
+    border-style: dashed;
+    border-color: var(--clair-bordure-forte);
+  }
+
+  .palierCorps {
+    align-items: center;
+  }
+
+  .palierCorps .meta {
+    justify-content: center;
+  }
+}

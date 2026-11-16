@@ -26,6 +26,18 @@
   color: var(--clair-texte-titre);
 }
 
+/*
+ * Titre du scrutin : sur petit écran, l'intitulé officiel (souvent plus de 150 signes) passe à la
+ * taille d'un h4, comme dans apps/web ; il prenait huit lignes.
+ */
+@media (max-width: 767px) {
+  .titre {
+    display: block;
+    font-size: var(--clair-texte-h4-taille);
+    line-height: var(--clair-texte-h4-interligne);
+  }
+}
+
 .mention {
   margin: var(--clair-espacement-2v) 0 0;
   font-size: var(--clair-texte-sm-taille);
@@ -267,4 +279,73 @@
   gap: var(--clair-espacement-2v);
   margin: 0 0 var(--clair-espacement-2v);
   font-weight: var(--clair-texte-h6-graisse);
+}
+
+/* « Afficher les N autres » sous les élus d'une position. */
+.plus {
+  margin-top: var(--clair-espacement-3v);
+}
+
+/* Liens sous la défense d'un amendement : débat du vote, passage dans la séance. */
+.defenseLiens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clair-espacement-1v) var(--clair-espacement-4v);
+  margin: 0;
+  font-size: var(--clair-texte-sm-taille);
+  line-height: var(--clair-texte-sm-interligne);
+}
+
+.defenseIcone {
+  width: 1em;
+  height: 1em;
+  margin-inline-end: var(--clair-espacement-1v);
+  vertical-align: -0.125em;
+}
+
+/* Photo et nom d'un votant. */
+.eluNom {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clair-espacement-2v);
+  min-width: 0;
+}
+
+/* Groupe et barre de répartition de ses voix, dans le tableau par groupe. */
+.groupeCellule {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clair-espacement-1v);
+  min-width: calc(var(--clair-espacement-16v) * 2);
+}
+
+.repartition {
+  width: 100%;
+}
+
+/* Sur petit écran, l'en-tête du scrutin se resserre : il repoussait les onglets (débats, vote). */
+@media (max-width: 1023px) {
+  .resume {
+    padding: var(--clair-espacement-4v);
+  }
+
+  .resume p {
+    font-size: var(--clair-texte-sm-taille);
+    line-height: var(--clair-texte-sm-interligne);
+  }
+
+  .infos {
+    padding: var(--clair-espacement-4v);
+  }
+
+  /* Informations sur deux colonnes ; demandeurs et thématiques gardent toute la largeur. */
+  .dl {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--clair-espacement-3v) var(--clair-espacement-4v);
+  }
+
+  .large {
+    grid-column: 1 / -1;
+  }
 }

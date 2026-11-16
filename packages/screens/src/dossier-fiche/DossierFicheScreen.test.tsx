@@ -1,6 +1,7 @@
 import { ApiError } from "@clair/api-client";
 import { fireEvent } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { contexteGouvernementalExemple } from "../shared/contexte-gouvernemental/fixtures.ts";
 import { renderScreen } from "../test-utils.tsx";
 import { DossierFicheScreen, ongletEffectif } from "./DossierFicheScreen.tsx";
 import {
@@ -30,7 +31,7 @@ describe("DossierFicheScreen", () => {
   });
 
   it("présente le dossier, son résumé IA signalé et ouvre le parcours par défaut", async () => {
-    const { getByRole, findByRole, getByText } = renderScreen(
+    const { getByRole, findByRole, getByText, queryByRole } = renderScreen(
       <DossierFicheScreen
         uid="DLEXEMPLE1"
         initialData={{ dossier: dossierDetailExemple, parcours: [etapeExemple] }}
@@ -46,10 +47,25 @@ describe("DossierFicheScreen", () => {
       "/commissions/commission-exemple",
     );
     expect(getByRole("tab", { name: /Parcours/, selected: true })).toBeInTheDocument();
+    // Les votes de chaque étape sont repliés, comme dans apps/web : un clic les montre.
+    const bascule = getByRole("button", { name: /^1 vote de l'étape du/ });
+    expect(bascule).toHaveAttribute("aria-expanded", "false");
+    expect(queryByRole("link", { name: /Scrutin n° 42 : Scrutin d'exemple/ })).toBeNull();
+    fireEvent.click(bascule);
+    expect(bascule).toHaveAttribute("aria-expanded", "true");
     expect(await findByRole("link", { name: /Scrutin n° 42 : Scrutin d'exemple/ })).toHaveAttribute(
       "href",
       "/scrutins/42?chambre=senat&session=2025",
     );
+  });
+
+  it("présente le Gouvernement et ce texte quand l'API le renseigne", () => {
+    const dossier = { ...dossierDetailExemple, gouvernement: contexteGouvernementalExemple };
+    const { getByRole } = renderScreen(
+      <DossierFicheScreen uid="DLEXEMPLE1" initialData={{ dossier, parcours: [etapeExemple] }} />,
+      { routes: { ...routes(), [CHEMIN]: dossier }, pathname: CHEMIN },
+    );
+    expect(getByRole("region", { name: "Le Gouvernement et ce texte" })).toBeInTheDocument();
   });
 
   it("lit l'onglet dans l'URL et liste les scrutins avec leur chambre et leur session", async () => {
