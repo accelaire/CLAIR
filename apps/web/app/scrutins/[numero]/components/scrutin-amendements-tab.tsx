@@ -8,7 +8,7 @@ import { ExpandableText } from '@/components/ui/expandable-text';
 import { DiscussionsEtSousAmendements, SousAmendementDe } from '@/components/AmendementSeance';
 import { amendementHref, libelleAlinea, type MetadonneesAmendement } from '@/lib/amendements';
 import type { RenvoiDispositif } from '@/lib/texte-amendement';
-import { TexteAmendement } from '@/components/TexteAmendement';
+import { ContenuAmendement } from '@/components/ContenuAmendement';
 import type { InterventionScrutin } from './scrutin-debats-tab';
 
 export interface AmendementDetail extends MetadonneesAmendement {
@@ -100,32 +100,36 @@ export function ScrutinAmendementsTab({
                 )}
               </div>
               <span className="flex flex-shrink-0 items-center gap-1 text-xs text-muted-foreground">
-                {isOpen ? 'Replier' : 'Texte et exposé'}
+                {isOpen ? 'Replier' : 'Lire le texte'}
                 <ChevronDown className={`h-5 w-5 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
               </span>
             </button>
 
-            <DiscussionsEtSousAmendements
-              amendement={a}
-              dossierUid={a.dossier?.uid}
-              enTete={
-                a.amendementParent && (
-                  <SousAmendementDe amendement={a} dossierUid={a.dossier?.uid} className="mr-1" />
-                )
-              }
-            />
-
-            {/* La défense en séance, visible sans rien déplier : c'est la
-                parole de l'auteur sur ce qu'il demande, et la raison la plus
-                directe de venir sur la page d'un vote d'amendement. */}
-            {a.defense && (
-              <DefenseEnSeance
-                defense={a.defense}
-                chambre={chambre}
-                onVoirDebat={onVoirDebat}
-                seanceHref={seanceHref}
+            {/* Les pastilles et la défense espacées, sans marge en tête quand
+                l'amendement n'a pas de pastille. */}
+            <div className="space-y-3">
+              <DiscussionsEtSousAmendements
+                amendement={a}
+                dossierUid={a.dossier?.uid}
+                enTete={
+                  a.amendementParent && (
+                    <SousAmendementDe amendement={a} dossierUid={a.dossier?.uid} className="mr-1" />
+                  )
+                }
               />
-            )}
+
+              {/* La défense en séance, visible sans rien déplier : c'est la
+                  parole de l'auteur sur ce qu'il demande, et la raison la plus
+                  directe de venir sur la page d'un vote d'amendement. */}
+              {a.defense && (
+                <DefenseEnSeance
+                  defense={a.defense}
+                  chambre={chambre}
+                  onVoirDebat={onVoirDebat}
+                  seanceHref={seanceHref}
+                />
+              )}
+            </div>
 
             {isOpen && (
               <div className="pt-4 space-y-4">
@@ -140,30 +144,16 @@ export function ScrutinAmendementsTab({
                     <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
                   </Link>
                 )}
-                {a.dispositif && (
-                  <div>
-                    <h4 className="text-sm font-semibold mb-2">Texte de l&apos;amendement</h4>
-                    <div className="bg-muted/50 text-sm text-muted-foreground leading-relaxed rounded-lg p-4">
-                      <TexteAmendement texte={a.dispositif} renvois={a.renvois} />
-                    </div>
-                  </div>
-                )}
-                {a.exposeSommaire && (
-                  <div>
-                    <h4 className="text-sm font-semibold mb-2">Exposé des motifs</h4>
-                    <div className="bg-muted/50 text-sm text-muted-foreground leading-relaxed rounded-lg p-4">
-                      <TexteAmendement texte={a.exposeSommaire} />
-                    </div>
-                  </div>
-                )}
+                <ContenuAmendement
+                  dispositif={a.dispositif}
+                  renvois={a.renvois}
+                  exposeSommaire={a.exposeSommaire}
+                />
                 {auteurs && auteurs.nbCosignataires > 0 && (
                   <div>
-                    <h4 className="text-sm font-semibold mb-2">Signataires</h4>
+                    <h4 className="mb-1 text-xs font-semibold text-foreground">Signataires</h4>
                     <p className="text-sm text-muted-foreground leading-relaxed">{a.auteurLibelle}</p>
                   </div>
-                )}
-                {!a.dispositif && !a.exposeSommaire && (
-                  <p className="text-sm text-muted-foreground italic">Contenu non disponible</p>
                 )}
               </div>
             )}
