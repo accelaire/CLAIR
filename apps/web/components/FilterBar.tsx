@@ -6,19 +6,22 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { DateRangePickerEnLigne } from '@/components/DateRangePicker';
 
 interface FilterBarProps {
-  search: ReactNode;
+  /** Reste visible sur mobile, à côté du bouton « Filtres » (recherche, bascule de vue). */
+  search?: ReactNode;
   children: ReactNode;
   activeFilterCount?: number;
   onClear?: () => void;
+  /** Marge sous la barre ; `""` dans un onglet déjà espacé par son parent. */
+  className?: string;
 }
 
-export function FilterBar({ search, children, activeFilterCount = 0, onClear }: FilterBarProps) {
+export function FilterBar({ search, children, activeFilterCount = 0, onClear, className = 'mb-6' }: FilterBarProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
 
   return (
     <>
       {/* Desktop: inline layout */}
-      <div className="mb-6 hidden md:flex md:flex-wrap md:items-center md:gap-3">
+      <div className={`${className} hidden md:flex md:flex-wrap md:items-center md:gap-3`}>
         {search}
         {children}
         {activeFilterCount > 0 && onClear && (
@@ -34,8 +37,8 @@ export function FilterBar({ search, children, activeFilterCount = 0, onClear }: 
       </div>
 
       {/* Mobile: search + filter button */}
-      <div className="mb-6 flex items-center gap-3 md:hidden">
-        <div className="flex-1 min-w-0">{search}</div>
+      <div className={`${className} flex items-center gap-3 md:hidden`}>
+        {search && <div className="flex-1 min-w-0">{search}</div>}
         <button
           type="button"
           onClick={() => setSheetOpen(true)}

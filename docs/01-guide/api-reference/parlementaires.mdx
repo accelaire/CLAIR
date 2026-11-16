@@ -18,7 +18,9 @@ Les trois préfixes servent les mêmes routes sur la même table : `/parlementai
 | `GET` | `/api/v1/senateurs` | Même liste, restreinte aux sénateurs |
 | `GET` | `/api/v1/parlementaires/:slug` | Fiche d'un parlementaire : identité, mandats, statistiques, fiche IA. `fonctionsGouvernementales` liste ses postes ministériels et sa présidence de la République, s'il en a (voir `/gouvernements`) ; ils ne figurent pas dans `mandats`. Chaque poste depuis juin 2017 porte `bilan` (projets signés comme chef de file ou cosignataire, réponses en séance par chambre, et pour un Premier ministre ses 49.3 et motions), `membreSlug`, qui donne le détail à `/gouvernements/membres/:slug`, et le `rangProtocolaire` et le `domaine` du poste. `listes` donne la taille des listes de la fiche avec leurs filtres par défaut (`votes`, `interventions`, `amendements` déposés ou cosignés) |
 | `GET` | `/api/v1/parlementaires/:slug/votes` | Votes du parlementaire, filtrables |
+| `GET` | `/api/v1/parlementaires/:slug/votes/dossiers` | Ses votes résumés dossier par dossier |
 | `GET` | `/api/v1/parlementaires/:slug/amendements` | Amendements déposés et cosignés |
+| `GET` | `/api/v1/parlementaires/:slug/amendements/dossiers` | Ses amendements résumés dossier par dossier |
 | `GET` | `/api/v1/parlementaires/:slug/interventions` | Prises de parole en séance et en commission |
 | `GET` | `/api/v1/parlementaires/compare?slugs=a,b` | Comparaison de 2 à 4 parlementaires par leurs statistiques |
 
@@ -54,4 +56,36 @@ Les statistiques d'une fiche portent sur toute la carrière parlementaire, les d
 
 ## 🗳️ Votes d'un parlementaire
 
-`GET /api/v1/parlementaires/:slug/votes` accepte `page`, `limit` (jusqu'à 100), `position` (`pour`, `contre`, `abstention`, `absent`), `tag`, `dateFrom`, `dateTo`, `dissidentOnly` (seulement les votes différents de la position majoritaire du groupe) et, pour une personne passée par les deux chambres, `chambre`. Le groupe d'un vote est celui du mandat à la date du scrutin, pas le groupe actuel. La liste n'a pas les lignes `absent` des scrutins où l'élu ne pouvait pas voter (président de séance ou de son assemblée, membre du Gouvernement) : la source les publie comme des absences, ce n'en sont pas. Un vrai vote émis pendant la même période reste dans la liste.
+`GET /api/v1/parlementaires/:slug/votes` accepte `page`, `limit` (jusqu'à 100), `position` (`pour`, `contre`, `abstention`, `absent`), `tag`, `dateFrom`, `dateTo`, `dissidentOnly` (seulement les votes exprimés différents de la position majoritaire du groupe : une absence n'est pas une dissidence), `dossier` (uid du dossier législatif des scrutins, ou `aucun` pour les scrutins sans dossier), `nature` (`ensemble`, `article`, `amendement`, `credits`, `motion`, `declaration`, `autre` : ce sur quoi porte le vote, renvoyé dans `scrutin.nature`) et, pour une personne passée par les deux chambres, `chambre`. Le groupe d'un vote est celui du mandat à la date du scrutin, pas le groupe actuel. La liste n'a pas les lignes `absent` des scrutins où l'élu ne pouvait pas voter (président de séance ou de son assemblée, membre du Gouvernement) : la source les publie comme des absences, ce n'en sont pas. Un vrai vote émis pendant la même période reste dans la liste.
+
+### Votes par dossier
+
+`GET /api/v1/parlementaires/:slug/votes/dossiers` résume les votes dossier par dossier, du plus récemment voté au plus ancien. Les scrutins sans dossier (motions de censure, demandes de suspension de séance…) forment un dernier groupe, `dossier: null`. Mêmes filtres que la liste (`dateFrom`, `dateTo`, `dissidentOnly`, `chambre`), `limit` jusqu'à 50. Chaque groupe donne :
+
+| Champ | Contenu |
+| :--- | :--- |
+| `dossier` | `uid`, `titre`, `titreCourt`, ou `null` |
+| `nbVotes`, `dernierVote` | Nombre de votes et date du plus récent |
+| `positions` | Nombre de votes `pour`, `contre`, `abstention`, `absent` |
+| `dissidents` | Votes exprimés contraires à la majorité du groupe de l'élu à la date du scrutin (pas de majorité en cas d'égalité) |
+| `parNature` | Nombre de votes sur l'`ensemble` du texte, les `article`, les `amendement`, les `motion` et le reste (`autre`) |
+| `ensemble` | Ses votes sur l'ensemble du texte, du plus récent au plus ancien (un par lecture), avec la position de son groupe et le scrutin |
+
+`meta.totalVotes` compte tous les votes filtrés, `meta.totalDossiers` les groupes qui sont des dossiers. Le détail d'un groupe se lit sur `/votes?dossier=<uid>` (ou `dossier=aucun`).
+
+---
+
+## 📝 Amendements d'un parlementaire
+
+`GET /api/v1/parlementaires/:slug/amendements` renvoie les amendements que l'élu a déposés ou cosignés, du dépôt le plus récent au plus ancien. Il accepte `page`, `limit` (jusqu'à 50), `sort`, `dateFrom`, `dateTo`, `votedOnly` (seulement les amendements mis aux voix par scrutin public), `dossier` (uid du dossier, ou `aucun`) et, pour une personne passée par les deux chambres, `chambre`.
+
+`GET /api/v1/parlementaires/:slug/amendements/dossiers` les résume dossier par dossier, du dépôt le plus récent au plus ancien, les amendements sans dossier en dernier (`dossier: null`). Mêmes filtres, `limit` jusqu'à 50. Chaque groupe donne `nbAmendements`, `dernierDepot` et `sorts`, ce qu'il est advenu des amendements en quatre familles :
+
+| Famille | Sorts publiés |
+| :--- | :--- |
+| `adopte` | Adopté, adopté modifié |
+| `rejete` | Rejeté |
+| `non_vote` | Non mis aux voix : retiré, tombé, non soutenu, irrecevable (y compris « Charge », « Cavalier », « Sous-amendement (98) »), satisfait, doublon |
+| `attente` | Pas encore examiné (« En traitement », « A discuter », recevabilité financière en cours) ou sort inconnu |
+
+`meta.totalAmendements` compte tous les amendements filtrés, `meta.totalDossiers` les groupes qui sont des dossiers.

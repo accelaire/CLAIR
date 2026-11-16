@@ -29,7 +29,7 @@ async function getDepute(slug: string) {
 }
 
 /**
- * Première page de votes, rendue côté serveur.
+ * Première page de la vue par dossier des votes, rendue côté serveur.
  *
  * `fetchFromApi` et non `fetchRessource` : une panne de l'API ne doit pas faire
  * échouer la fiche entière. La liste repart alors sur un chargement client,
@@ -37,7 +37,7 @@ async function getDepute(slug: string) {
  */
 async function getDeputeVotes(slug: string) {
   return fetchFromApi<PageVotes>(
-    `/deputes/${slug}/votes?page=1&limit=20`,
+    `/deputes/${slug}/votes/dossiers?page=1&limit=20`,
     REVALIDATE_LISTE_S,
   );
 }

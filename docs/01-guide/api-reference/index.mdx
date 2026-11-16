@@ -69,7 +69,7 @@ Toutes les routes métier sont sous le préfixe `/api/v1`. La spécification Ope
 
 | Préfixe | Routes |
 | :--- | :--- |
-| `/parlementaires`, `/deputes`, `/senateurs` | `/`, `/groupes`, `/legislatures`, `/sessions`, `/historique-carriere`, `/compare`, `/:slug`, `/:slug/stats`, `/:slug/rank`, `/:slug/votes`, `/:slug/amendements`, `/:slug/interventions`. Mêmes routes sur les trois préfixes : `/deputes` et `/senateurs` sont restreints à une chambre. Pour une personne passée par les deux chambres, `/:slug/votes`, `/:slug/amendements` et `/:slug/interventions` acceptent `?chambre=assemblee` ou `senat` |
+| `/parlementaires`, `/deputes`, `/senateurs` | `/`, `/groupes`, `/legislatures`, `/sessions`, `/historique-carriere`, `/compare`, `/:slug`, `/:slug/stats`, `/:slug/rank`, `/:slug/votes`, `/:slug/votes/dossiers`, `/:slug/amendements`, `/:slug/amendements/dossiers`, `/:slug/interventions`. Mêmes routes sur les trois préfixes : `/deputes` et `/senateurs` sont restreints à une chambre. Pour une personne passée par les deux chambres, `/:slug/votes`, `/:slug/amendements` et `/:slug/interventions` acceptent `?chambre=assemblee` ou `senat` |
 | `/groupes` | `/`, `/:chambre/:slug`, `/:chambre/:slug/stats`, `/:chambre/:slug/votes`, `/:chambre/:slug/alliances`, `/:chambre/:slug/thematiques`, `/:chambre/matrice-alliances` |
 | `/scrutins` | `/`, `/tags`, `/annees`, `/periodes`, `/importants`, `/:numero`, `/:numero/votes`, `/:numero/interventions`, `/interventions/:id` |
 | `/dossiers` | `/`, `/filters`, `/trending`, `/:uid`, `/:uid/chronologie`, `/:uid/scrutins`, `/:uid/amendements` |

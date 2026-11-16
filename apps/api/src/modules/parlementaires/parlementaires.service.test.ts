@@ -870,4 +870,194 @@ describe('ParlementairesService', () => {
       });
     });
   });
+
+  // ===========================================================================
+  // VUES PAR DOSSIER (#fiches par dossier)
+  // ===========================================================================
+
+  describe('getParlementaireVotes : filtres dossier et nature', () => {
+    const PARL = 'ac08f258-d040-4a0b-93c0-ebbe55dc9aec';
+    const GROUPE = '4a306451-bd1f-4879-b9d1-56cc19bdd862';
+    const baseQuery = { page: 1, limit: 20, dissidentOnly: false };
+
+    const capturer = () => {
+      const appels: Array<{ sql: string; params: unknown[] }> = [];
+      mockPrisma.$queryRawUnsafe.mockImplementation((sql: string, ...params: unknown[]) => {
+        appels.push({ sql, params });
+        return Promise.resolve(sql.includes('COUNT(*)::int as total') ? [{ total: 0 }] : []);
+      });
+      return appels;
+    };
+
+    it('filtre sur un dossier par son uid, ou sur les scrutins sans dossier', async () => {
+      let appels = capturer();
+      await service.getParlementaireVotes(PARL, GROUPE, { ...baseQuery, dossier: 'DLR5L17N54951' });
+      for (const a of appels) {
+        expect(a.sql).toContain('s.dossier_id = (SELECT d.id FROM dossiers_legislatifs d WHERE d.uid = $2)');
+        expect(a.params).toEqual([PARL, 'DLR5L17N54951']);
+      }
+
+      mockRedis._clear();
+      appels = capturer();
+      await service.getParlementaireVotes(PARL, GROUPE, { ...baseQuery, dossier: 'aucun' });
+      for (const a of appels) {
+        expect(a.sql).toContain('s.dossier_id IS NULL');
+        expect(a.params).toEqual([PARL]);
+      }
+    });
+
+    it('filtre sur la nature et la renvoie', async () => {
+      const appels = capturer();
+      await service.getParlementaireVotes(PARL, GROUPE, { ...baseQuery, nature: 'ensemble' });
+      for (const a of appels) expect(a.sql).toContain('s.nature_vote = $2');
+      expect(appels[0]!.sql).toContain('s.nature_vote as scrutin_nature');
+    });
+
+    it("ne compte pas une absence comme une dissidence", async () => {
+      const appels = capturer();
+      await service.getParlementaireVotes(PARL, GROUPE, { ...baseQuery, dissidentOnly: true });
+      expect(appels).toHaveLength(2);
+      for (const a of appels) expect(a.sql).toContain("v.position <> 'absent'");
+    });
+  });
+
+  describe('getParlementaireVotesParDossier', () => {
+    const PARL = 'ac08f258-d040-4a0b-93c0-ebbe55dc9aec';
+    const GROUPE = '4a306451-bd1f-4879-b9d1-56cc19bdd862';
+    const baseQuery = { page: 1, limit: 20, dissidentOnly: false };
+
+    const ligne = (overrides: Record<string, unknown> = {}) => ({
+      dossier_uid: 'DLR5L17N54951',
+      dossier_titre: 'Projet de loi de financement de la sécurité sociale pour 2027',
+      dossier_titre_court: 'PLFSS_2027',
+      nb_votes: 10,
+      pour: 6,
+      contre: 3,
+      abstention: 1,
+      absent: 0,
+      dissidents: 2,
+      sur_ensemble: 1,
+      sur_articles: 2,
+      sur_amendements: 5,
+      sur_motions: 1,
+      dernier_vote: new Date('2026-10-21'),
+      ensemble: [
+        {
+          scrutinId: 's-1', numero: 9000, chambre: 'assemblee', session: '17', date: '2026-10-21T00:00:00',
+          titre: 'l\'ensemble du projet de loi', sort: 'adopte', position: 'pour', groupePosition: 'contre',
+        },
+      ],
+      total: 2,
+      total_dossiers: 1,
+      total_votes: 13,
+      ...overrides,
+    });
+
+    it('résume chaque dossier : positions, natures, vote sur l’ensemble', async () => {
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([
+        ligne(),
+        ligne({ dossier_uid: null, dossier_titre: null, dossier_titre_court: null, nb_votes: 3, sur_ensemble: 0, sur_articles: 0, sur_amendements: 0, sur_motions: 2, ensemble: [] }),
+      ]);
+
+      const result = await service.getParlementaireVotesParDossier(PARL, GROUPE, baseQuery);
+
+      expect(result.data[0]).toMatchObject({
+        dossier: { uid: 'DLR5L17N54951', titreCourt: 'PLFSS_2027' },
+        nbVotes: 10,
+        positions: { pour: 6, contre: 3, abstention: 1, absent: 0 },
+        dissidents: 2,
+        parNature: { ensemble: 1, article: 2, amendement: 5, motion: 1, autre: 1 },
+      });
+      expect(result.data[0].ensemble[0]).toMatchObject({
+        position: 'pour',
+        groupePosition: 'contre',
+        scrutin: { id: 's-1', numero: 9000, sort: 'adopte' },
+      });
+      expect(result.data[1].dossier).toBeNull();
+      expect(result.data[1].parNature.autre).toBe(1);
+      expect(result.meta).toMatchObject({ total: 2, totalDossiers: 1, totalVotes: 13, hasNext: false });
+    });
+
+    it('tient compte des empêchements et ne compte pas une absence comme une dissidence', async () => {
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([]);
+      await service.getParlementaireVotesParDossier(PARL, GROUPE, { ...baseQuery, dissidentOnly: true });
+      const sql = mockPrisma.$queryRawUnsafe.mock.calls[0]![0] as string;
+      expect(sql).toContain("NOT (\n    v.position = 'absent'");
+      expect(sql).toContain("v.position <> 'absent' AND v.position <> gm.majority_position");
+      // Dossiers sans dossier en dernier, ordre total.
+      expect(sql).toContain('ORDER BY (g.dossier_id IS NULL), g.dernier_vote DESC, g.dossier_id');
+    });
+
+    it('renvoie vide sans requête si dissidentOnly et pas de groupe', async () => {
+      const result = await service.getParlementaireVotesParDossier(PARL, null, { ...baseQuery, dissidentOnly: true });
+      expect(result.data).toEqual([]);
+      expect(mockPrisma.$queryRawUnsafe).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getParlementaireAmendementsParDossier', () => {
+    const PARL = 'ac08f258-d040-4a0b-93c0-ebbe55dc9aec';
+    const d = (iso: string) => new Date(iso);
+
+    beforeEach(() => {
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([
+        { dossier_id: 'id-a', date_depot: d('2026-01-10'), sort: 'Adopté' },
+        { dossier_id: 'id-a', date_depot: d('2026-01-05'), sort: 'Tombé' },
+        { dossier_id: null, date_depot: d('2026-03-01'), sort: null },
+        { dossier_id: 'id-b', date_depot: d('2026-02-01'), sort: 'rejete' },
+        { dossier_id: 'id-b', date_depot: d('2026-02-01'), sort: 'En traitement' },
+        { dossier_id: 'id-c', date_depot: d('2026-02-01'), sort: 'Charge' },
+      ]);
+      mockPrisma.dossierLegislatif.findMany.mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
+        Promise.resolve(
+          where.id.in.map((id) => ({ id, uid: `UID-${id}`, titre: `Titre ${id}`, titreCourt: null })),
+        ),
+      );
+    });
+
+    it('regroupe par dossier, du dépôt le plus récent au plus ancien, sans dossier en dernier', async () => {
+      const result = await service.getParlementaireAmendementsParDossier(PARL, { page: 1, limit: 20 });
+
+      // id-b et id-c ex æquo (2026-02-01) : départagés par l'identifiant.
+      expect(result.data.map((g: { dossier: { uid: string } | null }) => g.dossier?.uid ?? null)).toEqual([
+        'UID-id-b',
+        'UID-id-c',
+        'UID-id-a',
+        null,
+      ]);
+      expect(result.data[0]).toMatchObject({
+        nbAmendements: 2,
+        sorts: { adopte: 0, rejete: 1, non_vote: 0, attente: 1 },
+      });
+      expect(result.data[2].sorts).toEqual({ adopte: 1, rejete: 0, non_vote: 1, attente: 0 });
+      expect(result.data[3]).toMatchObject({ dossier: null, nbAmendements: 1, sorts: { attente: 1 } });
+      expect(result.meta).toMatchObject({ total: 4, totalAmendements: 6, totalDossiers: 3, totalPages: 1 });
+    });
+
+    it('pagine les dossiers et ne charge que les titres de la page', async () => {
+      const result = await service.getParlementaireAmendementsParDossier(PARL, { page: 2, limit: 2 });
+
+      expect(result.data.map((g: { dossier: { uid: string } | null }) => g.dossier?.uid ?? null)).toEqual(['UID-id-a', null]);
+      expect(result.meta).toMatchObject({ page: 2, totalPages: 2, hasNext: false, hasPrev: true });
+      expect(mockPrisma.dossierLegislatif.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: { in: ['id-a'] } } }),
+      );
+    });
+
+    it('garde le périmètre auteur ou cosignataire et applique les filtres', async () => {
+      await service.getParlementaireAmendementsParDossier(PARL, {
+        page: 1,
+        limit: 20,
+        dateFrom: '2026-01-01',
+        votedOnly: true,
+        chambre: 'assemblee',
+      });
+      const [sql, ...params] = mockPrisma.$queryRawUnsafe.mock.calls[0]! as [string, ...unknown[]];
+      expect(sql).toContain('SELECT "A" AS id FROM "_AmendementCosignataires" WHERE "B" = $1');
+      expect(sql).toContain('a.date_depot >= $2');
+      expect(sql).toContain('"_AmendementToScrutin"');
+      expect(sql).toContain('a.chambre = $3');
+      expect(params).toEqual([PARL, new Date('2026-01-01'), 'assemblee']);
+    });
+  });
 });

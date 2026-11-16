@@ -37,9 +37,13 @@ export function formatDossierTitre(titre: string, procedureLibelle?: string | nu
 /**
  * `titreCourt` est parfois un identifiant technique issu de la source
  * (`pjl_approbation_goteborg`) plutôt qu'un intitulé : c'est le cas de ~40 % des
- * dossiers portant des scrutins. On ne s'en sert que s'il est présentable.
+ * dossiers portant des scrutins. Pour 2 016 dossiers (15e à 17e législature),
+ * c'est même l'uid du dossier (`DLR5L17N53980`), ou un code (`PLFSS2024`,
+ * `0000070001`). On ne s'en sert que s'il est présentable.
  */
 export function dossierTitreCourtLisible(titreCourt: string | null | undefined): string | null {
   if (!titreCourt) return null;
-  return titreCourt.includes('_') ? null : titreCourt;
+  if (titreCourt.includes('_')) return null;
+  if (/^[A-Z0-9]{8,}$/.test(titreCourt)) return null;
+  return titreCourt;
 }

@@ -8,7 +8,7 @@ import { FicheCompareCallout } from '@/components/FicheCompareCallout';
 import { bilanMandats, fonctionParlementaire, mentionFinDeMandat } from '@/lib/meta-parlementaire';
 import { StatsParlementaire } from '@/components/parlementaire/stats-parlementaire';
 import { SoutenirCallout } from '@/components/donations/SoutenirCallout';
-import { aucunFiltre, STALE_TIME_LISTE_MS } from '@/lib/liste-ssr';
+import { aucunFiltre } from '@/lib/liste-ssr';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -24,9 +24,6 @@ import {
   Globe,
   Vote,
   ArrowLeft,
-  ThumbsUp,
-  ThumbsDown,
-  Minus,
   ChevronDown,
   ChevronUp,
   Facebook,
@@ -39,8 +36,13 @@ import {
 import { api } from '@/lib/api';
 import { scrutinHref } from '@/lib/scrutin-url';
 import { DateRangePicker, dateRangeToParams } from '@/components/DateRangePicker';
+import { FilterBar } from '@/components/FilterBar';
 import { useUrlDateRange } from '@/hooks/useUrlFilters';
 import { InterventionsList } from '@/components/parlementaire/interventions-list';
+import { VotePositionBadge } from '@/components/parlementaire/vote-position-badge';
+import { VotesParDossier, type PageGroupesVotes } from '@/components/parlementaire/votes-par-dossier';
+import { AmendementsParDossier } from '@/components/parlementaire/amendements-par-dossier';
+import { BasculeVue, type VueFiche } from '@/components/parlementaire/bascule-vue';
 import { MandatsBlock } from '@/components/parlementaire/mandats-timeline';
 import { fonctionsEnVue, presideUneAssemblee } from '@/lib/fonctions-en-vue';
 import { fonctionEnCours, type FonctionGouvernementale } from '@/lib/gouvernements';
@@ -158,24 +160,6 @@ interface VoteItem {
   };
 }
 
-function VotePositionBadge({ position }: { position: string }) {
-  const config = {
-    pour: { label: 'Pour', className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400', icon: ThumbsUp },
-    contre: { label: 'Contre', className: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400', icon: ThumbsDown },
-    abstention: { label: 'Abstention', className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400', icon: Minus },
-    absent: { label: 'Absent', className: 'bg-gray-100 text-gray-800 dark:bg-gray-800/30 dark:text-gray-400', icon: Minus },
-  }[position] || { label: position, className: 'bg-muted text-muted-foreground', icon: Minus };
-
-  const Icon = config.icon;
-
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${config.className}`}>
-      <Icon className="h-3 w-3" />
-      {config.label}
-    </span>
-  );
-}
-
 interface AmendementItem extends MetadonneesAmendement {
   id: string;
   uid: string;
@@ -211,6 +195,8 @@ function AmendementsList({ slug, parcours }: { slug: string; parcours: ParcoursF
   const [dateRange, setDateRange] = useUrlDateRange();
   const [votedOnly, setVotedOnly] = useState(false);
   const [chambre, setChambre] = useState<ChambreFiltre>('');
+  const [vue, setVue] = useState<VueFiche>('dossier');
+  const [totalDossiers, setTotalDossiers] = useState<number | null>(null);
   const dateParams = dateRangeToParams(dateRange);
 
   const {
@@ -235,7 +221,7 @@ function AmendementsList({ slug, parcours }: { slug: string; parcours: ParcoursF
     getNextPageParam: (lastPage) =>
       lastPage.meta?.hasNext ? lastPage.meta.page + 1 : undefined,
     initialPageParam: 1,
-    enabled: !!slug,
+    enabled: !!slug && vue === 'chrono',
   });
 
   const { loadMoreRef } = useInfiniteScroll({
@@ -249,18 +235,26 @@ function AmendementsList({ slug, parcours }: { slug: string; parcours: ParcoursF
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-3">
-          <DateRangePicker
-            value={dateRange}
-            onChange={setDateRange}
-            placeholder="Filtrer par période"
-            resultCount={total}
-            minDate={parcours.debut}
-          />
-          {parcours.deuxChambres && <FiltreChambre value={chambre} onChange={setChambre} />}
-        </div>
+      <FilterBar
+        className=""
+        search={<BasculeVue value={vue} onChange={setVue} />}
+        activeFilterCount={(dateRange.from || dateRange.to ? 1 : 0) + (chambre ? 1 : 0) + (votedOnly ? 1 : 0)}
+        onClear={() => {
+          setDateRange({ from: null, to: null });
+          setChambre('');
+          setVotedOnly(false);
+        }}
+      >
+        <DateRangePicker
+          value={dateRange}
+          onChange={setDateRange}
+          placeholder="Filtrer par période"
+          resultCount={vue === 'dossier' ? totalDossiers : total}
+          minDate={parcours.debut}
+        />
+        {parcours.deuxChambres && <FiltreChambre value={chambre} onChange={setChambre} />}
         <button
+          type="button"
           onClick={() => setVotedOnly(!votedOnly)}
           className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
             votedOnly
@@ -276,9 +270,15 @@ function AmendementsList({ slug, parcours }: { slug: string; parcours: ParcoursF
             </span>
           )}
         </button>
-      </div>
+      </FilterBar>
 
-      {isLoading ? (
+      {vue === 'dossier' ? (
+        <AmendementsParDossier
+          base={`/senateurs/${slug}`}
+          params={{ votedOnly, ...dateParams, ...paramChambre(chambre) }}
+          onTotal={setTotalDossiers}
+        />
+      ) : isLoading ? (
         <div className="space-y-4">
           {[...Array(5)].map((_, i) => (
             <div key={i} className="animate-pulse rounded-lg border p-4">
@@ -312,15 +312,10 @@ function AmendementsList({ slug, parcours }: { slug: string; parcours: ParcoursF
 }
 
 /**
- * Première page de votes, telle que le serveur la rend.
- *
- * `data` reste typé par `VoteItem`, que la liste lit déjà : décrire la réponse
- * une seconde fois ferait diverger les deux copies.
+ * Première page de la vue par dossier, telle que le serveur la rend : c'est la
+ * vue ouverte par défaut, donc celle que lisent les moteurs de recherche.
  */
-export interface PageVotes {
-  data: VoteItem[];
-  meta: { total: number; page: number; limit: number; hasNext: boolean };
-}
+export type PageVotes = PageGroupesVotes;
 
 function VotesList({
   slug,
@@ -334,6 +329,8 @@ function VotesList({
   const [dateRange, setDateRange] = useUrlDateRange();
   const [dissidentOnly, setDissidentOnly] = useState(false);
   const [chambre, setChambre] = useState<ChambreFiltre>('');
+  const [vue, setVue] = useState<VueFiche>('dossier');
+  const [totalDossiers, setTotalDossiers] = useState<number | null>(null);
   const dateParams = dateRangeToParams(dateRange);
 
   // La donnée rendue côté serveur ne vaut que pour la vue canonique : dès
@@ -364,18 +361,7 @@ function VotesList({
     getNextPageParam: (lastPage) =>
       lastPage.meta?.hasNext ? lastPage.meta.page + 1 : undefined,
     initialPageParam: 1,
-    enabled: !!slug,
-    // Pièce 2 de la recette de `lib/liste-ssr`, jamais appliquée aux onglets
-    // des fiches : sans elle le HTML servi ne contenait pas un seul titre de
-    // scrutin. Le relevé de vote, qui est la raison d'être de la page et la
-    // seule chose qui la distingue de Wikipédia ou du site de la chambre,
-    // n'était visible que d'un lecteur exécutant le JavaScript.
-    ...(peutHydrater && initialVotes
-      ? {
-          initialData: { pages: [initialVotes], pageParams: [1] },
-          staleTime: STALE_TIME_LISTE_MS,
-        }
-      : {}),
+    enabled: !!slug && vue === 'chrono',
   });
 
   const { loadMoreRef } = useInfiniteScroll({
@@ -389,18 +375,26 @@ function VotesList({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-3">
-          <DateRangePicker
-            value={dateRange}
-            onChange={setDateRange}
-            placeholder="Filtrer par période"
-            resultCount={total}
-            minDate={parcours.debut}
-          />
-          {parcours.deuxChambres && <FiltreChambre value={chambre} onChange={setChambre} />}
-        </div>
+      <FilterBar
+        className=""
+        search={<BasculeVue value={vue} onChange={setVue} />}
+        activeFilterCount={(dateRange.from || dateRange.to ? 1 : 0) + (chambre ? 1 : 0) + (dissidentOnly ? 1 : 0)}
+        onClear={() => {
+          setDateRange({ from: null, to: null });
+          setChambre('');
+          setDissidentOnly(false);
+        }}
+      >
+        <DateRangePicker
+          value={dateRange}
+          onChange={setDateRange}
+          placeholder="Filtrer par période"
+          resultCount={vue === 'dossier' ? totalDossiers : total}
+          minDate={parcours.debut}
+        />
+        {parcours.deuxChambres && <FiltreChambre value={chambre} onChange={setChambre} />}
         <button
+          type="button"
           onClick={() => setDissidentOnly(!dissidentOnly)}
           className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
             dissidentOnly
@@ -416,9 +410,19 @@ function VotesList({
             </span>
           )}
         </button>
-      </div>
+      </FilterBar>
 
-      {isLoading ? (
+      {vue === 'dossier' ? (
+        <VotesParDossier
+          base={`/senateurs/${slug}`}
+          params={{ dissidentOnly, ...dateParams, ...paramChambre(chambre) }}
+          onTotal={setTotalDossiers}
+          // Pièce 2 de la recette de `lib/liste-ssr` : sans elle, le HTML servi
+          // ne contenait aucun vote. Le relevé de vote, raison d'être de la
+          // page, n'était visible que d'un lecteur exécutant le JavaScript.
+          initial={peutHydrater ? initialVotes : undefined}
+        />
+      ) : isLoading ? (
         <div className="space-y-4">
           {[...Array(5)].map((_, i) => (
             <div key={i} className="animate-pulse rounded-lg border p-4">
