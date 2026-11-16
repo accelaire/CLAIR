@@ -60,7 +60,7 @@ function metadataProvisoire(fiche: FicheProvisoire): Metadata {
 }
 
 /**
- * Première page de votes, rendue côté serveur.
+ * Première page de la vue par dossier des votes, rendue côté serveur.
  *
  * `fetchFromApi` et non `fetchRessource` : une panne de l'API ne doit pas faire
  * échouer la fiche entière. La liste repart alors sur un chargement client,
@@ -68,7 +68,7 @@ function metadataProvisoire(fiche: FicheProvisoire): Metadata {
  */
 async function getSenateurVotes(slug: string) {
   return fetchFromApi<PageVotes>(
-    `/senateurs/${slug}/votes?page=1&limit=20`,
+    `/senateurs/${slug}/votes/dossiers?page=1&limit=20`,
     REVALIDATE_LISTE_S,
   );
 }
