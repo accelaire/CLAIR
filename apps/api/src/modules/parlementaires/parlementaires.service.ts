@@ -8,6 +8,7 @@ import { Redis } from 'ioredis';
 import {
   ParlementairesListQuery,
   ParlementaireVotesQuery,
+  ParlementaireVotesParDossierQuery,
   ParlementaireStats,
   PaginationMeta,
   Chambre,
@@ -22,6 +23,7 @@ import { fuzzySearchCandidates, FuzzyCandidate } from '../../utils/fuzzy-search'
 import { INTERVENTIONS_DE_FOND } from '../../utils/interventions';
 import { priseDeParoleAuGouvernement, voteAbsentEmpeche } from '../../utils/empechements';
 import { METADONNEES_AMENDEMENT_SELECT, avecNombreDeSousAmendements } from '../../utils/amendements';
+import { FAMILLES_SORT, familleSort, type FamilleSort } from '../../utils/amendements-sort';
 import { RENVOIS_SELECT, avecRenvois } from '../../utils/renvois-legi';
 import { GouvernementsService } from '../gouvernements/gouvernements.service';
 
@@ -1058,7 +1060,7 @@ export class ParlementairesService {
   // ===========================================================================
 
   async getParlementaireVotes(parlementaireId: string, groupeId: string | null, query: ParlementaireVotesQuery) {
-    const { page, limit, position, tag, dateFrom, dateTo, dissidentOnly, chambre } = query;
+    const { page, limit, position, tag, dateFrom, dateTo, dissidentOnly, chambre, dossier, nature } = query;
     const offset = (page - 1) * limit;
 
     // Si dissidentOnly et pas de groupe, retourner vide
@@ -1081,6 +1083,8 @@ export class ParlementairesService {
       dateTo,
       dissidentOnly,
       chambre,
+      dossier,
+      nature,
     })}`;
 
     const cached = await this.redis.get(cacheKey);
@@ -1131,12 +1135,36 @@ export class ParlementairesService {
       paramIndex++;
     }
 
-    // Add dissident filter if needed
+    // Les votes d'un dossier (déplier un dossier de la vue par dossier).
+    if (dossier === 'aucun') {
+      conditions.push('s.dossier_id IS NULL');
+      countConditions.push('s.dossier_id IS NULL');
+    } else if (dossier) {
+      const c = `s.dossier_id = (SELECT d.id FROM dossiers_legislatifs d WHERE d.uid = $${paramIndex})`;
+      conditions.push(c);
+      countConditions.push(c);
+      params.push(dossier);
+      paramIndex++;
+    }
+
+    if (nature) {
+      conditions.push(`s.nature_vote = $${paramIndex}`);
+      countConditions.push(`s.nature_vote = $${paramIndex}`);
+      params.push(nature);
+      paramIndex++;
+    }
+
+    // Add dissident filter if needed. Une absence n'est pas une dissidence :
+    // sans `<> 'absent'`, chaque absence à un scrutin où le groupe avait une
+    // majorité sortait dans « Votes dissidents », que la fiche affichait
+    // pourtant sans la marque de dissidence.
     if (dissidentOnly && groupeId) {
       conditions.push(`v.position != gm.majority_position`);
       conditions.push(`gm.majority_position IS NOT NULL`);
+      conditions.push(`v.position <> 'absent'`);
       countConditions.push(`v.position != gm.majority_position`);
       countConditions.push(`gm.majority_position IS NOT NULL`);
+      countConditions.push(`v.position <> 'absent'`);
     }
 
     const whereClause = conditions.join(' AND ');
@@ -1158,6 +1186,7 @@ export class ParlementairesService {
       scrutin_titre: string;
       scrutin_sort: string;
       scrutin_type_vote: string;
+      scrutin_nature: string | null;
       scrutin_tags: string[];
       scrutin_importance: number;
       scrutin_nombre_pour: number;
@@ -1184,6 +1213,7 @@ export class ParlementairesService {
         s.titre as scrutin_titre,
         s.sort as scrutin_sort,
         s.type_vote as scrutin_type_vote,
+        s.nature_vote as scrutin_nature,
         s.tags as scrutin_tags,
         s.importance as scrutin_importance,
         s.nombre_pour as scrutin_nombre_pour,
@@ -1272,6 +1302,7 @@ export class ParlementairesService {
         titre: row.scrutin_titre,
         sort: row.scrutin_sort,
         typeVote: row.scrutin_type_vote,
+        nature: row.scrutin_nature,
         tags: row.scrutin_tags,
         importance: row.scrutin_importance,
         nombrePour: row.scrutin_nombre_pour,
@@ -1294,6 +1325,216 @@ export class ParlementairesService {
 
     await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
 
+    return result;
+  }
+
+  // ===========================================================================
+  // VOTES D'UN PARLEMENTAIRE, PAR DOSSIER
+  // ===========================================================================
+
+  /**
+   * Les votes d'un parlementaire regroupés par dossier législatif : un résumé
+   * par dossier, du plus récemment voté au plus ancien, les scrutins sans
+   * dossier (motions de censure, demandes de suspension…) en dernier.
+   *
+   * Un député de la 17e a voté environ 2 000 fois sur une centaine de dossiers :
+   * en liste, la fiche était une pile de cartes sans repère. Chaque résumé dit
+   * combien de votes, dans quel sens, combien contre la majorité de son groupe,
+   * et surtout son vote sur l'ensemble du texte, quand il y en a eu un. Le
+   * détail d'un dossier se lit ensuite par `/votes?dossier=<uid>`.
+   *
+   * Dissidence : majorité du groupe d'époque connue (pas d'ex æquo), vote
+   * exprimé (une absence n'est pas une dissidence) et différent d'elle. La
+   * majorité doit être connue pour TOUS les votes, avant regroupement : la CTE
+   * porte donc sur tous les scrutins de l'élu, d'où le cache.
+   */
+  async getParlementaireVotesParDossier(
+    parlementaireId: string,
+    groupeId: string | null,
+    query: ParlementaireVotesParDossierQuery,
+  ) {
+    const { page, limit, dateFrom, dateTo, dissidentOnly, chambre } = query;
+    const offset = (page - 1) * limit;
+
+    if (dissidentOnly && !groupeId) {
+      return {
+        data: [],
+        meta: { total: 0, totalVotes: 0, totalDossiers: 0, page, limit, totalPages: 0, hasNext: false, hasPrev: false },
+      };
+    }
+
+    const cacheKey = `parlementaire:votes-dossiers:${parlementaireId}:${JSON.stringify({
+      groupeId,
+      page,
+      limit,
+      dateFrom,
+      dateTo,
+      dissidentOnly,
+      chambre,
+    })}`;
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    const conditions: string[] = ['v.parlementaire_id = $1', `NOT ${voteAbsentEmpeche('v', 's')}`];
+    const params: (string | Date)[] = [parlementaireId];
+    if (dateFrom) {
+      params.push(dateFrom);
+      conditions.push(`s.date >= $${params.length}`);
+    }
+    if (dateTo) {
+      params.push(dateTo);
+      conditions.push(`s.date <= $${params.length}`);
+    }
+    if (chambre) {
+      params.push(chambre);
+      conditions.push(`s.chambre = $${params.length}`);
+    }
+
+    const DISSIDENT = `(gm.majority_position IS NOT NULL AND v.position <> 'absent' AND v.position <> gm.majority_position)`;
+    if (dissidentOnly) conditions.push(DISSIDENT);
+
+    const groupeIdParam = groupeId || '00000000-0000-0000-0000-000000000000';
+
+    interface GroupeRow {
+      dossier_uid: string | null;
+      dossier_titre: string | null;
+      dossier_titre_court: string | null;
+      nb_votes: number;
+      pour: number;
+      contre: number;
+      abstention: number;
+      absent: number;
+      dissidents: number;
+      sur_ensemble: number;
+      sur_articles: number;
+      sur_amendements: number;
+      sur_motions: number;
+      dernier_vote: Date;
+      ensemble: Array<{
+        scrutinId: string;
+        numero: number;
+        chambre: string;
+        session: string | null;
+        date: string;
+        titre: string;
+        sort: string;
+        position: string;
+        groupePosition: string | null;
+      }>;
+      total: number;
+      total_dossiers: number;
+      total_votes: number;
+    }
+
+    // Départage total (`dossier_id`) : sans lui, deux dossiers votés le même
+    // jour pourraient changer de page d'un appel à l'autre.
+    const sql = `
+      WITH ${CTE_GROUP_MAJORITY_EPOQUE(parlementaireId, groupeIdParam)},
+      base AS (
+        SELECT
+          v.position,
+          gm.majority_position AS groupe_position,
+          ${DISSIDENT} AS dissident,
+          s.id AS scrutin_id, s.numero, s.chambre, s.session, s.date, s.titre, s.sort,
+          s.nature_vote, s.dossier_id
+        FROM votes v
+        JOIN scrutins s ON s.id = v.scrutin_id
+        LEFT JOIN group_majority gm ON gm.scrutin_id = v.scrutin_id AND gm.rn = 1
+        WHERE ${conditions.join(' AND ')}
+      ),
+      groupes AS (
+        SELECT
+          dossier_id,
+          COUNT(*)::int AS nb_votes,
+          COUNT(*) FILTER (WHERE position = 'pour')::int AS pour,
+          COUNT(*) FILTER (WHERE position = 'contre')::int AS contre,
+          COUNT(*) FILTER (WHERE position = 'abstention')::int AS abstention,
+          COUNT(*) FILTER (WHERE position = 'absent')::int AS absent,
+          COUNT(*) FILTER (WHERE dissident)::int AS dissidents,
+          COUNT(*) FILTER (WHERE nature_vote = 'ensemble')::int AS sur_ensemble,
+          COUNT(*) FILTER (WHERE nature_vote = 'article')::int AS sur_articles,
+          COUNT(*) FILTER (WHERE nature_vote = 'amendement')::int AS sur_amendements,
+          COUNT(*) FILTER (WHERE nature_vote = 'motion')::int AS sur_motions,
+          MAX(date) AS dernier_vote,
+          COALESCE(
+            json_agg(
+              json_build_object(
+                'scrutinId', scrutin_id, 'numero', numero, 'chambre', chambre, 'session', session,
+                'date', date, 'titre', titre, 'sort', sort,
+                'position', position, 'groupePosition', groupe_position
+              ) ORDER BY date DESC, numero DESC
+            ) FILTER (WHERE nature_vote = 'ensemble'),
+            '[]'
+          ) AS ensemble
+        FROM base
+        GROUP BY dossier_id
+      )
+      SELECT
+        g.*,
+        d.uid AS dossier_uid,
+        d.titre AS dossier_titre,
+        d.titre_court AS dossier_titre_court,
+        COUNT(*) OVER ()::int AS total,
+        (COUNT(*) FILTER (WHERE g.dossier_id IS NOT NULL) OVER ())::int AS total_dossiers,
+        (SUM(g.nb_votes) OVER ())::int AS total_votes
+      FROM groupes g
+      LEFT JOIN dossiers_legislatifs d ON d.id = g.dossier_id
+      ORDER BY (g.dossier_id IS NULL), g.dernier_vote DESC, g.dossier_id
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+
+    const rows = await this.prisma.$queryRawUnsafe<GroupeRow[]>(sql, ...params);
+    const total = rows[0]?.total ?? 0;
+    const totalPages = Math.ceil(total / limit);
+
+    const result = {
+      data: rows.map((r) => ({
+        dossier: r.dossier_uid
+          ? { uid: r.dossier_uid, titre: r.dossier_titre, titreCourt: r.dossier_titre_court }
+          : null,
+        nbVotes: r.nb_votes,
+        positions: { pour: r.pour, contre: r.contre, abstention: r.abstention, absent: r.absent },
+        dissidents: r.dissidents,
+        parNature: {
+          ensemble: r.sur_ensemble,
+          article: r.sur_articles,
+          amendement: r.sur_amendements,
+          motion: r.sur_motions,
+          autre: r.nb_votes - r.sur_ensemble - r.sur_articles - r.sur_amendements - r.sur_motions,
+        },
+        dernierVote: r.dernier_vote,
+        // Les votes sur l'ensemble du texte, du plus récent au plus ancien :
+        // un par lecture, le dernier fait foi.
+        ensemble: r.ensemble.map((e) => ({
+          position: e.position,
+          groupePosition: e.groupePosition,
+          scrutin: {
+            id: e.scrutinId,
+            numero: e.numero,
+            chambre: e.chambre,
+            session: e.session,
+            date: e.date,
+            titre: e.titre,
+            sort: e.sort,
+          },
+        })),
+      })),
+      meta: {
+        total,
+        totalVotes: rows[0]?.total_votes ?? 0,
+        /** Groupes qui sont des dossiers (`total` compte aussi celui des votes sans dossier). */
+        totalDossiers: rows[0]?.total_dossiers ?? 0,
+        page,
+        limit,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrev: page > 1,
+      },
+    };
+
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
     return result;
   }
 
@@ -1324,9 +1565,11 @@ export class ParlementairesService {
       dateTo?: string;
       votedOnly?: boolean;
       chambre?: Chambre;
+      /** Uid du dossier, ou `aucun` pour les amendements sans dossier. */
+      dossier?: string;
     }
   ) {
-    const { page, limit, sort, dateFrom, dateTo, votedOnly, chambre } = query;
+    const { page, limit, sort, dateFrom, dateTo, votedOnly, chambre, dossier } = query;
     const offset = (page - 1) * limit;
 
     const cacheKey = `parlementaire:amendements:${parlementaireId}:${JSON.stringify({
@@ -1337,6 +1580,7 @@ export class ParlementairesService {
       dateTo,
       votedOnly,
       chambre,
+      dossier,
     })}`;
 
     const cached = await this.redis.get(cacheKey);
@@ -1369,6 +1613,14 @@ export class ParlementairesService {
     if (chambre) {
       conditions.push(`a.chambre = $${paramIndex}`);
       params.push(chambre);
+      paramIndex++;
+    }
+    // Les amendements d'un dossier (déplier un dossier de la vue par dossier).
+    if (dossier === 'aucun') {
+      conditions.push('a.dossier_id IS NULL');
+    } else if (dossier) {
+      conditions.push(`a.dossier_id = (SELECT d.id FROM dossiers_legislatifs d WHERE d.uid = $${paramIndex})`);
+      params.push(dossier);
       paramIndex++;
     }
 
@@ -1443,6 +1695,160 @@ export class ParlementairesService {
 
     await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
 
+    return result;
+  }
+
+  // ===========================================================================
+  // AMENDEMENTS D'UN PARLEMENTAIRE, PAR DOSSIER
+  // ===========================================================================
+
+  /**
+   * Les amendements d'un parlementaire (déposés ou cosignés) regroupés par
+   * dossier : un résumé par dossier, du dépôt le plus récent au plus ancien,
+   * les amendements sans dossier en dernier. Le détail d'un dossier se lit
+   * par `/amendements?dossier=<uid>`.
+   *
+   * Le regroupement se fait ici et non en SQL : la cinquantaine de sorts
+   * publiés se range en familles par `familleSort`, une règle testée qu'un
+   * CASE SQL dupliquerait sans test. On ne lit que trois colonnes par
+   * amendement ; un élu en compte au plus quelques milliers, cosignatures
+   * comprises.
+   */
+  async getParlementaireAmendementsParDossier(
+    parlementaireId: string,
+    query: {
+      page: number;
+      limit: number;
+      dateFrom?: string;
+      dateTo?: string;
+      votedOnly?: boolean;
+      chambre?: Chambre;
+    }
+  ) {
+    const { page, limit, dateFrom, dateTo, votedOnly, chambre } = query;
+
+    const cacheKey = `parlementaire:amendements-dossiers:${parlementaireId}:${JSON.stringify({
+      page,
+      limit,
+      dateFrom,
+      dateTo,
+      votedOnly,
+      chambre,
+    })}`;
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    const conditions: string[] = [];
+    const params: (string | Date)[] = [parlementaireId];
+    if (dateFrom) {
+      params.push(new Date(dateFrom));
+      conditions.push(`a.date_depot >= $${params.length}`);
+    }
+    if (dateTo) {
+      params.push(new Date(dateTo));
+      conditions.push(`a.date_depot <= $${params.length}`);
+    }
+    if (votedOnly) {
+      conditions.push(`EXISTS (SELECT 1 FROM "_AmendementToScrutin" ats WHERE ats."A" = a.id)`);
+    }
+    if (chambre) {
+      params.push(chambre);
+      conditions.push(`a.chambre = $${params.length}`);
+    }
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    // Même périmètre que la liste : auteur OU cosignataire, en UNION pour que
+    // chaque branche reste une recherche indexée.
+    const lignes = await this.prisma.$queryRawUnsafe<
+      { dossier_id: string | null; date_depot: Date | null; sort: string | null }[]
+    >(
+      `
+      WITH candidats AS (
+        SELECT id FROM amendements WHERE parlementaire_id = $1
+        UNION
+        SELECT "A" AS id FROM "_AmendementCosignataires" WHERE "B" = $1
+      )
+      SELECT a.dossier_id, a.date_depot, a.sort
+      FROM amendements a
+      JOIN candidats c ON c.id = a.id
+      ${whereClause}
+    `,
+      ...params
+    );
+
+    interface Groupe {
+      dossierId: string | null;
+      nb: number;
+      comptes: Record<FamilleSort, number>;
+      dernierDepot: Date | null;
+    }
+    const groupes = new Map<string, Groupe>();
+    for (const l of lignes) {
+      const cle = l.dossier_id ?? '';
+      let g = groupes.get(cle);
+      if (!g) {
+        g = {
+          dossierId: l.dossier_id,
+          nb: 0,
+          comptes: Object.fromEntries(FAMILLES_SORT.map((f) => [f, 0])) as Record<FamilleSort, number>,
+          dernierDepot: null,
+        };
+        groupes.set(cle, g);
+      }
+      g.nb++;
+      g.comptes[familleSort(l.sort)]++;
+      if (l.date_depot && (!g.dernierDepot || l.date_depot > g.dernierDepot)) g.dernierDepot = l.date_depot;
+    }
+
+    // Dossiers du dépôt le plus récent au plus ancien, sans dossier en dernier ;
+    // l'identifiant départage les ex æquo pour une pagination stable.
+    const tries = Array.from(groupes.values()).sort((x, y) => {
+      if (!x.dossierId !== !y.dossierId) return x.dossierId ? -1 : 1;
+      const dx = x.dernierDepot?.getTime() ?? 0;
+      const dy = y.dernierDepot?.getTime() ?? 0;
+      if (dx !== dy) return dy - dx;
+      return (x.dossierId ?? '').localeCompare(y.dossierId ?? '');
+    });
+
+    const total = tries.length;
+    const totalPages = Math.ceil(total / limit);
+    const pageGroupes = tries.slice((page - 1) * limit, page * limit);
+
+    const ids = pageGroupes.map((g) => g.dossierId).filter((id): id is string => !!id);
+    const dossiers = ids.length
+      ? await this.prisma.dossierLegislatif.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, uid: true, titre: true, titreCourt: true },
+        })
+      : [];
+    const dossierParId = new Map(dossiers.map((d) => [d.id, d]));
+
+    const result = {
+      data: pageGroupes.map((g) => {
+        const d = g.dossierId ? dossierParId.get(g.dossierId) : undefined;
+        return {
+          dossier: d ? { uid: d.uid, titre: d.titre, titreCourt: d.titreCourt } : null,
+          nbAmendements: g.nb,
+          sorts: g.comptes,
+          dernierDepot: g.dernierDepot,
+        };
+      }),
+      meta: {
+        total,
+        totalAmendements: lignes.length,
+        /** Groupes qui sont des dossiers (`total` compte aussi celui des amendements sans dossier). */
+        totalDossiers: tries.filter((g) => g.dossierId).length,
+        page,
+        limit,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrev: page > 1,
+      },
+    };
+
+    await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
     return result;
   }
 

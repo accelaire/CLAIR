@@ -87,6 +87,10 @@ export const parlementaireRankQuerySchema = z.object({
   groupe: z.string().optional().describe('Restreindre le classement à un slug de groupe'),
 });
 
+/** Ce sur quoi porte un scrutin (`scrutins.nature_vote`). */
+export const NATURES_VOTE = ['ensemble', 'article', 'amendement', 'credits', 'motion', 'declaration', 'autre'] as const;
+const natureVoteEnum = z.enum(NATURES_VOTE);
+
 export const parlementaireVotesQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -95,6 +99,24 @@ export const parlementaireVotesQuerySchema = z.object({
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
   dissidentOnly: booleenDeRequete.default(false).describe('Afficher uniquement les votes dissidents (différents du groupe)'),
+  chambre: chambreEnum.optional().describe('Chambre des scrutins, pour un parlementaire passé par les deux'),
+  dossier: z
+    .string()
+    .max(64)
+    .optional()
+    .describe('Uid du dossier législatif des scrutins, ou `aucun` pour les scrutins sans dossier'),
+  nature: natureVoteEnum.optional().describe('Ce sur quoi porte le vote'),
+});
+
+/** Votes d'un parlementaire regroupés par dossier : mêmes filtres, sans `position`, `tag`, `dossier`. */
+export const parlementaireVotesParDossierQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  dateFrom: z.coerce.date().optional(),
+  dateTo: z.coerce.date().optional(),
+  dissidentOnly: booleenDeRequete
+    .default(false)
+    .describe('Ne garder que les votes contraires à la majorité du groupe, et les dossiers qui en ont'),
   chambre: chambreEnum.optional().describe('Chambre des scrutins, pour un parlementaire passé par les deux'),
 });
 
@@ -234,6 +256,7 @@ export type ParlementaireIdParams = z.infer<typeof parlementaireIdParamsSchema>;
 export type ParlementaireQuery = z.infer<typeof parlementaireQuerySchema>;
 export type ParlementairesListQuery = z.infer<typeof parlementairesListQuerySchema>;
 export type ParlementaireVotesQuery = z.infer<typeof parlementaireVotesQuerySchema>;
+export type ParlementaireVotesParDossierQuery = z.infer<typeof parlementaireVotesParDossierQuerySchema>;
 export type ParlementaireRankQuery = z.infer<typeof parlementaireRankQuerySchema>;
 
 export type GroupePolitique = z.infer<typeof groupePolitiqueSchema>;

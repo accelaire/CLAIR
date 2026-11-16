@@ -10,6 +10,8 @@ import {
   parlementaireQuerySchema,
   parlementairesListQuerySchema,
   parlementaireVotesQuerySchema,
+  parlementaireVotesParDossierQuerySchema,
+  NATURES_VOTE,
   parlementaireRankQuerySchema,
   Chambre,
 } from './parlementaires.schema';
@@ -358,6 +360,16 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
               enum: ['assemblee', 'senat'],
               description: 'Chambre, pour un parlementaire passé par les deux',
             },
+            dossier: {
+              type: 'string',
+              maxLength: 64,
+              description: 'Uid du dossier législatif des scrutins (`DLR5L17N…`), ou `aucun` pour les scrutins sans dossier',
+            },
+            nature: {
+              type: 'string',
+              enum: [...NATURES_VOTE],
+              description: 'Ce sur quoi porte le vote : ensemble du texte, article, amendement, crédits, motion…',
+            },
           },
         },
       },
@@ -380,6 +392,66 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
 
         const result = await service.getParlementaireVotes(parlementaire.id, parlementaire.groupeId, query);
         return result;
+      },
+    });
+
+    // ===========================================================================
+    // GET /:slug/votes/dossiers - Votes d'un parlementaire regroupés par dossier
+    // ===========================================================================
+    fastify.get('/:slug/votes/dossiers', {
+      schema: {
+        tags: [chambreLabel],
+        summary: `Votes d'un ${chambreLabel.toLowerCase().slice(0, -1)}, par dossier législatif`,
+        description:
+          `Résume les votes d'un ${chambreLabel.toLowerCase().slice(0, -1)} dossier par dossier, du plus récemment voté au plus ancien : ` +
+          'nombre de votes, positions, votes contraires à la majorité de son groupe, répartition par nature et votes sur ' +
+          "l'ensemble du texte. Les scrutins sans dossier (motions de censure, demandes de suspension…) forment un dernier " +
+          'groupe, `dossier: null`. Le détail d\'un dossier : `/votes?dossier=<uid>` (ou `dossier=aucun`).',
+        params: {
+          type: 'object',
+          required: ['slug'],
+          properties: {
+            slug: { type: 'string' },
+          },
+        },
+        querystring: {
+          type: 'object',
+          properties: {
+            page: { type: 'integer', minimum: 1, default: 1 },
+            limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+            dateFrom: { type: 'string', format: 'date' },
+            dateTo: { type: 'string', format: 'date' },
+            dissidentOnly: {
+              type: 'boolean',
+              default: false,
+              description: 'Ne garder que les votes contraires à la majorité du groupe, et les dossiers qui en ont',
+            },
+            chambre: {
+              type: 'string',
+              enum: ['assemblee', 'senat'],
+              description: 'Chambre, pour un parlementaire passé par les deux',
+            },
+          },
+        },
+      },
+      handler: async (request, _reply) => {
+        const { slug } = parlementaireParamsSchema.parse(request.params);
+        const query = parlementaireVotesParDossierQuerySchema.parse(request.query);
+
+        const parlementaire = await fastify.prisma.parlementaire.findUnique({
+          where: { slug },
+          select: { id: true, chambre: true, groupeId: true },
+        });
+
+        if (!parlementaire) {
+          throw new ApiError(404, `${chambreLabel.slice(0, -1)} non trouvé`);
+        }
+
+        if (forcedChambre && parlementaire.chambre !== forcedChambre) {
+          throw new ApiError(404, `${chambreLabel.slice(0, -1)} non trouvé`);
+        }
+
+        return service.getParlementaireVotesParDossier(parlementaire.id, parlementaire.groupeId, query);
       },
     });
 
@@ -412,14 +484,19 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
               enum: ['assemblee', 'senat'],
               description: 'Chambre, pour un parlementaire passé par les deux',
             },
+            dossier: {
+              type: 'string',
+              maxLength: 64,
+              description: 'Uid du dossier législatif (`DLR5L17N…`), ou `aucun` pour les amendements sans dossier',
+            },
           },
         },
       },
       handler: async (request, _reply) => {
         const { slug } = parlementaireParamsSchema.parse(request.params);
-        const { page = 1, limit = 20, sort, dateFrom, dateTo, votedOnly, chambre } = request.query as {
+        const { page = 1, limit = 20, sort, dateFrom, dateTo, votedOnly, chambre, dossier } = request.query as {
         page?: number; limit?: number; sort?: string;
-        dateFrom?: string; dateTo?: string; votedOnly?: boolean; chambre?: Chambre;
+        dateFrom?: string; dateTo?: string; votedOnly?: boolean; chambre?: Chambre; dossier?: string;
       };
 
         const parlementaire = await fastify.prisma.parlementaire.findUnique({
@@ -439,6 +516,73 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           page,
           limit,
           sort,
+          dateFrom,
+          dateTo,
+          votedOnly,
+          chambre,
+          dossier,
+        });
+      },
+    });
+
+    // ===========================================================================
+    // GET /:slug/amendements/dossiers - Amendements regroupés par dossier
+    // ===========================================================================
+    fastify.get('/:slug/amendements/dossiers', {
+      schema: {
+        tags: [chambreLabel],
+        summary: `Amendements d'un ${chambreLabel.toLowerCase().slice(0, -1)}, par dossier législatif`,
+        description:
+          `Résume les amendements déposés ou cosignés par un ${chambreLabel.toLowerCase().slice(0, -1)}, dossier par dossier, ` +
+          'du dépôt le plus récent au plus ancien : nombre d\'amendements et ce qu\'il en est advenu, en quatre familles ' +
+          '(`adopte`, `rejete`, `non_vote` : retiré, tombé, non soutenu ou irrecevable, `attente` : pas encore examiné ou sort ' +
+          'inconnu). Les amendements sans dossier forment un dernier groupe, `dossier: null`. Le détail d\'un dossier : ' +
+          '`/amendements?dossier=<uid>` (ou `dossier=aucun`).',
+        params: {
+          type: 'object',
+          required: ['slug'],
+          properties: {
+            slug: { type: 'string' },
+          },
+        },
+        querystring: {
+          type: 'object',
+          properties: {
+            page: { type: 'integer', minimum: 1, default: 1 },
+            limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+            dateFrom: { type: 'string', format: 'date' },
+            dateTo: { type: 'string', format: 'date' },
+            votedOnly: { type: 'boolean', default: false, description: 'Seulement les amendements mis aux voix par scrutin public' },
+            chambre: {
+              type: 'string',
+              enum: ['assemblee', 'senat'],
+              description: 'Chambre, pour un parlementaire passé par les deux',
+            },
+          },
+        },
+      },
+      handler: async (request, _reply) => {
+        const { slug } = parlementaireParamsSchema.parse(request.params);
+        const { page = 1, limit = 20, dateFrom, dateTo, votedOnly, chambre } = request.query as {
+          page?: number; limit?: number; dateFrom?: string; dateTo?: string; votedOnly?: boolean; chambre?: Chambre;
+        };
+
+        const parlementaire = await fastify.prisma.parlementaire.findUnique({
+          where: { slug },
+          select: { id: true, chambre: true },
+        });
+
+        if (!parlementaire) {
+          throw new ApiError(404, `${chambreLabel.slice(0, -1)} non trouvé`);
+        }
+
+        if (forcedChambre && parlementaire.chambre !== forcedChambre) {
+          throw new ApiError(404, `${chambreLabel.slice(0, -1)} non trouvé`);
+        }
+
+        return service.getParlementaireAmendementsParDossier(parlementaire.id, {
+          page,
+          limit,
           dateFrom,
           dateTo,
           votedOnly,
