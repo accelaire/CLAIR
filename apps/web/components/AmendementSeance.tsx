@@ -157,7 +157,7 @@ export function DiscussionsEtSousAmendements({
               title={b.titre}
               aria-expanded={ouverte === b.cle}
               onClick={() => setOuverte(ouverte === b.cle ? null : b.cle)}
-              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
+              className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
                 ouverte === b.cle
                   ? 'border-primary/30 bg-primary/10 text-primary'
                   : 'border-border bg-muted/40 text-muted-foreground hover:bg-muted'
@@ -170,7 +170,7 @@ export function DiscussionsEtSousAmendements({
             <span
               key={b.cle}
               title={b.titre}
-              className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
+              className="inline-flex items-center whitespace-nowrap rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
             >
               {b.libelle}
             </span>
@@ -250,21 +250,26 @@ function AmendementsLies({
           </>
         );
         return (
-          <li key={a.id} className={`flex items-center justify-between gap-3 px-3 py-2 text-sm ${lui ? 'bg-primary/5' : ''}`}>
+          // Le vote et le sort passent sous la description quand la place
+          // manque, au lieu de l'écraser en colonne d'un mot.
+          <li
+            key={a.id}
+            className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2 text-sm ${lui ? 'bg-primary/5' : ''}`}
+          >
             {lui ? (
-              <div className="min-w-0">{description}</div>
+              <div className="min-w-0 flex-1 basis-40">{description}</div>
             ) : (
               <LienAmendement
                 dossierUid={dossierUid}
                 uid={a.uid}
-                className="group min-w-0"
+                className="group min-w-0 flex-1 basis-40"
               >
                 {description}
               </LienAmendement>
             )}
-            <div className="flex flex-shrink-0 items-center gap-2">
+            <div className="ml-auto flex flex-shrink-0 items-center gap-2">
               {a.scrutins?.map((s) => (
-                <Link key={s.id} href={scrutinHref(s)} className="text-xs text-primary hover:underline">
+                <Link key={s.id} href={scrutinHref(s)} className="whitespace-nowrap text-xs text-primary hover:underline">
                   vote n&deg;{s.numero}
                 </Link>
               ))}

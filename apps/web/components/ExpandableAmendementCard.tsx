@@ -2,13 +2,14 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ChevronDown, ChevronUp, FileText } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, FileText, Vote } from 'lucide-react';
 import { AmendementSortBadge } from '@/components/AmendementSortBadge';
 import { DiscussionsEtSousAmendements, SousAmendementDe } from '@/components/AmendementSeance';
+import { ContenuAmendement, contenuAmendementDepasse } from '@/components/ContenuAmendement';
 import { amendementHref, ancreAmendement, libelleAlinea, type MetadonneesAmendement } from '@/lib/amendements';
+import { dossierTitreCourtLisible } from '@/lib/dossiers';
 import { scrutinHref } from '@/lib/scrutin-url';
-import { nettoyerTexteAmendement, type RenvoiDispositif } from '@/lib/texte-amendement';
-import { TexteAmendement } from '@/components/TexteAmendement';
+import type { RenvoiDispositif } from '@/lib/texte-amendement';
 
 interface AmendementData extends MetadonneesAmendement {
   id: string;
@@ -36,13 +37,21 @@ interface ExpandableAmendementCardProps {
   surligne?: boolean;
 }
 
+/**
+ * Carte d'un amendement (fiche d'un parlementaire, page d'un dossier).
+ *
+ * Une seule colonne : à côté du texte, la colonne des liens (vote, dossier)
+ * ne laissait au texte que la moitié d'un écran de téléphone.
+ */
 export function ExpandableAmendementCard({ amendement, showAuteur, dossierUid, surligne }: ExpandableAmendementCardProps) {
   const [expanded, setExpanded] = useState(false);
   const alinea = libelleAlinea(amendement);
   const dossierDeLAmendement = dossierUid ?? amendement.dossier?.uid;
-
-  const exposeSommaireText = amendement.exposeSommaire ? nettoyerTexteAmendement(amendement.exposeSommaire).trim() : null;
-  const hasLongContent = (exposeSommaireText && exposeSommaireText.length > 200) || !!amendement.dispositif;
+  const visee = [amendement.articleVise, alinea].filter(Boolean).join(', ');
+  const depasse = contenuAmendementDepasse(amendement.dispositif, amendement.exposeSommaire);
+  // Sur la page du dossier, le lien vers ce même dossier n'apprend rien.
+  const dossierLie = amendement.dossier && amendement.dossier.uid !== dossierUid ? amendement.dossier : null;
+  const scrutins = amendement.scrutins ?? [];
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -56,121 +65,92 @@ export function ExpandableAmendementCard({ amendement, showAuteur, dossierUid, s
         surligne ? 'border-primary/20 bg-primary/5' : 'bg-card'
       }`}
     >
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="font-mono text-sm font-medium">n&deg;{amendement.numero}</span>
-            {(amendement.articleVise || alinea) && (
-              <span className="text-sm text-muted-foreground">
-                &bull; {[amendement.articleVise, alinea].filter(Boolean).join(', ')}
-              </span>
-            )}
-          </div>
-          <SousAmendementDe amendement={amendement} dossierUid={dossierDeLAmendement} />
-          {showAuteur && amendement.auteurLibelle && (
-            <p className="text-sm text-muted-foreground line-clamp-1 mb-2">{amendement.auteurLibelle}</p>
-          )}
-          {exposeSommaireText && (
-            <div className="mb-2">
-              <p className={`text-sm leading-relaxed ${!expanded ? 'line-clamp-3' : ''}`}>
-                {exposeSommaireText}
-              </p>
-            </div>
-          )}
-          {expanded && amendement.dispositif && (
-            <div className="mt-3 rounded bg-muted/50 p-3">
-              <p className="text-xs font-medium text-muted-foreground mb-1">Dispositif :</p>
-              <TexteAmendement
-                texte={amendement.dispositif}
-                renvois={amendement.renvois}
-                className="text-sm leading-relaxed"
-              />
-            </div>
-          )}
-          {/* Sous le texte qu'il déplie, et non en pied de carte, après les
-              listes de séance. */}
-          {hasLongContent && (
-            <button
-              type="button"
-              onClick={() => setExpanded(!expanded)}
-              aria-expanded={expanded}
-              className="mt-1 flex items-center gap-1 text-xs text-primary hover:underline"
-            >
-              {expanded ? (
-                <>
-                  <ChevronUp className="h-3 w-3" />
-                  Réduire
-                </>
-              ) : (
-                <>
-                  <ChevronDown className="h-3 w-3" />
-                  Voir plus
-                </>
-              )}
-            </button>
-          )}
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mt-2">
-            {amendement.dateDepot && (
-              <span>Déposé le {formatDate(amendement.dateDepot)}</span>
-            )}
-            {amendement.texteRef && (
-              <>
-                <span>&bull;</span>
-                <span className="font-mono">{amendement.texteRef}</span>
-              </>
-            )}
-          </div>
-          <DiscussionsEtSousAmendements amendement={amendement} dossierUid={dossierDeLAmendement} />
-        </div>
-
-        <div className="flex flex-col items-end gap-2 flex-shrink-0">
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <p className="min-w-0 text-sm">
+          <span className="font-mono font-medium">n&deg;{amendement.numero}</span>
+          {visee && <span className="text-muted-foreground"> &bull; {visee}</span>}
+        </p>
+        <div className="flex-shrink-0">
           <AmendementSortBadge sort={amendement.sort ?? null} />
-          {amendement.scrutins && amendement.scrutins.length > 0 && (
-            <div className="flex flex-col items-end gap-1">
-              {amendement.scrutins.map((s) => (
-                <Link
-                  key={s.id}
-                  href={scrutinHref(s)}
-                  className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 hover:underline w-fit"
-                >
-                  <span className="hidden sm:inline">Voir le vote n&deg;{s.numero}</span>
-                  <span className="sm:hidden">Vote n&deg;{s.numero}</span>
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-3 w-3"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 5l7 7-7 7"
-                    />
-                  </svg>
-                </Link>
-              ))}
-            </div>
+        </div>
+      </div>
+
+      <SousAmendementDe amendement={amendement} dossierUid={dossierDeLAmendement} />
+      {showAuteur && amendement.auteurLibelle && (
+        <p className="text-sm text-muted-foreground line-clamp-1 mb-2">{amendement.auteurLibelle}</p>
+      )}
+
+      <ContenuAmendement
+        dispositif={amendement.dispositif}
+        renvois={amendement.renvois}
+        exposeSommaire={amendement.exposeSommaire}
+        replie={!expanded}
+      />
+      {depasse && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline"
+        >
+          {expanded ? (
+            <>
+              <ChevronUp className="h-3 w-3" />
+              Réduire
+            </>
+          ) : (
+            <>
+              <ChevronDown className="h-3 w-3" />
+              Lire en entier
+            </>
           )}
-          {amendement.dossier && (
+        </button>
+      )}
+
+      {(scrutins.length > 0 || dossierLie) && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
+          {scrutins.map((s) => (
+            <Link
+              key={s.id}
+              href={scrutinHref(s)}
+              className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+            >
+              <Vote className="h-3.5 w-3.5" />
+              Voir le vote n&deg;{s.numero}
+              <ChevronRight className="h-3 w-3" />
+            </Link>
+          ))}
+          {dossierLie && (
             <Link
               href={
                 amendement.uid
-                  ? amendementHref(amendement.dossier.uid, amendement.uid)
-                  : `/dossiers/${amendement.dossier.uid}`
+                  ? amendementHref(dossierLie.uid, amendement.uid)
+                  : `/dossiers/${dossierLie.uid}`
               }
-              className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 hover:underline w-fit max-w-[200px]"
+              className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-muted-foreground hover:text-primary hover:underline"
             >
-              <FileText className="h-3 w-3 flex-shrink-0" />
-              <span className="line-clamp-1">
-                {amendement.dossier.titreCourt || amendement.dossier.titre || amendement.dossier.uid}
+              <FileText className="h-3.5 w-3.5 flex-shrink-0" />
+              <span className="truncate">
+                {dossierTitreCourtLisible(dossierLie.titreCourt) || dossierLie.titre || dossierLie.uid}
               </span>
             </Link>
           )}
         </div>
+      )}
+
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+        {amendement.dateDepot && <span>Déposé le {formatDate(amendement.dateDepot)}</span>}
+        {/* Référence technique du texte amendé : utile aux réutilisateurs,
+            du bruit sur un écran de téléphone. */}
+        {amendement.texteRef && (
+          <span className="hidden sm:inline">
+            {amendement.dateDepot && <>&bull; </>}
+            <span className="font-mono">{amendement.texteRef}</span>
+          </span>
+        )}
       </div>
 
+      <DiscussionsEtSousAmendements amendement={amendement} dossierUid={dossierDeLAmendement} />
     </div>
   );
 }
