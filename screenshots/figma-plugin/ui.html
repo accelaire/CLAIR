@@ -1,0 +1,214 @@
+<!doctype html>
+<meta charset="utf-8" />
+<style>
+  body { font: 13px/1.4 Inter, system-ui, sans-serif; margin: 0; padding: 16px; color: #1e1e1e; }
+  h1 { font-size: 15px; margin: 0 0 8px; }
+  p { margin: 0 0 12px; color: #555; }
+  .liste { border: 1px solid #ddd; border-radius: 6px; height: 300px; overflow: auto; padding: 6px 8px; margin: 8px 0; }
+  .liste label { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .liste .section { font-weight: 600; margin-top: 8px; }
+  .boutons { display: flex; gap: 8px; margin-top: 8px; }
+  button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+  button.principal { background: #0d99ff; border-color: #0d99ff; color: #fff; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #etat { margin-top: 10px; min-height: 36px; white-space: pre-wrap; }
+  .erreur { color: #c92a2a; }
+</style>
+<h1>Import des captures Clair</h1>
+<p>Choisir le dossier <code>screenshots/</code> du dépôt. Tout va sur la page ouverte : une section par partie du site, une sous-section par écran (captures et notes en cadres séparés), une par famille de composants. Relancer reconstruit les écrans cochés, à la même place.</p>
+<input type="file" id="dossier" webkitdirectory multiple />
+<div class="liste" id="liste"><p>Aucun dossier choisi.</p></div>
+<div class="boutons">
+  <button id="tout">Tout cocher</button>
+  <button id="rien">Tout décocher</button>
+  <button id="importer" class="principal" disabled>Importer</button>
+</div>
+<div id="etat"></div>
+
+<script>
+  const MAX = 4096; // côté maximal d'une image dans Figma
+  const SECTIONS = [
+    [10, "Écrans 0 · Accueil et recherche"],
+    [30, "Écrans 1 · Parlementaires et gouvernements"],
+    [50, "Écrans 2 · Votes, scrutins, dossiers, sujets"],
+    [80, "Écrans 3 · Commissions, agenda, lobbying, sénatoriales"],
+    [Infinity, "Écrans 4 · Pages éditoriales et légales"],
+  ];
+  const COLONNES = [
+    ["actuel", "desktop", "Site actuel · ordinateur", 1],
+    ["actuel", "mobile", "Site actuel · mobile", 0.5],
+    ["beta", "desktop", "Bêta · ordinateur", 1],
+    ["beta", "mobile", "Bêta · mobile", 0.5],
+  ];
+  const FAMILLES = ["fondations", "filtres", "graphiques", "mise-en-page", "parlementaire"];
+
+  const $ = (id) => document.getElementById(id);
+  let ecrans = [];   // { dossier, titre, section, notes, fichiers: { "beta-desktop": [File…] } }
+  let familles = []; // { nom, composants: [{ nom, variantes: [{ libelle, fichier }] }] }
+
+  const section = (dossier) => SECTIONS.find(([fin]) => parseInt(dossier, 10) < fin)[1];
+  const parNumero = (a, b) => a.n - b.n;
+
+  $("dossier").addEventListener("change", async (ev) => {
+    const fichiers = [...ev.target.files];
+    const rel = (f) => f.webkitRelativePath.split("/").slice(1).join("/");
+    const notesFichier = fichiers.find((f) => rel(f) === "notes.json");
+    const notes = notesFichier ? JSON.parse(await notesFichier.text()) : {};
+
+    const parDossier = {};
+    const parFamille = {};
+    for (const f of fichiers) {
+      const chemin = rel(f);
+      let m = chemin.match(/^(\d\d[a-z]?-[^/]+)\/(actuel|beta)-(desktop|mobile)(?:-(\d+))?\.png$/);
+      if (m) {
+        const e = (parDossier[m[1]] ||= { dossier: m[1], fichiers: {} });
+        (e.fichiers[`${m[2]}-${m[3]}`] ||= []).push({ n: Number(m[4] || 0), f });
+        continue;
+      }
+      m = chemin.match(/^composants\/(?:composants-)?(.+)\.png$/);
+      if (m) {
+        const famille = FAMILLES.find((x) => m[1].startsWith(x + "-"));
+        if (!famille) continue;
+        const [nom, variante = "defaut"] = m[1].slice(famille.length + 1).split("--");
+        const fam = (parFamille[famille] ||= {});
+        (fam[nom] ||= []).push({ libelle: variante, fichier: f });
+      }
+    }
+
+    ecrans = Object.values(parDossier)
+      .sort((a, b) => a.dossier.localeCompare(b.dossier))
+      .map((e) => {
+        for (const k in e.fichiers) e.fichiers[k] = e.fichiers[k].sort(parNumero).map((x) => x.f);
+        const n = notes[e.dossier];
+        return { ...e, titre: n ? n.titre : e.dossier, notes: n || null, section: section(e.dossier) };
+      });
+    familles = FAMILLES.filter((f) => parFamille[f]).map((f) => ({
+      nom: f,
+      composants: Object.keys(parFamille[f]).sort().map((nom) => ({
+        nom,
+        variantes: parFamille[f][nom].sort((a, b) => a.libelle.localeCompare(b.libelle)),
+      })),
+    }));
+    afficherListe();
+  });
+
+  function afficherListe() {
+    const l = $("liste");
+    l.innerHTML = "";
+    let derniere = null;
+    ecrans.forEach((e, i) => {
+      if (e.section !== derniere) {
+        derniere = e.section;
+        l.insertAdjacentHTML("beforeend", `<div class="section">${e.section}</div>`);
+      }
+      l.insertAdjacentHTML("beforeend", `<label><input type="checkbox" data-ecran="${i}" checked> ${e.dossier} · ${e.titre}</label>`);
+    });
+    if (familles.length) l.insertAdjacentHTML("beforeend", `<div class="section">Composants</div>`);
+    familles.forEach((f, i) => {
+      const n = f.composants.length;
+      l.insertAdjacentHTML("beforeend", `<label><input type="checkbox" data-famille="${i}" checked> ${f.nom} (${n})</label>`);
+    });
+    if (!ecrans.length && !familles.length) l.innerHTML = "<p>Aucune capture trouvée : choisir le dossier screenshots/.</p>";
+    $("importer").disabled = !ecrans.length && !familles.length;
+  }
+
+  const cocher = (v) => document.querySelectorAll(".liste input").forEach((c) => (c.checked = v));
+  $("tout").onclick = () => cocher(true);
+  $("rien").onclick = () => cocher(false);
+
+  /** Découpe une image trop haute en tuiles de MAX px ; garde le PNG d'origine sinon. */
+  async function tuiles(fichier) {
+    const bmp = await createImageBitmap(fichier);
+    const { width: l, height: h } = bmp;
+    if (l > MAX) throw new Error(`${fichier.name} : ${l} px de large, au-delà de ${MAX}`);
+    if (h <= MAX) {
+      bmp.close();
+      return [{ octets: new Uint8Array(await fichier.arrayBuffer()), largeur: l, hauteur: h }];
+    }
+    const sortie = [];
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    for (let y = 0; y < h; y += MAX) {
+      const t = Math.min(MAX, h - y);
+      canvas.width = l;
+      canvas.height = t;
+      ctx.clearRect(0, 0, l, t);
+      ctx.drawImage(bmp, 0, y, l, t, 0, 0, l, t);
+      const blob = await new Promise((ok) => canvas.toBlob(ok, "image/png"));
+      sortie.push({ octets: new Uint8Array(await blob.arrayBuffer()), largeur: l, hauteur: t });
+    }
+    bmp.close();
+    return sortie;
+  }
+
+  async function toutesLesTuiles(fichiers) {
+    const r = [];
+    for (const f of fichiers) r.push(...(await tuiles(f)));
+    return r;
+  }
+
+  let attente = null;
+  window.onmessage = (ev) => {
+    const m = ev.data.pluginMessage;
+    if (!m || !attente) return;
+    const { ok, ko } = attente;
+    attente = null;
+    m.type === "erreur" ? ko(new Error(m.message)) : ok();
+  };
+  const envoyer = (message) =>
+    new Promise((ok, ko) => {
+      attente = { ok, ko };
+      parent.postMessage({ pluginMessage: message }, "*");
+    });
+
+  const etat = (t, erreur) => {
+    $("etat").textContent = t;
+    $("etat").className = erreur ? "erreur" : "";
+  };
+
+  $("importer").onclick = async () => {
+    const choixEcrans = [...document.querySelectorAll("[data-ecran]:checked")].map((c) => ecrans[c.dataset.ecran]);
+    const choixFamilles = [...document.querySelectorAll("[data-famille]:checked")].map((c) => familles[c.dataset.famille]);
+    const total = choixEcrans.length + choixFamilles.length;
+    if (!total) return;
+    document.querySelectorAll("button, input").forEach((b) => (b.disabled = true));
+    const erreurs = [];
+    let fait = 0;
+    try {
+      await envoyer({ type: "commencer" });
+      for (const e of choixEcrans) {
+        etat(`${++fait}/${total} · ${e.dossier}`);
+        try {
+          const colonnes = [];
+          for (const [site, vp, libelle, echelle] of COLONNES) {
+            const fichiers = e.fichiers[`${site}-${vp}`] || [];
+            colonnes.push({ libelle, echelle, fichier: `${site}-${vp}`, tuiles: await toutesLesTuiles(fichiers) });
+          }
+          await envoyer({ type: "ecran", section: e.section, nom: `${e.dossier} · ${e.titre}`, notes: e.notes, colonnes });
+        } catch (err) {
+          erreurs.push(`${e.dossier} : ${err.message}`);
+        }
+      }
+      for (const f of choixFamilles) {
+        etat(`${++fait}/${total} · composants ${f.nom}`);
+        try {
+          const composants = [];
+          for (const c of f.composants) {
+            const variantes = [];
+            for (const v of c.variantes) variantes.push({ libelle: v.libelle, echelle: 0.5, tuiles: await tuiles(v.fichier) });
+            composants.push({ nom: c.nom, variantes });
+          }
+          await envoyer({ type: "famille", section: "Composants", nom: `Composants · ${f.nom}`, composants });
+        } catch (err) {
+          erreurs.push(`composants ${f.nom} : ${err.message}`);
+        }
+      }
+      await envoyer({ type: "fin" });
+      etat(erreurs.length ? `Terminé avec ${erreurs.length} erreur(s) :\n${erreurs.join("\n")}` : `Terminé : ${total} cadre(s) importé(s).`, erreurs.length > 0);
+    } catch (err) {
+      etat(`Erreur : ${err.message}`, true);
+    } finally {
+      document.querySelectorAll("button, input").forEach((b) => (b.disabled = false));
+    }
+  };
+</script>
