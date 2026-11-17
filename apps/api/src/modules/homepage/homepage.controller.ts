@@ -7,6 +7,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { INTERNAL_SECURITY_SCHEME } from '../../openapi';
 import { isStrictlyInternalRequest } from '../../utils/internal-auth';
 import { INTERVENTIONS_DE_FOND } from '../../utils/interventions';
+import { debutDuJourAParis } from '../../utils/jour-paris';
 
 // Cache 27h — survit au sync (CRON 5h, durée max ~2h) + marge
 // Le cache est renouvelé activement par l'ingestion après chaque sync
@@ -33,6 +34,105 @@ interface HomepageStats {
 }
 
 export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
+  /**
+   * Le bloc « à venir » de l'accueil, sous sa propre clé de 15 min.
+   *
+   * Il était rangé dans `homepage:data` (27 h) : le planning restait celui du
+   * préchauffage d'après le batch de nuit, sans les réunions ajoutées dans la
+   * journée et avec celles finies le matin. Il est relu à chaque réponse.
+   */
+  async function chargerAVenir(): Promise<{ events: unknown[]; evenements: unknown[]; echeances: unknown[] }> {
+    const upcomingCacheKey = 'homepage:upcoming';
+    const cachedUpcoming = await fastify.redis.get(upcomingCacheKey);
+    if (cachedUpcoming) return JSON.parse(cachedUpcoming);
+
+    const now = new Date();
+    const TARGET_DAYS = 7;
+    // Les réunions commencées restent tant qu'elles peuvent être en cours :
+    // c'est là que le site leur pose « En direct ». Sans heure de fin, une
+    // commission est réputée durer 4 h ; une séance, 12 h, car le Sénat
+    // n'annonce jamais la fin et une séance de 14 h 30 va souvent au soir.
+    // Jamais avant minuit à Paris : la séance d'hier soir n'est plus « à venir ».
+    const minuit = debutDuJourAParis(now).getTime();
+    const ilYA = (heures: number) => new Date(Math.max(now.getTime() - heures * 3_600_000, minuit));
+    const allEvents = await fastify.prisma.reunion.findMany({
+      where: {
+        etat: 'confirme',
+        type: { in: ['seance', 'commission'] },
+        OR: [
+          { dateDebut: { gte: now } },
+          { dateDebut: { lt: now }, dateFin: { gte: now } },
+          { dateDebut: { gte: ilYA(4), lt: now }, dateFin: null },
+          { type: 'seance', dateDebut: { gte: ilYA(12), lt: now }, dateFin: null },
+        ],
+      },
+      orderBy: { dateDebut: 'asc' },
+      take: 200,
+      select: {
+        id: true, uid: true, type: true, dateDebut: true, dateFin: true,
+        lieu: true, odjResume: true, etat: true, captationVideo: true,
+        compteRenduRef: true, urlVideo: true,
+        commission: {
+          select: { slug: true, nom: true, nomCourt: true, chambre: true, organeRef: true },
+        },
+      },
+    });
+    const seenDays = new Set<string>();
+    const events: typeof allEvents = [];
+    for (const ev of allEvents) {
+      const day = ev.dateDebut.toISOString().split('T')[0]!;
+      seenDays.add(day);
+      if (seenDays.size > TARGET_DAYS) break;
+      events.push(ev);
+    }
+    // Repères institutionnels. Deux listes, parce qu'elles répondent à deux
+    // questions différentes : `evenements` sert à annoter les jours affichés
+    // dans le planning, `echeances` à montrer les rendez-vous majeurs qui
+    // tombent bien au-delà de la fenêtre de 7 jours (les sénatoriales sont à
+    // six semaines et n'apparaîtraient jamais autrement).
+    const evenementSelect = {
+      id: true, slug: true, type: true, titre: true, description: true,
+      dateDebut: true, dateFin: true, datePrecise: true, chambre: true,
+      sources: true, important: true,
+    } as const;
+
+    const finFenetre = events.length > 0
+      ? events[events.length - 1]!.dateDebut
+      : new Date(now.getTime() + TARGET_DAYS * 86_400_000);
+    const debutJour = new Date(Date.UTC(
+      now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(),
+    ));
+
+    const [evenements, echeances] = await Promise.all([
+      fastify.prisma.evenementInstitutionnel.findMany({
+        where: {
+          OR: [
+            { dateFin: null, dateDebut: { gte: debutJour, lte: finFenetre } },
+            { dateFin: { not: null, gte: debutJour }, dateDebut: { lte: finFenetre } },
+          ],
+        },
+        orderBy: [{ dateDebut: 'asc' }, { titre: 'asc' }],
+        select: evenementSelect,
+      }),
+      fastify.prisma.evenementInstitutionnel.findMany({
+        where: {
+          important: true,
+          OR: [
+            { dateFin: null, dateDebut: { gte: debutJour } },
+            { dateFin: { gte: debutJour } },
+          ],
+        },
+        orderBy: [{ dateDebut: 'asc' }, { titre: 'asc' }],
+        take: 3,
+        select: evenementSelect,
+      }),
+    ]);
+
+    const upcoming = { events, evenements, echeances };
+    await fastify.redis.setex(upcomingCacheKey, UPCOMING_CACHE_TTL, JSON.stringify(upcoming));
+    return upcoming;
+  }
+
   // ===========================================================================
   // GET /api/v1/homepage - Données agrégées pour la page d'accueil
   // ===========================================================================
@@ -48,7 +148,7 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
       // Vérifier le cache
       const cached = await fastify.redis.get(cacheKey);
       if (cached) {
-        return JSON.parse(cached);
+        return { ...JSON.parse(cached), upcoming: await chargerAVenir() };
       }
 
       // Batch 1 — counts parallèles (requêtes légères, ~2ms chacune)
@@ -160,86 +260,6 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
       const fillCount = 8 - bigDossiers.length;
       const trendingDossiers = [...bigDossiers, ...recentlyVotedDossiers.slice(0, fillCount)];
 
-      // Batch 4 — agenda à venir (TTL court séparé), liste unifiée chronologique
-      const upcomingCacheKey = 'homepage:upcoming';
-      let upcoming: { events: unknown[]; evenements: unknown[]; echeances: unknown[] } | null = null;
-      const cachedUpcoming = await fastify.redis.get(upcomingCacheKey);
-      if (cachedUpcoming) {
-        upcoming = JSON.parse(cachedUpcoming);
-      } else {
-        const now = new Date();
-        const TARGET_DAYS = 7;
-        const allEvents = await fastify.prisma.reunion.findMany({
-          where: {
-            dateDebut: { gte: now },
-            etat: 'confirme',
-            type: { in: ['seance', 'commission'] },
-          },
-          orderBy: { dateDebut: 'asc' },
-          take: 200,
-          select: {
-            id: true, uid: true, type: true, dateDebut: true, dateFin: true,
-            lieu: true, odjResume: true, etat: true, captationVideo: true,
-            compteRenduRef: true,
-            commission: {
-              select: { slug: true, nom: true, nomCourt: true, chambre: true, organeRef: true },
-            },
-          },
-        });
-        const seenDays = new Set<string>();
-        const events: typeof allEvents = [];
-        for (const ev of allEvents) {
-          const day = ev.dateDebut.toISOString().split('T')[0]!;
-          seenDays.add(day);
-          if (seenDays.size > TARGET_DAYS) break;
-          events.push(ev);
-        }
-        // Repères institutionnels. Deux listes, parce qu'elles répondent à deux
-        // questions différentes : `evenements` sert à annoter les jours affichés
-        // dans le planning, `echeances` à montrer les rendez-vous majeurs qui
-        // tombent bien au-delà de la fenêtre de 7 jours (les sénatoriales sont à
-        // six semaines et n'apparaîtraient jamais autrement).
-        const evenementSelect = {
-          id: true, slug: true, type: true, titre: true, description: true,
-          dateDebut: true, dateFin: true, datePrecise: true, chambre: true,
-          sources: true, important: true,
-        } as const;
-
-        const finFenetre = events.length > 0
-          ? events[events.length - 1]!.dateDebut
-          : new Date(now.getTime() + TARGET_DAYS * 86_400_000);
-        const debutJour = new Date(Date.UTC(
-          now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(),
-        ));
-
-        const [evenements, echeances] = await Promise.all([
-          fastify.prisma.evenementInstitutionnel.findMany({
-            where: {
-              OR: [
-                { dateFin: null, dateDebut: { gte: debutJour, lte: finFenetre } },
-                { dateFin: { not: null, gte: debutJour }, dateDebut: { lte: finFenetre } },
-              ],
-            },
-            orderBy: [{ dateDebut: 'asc' }, { titre: 'asc' }],
-            select: evenementSelect,
-          }),
-          fastify.prisma.evenementInstitutionnel.findMany({
-            where: {
-              important: true,
-              OR: [
-                { dateFin: null, dateDebut: { gte: debutJour } },
-                { dateFin: { gte: debutJour } },
-              ],
-            },
-            orderBy: [{ dateDebut: 'asc' }, { titre: 'asc' }],
-            take: 3,
-            select: evenementSelect,
-          }),
-        ]);
-
-        upcoming = { events, evenements, echeances };
-        await fastify.redis.setex(upcomingCacheKey, UPCOMING_CACHE_TTL, JSON.stringify(upcoming));
-      }
 
       // Fetch vote stats (adopté/rejeté) per dossier
       const dossierIds = trendingDossiers.map(d => d.id);
@@ -296,13 +316,12 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
           };
         }),
         lastUpdate: lastSync?.completedAt || null,
-        upcoming,
       };
 
-      // Mettre en cache (27h)
+      // Mettre en cache (27h), sans le bloc « à venir » qui vit sous sa clé.
       await fastify.redis.setex(cacheKey, CACHE_TTL, JSON.stringify(result));
 
-      return result;
+      return { ...result, upcoming: await chargerAVenir() };
     },
   });
 

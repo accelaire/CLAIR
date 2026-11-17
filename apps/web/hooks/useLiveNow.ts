@@ -1,47 +1,19 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import type { LiveNowResponse } from '@/lib/live-url';
 
-interface LiveNowCommission {
-  organeRef: string;
-  directUrl: string;
-  chambre: string;
-}
-
-interface LiveNowSeance {
-  isoDate: string;
-  order: number;
-  directUrl: string;
-  chambre: string;
-}
-
-interface LiveNowResponse {
-  commissions: LiveNowCommission[];
-  seances: LiveNowSeance[];
-}
-
-export function useLiveNow() {
+/** Les directs en cours, relus toutes les 5 minutes. À rapprocher par `directsDesReunions`. */
+export function useLiveNow(): LiveNowResponse | undefined {
   const { data } = useQuery<LiveNowResponse>({
     queryKey: ['live-now'],
-    queryFn: () => fetch('/api/live-now').then(r => r.json()),
+    queryFn: async () => {
+      const res = await fetch('/api/live-now');
+      if (!res.ok) throw new Error(`live-now : HTTP ${res.status}`);
+      return res.json();
+    },
     refetchInterval: 5 * 60 * 1000,
     staleTime: 4 * 60 * 1000,
   });
-
-  const liveByOrganeRef = new Map<string, string>();
-  const liveBySeanceKey = new Map<string, string>();
-  const liveBySeanceDate = new Map<string, string>();
-
-  if (data) {
-    for (const c of data.commissions) {
-      liveByOrganeRef.set(c.organeRef, c.directUrl);
-    }
-    for (const s of data.seances) {
-      liveBySeanceKey.set(`${s.chambre}|${s.isoDate}|${s.order}`, s.directUrl);
-      const dateKey = `${s.chambre}|${s.isoDate}`;
-      if (!liveBySeanceDate.has(dateKey)) liveBySeanceDate.set(dateKey, s.directUrl);
-    }
-  }
-
-  return { liveByOrganeRef, liveBySeanceKey, liveBySeanceDate };
+  return data;
 }
