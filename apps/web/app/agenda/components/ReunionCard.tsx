@@ -53,26 +53,16 @@ function formatTime(dateStr: string) {
   });
 }
 
-// Fenêtre de direct: dateDebut → dateFin (ou +4h par défaut)
-const LIVE_FALLBACK_DURATION_MS = 4 * 60 * 60 * 1000;
-
-function isHappeningNow(reunion: AgendaReunion, now: number): boolean {
-  const start = new Date(reunion.dateDebut).getTime();
-  const end = reunion.dateFin
-    ? new Date(reunion.dateFin).getTime()
-    : start + LIVE_FALLBACK_DURATION_MS;
-  return now >= start && now <= end;
-}
-
-
 import { deriveChambre } from '@/lib/chambre';
 import { urlDuCompteRendu } from '@/lib/compte-rendu-url';
+import { estEnCours } from '@/lib/live-url';
 
 export function ReunionCard({
   reunion,
   liveUrl,
 }: {
   reunion: AgendaReunion;
+  /** Le lien du direct, quand `directsDesReunions` tient la réunion pour en direct. */
   liveUrl?: string;
 }) {
   const STORAGE_KEY = 'agenda-expanded';
@@ -121,7 +111,9 @@ export function ReunionCard({
     checkClamp();
   }, [checkClamp, reunion.odjResume]);
 
-  const happeningNow = isHappeningNow(reunion, now);
+  // Une séance du Sénat dure souvent au-delà de la fenêtre par défaut : un
+  // direct confirmé tient la carte « en cours » tant qu'il dure.
+  const happeningNow = estEnCours(reunion, now) || !!liveUrl;
   const hasScrutins = !!reunion.scrutins && reunion.scrutins.length > 0;
   const hasExpandableContent = isOdjClamped || hasScrutins;
 
@@ -212,7 +204,7 @@ export function ReunionCard({
                 </span>
               )}
 
-              {liveUrl && happeningNow && (
+              {liveUrl && (
                 <a
                   href={liveUrl}
                   target='_blank'
@@ -230,7 +222,7 @@ export function ReunionCard({
                   « Vidéo » ferait doublon, et elle mènerait à un enregistrement
                   que la séance n'a pas fini d'écrire. On la garde pour l'avant
                   et l'après — c'est là qu'elle apprend quelque chose. */}
-              {reunion.urlVideo && !(happeningNow && liveUrl) && (
+              {reunion.urlVideo && !liveUrl && (
                 <a
                   href={reunion.urlVideo}
                   target='_blank'

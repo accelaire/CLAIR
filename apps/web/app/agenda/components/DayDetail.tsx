@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ReunionCard, type AgendaReunion } from './ReunionCard';
 import { EvenementCard, type AgendaEvenement } from './EvenementCard';
 import { Calendar } from 'lucide-react';
 import { useLiveNow } from '@/hooks/useLiveNow';
-import { matchLiveUrl } from '@/lib/live-url';
+import { directsDesReunions } from '@/lib/live-url';
 
 interface DayDetailProps {
   selectedDate: string | null; // 'YYYY-MM-DD'
@@ -30,11 +30,18 @@ function formatDayTitle(dateStr: string): string {
 }
 
 export function DayDetail({ selectedDate, reunions, evenements }: DayDetailProps) {
-  const { liveByOrganeRef, liveBySeanceKey, liveBySeanceDate } = useLiveNow();
+  const live = useLiveNow();
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const sorted = [...reunions].sort(
     (a, b) => new Date(a.dateDebut).getTime() - new Date(b.dateDebut).getTime(),
   );
+  const directs = useMemo(() => directsDesReunions(reunions, live, now), [reunions, live, now]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.location.hash || reunions.length === 0) return;
@@ -91,7 +98,7 @@ export function DayDetail({ selectedDate, reunions, evenements }: DayDetailProps
           <ReunionCard
             key={reunion.id}
             reunion={reunion}
-            liveUrl={matchLiveUrl(reunion, liveByOrganeRef, liveBySeanceKey, liveBySeanceDate)}
+            liveUrl={directs.get(reunion.id)}
           />
         ))}
       </div>

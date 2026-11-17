@@ -10,7 +10,7 @@ import { EncartResultatsSenatoriales } from '@/components/senatoriales/EncartRes
 import { api } from '@/lib/api';
 import { useCountUp } from '@/hooks/useCountUp';
 import { useLiveNow } from '@/hooks/useLiveNow';
-import { matchLiveUrl } from '@/lib/live-url';
+import { directsDesReunions, estEnCours } from '@/lib/live-url';
 import { CONTRIBUTION_GUIDE_URL } from '@/lib/docs-url';
 import { FAQAccordion } from '@/components/ui/faq-accordion';
 
@@ -53,6 +53,8 @@ interface UpcomingEvent {
   etat: string;
   captationVideo: boolean | null;
   compteRenduRef: string | null;
+  /** Absent d'une réponse servie depuis un cache écrit avant son ajout. */
+  urlVideo?: string | null;
   commission: {
     slug: string;
     nom: string;
@@ -156,13 +158,6 @@ function toISODate(d: Date): string {
 }
 
 const VISIBLE_EVENTS = 3;
-const FALLBACK_DURATION_MS = 4 * 60 * 60 * 1000;
-
-function isEventHappeningNow(ev: UpcomingEvent, now: number): boolean {
-  const start = new Date(ev.dateDebut).getTime();
-  const end = ev.dateFin ? new Date(ev.dateFin).getTime() : start + FALLBACK_DURATION_MS;
-  return now >= start && now <= end;
-}
 
 import { deriveChambre } from '@/lib/chambre';
 import {
@@ -179,15 +174,17 @@ function DayCard({ isoDate, label, events, evenements }: {
   evenements: AgendaEvenement[];
 }) {
   const [now, setNow] = useState(() => Date.now());
-  const { liveByOrganeRef, liveBySeanceKey, liveBySeanceDate } = useLiveNow();
+  const live = useLiveNow();
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(timer);
   }, []);
 
-  const visible = events.filter((ev, i) => i < VISIBLE_EVENTS || isEventHappeningNow(ev, now));
-  const hiddenCount = events.filter((ev, i) => i >= VISIBLE_EVENTS && !isEventHappeningNow(ev, now)).length;
+  const directs = useMemo(() => directsDesReunions(events, live, now), [events, live, now]);
+  const enCours = (ev: UpcomingEvent) => estEnCours(ev, now) || directs.has(ev.id);
+  const visible = events.filter((ev, i) => i < VISIBLE_EVENTS || enCours(ev));
+  const hiddenCount = events.filter((ev, i) => i >= VISIBLE_EVENTS && !enCours(ev)).length;
 
   return (
     <div className="w-[calc((100%-2rem)/3)] min-w-[300px] shrink-0 rounded-xl border bg-card p-4">
@@ -227,8 +224,8 @@ function DayCard({ isoDate, label, events, evenements }: {
           const chambreLabel = chambre === 'assemblee' ? 'Assemblée' : chambre === 'senat' ? 'Sénat' : null;
           const time = new Date(ev.dateDebut).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
           const commissionName = ev.commission?.nomCourt || ev.commission?.nom;
-          const happeningNow = isEventHappeningNow(ev, now);
-          const liveUrl = happeningNow ? matchLiveUrl(ev, liveByOrganeRef, liveBySeanceKey, liveBySeanceDate) : undefined;
+          const happeningNow = enCours(ev);
+          const liveUrl = directs.get(ev.id);
 
           return (
             <Link
