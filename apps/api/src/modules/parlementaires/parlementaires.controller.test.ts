@@ -311,4 +311,43 @@ describe('Parlementaires Controller - Integration Tests', () => {
       expect(body.meta.total).toBe(0);
     });
   });
+
+  describe('GET /api/v1/deputes/:slug/amendements', () => {
+    beforeEach(() => {
+      app.mockPrisma.parlementaire.findUnique.mockResolvedValue({ id: 'parl-1', chambre: 'assemblee' });
+      app.mockPrisma.$queryRawUnsafe.mockResolvedValue([]);
+    });
+
+    it('refuse un rôle inconnu', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/deputes/jean-dupont/amendements?role=auteur',
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('garde déposés et cosignés par défaut, le périmètre historique de la route', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/deputes/jean-dupont/amendements/dossiers',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const [sql] = app.mockPrisma.$queryRawUnsafe.mock.calls.at(-1)! as [string];
+      expect(sql).toContain('UNION');
+    });
+
+    it('transmet role=depose au service', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/deputes/jean-dupont/amendements?role=depose',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const [sql] = app.mockPrisma.$queryRawUnsafe.mock.calls.at(-1)! as [string];
+      expect(sql).toContain('WHERE a.parlementaire_id = $1');
+      expect(sql).not.toContain('_AmendementCosignataires');
+    });
+  });
 });
