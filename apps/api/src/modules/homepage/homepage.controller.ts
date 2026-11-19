@@ -50,8 +50,9 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
     const TARGET_DAYS = 7;
     // Les réunions commencées restent tant qu'elles peuvent être en cours :
     // c'est là que le site leur pose « En direct ». Sans heure de fin, une
-    // commission est réputée durer 4 h ; une séance, 12 h, car le Sénat
-    // n'annonce jamais la fin et une séance de 14 h 30 va souvent au soir.
+    // commission est réputée durer 4 h ; une séance reste toute la journée, car
+    // le Sénat n'annonce jamais la fin et sa séance de 10 h 30 court souvent
+    // jusqu'au soir. Le site écarte celle qui n'est plus en direct.
     // Jamais avant minuit à Paris : la séance d'hier soir n'est plus « à venir ».
     const minuit = debutDuJourAParis(now).getTime();
     const ilYA = (heures: number) => new Date(Math.max(now.getTime() - heures * 3_600_000, minuit));
@@ -63,7 +64,7 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
           { dateDebut: { gte: now } },
           { dateDebut: { lt: now }, dateFin: { gte: now } },
           { dateDebut: { gte: ilYA(4), lt: now }, dateFin: null },
-          { type: 'seance', dateDebut: { gte: ilYA(12), lt: now }, dateFin: null },
+          { type: 'seance', dateDebut: { gte: new Date(minuit), lt: now }, dateFin: null },
         ],
       },
       orderBy: { dateDebut: 'asc' },
@@ -73,7 +74,7 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         lieu: true, odjResume: true, etat: true, captationVideo: true,
         compteRenduRef: true, urlVideo: true,
         commission: {
-          select: { slug: true, nom: true, nomCourt: true, chambre: true, organeRef: true },
+          select: { slug: true, nom: true, nomCourt: true, chambre: true, organeRef: true, type: true },
         },
       },
     });
