@@ -9,11 +9,18 @@ import {
   jourDe,
   type AgendaEvenement,
 } from './EvenementCard';
+import { jourAParis } from '@/lib/live-url';
+
+/** Le strict nécessaire d'une réunion pour la marquer sur la grille. */
+interface ReunionDuJour {
+  etat?: string | null;
+  commission?: { chambre?: string | null } | null;
+}
 
 interface MonthCalendarProps {
   year: number;
   month: number; // 0-indexed
-  byDay: Record<string, unknown[]>;
+  byDay: Record<string, ReunionDuJour[]>;
   evenements: AgendaEvenement[];
   selectedDate: string | null; // 'YYYY-MM-DD'
   onSelectDate: (date: string) => void;
@@ -28,19 +35,14 @@ const MONTH_NAMES = [
 
 const DAY_NAMES = ['Lu', 'Ma', 'Me', 'Je', 'Ve', 'Sa', 'Di'];
 
-// Returns the density bucket for a count
-function getDensity(count: number): 'none' | 'low' | 'medium' | 'high' {
-  if (count === 0) return 'none';
-  if (count === 1) return 'low';
-  if (count <= 4) return 'medium';
-  return 'high';
-}
-
-const DENSITY_COLORS = {
-  none: '',
-  low: 'bg-primary/30',
-  medium: 'bg-primary/60',
-  high: 'bg-primary',
+/**
+ * Une pastille par chambre qui siège ce jour-là, aux couleurs des badges AN et
+ * Sénat du site. Le nombre de réunions disait peu (un jour à 25 réunions de
+ * commission et un jour de séance se ressemblaient) ; qui siège dit où regarder.
+ */
+const PASTILLE_CHAMBRE: Record<string, string> = {
+  assemblee: 'bg-purple-500 dark:bg-purple-400',
+  senat: 'bg-blue-500 dark:bg-blue-400',
 };
 
 export function MonthCalendar({
@@ -53,8 +55,7 @@ export function MonthCalendar({
   onPrevMonth,
   onNextMonth,
 }: MonthCalendarProps) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const aujourdhui = jourAParis(Date.now());
 
   // Événements ponctuels : une pastille sur leur jour.
   const evenementsParJour = useMemo(() => {
@@ -161,10 +162,13 @@ export function MonthCalendar({
       {/* Calendar grid */}
       <div className='grid grid-cols-7 gap-px'>
         {cells.map(({ date, inMonth, key }) => {
-          const count = byDay[key]?.length ?? 0;
+          const actives = (byDay[key] ?? []).filter((r) => r.etat !== 'annule');
+          const count = actives.length;
+          const chambres = (['assemblee', 'senat'] as const).filter((c) =>
+            actives.some((r) => r.commission?.chambre === c),
+          );
           const evenementsDuJour = evenementsParJour[key] ?? [];
-          const density = getDensity(count);
-          const isToday = date.getTime() === today.getTime();
+          const isToday = key === aujourdhui;
           const isSelected = key === selectedDate;
           const isWeekend = date.getDay() === 0 || date.getDay() === 6;
           // Un jour sans réunion mais porteur d'un événement reste cliquable :
@@ -188,25 +192,26 @@ export function MonthCalendar({
                 ${inMonth ? 'cursor-pointer' : 'cursor-default opacity-30'}
                 ${selectionnable ? 'hover:bg-accent' : ''}
                 ${isSelected ? 'bg-primary text-primary-foreground hover:bg-primary' : ''}
-                ${isToday && !isSelected ? 'font-bold' : ''}
-                ${isWeekend && !isSelected && inMonth ? 'text-muted-foreground' : ''}
+                ${isToday && !isSelected ? 'font-semibold text-primary ring-1 ring-inset ring-primary/40' : ''}
+                ${isWeekend && !isSelected && !isToday && inMonth ? 'text-muted-foreground' : ''}
               `}
               aria-label={`${date.getDate()} ${MONTH_NAMES[date.getMonth()]}${
                 libelles.length > 0 ? ` — ${libelles.join(', ')}` : ''
               }`}
             >
-              <span className={`text-sm leading-6 ${isToday && !isSelected ? 'underline underline-offset-2' : ''}`}>
+              <span className='text-sm leading-6 tabular-nums'>
                 {date.getDate()}
               </span>
               <span className='mt-0.5 flex items-center gap-0.5 h-1.5'>
-                {/* Densité de réunions */}
-                {inMonth && density !== 'none' && (
+                {/* Chambres qui siègent */}
+                {inMonth && chambres.map((c) => (
                   <span
+                    key={c}
                     className={`h-1.5 w-1.5 rounded-full ${
-                      isSelected ? 'bg-primary-foreground/80' : DENSITY_COLORS[density]
+                      isSelected ? 'bg-primary-foreground/80' : PASTILLE_CHAMBRE[c]
                     }`}
                   />
-                )}
+                ))}
                 {/* Événement institutionnel — carré, pour se distinguer au coup d'œil */}
                 {inMonth && evenementsDuJour.map((e) => (
                   <span
@@ -260,16 +265,12 @@ export function MonthCalendar({
       {/* Legend */}
       <div className='mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground'>
         <span className='flex items-center gap-1.5'>
-          <span className='h-2 w-2 rounded-full bg-primary/30' />
-          1 réunion
+          <span className={`h-2 w-2 rounded-full ${PASTILLE_CHAMBRE.assemblee}`} />
+          Assemblée
         </span>
         <span className='flex items-center gap-1.5'>
-          <span className='h-2 w-2 rounded-full bg-primary/60' />
-          2–4
-        </span>
-        <span className='flex items-center gap-1.5'>
-          <span className='h-2 w-2 rounded-full bg-primary' />
-          5+
+          <span className={`h-2 w-2 rounded-full ${PASTILLE_CHAMBRE.senat}`} />
+          Sénat
         </span>
         {Object.keys(evenementsParJour).length > 0 && (
           <span className='flex items-center gap-1.5'>

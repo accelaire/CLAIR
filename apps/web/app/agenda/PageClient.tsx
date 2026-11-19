@@ -4,11 +4,14 @@ import { useState, useMemo, useCallback, useEffect, Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { ChevronDown } from 'lucide-react';
+import { reunionsParJour } from '@/lib/agenda';
+import { jourAParis } from '@/lib/live-url';
 import { api } from '@/lib/api';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
 import { FilterBar } from '@/components/FilterBar';
 import { MonthCalendar } from './components/MonthCalendar';
 import { DayDetail } from './components/DayDetail';
+import { SemaineMobile } from './components/SemaineMobile';
 import type { AgendaReunion } from './components/ReunionCard';
 import { joursCouverts, type AgendaEvenement } from './components/EvenementCard';
 
@@ -26,6 +29,11 @@ interface AgendaResponse {
   evenements: AgendaEvenement[];
 }
 
+const MOIS = [
+  'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+  'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
+];
+
 function toDateStr(year: number, month: number, day: number): string {
   const mm = String(month + 1).padStart(2, '0');
   const dd = String(day).padStart(2, '0');
@@ -41,9 +49,15 @@ function getLastDayOfMonth(year: number, month: number): string {
   return toDateStr(year, month, last);
 }
 
+/** Aujourd'hui à Paris : c'est le jour de l'agenda, quel que soit le fuseau du lecteur. */
 function todayStr(): string {
-  const d = new Date();
-  return toDateStr(d.getFullYear(), d.getMonth(), d.getDate());
+  return jourAParis(Date.now());
+}
+
+function decalerJour(dateStr: string, jours: number): string {
+  const d = new Date(`${dateStr}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + jours);
+  return d.toISOString().slice(0, 10);
 }
 
 function AgendaPageContent() {
@@ -85,8 +99,14 @@ function AgendaPageContent() {
     type: string;
   }>(['chambre', 'type']);
 
-  const dateFrom = getFirstDayOfMonth(year, month);
-  const dateTo = getLastDayOfMonth(year, month);
+  // Une semaine de marge avant le mois : une mission commencée fin octobre
+  // court encore début novembre. Un jour après : l'API borne en UTC, et une
+  // réunion du 1er à 0 h 30 à Paris tombe la veille en UTC.
+  const premierJour = getFirstDayOfMonth(year, month);
+  const dernierJour = getLastDayOfMonth(year, month);
+  const dateFrom = decalerJour(premierJour, -7);
+  const dateTo = decalerJour(dernierJour, 1);
+  const prefixeMois = premierJour.slice(0, 7);
 
   const { data, isLoading, error } = useQuery<AgendaResponse>({
     queryKey: ['agenda', year, month, filters.chambre, filters.type],
@@ -105,28 +125,59 @@ function AgendaPageContent() {
     staleTime: 60000,
   });
 
-  const byDay = useMemo(() => data?.byDay ?? {}, [data]);
+  // Rangées par jour À PARIS, missions de plusieurs jours à chacun de leurs jours.
+  const byDay = useMemo(
+    () => reunionsParJour(Object.values(data?.byDay ?? {}).flat()),
+    [data],
+  );
 
-  // When month changes, select the first day that has reunions (or null)
-  const handlePrevMonth = () => {
-    if (month === 0) {
-      setYear((y) => y - 1);
-      setMonth(11);
-    } else {
-      setMonth((m) => m - 1);
+  const reunionsDuMois = useMemo(() => {
+    const ids = new Set<string>();
+    for (const [jour, liste] of Object.entries(byDay)) {
+      if (!jour.startsWith(prefixeMois)) continue;
+      for (const r of liste) if (r.etat !== 'annule') ids.add(r.id);
     }
-    setSelectedDate(null);
+    return ids.size;
+  }, [byDay, prefixeMois]);
+
+  // Changer de mois sélectionne un jour : aujourd'hui s'il en fait partie,
+  // sinon le premier jour qui a des réunions, une fois les données arrivées.
+  const [selectionEnAttente, setSelectionEnAttente] = useState(false);
+
+  const allerAuMois = (y: number, m: number) => {
+    setYear(y);
+    setMonth(m);
+    const aujourdhui = todayStr();
+    if (aujourdhui.startsWith(toDateStr(y, m, 1).slice(0, 7))) {
+      setSelectedDate(aujourdhui);
+    } else {
+      setSelectedDate(null);
+      setSelectionEnAttente(true);
+    }
   };
 
-  const handleNextMonth = () => {
-    if (month === 11) {
-      setYear((y) => y + 1);
-      setMonth(0);
-    } else {
-      setMonth((m) => m + 1);
-    }
-    setSelectedDate(null);
-  };
+  useEffect(() => {
+    if (!selectionEnAttente || !data) return;
+    setSelectionEnAttente(false);
+    const premier = Object.keys(byDay)
+      .filter((j) => j.startsWith(prefixeMois))
+      .sort()[0];
+    if (premier) setSelectedDate(premier);
+  }, [selectionEnAttente, data, byDay, prefixeMois, setSelectedDate]);
+
+  const handlePrevMonth = () => (month === 0 ? allerAuMois(year - 1, 11) : allerAuMois(year, month - 1));
+  const handleNextMonth = () => (month === 11 ? allerAuMois(year + 1, 0) : allerAuMois(year, month + 1));
+
+  /** Un jour quelconque, mois suivant ou précédent compris. */
+  const allerAuJour = useCallback(
+    (jour: string) => {
+      const [y, m] = jour.split('-').map(Number);
+      setYear(y!);
+      setMonth(m! - 1);
+      setSelectedDate(jour);
+    },
+    [setSelectedDate],
+  );
 
   const evenements = useMemo(() => data?.evenements ?? [], [data]);
 
@@ -150,12 +201,15 @@ function AgendaPageContent() {
     return n;
   }, [filters]);
 
-  const totalThisMonth = data?.total ?? 0;
+  const [moisOuvert, setMoisOuvert] = useState(false);
+  const totalThisMonth = reunionsDuMois;
+  const estAujourdhui = selectedDate === todayStr();
 
   return (
     <div className='container mx-auto px-4 pt-8'>
-      {/* Header + Filtres — ancrés sous le header du site */}
-      <div className='lg:sticky lg:top-16 lg:z-30 bg-background pt-4 pb-4 border-b'>
+      {/* Header + Filtres. Plus ancrés sous le header du site : à 800 px de
+          haut, ils mangeaient un tiers de l'écran et masquaient les cartes. */}
+      <div className='pt-4 pb-4 border-b'>
         <div className='mb-4'>
           <h1 className='text-3xl font-bold'>Agenda parlementaire</h1>
           <p className='mt-1 text-muted-foreground'>
@@ -163,7 +217,7 @@ function AgendaPageContent() {
               ? 'Chargement...'
               : [
                 totalThisMonth > 0
-                  ? `${totalThisMonth} réunion${totalThisMonth > 1 ? 's' : ''} ce mois`
+                  ? `${totalThisMonth} réunion${totalThisMonth > 1 ? 's' : ''} en ${MOIS[month]}`
                   : null,
                 evenements.length > 0
                   ? `${evenements.length} événement${evenements.length > 1 ? 's' : ''}`
@@ -176,7 +230,16 @@ function AgendaPageContent() {
         <FilterBar
           activeFilterCount={activeFilterCount}
           onClear={() => clearAll()}
-          search={<div />}
+          search={
+            <button
+              type='button'
+              onClick={() => allerAuJour(todayStr())}
+              disabled={estAujourdhui}
+              className='rounded-lg border bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent disabled:cursor-default disabled:opacity-50 disabled:hover:bg-background'
+            >
+              Aujourd&apos;hui
+            </button>
+          }
         >
           <div className='relative'>
             <select
@@ -215,8 +278,19 @@ function AgendaPageContent() {
 
       {/* Main layout: calendar sticky + day detail */}
       <div className='grid gap-6 lg:grid-cols-[380px_1fr] items-start py-6'>
+        {/* Téléphone : la semaine en bande, le mois à la demande. */}
+        <div className='lg:hidden'>
+          <SemaineMobile
+            selectedDate={selectedDate}
+            byDay={byDay}
+            onSelectDate={allerAuJour}
+            moisOuvert={moisOuvert}
+            onToggleMois={() => setMoisOuvert((v) => !v)}
+          />
+        </div>
+
         {/* Left: Calendar — sticky sous le header page */}
-        <div className='rounded-lg border bg-card p-5 lg:sticky lg:top-[16rem] lg:self-start'>
+        <div className={`rounded-lg border bg-card p-5 lg:sticky lg:top-20 lg:block lg:self-start ${moisOuvert ? '' : 'hidden'}`}>
           {isLoading ? (
             <div className='animate-pulse space-y-3'>
               <div className='flex justify-between'>
@@ -244,8 +318,9 @@ function AgendaPageContent() {
           )}
         </div>
 
-        {/* Right: Day detail — défile avec la page */}
-        <div className='rounded-lg border bg-card p-5'>
+        {/* Right: Day detail — défile avec la page. Sans cadre sur téléphone :
+            des cartes dans un cadre dans la page perdaient un tiers de la largeur. */}
+        <div className='min-w-0 lg:rounded-lg lg:border lg:bg-card lg:p-5'>
           {isLoading ? (
             <div className='animate-pulse space-y-3'>
               <div className='h-6 w-48 rounded bg-muted' />
@@ -260,6 +335,7 @@ function AgendaPageContent() {
               selectedDate={selectedDate}
               reunions={selectedReunions}
               evenements={selectedEvenements}
+              onNavigate={allerAuJour}
             />
           )}
         </div>

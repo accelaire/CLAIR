@@ -10,7 +10,9 @@ import { EncartResultatsSenatoriales } from '@/components/senatoriales/EncartRes
 import { api } from '@/lib/api';
 import { useCountUp } from '@/hooks/useCountUp';
 import { useLiveNow } from '@/hooks/useLiveNow';
-import { directsDesReunions, estEnCours } from '@/lib/live-url';
+import { directsDesReunions, estEnCours, jourAParis } from '@/lib/live-url';
+import { estSansHoraire, heureAParis, natureDeReunion, pointsDeLOrdreDuJour, titreDeReunion } from '@/lib/agenda';
+import { BadgeEnDirect } from './agenda/components/BadgeEnDirect';
 import { CONTRIBUTION_GUIDE_URL } from '@/lib/docs-url';
 import { FAQAccordion } from '@/components/ui/faq-accordion';
 
@@ -61,6 +63,8 @@ interface UpcomingEvent {
     nomCourt: string | null;
     chambre: string;
     organeRef: string | null;
+    /** Absent d'une réponse servie depuis un cache écrit avant son ajout. */
+    type?: string | null;
   } | null;
 }
 
@@ -153,9 +157,6 @@ const comprendreTopics = [
   },
 ] as const;
 
-function toISODate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 const VISIBLE_EVENTS = 3;
 
@@ -183,8 +184,12 @@ function DayCard({ isoDate, label, events, evenements }: {
 
   const directs = useMemo(() => directsDesReunions(events, live, now), [events, live, now]);
   const enCours = (ev: UpcomingEvent) => estEnCours(ev, now) || directs.has(ev.id);
-  const visible = events.filter((ev, i) => i < VISIBLE_EVENTS || enCours(ev));
-  const hiddenCount = events.filter((ev, i) => i >= VISIBLE_EVENTS && !enCours(ev)).length;
+  // L'API garde les séances du jour sans heure de fin, faute de savoir si elles
+  // durent encore : c'est le direct qui tranche ici. Une réunion commencée qui
+  // n'est ni en cours ni en direct n'est plus « à venir ».
+  const pertinents = events.filter((ev) => new Date(ev.dateDebut).getTime() > now || enCours(ev));
+  const visible = pertinents.filter((ev, i) => i < VISIBLE_EVENTS || enCours(ev));
+  const hiddenCount = pertinents.length - visible.length;
 
   return (
     <div className="w-[calc((100%-2rem)/3)] min-w-[300px] shrink-0 rounded-xl border bg-card p-4">
@@ -217,61 +222,47 @@ function DayCard({ isoDate, label, events, evenements }: {
         </div>
       )}
 
+      {visible.length === 0 && evenements.length === 0 && (
+        <p className="text-xs text-muted-foreground">Les réunions du jour sont terminées.</p>
+      )}
       <div className="space-y-2">
         {visible.map((ev) => {
           const chambre = deriveChambre(ev);
-          const isSeance = ev.type === 'seance';
-          const chambreLabel = chambre === 'assemblee' ? 'Assemblée' : chambre === 'senat' ? 'Sénat' : null;
-          const time = new Date(ev.dateDebut).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-          const commissionName = ev.commission?.nomCourt || ev.commission?.nom;
+          // Une mission de plusieurs jours est déjà rangée sous le bon jour.
+          const heure = estSansHoraire(ev) ? 'Journée' : heureAParis(ev.dateDebut);
           const happeningNow = enCours(ev);
           const liveUrl = directs.get(ev.id);
+          const point = pointsDeLOrdreDuJour(ev.odjResume)[0];
 
           return (
             <Link
               key={ev.id}
               href={`/agenda?date=${isoDate}#event-${ev.id}`}
-              className={`flex items-start gap-3 rounded-lg border p-3 transition-all hover:border-primary hover:shadow-sm ${
-                happeningNow
-                  ? 'border-primary/50 bg-primary/[0.04] dark:bg-primary/[0.08]'
-                  : 'bg-background'
+              className={`flex items-start gap-3 rounded-lg border p-3 transition-all hover:border-primary/40 hover:shadow-sm ${
+                liveUrl ? 'border-primary/30 bg-primary/5' : happeningNow ? 'border-primary/20 bg-background' : 'bg-background'
               }`}
             >
-              <div className="shrink-0 w-12 text-center pt-0.5">
-                <span className="text-sm font-semibold tabular-nums">{time}</span>
+              <div className="w-12 shrink-0 pt-0.5 text-right">
+                <span className={`font-semibold tabular-nums ${heure === 'Journée' ? 'text-xs' : 'text-sm'}`}>{heure}</span>
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {chambreLabel && (
-                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'}`}>
-                      {chambreLabel}
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {chambre && (
+                    <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${chambre === 'senat' ? 'badge-senat' : 'badge-assemblee'}`}>
+                      {chambre === 'senat' ? 'Sénat' : 'AN'}
                     </span>
                   )}
-                  <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                    isSeance
-                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                      : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                  }`}>
-                    {isSeance ? 'Séance' : 'Commission'}
-                  </span>
-                  {liveUrl && (
-                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary border border-primary/25">
-                      <span className="relative flex h-1.5 w-1.5 shrink-0">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary" />
-                      </span>
-                      En direct
+                  {liveUrl ? (
+                    <BadgeEnDirect compact />
+                  ) : (
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                      {natureDeReunion(ev)}
                     </span>
                   )}
                 </div>
-                {commissionName && (
-                  <p className="mt-1 text-xs font-medium text-foreground line-clamp-1">{commissionName}</p>
-                )}
-                {!commissionName && (
-                  <p className="mt-1 text-xs font-medium text-foreground">Séance publique</p>
-                )}
-                {ev.odjResume && (
-                  <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{ev.odjResume}</p>
+                <p className="mt-1 line-clamp-2 text-sm font-medium leading-snug text-foreground">{titreDeReunion(ev)}</p>
+                {point && (
+                  <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{point}</p>
                 )}
               </div>
             </Link>
@@ -396,14 +387,19 @@ function UpcomingTimeline({ events, evenements, echeances }: {
     if (!events || events.length === 0) return [];
     const groups: Array<{ isoDate: string; label: string; events: UpcomingEvent[] }> = [];
     const seen = new Map<string, number>();
+    // Le jour à Paris ; une mission commencée hier et qui dure encore se range
+    // sous aujourd'hui, pas sous une carte « hier » en tête des prochains jours.
+    const aujourdhui = jourAParis(Date.now());
     for (const ev of events) {
-      const d = new Date(ev.dateDebut);
-      const iso = toISODate(d);
+      const debut = jourAParis(ev.dateDebut);
+      const iso = debut < aujourdhui ? aujourdhui : debut;
       const idx = seen.get(iso);
       if (idx !== undefined) {
         groups[idx].events.push(ev);
       } else {
-        const label = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+        const label = new Date(`${iso}T12:00:00Z`).toLocaleDateString('fr-FR', {
+          weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Paris',
+        });
         seen.set(iso, groups.length);
         groups.push({ isoDate: iso, label, events: [ev] });
       }
