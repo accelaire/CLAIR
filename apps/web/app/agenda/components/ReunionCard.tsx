@@ -1,9 +1,20 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import Link from 'next/link';
-import { MapPin, Video, FileText, ChevronDown, ChevronUp, Users } from 'lucide-react';
+import { MapPin, Video, FileText, ChevronDown, Users, Vote } from 'lucide-react';
 import { ScrutinsByDossier } from '@/components/scrutins/ScrutinsByDossier';
+import { deriveChambre } from '@/lib/chambre';
+import { urlDuCompteRendu } from '@/lib/compte-rendu-url';
+import {
+  estAnnulee,
+  estSeance,
+  horaireDeLaReunion,
+  natureDeReunion,
+  pointsDeLOrdreDuJour,
+  titreDeReunion,
+} from '@/lib/agenda';
+import { BadgeEnDirect } from './BadgeEnDirect';
 
 export interface AgendaReunion {
   id: string;
@@ -41,247 +52,225 @@ export interface AgendaReunion {
   }>;
 }
 
-const CHAMBRE_CLASSES: Record<string, string> = {
-  assemblee: 'badge-assemblee',
-  senat: 'badge-senat',
+const CHAMBRE: Record<string, { label: string; classe: string }> = {
+  assemblee: { label: 'AN', classe: 'badge-assemblee' },
+  senat: { label: 'Sénat', classe: 'badge-senat' },
 };
 
-function formatTime(dateStr: string) {
-  return new Date(dateStr).toLocaleTimeString('fr-FR', {
-    hour: '2-digit',
-    minute: '2-digit',
+const STORAGE_KEY = 'agenda-expanded';
+
+/** Ce qui a été déplié reste déplié au retour arrière, le temps de la session. */
+function useDepliee(id: string): [boolean, (v: boolean) => void] {
+  const [depliee, setDeplieeBrut] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const stored = sessionStorage.getItem(STORAGE_KEY);
+      return stored ? (JSON.parse(stored) as string[]).includes(id) : false;
+    } catch {
+      return false;
+    }
   });
+  const setDepliee = useCallback(
+    (val: boolean) => {
+      setDeplieeBrut(val);
+      try {
+        const stored = sessionStorage.getItem(STORAGE_KEY);
+        const ids = new Set<string>(stored ? JSON.parse(stored) : []);
+        if (val) ids.add(id);
+        else ids.delete(id);
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify([...ids]));
+      } catch {
+        /* stockage indisponible : l'état reste local */
+      }
+    },
+    [id],
+  );
+  return [depliee, setDepliee];
 }
 
-import { deriveChambre } from '@/lib/chambre';
-import { urlDuCompteRendu } from '@/lib/compte-rendu-url';
-import { estEnCours } from '@/lib/live-url';
+const PASTILLE_LIEN =
+  'inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs transition-colors';
 
 export function ReunionCard({
   reunion,
   liveUrl,
+  statut = 'normale',
+  rang,
 }: {
   reunion: AgendaReunion;
   /** Le lien du direct, quand `directsDesReunions` tient la réunion pour en direct. */
   liveUrl?: string;
+  /** `en-cours` : commencée, sans direct connu. */
+  statut?: 'normale' | 'en-cours';
+  /** « 2e séance », pour une séance de l'AN parmi plusieurs le même jour. */
+  rang?: string;
 }) {
-  const STORAGE_KEY = 'agenda-expanded';
-  const [expanded, setExpandedRaw] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    try {
-      const stored = sessionStorage.getItem(STORAGE_KEY);
-      if (!stored) return false;
-      const set: string[] = JSON.parse(stored);
-      return set.includes(reunion.id);
-    } catch { return false; }
-  });
-  const setExpanded = useCallback((val: boolean) => {
-    setExpandedRaw(val);
-    try {
-      const stored = sessionStorage.getItem(STORAGE_KEY);
-      const set: string[] = stored ? JSON.parse(stored) : [];
-      if (val && !set.includes(reunion.id)) {
-        set.push(reunion.id);
-      } else if (!val) {
-        const idx = set.indexOf(reunion.id);
-        if (idx >= 0) set.splice(idx, 1);
-      }
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(set));
-    } catch { /* noop */ }
-  }, [reunion.id]);
-
-  const [now, setNow] = useState(() => Date.now());
-  const [isOdjClamped, setIsOdjClamped] = useState(false);
-  const odjRef = useRef<HTMLParagraphElement>(null);
-  const commissionName = reunion.commission?.nom || reunion.commission?.nomCourt;
+  const [depliee, setDepliee] = useDepliee(reunion.id);
   const chambre = deriveChambre(reunion);
+  const annulee = estAnnulee(reunion);
+  const seance = estSeance(reunion);
+  const titre = titreDeReunion(reunion);
+  const nature = natureDeReunion(reunion);
+  const horaire = horaireDeLaReunion(reunion);
+  const points = pointsDeLOrdreDuJour(reunion.odjResume);
+  const scrutins = reunion.scrutins ?? [];
+  const aDeplier = points.length > 1 || (points[0]?.length ?? 0) > 160 || scrutins.length > 0;
+  const enDirect = !!liveUrl && !annulee;
+  const commencee = new Date(reunion.dateDebut).getTime() < Date.now();
+  const urlCompteRendu = commencee && reunion.compteRenduRef ? urlDuCompteRendu(reunion.compteRenduRef) : null;
 
-  const checkClamp = useCallback(() => {
-    const el = odjRef.current;
-    if (!el) return;
-    setIsOdjClamped(el.scrollHeight > el.clientHeight + 1);
-  }, []);
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    checkClamp();
-  }, [checkClamp, reunion.odjResume]);
-
-  // Une séance du Sénat dure souvent au-delà de la fenêtre par défaut : un
-  // direct confirmé tient la carte « en cours » tant qu'il dure.
-  const happeningNow = estEnCours(reunion, now) || !!liveUrl;
-  const hasScrutins = !!reunion.scrutins && reunion.scrutins.length > 0;
-  const hasExpandableContent = isOdjClamped || hasScrutins;
+  const fond = enDirect
+    ? 'border-primary/30 bg-primary/5'
+    : statut === 'en-cours'
+      ? 'border-primary/20 bg-card'
+      : annulee
+        ? 'bg-muted/40'
+        : 'bg-card';
 
   return (
-    <div
+    <article
       id={`event-${reunion.id}`}
-      className={`relative rounded-lg border transition-all hover:border-primary hover:shadow-md scroll-mt-4 ${
-        happeningNow
-          ? 'border-primary/50 bg-primary/[0.03] dark:bg-primary/[0.06]'
-          : 'bg-card'
-      }`}
+      className={`group relative scroll-mt-24 rounded-lg border p-4 transition-all hover:border-primary/40 hover:shadow-sm ${fond}`}
     >
-      {/* Le lien étalé : la carte entière mène à la réunion, comme celles d'un
-          scrutin ou d'un dossier. On ne peut pas l'envelopper dans un <Link> —
-          elle contient déjà des liens (vidéo, compte rendu, scrutins) et des
-          boutons, qu'on ne peut pas imbriquer. Le lien couvre donc la carte en
-          z-[1], et tout ce qui est cliquable passe en z-[2] juste dessous.
-
-          La carte ouvrait auparavant la vidéo. Elle mène désormais à la page de
-          la réunion : c'est la convention du site, et la vidéo garde sa
-          pastille. */}
-      <Link
-        href={`/reunions/${encodeURIComponent(reunion.uid)}`}
-        className='absolute inset-0 z-[1] rounded-lg'
-      >
-        <span className='sr-only'>Voir le détail de la réunion</span>
+      {/* Lien étalé : la carte mène à la page de la réunion. Ce qui est
+          cliquable à l'intérieur (commission, vidéo, compte rendu, dépliage)
+          passe au-dessus, en z-[2]. */}
+      <Link href={`/reunions/${encodeURIComponent(reunion.uid)}`} className='absolute inset-0 z-[1] rounded-lg'>
+        <span className='sr-only'>Voir le détail : {titre}</span>
       </Link>
-      <div className='p-4'>
-        <div className='flex items-start gap-3'>
-          {/* Time column */}
-          <div className='shrink-0 w-14 text-center'>
-            <div className='text-sm font-semibold tabular-nums'>{formatTime(reunion.dateDebut)}</div>
-            {reunion.dateFin && (
-              <div className='text-xs text-muted-foreground tabular-nums'>
-                — {formatTime(reunion.dateFin)}
-              </div>
-            )}
+
+      <div className='flex gap-4'>
+        <div className='hidden w-16 shrink-0 pt-0.5 text-right sm:block'>
+          <div className={`text-sm font-semibold tabular-nums ${annulee ? 'text-muted-foreground line-through' : ''}`}>
+            {horaire.debut}
           </div>
-
-          {/* Content */}
-          <div className='flex-1 min-w-0'>
-            {/* Le libellé suit le TYPE de la réunion, pas la présence d'une
-                commission rattachée. L'écrire « Séance publique » dès que la
-                commission manquait étiquetait 918 réunions de commission comme
-                des séances de l'hémicycle — la MECSS, les missions
-                d'information, les commissions d'enquête : 62 organes que le
-                rattachement ne résout pas encore. */}
-            {reunion.commission ? (
-              <Link
-                href={`/commissions/${reunion.commission.slug}`}
-                className='relative z-[2] text-sm font-semibold hover:text-primary transition-colors line-clamp-1'
-              >
-                {commissionName}
-              </Link>
-            ) : (
-              <span className='text-sm font-semibold'>
-                {reunion.type === 'seance' ? 'Séance publique' : 'Réunion de commission'}
-              </span>
-            )}
-
-            {/* ODJ resume — collapsed: 2 lines, expanded: full */}
-            {reunion.odjResume && (
-              <p
-                ref={odjRef}
-                className={`mt-0.5 text-xs text-muted-foreground ${expanded ? '' : 'line-clamp-2'}`}
-              >
-                {reunion.odjResume}
-              </p>
-            )}
-
-            {/* Scrutins — only shown when expanded, grouped by dossier */}
-            {expanded && hasScrutins && (
-              <div className='relative z-[2] mt-3'>
-                <ScrutinsByDossier
-                  scrutins={reunion.scrutins!}
-                  label='Scrutins de la séance'
-                />
-              </div>
-            )}
-
-            {/* Meta row */}
-            <div className='relative z-[2] mt-2 flex flex-wrap items-center gap-2'>
-              {chambre && (
-                <span
-                  className={`px-2 py-0.5 rounded text-xs font-medium ${CHAMBRE_CLASSES[chambre] || 'bg-muted text-muted-foreground'}`}
-                >
-                  {chambre === 'assemblee' ? 'AN' : 'Sénat'}
-                </span>
-              )}
-
-              {liveUrl && (
-                <a
-                  href={liveUrl}
-                  target='_blank'
-                  rel='noopener noreferrer'
-                  className='flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border bg-red-50 text-red-600 border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-950/50 transition-colors font-medium'
-                >
-                  <span className='relative flex h-2 w-2 shrink-0'>
-                    <span className='animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75' />
-                    <span className='relative inline-flex rounded-full h-2 w-2 bg-red-500' />
-                  </span>
-                  En direct
-                </a>
-              )}
-              {/* Pendant la réunion, « En direct » dit déjà tout : la pastille
-                  « Vidéo » ferait doublon, et elle mènerait à un enregistrement
-                  que la séance n'a pas fini d'écrire. On la garde pour l'avant
-                  et l'après — c'est là qu'elle apprend quelque chose. */}
-              {reunion.urlVideo && !liveUrl && (
-                <a
-                  href={reunion.urlVideo}
-                  target='_blank'
-                  rel='noopener noreferrer'
-                  className='flex items-center gap-1 px-2 py-0.5 rounded text-xs border bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/30 dark:text-violet-400 dark:border-violet-800 hover:bg-violet-100 dark:hover:bg-violet-950/50 transition-colors'
-                >
-                  <Video className='h-3 w-3' />
-                  Vidéo
-                </a>
-              )}
-              {(() => {
-                const isPast = new Date(reunion.dateDebut) < new Date();
-                const crUrl = isPast && reunion.compteRenduRef ? urlDuCompteRendu(reunion.compteRenduRef) : null;
-                if (!crUrl) return null;
-                return (
-                  <a
-                    href={crUrl}
-                    target='_blank'
-                    rel='noopener noreferrer'
-                    className='flex items-center gap-1 px-2 py-0.5 rounded text-xs border bg-muted text-muted-foreground hover:bg-accent hover:text-foreground transition-colors'
-                  >
-                    <FileText className='h-3 w-3' />
-                    Compte rendu
-                  </a>
-                );
-              })()}
-
-              {reunion.nbParticipants > 0 && (
-                <span className='flex items-center gap-1 text-xs text-muted-foreground'>
-                  <Users className='h-3 w-3' />
-                  {reunion.nbParticipants}
-                </span>
-              )}
-
-              {reunion.lieu && (
-                <span className='flex items-center gap-1 text-xs text-muted-foreground'>
-                  <MapPin className='h-3 w-3' />
-                  <span>{reunion.lieu}</span>
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Expand toggle — only when ODJ is long enough to be clamped */}
-          {hasExpandableContent && (
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className='relative z-[2] shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors'
-              aria-label={expanded ? 'Réduire' : 'Développer'}
-            >
-              {expanded ? (
-                <ChevronUp className='h-4 w-4' />
-              ) : (
-                <ChevronDown className='h-4 w-4' />
-              )}
-            </button>
+          {horaire.fin && (
+            <div className='text-xs tabular-nums text-muted-foreground'>{horaire.fin}</div>
           )}
         </div>
+
+        <div className='min-w-0 flex-1'>
+          <div className='flex flex-wrap items-center gap-1.5'>
+            {/* Sur téléphone, l'heure passe en tête de ligne : la colonne
+                prenait un quart de la largeur. */}
+            <span className={`mr-0.5 text-sm font-semibold tabular-nums sm:hidden ${annulee ? 'text-muted-foreground line-through' : ''}`}>
+              {horaire.debut}
+              {horaire.fin && <span className='font-normal text-muted-foreground'> – {horaire.fin}</span>}
+            </span>
+            {chambre && CHAMBRE[chambre] && (
+              <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${CHAMBRE[chambre]!.classe}`}>
+                {CHAMBRE[chambre]!.label}
+              </span>
+            )}
+            {/* La nature redirait le titre d'une séance : on donne son rang à la place. */}
+            {seance ? (
+              rang && <span className='rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground'>{rang}</span>
+            ) : (
+              <span className='rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground'>{nature}</span>
+            )}
+            {enDirect && (
+              <span className='relative z-[2]'>
+                <BadgeEnDirect href={liveUrl} />
+              </span>
+            )}
+            {annulee && (
+              <span className='badge-caduc rounded px-1.5 py-0.5 text-xs font-medium'>Annulée</span>
+            )}
+          </div>
+
+          <h3 className={`mt-1.5 font-semibold leading-snug ${annulee ? 'text-muted-foreground line-through decoration-muted-foreground/50' : ''}`}>
+            {reunion.commission && !seance ? (
+              <Link
+                href={`/commissions/${reunion.commission.slug}`}
+                className='relative z-[2] line-clamp-2 transition-colors hover:text-primary'
+              >
+                {titre}
+              </Link>
+            ) : (
+              titre
+            )}
+          </h3>
+
+          {points.length > 0 && (
+            depliee ? (
+              <ul className='mt-1.5 list-disc space-y-1 pl-4 text-sm text-muted-foreground marker:text-muted-foreground/50'>
+                {points.map((p, i) => <li key={i}>{p}</li>)}
+              </ul>
+            ) : (
+              <p className='mt-1 line-clamp-2 text-sm text-muted-foreground'>
+                {points[0]}
+                {points.length > 1 && (
+                  <span className='text-muted-foreground/70'>
+                    {' '}· {points.length - 1} autre{points.length > 2 ? 's' : ''} point{points.length > 2 ? 's' : ''}
+                  </span>
+                )}
+              </p>
+            )
+          )}
+
+          {depliee && scrutins.length > 0 && (
+            <div className='relative z-[2] mt-3'>
+              <ScrutinsByDossier scrutins={scrutins} label='Scrutins de la séance' />
+            </div>
+          )}
+
+          <div className='mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground'>
+            {/* Pendant le direct, la pastille « Vidéo » ferait doublon et mènerait
+                à un enregistrement que la séance n'a pas fini d'écrire. */}
+            {reunion.urlVideo && !enDirect && (
+              <a
+                href={reunion.urlVideo}
+                target='_blank'
+                rel='noopener noreferrer'
+                className={`${PASTILLE_LIEN} relative z-[2] bg-violet-50 text-violet-700 hover:bg-violet-100 dark:bg-violet-950/30 dark:text-violet-400 dark:hover:bg-violet-950/50`}
+              >
+                <Video className='h-3 w-3' aria-hidden />
+                Vidéo
+              </a>
+            )}
+            {urlCompteRendu && (
+              <a
+                href={urlCompteRendu}
+                target='_blank'
+                rel='noopener noreferrer'
+                className={`${PASTILLE_LIEN} relative z-[2] bg-muted hover:bg-accent hover:text-foreground`}
+              >
+                <FileText className='h-3 w-3' aria-hidden />
+                Compte rendu
+              </a>
+            )}
+            {scrutins.length > 0 && (
+              <span className='inline-flex items-center gap-1'>
+                <Vote className='h-3 w-3' aria-hidden />
+                {scrutins.length} scrutin{scrutins.length > 1 ? 's' : ''}
+              </span>
+            )}
+            {reunion.nbParticipants > 0 && (
+              <span className='inline-flex items-center gap-1'>
+                <Users className='h-3 w-3' aria-hidden />
+                {reunion.nbParticipants} présent{reunion.nbParticipants > 1 ? 's' : ''}
+              </span>
+            )}
+            {reunion.lieu && (
+              <span className='inline-flex min-w-0 max-w-full items-center gap-1'>
+                <MapPin className='h-3 w-3 shrink-0' aria-hidden />
+                <span className='truncate'>{reunion.lieu}</span>
+              </span>
+            )}
+            {aDeplier && (
+              <button
+                type='button'
+                onClick={() => setDepliee(!depliee)}
+                aria-expanded={depliee}
+                className='relative z-[2] ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-foreground/80 transition-colors hover:bg-accent hover:text-foreground'
+              >
+                {depliee ? 'Réduire' : scrutins.length > 0 ? 'Ordre du jour et scrutins' : "Tout l'ordre du jour"}
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${depliee ? 'rotate-180' : ''}`} aria-hidden />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+    </article>
   );
 }
