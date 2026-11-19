@@ -96,6 +96,7 @@ export function ReunionCard({
   liveUrl,
   statut = 'normale',
   rang,
+  depuisHier = false,
 }: {
   reunion: AgendaReunion;
   /** Le lien du direct, quand `directsDesReunions` tient la réunion pour en direct. */
@@ -104,6 +105,8 @@ export function ReunionCard({
   statut?: 'normale' | 'en-cours';
   /** « 2e séance », pour une séance de l'AN parmi plusieurs le même jour. */
   rang?: string;
+  /** Commencée la veille et toujours en cours : son heure est celle d'hier. */
+  depuisHier?: boolean;
 }) {
   const [depliee, setDepliee] = useDepliee(reunion.id);
   const chambre = deriveChambre(reunion);
@@ -167,6 +170,9 @@ export function ReunionCard({
               rang && <span className='rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground'>{rang}</span>
             ) : (
               <span className='rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground'>{nature}</span>
+            )}
+            {depuisHier && (
+              <span className='rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground'>Depuis hier</span>
             )}
             {enDirect && (
               <span className='relative z-[2]'>

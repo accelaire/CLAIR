@@ -181,6 +181,13 @@ function AgendaPageContent() {
 
   const evenements = useMemo(() => data?.evenements ?? [], [data]);
 
+  // Après minuit, la séance de 21 h 30 est souvent encore en direct : la
+  // journée en cours reprend la veille, et n'en garde que ce qui dure encore.
+  const reunionsDeLaVeille = useMemo<AgendaReunion[]>(() => {
+    if (!selectedDate || selectedDate !== todayStr()) return [];
+    return (byDay[decalerJour(selectedDate, -1)] ?? []) as AgendaReunion[];
+  }, [selectedDate, byDay]);
+
   const selectedReunions = useMemo<AgendaReunion[]>(() => {
     if (!selectedDate) return [];
     return (byDay[selectedDate] ?? []) as AgendaReunion[];
@@ -334,6 +341,7 @@ function AgendaPageContent() {
             <DayDetail
               selectedDate={selectedDate}
               reunions={selectedReunions}
+              veille={reunionsDeLaVeille}
               evenements={selectedEvenements}
               onNavigate={allerAuJour}
             />

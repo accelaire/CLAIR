@@ -21,6 +21,8 @@ interface DayDetailProps {
   reunions: AgendaReunion[];
   /** Repères institutionnels du jour : ponctuels, ou périodes le couvrant. */
   evenements: AgendaEvenement[];
+  /** Aujourd'hui seulement : les réunions d'hier, dont on garde celles qui durent encore. */
+  veille?: AgendaReunion[];
   onNavigate: (date: string) => void;
 }
 
@@ -82,7 +84,9 @@ function Repli({ libelle, children }: { libelle: string; children: React.ReactNo
 const BOUTON_ICONE =
   'rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground';
 
-export function DayDetail({ selectedDate, reunions, evenements, onNavigate }: DayDetailProps) {
+const AUCUNE: AgendaReunion[] = [];
+
+export function DayDetail({ selectedDate, reunions, evenements, veille = AUCUNE, onNavigate }: DayDetailProps) {
   const live = useLiveNow();
   const [now, setNow] = useState(() => Date.now());
 
@@ -92,9 +96,24 @@ export function DayDetail({ selectedDate, reunions, evenements, onNavigate }: Da
   }, []);
 
 
-  const directs = useMemo(() => directsDesReunions(reunions, live, now), [reunions, live, now]);
-  const rangs = useMemo(() => rangsDesSeances(reunions), [reunions]);
+  // La veille entre dans le calcul des directs et des rangs : chacune reste
+  // rattachée à SON jour (une séance d'hier n'est pas relayée par celle d'aujourd'hui).
+  const toutes = useMemo(() => {
+    const ids = new Set(reunions.map((r) => r.id));
+    return [...veille.filter((r) => !ids.has(r.id)), ...reunions];
+  }, [reunions, veille]);
+  const directs = useMemo(() => directsDesReunions(toutes, live, now), [toutes, live, now]);
+  const rangs = useMemo(() => rangsDesSeances(toutes), [toutes]);
   const aujourdhui = selectedDate === jourAParis(now);
+
+  /** Commencées hier, encore en direct ou dans leur durée. */
+  const depuisHier = useMemo(() => {
+    if (!aujourdhui) return [];
+    const ids = new Set(reunions.map((r) => r.id));
+    return veille.filter(
+      (r) => !ids.has(r.id) && !estAnnulee(r) && !estSansHoraire(r) && (directs.has(r.id) || estEnCours(r, now)),
+    );
+  }, [aujourdhui, reunions, veille, directs, now]);
 
   /**
    * Aujourd'hui, la journée se lit depuis l'instant présent : ce qui se tient
@@ -110,7 +129,7 @@ export function DayDetail({ selectedDate, reunions, evenements, onNavigate }: Da
     const minutees = actives.filter((r) => !estSansHoraire(r));
 
     const enCeMoment = aujourdhui
-      ? minutees.filter((r) => directs.has(r.id) || estEnCours(r, now))
+      ? [...depuisHier, ...minutees.filter((r) => directs.has(r.id) || estEnCours(r, now))]
       : [];
     const terminees = aujourdhui
       ? minutees.filter((r) => !enCeMoment.includes(r) && finPresumee(r) < now)
@@ -122,7 +141,7 @@ export function DayDetail({ selectedDate, reunions, evenements, onNavigate }: Da
       parMoment.set(m, [...(parMoment.get(m) ?? []), r]);
     }
     return { enCeMoment, journee, parMoment, terminees, annulees };
-  }, [reunions, aujourdhui, directs, now]);
+  }, [reunions, aujourdhui, directs, now, depuisHier]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.location.hash || reunions.length === 0) return;
@@ -142,6 +161,7 @@ export function DayDetail({ selectedDate, reunions, evenements, onNavigate }: Da
   const aVenir = [...parMoment.values()].reduce((n, l) => n + l.length, 0);
   const resume = [
     compte(reunions.length - annulees.length, 'réunion', 'réunions'),
+    depuisHier.length > 0 ? `${depuisHier.length} commencée${depuisHier.length > 1 ? 's' : ''} hier` : null,
     directs.size > 0 ? `${directs.size} en direct` : null,
     aujourdhui && aVenir > 0 ? `${aVenir} à venir` : null,
     annulees.length > 0 ? compte(annulees.length, 'annulée', 'annulées') : null,
@@ -157,6 +177,7 @@ export function DayDetail({ selectedDate, reunions, evenements, onNavigate }: Da
       liveUrl={directs.get(r.id)}
       statut={statutDe(r)}
       rang={rangs.get(r.id)}
+      depuisHier={depuisHier.includes(r)}
     />
   );
 
@@ -166,7 +187,7 @@ export function DayDetail({ selectedDate, reunions, evenements, onNavigate }: Da
         <div className='min-w-0'>
           <h3 className='text-lg font-semibold first-letter:uppercase'>{formatDayTitle(selectedDate)}</h3>
           <p className='mt-0.5 text-sm text-muted-foreground'>
-            {reunions.length > 0 ? resume : 'Aucune réunion'}
+            {reunions.length + depuisHier.length > 0 ? resume : 'Aucune réunion'}
           </p>
         </div>
         <div className='flex shrink-0 items-center gap-1'>
@@ -188,7 +209,7 @@ export function DayDetail({ selectedDate, reunions, evenements, onNavigate }: Da
           </div>
         )}
 
-        {reunions.length === 0 && (
+        {reunions.length === 0 && depuisHier.length === 0 && (
           <div className='flex flex-col items-center justify-center py-10 text-center text-muted-foreground'>
             <Calendar className='mb-3 h-8 w-8 opacity-30' />
             <p className='text-sm'>Ni séance ni réunion ce jour-là.</p>
