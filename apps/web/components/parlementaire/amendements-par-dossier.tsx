@@ -10,6 +10,7 @@ import { ExpandableAmendementCard } from '@/components/ExpandableAmendementCard'
 import { getAmendementSortClasses, libelleAlinea, normalizeAmendementSort } from '@/lib/amendements';
 import { dossierTitreCourtLisible } from '@/lib/dossiers';
 import { nettoyerTexteAmendement } from '@/lib/texte-amendement';
+import { libelleRole, type RoleAmendement } from '@/components/parlementaire/filtre-role';
 
 type Amendement = ComponentProps<typeof ExpandableAmendementCard>['amendement'];
 
@@ -49,19 +50,23 @@ const dateCourte = (iso: string) =>
  */
 export function AmendementsParDossier({
   base,
+  role,
   params,
   onTotal,
 }: {
   /** `/deputes/<slug>` ou `/senateurs/<slug>`. */
   base: string;
+  /** Amendements déposés ou cosignés. */
+  role: RoleAmendement;
   /** Les filtres de l'onglet (période, chambre, votes publics). */
   params: Record<string, unknown>;
   onTotal?: (total: number) => void;
 }) {
+  const filtres = { ...params, role };
   const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery<PageGroupes>({
-    queryKey: ['amendements-par-dossier', base, params],
+    queryKey: ['amendements-par-dossier', base, filtres],
     queryFn: ({ pageParam }) =>
-      api.get(`${base}/amendements/dossiers`, { params: { ...params, page: pageParam, limit: 20 } }).then((r) => r.data),
+      api.get(`${base}/amendements/dossiers`, { params: { ...filtres, page: pageParam, limit: 20 } }).then((r) => r.data),
     initialPageParam: 1,
     getNextPageParam: (derniere) => (derniere.meta.hasNext ? derniere.meta.page + 1 : undefined),
     staleTime: 5 * 60 * 1000,
@@ -84,17 +89,20 @@ export function AmendementsParDossier({
   }
   const groupes = data?.pages.flatMap((p) => p.data) ?? [];
   if (isError || !meta || groupes.length === 0) {
-    return <p className="py-8 text-center text-muted-foreground">Aucun amendement trouvé pour cette période.</p>;
+    return (
+      <p className="py-8 text-center text-muted-foreground">Aucun amendement {libelleRole(role, 1)} pour cette période.</p>
+    );
   }
 
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        {meta.totalAmendements.toLocaleString('fr-FR')} amendement{meta.totalAmendements > 1 ? 's' : ''} sur{' '}
+        {meta.totalAmendements.toLocaleString('fr-FR')} amendement{meta.totalAmendements > 1 ? 's' : ''}{' '}
+        {libelleRole(role, meta.totalAmendements)} sur{' '}
         {meta.totalDossiers.toLocaleString('fr-FR')} dossier{meta.totalDossiers > 1 ? 's' : ''}
       </p>
       {groupes.map((g) => (
-        <BlocDossier key={g.dossier?.uid ?? 'aucun'} groupe={g} base={base} params={params} />
+        <BlocDossier key={g.dossier?.uid ?? 'aucun'} groupe={g} base={base} params={filtres} />
       ))}
       <div ref={loadMoreRef} className="h-4" />
       {isFetchingNextPage && (

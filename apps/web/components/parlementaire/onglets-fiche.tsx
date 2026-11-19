@@ -15,7 +15,10 @@ const LIBELLES: Record<OngletFiche, string> = {
 };
 
 /** Taille des listes de la fiche (`listes` de l'API). */
-export type ListesFiche = Record<OngletFiche, number>;
+export type ListesFiche = Record<OngletFiche, number> & {
+  /** Amendements dont il est l’auteur, sur les `amendements` déposés ou cosignés. */
+  amendementsDeposes?: number;
+};
 
 /**
  * Les onglets à montrer, dans l'ordre. Sans `listes` (réponse mise en cache

@@ -1,5 +1,7 @@
 'use client';
 
+import { FiltreSelect } from '@/components/FiltreSelect';
+
 /** '' = les deux chambres. */
 export type ChambreFiltre = '' | 'assemblee' | 'senat';
 
@@ -38,15 +40,15 @@ export function FiltreChambre({
   onChange: (value: ChambreFiltre) => void;
 }) {
   return (
-    <select
+    <FiltreSelect
       value={value}
-      onChange={(e) => onChange(e.target.value as ChambreFiltre)}
-      aria-label="Filtrer par chambre"
-      className="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-    >
-      <option value="">Les deux chambres</option>
-      <option value="assemblee">Assemblée nationale</option>
-      <option value="senat">Sénat</option>
-    </select>
+      onChange={onChange}
+      ariaLabel="Filtrer par chambre"
+      options={[
+        { value: '', label: 'Les deux chambres' },
+        { value: 'assemblee', label: 'Assemblée nationale' },
+        { value: 'senat', label: 'Sénat' },
+      ]}
+    />
   );
 }
