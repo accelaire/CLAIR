@@ -4,11 +4,22 @@
 // =============================================================================
 
 import { logger } from '../../utils/logger.js';
-import { errorMessage } from '../../utils/errors.js';
+import { getWikimedia, WikimediaIndisponible } from '../wikimedia-http.js';
 
 const WIKIPEDIA_API_URL = 'https://fr.wikipedia.org/w/api.php';
 const MAX_EXTRACT_CHARS = 4000;
-const REQUEST_TIMEOUT_MS = 10_000;
+/** Nouvelles tentatives après un 429, un 5xx ou une coupure réseau */
+const REPRISES = 3;
+
+/** Lecture de l'API ; lève `WikimediaIndisponible` si Wikipédia ne répond pas. */
+async function lireWikipedia<T>(params: Record<string, string>): Promise<T> {
+  const r = await getWikimedia<T>(WIKIPEDIA_API_URL, params, { reprises: REPRISES });
+  if (!r.ok) throw new WikimediaIndisponible(`Wikipédia indisponible (${params.action}, ${r.raison})`);
+  // Une erreur de l'API arrive en HTTP 200, dans un objet `error`.
+  const erreur = (r.json as { error?: { code?: string } } | null)?.error;
+  if (erreur) throw new WikimediaIndisponible(`Wikipédia : erreur ${erreur.code ?? 'inconnue'} (${params.action})`);
+  return r.json;
+}
 
 export interface WikipediaResult {
   title: string;
@@ -20,6 +31,8 @@ export interface WikipediaResult {
 /**
  * Recherche et extrait le contenu Wikipedia FR pour un parlementaire.
  * Utilise l'API opensearch + extracts pour obtenir le texte brut.
+ * Lève `WikimediaIndisponible` si Wikipédia ne répond pas : une panne n'est
+ * pas une absence d'article.
  */
 export async function fetchWikipediaBio(
   prenom: string,
@@ -35,12 +48,8 @@ export async function fetchWikipediaBio(
   ];
 
   for (const query of queries) {
-    try {
-      const result = await searchAndExtract(query, nom);
-      if (result) return result;
-    } catch (error) {
-      logger.debug({ query, error: errorMessage(error) }, 'Wikipedia search failed for query');
-    }
+    const result = await searchAndExtract(query, nom);
+    if (result) return result;
   }
 
   return null;
@@ -51,22 +60,12 @@ async function searchAndExtract(
   nom: string,
 ): Promise<WikipediaResult | null> {
   // Étape 1 : Recherche via opensearch
-  const searchParams = new URLSearchParams({
+  const [, titles] = await lireWikipedia<[string, string[]]>({
     action: 'opensearch',
     search: query,
     limit: '5',
     namespace: '0',
-    format: 'json',
   });
-
-  const searchRes = await fetch(`${WIKIPEDIA_API_URL}?${searchParams}`, {
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    headers: { 'User-Agent': 'CLAIRBot/1.0 (transparence parlementaire; contact@clair.fr)' },
-  });
-
-  if (!searchRes.ok) return null;
-
-  const [, titles] = await searchRes.json() as [string, string[]];
   if (!titles || titles.length === 0) return null;
 
   // Filtrer les résultats : le titre doit contenir le nom de famille
@@ -75,26 +74,16 @@ async function searchAndExtract(
   if (!matchingTitle) return null;
 
   // Étape 2 : Extraire le contenu de la page
-  const extractParams = new URLSearchParams({
+  const data = await lireWikipedia<{
+    query?: { pages?: Record<string, { title: string; extract?: string; missing?: boolean }> };
+  }>({
     action: 'query',
     titles: matchingTitle,
     prop: 'extracts',
     exintro: '0',           // Article complet, pas juste l'intro
     explaintext: '1',       // Texte brut (pas HTML)
     exchars: String(MAX_EXTRACT_CHARS),
-    format: 'json',
   });
-
-  const extractRes = await fetch(`${WIKIPEDIA_API_URL}?${extractParams}`, {
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    headers: { 'User-Agent': 'CLAIRBot/1.0 (transparence parlementaire; contact@clair.fr)' },
-  });
-
-  if (!extractRes.ok) return null;
-
-  const data = await extractRes.json() as {
-    query: { pages: Record<string, { title: string; extract?: string; missing?: boolean }> };
-  };
 
   const pages = data.query?.pages;
   if (!pages) return null;

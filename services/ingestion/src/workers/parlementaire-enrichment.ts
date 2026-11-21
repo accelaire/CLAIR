@@ -360,13 +360,14 @@ export async function enrichParlementairesIA(
             orderBy: { datePublication: 'desc' },
           });
 
-          // Fetch Wikipedia bio (rate-limit friendly, 1 req per parl)
+          // Bio Wikipédia et faits structurés Wikidata (sourcés et traçables).
+          // Une personne absente de l'un ou de l'autre a sa fiche quand même ;
+          // une panne de l'un des deux (429, 5xx, après les reprises) lève une
+          // erreur : la fiche n'est pas réécrite et sera retentée. Sans cela,
+          // elle s'écrivait sans ses sources, et l'empreinte (qui ne les compte
+          // pas) la gardait ainsi jusqu'à la rotation suivante.
           const role = parl.chambre === 'senat' ? 'sénateur' : 'député';
           const wikiBio = await fetchWikipediaBio(parl.prenom, parl.nom, { role });
-
-          // Faits structurés Wikidata (best-effort, sourcé et traçable).
-          // Gratuit, sans quota, sans clé. En cas d'indisponibilité, on continue :
-          // la fiche reste ancrée sur nos données + Wikipédia.
           const wikidata = await fetchWikidataFacts(parl.prenom, parl.nom);
 
           // Build prompt data

@@ -23,6 +23,8 @@ Code : `services/ingestion/src/workers/ia-enrichment.ts`, `workers/parlementaire
 
 Chaque entité porte aussi `ia_content_hash` (empreinte des données d'entrée) et `ia_generated_at` (date de génération). Les fiches parlementaires enregistrent en plus la provenance de leurs sources web dans `ia_sources` (URL et date de lecture de Wikipedia et Wikidata).
 
+**Wikipedia et Wikidata indisponibles.** Une personne absente de Wikipedia ou de Wikidata a sa fiche quand même. Si l'une des deux API ne répond pas (429, 5xx ou coupure réseau, après 3 nouvelles tentatives qui respectent `Retry-After`), la fiche n'est pas réécrite et l'erreur est comptée : elle garde sa version précédente, et une fiche périmée est retentée au passage suivant. Une fiche n'est donc jamais générée sans ses sources à cause d'une panne passagère.
+
 **Positions des groupes.** Lorsque les seuls votes disponibles portent sur des amendements, les prompts des dossiers et des sujets interdisent au modèle de décrire une position de groupe : un vote sur un amendement ne dit pas ce qu'un groupe pense du texte.
 
 ---

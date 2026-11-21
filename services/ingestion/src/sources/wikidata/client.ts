@@ -15,11 +15,13 @@
 // =============================================================================
 
 import { logger } from '../../utils/logger.js';
-import { errorMessage } from '../../utils/errors.js';
+import { getWikimedia, WikimediaIndisponible } from '../wikimedia-http.js';
 
 const WIKIDATA_API_URL = 'https://www.wikidata.org/w/api.php';
-const REQUEST_TIMEOUT_MS = 10_000;
-const USER_AGENT = 'CLAIRBot/1.0 (transparence parlementaire; contact@clair.fr)';
+/** Nouvelles tentatives des lectures d'une fiche après un 429, un 5xx ou une coupure */
+const REPRISES_FICHE = 3;
+/** `wbgetentities` refuse plus de 50 identifiants par appel */
+const IDS_PAR_APPEL = 50;
 
 // Entités Wikidata de référence pour la désambiguïsation.
 const Q_HUMAN = 'Q5';
@@ -66,9 +68,6 @@ interface WbEntity {
   claims?: Record<string, WbClaimValue[]>;
 }
 
-/** Attente maximale demandée par `Retry-After` que l'on accepte de respecter. */
-const ATTENTE_MAX_MS = 30_000;
-
 /**
  * Appel à l'API de Wikidata ; `null` si la réponse n'est pas un succès.
  *
@@ -80,19 +79,25 @@ export async function wikidataGet<T>(
   params: Record<string, string>,
   options: { reprises?: number } = {},
 ): Promise<T | null> {
-  const search = new URLSearchParams({ ...params, format: 'json', origin: '*' });
-  for (let tentative = 0; ; tentative++) {
-    const res = await fetch(`${WIKIDATA_API_URL}?${search}`, {
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      headers: { 'User-Agent': USER_AGENT },
-    });
-    if (res.ok) return (await res.json()) as T;
-    const reessayable = res.status === 429 || res.status >= 500;
-    if (!reessayable || tentative >= (options.reprises ?? 0)) return null;
-    const retryAfter = Number(res.headers.get('retry-after'));
-    const attente = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2000 * 2 ** tentative;
-    await new Promise((r) => setTimeout(r, Math.min(attente, ATTENTE_MAX_MS)));
+  const r = await getWikimedia<T>(WIKIDATA_API_URL, { ...params, origin: '*' }, options);
+  return r.ok ? r.json : null;
+}
+
+/**
+ * Lecture pour une fiche : lève `WikimediaIndisponible` si Wikidata ne répond
+ * pas, après les reprises, ou répond par une erreur de l'API (rendue en HTTP 200).
+ */
+async function lireWikidata<T>(params: Record<string, string>): Promise<T> {
+  const r = await getWikimedia<T & { error?: { code?: string } }>(
+    WIKIDATA_API_URL,
+    { ...params, origin: '*' },
+    { reprises: REPRISES_FICHE },
+  );
+  if (!r.ok) throw new WikimediaIndisponible(`Wikidata indisponible (${params.action}, ${r.raison})`);
+  if (r.json.error) {
+    throw new WikimediaIndisponible(`Wikidata : erreur ${r.json.error.code ?? 'inconnue'} (${params.action})`);
   }
+  return r.json;
 }
 
 /** Année (YYYY) extraite d'un timestamp Wikidata (+2022-06-22T00:00:00Z). */
@@ -105,66 +110,64 @@ function annee(time?: string): string | undefined {
 /**
  * Récupère les faits structurés Wikidata pour un parlementaire.
  * Retourne null si aucune entité fiable (humain + description politique) n'est trouvée.
+ * Lève `WikimediaIndisponible` si Wikidata ne répond pas : l'appelant ne doit
+ * pas prendre une panne pour une absence, sinon la fiche s'écrit sans ses faits.
  */
 export async function fetchWikidataFacts(
   prenom: string,
   nom: string,
 ): Promise<WikidataResult | null> {
-  try {
-    // 1) Recherche des entités candidates.
-    const search = await wikidataGet<{ search?: WbSearchEntity[] }>({
-      action: 'wbsearchentities',
-      search: `${prenom} ${nom}`,
-      language: 'fr',
-      uselang: 'fr',
-      type: 'item',
-      limit: '5',
-    });
-    const candidates = search?.search ?? [];
-    if (candidates.length === 0) return null;
+  // 1) Recherche des entités candidates.
+  const search = await lireWikidata<{ search?: WbSearchEntity[] }>({
+    action: 'wbsearchentities',
+    search: `${prenom} ${nom}`,
+    language: 'fr',
+    uselang: 'fr',
+    type: 'item',
+    limit: '5',
+  });
+  const candidates = search.search ?? [];
+  if (candidates.length === 0) return null;
 
-    // 2) Charge claims + descriptions des candidats en UN appel.
-    const ids = candidates.map((c) => c.id).join('|');
-    const entities = await wikidataGet<{ entities?: Record<string, WbEntity> }>({
-      action: 'wbgetentities',
-      ids,
-      props: 'labels|descriptions|claims',
-      languages: 'fr|en',
-    });
-    if (!entities?.entities) return null;
+  // 2) Charge claims + descriptions des candidats en UN appel.
+  const ids = candidates.map((c) => c.id).join('|');
+  const { entities = {} } = await lireWikidata<{ entities?: Record<string, WbEntity> }>({
+    action: 'wbgetentities',
+    ids,
+    props: 'labels|descriptions|claims',
+    languages: 'fr|en',
+  });
 
-    // 3) Désambiguïsation : humain (P31=Q5) ET description à connotation politique.
-    const chosen = candidates
-      .map((c) => entities.entities![c.id])
-      .find((e) => e && isHumanPolitician(e));
-    if (!chosen) {
-      logger.debug({ prenom, nom, candidats: candidates.map((c) => c.id) },
-        'Wikidata : aucun candidat humain/politique fiable');
-      return null;
-    }
-
-    // 4) Extraction des faits + résolution des labels des QID référencés.
-    const partiClaims = valueClaims(chosen, 'P102'); // membre de parti politique
-    const fonctionClaims = valueClaims(chosen, 'P39'); // fonction occupée
-    const refIds = [...new Set([...partiClaims, ...fonctionClaims].map((c) => c.id))];
-    const labels = await resolveLabels(refIds);
-
-    const naissance = annee(timeClaim(chosen, 'P569'));
-
-    return {
-      qid: chosen.id,
-      label: chosen.labels?.fr?.value ?? chosen.labels?.en?.value ?? `${prenom} ${nom}`,
-      description: chosen.descriptions?.fr?.value ?? chosen.descriptions?.en?.value,
-      naissance,
-      partis: partiClaims.map((c) => ({ label: labels[c.id] ?? c.id, debut: c.debut, fin: c.fin })),
-      fonctions: fonctionClaims.map((c) => ({ label: labels[c.id] ?? c.id, debut: c.debut, fin: c.fin })),
-      pageUrl: `https://www.wikidata.org/wiki/${chosen.id}`,
-      found: true,
-    };
-  } catch (error) {
-    logger.debug({ prenom, nom, error: errorMessage(error) }, 'Wikidata fetch failed');
+  // 3) Désambiguïsation : humain (P31=Q5) ET description à connotation politique.
+  const chosen = candidates
+    .map((c) => entities[c.id])
+    .find((e) => e && isHumanPolitician(e));
+  if (!chosen) {
+    logger.debug({ prenom, nom, candidats: candidates.map((c) => c.id) },
+      'Wikidata : aucun candidat humain/politique fiable');
     return null;
   }
+
+  // 4) Extraction des faits + résolution des labels des QID référencés.
+  const partiClaims = valueClaims(chosen, 'P102'); // membre de parti politique
+  const fonctionClaims = valueClaims(chosen, 'P39'); // fonction occupée
+  const refIds = [...new Set([...partiClaims, ...fonctionClaims].map((c) => c.id))];
+  const labels = await resolveLabels(refIds);
+  // Un fait sans libellé français ni anglais n'est pas transmis : un QID brut
+  // dans le prompt finirait tel quel dans la fiche.
+  const faits = (claims: typeof partiClaims): WikidataFait[] =>
+    claims.flatMap((c) => (labels[c.id] ? [{ label: labels[c.id]!, debut: c.debut, fin: c.fin }] : []));
+
+  return {
+    qid: chosen.id,
+    label: chosen.labels?.fr?.value ?? chosen.labels?.en?.value ?? `${prenom} ${nom}`,
+    description: chosen.descriptions?.fr?.value ?? chosen.descriptions?.en?.value,
+    naissance: annee(timeClaim(chosen, 'P569')),
+    partis: faits(partiClaims),
+    fonctions: faits(fonctionClaims),
+    pageUrl: `https://www.wikidata.org/wiki/${chosen.id}`,
+    found: true,
+  };
 }
 
 /** Vrai si l'entité est un humain (P31=Q5) avec une description à connotation politique. */
@@ -198,19 +201,20 @@ function timeClaim(e: WbEntity, prop: string): string | undefined {
   return typeof v === 'object' ? v?.time : undefined;
 }
 
-/** Résout un lot de QID en labels FR (un seul appel wbgetentities). */
+/** Résout des QID en libellés français (anglais à défaut), 50 par appel. */
 async function resolveLabels(ids: string[]): Promise<Record<string, string>> {
-  if (ids.length === 0) return {};
-  const data = await wikidataGet<{ entities?: Record<string, WbEntity> }>({
-    action: 'wbgetentities',
-    ids: ids.join('|'),
-    props: 'labels',
-    languages: 'fr|en',
-  });
   const out: Record<string, string> = {};
-  for (const [id, e] of Object.entries(data?.entities ?? {})) {
-    const label = e.labels?.fr?.value ?? e.labels?.en?.value;
-    if (label) out[id] = label;
+  for (let i = 0; i < ids.length; i += IDS_PAR_APPEL) {
+    const { entities = {} } = await lireWikidata<{ entities?: Record<string, WbEntity> }>({
+      action: 'wbgetentities',
+      ids: ids.slice(i, i + IDS_PAR_APPEL).join('|'),
+      props: 'labels',
+      languages: 'fr|en',
+    });
+    for (const [id, e] of Object.entries(entities)) {
+      const label = e.labels?.fr?.value ?? e.labels?.en?.value;
+      if (label) out[id] = label;
+    }
   }
   return out;
 }
