@@ -173,7 +173,7 @@ Volumétrie de la prod au 11 novembre 2026 (projets déposés depuis le 21 juin 
 | `LegiTexte` | `legi_textes` | 154 473 | Index de la base LEGI de la DILA : versions des textes cités comme du droit (codes, lois, ordonnances, décrets, arrêtés, Constitution…), avec leur titre et leurs dates. Compté au premier chargement en production, le 31 octobre 2026 |
 | `LegiArticle` | `legi_articles` | 734 625 | Index de la base LEGI : versions des articles de ces textes (hors arrêtés et circulaires) encore en vigueur en 2017 ou après. Identifiant Légifrance, numéro, dates ; aucun contenu. Compté au premier chargement en production, le 31 octobre 2026 |
 | `TexteSenat` | `textes_senat` | 9 075 | Textes du Sénat décrits par la base AMELI : session de dépôt et d'inscription, numéro, signet du dossier DOSLEG. Un numéro de texte n'est unique que dans sa session de dépôt (le n° 155 est le PLF 2014 en 2013-2014 et le PLF 2027 en 2026-2027) ; le signet donne son dossier à chaque amendement du Sénat. Compté dans le dump AMELI du 21 novembre 2026 |
-| `AmendementRenvois` | `amendements_renvois` | 531 547 | Renvois au droit en vigueur repérés dans le dispositif d'un amendement : positions dans le texte, article (LEGIARTI) ou texte (CID) visé dans l'index LEGI. Une ligne par amendement calculé, même sans renvoi ; 31 % en ont au moins un. Compté au premier calcul en production, le 1er novembre 2026 |
+| `AmendementRenvois` | `amendements_renvois` | 531 547 | Renvois au droit en vigueur repérés dans le dispositif d'un amendement (`renvois`) et dans son exposé sommaire (`renvois_expose`) : positions dans le texte, article (LEGIARTI) ou texte (CID) visé dans l'index LEGI. Une ligne par amendement calculé, même sans renvoi ; 31 % des dispositifs en ont au moins un. Compté au premier calcul en production, le 1er novembre 2026 |
 
 ### Commissions et agenda
 
@@ -258,7 +258,7 @@ L'API renvoie l'essentiel de la base, souvent la ligne entière sur les routes d
 | Table | Colonnes | Remarque |
 | :--- | :--- | :--- |
 | `amendements` | `parlementaire_id`, `source_url`, `numero_ordre`, `uid_canonique`, `auteur_ref`, `groupe_ref`, `source_hash`, `amendement_parent_ref` | L'auteur n'est donné que par `auteur_libelle` ; le parent d'un sous-amendement l'est par `amendementParent` |
-| `amendements_renvois` | `version`, `calcule_le` | Les renvois sont servis avec chaque amendement (`renvois`), adresse Légifrance comprise, sauf s'ils ont été calculés avant la dernière modification de l'amendement |
+| `amendements_renvois` | `version`, `calcule_le` | Les renvois sont servis avec chaque amendement (`renvois`, `renvoisExpose`), adresse Légifrance comprise, sauf s'ils ont été calculés avant la dernière modification de l'amendement |
 | `interventions` | `source_uid`, `seance_uid`, `ordre_absolu` | Repérage dans le compte rendu source |
 | `dossiers_legislatifs` | `source_data`, `ia_content_hash`, `ia_generated_at` | L'API extrait de `source_data` la chronologie et le lien vers le Journal officiel, sans le renvoyer brut |
 | `sujets` | `ia_content_hash`, `ia_generated_at`, `ia_groupe_amendement_hash`, `context_resolved_at`, `context_input_hash` | Suivi de l'enrichissement |
