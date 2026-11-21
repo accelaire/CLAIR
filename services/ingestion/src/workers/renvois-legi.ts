@@ -1,13 +1,15 @@
 // =============================================================================
-// Worker — Renvois au droit en vigueur dans les dispositifs d'amendements
+// Worker — Renvois au droit en vigueur dans le texte des amendements
 // =============================================================================
 //
-// Repère dans le dispositif d'un amendement les textes et articles du droit
-// français qu'il cite (« l'article L. 121-1 du code de la consommation ») et les
-// rattache à l'index LEGI (`legi_textes`, `legi_articles`, workers/index-legi.ts)
-// : identifiant Légifrance de l'article, dans sa version en vigueur à la date de
-// dépôt (T5, ticket #46). Le résultat va dans `amendements_renvois`, une ligne
-// par amendement traité, renvois en positions dans `amendements.dispositif`.
+// Repère dans le dispositif d'un amendement et dans son exposé sommaire les
+// textes et articles du droit français cités (« l'article L. 121-1 du code de
+// la consommation ») et les rattache à l'index LEGI (`legi_textes`,
+// `legi_articles`, workers/index-legi.ts) : identifiant Légifrance de
+// l'article, dans sa version en vigueur à la date de dépôt (T5, ticket #46).
+// Le résultat va dans `amendements_renvois`, une ligne par amendement traité,
+// renvois en positions dans `amendements.dispositif` (`renvois`) et dans
+// `amendements.expose_sommaire` (`renvois_expose`).
 //
 // La grammaire est celle de @tricoteuses/tisseuse ; la résolution, la nôtre,
 // adossée à l'index LEGI (`ResolveurLegi`). Deux écarts assumés avec le
@@ -22,7 +24,8 @@
 // sans nommer le code, que nomme l'article du projet amendé. Pour un amendement
 // AN sur un article (pas « après l'article »), le texte de cet article
 // (`textes_articles`) est lu d'abord, et le dernier texte qu'il cite sert de
-// texte courant au dispositif.
+// texte courant au dispositif. L'exposé est lu avec le même contexte, mais
+// n'en garde que les articles dont le texte est nommé (`texteNomme`).
 // =============================================================================
 
 import { PrismaClient } from '@prisma/client';
@@ -54,6 +57,15 @@ const JOURS_RECALCUL_RECENTS = 45;
 const TAILLE_LOT = 500;
 
 /**
+ * Amendements calculés par une version antérieure de la détection, et qui
+ * n'ont pas d'autre raison d'être recalculés, repris par un passage sans
+ * `--tout`. Une nouvelle version recalcule ainsi toute la base en quelques
+ * nuits (535 000 amendements en novembre 2026) au lieu d'allonger une seule
+ * nuit de plusieurs heures. `sync-renvois-legi --tout` va plus vite.
+ */
+const RATTRAPAGE_PAR_PASSAGE = 60_000;
+
+/**
  * Natures dont les titres ne sont pas chargés. Les arrêtés font 60 % des
  * titres de l'index (92 000) : sans eux, mesuré sur 3 000 amendements le
  * 31/10/2026, le chargement passe de 75 s à 6 s et de 1,85 à 0,89 Go, pour un
@@ -66,7 +78,7 @@ const NATURES_TITRES_IGNOREES: ReadonlySet<string> = new Set(['ARRETE']);
 const FIN_OUVERTE = '2999-01-01';
 
 export interface RenvoiLegi {
-  /** Positions dans `amendements.dispositif`, en unités de code UTF-16 (`String#slice`). */
+  /** Positions dans le texte analysé (dispositif ou exposé), en unités de code UTF-16 (`String#slice`). */
   debut: number;
   fin: number;
   type: 'article' | 'texte';
@@ -102,6 +114,8 @@ function dateTitre(d: string | null): string | null {
 export interface ResolveurLegi extends LegiResolver {
   /** Nature du texte, d'après les titres chargés. */
   natureDe(cid: string): string | null;
+  /** Date du texte (signature), d'après les titres chargés. */
+  dateDe(cid: string): string | null;
   /** CID du texte d'un article déjà rencontré. */
   cidDeLArticle(id: string): string | undefined;
   /** Titres écartés parce que tisseuse ne sait pas les lire. */
@@ -118,11 +132,16 @@ export function creerResolveur(t: Tisseuse, db: PrismaClient = prisma): Resolveu
     private articlesParCid = new Map<string, Promise<Map<string, VersionArticle[]>>>();
     private cidParArticle = new Map<string, string>();
     private natureParCid = new Map<string, string>();
+    private dateParCid = new Map<string, string>();
     private titres: Promise<void> | undefined;
     titresEcartes: string[] = [];
 
     natureDe(cid: string): string | null {
       return this.natureParCid.get(cid) ?? null;
+    }
+
+    dateDe(cid: string): string | null {
+      return this.dateParCid.get(cid) ?? null;
     }
 
     cidDeLArticle(id: string): string | undefined {
@@ -192,6 +211,9 @@ export function creerResolveur(t: Tisseuse, db: PrismaClient = prisma): Resolveu
         FROM legi_textes WHERE nature = ANY(${natures}::text[]) AND titre <> ''`;
       let rows: TextTitlesInfoRow[] = lignes.map((l) => {
         this.natureParCid.set(l.cid, l.nature);
+        // Les codes sont datés de la fin ouverte : pas une date.
+        const date = dateTitre(l.dateTexte);
+        if (date) this.dateParCid.set(l.cid, date);
         return {
           cid: l.cid, id: l.id, nature: l.nature, num: l.num, title: l.titre,
           dateTexte: dateTitre(l.dateTexte), dateDebut: dateTitre(l.dateDebut), dateFin: l.dateFin,
@@ -235,11 +257,28 @@ export async function texteCourant(
   return context.currentText?.cid ? context.currentText : undefined;
 }
 
-/** Renvois d'un texte, en positions dans ce texte, sans chevauchement. */
+/**
+ * Renvois d'un texte, en positions dans ce texte, sans chevauchement.
+ *
+ * Un texte daté d'après `date` n'existait pas encore : « la loi de finances
+ * pour 2026 » d'un amendement déposé en octobre 2025 est le projet en
+ * discussion, que tisseuse rattache pourtant, par son titre, à la loi qui en
+ * est sortie en février 2026.
+ *
+ * `texteNomme` ne garde un article que si son texte est nommé dans la
+ * citation, ou dans le passage qui l'énumère avec d'autres : sans lui,
+ * tisseuse prend le dernier texte cité ou le contexte. C'est juste dans un
+ * dispositif, qui modifie un texte à la fois ; faux dans un exposé, où
+ * « l'article 3 » désigne le plus souvent un article du texte en discussion
+ * (essai du 21/11/2026 : « L'article 19 du PLF » relié à la Constitution
+ * citée plus haut).
+ */
 export async function detecterRenvois(
   t: Tisseuse,
   resolveur: ResolveurLegi,
-  { texte, date, contexte }: { texte: string; date: string; contexte?: TextAstText },
+  { texte, date, contexte, texteNomme = false }: {
+    texte: string; date: string; contexte?: TextAstText; texteNomme?: boolean;
+  },
 ): Promise<RenvoiLegi[]> {
   const transformation = t.simplifyPlainText(texte);
   const context = new t.TextParserContext(transformation.output);
@@ -250,6 +289,7 @@ export async function detecterRenvois(
     if (!position) continue;
     let renvoi: RenvoiLegi | undefined;
     if (lien.type === 'external_article' && lien.articleId) {
+      if (texteNomme && lien.article.implicitText) continue;
       const cid = resolveur.cidDeLArticle(lien.articleId);
       if (cid) {
         renvoi = {
@@ -259,6 +299,8 @@ export async function detecterRenvois(
       }
     } else if (lien.type === 'external_text' && lien.text.cid) {
       const cid = lien.text.cid;
+      const dateTexte = resolveur.dateDe(cid);
+      if (dateTexte && dateTexte > date) continue;
       renvoi = { debut: position.start, fin: position.stop, type: 'texte', cid, nature: resolveur.natureDe(cid) };
     }
     if (renvoi && renvoi.fin > renvoi.debut) renvois.push(renvoi);
@@ -289,51 +331,75 @@ interface AmendementATraiter {
   id: string;
   /** NULL pour une ligne de renvois dont l'amendement a perdu son dispositif. */
   dispositif: string | null;
+  expose: string | null;
   date: string | null;
   texteRef: string | null;
   articleVise: string | null;
 }
 
 /**
- * Amendements à (re)calculer : jamais traités, modifiés depuis, traités par
- * une version antérieure de la détection, dont le texte amendé a reçu ses
- * articles depuis, ou trop récents pour que la DILA ait tout consolidé.
- *
- * Ramène aussi, sans dispositif, les amendements calculés dont le dispositif a
- * disparu depuis (107 à l'Assemblée le 11/11/2026) : leurs renvois pointent
- * dans un texte qui n'existe plus, la ligne est effacée.
+ * Quels amendements un lot ramène :
+ *  - `courant` : jamais traités, modifiés depuis, dont le texte amendé a reçu
+ *    ses articles depuis, ou trop récents pour que la DILA ait tout
+ *    consolidé ;
+ *  - `rattrapage` : les autres, calculés par une version antérieure de la
+ *    détection ;
+ *  - `tout` : tous.
  */
-async function lireLot(apres: string, tout: boolean, uid?: string): Promise<AmendementATraiter[]> {
+type Selection = 'courant' | 'rattrapage' | 'tout';
+
+/**
+ * Amendements à (re)calculer, selon la sélection.
+ *
+ * Le passage courant ramène aussi, sans dispositif, les amendements calculés
+ * dont le dispositif a disparu depuis (107 à l'Assemblée le 11/11/2026) :
+ * leurs renvois pointent dans un texte qui n'existe plus, la ligne est
+ * effacée.
+ */
+async function lireLot(apres: string, selection: Selection, uid?: string): Promise<AmendementATraiter[]> {
+  const tout = selection === 'tout';
+  const rattrapage = selection === 'rattrapage';
   return prisma.$queryRaw<AmendementATraiter[]>`
-    SELECT a.id, a.dispositif, a.date_depot::date::text AS date, a.texte_ref AS "texteRef",
-      a.article_vise AS "articleVise"
+    SELECT a.id, a.dispositif, a.expose_sommaire AS expose, a.date_depot::date::text AS date,
+      a.texte_ref AS "texteRef", a.article_vise AS "articleVise"
     FROM amendements a
     LEFT JOIN amendements_renvois r ON r.amendement_id = a.id
     WHERE a.id > ${apres}
       AND (${uid ?? null}::text IS NULL OR a.uid = ${uid ?? null})
       AND (
-        (a.dispositif IS NULL OR a.date_depot IS NULL) AND r.amendement_id IS NOT NULL
+        NOT ${rattrapage} AND (a.dispositif IS NULL OR a.date_depot IS NULL) AND r.amendement_id IS NOT NULL
         OR a.dispositif IS NOT NULL AND a.date_depot IS NOT NULL AND (
-          ${tout} OR r.amendement_id IS NULL OR r.version < ${VERSION_DETECTION}
-          OR a.updated_at > r.calcule_le
-          OR a.date_depot > now() - make_interval(days => ${JOURS_RECALCUL_RECENTS}::int)
-          OR EXISTS (
-            SELECT 1 FROM textes_articles ta WHERE ta.texte_ref = a.texte_ref AND ta.created_at > r.calcule_le)
+          ${tout}
+          OR ${rattrapage} AND r.version < ${VERSION_DETECTION}
+          OR NOT ${rattrapage} AND (
+            r.amendement_id IS NULL
+            OR a.updated_at > r.calcule_le
+            OR a.date_depot > now() - make_interval(days => ${JOURS_RECALCUL_RECENTS}::int)
+            OR EXISTS (
+              SELECT 1 FROM textes_articles ta WHERE ta.texte_ref = a.texte_ref AND ta.created_at > r.calcule_le)
+          )
         )
       )
     ORDER BY a.id
     LIMIT ${TAILLE_LOT}`;
 }
 
-async function ecrireLot(lignes: Array<{ amendementId: string; renvois: RenvoiLegi[] }>): Promise<void> {
+interface LigneRenvois {
+  amendementId: string;
+  renvois: RenvoiLegi[];
+  renvoisExpose: RenvoiLegi[];
+}
+
+async function ecrireLot(lignes: LigneRenvois[]): Promise<void> {
   if (lignes.length === 0) return;
   // Un seul paramètre JSON (cf. workers/index-legi.ts).
   await prisma.$executeRaw`
-    INSERT INTO amendements_renvois (amendement_id, version, renvois)
-    SELECT "amendementId", ${VERSION_DETECTION}, renvois
-    FROM json_to_recordset(${JSON.stringify(lignes)}::json) AS x("amendementId" text, renvois jsonb)
+    INSERT INTO amendements_renvois (amendement_id, version, renvois, renvois_expose)
+    SELECT "amendementId", ${VERSION_DETECTION}, renvois, "renvoisExpose"
+    FROM json_to_recordset(${JSON.stringify(lignes)}::json)
+      AS x("amendementId" text, renvois jsonb, "renvoisExpose" jsonb)
     ON CONFLICT (amendement_id) DO UPDATE SET version = EXCLUDED.version, renvois = EXCLUDED.renvois,
-      calcule_le = now()`;
+      renvois_expose = EXCLUDED.renvois_expose, calcule_le = now()`;
 }
 
 async function effacerLot(ids: string[]): Promise<void> {
@@ -379,21 +445,40 @@ export interface RenvoisLegiOptions {
   limite?: number;
   /** Tout recalculer, même ce qui est à jour. */
   tout?: boolean;
+  /**
+   * Nombre maximum d'amendements d'une version antérieure de la détection
+   * repris après le passage courant (`RATTRAPAGE_PAR_PASSAGE` par défaut,
+   * 0 pour aucun). Sans effet avec `tout`.
+   */
+  rattrapage?: number;
   /** Ne traiter que cet amendement (uid). */
   uid?: string;
   /** Calculer sans écrire. */
   dryRun?: boolean;
 }
 
-export interface RenvoisLegiResultat {
-  amendements: number;
+interface CompteRenvois {
+  /** Amendements avec au moins un lien dans ce texte. */
   avecRenvoi: number;
   renvois: { article: number; texte: number };
+}
+
+export interface RenvoisLegiResultat extends CompteRenvois {
+  amendements: number;
+  /** Dont amendements d'une version antérieure, repris par le rattrapage. */
+  rattrapes: number;
+  /** Les mêmes comptes, pour l'exposé sommaire. */
+  expose: CompteRenvois;
   avecContexte: number;
   erreurs: number;
   titresEcartes: number;
   /** Lignes effacées : amendements qui n'ont plus de dispositif. */
   effaces: number;
+}
+
+function compter(compte: CompteRenvois, renvois: RenvoiLegi[]): void {
+  if (renvois.length) compte.avecRenvoi++;
+  for (const r of renvois) compte.renvois[r.type]++;
 }
 
 export async function synchroniserRenvoisLegi(options: RenvoisLegiOptions = {}): Promise<RenvoisLegiResultat> {
@@ -404,56 +489,75 @@ export async function synchroniserRenvoisLegi(options: RenvoisLegiOptions = {}):
   logger.info({ ms: Date.now() - debut, titresEcartes: resolveur.titresEcartes }, 'Renvois LEGI : titres chargés');
 
   const resultat: RenvoisLegiResultat = {
-    amendements: 0, avecRenvoi: 0, renvois: { article: 0, texte: 0 }, avecContexte: 0, erreurs: 0,
-    titresEcartes: resolveur.titresEcartes.length, effaces: 0,
+    amendements: 0, rattrapes: 0, avecRenvoi: 0, renvois: { article: 0, texte: 0 },
+    expose: { avecRenvoi: 0, renvois: { article: 0, texte: 0 } },
+    avecContexte: 0, erreurs: 0, titresEcartes: resolveur.titresEcartes.length, effaces: 0,
   };
   // Texte courant de chaque article amendé, calculé une fois par article.
   const contextes = new Map<string, Promise<TextAstText | undefined>>();
-  let apres = '';
-  for (;;) {
-    const restant = options.limite !== undefined ? options.limite - resultat.amendements : Infinity;
-    if (restant <= 0) break;
-    const lus = (await lireLot(apres, options.tout ?? false, options.uid)).slice(0, restant);
-    if (lus.length === 0) break;
-    apres = lus.at(-1)!.id;
-    const aEffacer = lus.filter((a) => a.dispositif === null || a.date === null).map((a) => a.id);
-    const lot = lus.filter((a): a is AmendementATraiter & { dispositif: string; date: string } =>
-      a.dispositif !== null && a.date !== null);
 
-    const { cleParAmendement, contenuParCle } = await articlesAmendes(lot);
-    const lignes: Array<{ amendementId: string; renvois: RenvoiLegi[] }> = [];
-    for (const a of lot) {
-      try {
-        const cle = cleParAmendement.get(a.id);
-        let contexte: TextAstText | undefined;
-        if (cle) {
-          let p = contextes.get(cle);
-          if (!p) {
-            p = texteCourant(t, resolveur, contenuParCle.get(cle)!, a.date);
-            contextes.set(cle, p);
+  /** Un passage sur la sélection, `limite` amendements au plus. */
+  const passer = async (selection: Selection, limite: number): Promise<number> => {
+    let traites = 0;
+    let apres = '';
+    for (;;) {
+      const restant = Math.min(limite - traites, (options.limite ?? Infinity) - resultat.amendements);
+      if (restant <= 0) break;
+      const lus = (await lireLot(apres, selection, options.uid)).slice(0, restant);
+      if (lus.length === 0) break;
+      apres = lus.at(-1)!.id;
+      const aEffacer = lus.filter((a) => a.dispositif === null || a.date === null).map((a) => a.id);
+      const lot = lus.filter((a): a is AmendementATraiter & { dispositif: string; date: string } =>
+        a.dispositif !== null && a.date !== null);
+
+      const { cleParAmendement, contenuParCle } = await articlesAmendes(lot);
+      const lignes: LigneRenvois[] = [];
+      for (const a of lot) {
+        try {
+          const cle = cleParAmendement.get(a.id);
+          let contexte: TextAstText | undefined;
+          if (cle) {
+            let p = contextes.get(cle);
+            if (!p) {
+              p = texteCourant(t, resolveur, contenuParCle.get(cle)!, a.date);
+              contextes.set(cle, p);
+            }
+            contexte = await p;
+            if (contexte) resultat.avecContexte++;
           }
-          contexte = await p;
-          if (contexte) resultat.avecContexte++;
+          const renvois = await detecterRenvois(t, resolveur, { texte: a.dispositif, date: a.date, contexte });
+          const renvoisExpose = a.expose
+            ? await detecterRenvois(t, resolveur, { texte: a.expose, date: a.date, contexte, texteNomme: true })
+            : [];
+          lignes.push({ amendementId: a.id, renvois, renvoisExpose });
+          compter(resultat, renvois);
+          compter(resultat.expose, renvoisExpose);
+        } catch (e) {
+          // Un texte que la grammaire ne sait pas lire ne bloque pas les autres.
+          resultat.erreurs++;
+          logger.warn({ amendementId: a.id, erreur: String(e).slice(0, 300) }, 'Renvois LEGI : texte illisible');
         }
-        const renvois = await detecterRenvois(t, resolveur, { texte: a.dispositif, date: a.date, contexte });
-        lignes.push({ amendementId: a.id, renvois });
-        if (renvois.length) resultat.avecRenvoi++;
-        for (const r of renvois) resultat.renvois[r.type]++;
-      } catch (e) {
-        // Un dispositif que la grammaire ne sait pas lire ne bloque pas les autres.
-        resultat.erreurs++;
-        logger.warn({ amendementId: a.id, erreur: String(e).slice(0, 300) }, 'Renvois LEGI : dispositif illisible');
+      }
+      if (!options.dryRun) {
+        await ecrireLot(lignes);
+        await effacerLot(aEffacer);
+      }
+      resultat.effaces += aEffacer.length;
+      resultat.amendements += lot.length;
+      traites += lus.length;
+      if (selection === 'rattrapage') resultat.rattrapes += lot.length;
+      if (resultat.amendements % 10_000 < TAILLE_LOT) {
+        logger.info({ ...resultat, ms: Date.now() - debut }, 'Renvois LEGI : avancement');
       }
     }
-    if (!options.dryRun) {
-      await ecrireLot(lignes);
-      await effacerLot(aEffacer);
-    }
-    resultat.effaces += aEffacer.length;
-    resultat.amendements += lot.length;
-    if (resultat.amendements % 10_000 < TAILLE_LOT) {
-      logger.info({ ...resultat, ms: Date.now() - debut }, 'Renvois LEGI : avancement');
-    }
+    return traites;
+  };
+
+  if (options.tout) {
+    await passer('tout', Infinity);
+  } else {
+    await passer('courant', Infinity);
+    await passer('rattrapage', options.rattrapage ?? RATTRAPAGE_PAR_PASSAGE);
   }
   return resultat;
 }

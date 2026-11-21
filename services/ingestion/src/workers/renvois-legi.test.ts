@@ -95,6 +95,17 @@ describe('renvois au droit en vigueur', () => {
     expect(renvois).toEqual([expect.objectContaining({ type: 'article', article: 'LEGIARTI000044142344' })]);
   });
 
+  it("lit un exposé sommaire comme un dispositif : les articles cités dans l'argumentaire", async () => {
+    const texte = 'Cet amendement vise à revenir sur la rédaction actuelle. En effet, les pratiques '
+      + "commerciales définies à l'article L. 121‑1 du code de la consommation et l'article 51 de la "
+      + "loi n° 2008‑776 du 4 août 2008 de modernisation de l'économie ne couvrent pas ce cas. "
+      + "L'article 3 de la présente proposition de loi y remédie.";
+    const renvois = await detecterRenvois(t, resolveur, { texte, date: '2024-03-01' });
+    expect(renvois.map((r) => r.article)).toEqual(['LEGIARTI000044142344', 'LEGIARTI000019284384']);
+    // « L'article 3 de la présente proposition de loi » : le texte en discussion, pas de lien.
+    expect(extraits(texte, renvois).join(' | ')).not.toContain('article 3');
+  });
+
   it("ne relie pas un article absent de l'index à la date de dépôt", async () => {
     const texte = "L'article L. 121‑1 du code de la consommation est abrogé.";
     expect(await detecterRenvois(t, resolveur, { texte, date: '2010-01-01' })).toEqual([]);
