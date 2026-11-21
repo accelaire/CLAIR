@@ -1,10 +1,10 @@
 // =============================================================================
-// Texte d'un amendement : nettoyage et liens Légifrance du dispositif (T5, #46)
+// Texte d'un amendement : nettoyage et liens Légifrance (T5, #46)
 // =============================================================================
 
-/** Renvoi au droit en vigueur repéré dans le dispositif, tel que l'API le sert. */
-export interface RenvoiDispositif {
-  /** Positions dans le dispositif brut, en unités de code UTF-16 (`String#slice`). */
+/** Renvoi au droit en vigueur repéré dans le dispositif ou l'exposé, tel que l'API le sert. */
+export interface RenvoiDroit {
+  /** Positions dans le texte brut qui le porte, en unités de code UTF-16 (`String#slice`). */
   debut: number;
   fin: number;
   type: 'article' | 'texte';
@@ -16,7 +16,7 @@ export interface RenvoiDispositif {
 
 export interface SegmentTexte {
   texte: string;
-  renvoi?: RenvoiDispositif;
+  renvoi?: RenvoiDroit;
 }
 
 /**
@@ -40,7 +40,7 @@ export function nettoyerTexteAmendement(texte: string): string {
  */
 export function segmenterTexteAmendement(
   texte: string,
-  renvois: RenvoiDispositif[] = [],
+  renvois: RenvoiDroit[] = [],
   { compact = false }: { compact?: boolean } = {},
 ): SegmentTexte[] {
   const bruts: SegmentTexte[] = [];

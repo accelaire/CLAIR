@@ -7,7 +7,7 @@ import { ArrowRight, ChevronDown, Landmark, MessageSquare, Users } from 'lucide-
 import { ExpandableText } from '@/components/ui/expandable-text';
 import { DiscussionsEtSousAmendements, SousAmendementDe } from '@/components/AmendementSeance';
 import { amendementHref, libelleAlinea, type MetadonneesAmendement } from '@/lib/amendements';
-import type { RenvoiDispositif } from '@/lib/texte-amendement';
+import type { RenvoiDroit } from '@/lib/texte-amendement';
 import { ContenuAmendement } from '@/components/ContenuAmendement';
 import type { InterventionScrutin } from './scrutin-debats-tab';
 
@@ -18,7 +18,9 @@ export interface AmendementDetail extends MetadonneesAmendement {
   articleVise: string | null;
   dispositif: string | null;
   /** Liens Légifrance du dispositif. */
-  renvois?: RenvoiDispositif[];
+  renvois?: RenvoiDroit[];
+  /** Liens Légifrance de l'exposé sommaire. */
+  renvoisExpose?: RenvoiDroit[];
   exposeSommaire: string | null;
   auteurLibelle: string | null;
   sort: string | null;
@@ -148,6 +150,7 @@ export function ScrutinAmendementsTab({
                   dispositif={a.dispositif}
                   renvois={a.renvois}
                   exposeSommaire={a.exposeSommaire}
+                  renvoisExpose={a.renvoisExpose}
                 />
                 {auteurs && auteurs.nbCosignataires > 0 && (
                   <div>

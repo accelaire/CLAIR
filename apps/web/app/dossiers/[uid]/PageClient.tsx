@@ -21,7 +21,7 @@ import { LoiPromulgueeCard } from '@/components/LoiPromulgueeCard';
 import { ParcoursParlementaire, type EtapeDuParcours } from '@/components/parcours/ParcoursParlementaire';
 import { ExpandableAmendementCard } from '@/components/ExpandableAmendementCard';
 import { ancreAmendement, type MetadonneesAmendement } from '@/lib/amendements';
-import type { RenvoiDispositif } from '@/lib/texte-amendement';
+import type { RenvoiDroit } from '@/lib/texte-amendement';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,7 +44,9 @@ interface DossierAmendement extends MetadonneesAmendement {
   articleVise: string | null;
   dispositif: string | null;
   /** Liens Légifrance du dispositif. */
-  renvois?: RenvoiDispositif[];
+  renvois?: RenvoiDroit[];
+  /** Liens Légifrance de l'exposé sommaire. */
+  renvoisExpose?: RenvoiDroit[];
   exposeSommaire: string | null;
   texteRef: string | null;
   sort: string | null;

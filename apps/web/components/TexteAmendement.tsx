@@ -1,11 +1,11 @@
 import { Fragment } from 'react';
-import { segmenterTexteAmendement, type RenvoiDispositif } from '@/lib/texte-amendement';
+import { segmenterTexteAmendement, type RenvoiDroit } from '@/lib/texte-amendement';
 
 interface TexteAmendementProps {
   /** Le texte tel que l'API le renvoie (dispositif ou exposé sommaire). */
   texte: string;
-  /** Renvois au droit en vigueur, en positions dans `texte` (dispositif seulement). */
-  renvois?: RenvoiDispositif[];
+  /** Renvois au droit en vigueur, en positions dans `texte`. */
+  renvois?: RenvoiDroit[];
   className?: string;
   /** Sans lignes vides : pour un texte coupé à quelques lignes. */
   compact?: boolean;
@@ -15,8 +15,7 @@ const TITRE_LIEN = "Sur Légifrance, dans la version en vigueur au dépôt de l'
 
 /**
  * Texte d'un amendement, rendu en texte (jamais en HTML), retours à la ligne
- * gardés. Les articles et textes de loi cités par le dispositif mènent à
- * Légifrance.
+ * gardés. Les articles et textes de loi cités mènent à Légifrance.
  */
 export function TexteAmendement({ texte, renvois, className, compact }: TexteAmendementProps) {
   const segments = segmenterTexteAmendement(texte, renvois, { compact });

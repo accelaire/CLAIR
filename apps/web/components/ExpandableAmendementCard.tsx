@@ -9,7 +9,7 @@ import { ContenuAmendement, contenuAmendementDepasse } from '@/components/Conten
 import { amendementHref, ancreAmendement, libelleAlinea, type MetadonneesAmendement } from '@/lib/amendements';
 import { dossierTitreCourtLisible } from '@/lib/dossiers';
 import { scrutinHref } from '@/lib/scrutin-url';
-import type { RenvoiDispositif } from '@/lib/texte-amendement';
+import type { RenvoiDroit } from '@/lib/texte-amendement';
 
 interface AmendementData extends MetadonneesAmendement {
   id: string;
@@ -20,7 +20,9 @@ interface AmendementData extends MetadonneesAmendement {
   exposeSommaire?: string | null;
   dispositif?: string | null;
   /** Liens Légifrance du dispositif. */
-  renvois?: RenvoiDispositif[];
+  renvois?: RenvoiDroit[];
+  /** Liens Légifrance de l'exposé sommaire. */
+  renvoisExpose?: RenvoiDroit[];
   sort?: string | null;
   dateDepot?: string | null;
   texteRef?: string | null;
@@ -84,6 +86,7 @@ export function ExpandableAmendementCard({ amendement, showAuteur, dossierUid, s
         dispositif={amendement.dispositif}
         renvois={amendement.renvois}
         exposeSommaire={amendement.exposeSommaire}
+        renvoisExpose={amendement.renvoisExpose}
         replie={!expanded}
       />
       {depasse && (
