@@ -31,6 +31,7 @@ Code : `services/ingestion/src/checks/data-quality.ts`. Le contrôle réussit si
 | Doublons d'amendements (uid) |
 | Amendements en double sous une même clé canonique |
 | Prises de parole du Sénat empilées sur un même rang de séance |
+| Prises de parole de l'Assemblée rattachées à une fiche que le nom de l'orateur contredit (identifiant d'acteur faux dans le compte rendu, voir plus bas) |
 | Tables sans `updated_at` tenu par la base (colonne ou trigger manquant, voir [Suivi des modifications](/donnees/suivi-des-modifications)) |
 | Liaisons qui ne datent pas leur parent (cosignataires, amendement ↔ scrutin, secteurs, participants) |
 | Parlementaires actifs sans groupe |
@@ -91,6 +92,10 @@ Code : `services/ingestion/src/checks/data-quality.ts`. Le contrôle réussit si
 | Motions de censure votées depuis juin 2017 absentes du bilan |
 | Motions de l'alinéa 3 sans aucun recours au 49.3 dans les 10 jours qui précèdent |
 | Chambres dont plus de 1 % des réponses du Gouvernement n'ont pas de poste |
+| Photos de membres du Gouvernement sans crédit (licence, page Commons, personne Wikidata) |
+| Adresses de photo qui ne répondent plus (HEAD : 404, 410 ou autre chose qu'une image) |
+
+**Le nom de l'orateur fait foi.** Le compte rendu de l'Assemblée donne pour chaque paragraphe le nom de l'orateur et un identifiant d'acteur, qui se trompe parfois : la réponse d'une ministre portait l'identifiant d'un député au nom proche, une audition de syndicalistes ceux des députés présents, « Un député du groupe LR » celui d'un député nommé. Une fiche n'est retenue que si le nom écrit concorde avec elle : même nom de famille, et même prénom quand le compte rendu en donne un (Maud Petit n'est pas Frédéric Petit). Sont tolérés un nom d'usage changé avec le même prénom et une fonction sans nom (« le rapporteur général »). Une prise ainsi écartée est rendue à la fiche que le même orateur, écrit à l'identique, porte ailleurs dans la séance, si cette fiche est unique et concorde avec son nom ; sinon elle reste sans fiche (ministres, intervenants extérieurs, collectifs). Les interventions déjà en base se corrigent avec `corriger-orateurs-an`. Le 21 novembre 2026, sur les 993 648 prises de séance rattachées à une fiche, 151 étaient sur la fiche de quelqu'un d'autre : 54 ont été rendues à leur orateur, les 97 autres détachées.
 
 **Le Congrès n'a pas de votes nominatifs, c'est normal.** Les scrutins du Congrès (députés et sénateurs réunis à Versailles) sont publiés par l'AN sous un uid `VTCG…` (CG pour Congrès, AN pour Assemblée) avec leurs totaux, mais sans aucune liste de votants. Ce n'est ni une perte à l'ingestion ni un scrutin cassé : il n'y a rien à réparer. Ces scrutins sont donc exclus de l'invariant « scrutins sans aucun vote » (filtre sur `source_url` contenant `/scrutins/VTCG`), ce qui ne peut masquer aucun scrutin de l'Assemblée ni du Sénat. Au 7 octobre 2026, la base en compte un seul : `VTCGR5L16V1`, la révision constitutionnelle sur l'IVG du 4 mars 2024 (780 pour, 72 contre).
 
