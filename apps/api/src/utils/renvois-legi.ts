@@ -2,10 +2,10 @@
 // Renvois au droit en vigueur dans le dispositif des amendements (T5, #46)
 // =============================================================================
 //
-// L'ingestion repère dans le dispositif d'un amendement les articles et textes
-// de loi qu'il cite et les rattache à l'index de la base LEGI
-// (`amendements_renvois`, services/ingestion/src/workers/renvois-legi.ts). Ici,
-// ces renvois deviennent des liens Légifrance, en positions dans le dispositif
+// L'ingestion repère dans le dispositif d'un amendement et dans son exposé
+// sommaire les articles et textes de loi cités et les rattache à l'index de la
+// base LEGI (`amendements_renvois`, services/ingestion/src/workers/renvois-legi.ts).
+// Ici, ces renvois deviennent des liens Légifrance, en positions dans le texte
 // tel que l'API le renvoie.
 
 import type { Prisma } from '@prisma/client';
@@ -23,8 +23,8 @@ interface RenvoiStocke {
 }
 
 /** Un renvoi tel que l'API le renvoie. */
-export interface RenvoiDispositif {
-  /** Positions dans `dispositif`, en unités de code UTF-16 (`String#slice`). */
+export interface RenvoiDroit {
+  /** Positions dans le texte qui le porte (`dispositif` ou `exposeSommaire`), en unités de code UTF-16 (`String#slice`). */
   debut: number;
   fin: number;
   type: 'article' | 'texte';
@@ -44,9 +44,10 @@ export interface RenvoiDispositif {
  */
 export const RENVOIS_SELECT = {
   dispositif: true,
+  exposeSommaire: true,
   dateDepot: true,
   updatedAt: true,
-  renvoisLegi: { select: { renvois: true, calculeLe: true } },
+  renvoisLegi: { select: { renvois: true, renvoisExpose: true, calculeLe: true } },
 } satisfies Prisma.AmendementSelect;
 
 const ARTICLE = /^LEGIARTI\d{12}$/;
@@ -82,21 +83,21 @@ function estRenvoiStocke(r: unknown): r is RenvoiStocke {
 }
 
 /**
- * Renvois d'un dispositif, prêts à servir. Ceux qui ne tombent plus dans le
- * texte (dispositif raccourci ou effacé depuis le calcul) sont écartés, comme
- * ceux qui se chevauchent ou dont l'adresse ne peut pas être construite :
- * un lien faux est pire qu'un lien absent.
+ * Renvois d'un texte de l'amendement (dispositif ou exposé), prêts à servir.
+ * Ceux qui ne tombent plus dans le texte (raccourci ou effacé depuis le
+ * calcul) sont écartés, comme ceux qui se chevauchent ou dont l'adresse ne
+ * peut pas être construite : un lien faux est pire qu'un lien absent.
  */
-export function renvoisDuDispositif(
-  dispositif: string | null,
+export function renvoisDuTexte(
+  texte: string | null,
   dateDepot: Date | null,
   stockes: unknown,
-): RenvoiDispositif[] {
-  if (!dispositif || !Array.isArray(stockes)) return [];
-  const renvois: RenvoiDispositif[] = [];
+): RenvoiDroit[] {
+  if (!texte || !Array.isArray(stockes)) return [];
+  const renvois: RenvoiDroit[] = [];
   let finPrecedente = 0;
   for (const r of [...stockes].filter(estRenvoiStocke).sort((a, b) => a.debut - b.debut)) {
-    if (r.debut < finPrecedente || r.fin <= r.debut || r.fin > dispositif.length) continue;
+    if (r.debut < finPrecedente || r.fin <= r.debut || r.fin > texte.length) continue;
     const url = urlLegifrance(r, dateDepot);
     if (!url) continue;
     renvois.push({
@@ -115,7 +116,8 @@ export function renvoisDuDispositif(
 
 /**
  * Remplace la relation `renvoisLegi` d'un amendement lu avec `RENVOIS_SELECT`
- * par ses renvois servis (`renvois`, tableau vide sans calcul ou sans renvoi).
+ * par ses renvois servis : `renvois` dans le dispositif, `renvoisExpose` dans
+ * l'exposé sommaire (tableaux vides sans calcul ou sans renvoi).
  *
  * Un calcul antérieur à la dernière modification de l'amendement n'est pas
  * servi : le dispositif a pu changer, et les positions avec lui. L'étape des
@@ -125,11 +127,20 @@ export function renvoisDuDispositif(
  */
 export function avecRenvois<T extends {
   dispositif: string | null;
+  exposeSommaire: string | null;
   dateDepot: Date | null;
   updatedAt: Date;
-  renvoisLegi: { renvois: unknown; calculeLe: Date } | null;
-}>(amendement: T): Omit<T, 'renvoisLegi' | 'updatedAt'> & { renvois: RenvoiDispositif[] } {
+  renvoisLegi: { renvois: unknown; renvoisExpose: unknown; calculeLe: Date } | null;
+}>(amendement: T): Omit<T, 'renvoisLegi' | 'updatedAt'> & {
+  renvois: RenvoiDroit[];
+  renvoisExpose: RenvoiDroit[];
+} {
   const { renvoisLegi, updatedAt, ...reste } = amendement;
-  const aJour = renvoisLegi != null && renvoisLegi.calculeLe >= updatedAt;
-  return { ...reste, renvois: aJour ? renvoisDuDispositif(amendement.dispositif, amendement.dateDepot, renvoisLegi.renvois) : [] };
+  if (renvoisLegi == null || renvoisLegi.calculeLe < updatedAt) return { ...reste, renvois: [], renvoisExpose: [] };
+  const { dispositif, exposeSommaire, dateDepot } = amendement;
+  return {
+    ...reste,
+    renvois: renvoisDuTexte(dispositif, dateDepot, renvoisLegi.renvois),
+    renvoisExpose: renvoisDuTexte(exposeSommaire, dateDepot, renvoisLegi.renvoisExpose),
+  };
 }
