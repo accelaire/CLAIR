@@ -47,6 +47,10 @@ Code : `services/ingestion/src/checks/data-quality.ts`. Le contrôle réussit si
 | Prises de parole rattachées au dossier d'une autre législature (AN) |
 | Amendements rattachés au dossier d'une autre législature (AN) |
 | Amendements AN rattachés à un autre dossier que celui de leur texte |
+| Amendements Sénat rattachés à un autre dossier que celui de leur texte (AMELI) |
+| Amendements Sénat rattachés au dossier d'une session postérieure à leur dépôt |
+| Scrutins Sénat liés à un amendement déposé après le vote |
+| Scrutins Sénat liés à un amendement d'un autre dossier |
 | Sous-amendements AN rattachés à un amendement d'un autre texte |
 | Amendements placés dans une discussion sans identifiant de discussion |
 | Interventions dont la date contredit celle de leur séance |
@@ -99,6 +103,7 @@ Code : `services/ingestion/src/checks/data-quality.ts`. Le contrôle réussit si
 | Scrutins | 5 000 |
 | Votes | 1 000 000 |
 | Amendements | 150 000 |
+| Textes du Sénat décrits par AMELI (`textes_senat`) | 5 000 |
 | Interventions | 500 000 |
 | Liens débat → scrutin (Assemblée) | 130 000 |
 | Scrutins de l'Assemblée dont on montre le débat | 11 500 |
@@ -113,6 +118,7 @@ Code : `services/ingestion/src/checks/data-quality.ts`. Le contrôle réussit si
 | Taux de liaison scrutins → amendements, Sénat (mêmes scrutins, sessions 2024 et suivantes) | 45 % |
 | Taux de liaison scrutins → dossiers (Sénat, et AN de la législature courante) | 90 % |
 | Taux de liaison amendements → dossiers | 40 % |
+| Amendements du Sénat rattachés à un dossier | 90 % |
 | Amendements du Sénat avec article visé | 90 % |
 | Amendements de l'AN datés par la source (`chronotag`) | 99 % |
 | Sous-amendements de l'AN dont le parent est retrouvé | 99 % |
