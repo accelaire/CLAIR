@@ -10,6 +10,12 @@ import { ORGANES_AN_HORS_MANDAT } from '../workers/mandats-an-sortants';
 import { VERSION_DETECTION } from '../utils/version-renvois-legi';
 import { CTE_LEGISLATURES_DOSSIER_SQL, CTE_TEXTE_DU_DOSSIER_SQL, dossierValantPourSql } from '../utils/legislatures-dossier-sql';
 import { QUALITE_GOUVERNEMENT_SQL } from '../utils/interventions';
+import {
+  AMENDEMENTS_SENAT_AVANT_SESSION_DU_DOSSIER_SQL,
+  AMENDEMENTS_SENAT_HORS_DOSSIER_DU_TEXTE_SQL,
+  LIENS_SENAT_APRES_LE_VOTE_SQL,
+  LIENS_SENAT_HORS_DOSSIER_DU_TEXTE_SQL,
+} from '../utils/textes-senat-sql';
 
 // Les contrôles sont des requêtes texte : les fragments SQL partagés y entrent
 // tels quels (legislatures-dossier-sql.ts, sans import de Prisma).
@@ -454,6 +460,54 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
             WHERE s.chambre = 'assemblee'
               AND a.date_depot IS NOT NULL
               AND a.date_depot::date > s.date::date`,
+  },
+
+  amendements_senat_hors_dossier_du_texte: {
+    type: 'invariant',
+    label: 'Amendements Sénat rattachés à un autre dossier que celui de leur texte',
+    min: 0,
+    max: 0,
+    // AMELI donne le dossier de chaque texte (textes_senat). Le 21/11/2026,
+    // 23 998 des 45 359 amendements rattachés l'étaient ailleurs : les 4 696 du
+    // PLF 2027 sous « Budget 2014 », le PLFSS 2027 sous « fracture numérique ».
+    // Réécrits chaque nuit (rattacherAmendementsSenatAuDossierDuTexte) : non nul
+    // = une passe les déplace après elle.
+    query: AMENDEMENTS_SENAT_HORS_DOSSIER_DU_TEXTE_SQL,
+  },
+
+  amendements_senat_avant_session_du_dossier: {
+    type: 'invariant',
+    label: "Amendements Sénat rattachés au dossier d'une session postérieure à leur dépôt",
+    min: 0,
+    max: 0,
+    // Aucun des 280 000 amendements d'AMELI n'est antérieur à la session de son
+    // dossier. Couvre aussi les textes sans dossier dans la source, que seules
+    // les propagations rattachent. (La borne haute n'existe pas : une navette
+    // amende un texte jusqu'à onze sessions après son dépôt.)
+    query: AMENDEMENTS_SENAT_AVANT_SESSION_DU_DOSSIER_SQL,
+  },
+
+  liens_amendement_senat_apres_le_vote: {
+    type: 'invariant',
+    label: 'Scrutins Sénat liés à un amendement déposé après le vote',
+    min: 0,
+    max: 0,
+    // 284 liens sur 1 082 au 21/11/2026 : la session de l'adresse de
+    // l'amendement était ignorée, le n° 155 de 2013-2014 (PLF 2014) pris pour
+    // celui de 2026-2027 (PLF 2027). Effacés chaque nuit
+    // (effacerLiensAmendementApresLeVote).
+    query: LIENS_SENAT_APRES_LE_VOTE_SQL,
+  },
+
+  liens_amendement_senat_hors_dossier: {
+    type: 'invariant',
+    label: "Scrutins Sénat liés à un amendement d'un autre dossier",
+    min: 0,
+    max: 0,
+    // Le contrôle de date ne suffit pas : un texte homonyme d'une session
+    // antérieure le passe (28 liens le 21/11/2026). Effacés chaque nuit
+    // (effacerLiensSenatHorsDossierDuTexte).
+    query: LIENS_SENAT_HORS_DOSSIER_DU_TEXTE_SQL,
   },
 
   cross_legislature_amendements: {
@@ -1016,6 +1070,14 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     min: 150000,
     query: `SELECT COUNT(*)::int AS value FROM amendements`,
   },
+  textes_senat_count: {
+    type: 'threshold',
+    // Les textes AMELI (9 075 le 21/11/2026) : sans eux, aucun amendement du
+    // Sénat ne reçoit son dossier et aucun scrutin du Sénat n'est relié.
+    label: 'Nombre de textes du Sénat (AMELI)',
+    min: 5000,
+    query: `SELECT COUNT(*)::int AS value FROM textes_senat`,
+  },
   interventions_count: {
     type: 'threshold',
     // Relevé de 70 000 au passage des débats AN à syceron. Ramené de 600 000
@@ -1161,6 +1223,16 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     label: 'Taux de liaison amendements-dossiers (%)',
     min: 40,
     query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (linked * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE dossier_id IS NOT NULL) AS linked FROM amendements) sub`,
+  },
+  senat_amendement_dossier_link_rate: {
+    type: 'threshold',
+    // Le dossier d'un amendement du Sénat vient de son texte (AMELI) : 100 %
+    // attendus, hors amendements d'un texte dont le dossier n'est pas encore
+    // en base (ceux du PLF 2027 ont précédé son dossier de 8 jours). 59 % le
+    // 21/11/2026, et plus de la moitié de ceux-là au mauvais dossier.
+    label: 'Taux d’amendements Sénat rattachés à un dossier (%)',
+    min: 90,
+    query: `SELECT CASE WHEN total = 0 THEN 0 ELSE (linked * 100 / total)::int END AS value FROM (SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE dossier_id IS NOT NULL) AS linked FROM amendements WHERE chambre = 'senat') sub`,
   },
   senat_amendement_article_vise_rate: {
     type: 'threshold',

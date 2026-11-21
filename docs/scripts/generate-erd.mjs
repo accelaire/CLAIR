@@ -101,6 +101,12 @@ const SECTIONS = [
     ],
   },
   {
+    titre: "Textes du Sénat (AMELI)",
+    intro:
+      "Sans clé étrangère : `textes_senat.texte_ref` est la valeur de `amendements.texte_ref` (`SENAT-TXT-<id AMELI>`), et son `signet` désigne le dossier `SENAT-<signet>` de `dossiers_legislatifs`. C'est lui qui donne son dossier à chaque amendement du Sénat.",
+    tables: ["textes_senat"],
+  },
+  {
     titre: "Index de la base LEGI (DILA) et renvois des amendements",
     intro:
       "Sans clé étrangère : `legi_articles.cid` désigne le `cid` commun aux versions d'un texte de `legi_textes`, qui n'est pas unique. `amendements_renvois` désigne articles et textes de l'index par leurs identifiants, dans son JSON.",

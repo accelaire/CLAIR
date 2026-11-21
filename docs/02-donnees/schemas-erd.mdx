@@ -47,7 +47,7 @@ Diagrammes entité-relation de la base, générés depuis [`apps/api/prisma/sche
 
 ## 🗺️ Vue d'ensemble des relations
 
-Les 68 relations entre tables, sans les colonnes. Les 7 tables sans clé étrangère (`evenements_institutionnels`, `candidats_mandats_locaux`, `legi_textes`, `legi_articles`, `sync_logs`, `source_states`, `feedbacks`) n'y figurent pas ; elles sont détaillées plus bas.
+Les 68 relations entre tables, sans les colonnes. Les 8 tables sans clé étrangère (`evenements_institutionnels`, `candidats_mandats_locaux`, `legi_textes`, `legi_articles`, `textes_senat`, `sync_logs`, `source_states`, `feedbacks`) n'y figurent pas ; elles sont détaillées plus bas.
 
 <Mermaid
   title="Toutes les relations"
@@ -971,6 +971,27 @@ Les 68 relations entre tables, sans les colonnes. Les 7 tables sans clé étrang
     parlementaires |o--o{ candidatures : "personne_id"
     circonscriptions ||--o{ resultats_tours : "circonscription_id"
     circonscriptions ||--o{ resultats_listes : "circonscription_id"
+`}
+/>
+
+## Textes du Sénat (AMELI)
+
+Sans clé étrangère : `textes_senat.texte_ref` est la valeur de `amendements.texte_ref` (`SENAT-TXT-<id AMELI>`), et son `signet` désigne le dossier `SENAT-<signet>` de `dossiers_legislatifs`. C'est lui qui donne son dossier à chaque amendement du Sénat.
+
+<Mermaid
+  title="Textes du Sénat (AMELI)"
+  chart={`erDiagram
+    textes_senat {
+        text texte_ref PK
+        int session_depot
+        int session_inscription
+        text numero
+        text signet  "nullable"
+        text type  "nullable"
+        text intitule  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
 `}
 />
 

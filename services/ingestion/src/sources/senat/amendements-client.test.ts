@@ -3,7 +3,9 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   SenatAmendementsClient,
   enTeteCopyConforme,
+  enTeteTextesConforme,
   libelleArticleVise,
+  lireTexteAmeli,
   lirePositionAmd,
   lireSubdivisionAmeli,
   type SubdivisionAmeli,
@@ -122,6 +124,41 @@ describe('enTeteCopyConforme', () => {
 
   it('ne juge pas les tables qu’il ne lit pas par position', () => {
     expect(enTeteCopyConforme('COPY typsub (id, lib) FROM stdin;')).toBe(true);
+  });
+});
+
+describe('textes AMELI', () => {
+  // En-têtes et ligne du dump AMELI du 21/11/2026 (texte 107239, PLF 2027).
+  const enTeteTxt = 'COPY txt_ameli (id, natid, lecid, sesinsid, sesdepid, fbuid, num, "int", inl, datdep, urg, dis, secdel, loifin, loifinpar, txtamd, datado, numado, txtexa, pubdellim, numabs, libdelim, libcplnat, doslegsignet, proacc, txttyp, ordsnddelib, txtetaid, fusderid, fusder, fusderord, fusdertyp) FROM stdin;';
+  const ligne = ['107239', '1', '1', '69', '68', '100783', '155', 'Projet de loi de finances pour 2027', '\\N', '2026-11-19 00:00:00',
+    ...Array(13).fill('\\N'), 'PJLF2027', 'N', 'S', '\\N', '0', '\\N', 'N', '0', '\\N'];
+  // 68 : session extraordinaire de juillet, dont `lil` n'a pas la forme 2025-2026.
+  const sessions = new Map([[68, 2025], [69, 2026]]);
+
+  it("accepte l'en-tête actuel de ses et txt_ameli, refuse une colonne déplacée", () => {
+    expect(enTeteTextesConforme(enTeteTxt)).toBe(true);
+    expect(enTeteTextesConforme('COPY ses (id, typid, ann, lil) FROM stdin;')).toBe(true);
+    expect(enTeteTextesConforme('COPY ses (id, typid, lil, ann) FROM stdin;')).toBe(false);
+    expect(enTeteTextesConforme(enTeteTxt.replace('doslegsignet, proacc', 'proacc, doslegsignet'))).toBe(false);
+  });
+
+  it('lit les deux sessions par leur année et le signet en minuscules', () => {
+    expect(lireTexteAmeli(ligne, sessions)).toEqual({
+      id: 107239,
+      sessionDepot: 2025,
+      sessionInscription: 2026,
+      numero: '155',
+      signet: 'pjlf2027',
+      type: 'S',
+      intitule: 'Projet de loi de finances pour 2027',
+    });
+  });
+
+  it('laisse le signet absent à null et écarte un texte de session inconnue', () => {
+    const sansSignet = [...ligne];
+    sansSignet[23] = '\\N';
+    expect(lireTexteAmeli(sansSignet, sessions)?.signet).toBeNull();
+    expect(lireTexteAmeli(ligne, new Map([[69, 2026]]))).toBeNull();
   });
 });
 

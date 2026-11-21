@@ -1781,6 +1781,38 @@ model LegiArticle {
   @@map("legi_articles")
 }
 
+// Les textes du Sénat tels que la base AMELI les décrit (table `txt_ameli`),
+// recopiés chaque nuit avec le dump des amendements (syncAmendementsSenatCsv).
+//
+// Un numéro de texte du Sénat n'est unique que dans sa session de dépôt : le
+// n° 155 est le PLF 2014 en 2013-2014 et le PLF 2027 en 2026-2027. AMELI donne
+// le dossier de chaque texte (`doslegsignet`) : c'est par lui, et non par un
+// scrutin ou un voisin, qu'un amendement du Sénat rejoint son dossier
+// (rattacherAmendementsSenatAuDossierDuTexte).
+model TexteSenat {
+  /// `SENAT-TXT-<id AMELI>`, la forme de `Amendement.texteRef`
+  texteRef           String  @id @map("texte_ref")
+  /// Année d'ouverture de la session de dépôt (2026 pour 2026-2027). C'est
+  /// elle que portent les adresses senat.fr (`/amendements/2026-2027/155/`).
+  sessionDepot       Int     @map("session_depot")
+  /// Année d'ouverture de la session d'inscription, ordinaire ou extraordinaire
+  sessionInscription Int     @map("session_inscription")
+  /// Numéro du texte tel qu'AMELI l'écrit (« 155 », « 636 rect. bis »)
+  numero             String
+  /// Signet du dossier DOSLEG (`pjlf2027`, `ppl24-661`), en minuscules ; le
+  /// dossier est `SENAT-<signet>`. Absent de certains textes (parties du PLF 2025).
+  signet             String?
+  /// `S` texte de séance, `C` texte de commission
+  type               String?
+  intitule           String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@index([sessionDepot, numero])
+  @@map("textes_senat")
+}
+
 // Renvois au droit en vigueur repérés dans le dispositif d'un amendement et
 // rattachés à l'index LEGI (workers/renvois-legi.ts). Une ligne par amendement
 // traité, sans renvoi compris : elle dit que le calcul a eu lieu.

@@ -1172,6 +1172,71 @@ program
   });
 
 // =============================================================================
+// COMMANDE: rattacher-amendements-senat
+// =============================================================================
+program
+  .command('rattacher-amendements-senat')
+  .description(
+    "Rattacher les amendements du Sénat au dossier de leur texte (AMELI), effacer les liens scrutin → amendement impossibles, puis relier de nouveau les scrutins sans lien",
+  )
+  .option('--dry-run', "Mesurer ce qui changerait sans rien écrire (textes_senat doit être rempli)")
+  .option('--sans-ameli', 'Ne pas retélécharger AMELI : utiliser textes_senat tel quel')
+  .option('--concurrence <n>', 'Pages de scrutin lues en parallèle', (v: string) => parseInt(v, 10), 5)
+  .action(async (options: { dryRun?: boolean; sansAmeli?: boolean; concurrence: number }) => {
+    try {
+      const {
+        ecrireTextesSenat, effacerLiensSenatHorsDossierDuTexte, mesurerRattachementSenat,
+        rattacherAmendementsSenatAuDossierDuTexte,
+      } = await import('./workers/textes-senat.js');
+      const afficher = (titre: string, m: Awaited<ReturnType<typeof mesurerRattachementSenat>>) => {
+        console.log(`\n${titre}`);
+        console.log(`  textes AMELI : ${m.textes}`);
+        console.log(`  amendements : ${m.amendements}, rattachés : ${m.amendementsRattaches}`);
+        console.log(`  hors du dossier de leur texte : ${m.horsDossierDuTexte}, avant la session de leur dossier : ${m.avantSessionDuDossier}`);
+        console.log(`  liens scrutin → amendement : ${m.liens}, après le vote : ${m.liensApresLeVote}, hors dossier : ${m.liensHorsDossierDuTexte}`);
+      };
+
+      if (!options.sansAmeli && !options.dryRun) {
+        const { SenatAmendementsClient } = await import('./sources/senat/amendements-client.js');
+        const { textesSenat } = await new SenatAmendementsClient().getAmeliMappings();
+        const r = await ecrireTextesSenat(textesSenat);
+        console.log(`Textes AMELI : ${r.crees} créés, ${r.modifies} modifiés, ${r.inchanges} inchangés`);
+      }
+
+      afficher('Avant', await mesurerRattachementSenat());
+      if (options.dryRun) {
+        const r = await rattacherAmendementsSenatAuDossierDuTexte({ dryRun: true });
+        const l = await effacerLiensSenatHorsDossierDuTexte({ dryRun: true });
+        console.log(`\nÀ rattacher : ${r.poses}, à corriger : ${r.corriges}, à retirer (dossier absent) : ${r.retires}`);
+        console.log(`Liens hors dossier à effacer : ${l.effaces} (plus les liens après le vote ci-dessus)`);
+        process.exit(0);
+      }
+
+      const apres = await effacerLiensAmendementApresLeVote();
+      const rattachement = await rattacherAmendementsSenatAuDossierDuTexte();
+      const horsDossier = await effacerLiensSenatHorsDossierDuTexte();
+      console.log(`\nLiens effacés : ${apres.effaces} après le vote, ${horsDossier.effaces} hors dossier`);
+      console.log(`Amendements : ${rattachement.poses} rattachés, ${rattachement.corriges} corrigés, ${rattachement.retires} retirés`);
+
+      // Les scrutins privés de lien se relient de nouveau, par leur page puis
+      // par leur libellé, et les propagations comblent ce que la source ne couvre pas.
+      const html = await enrichScrutinsSenatAmendements({ concurrency: options.concurrence });
+      console.log(`Scrutins reliés par leur page : ${html.enriched} (sans lien : ${html.notFound}, erreurs : ${html.errors})`);
+      const cte = await linkScrutinsToAmendements({ chambre: 'senat' });
+      console.log(`Scrutins reliés par leur libellé : ${cte.linked}`);
+      const parScrutin = await linkAmendementsToDossiers();
+      const parVoisin = await propagateDossierIdBySiblingTexteRef();
+      console.log(`Amendements hors source rattachés : ${parScrutin.linked} par scrutin, ${parVoisin.linked} par voisin`);
+
+      afficher('Après', await mesurerRattachementSenat());
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'rattacher-amendements-senat failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
 // COMMANDE: verifier-amendements-scrutins-an
 // =============================================================================
 program

@@ -272,6 +272,7 @@ Détail des contrôles : [Qualité des données](/donnees/qualite-des-donnees).
 | `separer-homonyme <slug> <matricule ou PA>` | Rend à l'homonyme de l'autre chambre sa fiche, avec ses mandats et ses votes de cette chambre (`--appliquer`, sinon simulation) |
 | `lier-identifiant <slug> <chambre> <id>` | Range sur la fiche l'identifiant de l'autre chambre d'un élu passé de l'une à l'autre (`--appliquer`) |
 | `relink-voterefs` | Rattache chaque scrutin AN au dossier qui le référence (`voteRefs` de la source), en corrigeant les liens contraires |
+| `rattacher-amendements-senat` | Rattache les amendements du Sénat au dossier de leur texte (AMELI, table `textes_senat`), efface les liens scrutin → amendement impossibles (déposé après le vote, autre dossier), puis relie de nouveau les scrutins sans lien, par leur page et leur libellé. Affiche l'état avant et après (`--dry-run`, `--sans-ameli`, `--concurrence`) |
 | `verifier-amendements-scrutins-an` | Fiabilise les liens scrutin AN → amendement : efface les impossibles, revérifie les douteux sur la page de l'Assemblée, puis aligne leur dossier (`--dry-run`, `--concurrence`, `--articles`) |
 | `generate-sujets` | Génère les sujets (`--reset`, `--dry-run`) |
 | `relabel-sujets` | Recalcule le libellé des sujets restés sur un identifiant technique |
