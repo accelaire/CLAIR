@@ -210,6 +210,7 @@ export const parlementaireDetailSchema = parlementaireSchema.extend({
       votes: z.number().describe('Lignes de la liste des votes : hors scrutins où il ne pouvait pas voter'),
       interventions: z.number().describe('Interventions de la liste, au banc du Gouvernement comprises'),
       amendements: z.number().describe('Amendements déposés ou cosignés'),
+      amendementsDeposes: z.number().describe('Amendements dont il est l’auteur : l’onglet s’ouvre sur eux quand il y en a'),
     })
     .optional()
     .describe('Taille des listes de la fiche, avec leurs filtres par défaut : une liste vide n’a pas d’onglet'),

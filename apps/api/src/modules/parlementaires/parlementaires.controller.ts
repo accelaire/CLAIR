@@ -16,6 +16,7 @@ import {
   Chambre,
 } from './parlementaires.schema';
 import { ApiError } from '../../utils/errors';
+import { ROLES_AMENDEMENT, type RoleAmendement } from '../../utils/amendements-role';
 import {
   INTERVENTIONS_DE_FOND,
   journeeDeSeance,
@@ -462,7 +463,9 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
       schema: {
         tags: [chambreLabel],
         summary: `Amendements d'un ${chambreLabel.toLowerCase().slice(0, -1)}`,
-        description: `Retourne les amendements déposés par un ${chambreLabel.toLowerCase().slice(0, -1)}`,
+        description:
+          `Retourne les amendements d'un ${chambreLabel.toLowerCase().slice(0, -1)}, du dépôt le plus récent au plus ancien : ` +
+          'déposés et cosignés par défaut, `role` pour ne garder que les uns ou les autres.',
         params: {
           type: 'object',
           required: ['slug'],
@@ -489,14 +492,23 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
               maxLength: 64,
               description: 'Uid du dossier législatif (`DLR5L17N…`), ou `aucun` pour les amendements sans dossier',
             },
+            role: {
+              type: 'string',
+              enum: [...ROLES_AMENDEMENT],
+              default: 'tous',
+              description:
+                '`depose` : ceux dont il est l\'auteur (premier signataire, tel que publié par la source) ; ' +
+                '`cosigne` : ceux qu\'il a seulement cosignés ; `tous` : les deux',
+            },
           },
         },
       },
       handler: async (request, _reply) => {
         const { slug } = parlementaireParamsSchema.parse(request.params);
-        const { page = 1, limit = 20, sort, dateFrom, dateTo, votedOnly, chambre, dossier } = request.query as {
+        const { page = 1, limit = 20, sort, dateFrom, dateTo, votedOnly, chambre, dossier, role } = request.query as {
         page?: number; limit?: number; sort?: string;
         dateFrom?: string; dateTo?: string; votedOnly?: boolean; chambre?: Chambre; dossier?: string;
+        role?: RoleAmendement;
       };
 
         const parlementaire = await fastify.prisma.parlementaire.findUnique({
@@ -521,6 +533,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           votedOnly,
           chambre,
           dossier,
+          role,
         });
       },
     });
@@ -533,7 +546,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
         tags: [chambreLabel],
         summary: `Amendements d'un ${chambreLabel.toLowerCase().slice(0, -1)}, par dossier législatif`,
         description:
-          `Résume les amendements déposés ou cosignés par un ${chambreLabel.toLowerCase().slice(0, -1)}, dossier par dossier, ` +
+          `Résume les amendements d'un ${chambreLabel.toLowerCase().slice(0, -1)} (déposés et cosignés par défaut, voir \`role\`), dossier par dossier, ` +
           'du dépôt le plus récent au plus ancien : nombre d\'amendements et ce qu\'il en est advenu, en quatre familles ' +
           '(`adopte`, `rejete`, `non_vote` : retiré, tombé, non soutenu ou irrecevable, `attente` : pas encore examiné ou sort ' +
           'inconnu). Les amendements sans dossier forment un dernier groupe, `dossier: null`. Le détail d\'un dossier : ' +
@@ -558,13 +571,22 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
               enum: ['assemblee', 'senat'],
               description: 'Chambre, pour un parlementaire passé par les deux',
             },
+            role: {
+              type: 'string',
+              enum: [...ROLES_AMENDEMENT],
+              default: 'tous',
+              description:
+                '`depose` : ceux dont il est l\'auteur (premier signataire, tel que publié par la source) ; ' +
+                '`cosigne` : ceux qu\'il a seulement cosignés ; `tous` : les deux',
+            },
           },
         },
       },
       handler: async (request, _reply) => {
         const { slug } = parlementaireParamsSchema.parse(request.params);
-        const { page = 1, limit = 20, dateFrom, dateTo, votedOnly, chambre } = request.query as {
+        const { page = 1, limit = 20, dateFrom, dateTo, votedOnly, chambre, role } = request.query as {
           page?: number; limit?: number; dateFrom?: string; dateTo?: string; votedOnly?: boolean; chambre?: Chambre;
+          role?: RoleAmendement;
         };
 
         const parlementaire = await fastify.prisma.parlementaire.findUnique({
@@ -587,6 +609,7 @@ function createParlementairesRoutes(forcedChambre?: Chambre): FastifyPluginAsync
           dateTo,
           votedOnly,
           chambre,
+          role,
         });
       },
     });

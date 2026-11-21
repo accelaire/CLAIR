@@ -16,10 +16,10 @@ Les trois préfixes servent les mêmes routes sur la même table : `/parlementai
 | `GET` | `/api/v1/parlementaires` | Liste paginée des parlementaires (Assemblée et Sénat) |
 | `GET` | `/api/v1/deputes` | Même liste, restreinte aux députés |
 | `GET` | `/api/v1/senateurs` | Même liste, restreinte aux sénateurs |
-| `GET` | `/api/v1/parlementaires/:slug` | Fiche d'un parlementaire : identité, mandats, statistiques, fiche IA. `fonctionsGouvernementales` liste ses postes ministériels et sa présidence de la République, s'il en a (voir `/gouvernements`) ; ils ne figurent pas dans `mandats`. Chaque poste depuis juin 2017 porte `bilan` (projets signés comme chef de file ou cosignataire, réponses en séance par chambre, et pour un Premier ministre ses 49.3 et motions), `membreSlug`, qui donne le détail à `/gouvernements/membres/:slug`, et le `rangProtocolaire` et le `domaine` du poste. `listes` donne la taille des listes de la fiche avec leurs filtres par défaut (`votes`, `interventions`, `amendements` déposés ou cosignés) |
+| `GET` | `/api/v1/parlementaires/:slug` | Fiche d'un parlementaire : identité, mandats, statistiques, fiche IA. `fonctionsGouvernementales` liste ses postes ministériels et sa présidence de la République, s'il en a (voir `/gouvernements`) ; ils ne figurent pas dans `mandats`. Chaque poste depuis juin 2017 porte `bilan` (projets signés comme chef de file ou cosignataire, réponses en séance par chambre, et pour un Premier ministre ses 49.3 et motions), `membreSlug`, qui donne le détail à `/gouvernements/membres/:slug`, et le `rangProtocolaire` et le `domaine` du poste. `listes` donne la taille des listes de la fiche avec leurs filtres par défaut (`votes`, `interventions`, `amendements` déposés ou cosignés, dont `amendementsDeposes`) |
 | `GET` | `/api/v1/parlementaires/:slug/votes` | Votes du parlementaire, filtrables |
 | `GET` | `/api/v1/parlementaires/:slug/votes/dossiers` | Ses votes résumés dossier par dossier |
-| `GET` | `/api/v1/parlementaires/:slug/amendements` | Amendements déposés et cosignés |
+| `GET` | `/api/v1/parlementaires/:slug/amendements` | Amendements déposés et cosignés, ou les uns ou les autres (`role`) |
 | `GET` | `/api/v1/parlementaires/:slug/amendements/dossiers` | Ses amendements résumés dossier par dossier |
 | `GET` | `/api/v1/parlementaires/:slug/interventions` | Prises de parole en séance et en commission |
 | `GET` | `/api/v1/parlementaires/compare?slugs=a,b` | Comparaison de 2 à 4 parlementaires par leurs statistiques |
@@ -77,7 +77,17 @@ Les statistiques d'une fiche portent sur toute la carrière parlementaire, les d
 
 ## 📝 Amendements d'un parlementaire
 
-`GET /api/v1/parlementaires/:slug/amendements` renvoie les amendements que l'élu a déposés ou cosignés, du dépôt le plus récent au plus ancien. Il accepte `page`, `limit` (jusqu'à 50), `sort`, `dateFrom`, `dateTo`, `votedOnly` (seulement les amendements mis aux voix par scrutin public), `dossier` (uid du dossier, ou `aucun`) et, pour une personne passée par les deux chambres, `chambre`.
+`GET /api/v1/parlementaires/:slug/amendements` renvoie les amendements que l'élu a déposés ou cosignés, du dépôt le plus récent au plus ancien. Il accepte `page`, `limit` (jusqu'à 50), `sort`, `dateFrom`, `dateTo`, `votedOnly` (seulement les amendements mis aux voix par scrutin public), `dossier` (uid du dossier, ou `aucun`), `role` et, pour une personne passée par les deux chambres, `chambre`.
+
+`role` choisit le lien de l'élu à l'amendement :
+
+| Valeur | Amendements |
+| :--- | :--- |
+| `tous` (par défaut) | Déposés et cosignés |
+| `depose` | Ceux dont il est l'auteur, tel que la source le publie : le premier signataire, pour un amendement de groupe aussi |
+| `cosigne` | Ceux qu'il a cosignés sans en être l'auteur |
+
+`depose` et `cosigne` ne se recoupent pas : leur somme fait `tous`. Un député cosigne souvent des milliers d'amendements de son groupe, bien plus qu'il n'en dépose : sur les fiches du site, l'onglet s'ouvre sur `depose`. Sans `role`, la réponse peut prendre plusieurs secondes pour un gros cosignataire.
 
 `GET /api/v1/parlementaires/:slug/amendements/dossiers` les résume dossier par dossier, du dépôt le plus récent au plus ancien, les amendements sans dossier en dernier (`dossier: null`). Mêmes filtres, `limit` jusqu'à 50. Chaque groupe donne `nbAmendements`, `dernierDepot` et `sorts`, ce qu'il est advenu des amendements en quatre familles :
 

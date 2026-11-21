@@ -331,6 +331,7 @@ describe('ParlementairesService', () => {
     it('donne la taille de ses listes, votes empêchés exclus (#129)', async () => {
       mockPrisma.parlementaire.findUnique.mockResolvedValue(mockParlementaireWithRelations);
       mockPrisma.intervention.count.mockResolvedValue(167);
+      mockPrisma.amendement.count.mockResolvedValue(3);
       const sql: string[] = [];
       mockPrisma.$queryRawUnsafe.mockImplementation((q: string) => {
         sql.push(q);
@@ -339,7 +340,8 @@ describe('ParlementairesService', () => {
 
       const result = await service.getParlementaireBySlug(mockParlementaireWithRelations.slug);
 
-      expect(result.listes).toEqual({ votes: 0, interventions: 167, amendements: 12 });
+      expect(result.listes).toEqual({ votes: 0, interventions: 167, amendements: 12, amendementsDeposes: 3 });
+      expect(mockPrisma.amendement.count).toHaveBeenCalledWith({ where: { parlementaireId: mockParlementaireWithRelations.id } });
       const votes = sql.find((q) => q.includes('FROM votes v'))!;
       expect(votes).toContain("v.position = 'absent'");
       expect(sql.find((q) => q.includes('_AmendementCosignataires'))).toContain('UNION');
@@ -856,6 +858,37 @@ describe('ParlementairesService', () => {
       expect(result.data).toHaveLength(1);
     });
 
+    it('role=depose : filtre sur l’auteur, sans toucher aux cosignatures', async () => {
+      const sql = mockQueries(['a'], 1);
+
+      await service.getParlementaireAmendements(PARL, { ...baseQuery, role: 'depose', sort: 'Adopté' });
+
+      for (const q of sql) {
+        expect(q).toContain('WHERE a.parlementaire_id = $1 AND a.sort = $2');
+        expect(q).not.toContain('_AmendementCosignataires');
+      }
+    });
+
+    it('role=cosigne : retire les amendements dont il est l’auteur', async () => {
+      const sql = mockQueries(['a'], 1);
+
+      await service.getParlementaireAmendements(PARL, { ...baseQuery, role: 'cosigne' });
+
+      expect(sql[0]).toContain('"_AmendementCosignataires"');
+      expect(sql[0]).toContain('EXCEPT');
+      expect(sql[0]).not.toContain('UNION');
+    });
+
+    it('distingue les rôles dans la clé de cache', async () => {
+      mockQueries(['a'], 1);
+      await service.getParlementaireAmendements(PARL, { ...baseQuery, role: 'depose' });
+      mockPrisma.$queryRawUnsafe.mockClear();
+
+      await service.getParlementaireAmendements(PARL, { ...baseQuery, role: 'cosigne' });
+
+      expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalled();
+    });
+
     it('calcule la pagination à partir du total', async () => {
       mockQueries(['a'], 45);
 
@@ -1058,6 +1091,14 @@ describe('ParlementairesService', () => {
       expect(sql).toContain('"_AmendementToScrutin"');
       expect(sql).toContain('a.chambre = $3');
       expect(params).toEqual([PARL, new Date('2026-01-01'), 'assemblee']);
+    });
+
+    it('role=depose : les seuls amendements dont il est l’auteur', async () => {
+      await service.getParlementaireAmendementsParDossier(PARL, { page: 1, limit: 20, role: 'depose', chambre: 'senat' });
+      const [sql, ...params] = mockPrisma.$queryRawUnsafe.mock.calls[0]! as [string, ...unknown[]];
+      expect(sql).toContain('WHERE a.parlementaire_id = $1 AND a.chambre = $2');
+      expect(sql).not.toContain('_AmendementCosignataires');
+      expect(params).toEqual([PARL, 'senat']);
     });
   });
 });

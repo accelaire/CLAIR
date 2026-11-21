@@ -25,6 +25,7 @@ import { priseDeParoleAuGouvernement, voteAbsentEmpeche } from '../../utils/empe
 import { METADONNEES_AMENDEMENT_SELECT, avecNombreDeSousAmendements } from '../../utils/amendements';
 import { FAMILLES_SORT, familleSort, type FamilleSort } from '../../utils/amendements-sort';
 import { RENVOIS_SELECT, avecRenvois } from '../../utils/renvois-legi';
+import { perimetreAmendements, type RoleAmendement } from '../../utils/amendements-role';
 import { GouvernementsService } from '../gouvernements/gouvernements.service';
 
 // =============================================================================
@@ -835,7 +836,7 @@ export class ParlementairesService {
    * scrutins où il ne pouvait pas voter : sans eux, il ne reste rien.
    */
   private async taillesDesListes(parlementaireId: string) {
-    const [votes, interventions, amendements] = await Promise.all([
+    const [votes, interventions, amendements, amendementsDeposes] = await Promise.all([
       this.prisma.$queryRawUnsafe<{ n: number }[]>(
         `SELECT COUNT(*)::int AS n
          FROM votes v
@@ -847,7 +848,7 @@ export class ParlementairesService {
       this.prisma.intervention.count({
         where: { parlementaireId, seanceId: { not: null }, ...INTERVENTIONS_DE_FOND },
       }),
-      // Même périmètre que getParlementaireAmendements : déposés ou cosignés.
+      // Déposés ou cosignés : l'onglet existe dès qu'il y a l'un ou l'autre.
       this.prisma.$queryRawUnsafe<{ n: number }[]>(
         `SELECT COUNT(*)::int AS n FROM (
            SELECT id FROM amendements WHERE parlementaire_id = $1
@@ -856,8 +857,16 @@ export class ParlementairesService {
          ) c`,
         parlementaireId,
       ),
+      // Déposés seulement : l'onglet s'ouvre sur eux, sauf pour qui n'a fait
+      // que cosigner.
+      this.prisma.amendement.count({ where: { parlementaireId } }),
     ]);
-    return { votes: votes[0]?.n ?? 0, interventions, amendements: amendements[0]?.n ?? 0 };
+    return {
+      votes: votes[0]?.n ?? 0,
+      interventions,
+      amendements: amendements[0]?.n ?? 0,
+      amendementsDeposes,
+    };
   }
 
   /**
@@ -1543,17 +1552,12 @@ export class ParlementairesService {
   // ===========================================================================
 
   /**
-   * Amendements déposés OU cosignés par un parlementaire.
+   * Amendements d'un parlementaire : déposés, cosignés, ou les deux (`role`,
+   * voir `perimetreAmendements`). `tous` par défaut, le périmètre historique
+   * de la route publique.
    *
-   * Le périmètre est une union de deux ensembles : `amendements.parlementaire_id`
-   * (l'auteur) et la table de cosignatures. Exprimé en `OR` dans un seul WHERE —
-   * ce que produit naturellement Prisma —, Postgres ne peut se servir d'aucun des
-   * deux index et parcourt les 197 000 amendements en séquentiel ; le coût estimé
-   * déclenchait même la compilation JIT, 250 ms perdus avant la première ligne.
-   *
-   * En UNION, chaque branche redevient une simple recherche indexée. On ne
-   * ramène ainsi que les identifiants de la page, dont Prisma charge ensuite le
-   * détail avec ses relations — deux allers-retours courts plutôt qu'un long.
+   * On ne ramène que les identifiants de la page, dont Prisma charge ensuite
+   * le détail avec ses relations : deux allers-retours courts plutôt qu'un long.
    */
   async getParlementaireAmendements(
     parlementaireId: string,
@@ -1567,9 +1571,10 @@ export class ParlementairesService {
       chambre?: Chambre;
       /** Uid du dossier, ou `aucun` pour les amendements sans dossier. */
       dossier?: string;
+      role?: RoleAmendement;
     }
   ) {
-    const { page, limit, sort, dateFrom, dateTo, votedOnly, chambre, dossier } = query;
+    const { page, limit, sort, dateFrom, dateTo, votedOnly, chambre, dossier, role = 'tous' } = query;
     const offset = (page - 1) * limit;
 
     const cacheKey = `parlementaire:amendements:${parlementaireId}:${JSON.stringify({
@@ -1581,6 +1586,7 @@ export class ParlementairesService {
       votedOnly,
       chambre,
       dossier,
+      role,
     })}`;
 
     const cached = await this.redis.get(cacheKey);
@@ -1588,7 +1594,8 @@ export class ParlementairesService {
       return JSON.parse(cached);
     }
 
-    const conditions: string[] = [];
+    const perimetre = perimetreAmendements(role);
+    const conditions: string[] = perimetre.condition ? [perimetre.condition] : [];
     const params: (string | Date)[] = [parlementaireId];
     let paramIndex = 2;
 
@@ -1626,13 +1633,6 @@ export class ParlementairesService {
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const CANDIDATS = `
-      WITH candidats AS (
-        SELECT id FROM amendements WHERE parlementaire_id = $1
-        UNION
-        SELECT "A" AS id FROM "_AmendementCosignataires" WHERE "B" = $1
-      )`;
-
     // Le tri porte sur trois colonnes dont deux acceptent NULL : des ex æquo
     // parfaits existent (même dépôt, même dossier, même rang). Sans départage,
     // deux exécutions les ordonnent différemment et la pagination peut répéter
@@ -1644,20 +1644,20 @@ export class ParlementairesService {
     // aucune ligne — donc aucun total — dès que la page demandée est au-delà de
     // la fin, et l'interface afficherait « 0 résultat » sur un jeu non vide.
     const pageQuery = `
-      ${CANDIDATS}
+      ${perimetre.cte}
       SELECT a.id
       FROM amendements a
-      JOIN candidats c ON c.id = a.id
+      ${perimetre.jointure}
       ${whereClause}
       ${ORDRE}
       LIMIT ${limit} OFFSET ${offset}
     `;
 
     const countQuery = `
-      ${CANDIDATS}
+      ${perimetre.cte}
       SELECT COUNT(*)::int as total
       FROM amendements a
-      JOIN candidats c ON c.id = a.id
+      ${perimetre.jointure}
       ${whereClause}
     `;
 
@@ -1703,8 +1703,8 @@ export class ParlementairesService {
   // ===========================================================================
 
   /**
-   * Les amendements d'un parlementaire (déposés ou cosignés) regroupés par
-   * dossier : un résumé par dossier, du dépôt le plus récent au plus ancien,
+   * Les amendements d'un parlementaire (déposés, cosignés ou les deux, selon
+   * `role`) regroupés par dossier : un résumé par dossier, du dépôt le plus récent au plus ancien,
    * les amendements sans dossier en dernier. Le détail d'un dossier se lit
    * par `/amendements?dossier=<uid>`.
    *
@@ -1723,9 +1723,10 @@ export class ParlementairesService {
       dateTo?: string;
       votedOnly?: boolean;
       chambre?: Chambre;
+      role?: RoleAmendement;
     }
   ) {
-    const { page, limit, dateFrom, dateTo, votedOnly, chambre } = query;
+    const { page, limit, dateFrom, dateTo, votedOnly, chambre, role = 'tous' } = query;
 
     const cacheKey = `parlementaire:amendements-dossiers:${parlementaireId}:${JSON.stringify({
       page,
@@ -1734,13 +1735,15 @@ export class ParlementairesService {
       dateTo,
       votedOnly,
       chambre,
+      role,
     })}`;
     const cached = await this.redis.get(cacheKey);
     if (cached) {
       return JSON.parse(cached);
     }
 
-    const conditions: string[] = [];
+    const perimetre = perimetreAmendements(role);
+    const conditions: string[] = perimetre.condition ? [perimetre.condition] : [];
     const params: (string | Date)[] = [parlementaireId];
     if (dateFrom) {
       params.push(new Date(dateFrom));
@@ -1759,20 +1762,15 @@ export class ParlementairesService {
     }
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    // Même périmètre que la liste : auteur OU cosignataire, en UNION pour que
-    // chaque branche reste une recherche indexée.
+    // Même périmètre que la liste.
     const lignes = await this.prisma.$queryRawUnsafe<
       { dossier_id: string | null; date_depot: Date | null; sort: string | null }[]
     >(
       `
-      WITH candidats AS (
-        SELECT id FROM amendements WHERE parlementaire_id = $1
-        UNION
-        SELECT "A" AS id FROM "_AmendementCosignataires" WHERE "B" = $1
-      )
+      ${perimetre.cte}
       SELECT a.dossier_id, a.date_depot, a.sort
       FROM amendements a
-      JOIN candidats c ON c.id = a.id
+      ${perimetre.jointure}
       ${whereClause}
     `,
       ...params

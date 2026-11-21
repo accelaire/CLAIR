@@ -42,6 +42,7 @@ import { InterventionsList } from '@/components/parlementaire/interventions-list
 import { VotePositionBadge } from '@/components/parlementaire/vote-position-badge';
 import { VotesParDossier, type PageGroupesVotes } from '@/components/parlementaire/votes-par-dossier';
 import { AmendementsParDossier } from '@/components/parlementaire/amendements-par-dossier';
+import { FiltreRole, libelleRole, roleParDefaut, type RoleAmendement } from '@/components/parlementaire/filtre-role';
 import { BasculeVue, type VueFiche } from '@/components/parlementaire/bascule-vue';
 import { MandatsBlock } from '@/components/parlementaire/mandats-timeline';
 import { fonctionsEnVue, presideUneAssemblee } from '@/lib/fonctions-en-vue';
@@ -180,7 +181,16 @@ interface AmendementItem {
   } | null;
 }
 
-function AmendementsList({ slug, parcours }: { slug: string; parcours: ParcoursFiche }) {
+function AmendementsList({
+  slug,
+  parcours,
+  listes,
+}: {
+  slug: string;
+  parcours: ParcoursFiche;
+  listes?: ListesFiche;
+}) {
+  const [role, setRole] = useState<RoleAmendement>(() => roleParDefaut(listes));
   const [dateRange, setDateRange] = useUrlDateRange();
   const [votedOnly, setVotedOnly] = useState(false);
   const [chambre, setChambre] = useState<ChambreFiltre>('');
@@ -196,12 +206,13 @@ function AmendementsList({ slug, parcours }: { slug: string; parcours: ParcoursF
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['depute-amendements', slug, dateParams, votedOnly, chambre],
+    queryKey: ['depute-amendements', slug, role, dateParams, votedOnly, chambre],
     queryFn: ({ pageParam = 1 }) =>
       api.get(`/deputes/${slug}/amendements`, {
         params: {
           page: pageParam,
           limit: 20,
+          role,
           votedOnly,
           ...dateParams,
           ...paramChambre(chambre),
@@ -227,13 +238,20 @@ function AmendementsList({ slug, parcours }: { slug: string; parcours: ParcoursF
       <FilterBar
         className=""
         search={<BasculeVue value={vue} onChange={setVue} />}
-        activeFilterCount={(dateRange.from || dateRange.to ? 1 : 0) + (chambre ? 1 : 0) + (votedOnly ? 1 : 0)}
+        activeFilterCount={
+          (role !== roleParDefaut(listes) ? 1 : 0) +
+          (dateRange.from || dateRange.to ? 1 : 0) +
+          (chambre ? 1 : 0) +
+          (votedOnly ? 1 : 0)
+        }
         onClear={() => {
+          setRole(roleParDefaut(listes));
           setDateRange({ from: null, to: null });
           setChambre('');
           setVotedOnly(false);
         }}
       >
+        <FiltreRole value={role} onChange={setRole} listes={listes} />
         <DateRangePicker
           value={dateRange}
           onChange={setDateRange}
@@ -263,6 +281,7 @@ function AmendementsList({ slug, parcours }: { slug: string; parcours: ParcoursF
 
       {vue === 'dossier' ? (
         <AmendementsParDossier
+          role={role}
           base={`/deputes/${slug}`}
           params={{ votedOnly, ...dateParams, ...paramChambre(chambre) }}
           onTotal={setTotalDossiers}
@@ -278,7 +297,7 @@ function AmendementsList({ slug, parcours }: { slug: string; parcours: ParcoursF
         </div>
       ) : error || amendements.length === 0 ? (
         <p className="text-center text-muted-foreground py-8">
-          Aucun amendement trouvé pour cette période.
+          Aucun amendement {libelleRole(role, 1)} pour cette période.
         </p>
       ) : (
         <div className="space-y-4">
@@ -883,7 +902,7 @@ export default function PageClient({
             {activeTab === 'interventions' && (
               <InterventionsList slug={depute.slug} chambre="assemblee" parcours={parcours} />
             )}
-            {activeTab === 'amendements' && <AmendementsList slug={depute.slug} parcours={parcours} />}
+            {activeTab === 'amendements' && <AmendementsList slug={depute.slug} parcours={parcours} listes={data?.listes} />}
           </div>
         </>
       )}
