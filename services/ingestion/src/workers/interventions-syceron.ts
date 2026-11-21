@@ -10,6 +10,13 @@ import { TYPE_INTERRUPTION, typeSelonOrateur } from '../utils/interventions';
 import { SyceronClient } from '../sources/assemblee-nationale/syceron-client';
 import type { PriseDeParoleSyceron, SeanceSyceron } from '../sources/assemblee-nationale/syceron-parser';
 import { ajouterIdentifiantsConserves } from './changement-chambre';
+import {
+  concordanceOrateur,
+  ficheDansLaSeance,
+  ficheRetenue,
+  type NomPersonne,
+  type PriseAttribuee,
+} from '../utils/concordance-orateur';
 import { differencier } from '../utils/synchro-differentielle';
 
 const prisma = new PrismaClient();
@@ -71,6 +78,12 @@ export interface ResultatSyceron {
   /** Comptes rendus encore provisoires dans l'archive : ils seront relus. */
   provisoires: number;
   sansParlementaire: number;
+  /**
+   * Prises dont l'identifiant d'acteur désigne une fiche que le nom de
+   * l'orateur contredit (`concordanceOrateur`) : écrites avec la fiche que le
+   * même orateur porte ailleurs dans la séance, sans fiche à défaut.
+   */
+  fichesEcartees: number;
   /**
    * Les séances écrites (nouvelles, ou relues avec un compte rendu changé) :
    * le rattachement des débats aux scrutins les recalcule
@@ -281,7 +294,7 @@ export async function syncInterventionsSyceron(options: OptionsSyceron): Promise
   const { legislature } = options;
   logger.info({ legislature, maxSeances: options.maxSeances }, 'Ingestion des débats AN (syceron)...');
 
-  const parlementaireParRef = await chargerParlementaires();
+  const fiches = await chargerParlementaires();
 
   const enBase = options.reingerer ? new Map<string, Date>() : await seancesDejaEnBase(legislature);
   const { ignorer, aRelire } = repartirSeances(enBase, options.maintenant ?? new Date());
@@ -296,6 +309,7 @@ export async function syncInterventionsSyceron(options: OptionsSyceron): Promise
     remplacees: 0,
     provisoires: 0,
     sansParlementaire: 0,
+    fichesEcartees: 0,
     seancesEcrites: [],
   };
 
@@ -308,7 +322,7 @@ export async function syncInterventionsSyceron(options: OptionsSyceron): Promise
       if (seance.etat === 'provisoire') resultat.provisoires++;
       const relue = aRelire.has(seance.uid);
       const mode: ModeEcriture = options.reingerer ? 'remplacer' : relue ? 'siChangee' : 'ajouter';
-      const ecrites = await ecrireSeance(seance, parlementaireParRef, mode);
+      const ecrites = await ecrireSeance(seance, fiches, mode);
       if (relue) {
         resultat.relues++;
         if (!ecrites.ecrite) continue;
@@ -322,6 +336,7 @@ export async function syncInterventionsSyceron(options: OptionsSyceron): Promise
       if (ecrites.ecrite) resultat.seancesEcrites.push(seance.uid);
       resultat.interventions += ecrites.ecrites;
       resultat.sansParlementaire += ecrites.sansParlementaire;
+      resultat.fichesEcartees += ecrites.fichesEcartees;
     } catch (error) {
       logger.warn({ seance: seance.uid, error: errorMessage(error) }, 'Séance non écrite');
     }
@@ -331,7 +346,13 @@ export async function syncInterventionsSyceron(options: OptionsSyceron): Promise
   return resultat;
 }
 
-async function chargerParlementaires(): Promise<Map<string, string>> {
+/** Fiches que désignent les identifiants d'acteur, et leurs noms pour contrôle. */
+interface FichesParRef {
+  parRef: Map<string, string>;
+  nomParId: Map<string, NomPersonne>;
+}
+
+async function chargerParlementaires(): Promise<FichesParRef> {
   const parlementaires = await prisma.parlementaire.findMany({
     where: { chambre: CHAMBRE },
     select: { id: true, sourceId: true },
@@ -341,8 +362,58 @@ async function chargerParlementaires(): Promise<Map<string, string>> {
     if (p.sourceId) parRef.set(p.sourceId, p.id);
   }
   await ajouterIdentifiantsConserves(prisma, CHAMBRE, parRef);
+  // Les identifiants conservés mènent aussi à des fiches de l'autre chambre.
+  const noms = await prisma.parlementaire.findMany({
+    where: { id: { in: [...new Set(parRef.values())] } },
+    select: { id: true, nom: true, prenom: true },
+  });
+  const nomParId = new Map(noms.map((p) => [p.id, { nom: p.nom, prenom: p.prenom }]));
   logger.info({ parlementaires: parRef.size }, 'Parlementaires AN chargés');
-  return parRef;
+  return { parRef, nomParId };
+}
+
+/**
+ * Fiche d'une prise de parole : celle de son identifiant d'acteur, sauf si le
+ * nom de l'orateur la contredit (identifiant faux dans la source, voir
+ * `utils/concordance-orateur.ts`). `ecartee` : une fiche était proposée et n'a
+ * pas été retenue.
+ */
+export function ficheDeLaPrise(
+  prise: Pick<PriseDeParoleSyceron, 'orateurRef' | 'orateurNom' | 'orateurPrenom'>,
+  fiches: FichesParRef,
+): { parlementaireId: string | null; ecartee: boolean } {
+  const id = prise.orateurRef ? fiches.parRef.get(prise.orateurRef) ?? null : null;
+  const fiche = id ? fiches.nomParId.get(id) : undefined;
+  if (!id || !fiche) return { parlementaireId: id, ecartee: false };
+  const c = concordanceOrateur({ prenom: prise.orateurPrenom, nom: prise.orateurNom }, fiche);
+  return ficheRetenue(c) ? { parlementaireId: id, ecartee: false } : { parlementaireId: null, ecartee: true };
+}
+
+/**
+ * Fiches des prises d'une séance. Une prise dont l'identifiant est écarté
+ * reprend la fiche que le même orateur porte ailleurs dans la séance, quand
+ * elle est unique et concorde (`ficheDansLaSeance`) : l'identifiant faux d'un
+ * paragraphe ne prive pas l'orateur de sa parole.
+ */
+export function fichesDeLaSeance(
+  prises: ReadonlyArray<Pick<PriseDeParoleSyceron, 'orateurRef' | 'orateurNom' | 'orateurPrenom' | 'estPresidence'>>,
+  fiches: FichesParRef,
+): Array<{ parlementaireId: string | null; ecartee: boolean; rendue: boolean }> {
+  const resolues = prises.map((p) => ficheDeLaPrise(p, fiches));
+  const attribuees: PriseAttribuee[] = [];
+  prises.forEach((p, i) => {
+    const id = resolues[i]!.parlementaireId;
+    const fiche = id ? fiches.nomParId.get(id) : undefined;
+    if (id && fiche && !p.estPresidence) {
+      attribuees.push({ orateur: { nom: p.orateurNom, prenom: p.orateurPrenom }, parlementaireId: id, fiche });
+    }
+  });
+  return prises.map((p, i) => {
+    const r = resolues[i]!;
+    if (!r.ecartee) return { ...r, rendue: false };
+    const id = ficheDansLaSeance({ nom: p.orateurNom, prenom: p.orateurPrenom }, attribuees);
+    return { parlementaireId: id, ecartee: true, rendue: id !== null };
+  });
 }
 
 /** Séances déjà en base, avec leur date. */
@@ -376,16 +447,19 @@ type ModeEcriture = 'ajouter' | 'remplacer' | 'siChangee';
 
 async function ecrireSeance(
   seance: SeanceSyceron,
-  parlementaireParRef: Map<string, string>,
+  fiches: FichesParRef,
   mode: ModeEcriture,
-): Promise<{ ecrites: number; sansParlementaire: number; ecrite: boolean }> {
+): Promise<{ ecrites: number; sansParlementaire: number; fichesEcartees: number; ecrite: boolean }> {
   const groupes = regrouperPrises(seance.prises);
-  if (groupes.length === 0) return { ecrites: 0, sansParlementaire: 0, ecrite: false };
+  if (groupes.length === 0) return { ecrites: 0, sansParlementaire: 0, fichesEcartees: 0, ecrite: false };
 
   let sansParlementaire = 0;
+  let fichesEcartees = 0;
+  const fichesGroupes = fichesDeLaSeance(groupes, fiches);
 
-  const lignes = groupes.map((g) => {
-    const parlementaireId = g.orateurRef ? parlementaireParRef.get(g.orateurRef) ?? null : null;
+  const lignes = groupes.map((g, i) => {
+    const { parlementaireId, ecartee } = fichesGroupes[i]!;
+    if (ecartee) fichesEcartees++;
     // Ministres et invités n'ont pas de fiche de parlementaire : c'est attendu,
     // leurs nom et qualité suffisent à les afficher.
     if (!parlementaireId && !g.orateurQualite && !g.estPresidence) sansParlementaire++;
@@ -430,12 +504,12 @@ async function ecrireSeance(
   // ce qui rend la commande rejouable sans précaution particulière.
   if (mode === 'ajouter') {
     const { count } = await prisma.intervention.createMany({ data: lignes, skipDuplicates: true });
-    return { ecrites: count, sansParlementaire, ecrite: true };
+    return { ecrites: count, sansParlementaire, fichesEcartees, ecrite: true };
   }
 
   // Séance relue à l'identique : rien à faire, et surtout rien à défaire.
   if (mode === 'siChangee' && empreinteDesLignes(lignes) === (await empreinteEnBase(seance.uid))) {
-    return { ecrites: 0, sansParlementaire, ecrite: false };
+    return { ecrites: 0, sansParlementaire, fichesEcartees, ecrite: false };
   }
 
   // Réingestion : la séance est alignée sur la nouvelle lecture d'un seul
@@ -488,7 +562,7 @@ async function ecrireSeance(
     // rien perdre, mais sans être corrigée non plus.
     { timeout: DELAI_TRANSACTION, maxWait: DELAI_ATTENTE },
   );
-  return { ecrites: count, sansParlementaire, ecrite: true };
+  return { ecrites: count, sansParlementaire, fichesEcartees, ecrite: true };
 }
 
 /** Les colonnes qu'écrit la lecture d'une séance, donc celles qu'elle compare. */

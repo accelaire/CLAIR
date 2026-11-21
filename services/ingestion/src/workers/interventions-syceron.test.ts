@@ -5,6 +5,8 @@ import {
   repartirSeances,
   empreinteDesLignes,
   RELECTURE_JOURS,
+  ficheDeLaPrise,
+  fichesDeLaSeance,
 } from './interventions-syceron';
 import { TYPE_INTERRUPTION, TYPE_REPONSE, estMembreDuGouvernement, typeSelonOrateur } from '../utils/interventions';
 import type { PriseDeParoleSyceron } from '../sources/assemblee-nationale/syceron-parser';
@@ -379,5 +381,69 @@ describe('empreinteDesLignes', () => {
       .update(`${a.sourceUid}\t${a.contenu}\n${b.sourceUid}\t${b.contenu}`, 'utf8')
       .digest('hex');
     expect(empreinteDesLignes([b, a])).toBe(attendu);
+  });
+});
+
+describe('ficheDeLaPrise', () => {
+  const fiches = {
+    parRef: new Map([['PA722142', 'fiche-ruffin'], ['PA1', 'fiche-sans-nom']]),
+    nomParId: new Map([['fiche-ruffin', { prenom: 'François', nom: 'Ruffin' }]]),
+  };
+
+  it("retient la fiche de l'identifiant quand le nom concorde", () => {
+    expect(ficheDeLaPrise({ orateurRef: 'PA722142', orateurPrenom: 'François', orateurNom: 'Ruffin' }, fiches)).toEqual({
+      parlementaireId: 'fiche-ruffin',
+      ecartee: false,
+    });
+  });
+
+  it("écarte la fiche que le nom de l'orateur contredit (réponse d'Alice Rufo, 24/03/2026)", () => {
+    expect(ficheDeLaPrise({ orateurRef: 'PA722142', orateurPrenom: 'Alice', orateurNom: 'Rufo' }, fiches)).toEqual({
+      parlementaireId: null,
+      ecartee: true,
+    });
+  });
+
+  it("n'écarte rien sans identifiant, ni sans fiche connue pour l'identifiant", () => {
+    expect(ficheDeLaPrise({ orateurRef: null, orateurPrenom: 'Alice', orateurNom: 'Rufo' }, fiches)).toEqual({
+      parlementaireId: null,
+      ecartee: false,
+    });
+    expect(ficheDeLaPrise({ orateurRef: 'PA999', orateurPrenom: 'Alice', orateurNom: 'Rufo' }, fiches)).toEqual({
+      parlementaireId: null,
+      ecartee: false,
+    });
+  });
+});
+
+describe('fichesDeLaSeance', () => {
+  const fiches = {
+    parRef: new Map([
+      ['PA1', 'fiche-trouve'],
+      ['PA2', 'fiche-clouet'],
+      ['PA3', 'fiche-ruffin'],
+    ]),
+    nomParId: new Map([
+      ['fiche-trouve', { prenom: 'Aurélie', nom: 'Trouvé' }],
+      ['fiche-clouet', { prenom: 'Hadrien', nom: 'Clouet' }],
+      ['fiche-ruffin', { prenom: 'François', nom: 'Ruffin' }],
+    ]),
+  };
+  const prise = (orateurRef: string | null, orateurPrenom: string | null, orateurNom: string, estPresidence = false) => ({
+    orateurRef,
+    orateurPrenom,
+    orateurNom,
+    estPresidence,
+  });
+
+  it("rend à l'orateur la fiche qu'il porte ailleurs dans la séance", () => {
+    const r = fichesDeLaSeance([prise('PA2', 'Hadrien', 'Clouet'), prise('PA1', 'Hadrien', 'Clouet')], fiches);
+    expect(r[1]).toEqual({ parlementaireId: 'fiche-clouet', ecartee: true, rendue: true });
+    expect(r[0]).toEqual({ parlementaireId: 'fiche-clouet', ecartee: false, rendue: false });
+  });
+
+  it("laisse sans fiche un orateur qui n'en porte aucune dans la séance (ministre)", () => {
+    const r = fichesDeLaSeance([prise('PA3', 'Alice', 'Rufo'), prise('PA3', 'François', 'Ruffin')], fiches);
+    expect(r[0]).toEqual({ parlementaireId: null, ecartee: true, rendue: false });
   });
 });
