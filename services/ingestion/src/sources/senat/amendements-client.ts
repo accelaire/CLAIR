@@ -13,6 +13,7 @@ import { createReadStream } from 'fs';
 import * as readline from 'readline';
 import { logger } from '../../utils/logger';
 import { errorMessage, errorProp } from '../../utils/errors';
+import { libelleSessionSenat } from '../../utils/amendement-scrutin-senat';
 import { decoderWindows1252 } from '../../utils/encodage';
 
 // =============================================================================
@@ -251,6 +252,69 @@ const COLONNES_ATTENDUES: Record<string, Record<number, string>> = {
   amd: { 1: 'subid', 24: 'subpos' },
   sub: { 0: 'id', 2: 'merid', 3: 'typid', 5: 'lib' },
 };
+
+/**
+ * Colonnes de `ses` et `txt_ameli` lues par position. Un décalage donnerait aux
+ * textes une autre session ou un autre dossier, donc de fausses adresses CSV et
+ * de faux rattachements : le parse s'arrête plutôt que de les écrire.
+ */
+const COLONNES_TEXTES: Record<string, Record<number, string>> = {
+  ses: { 0: 'id', 2: 'ann' },
+  txt_ameli: { 0: 'id', 3: 'sesinsid', 4: 'sesdepid', 6: 'num', 7: 'int', 23: 'doslegsignet', 25: 'txttyp' },
+};
+
+export function enTeteTextesConforme(line: string): boolean {
+  const match = line.match(/^COPY (\w+) \(([^)]*)\)/);
+  if (!match) return true;
+  const attendues = COLONNES_TEXTES[match[1]!];
+  if (!attendues) return true;
+  const colonnes = match[2]!.split(',').map(c => c.trim().replace(/"/g, ''));
+  return Object.entries(attendues).every(([i, nom]) => colonnes[Number(i)] === nom);
+}
+
+/** Un texte du Sénat tel qu'AMELI le décrit (table `textes_senat`). */
+export interface TexteSenatAmeli {
+  /** Identifiant AMELI : `texte_ref` = `SENAT-TXT-<id>` */
+  id: number;
+  /** Année d'ouverture de la session de dépôt, celle des adresses senat.fr */
+  sessionDepot: number;
+  /** Année d'ouverture de la session d'inscription (ordinaire ou extraordinaire) */
+  sessionInscription: number;
+  numero: string;
+  /** Signet DOSLEG en minuscules (`pjlf2027`), ou `null` */
+  signet: string | null;
+  /** `S` séance, `C` commission */
+  type: string | null;
+  intitule: string | null;
+}
+
+/**
+ * Lit une ligne COPY de `txt_ameli`. `sessions` donne l'année d'ouverture de
+ * chaque session AMELI (`ses.ann`). `null` si l'identifiant, le numéro ou une
+ * des deux sessions manque.
+ */
+export function lireTexteAmeli(fields: string[], sessions: Map<number, number>): TexteSenatAmeli | null {
+  const valeur = (i: number): string | null => {
+    const v = (fields[i] ?? '\\N').trim();
+    return v === '\\N' || v === '' ? null : v;
+  };
+  const id = parseInt(valeur(0) ?? '', 10);
+  const numero = valeur(6);
+  const sessionInscription = sessions.get(parseInt(valeur(3) ?? '', 10));
+  const sessionDepot = sessions.get(parseInt(valeur(4) ?? '', 10));
+  if (!Number.isInteger(id) || id <= 0 || !numero || sessionDepot === undefined || sessionInscription === undefined) {
+    return null;
+  }
+  return {
+    id,
+    sessionDepot,
+    sessionInscription,
+    numero,
+    signet: valeur(23)?.toLowerCase() ?? null,
+    type: valeur(25),
+    intitule: valeur(7),
+  };
+}
 
 /**
  * Colonnes de `amd` lues pour les métadonnées. Contrôlées à part : un
@@ -703,7 +767,14 @@ export class SenatAmendementsClient {
 
   /**
    * Parse AMELI dump to extract:
-   * - texteMapping: texteId → { num (externe), session }
+   * - texteMapping: texteId → { num (externe), session } ; `session` est la
+   *   session de DÉPÔT du texte (`2024-2025`), celle des adresses senat.fr.
+   *   Jusqu'au 21/11/2026 c'était le libellé de la session d'INSCRIPTION : un
+   *   texte déposé en 2024-2025 et examiné en 2025-2026 était cherché sous
+   *   l'adresse d'un autre texte, et un texte inscrit en session extraordinaire
+   *   (« Première session extraordinaire de 2025-2026 ») n'était jamais lu.
+   * - textesSenat : chaque texte avec ses deux sessions et le signet de son
+   *   dossier DOSLEG (`doslegsignet`), recopiés dans `textes_senat`
    * - cosignatairesByKey: `${session}/${texteNum}:${numeroAmendement}` → matricules cosignataires
    * - articlesVisesByKey: même clé → article visé (cf. libelleArticleVise)
    * - articlesVisesByAmdId: id AMELI → article visé, pour les rows `SENAT-AMD-{id}`
@@ -720,6 +791,7 @@ export class SenatAmendementsClient {
    */
   async getAmeliMappings(options: { minYear?: number } = {}): Promise<{
     texteMapping: Map<number, { num: string; session: string }>;
+    textesSenat: TexteSenatAmeli[];
     cosignatairesByKey: Map<string, string[]>;
     articlesVisesByKey: Map<string, string>;
     articlesVisesByAmdId: Map<number, string>;
@@ -736,8 +808,9 @@ export class SenatAmendementsClient {
     const amdMap = new Map<number, { txtid: number; numero: string; subid: number | null; subpos: string | null }>();
     const amdSenLinks: Array<{ amdId: number; senId: number; rang: number }> = [];
     const senMatriculeMap = new Map<number, string>();
-    const sesMap = new Map<number, string>(); // sesId → session label (e.g. "2025-2026")
+    const sesMap = new Map<number, number>(); // sesId → année d'ouverture (2025 pour 2025-2026)
     const texteMapping = new Map<number, { num: string; session: string }>();
+    const textesSenat: TexteSenatAmeli[] = [];
     const subdivisions = new Map<number, SubdivisionAmeli>();
     let subdivisionsLisibles = true;
     const metaBrutes = new Map<number, { txtid: number; numero: string } & ReturnType<typeof lireMetadonneesAmd>>();
@@ -768,6 +841,9 @@ export class SenatAmendementsClient {
           if (!enTeteMetadonneesConforme(line)) {
             logger.error({ copy: line.slice(0, 200) }, 'AMELI : colonnes déplacées, discussions, alinéas et parents non renseignés');
             metadonneesLisibles = false;
+          }
+          if (!enTeteTextesConforme(line)) {
+            throw new Error(`AMELI : colonnes des textes déplacées, sessions et dossiers illisibles (${line.slice(0, 200)})`);
           }
           continue;
         }
@@ -815,13 +891,15 @@ export class SenatAmendementsClient {
             }
           }
 
-          // ses table: id, typid, ann, lil
+          // ses table: id, typid, ann, lil. `lil` vaut « 2025-2026 » pour une
+          // session ordinaire, mais « Première session extraordinaire de
+          // 2025-2026 » pour celle de juillet : on garde l'année d'ouverture.
           if (currentTable === 'ses') {
             if (fields.length < 4) continue;
             const id = parseInt(fields[0] ?? '0', 10);
-            const lil = (fields[3] ?? '').trim();
-            if (id && lil && lil !== '\\N') {
-              sesMap.set(id, lil);
+            const ann = parseInt(fields[2] ?? '', 10);
+            if (id && Number.isInteger(ann)) {
+              sesMap.set(id, ann);
             }
           }
 
@@ -831,17 +909,13 @@ export class SenatAmendementsClient {
             if (subdivision) subdivisions.set(...subdivision);
           }
 
-          // txt_ameli table: id(0), ..., sesinsid(3), ..., num(6), ...
+          // txt_ameli table: id(0), natid, lecid, sesinsid(3), sesdepid(4),
+          // fbuid, num(6), int(7), ..., doslegsignet(23), proacc, txttyp(25), ...
           if (currentTable === 'txt_ameli') {
-            if (fields.length < 7) continue;
-            const id = parseInt(fields[0] ?? '0', 10);
-            const sesinsid = parseInt(fields[3] ?? '0', 10);
-            const num = (fields[6] ?? '').trim();
-            if (id && num && num !== '\\N') {
-              const session = sesMap.get(sesinsid);
-              if (session) {
-                texteMapping.set(id, { num, session });
-              }
+            const texte = lireTexteAmeli(fields, sesMap);
+            if (texte) {
+              textesSenat.push(texte);
+              texteMapping.set(texte.id, { num: texte.numero, session: libelleSessionSenat(texte.sessionDepot) });
             }
           }
         } catch {
@@ -932,7 +1006,7 @@ export class SenatAmendementsClient {
       }, 'AMELI mappings extracted');
 
       return {
-        texteMapping, cosignatairesByKey, articlesVisesByKey, articlesVisesByAmdId,
+        texteMapping, textesSenat, cosignatairesByKey, articlesVisesByKey, articlesVisesByAmdId,
         metadonneesByAmdId, metadonneesByKey,
       };
 
