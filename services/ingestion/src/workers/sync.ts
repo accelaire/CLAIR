@@ -30,7 +30,7 @@ import { libererArchivesAMO30 } from '../sources/assemblee-nationale/amo30-archi
 import { syncSenatDossierCommissions } from './senat-dossier-commissions';
 import { logger } from '../utils/logger';
 import { choisirFiche, slugLibre } from '../utils/rapprochement-fiche';
-import { errorMessage } from '../utils/errors';
+import { errorMessage, errorProp, httpStatus } from '../utils/errors';
 import { typeSelonOrateur } from '../utils/interventions';
 import { dateFinMandatAN } from '../utils/date-fin-mandat-an';
 import { asArray, isRecord, readString } from '../utils/json';
@@ -39,6 +39,19 @@ import { cleMotion, dossierMotionSansReferences } from '../utils/motions-censure
 import { classifyNatureScrutin } from '../utils/nature-scrutin';
 import { CTE_LEGISLATURES_DOSSIER, CTE_TEXTE_DU_DOSSIER, dossierValantPour } from '../utils/legislatures-dossier';
 import { choisirAmendement, deposeApresLeVote, type CandidatAmendement } from '../utils/amendement-scrutin';
+import {
+  anneeDeSessionSenat,
+  choisirAmendementSenat,
+  cleTexteSenat,
+  extraireLiensAmendementsSenat,
+  memeNumeroAmendement,
+} from '../utils/amendement-scrutin-senat';
+import { CTE_DOSSIER_DU_TEXTE_SENAT, dossierSenatPossiblePour, texteSenatCouvert } from '../utils/textes-senat-db';
+import {
+  ecrireTextesSenat,
+  effacerLiensSenatHorsDossierDuTexte,
+  rattacherAmendementsSenatAuDossierDuTexte,
+} from './textes-senat';
 import { uidCanoniqueAmendement, uneEmissionParAmendement } from '../utils/uid-amendement';
 import {
   LEGISLATURE_AN_COURANTE,
@@ -3577,8 +3590,6 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
   // rattachement aux scrutins, joué en fin de batch, doit reprendre.
   let journeesSenatRevisees: string[] = [];
 
-  // Cache AMELI texte mapping across sync steps to avoid double download
-  let cachedTexteMapping: Map<number, { num: string; session: string }> | undefined;
   // Séances AN écrites ou réécrites par les lectures syceron de la nuit : le
   // rattachement des débats aux scrutins réaligne leurs liens par différence.
   const seancesANEcrites = new Set<string>();
@@ -3828,10 +3839,6 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
           case 'senat:amendements': {
             const senatAmendementsResult = await syncAmendementsSenatCsv();
             syncResult = { created: senatAmendementsResult.created, updated: senatAmendementsResult.updated };
-            // Cache texte mapping to avoid re-downloading AMELI in enrichScrutinsSenatAmendements
-            if (senatAmendementsResult.texteMapping) {
-              cachedTexteMapping = senatAmendementsResult.texteMapping;
-            }
             break;
           }
 
@@ -4239,6 +4246,17 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       logger.error({ error: errorMessage(error) }, 'Liens amendement après le vote : nettoyage échoué (non bloquant)');
     }
 
+    // Au Sénat, le dossier d'un amendement est celui de son texte (AMELI), et
+    // il le reçoit avant tout rattachement : le repli par libellé de
+    // linkScrutinsToAmendements exige que l'amendement ait le dossier du scrutin.
+    // Puis on retire les liens vers un amendement d'un autre dossier.
+    try {
+      await rattacherAmendementsSenatAuDossierDuTexte();
+      await effacerLiensSenatHorsDossierDuTexte();
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'Amendements Sénat : rattachement au dossier du texte échoué (non bloquant)');
+    }
+
     logger.info('Enriching scrutins with amendements (HTML scraping for new scrutins only)...');
     try {
       // Enrichissement AN: scrape les pages HTML des scrutins RÉCENTS sans lien
@@ -4259,10 +4277,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       // Pas de reset - on enrichit seulement ceux sans lien (amendements: none)
       // Pour corriger des liens existants, utiliser CLI: sync --enrich-amendements-senat --reset
       logger.info('Enriching Sénat scrutins with HTML scraping...');
-      const enrichSenatResult = await enrichScrutinsSenatAmendements({
-        concurrency: 5,
-        texteMapping: cachedTexteMapping,
-      });
+      const enrichSenatResult = await enrichScrutinsSenatAmendements({ concurrency: 5 });
       logger.info({
         enriched: enrichSenatResult.enriched,
         notFound: enrichSenatResult.notFound,
@@ -5242,13 +5257,23 @@ export async function syncAmendementsSenatCsv(
   // (un seul téléchargement du dump pour les deux)
   logger.info('Fetching AMELI mappings...');
   const {
-    texteMapping, cosignatairesByKey, articlesVisesByKey, articlesVisesByAmdId, metadonneesByAmdId, metadonneesByKey,
+    texteMapping, textesSenat, cosignatairesByKey, articlesVisesByKey, articlesVisesByAmdId, metadonneesByAmdId, metadonneesByKey,
   } = await client.getAmeliMappings();
   logger.info({
     textes: texteMapping.size,
     clesCosignataires: cosignatairesByKey.size,
     articlesVises: articlesVisesByAmdId.size,
   }, 'AMELI mappings loaded');
+
+  // Les textes et le dossier de chacun : le rattachement des amendements
+  // (rattacherAmendementsSenatAuDossierDuTexte) et celui des scrutins
+  // (enrichScrutinsSenatAmendements) les lisent en base. Un échec ne prive pas
+  // la nuit des amendements : la table de la veille reste valable.
+  try {
+    await ecrireTextesSenat(textesSenat);
+  } catch (error) {
+    logger.error({ error: errorMessage(error) }, 'Textes du Sénat (AMELI) : écriture échouée (non bloquante)');
+  }
 
   // 2. Determine which textes to fetch
   let texteIds: number[];
@@ -5258,12 +5283,14 @@ export async function syncAmendementsSenatCsv(
   } else {
     // Only fetch recent sessions (current + previous) — historical textes rarely change
     // For a full re-sync of all textes, use --texte-ids or a dedicated backfill command
+    // Un texte est récent s'il a été déposé OU inscrit récemment : un texte
+    // déposé en 2024-2025 peut être amendé en 2025-2026. L'adresse du CSV, elle,
+    // porte toujours la session de dépôt (texteMapping).
     const minYear = options.minYear ?? new Date().getFullYear() - 1;
     const recentIds = new Set<number>();
-    for (const [texteId, { session }] of texteMapping) {
-      const sessionYear = parseInt(session.split('-')[0] ?? '0', 10);
-      if (sessionYear >= minYear) {
-        recentIds.add(texteId);
+    for (const t of textesSenat) {
+      if (Math.max(t.sessionDepot, t.sessionInscription) >= minYear) {
+        recentIds.add(t.id);
       }
     }
 
@@ -6452,15 +6479,18 @@ export async function effacerDossiersDAutreLegislature(): Promise<{ effaces: num
 }
 
 /**
- * Efface les liens scrutin AN → amendement déposé après le jour du vote.
+ * Efface les liens scrutin → amendement déposé après le jour du vote, dans les
+ * deux chambres.
  *
  * Un tel lien est impossible : c'est l'homonyme d'une lecture suivante, ou d'un
- * autre texte, posé par un repli qui ne regardait que le numéro. 835 liens au
- * 10 octobre 2026, presque tous des scrutins de la première lecture du PLF 2026
- * (octobre-novembre 2025) vers les amendements de sa nouvelle lecture (janvier
- * 2026), plus 18 scrutins sur la sûreté dans les transports liés aux
- * amendements d'une résolution sur l'Ukraine déposés un mois après le vote. Les
- * rattacheurs, qui ne comblent que les scrutins sans lien, les reposent ensuite.
+ * autre texte, posé par un repli qui ne regardait que le numéro. À l'Assemblée,
+ * 835 liens au 10 octobre 2026, presque tous des scrutins de la première
+ * lecture du PLF 2026 (octobre-novembre 2025) vers les amendements de sa
+ * nouvelle lecture (janvier 2026). Au Sénat, 284 liens sur 1 082 au 21
+ * novembre 2026 : les scrutins de novembre 2013 sur le PLF 2014 (texte n° 155)
+ * reliés aux amendements du PLF 2027, texte n° 155 lui aussi, déposés en 2026.
+ * Les rattacheurs, qui ne comblent que les scrutins sans lien, les reposent
+ * ensuite.
  */
 export async function effacerLiensAmendementApresLeVote(): Promise<{ effaces: number }> {
   const effaces = await prisma.$executeRaw`
@@ -6468,7 +6498,6 @@ export async function effacerLiensAmendementApresLeVote(): Promise<{ effaces: nu
     USING scrutins s, amendements a
     WHERE ats."B" = s.id
       AND ats."A" = a.id
-      AND s.chambre = 'assemblee'
       AND a.date_depot IS NOT NULL
       AND a.date_depot::date > s.date::date
   `;
@@ -6566,12 +6595,17 @@ export async function alignerDossierDesScrutinsSurLeursAmendements(): Promise<{ 
  * on set l'amendement.dossier_id à la même valeur.
  * Sûr seulement si le M:N amendement-scrutin est correct — et jamais vers un
  * dossier d'une autre législature que l'amendement.
+ *
+ * Au Sénat, jamais sur un amendement dont la source donne le dossier
+ * (`textes_senat`), ni depuis un scrutin antérieur à son dépôt ou un dossier
+ * d'une session postérieure : c'est par ce chemin que les amendements du PLF
+ * 2027 avaient reçu « Budget 2014 ».
  */
 export async function linkAmendementsToDossiers(): Promise<{ linked: number }> {
   logger.info('Propagating dossier_id from scrutins to amendements...');
 
   const linked = await prisma.$executeRaw`
-    WITH ${CTE_LEGISLATURES_DOSSIER}
+    WITH ${CTE_LEGISLATURES_DOSSIER}, ${CTE_DOSSIER_DU_TEXTE_SENAT}
     UPDATE amendements a
     SET dossier_id = s.dossier_id
     FROM "_AmendementToScrutin" ats
@@ -6580,6 +6614,9 @@ export async function linkAmendementsToDossiers(): Promise<{ linked: number }> {
     WHERE ats."A" = a.id
       AND a.dossier_id IS NULL
       AND ${DOSSIER_DE_MEME_LEGISLATURE}
+      AND (a.date_depot IS NULL OR a.date_depot::date <= s.date::date)
+      AND (a.chambre <> 'senat' OR NOT ${texteSenatCouvert('a')})
+      AND ${dossierSenatPossiblePour('d', 'a')}
   `;
 
   logger.info({ linked }, 'Amendements-dossiers linking completed');
@@ -6598,7 +6635,9 @@ export async function linkAmendementsToDossiers(): Promise<{ linked: number }> {
  * amendement de l'Assemblée dont le dossier diffère de celui de son texte.
  * Un texte que deux dossiers revendiquent n'est pas tranché ici.
  *
- * Ailleurs (Sénat), on ne fait que combler, comme avant.
+ * AU SÉNAT AUSSI : AMELI donne le dossier de chaque texte
+ * (rattacherAmendementsSenatAuDossierDuTexte). La branche qui lisait
+ * `source_data` ne faisait rien au Sénat, dont les dossiers n'en ont pas.
  */
 export async function linkAmendementsToDossiersByTexteRef(): Promise<{ linked: number; corriges: number }> {
   logger.info('Linking amendements to dossiers by texte_ref...');
@@ -6625,42 +6664,26 @@ export async function linkAmendementsToDossiersByTexteRef(): Promise<{ linked: n
     logger.warn({ corriges: Number(corriges) }, 'Amendements AN rattachés à un autre dossier que celui de leur texte : corrigés');
   }
 
-  const dossiers = await prisma.dossierLegislatif.findMany({
-    where: { uid: { not: { startsWith: 'DLR5L' } } },
-    select: { id: true, sourceData: true },
-  });
+  const senat = await rattacherAmendementsSenatAuDossierDuTexte();
 
-  let comblesAilleurs = 0;
-  for (const dossier of dossiers) {
-    const texteRefs = extractTexteRefsFromSourceData(dossier.sourceData);
-    if (texteRefs.length === 0) continue;
-
-    const result = await prisma.amendement.updateMany({
-      where: {
-        texteRef: { in: texteRefs },
-        chambre: { not: 'assemblee' },
-        dossierId: null,
-      },
-      data: { dossierId: dossier.id },
-    });
-    comblesAilleurs += result.count;
-  }
-
-  const linked = convergesAN + comblesAilleurs;
-  logger.info({ linked, corriges: Number(corriges) }, 'Amendements-dossiers texteRef linking completed');
-  return { linked, corriges: Number(corriges) };
+  const linked = convergesAN + senat.poses + senat.corriges + senat.retires;
+  const corrigesTotal = Number(corriges) + senat.corriges + senat.retires;
+  logger.info({ linked, corriges: corrigesTotal }, 'Amendements-dossiers texteRef linking completed');
+  return { linked, corriges: corrigesTotal };
 }
 
 /**
  * Propage dossier_id entre amendements sur le même texte_ref.
  * SAFETY: ne propage que si TOUS les amendements avec dossier_id sur ce texte_ref
- * sont unanimes (même dossier). Si conflit → skip.
+ * sont unanimes (même dossier). Si conflit → skip. Au Sénat, jamais sur un
+ * texte dont la source donne le dossier, ni vers un dossier d'une session
+ * postérieure au dépôt.
  */
 export async function propagateDossierIdBySiblingTexteRef(): Promise<{ linked: number }> {
   logger.info('Propagating dossier_id between sibling amendments on same texte_ref (safe mode)...');
 
   const linked = await prisma.$executeRaw`
-    WITH ${CTE_LEGISLATURES_DOSSIER}
+    WITH ${CTE_LEGISLATURES_DOSSIER}, ${CTE_DOSSIER_DU_TEXTE_SENAT}
     UPDATE amendements a
     SET dossier_id = sibling.dossier_id
     FROM (
@@ -6674,53 +6697,12 @@ export async function propagateDossierIdBySiblingTexteRef(): Promise<{ linked: n
     WHERE a.texte_ref = sibling.texte_ref
       AND a.dossier_id IS NULL
       AND ${DOSSIER_DE_MEME_LEGISLATURE}
+      AND (a.chambre <> 'senat' OR NOT ${texteSenatCouvert('a')})
+      AND ${dossierSenatPossiblePour('d', 'a')}
   `;
 
   logger.info({ linked }, 'Sibling texte_ref dossier propagation completed (safe mode)');
   return { linked };
-}
-
-/** Extrait récursivement tous les texteRefs du sourceData brut d'un dossier AN */
-function extractTexteRefsFromSourceData(sourceData: unknown): string[] {
-  if (!sourceData || typeof sourceData !== 'object') return [];
-  const refs: string[] = [];
-
-  function walk(node: unknown) {
-    if (Array.isArray(node)) { node.forEach(walk); return; }
-    if (!isRecord(node)) return;
-
-    const texteAssocie = node.texteAssocie;
-    if (texteAssocie) {
-      if (typeof texteAssocie === 'string') {
-        refs.push(texteAssocie);
-      } else if (Array.isArray(texteAssocie)) {
-        for (const t of texteAssocie) {
-          if (typeof t === 'string') refs.push(t);
-          else {
-            const ref = readString(t, 'refTexteAssocie');
-            if (ref) refs.push(ref);
-          }
-        }
-      } else {
-        const ref = readString(texteAssocie, 'refTexteAssocie');
-        if (ref) refs.push(ref);
-      }
-    }
-    if (typeof node.texteAdopte === 'string') {
-      refs.push(node.texteAdopte);
-    }
-
-    // Recurse into nested actes
-    const nested = isRecord(node.actesLegislatifs) ? node.actesLegislatifs.acteLegislatif : undefined;
-    if (nested) asArray(nested).forEach(walk);
-  }
-
-  const actes = isRecord(sourceData) && isRecord(sourceData.actesLegislatifs)
-    ? sourceData.actesLegislatifs.acteLegislatif
-    : undefined;
-  if (actes) asArray(actes).forEach(walk);
-
-  return [...new Set(refs)];
 }
 
 // =============================================================================
@@ -6968,8 +6950,12 @@ export async function linkScrutinsToAmendements(
     // Propagate dossier_id to Sénat amendments via texte_ref:
     // Many Sénat amendments lack dossier_id but share texte_ref with ones that have it.
     // Only propagate when one texte_ref maps to exactly one dossier (safety check).
+    // Jamais sur un texte dont AMELI donne le dossier (il le reçoit de la source,
+    // rattacherAmendementsSenatAuDossierDuTexte), ni vers un dossier d'une session
+    // postérieure au dépôt de l'amendement.
     if (!dryRun) {
       const propagated = await prisma.$executeRaw`
+        WITH ${CTE_DOSSIER_DU_TEXTE_SENAT}
         UPDATE amendements a
         SET dossier_id = sub.dossier_id
         FROM (
@@ -6979,9 +6965,12 @@ export async function linkScrutinsToAmendements(
             AND a2.dossier_id IS NOT NULL
             AND a2.texte_ref IS NOT NULL
         ) sub
+        JOIN dossiers_legislatifs d ON d.id = sub.dossier_id
         WHERE a.texte_ref = sub.texte_ref
           AND a.chambre = 'senat'
           AND a.dossier_id IS NULL
+          AND NOT ${texteSenatCouvert('a')}
+          AND ${dossierSenatPossiblePour('d', 'a')}
           AND NOT EXISTS (
             SELECT 1 FROM amendements a3
             WHERE a3.texte_ref = sub.texte_ref
@@ -7002,6 +6991,7 @@ export async function linkScrutinsToAmendements(
           SELECT
             s.id,
             s.dossier_id,
+            s.date::date as date_vote,
             m[1] as amendement_numero,
             (s.titre ILIKE '%rectifi%' OR s.titre ILIKE '%(rect.)%') as is_rectifie
           FROM scrutins s,
@@ -7022,6 +7012,8 @@ export async function linkScrutinsToAmendements(
             SPLIT_PART(a.numero, ' ', 1) = ss.amendement_numero
             AND a.chambre = 'senat'
             AND a.dossier_id = ss.dossier_id
+            -- Un amendement déposé après le vote est l'homonyme d'une autre lecture.
+            AND (a.date_depot IS NULL OR a.date_depot::date <= ss.date_vote)
           WHERE ss.amendement_numero IS NOT NULL
         )
         SELECT
@@ -7046,6 +7038,7 @@ export async function linkScrutinsToAmendements(
           SELECT
             s.id,
             s.dossier_id,
+            s.date::date as date_vote,
             m[1] as amendement_numero,
             (s.titre ILIKE '%rectifi%' OR s.titre ILIKE '%(rect.)%') as is_rectifie
           FROM scrutins s,
@@ -7067,6 +7060,8 @@ export async function linkScrutinsToAmendements(
               SPLIT_PART(a.numero, ' ', 1) = ss.amendement_numero
               AND a.chambre = 'senat'
               AND a.dossier_id = ss.dossier_id
+              -- Un amendement déposé après le vote est l'homonyme d'une autre lecture.
+              AND (a.date_depot IS NULL OR a.date_depot::date <= ss.date_vote)
             WHERE ss.amendement_numero IS NOT NULL
           ) ranked WHERE rn = 1
         )
@@ -7439,14 +7434,16 @@ export async function enrichScrutinsANAmendements(
  * Le lien a le format: /amendements/{session}/{texteNumero}/Amdt_{amendementNumero}.html
  * Exemple: /amendements/2025-2026/265/Amdt_72.html
  *
- * Comme on ne peut pas mapper directement le texteNumero visible (265) vers le texte_ref interne
- * (SENAT-TXT-106870), on utilise une combinaison de:
- * - Session extraite de l'URL (ex: 2025-2026 -> filtre par année)
- * - Numéro d'amendement
- * - Date du scrutin (pour matcher avec date_depot proche)
+ * La session de l'adresse est celle du DÉPÔT du texte, et elle fait partie de
+ * son identité : le n° 155 est le PLF 2014 en 2013-2014 et le PLF 2027 en
+ * 2026-2027. Le texte se retrouve donc par (session de dépôt, numéro) dans
+ * `textes_senat`, puis l'amendement par son numéro, déposé au plus tard le jour
+ * du vote (utils/amendement-scrutin-senat.ts). Jusqu'au 21/11/2026 la session
+ * était ignorée et l'amendement le plus récent de tous les textes n° 155
+ * l'emportait : 284 liens impossibles, et le PLF 2027 rangé sous « Budget 2014 ».
  */
 export async function enrichScrutinsSenatAmendements(
-  options: { limit?: number; dryRun?: boolean; concurrency?: number; reset?: boolean; texteMapping?: Map<number, { num: string; session: string }> } = {}
+  options: { limit?: number; dryRun?: boolean; concurrency?: number; reset?: boolean } = {}
 ): Promise<{ enriched: number; notFound: number; errors: number; resetCount?: number }> {
   const dryRun = options.dryRun ?? false;
   const concurrency = options.concurrency ?? 3;
@@ -7514,49 +7511,28 @@ export async function enrichScrutinsSenatAmendements(
     return { enriched: 0, notFound: 0, errors: 0 };
   }
 
+  // (session de dépôt, numéro) → textes AMELI. Plusieurs textes partagent une
+  // clé : les parties d'un PLF, ou un texte et sa rectification.
+  const textesParCle = new Map<string, string[]>();
+  for (const t of await prisma.texteSenat.findMany({ select: { texteRef: true, sessionDepot: true, numero: true } })) {
+    const cle = cleTexteSenat(t.sessionDepot, t.numero);
+    const liste = textesParCle.get(cle);
+    if (liste) liste.push(t.texteRef);
+    else textesParCle.set(cle, [t.texteRef]);
+  }
+  if (textesParCle.size === 0) {
+    // Sans les textes, on ne saurait pas de quel texte parle l'adresse : aucun
+    // lien plutôt qu'un lien deviné. La table se remplit avec les amendements
+    // (syncAmendementsSenatCsv) ou par `rattacher-amendements-senat`.
+    logger.warn('textes_senat est vide : scrutins Sénat non enrichis');
+    return { enriched: 0, notFound: scrutinsToEnrich.length, errors: 0, resetCount };
+  }
+
   let enriched = 0;
   let notFound = 0;
   let errors = 0;
 
   const axios = (await import('axios')).default;
-
-  // =========================================================================
-  // Build texteNumero externe → texte_ref interne mapping
-  // Reuse pre-built mapping if passed (from syncAmendementsSenatCsv), else download AMELI
-  // =========================================================================
-  const texteNumToInternalId = new Map<string, number[]>(); // "298" -> [106889, ...]
-
-  if (options.texteMapping && options.texteMapping.size > 0) {
-    // Reuse pre-built mapping — invert from texteId→{num,session} to num→texteId[]
-    for (const [texteId, { num }] of options.texteMapping) {
-      const existing = texteNumToInternalId.get(num) || [];
-      existing.push(texteId);
-      texteNumToInternalId.set(num, existing);
-    }
-    logger.info({ uniqueNums: texteNumToInternalId.size }, 'Texte number mapping reused from CSV sync (no AMELI re-download)');
-  } else {
-    logger.info('Downloading AMELI dump to build texte number mapping...');
-    try {
-      const { SenatAmendementsClient } = await import('../sources/senat/amendements-client.js');
-      const client = new SenatAmendementsClient();
-      const mapping = await client.getTexteMapping();
-      for (const [texteId, { num }] of mapping) {
-        const existing = texteNumToInternalId.get(num) || [];
-        existing.push(texteId);
-        texteNumToInternalId.set(num, existing);
-      }
-      logger.info({ uniqueNums: texteNumToInternalId.size }, 'Texte number mapping loaded from AMELI');
-    } catch (error) {
-      logger.warn({ error: errorMessage(error) }, 'Failed to load texte mapping - will fallback to dossier-based matching only');
-    }
-  }
-
-  // =========================================================================
-  // Regex pour extraire TOUS les liens vers amendements Sénat
-  // Format: href="https://www.senat.fr/amendements/{session}/{texteNumero}/Amdt_{numero}.html"
-  // =========================================================================
-  const amendementLinkRegex = /href="[^"]*\/amendements\/(\d{4}-\d{4})\/(\d+)\/Amdt_([A-Z0-9-]+)\.html"/gi;
-
   const enrichLimit = pLimit(concurrency);
 
   const results = await Promise.all(
@@ -7569,83 +7545,45 @@ export async function enrichScrutinsSenatAmendements(
             return { status: 'notFound' as const };
           }
 
-          // Fetch la page HTML
           const htmlResponse = await axios.get(url, {
             timeout: 10000,
             headers: { 'User-Agent': 'CLAIR-Bot/1.0 (https://github.com/clair)' },
           });
-
-          const html = htmlResponse.data as string;
-
-          // Extraire TOUS les liens vers amendements
-          const allMatches = [...html.matchAll(amendementLinkRegex)];
-          if (allMatches.length === 0) {
+          const liens = extraireLiensAmendementsSenat(htmlResponse.data as string);
+          if (liens.length === 0) {
             logger.debug({ scrutinNumero: scrutin.numero, url }, 'No amendment links found in HTML');
             return { status: 'notFound' as const };
           }
 
-          // Traiter TOUS les liens amendements trouvés (relation M:N)
+          // Tous les amendements cités (relation M:N : « amendements identiques »).
           const foundAmendementIds: string[] = [];
-
-          for (const match of allMatches) {
-            const [, , texteNumExterne, amendementNumeroRaw] = match;
-            if (!amendementNumeroRaw) continue;
-
-            const baseNumero = amendementNumeroRaw.replace(/\s*rect.*$/i, '').trim();
-
-            // Utiliser le mapping txt_ameli pour trouver le bon texte_ref
-            let targetTexteRefs: string[] = [];
-            if (texteNumExterne && texteNumToInternalId.has(texteNumExterne)) {
-              const internalIds = texteNumToInternalId.get(texteNumExterne) || [];
-              targetTexteRefs = internalIds.map(id => `SENAT-TXT-${id}`);
-            }
-
-            // Build where clause: require texteRef match OR dossier match
-            // NEVER fall back to date-based matching — better no link than a wrong link
-            const where: Prisma.AmendementWhereInput = {
-              chambre: 'senat' as const,
-              numero: baseNumero,
-            };
-
-            if (targetTexteRefs.length > 0) {
-              // Primary: match by texteRef from AMELI mapping
-              where.texteRef = { in: targetTexteRefs };
-              if (scrutin.dossierId) {
-                // Allow matching amendments with correct dossier OR NULL dossier
-                // (CSV-synced amendments may not have dossierId yet)
-                where.OR = [
-                  { dossierId: scrutin.dossierId },
-                  { dossierId: null },
-                ];
-              }
-            } else if (scrutin.dossierId) {
-              // No texteRef available but we have dossier — match within same dossier
-              where.dossierId = scrutin.dossierId;
-            } else {
-              // No texteRef AND no dossier — skip entirely to avoid false positives
-              logger.debug({
-                scrutinNumero: scrutin.numero,
-                amendementNumero: baseNumero,
-              }, 'Skipping: no texteRef and no dossierId — cannot safely match');
+          for (const lien of liens) {
+            const annee = anneeDeSessionSenat(lien.session);
+            const texteRefs = annee === null ? undefined : textesParCle.get(cleTexteSenat(annee, lien.texteNumero));
+            if (!texteRefs) {
+              logger.debug({ scrutinNumero: scrutin.numero, lien }, 'Texte de la page absent de textes_senat : pas de lien');
               continue;
             }
 
-            const candidates = await prisma.amendement.findMany({
-              where,
-              select: { id: true },
-              orderBy: { dateDepot: 'desc' },
-              take: 1,
-            });
+            const candidats = (await prisma.amendement.findMany({
+              where: {
+                chambre: 'senat',
+                texteRef: { in: texteRefs },
+                OR: [{ numero: lien.numero }, { numero: { startsWith: `${lien.numero} ` } }],
+              },
+              select: { id: true, numero: true, dateDepot: true, dossierId: true },
+            })).filter((a) => memeNumeroAmendement(a.numero, lien.numero));
 
-            if (candidates[0] && !foundAmendementIds.includes(candidates[0].id)) {
-              foundAmendementIds.push(candidates[0].id);
+            const choisi = choisirAmendementSenat(candidats, { date: scrutin.date, dossierId: scrutin.dossierId });
+            if (choisi && !foundAmendementIds.includes(choisi.id)) {
+              foundAmendementIds.push(choisi.id);
             }
           }
 
           if (foundAmendementIds.length === 0) {
             logger.debug({
               scrutinNumero: scrutin.numero,
-              matchCount: allMatches.length,
+              liens: liens.length,
               scrutinDate: scrutin.date.toISOString(),
             }, 'No matching amendments found');
             return { status: 'notFound' as const };
@@ -7670,7 +7608,17 @@ export async function enrichScrutinsSenatAmendements(
           return { status: 'enriched' as const };
 
         } catch (error) {
-          logger.warn({ scrutinNumero: scrutin.numero, error: errorMessage(error) }, 'Error enriching Sénat scrutin');
+          // Le message seul ne disait rien (« Error », scrutins 439 et 444 le
+          // 12/11/2026, pages servies normalement depuis) : code réseau et
+          // statut HTTP avec.
+          logger.warn({
+            scrutinNumero: scrutin.numero,
+            session: scrutin.session,
+            url: scrutin.sourceUrl,
+            error: errorMessage(error),
+            code: errorProp(error, 'code'),
+            status: httpStatus(error),
+          }, 'Error enriching Sénat scrutin');
           return { status: 'error' as const };
         }
       })
