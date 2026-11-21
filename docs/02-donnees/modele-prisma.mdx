@@ -96,7 +96,7 @@ Au Sénat, chaque colonne n'a qu'un écrivain (le CSV pour le libellé de l'alin
 
 ### 10. Interventions
 
-`interventions` contient les prises de parole en séance (`reunion_id` à `NULL`) et en commission (`reunion_id` renseigné). `parlementaire_id` est vide pour les orateurs non parlementaires (ministres…), dont le nom reste dans `orateur_nom`. `intervention_scrutin` relie une prise de parole au scrutin qu'elle précède, avec la méthode du rattachement dans `via` : `amendement` et `article` dans les deux chambres ; `ensemble` (explications de vote), `motion` et `finances` (fascicule budgétaire) au Sénat ; `fenetre` (ce qui a été dit entre deux votes) à l'Assemblée.
+`interventions` contient les prises de parole en séance (`reunion_id` à `NULL`) et en commission (`reunion_id` renseigné). `parlementaire_id` est vide pour les orateurs non parlementaires (ministres…), dont le nom reste dans `orateur_nom`, et pour un paragraphe dont l'identifiant d'acteur contredit le nom de l'orateur, quand ce dernier ne porte aucune fiche ailleurs dans la séance. `intervention_scrutin` relie une prise de parole au scrutin qu'elle précède, avec la méthode du rattachement dans `via` : `amendement` et `article` dans les deux chambres ; `ensemble` (explications de vote), `motion` et `finances` (fascicule budgétaire) au Sénat ; `fenetre` (ce qui a été dit entre deux votes) à l'Assemblée.
 
 ### 11. Sujets
 

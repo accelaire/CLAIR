@@ -16,6 +16,7 @@ import {
   LIENS_SENAT_APRES_LE_VOTE_SQL,
   LIENS_SENAT_HORS_DOSSIER_DU_TEXTE_SQL,
 } from '../utils/textes-senat-sql';
+import { pairesContredites, type PaireContredite } from '../workers/orateurs-an';
 
 // Les contrôles sont des requêtes texte : les fragments SQL partagés y entrent
 // tels quels (legislatures-dossier-sql.ts, sans import de Prisma).
@@ -133,6 +134,8 @@ export interface QualityReport {
   sujetLiens: SujetLiensReport;
   /** null si la vérification HTTP des photos n'a pas été demandée */
   photos: PhotosHttpReport | null;
+  /** Détail de l'invariant interventions_orateur_contredit */
+  orateursContredits: PaireContredite[];
   passed: boolean;
   invariantsPassed: boolean;
   thresholdsPassed: boolean;
@@ -1845,6 +1848,19 @@ export async function runDataQualityChecks(
     checkDeadLinks: opts.checkSujetLinksHttp ?? false,
   });
 
+  // Prises de parole AN sur une fiche que le nom de l'orateur contredit
+  // (identifiant d'acteur faux dans la source ; voir workers/orateurs-an.ts).
+  const orateursContredits = await pairesContredites(prisma);
+  const nContredites = orateursContredits.reduce((s, p) => s + p.interventions, 0);
+  results.push({
+    key: 'interventions_orateur_contredit',
+    label: "Interventions AN rattachées à une fiche que le nom de l'orateur contredit",
+    type: 'invariant',
+    expected: '= 0',
+    actual: nContredites,
+    passed: nContredites === 0,
+  });
+
   // Photos : invariant compté avec les autres (une image cassée est visible).
   const photos = opts.checkPhotosHttp ? await runPhotosHttpCheck(prisma) : null;
   if (photos) {
@@ -1868,6 +1884,7 @@ export async function runDataQualityChecks(
     multiAmendment,
     sujetLiens,
     photos,
+    orateursContredits,
     passed: results.every((r) => r.passed),
     invariantsPassed: invariantResults.every((r) => r.passed),
     thresholdsPassed: thresholdResults.every((r) => r.passed),
@@ -1983,6 +2000,17 @@ export function printReport(report: QualityReport): void {
     }
     if (ph.mortes.length > 20) console.log(`       ... et ${ph.mortes.length - 20} autres`);
     console.log();
+  }
+
+  // Orateurs : détail de l'invariant interventions_orateur_contredit
+  if (report.orateursContredits.length > 0) {
+    console.log("--- Interventions AN sur une fiche que le nom de l'orateur contredit ---\n");
+    for (const p of report.orateursContredits.slice(0, 20)) {
+      const orateur = `${p.orateurPrenom ?? ''} ${p.orateurNom ?? ''}`.trim();
+      console.log(`       \x1b[31m✗\x1b[0m ${p.interventions} · ${orateur} → ${p.fichePrenom} ${p.ficheNom} (${p.concordance})`);
+    }
+    if (report.orateursContredits.length > 20) console.log(`       ... et ${report.orateursContredits.length - 20} autres`);
+    console.log("       Correction : corriger-orateurs-an\n");
   }
 
   // Summary

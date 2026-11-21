@@ -58,6 +58,7 @@ import { backfillMandatsParlementaires } from './workers/backfill-mandats.js';
 import { backfillNatureVote } from './workers/backfill-nature-vote.js';
 import { syncSenateursHistoriques } from './workers/senat-histo.js';
 import { completerPhotosSenateurs, type ResultatPhotosSenat } from './workers/photos-senat.js';
+import { corrigerOrateursAN } from './workers/orateurs-an.js';
 import { syncSenatFonctions } from './workers/senat-fonctions.js';
 import { syncBilanGouvernement } from './workers/bilan-gouvernement.js';
 import { syncGouvernements } from './workers/gouvernements.js';
@@ -899,6 +900,52 @@ program
       afficherPhotosSenat(await completerPhotosSenateurs(prisma));
     } catch (error) {
       logger.error({ error: errorMessage(error) }, 'sync-photos-senat failed');
+      code = 1;
+    } finally {
+      await prisma.$disconnect();
+    }
+    process.exit(code);
+  });
+
+// =============================================================================
+// COMMANDE: corriger-orateurs-an
+// =============================================================================
+program
+  .command('corriger-orateurs-an')
+  .description("Rend à leur orateur, ou détache de toute fiche, les prises de parole de l'Assemblée dont l'identifiant d'acteur contredit le nom de l'orateur")
+  .option('--dry-run', 'Lister sans rien écrire')
+  .option('--sauvegarde <fichier>', 'Écrire avant la correction le CSV des interventions, de leur fiche et de la fiche rendue')
+  .option('--reprendre <fichier>', "Sauvegarde d'une passe précédente : ses interventions encore sans fiche cherchent aussi leur orateur")
+  .action(async (options) => {
+    const { PrismaClient } = await import('@prisma/client');
+    const { readFileSync } = await import('node:fs');
+    const prisma = new PrismaClient();
+    let code = 0;
+    try {
+      // Première colonne de la sauvegarde : l'id de l'intervention.
+      const reprendre: string[] = options.reprendre
+        ? readFileSync(options.reprendre, 'utf8')
+            .split('\n')
+            .slice(1)
+            .map((l: string) => l.split(',')[0]!.replace(/"/g, '').trim())
+            .filter((id: string) => id.length > 0)
+        : [];
+      const r = await corrigerOrateursAN(prisma, { dryRun: !!options.dryRun, sauvegarde: options.sauvegarde, reprendre });
+      const rendues = r.interventions.filter((x) => x.nouvelleFiche !== null).length;
+      console.log(
+        `\n${options.dryRun ? 'Essai à blanc' : 'Correction'} : ${r.interventions.length} interventions (${rendues} rendues à leur orateur, ${r.interventions.length - rendues} détachées), ${r.paires.length} couples contredits, ${r.fiches.length} fiches touchées`,
+      );
+      if (reprendre.length > 0) console.log(`Reprises depuis la sauvegarde : ${reprendre.length} ids lus`);
+      for (const p of r.paires) {
+        console.log(
+          `  ${String(p.interventions).padStart(4)}  ${`${p.orateurPrenom ?? ''} ${p.orateurNom ?? ''}`.trim()} → ${p.fichePrenom} ${p.ficheNom}  (${p.concordance})`,
+        );
+      }
+      if (!options.dryRun && r.interventions.length > 0) {
+        console.log('\nÀ faire : calculate-stats --include-frozen (fiches des législatures figées), puis purger le cache des fiches.');
+      }
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'corriger-orateurs-an failed');
       code = 1;
     } finally {
       await prisma.$disconnect();
@@ -1776,6 +1823,7 @@ program
       console.log(`Comptes rendus provisoires : ${result.provisoires}`);
       console.log(`Interventions écrites : ${result.interventions}`);
       console.log(`Orateurs non résolus  : ${result.sansParlementaire}`);
+      console.log(`Fiches écartées (nom de l'orateur contraire) : ${result.fichesEcartees}`);
       // Les liens vers les scrutins des séances écrites se réalignent ici :
       // la relecture ne les efface plus pour que le batch les repose.
       if (result.seancesEcrites.length > 0) {
