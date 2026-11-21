@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { avecRenvois, renvoisDuDispositif, urlLegifrance } from './renvois-legi';
+import { avecRenvois, renvoisDuTexte, urlLegifrance } from './renvois-legi';
 
 const DISPOSITIF = 'L’article L. 242‑1 du code de la sécurité sociale est ainsi modifié :';
 const DEPOT = new Date('2024-10-13T00:00:00.000Z');
@@ -48,11 +48,11 @@ describe('urlLegifrance', () => {
   });
 });
 
-describe('renvoisDuDispositif', () => {
+describe('renvoisDuTexte', () => {
   it('sert les renvois avec leur adresse, dans l’ordre du texte', () => {
     const texte = { debut: 30, fin: 50, type: 'texte', cid: 'LEGITEXT000006073189', nature: 'CODE' };
     const article = { ...ARTICLE_CSS, fin: 18 };
-    const renvois = renvoisDuDispositif(DISPOSITIF, DEPOT, [texte, article]);
+    const renvois = renvoisDuTexte(DISPOSITIF, DEPOT, [texte, article]);
     expect(renvois).toEqual([
       {
         debut: 0, fin: 18, type: 'article', article: 'LEGIARTI000051218352', texte: 'LEGITEXT000006073189',
@@ -66,16 +66,16 @@ describe('renvoisDuDispositif', () => {
   });
 
   it('écarte un renvoi qui dépasse le dispositif (texte raccourci depuis le calcul)', () => {
-    expect(renvoisDuDispositif(DISPOSITIF, DEPOT, [{ ...ARTICLE_CSS, fin: DISPOSITIF.length + 1 }])).toEqual([]);
-    expect(renvoisDuDispositif(DISPOSITIF, DEPOT, [{ ...ARTICLE_CSS, fin: DISPOSITIF.length }])).toHaveLength(1);
+    expect(renvoisDuTexte(DISPOSITIF, DEPOT, [{ ...ARTICLE_CSS, fin: DISPOSITIF.length + 1 }])).toEqual([]);
+    expect(renvoisDuTexte(DISPOSITIF, DEPOT, [{ ...ARTICLE_CSS, fin: DISPOSITIF.length }])).toHaveLength(1);
   });
 
   it('dispositif effacé depuis le calcul : aucun renvoi', () => {
-    expect(renvoisDuDispositif(null, DEPOT, [ARTICLE_CSS])).toEqual([]);
+    expect(renvoisDuTexte(null, DEPOT, [ARTICLE_CSS])).toEqual([]);
   });
 
   it('écarte les chevauchements, les positions vides et les lignes mal formées', () => {
-    const renvois = renvoisDuDispositif(DISPOSITIF, DEPOT, [
+    const renvois = renvoisDuTexte(DISPOSITIF, DEPOT, [
       ARTICLE_CSS,
       { ...ARTICLE_CSS, debut: 10, fin: 20 },
       { ...ARTICLE_CSS, debut: 55, fin: 55 },
@@ -87,8 +87,8 @@ describe('renvoisDuDispositif', () => {
   });
 
   it('JSON inattendu : aucun renvoi', () => {
-    expect(renvoisDuDispositif(DISPOSITIF, DEPOT, { renvois: [] })).toEqual([]);
-    expect(renvoisDuDispositif(DISPOSITIF, DEPOT, undefined)).toEqual([]);
+    expect(renvoisDuTexte(DISPOSITIF, DEPOT, { renvois: [] })).toEqual([]);
+    expect(renvoisDuTexte(DISPOSITIF, DEPOT, undefined)).toEqual([]);
   });
 });
 
@@ -96,11 +96,16 @@ describe('avecRenvois', () => {
   const modifie = new Date('2026-11-11T04:20:00Z');
   const calcule = new Date('2026-11-11T05:10:00Z');
 
+  const EXPOSE = 'Cet amendement précise l’article 40 de la Constitution.';
+  const ARTICLE_40 = {
+    debut: EXPOSE.indexOf('article 40'), fin: EXPOSE.indexOf('.', EXPOSE.indexOf('Constitution')), type: 'article',
+    article: 'LEGIARTI000006527516', cid: 'JORFTEXT000000571356', nature: 'CONSTITUTION',
+  };
+  const lu = (renvoisLegi: { renvois: unknown; renvoisExpose: unknown; calculeLe: Date } | null, updatedAt = modifie) =>
+    avecRenvois({ id: 'a', dispositif: DISPOSITIF, exposeSommaire: EXPOSE, dateDepot: DEPOT, updatedAt, renvoisLegi });
+
   it('remplace la relation par les renvois servis, sans la date de modification', () => {
-    const a = avecRenvois({
-      id: 'a', dispositif: DISPOSITIF, dateDepot: DEPOT, updatedAt: modifie,
-      renvoisLegi: { renvois: [ARTICLE_CSS], calculeLe: calcule },
-    });
+    const a = lu({ renvois: [ARTICLE_CSS], renvoisExpose: [ARTICLE_40], calculeLe: calcule });
     expect(a).not.toHaveProperty('renvoisLegi');
     expect(a).not.toHaveProperty('updatedAt');
     expect(a.dateDepot).toBe(DEPOT);
@@ -108,16 +113,33 @@ describe('avecRenvois', () => {
     expect(a.renvois[0]!.url).toMatch(/\/2024-10-13$/);
   });
 
-  it('calcul antérieur à la dernière modification de l’amendement : rien n’est servi', () => {
-    const a = avecRenvois({
-      id: 'a', dispositif: DISPOSITIF, dateDepot: DEPOT, updatedAt: calcule,
-      renvoisLegi: { renvois: [ARTICLE_CSS], calculeLe: modifie },
-    });
-    expect(a.renvois).toEqual([]);
+  it('renvois de l’exposé, en positions dans l’exposé', () => {
+    const a = lu({ renvois: [], renvoisExpose: [ARTICLE_40], calculeLe: calcule });
+    expect(a.renvoisExpose).toHaveLength(1);
+    const r = a.renvoisExpose[0]!;
+    expect(EXPOSE.slice(r.debut, r.fin)).toBe('article 40 de la Constitution');
+    expect(r.url).toBe('https://www.legifrance.gouv.fr/loda/article_lc/LEGIARTI000006527516/2024-10-13');
   });
 
-  it('amendement jamais calculé : tableau vide', () => {
-    expect(avecRenvois({ id: 'a', dispositif: DISPOSITIF, dateDepot: DEPOT, updatedAt: modifie, renvoisLegi: null }).renvois)
-      .toEqual([]);
+  it('les positions de l’un ne valent pas pour l’autre : hors du texte, rien n’est servi', () => {
+    // Un renvoi du dispositif (50 caractères) tombe hors d'un exposé plus court.
+    const court = avecRenvois({
+      id: 'a', dispositif: DISPOSITIF, exposeSommaire: 'Exposé.', dateDepot: DEPOT, updatedAt: modifie,
+      renvoisLegi: { renvois: [ARTICLE_CSS], renvoisExpose: [ARTICLE_CSS], calculeLe: calcule },
+    });
+    expect(court.renvois).toHaveLength(1);
+    expect(court.renvoisExpose).toEqual([]);
+  });
+
+  it('calcul antérieur à la dernière modification de l’amendement : rien n’est servi', () => {
+    const a = lu({ renvois: [ARTICLE_CSS], renvoisExpose: [ARTICLE_40], calculeLe: modifie }, calcule);
+    expect(a.renvois).toEqual([]);
+    expect(a.renvoisExpose).toEqual([]);
+  });
+
+  it('amendement jamais calculé : tableaux vides', () => {
+    const a = lu(null);
+    expect(a.renvois).toEqual([]);
+    expect(a.renvoisExpose).toEqual([]);
   });
 });

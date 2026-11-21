@@ -6,4 +6,5 @@
  * Module à part, sans Prisma : `checks/data-quality.ts` la lit, et charger le
  * worker instancierait un client Prisma, qui lit `.env` au passage.
  */
-export const VERSION_DETECTION = 1;
+export const VERSION_DETECTION = 2;
+// 2 (11/2026) : l'exposé sommaire est lu aussi (`renvois_expose`).

@@ -1822,6 +1822,8 @@ model AmendementRenvois {
   /// Tableau de { debut, fin, type: "article" | "texte", article?, cid, nature },
   /// positions dans `amendements.dispositif` (unités UTF-16), sans chevauchement
   renvois      Json
+  /// Même forme, positions dans `amendements.expose_sommaire` (vide avant la version 2)
+  renvoisExpose Json      @default("[]") @map("renvois_expose")
   /// Version de la détection qui a produit la ligne
   version      Int
   /// Dernier calcul, même sans changement du résultat

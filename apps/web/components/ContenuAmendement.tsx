@@ -1,11 +1,13 @@
 import { TexteAmendement } from '@/components/TexteAmendement';
-import { nettoyerTexteAmendement, type RenvoiDispositif } from '@/lib/texte-amendement';
+import { nettoyerTexteAmendement, type RenvoiDroit } from '@/lib/texte-amendement';
 
 interface ContenuAmendementProps {
   dispositif?: string | null;
   /** Liens Légifrance du dispositif. */
-  renvois?: RenvoiDispositif[];
+  renvois?: RenvoiDroit[];
   exposeSommaire?: string | null;
+  /** Liens Légifrance de l'exposé sommaire. */
+  renvoisExpose?: RenvoiDroit[];
   /** Chaque texte coupé à trois lignes (carte repliée). */
   replie?: boolean;
 }
@@ -19,7 +21,7 @@ interface ContenuAmendementProps {
  * Présenter l'exposé seul, sans intitulé, le faisait passer pour l'amendement
  * lui-même, voire pour un résumé neutre.
  */
-export function ContenuAmendement({ dispositif, renvois, exposeSommaire, replie }: ContenuAmendementProps) {
+export function ContenuAmendement({ dispositif, renvois, exposeSommaire, renvoisExpose, replie }: ContenuAmendementProps) {
   const expose = exposeSommaire ? nettoyerTexteAmendement(exposeSommaire).trim() : '';
   const coupe = replie ? 'line-clamp-3' : '';
 
@@ -53,6 +55,7 @@ export function ContenuAmendement({ dispositif, renvois, exposeSommaire, replie 
           </h4>
           <TexteAmendement
             texte={exposeSommaire}
+            renvois={renvoisExpose}
             compact={replie}
             className={`text-sm leading-relaxed text-muted-foreground ${coupe}`}
           />

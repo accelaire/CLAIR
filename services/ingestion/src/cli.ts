@@ -2097,23 +2097,29 @@ program
 program
   .command('sync-renvois-legi')
   .description(
-    "Repérer dans le dispositif des amendements les textes et articles de loi cités, rattachés à l'index LEGI. " +
-      'Ne traite que les amendements nouveaux, modifiés ou récents, sauf --tout',
+    "Repérer dans le dispositif et l'exposé des amendements les textes et articles de loi cités, rattachés à " +
+      "l'index LEGI. Traite les amendements nouveaux, modifiés ou récents, puis --rattrapage amendements " +
+      "calculés par une version antérieure de la détection, sauf --tout",
   )
   .option('--limite <n>', "Nombre maximum d'amendements traités", (v: string) => parseInt(v, 10))
   .option('--tout', 'Tout recalculer, même ce qui est à jour')
+  .option(
+    '--rattrapage <n>',
+    "Amendements d'une version antérieure de la détection repris en fin de passage (60 000 par défaut, 0 pour aucun)",
+    (v: string) => parseInt(v, 10),
+  )
   .option('--uid <uid>', 'Ne traiter que cet amendement')
   .option('--dry-run', 'Calculer sans rien écrire')
-  .action(async (options: { limite?: number; tout?: boolean; uid?: string; dryRun?: boolean }) => {
+  .action(async (options: { limite?: number; tout?: boolean; rattrapage?: number; uid?: string; dryRun?: boolean }) => {
     try {
       const { synchroniserRenvoisLegi } = await import('./workers/renvois-legi.js');
       const r = await synchroniserRenvoisLegi(options);
       console.log(`\nAmendements traités   : ${r.amendements}${options.dryRun ? ' (dry-run, rien écrit)' : ''}`);
-      console.log(`  avec au moins 1 lien : ${r.avecRenvoi}`);
+      console.log(`  dont rattrapés       : ${r.rattrapes}`);
       console.log(`  lus avec leur article: ${r.avecContexte}`);
       console.log(`  illisibles           : ${r.erreurs}`);
-      console.log(`Liens vers un article : ${r.renvois.article}`);
-      console.log(`Liens vers un texte   : ${r.renvois.texte}`);
+      console.log(`Dispositif : ${r.avecRenvoi} amendements liés, ${r.renvois.article} liens vers un article, ${r.renvois.texte} vers un texte`);
+      console.log(`Exposé     : ${r.expose.avecRenvoi} amendements liés, ${r.expose.renvois.article} liens vers un article, ${r.expose.renvois.texte} vers un texte`);
       console.log(`Titres LEGI écartés   : ${r.titresEcartes}`);
       console.log(`Lignes effacées (amendement sans dispositif) : ${r.effaces}`);
       process.exit(0);

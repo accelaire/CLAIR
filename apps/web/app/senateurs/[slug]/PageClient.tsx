@@ -56,7 +56,7 @@ import {
   type ParcoursFiche,
 } from '@/components/parlementaire/filtre-chambre';
 import { SiegeRenouvelableCallout } from '@/components/SiegeRenouvelableCallout';
-import type { RenvoiDispositif } from '@/lib/texte-amendement';
+import type { RenvoiDroit } from '@/lib/texte-amendement';
 import { ExpandableAmendementCard } from '@/components/ExpandableAmendementCard';
 
 export interface SenateurDetail {
@@ -170,7 +170,9 @@ interface AmendementItem extends MetadonneesAmendement {
   articleVise: string | null;
   dispositif: string | null;
   /** Liens Légifrance du dispositif. */
-  renvois?: RenvoiDispositif[];
+  renvois?: RenvoiDroit[];
+  /** Liens Légifrance de l'exposé sommaire. */
+  renvoisExpose?: RenvoiDroit[];
   exposeSommaire: string | null;
   auteurLibelle: string | null;
   sort: string | null;

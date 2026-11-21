@@ -4495,9 +4495,10 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       results.results['dila:legi'] = { created: 0, updated: 0, failed: true, error: errorMessage(error) };
     }
 
-    // Renvois au droit en vigueur dans le dispositif des amendements : les
-    // amendements nouveaux, modifiés ou déposés depuis moins de 45 jours (la
-    // DILA consolide une loi nouvelle avec retard). Après les amendements, les
+    // Renvois au droit en vigueur dans le dispositif et l'exposé des
+    // amendements : les amendements nouveaux, modifiés ou déposés depuis moins
+    // de 45 jours (la DILA consolide une loi nouvelle avec retard), puis 60 000
+    // au plus d'une version antérieure de la détection. Après les amendements, les
     // articles des textes (le contexte du dispositif) et l'index LEGI. Les
     // titres de l'index restent en mémoire jusqu'à la fin du batch (0,9 Go
     // pour le processus seul, mesuré sur 3 000 amendements).

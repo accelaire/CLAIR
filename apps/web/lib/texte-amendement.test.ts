@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { nettoyerTexteAmendement, segmenterTexteAmendement, type RenvoiDispositif } from './texte-amendement';
+import { nettoyerTexteAmendement, segmenterTexteAmendement, type RenvoiDroit } from './texte-amendement';
 
-const renvoi = (debut: number, fin: number): RenvoiDispositif => ({
+const renvoi = (debut: number, fin: number): RenvoiDroit => ({
   debut, fin, type: 'article', article: 'LEGIARTI000051218352', texte: 'LEGITEXT000006073189', nature: 'CODE',
   url: 'https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000051218352',
 });

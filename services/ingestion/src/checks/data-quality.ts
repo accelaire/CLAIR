@@ -1427,7 +1427,8 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     max: 0,
     // Le batch de nuit calcule les amendements nouveaux ou modifiés. Il en
     // reste : l'étape échoue, ou VERSION_DETECTION a augmenté sans que le
-    // recalcul complet ait été lancé (`sync-renvois-legi`).
+    // recalcul complet ait été lancé (`sync-renvois-legi --tout`). Sans lui,
+    // chaque nuit en reprend 60 000 (RATTRAPAGE_PAR_PASSAGE).
     query: `SELECT COUNT(*)::int AS value FROM amendements a
             LEFT JOIN amendements_renvois r ON r.amendement_id = a.id
             WHERE a.dispositif IS NOT NULL AND a.date_depot IS NOT NULL
