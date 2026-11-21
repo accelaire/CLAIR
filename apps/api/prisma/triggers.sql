@@ -211,6 +211,9 @@ CREATE OR REPLACE TRIGGER legi_articles_updated_at BEFORE INSERT OR UPDATE ON le
 -- par une version plus récente de la détection, n'est pas un changement.
 CREATE OR REPLACE TRIGGER amendements_renvois_updated_at BEFORE INSERT OR UPDATE ON amendements_renvois
   FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at('version', 'calcule_le');
+-- Textes du Sénat décrits par AMELI (rattachement des amendements à leur dossier).
+CREATE OR REPLACE TRIGGER textes_senat_updated_at BEFORE INSERT OR UPDATE ON textes_senat
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
 
 -- Scrutins, votes, débats, amendements. `source_hash` est l'empreinte de ce
 -- que l'ingestion a écrit, pas une donnée de la source.
