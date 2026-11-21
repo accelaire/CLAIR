@@ -37,6 +37,9 @@ const db = (): PrismaClient => (client ??= new PrismaClient());
  */
 const TEXTES_SENAT_MINIMUM = 5000;
 
+/** Amendements réécrits par instruction (rattacherAmendementsSenatAuDossierDuTexte). */
+const TAILLE_LOT_RATTACHEMENT = 1000;
+
 interface LigneTexteSenat {
   texteRef: string;
   sessionDepot: number;
@@ -112,33 +115,35 @@ export interface RattachementSenat {
 export async function rattacherAmendementsSenatAuDossierDuTexte(
   options: { dryRun?: boolean } = {},
 ): Promise<RattachementSenat> {
-  const [compte] = await db().$queryRaw<[{ poses: bigint; corriges: bigint; retires: bigint }]>`
+  const ecarts = await db().$queryRaw<Array<{ id: string; actuel: string | null; voulu: string | null }>>`
     WITH ${CTE_DOSSIER_DU_TEXTE_SENAT}
-    SELECT
-      count(*) FILTER (WHERE a.dossier_id IS NULL AND x.dossier_id IS NOT NULL) AS poses,
-      count(*) FILTER (WHERE a.dossier_id IS NOT NULL AND x.dossier_id IS NOT NULL) AS corriges,
-      count(*) FILTER (WHERE a.dossier_id IS NOT NULL AND x.dossier_id IS NULL) AS retires
+    SELECT a.id, a.dossier_id AS actuel, x.dossier_id AS voulu
     FROM amendements a
     JOIN dossier_du_texte_senat x ON x.texte_ref = a.texte_ref
     WHERE a.chambre = 'senat'
       AND a.dossier_id IS DISTINCT FROM x.dossier_id
+    ORDER BY a.id
   `;
   const resultat: RattachementSenat = {
-    poses: Number(compte.poses),
-    corriges: Number(compte.corriges),
-    retires: Number(compte.retires),
+    poses: ecarts.filter((e) => e.actuel === null).length,
+    corriges: ecarts.filter((e) => e.actuel !== null && e.voulu !== null).length,
+    retires: ecarts.filter((e) => e.actuel !== null && e.voulu === null).length,
   };
 
-  if (!options.dryRun && resultat.poses + resultat.corriges + resultat.retires > 0) {
-    await db().$executeRaw`
-      WITH ${CTE_DOSSIER_DU_TEXTE_SENAT}
-      UPDATE amendements a
-      SET dossier_id = x.dossier_id
-      FROM dossier_du_texte_senat x
-      WHERE x.texte_ref = a.texte_ref
-        AND a.chambre = 'senat'
-        AND a.dossier_id IS DISTINCT FROM x.dossier_id
-    `;
+  // PAR LOTS. Le premier passage en production réécrivait 55 860 lignes en une
+  // instruction : chacune passe par le trigger d'horodatage, qui compare la
+  // ligne entière (dispositif et objet compris). Annulée au bout de 14 minutes
+  // le 21/11/2026, sans rien écrire. Des lots courts avancent et se reprennent.
+  if (!options.dryRun) {
+    for (const lot of tranches(ecarts, TAILLE_LOT_RATTACHEMENT)) {
+      await db().$executeRaw`
+        UPDATE amendements a
+        SET dossier_id = v.voulu
+        FROM unnest(${lot.map((e) => e.id)}::text[], ${lot.map((e) => e.voulu)}::text[]) AS v(id, voulu)
+        WHERE a.id = v.id
+          AND a.dossier_id IS DISTINCT FROM v.voulu
+      `;
+    }
   }
 
   if (resultat.corriges + resultat.retires > 0) {
