@@ -28,6 +28,8 @@ interface Stats {
   actionsLobby: number;
   interventions: number;
   amendements: number;
+  /** Absent d'un cache rempli avant les pétitions. */
+  petitions?: number;
 }
 
 interface TrendingDossier {
@@ -112,6 +114,7 @@ const statItems = [
   { key: 'senateurs', label: 'Sénateurs', href: '/senateurs', totalKey: 'senateursTotal' },
   { key: 'scrutins', label: 'Scrutins', href: '/scrutins' },
   { key: 'dossiers', label: 'Dossiers', href: '/dossiers' },
+  { key: 'petitions', label: 'Pétitions', href: '/petitions' },
   { key: 'interventions', label: 'Interventions', href: '/deputes' },
   { key: 'amendements', label: 'Amendements', href: '/scrutins' },
   { key: 'lobbyistes', label: 'Lobbyistes', href: '/lobbying' },
@@ -531,6 +534,7 @@ export default function HomePage() {
   const actionsCount = useCountUp(stats?.actionsLobby);
   const interventionsCount = useCountUp(stats?.interventions);
   const amendementsCount = useCountUp(stats?.amendements);
+  const petitionsCount = useCountUp(stats?.petitions);
 
   const formatStat = (n: number) => {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace('.', ',')}M`;
@@ -550,6 +554,7 @@ export default function HomePage() {
     dossiers: dossiersCount,
     interventions: interventionsCount,
     amendements: amendementsCount,
+    petitions: petitionsCount,
     lobbyistes: lobbyistesCount,
     actionsLobby: actionsCount,
   };

@@ -192,6 +192,26 @@ export default function MentionsLegalesPage() {
                   </a>{' '}
                   (Licence Ouverte / Open Licence)
                 </li>
+                <li>
+                  <a
+                    href="https://www.data.gouv.fr/datasets/petitions-de-lassemblee-nationale"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    data.gouv.fr : Pétitions de l&apos;Assemblée nationale
+                  </a>{' '}
+                  et{' '}
+                  <a
+                    href="https://www.data.gouv.fr/datasets/petitions-du-senat"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    Pétitions du Sénat
+                  </a>{' '}
+                  (Licence Ouverte / Open Licence), relevées sur les plateformes officielles des deux chambres
+                </li>
               </ul>
               <p>
                 Conformément à la Licence Ouverte 2.0, la réutilisation de ces données

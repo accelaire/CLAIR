@@ -37,6 +37,7 @@ const navigation: NavItem[] = [
       { name: 'Sujets', href: '/sujets' },
       { name: 'Dossiers législatifs', href: '/dossiers' },
       { name: 'Scrutins', href: '/scrutins' },
+      { name: 'Pétitions', href: '/petitions' },
       { name: 'Agenda', href: '/agenda' },
     ],
   },

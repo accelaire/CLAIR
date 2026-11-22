@@ -8,7 +8,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import type { LucideIcon } from 'lucide-react';
 import {
   Search, Users, Vote, Building2, FileText, Loader2, X,
-  Landmark, BookOpen, Tag, ChevronRight, Flag, Star,
+  Landmark, BookOpen, Tag, ChevronRight, Flag, Star, PenLine,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { scrutinHref } from '@/lib/scrutin-url';
@@ -17,6 +17,7 @@ import { useDebouncedCallback } from 'use-debounce';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { legislatureLabel, mandatureLabel } from '@/lib/periodes';
 import { creditPhoto, libellePoste, moisAnnee, photoDe, type PersonneGouvernement, type PhotoCommons } from '@/lib/gouvernements';
+import { COULEUR_ETAPE, LIBELLE_CHAMBRE, cheminPetition, dateLongue, libelleEtape, signaturesEnClair, type ChambrePetition, type TypeEtapePetition } from '@/lib/petitions';
 
 // La recherche présente des personnes, pas des tables : un parlementaire et
 // le membre du Gouvernement qu'il a été font un seul résultat, anciens compris
@@ -134,9 +135,21 @@ interface Dossier {
   loiNumero: string | null;
 }
 
-type Resultat = Personne | Gouvernement | Groupe | Commission | Scrutin | Sujet | Lobbyiste | Dossier;
+interface Petition {
+  _type: 'petition';
+  id: string;
+  chambre: ChambrePetition;
+  numero: number;
+  titre: string;
+  signatures: number | null;
+  collecte: 'ouverte' | 'close';
+  etape: TypeEtapePetition | null;
+  etapeDate: string | null;
+}
 
-const CATEGORIES = ['personnes', 'gouvernements', 'groupes', 'commissions', 'scrutins', 'sujets', 'lobbyistes', 'dossiers'] as const;
+type Resultat = Personne | Gouvernement | Groupe | Commission | Scrutin | Sujet | Lobbyiste | Dossier | Petition;
+
+const CATEGORIES = ['personnes', 'gouvernements', 'groupes', 'commissions', 'scrutins', 'sujets', 'lobbyistes', 'dossiers', 'petitions'] as const;
 type Categorie = (typeof CATEGORIES)[number];
 type Filtre = 'all' | Categorie;
 
@@ -169,6 +182,7 @@ const LIBELLES: Record<Categorie, { pluriel: string; icone: LucideIcon; teinte: 
   sujets:        { pluriel: 'Sujets',        icone: Tag,       teinte: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' },
   lobbyistes:    { pluriel: 'Lobbyistes',    icone: Building2, teinte: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
   dossiers:      { pluriel: 'Dossiers',      icone: FileText,  teinte: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+  petitions:     { pluriel: 'Pétitions',     icone: PenLine,   teinte: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
 };
 
 const CATEGORIE_DU_TYPE: Record<Resultat['_type'], Categorie> = {
@@ -180,6 +194,7 @@ const CATEGORIE_DU_TYPE: Record<Resultat['_type'], Categorie> = {
   sujet: 'sujets',
   lobbyiste: 'lobbyistes',
   dossier: 'dossiers',
+  petition: 'petitions',
 };
 
 const ROLES: { valeur: RolePersonne | null; libelle: string }[] = [
@@ -377,6 +392,19 @@ function carteDe(r: Resultat): Carte {
         teinte,
       };
     }
+    case 'petition':
+      return {
+        href: cheminPetition(r),
+        titre: r.titre,
+        titreLong: true,
+        badges: r.etape
+          ? [{ texte: `${libelleEtape(r.etape, r.etapeDate)}${r.etapeDate ? ` · ${dateLongue(r.etapeDate)}` : ''}`, classe: COULEUR_ETAPE[r.etape] }]
+          : [],
+        contexte: `${signaturesEnClair(r.signatures)} · ${r.collecte === 'ouverte' ? 'signatures ouvertes' : 'collecte close'}`,
+        detail: `Pétition n° ${r.numero} · ${LIBELLE_CHAMBRE[r.chambre]}`,
+        icone,
+        teinte,
+      };
   }
 }
 
@@ -385,7 +413,9 @@ const cleDe = (r: Resultat): string =>
     ? `${r._type}-${r.slug}`
     : r._type === 'dossier'
       ? `dossier-${r.uid}`
-      : `${r._type}-${r.id}`;
+      : r._type === 'petition'
+        ? `petition-${r.chambre}-${r.numero}`
+        : `${r._type}-${r.id}`;
 
 function CarteResultat({ resultat, enAvant = false }: { resultat: Resultat; enAvant?: boolean }) {
   const c = carteDe(resultat);
@@ -548,7 +578,7 @@ export default function RecherchePage() {
         <h1 className="text-3xl font-bold">Recherche</h1>
         <p className="mt-2 text-muted-foreground">
           Trouvez des parlementaires et des membres du Gouvernement, d’hier et d’aujourd’hui, des gouvernements, groupes,
-          commissions, scrutins, sujets, lobbyistes et dossiers
+          commissions, scrutins, sujets, lobbyistes, dossiers et pétitions
         </p>
       </div>
 
