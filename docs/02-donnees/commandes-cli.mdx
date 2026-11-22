@@ -274,6 +274,7 @@ Détail des contrôles : [Qualité des données](/donnees/qualite-des-donnees).
 | `lier-identifiant <slug> <chambre> <id>` | Range sur la fiche l'identifiant de l'autre chambre d'un élu passé de l'une à l'autre (`--appliquer`) |
 | `relink-voterefs` | Rattache chaque scrutin AN au dossier qui le référence (`voteRefs` de la source), en corrigeant les liens contraires |
 | `rattacher-amendements-senat` | Rattache les amendements du Sénat au dossier de leur texte (AMELI, table `textes_senat`), efface les liens scrutin → amendement impossibles (déposé après le vote, autre dossier), puis relie de nouveau les scrutins sans lien, par leur page et leur libellé. Affiche l'état avant et après (`--dry-run`, `--sans-ameli`, `--concurrence`) |
+| `fusionner-amendements-senat` | Ramène chaque amendement du Sénat à son `uid` stable (session de dépôt, texte, numéro sans rectification) et fusionne les lignes en double (versions rectifiées, ancien import AMELI) : la dernière version est gardée et reprend leurs liens. Affiche l'état avant et après (`--dry-run`). Aussi lancée chaque nuit par la synchro CSV, avant l'écriture |
 | `verifier-amendements-scrutins-an` | Fiabilise les liens scrutin AN → amendement : efface les impossibles, revérifie les douteux sur la page de l'Assemblée, puis aligne leur dossier (`--dry-run`, `--concurrence`, `--articles`) |
 | `generate-sujets` | Génère les sujets (`--reset`, `--dry-run`) |
 | `relabel-sujets` | Recalcule le libellé des sujets restés sur un identifiant technique |

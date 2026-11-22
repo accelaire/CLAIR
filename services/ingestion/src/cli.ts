@@ -1284,6 +1284,45 @@ program
   });
 
 // =============================================================================
+// COMMANDE: fusionner-amendements-senat
+// =============================================================================
+program
+  .command('fusionner-amendements-senat')
+  .description(
+    "Ramener chaque amendement du Sénat à son uid stable (sans rectification) et fusionner les doublons : versions rectifiées, lignes de l'ancien import AMELI",
+  )
+  .option('--dry-run', 'Mesurer ce qui changerait sans rien écrire (textes_senat doit être rempli)')
+  .action(async (options: { dryRun?: boolean }) => {
+    try {
+      const { fusionnerAmendementsSenat, mesurerAmendementsSenatUid } = await import('./workers/amendements-senat-uid.js');
+      const { rattacherAmendementsSenatAuDossierDuTexte } = await import('./workers/textes-senat.js');
+      const afficher = (titre: string, m: Awaited<ReturnType<typeof mesurerAmendementsSenatUid>>) => {
+        console.log(`\n${titre}`);
+        console.log(`  amendements du Sénat : ${m.amendements}, dont de commission : ${m.commission}`);
+        console.log(`  en double : ${m.enDouble}, uid instable : ${m.uidInstable}`);
+        console.log(`  de commission déposés depuis 90 jours : ${m.commissionRecents}`);
+      };
+
+      afficher('Avant', await mesurerAmendementsSenatUid());
+      const r = await fusionnerAmendementsSenat({ dryRun: options.dryRun });
+      console.log(`\n${options.dryRun ? 'À faire' : 'Fait'} : ${r.groupes} amendements en double, ${r.supprimees} lignes en trop, ${r.renommees} uid repris, ${r.ignores} ignorés`);
+      if (options.dryRun) process.exit(0);
+      console.log(`Liens scrutin reportés sur la ligne gardée : ${r.liensScrutinReportes}`);
+
+      // La ligne gardée prend le dossier de son texte si elle ne l'avait pas.
+      const rattachement = await rattacherAmendementsSenatAuDossierDuTexte();
+      console.log(`Dossiers : ${rattachement.poses} posés, ${rattachement.corriges} corrigés`);
+
+      afficher('Après', await mesurerAmendementsSenatUid());
+      console.log("\nLes amendements de commission arrivent par la synchro CSV : `sync --se --am` (ou la nuit).");
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'fusionner-amendements-senat failed');
+      process.exit(1);
+    }
+  });
+
+// =============================================================================
 // COMMANDE: verifier-amendements-scrutins-an
 // =============================================================================
 program

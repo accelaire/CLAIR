@@ -50,6 +50,8 @@ Code : `services/ingestion/src/checks/data-quality.ts`. Le contrôle réussit si
 | Amendements AN rattachés à un autre dossier que celui de leur texte |
 | Amendements Sénat rattachés à un autre dossier que celui de leur texte (AMELI) |
 | Amendements Sénat rattachés au dossier d'une session postérieure à leur dépôt |
+| Amendements Sénat en double (même texte, même numéro hors rectification) |
+| Amendements Sénat dont l'`uid` n'est pas la forme stable (sans rectification) |
 | Scrutins Sénat liés à un amendement déposé après le vote |
 | Scrutins Sénat liés à un amendement d'un autre dossier |
 | Sous-amendements AN rattachés à un amendement d'un autre texte |
@@ -109,6 +111,7 @@ Code : `services/ingestion/src/checks/data-quality.ts`. Le contrôle réussit si
 | Votes | 1 000 000 |
 | Amendements | 150 000 |
 | Textes du Sénat décrits par AMELI (`textes_senat`) | 5 000 |
+| Amendements de commission du Sénat déposés depuis 90 jours | 1 |
 | Interventions | 500 000 |
 | Liens débat → scrutin (Assemblée) | 130 000 |
 | Scrutins de l'Assemblée dont on montre le débat | 11 500 |

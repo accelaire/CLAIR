@@ -15,6 +15,7 @@ import { logger } from '../../utils/logger';
 import { errorMessage, errorProp } from '../../utils/errors';
 import { libelleSessionSenat } from '../../utils/amendement-scrutin-senat';
 import { decoderWindows1252 } from '../../utils/encodage';
+import { normalizeSenatNumero, uidAmendementSenat } from '../../utils/uid-amendement-senat';
 
 // =============================================================================
 // TYPES
@@ -131,14 +132,9 @@ function stripHtml(html: string | null): string | null {
   return text.trim();
 }
 
-/**
- * Normalise un numéro d'amendement Sénat pour la jointure AMELI ↔ CSV.
- * AMELI stocke le numéro de base (la rectification est dans un champ `rev` séparé),
- * le CSV inclut le suffixe ("4 rect.", "77 rect. bis") → on retire tout à partir de " rect".
- */
-export function normalizeSenatNumero(numero: string): string {
-  return numero.replace(/\s+rect\b.*$/i, '').trim();
-}
+// Le numéro sans rectification (jointure AMELI ↔ CSV) et l'uid stable vivent
+// dans utils/uid-amendement-senat.ts, que check-quality lit sans ce client.
+export { normalizeSenatNumero };
 
 // =============================================================================
 // ARTICLE VISÉ (tables `amd.subid` / `amd.subpos` et `sub`)
@@ -1028,15 +1024,25 @@ export class SenatAmendementsClient {
   // ===========================================================================
 
   /**
-   * Fetch amendements for a single texte from its CSV on senat.fr.
-   * Returns all amendments (commission + séance) for that texte.
+   * Les amendements d'un texte, lus dans son CSV sur senat.fr.
+   *
+   * Un texte de commission (`txt_ameli.txttyp = 'C'`) publie les siens à une
+   * autre adresse, sous `/amendements/commissions/` : jusqu'au 22/11/2026, on
+   * ne lisait que celle de séance, qui répond 404 pour lui, et aucun
+   * amendement de commission n'entrait plus depuis l'arrêt de l'import complet
+   * d'AMELI (février 2026).
+   *
+   * @param session libellé de la session de DÉPÔT du texte (`2025-2026`)
    */
   async fetchCsvForTexte(
     texteId: number,
     texteNum: string,
-    session: string
+    session: string,
+    options: { commission?: boolean } = {},
   ): Promise<TransformedAmendementSenat[]> {
-    const url = `https://www.senat.fr/amendements/${session}/${texteNum}/jeu_complet_${session}_${texteNum}.csv`;
+    const url = options.commission
+      ? `https://www.senat.fr/amendements/commissions/${session}/${texteNum}/jeu_complet_commission_${session}_${texteNum}.csv`
+      : `https://www.senat.fr/amendements/${session}/${texteNum}/jeu_complet_${session}_${texteNum}.csv`;
 
     try {
       const response = await axios({
@@ -1051,7 +1057,7 @@ export class SenatAmendementsClient {
       });
 
       if (response.status === 404) {
-        logger.debug({ texteId, texteNum, session }, 'No CSV for texte (404)');
+        logger.debug({ texteId, texteNum, session, commission: !!options.commission }, 'No CSV for texte (404)');
         return [];
       }
 
@@ -1096,7 +1102,10 @@ export class SenatAmendementsClient {
         return [];
       }
 
-      const results: TransformedAmendementSenat[] = [];
+      // Par uid : le CSV ne publie que la version courante d'un amendement,
+      // mais deux lignes de même numéro de base écraseraient la même ligne en
+      // base. La dernière l'emporte, comme elle l'emporterait à l'écriture.
+      const parUid = new Map<string, TransformedAmendementSenat>();
 
       for (let li = headerIdx + 1; li < lines.length; li++) {
         const line = lines[li]!;
@@ -1116,19 +1125,16 @@ export class SenatAmendementsClient {
         const subdivision = (colIdx.subdivision >= 0 ? cols[colIdx.subdivision] : '')?.trim() || null;
         const alinea = (colIdx.alinea >= 0 ? cols[colIdx.alinea] : '')?.trim() || null;
 
-        // Build UID from URL if available
-        let uid: string;
-        if (urlAmendement) {
-          // URL format: //www.senat.fr/amendements/2025-2026/298/Amdt_4.html
-          uid = `SENAT-AMD-S${session}-${texteNum}-${numero.replace(/\s+/g, '_')}`;
-        } else {
-          uid = `SENAT-AMD-T${texteId}-${numero.replace(/\s+/g, '_')}`;
-        }
+        // Sans la rectification : « 1 rect. bis » remplace « 1 » sur la même
+        // ligne, comme sur senat.fr (Amdt_1.html). Voir utils/uid-amendement-senat.ts.
+        const uid = uidAmendementSenat(session, texteNum, numero);
 
-        // Parse auteur: "M. JADOT" → nom=JADOT
+        // Parse auteur: "M. JADOT" → nom=JADOT. En commission, le rapporteur
+        // signe « M. MILON, rapporteur » (« rapporteure », « pour avis ») :
+        // la qualité ne fait pas partie du nom, le libellé la garde.
         let auteurNom: string | null = null;
         const auteurPrenom: string | null = null;
-        const auteurMatch = auteur.match(/^(?:M\.|Mme|Mlle)\s+(.+)$/i);
+        const auteurMatch = auteur.replace(/,\s*rapporteure?\b.*$/i, '').match(/^(?:M\.|Mme|Mlle)\s+(.+)$/i);
         if (auteurMatch) {
           auteurNom = auteurMatch[1]!.trim();
         } else if (auteur) {
@@ -1149,7 +1155,7 @@ export class SenatAmendementsClient {
           ? (urlAmendement.startsWith('//') ? `https:${urlAmendement}` : urlAmendement)
           : null;
 
-        results.push({
+        parUid.set(uid, {
           uid,
           numero,
           dispositif: stripHtml(dispositif) || null,
@@ -1168,7 +1174,8 @@ export class SenatAmendementsClient {
         });
       }
 
-      logger.debug({ texteId, texteNum, session, count: results.length }, 'CSV parsed');
+      const results = [...parUid.values()];
+      logger.debug({ texteId, texteNum, session, commission: !!options.commission, count: results.length }, 'CSV parsed');
       return results;
 
     } catch (error) {
