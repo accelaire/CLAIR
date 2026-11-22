@@ -648,6 +648,7 @@ model Commission {
   mandats            Mandat[]
   reunions           Reunion[]
   dossierCommissions DossierCommission[]
+  petitions          Petition[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @map("updated_at")
@@ -688,6 +689,7 @@ model Reunion {
   participants   ReunionParticipant[]
   interventions  Intervention[]
   avisCommission AvisCommission[]
+  petitionEtapes PetitionEtape[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @map("updated_at")
@@ -1152,6 +1154,7 @@ model DossierLegislatif {
   scrutins           Scrutin[]
   amendements        Amendement[]
   dossierCommissions DossierCommission[]
+  petitionEtapes     PetitionEtape[]
   articles           TexteArticle[]
   interventions      Intervention[]
   projetLoi          ProjetLoi?                 @relation("ProjetLoi")
@@ -2090,4 +2093,134 @@ model InterventionScrutin {
   @@id([interventionId, scrutinId])
   @@index([scrutinId, via])
   @@map("intervention_scrutin")
+}
+
+// =============================================================================
+// Pétitions citoyennes (#84)
+// =============================================================================
+//
+// Source : les jeux « Pétitions de l'Assemblée nationale » et « Pétitions du
+// Sénat » de data.gouv.fr (Licence Ouverte v2), relevés chaque semaine sur les
+// plateformes officielles. Ce relevé dit qui signe quoi, pas ce que la chambre
+// en a fait : son statut vaut « ouverte » par défaut et sa décision manque une
+// fois sur deux. Le parcours (`PetitionEtape`) se construit donc à partir de
+// sources de première main : l'agenda des commissions, les dossiers de la
+// procédure « Pétitions », la page officielle de la pétition.
+
+/// Une pétition déposée sur la plateforme de l'Assemblée nationale ou du Sénat.
+model Petition {
+  id               String      @id @default(uuid())
+  chambre          String // 'assemblee' | 'senat'
+  /// `identifiant` source : le n° de la plateforme, unique dans sa chambre seulement
+  numero           Int
+  titre            String
+  /// Texte du jeu de données tel quel : paragraphes aplatis, parfois tronqué
+  /// vers 10 000 caractères. Jamais exposé par l'API (cf. `texte`).
+  description      String
+  /// Début du texte (~300 caractères, coupé sur un mot), courriels et
+  /// téléphones masqués : listes, partage, moteurs.
+  extrait          String
+  /// Le texte entier remis en paragraphes (lignes vides) et en listes (retours
+  /// simples), courriels et téléphones masqués : la fiche.
+  texte            String
+  /// Assez long (9 800 caractères ou plus) pour que la source l'ait coupé.
+  texteIncomplet   Boolean     @default(false) @map("texte_incomplet")
+  datePublication  DateTime    @map("date_publication") @db.Date
+  /// Fin de la collecte ; pour une pétition classée, la date du classement
+  dateLimite       DateTime?   @map("date_limite") @db.Date
+  /// null : compteur absent à la source
+  signatures       Int?
+  /// Statut tel que la plateforme l'affiche (« ouverte », « Seuil atteint »…).
+  /// Ne dit PAS le sort de la pétition : voir `etape`.
+  statutSource     String      @map("statut_source")
+  /// 'ouverte' | 'close' : statut source ET date limite
+  collecte         String
+  /// AN : 15, 16 d'après le libellé source, la législature courante sinon ; Sénat : null
+  legislature      Int?
+  /// Sénat : « Texte législatif » | « Mission de contrôle »
+  typeSource       String?     @map("type_source")
+  /// Libellé de commission du jeu de données (AN)
+  commissionSource String?     @map("commission_source")
+  commissionId     String?     @map("commission_id")
+  commission       Commission? @relation(fields: [commissionId], references: [id], onDelete: SetNull)
+  /// Décision lue dans le jeu de données (AN, `decision_commission`)
+  decisionSource   String?     @map("decision_source")
+  /// Décision lue sur la page officielle (pétitions suivies seulement) : blocs
+  /// séparés par une ligne vide, liens gardés en `[texte](url)`
+  decisionPage     String?     @map("decision_page")
+  decisionPageDate DateTime?   @map("decision_page_date") @db.Date
+  /// Dernière lecture de la page officielle (traitement, pas contenu)
+  pageLueLe        DateTime?   @map("page_lue_le")
+  /// Type de la dernière étape connue du parcours, null si aucune
+  etape            String?
+  etapeDate        DateTime?   @map("etape_date") @db.Date
+  /// Indexable : au moins 10 000 signatures ou au moins une étape institutionnelle
+  suivie           Boolean     @default(false)
+  url              String
+  /// Empreinte de la ligne source normalisée (traitement, pas contenu)
+  empreinteSource  String      @map("empreinte_source")
+
+  etapes  PetitionEtape[]
+  releves PetitionReleve[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@unique([chambre, numero])
+  @@index([commissionId])
+  @@index([suivie, signatures])
+  @@index([signatures])
+  @@index([datePublication])
+  @@index([etape])
+  @@map("petitions")
+}
+
+/// Une étape du parcours d'une pétition, datée et sourcée. Recalculée à chaque
+/// passage : une étape qui disparaît de sa source disparaît d'ici.
+model PetitionEtape {
+  id           String             @id @default(uuid())
+  petitionId   String             @map("petition_id")
+  petition     Petition           @relation(fields: [petitionId], references: [id], onDelete: Cascade)
+  /// 'rapporteur' | 'decision' | 'examen' | 'rapport' | 'classement'
+  /// | 'seuil_atteint' | 'decision_conference'
+  type         String
+  /// null : la source ne date pas l'étape
+  date         DateTime?          @db.Date
+  /// 'agenda_an' | 'dossier_an' | 'plateforme'
+  source       String
+  /// 'numero' (n° explicite) | 'titre_exact' (titre identique, une seule
+  /// pétition de la commission) | 'plateforme' (donnée par la pétition elle-même)
+  rattachement String
+  /// uid de la réunion ou du dossier, '' pour la plateforme : identité de l'étape
+  cle          String
+  /// Texte source exact : point de l'ordre du jour, titre du dossier, décision
+  libelle      String
+  reunionId    String?            @map("reunion_id")
+  reunion      Reunion?           @relation(fields: [reunionId], references: [id], onDelete: SetNull)
+  dossierId    String?            @map("dossier_id")
+  dossier      DossierLegislatif? @relation(fields: [dossierId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@unique([petitionId, type, source, cle])
+  @@index([dossierId])
+  @@index([reunionId])
+  @@map("petitions_etapes")
+}
+
+/// Compteur de signatures relevé dans un fichier source. Une ligne quand le
+/// compteur change, à la hausse comme à la baisse (des signatures sont retirées).
+model PetitionReleve {
+  petitionId String   @map("petition_id")
+  petition   Petition @relation(fields: [petitionId], references: [id], onDelete: Cascade)
+  /// Date du fichier source
+  date       DateTime @db.Date
+  signatures Int
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@id([petitionId, date])
+  @@map("petitions_releves")
 }

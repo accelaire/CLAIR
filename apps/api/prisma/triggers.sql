@@ -214,6 +214,14 @@ CREATE OR REPLACE TRIGGER amendements_renvois_updated_at BEFORE INSERT OR UPDATE
 -- Textes du Sénat décrits par AMELI (rattachement des amendements à leur dossier).
 CREATE OR REPLACE TRIGGER textes_senat_updated_at BEFORE INSERT OR UPDATE ON textes_senat
   FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+-- Pétitions citoyennes (#84). La dernière lecture de la page officielle et
+-- l'empreinte de la ligne source décrivent notre traitement, pas la pétition.
+CREATE OR REPLACE TRIGGER petitions_updated_at BEFORE INSERT OR UPDATE ON petitions
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at('page_lue_le', 'empreinte_source');
+CREATE OR REPLACE TRIGGER petitions_etapes_updated_at BEFORE INSERT OR UPDATE ON petitions_etapes
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
+CREATE OR REPLACE TRIGGER petitions_releves_updated_at BEFORE INSERT OR UPDATE ON petitions_releves
+  FOR EACH ROW EXECUTE FUNCTION clair_set_updated_at();
 
 -- Scrutins, votes, débats, amendements. `source_hash` est l'empreinte de ce
 -- que l'ingestion a écrit, pas une donnée de la source.
