@@ -52,6 +52,7 @@ import {
   effacerLiensSenatHorsDossierDuTexte,
   rattacherAmendementsSenatAuDossierDuTexte,
 } from './textes-senat';
+import { fusionnerAmendementsSenat } from './amendements-senat-uid';
 import { uidCanoniqueAmendement, uneEmissionParAmendement } from '../utils/uid-amendement';
 import {
   LEGISLATURE_AN_COURANTE,
@@ -5237,6 +5238,10 @@ export async function syncAmendementsSenat(
     }
   }
 
+  // Cet import écrit des uid `SENAT-AMD-{id AMELI}` : chaque ligne qu'il crée
+  // doublonne celle que le CSV a déjà, jusqu'à la fusion.
+  await fusionnerAmendementsSenat();
+
   logger.info({ created, updated, linked, total: rawAmendements.length }, 'Amendements Sénat sync completed');
   return { created, updated, linked };
 }
@@ -5276,6 +5281,17 @@ export async function syncAmendementsSenatCsv(
     logger.error({ error: errorMessage(error) }, 'Textes du Sénat (AMELI) : écriture échouée (non bloquante)');
   }
 
+  // Avant d'écrire : chaque amendement déjà en base sous son uid stable, pour
+  // que le CSV mette à jour sa ligne au lieu d'en créer une autre (versions
+  // rectifiées, lignes de l'ancien import AMELI). Un échec ne bloque pas la
+  // nuit : la passe est idempotente et fusionne le lendemain ce qui aurait été
+  // créé en double.
+  try {
+    await fusionnerAmendementsSenat();
+  } catch (error) {
+    logger.error({ error: errorMessage(error) }, 'Amendements Sénat : fusion des doublons échouée (non bloquante)');
+  }
+
   // 2. Determine which textes to fetch
   let texteIds: number[];
 
@@ -5299,21 +5315,25 @@ export async function syncAmendementsSenatCsv(
     logger.info({ texteIds: texteIds.length, minYear }, 'Scoped to recent sessions only');
   }
 
-  // Resolve texteIds to { texteId, texteNum, session } via mapping
-  // Deduplicate by (session, texteNum) — multiple texteIds can map to the same CSV
-  // (different lectures/stages of the same bill). Pick the largest texteId as canonical.
-  const textes: Array<{ texteId: number; texteNum: string; session: string }> = [];
+  // Un CSV par (session de dépôt, numéro, commission ou séance) : plusieurs
+  // textes AMELI (lectures, parties d'un PLF) partagent la même adresse, et le
+  // plus grand identifiant devient le texte_ref de ses amendements. Un même
+  // numéro peut porter un texte de commission et un texte de séance
+  // (`ppl16-155`) : deux CSV, deux adresses.
+  type TexteCsv = { texteId: number; texteNum: string; session: string; commission: boolean };
+  const textes: TexteCsv[] = [];
   const unmapped: number[] = [];
-  const csvDedup = new Map<string, { texteId: number; texteNum: string; session: string }>();
+  const csvDedup = new Map<string, TexteCsv>();
+  const typeDuTexte = new Map(textesSenat.map((t) => [t.id, t.type]));
 
   for (const texteId of texteIds) {
     const mapping = texteMapping.get(texteId);
     if (mapping) {
-      const csvKey = `${mapping.session}/${mapping.num}`;
+      const commission = typeDuTexte.get(texteId) === 'C';
+      const csvKey = `${mapping.session}/${mapping.num}/${commission ? 'C' : 'S'}`;
       const existing = csvDedup.get(csvKey);
-      // Keep the largest texteId (most recent lecture) as canonical
       if (!existing || texteId > existing.texteId) {
-        csvDedup.set(csvKey, { texteId, texteNum: mapping.num, session: mapping.session });
+        csvDedup.set(csvKey, { texteId, texteNum: mapping.num, session: mapping.session, commission });
       }
     } else {
       unmapped.push(texteId);
@@ -5326,7 +5346,11 @@ export async function syncAmendementsSenatCsv(
     logger.warn({ count: unmapped.length, sample: unmapped.slice(0, 5) }, 'Texte IDs not found in AMELI mapping');
   }
 
-  logger.info({ textes: textes.length, deduped: texteIds.length - unmapped.length - textes.length }, 'Fetching CSV amendements (deduplicated by session/texteNum)...');
+  logger.info({
+    textes: textes.length,
+    commission: textes.filter((t) => t.commission).length,
+    deduped: texteIds.length - unmapped.length - textes.length,
+  }, 'Fetching CSV amendements (deduplicated by session/texteNum)...');
 
   // 3. Load sénateurs for author matching (once, kept in memory — ~350 entries)
   const parlementaires = await prisma.parlementaire.findMany({
@@ -5391,7 +5415,7 @@ export async function syncAmendementsSenatCsv(
     const texte = textes[ti]!;
 
     try {
-      amendments = await client.fetchCsvForTexte(texte.texteId, texte.texteNum, texte.session);
+      amendments = await client.fetchCsvForTexte(texte.texteId, texte.texteNum, texte.session, { commission: texte.commission });
 
       if (amendments.length === 0) continue;
 
@@ -5403,9 +5427,10 @@ export async function syncAmendementsSenatCsv(
       // silencieusement sauté via skipDuplicates, texteRef jamais rafraîchi).
       const existingAmds = await prisma.amendement.findMany({
         where: { uidCanonique: { in: amendments.map(a => uidCanoniqueAmendement(a.uid)) } },
-        select: { id: true, uidCanonique: true },
+        select: { id: true, uidCanonique: true, dateDepot: true },
       });
       const existingByUid = new Map(existingAmds.map(a => [a.uidCanonique, a.id]));
+      const dateDepotExistante = new Map(existingAmds.map(a => [a.id, a.dateDepot]));
 
       // 2. Partition into creates and updates
       const toCreate: Array<{
@@ -5454,6 +5479,11 @@ export async function syncAmendementsSenatCsv(
         const uidCanonique = uidCanoniqueAmendement(amd.uid);
         const existingId = existingByUid.get(uidCanonique);
         if (existingId) {
+          // La « Date de dépôt » du CSV est celle de la version courante
+          // (« 1 rect. quinquies ») : on garde celle de la première version,
+          // déjà en base. Voir workers/amendements-senat-uid.ts.
+          const premiere = dateDepotExistante.get(existingId);
+          if (premiere && (!data.dateDepot || premiere < data.dateDepot)) data.dateDepot = premiere;
           // Sans article ni d'un côté ni de l'autre, on n'efface pas celui
           // qu'un passage précédent a écrit.
           const { articleVise: _articleVise, ...sansArticle } = data;

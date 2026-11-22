@@ -188,4 +188,79 @@ describe('fetchCsvForTexte', () => {
     expect(amd!.dispositif!.endsWith('il est inséré un alinéa.')).toBe(true);
     expect(amd!.exposeSommaire!.length).toBeGreaterThan(6_000);
   });
+
+  // Lignes du CSV de commission du texte 2025-2026/689 (pjl25-689), relevé du 21/11/2026.
+  const ligneCommission = (numero: string, url: string) => [
+    'Amt', numero, 'Article 15', '', 'Mme JACQUEMET', '', '2026-06-16', '<p>Compléter cet article.</p>',
+    '<p>Objet.</p>', '', '', url, '',
+  ].join('\t');
+
+  it("lit un texte de commission à l'adresse des commissions, avec un uid sans rectification", async () => {
+    vi.mocked(axios).mockClear();
+    vi.mocked(axios).mockResolvedValueOnce({
+      status: 200,
+      data: Buffer.from([
+        'sep=\t', ENTETE,
+        ligneCommission('COM-1 rect. ter', '//www.senat.fr/amendements/commissions/2025-2026/689/Amdt_COM-1.html'),
+        // Sans adresse (amendement non publié) : même schéma d'uid.
+        ligneCommission('COM-3 rect. bis', ''),
+      ].join('\n'), 'latin1'),
+    });
+
+    const amds = await new SenatAmendementsClient().fetchCsvForTexte(106990, '689', '2025-2026', { commission: true });
+
+    expect(vi.mocked(axios).mock.calls[0]![0]).toMatchObject({
+      url: 'https://www.senat.fr/amendements/commissions/2025-2026/689/jeu_complet_commission_2025-2026_689.csv',
+    });
+    expect(amds.map((a) => [a.uid, a.numero])).toEqual([
+      ['SENAT-AMD-S2025-2026-689-COM-1', 'COM-1 rect. ter'],
+      ['SENAT-AMD-S2025-2026-689-COM-3', 'COM-3 rect. bis'],
+    ]);
+    expect(amds[0]!.texteRef).toBe('SENAT-TXT-106990');
+  });
+
+  it('reconnaît le rapporteur, dont la qualité suit le nom', async () => {
+    const ligne = (numero: string, auteur: string) => [
+      'Amt', numero, 'Article 2', '', auteur, '', '2026-06-10', '<p>Rédiger ainsi.</p>', '<p>Objet.</p>',
+      '', '', '//www.senat.fr/amendements/commissions/2025-2026/689/Amdt_COM-90.html', '',
+    ].join('\t');
+    vi.mocked(axios).mockResolvedValueOnce({
+      status: 200,
+      data: Buffer.from(['sep=\t', ENTETE, ligne('COM-90', 'M. MILON, rapporteur'), ligne('COM-91', 'Mme JOSENDE, rapporteure pour avis')].join('\n'), 'latin1'),
+    });
+
+    const amds = await new SenatAmendementsClient().fetchCsvForTexte(106990, '689', '2025-2026', { commission: true });
+
+    expect(amds.map((a) => [a.auteurNom, a.auteurLibelle])).toEqual([
+      ['MILON', 'M. MILON, rapporteur'],
+      ['JOSENDE', 'Mme JOSENDE, rapporteure pour avis'],
+    ]);
+  });
+
+  it("lit un texte de séance à l'adresse de séance", async () => {
+    vi.mocked(axios).mockClear();
+    vi.mocked(axios).mockResolvedValueOnce({ status: 404, data: Buffer.from('') });
+
+    await new SenatAmendementsClient().fetchCsvForTexte(107173, '89', '2026-2027');
+
+    expect(vi.mocked(axios).mock.calls[0]![0]).toMatchObject({
+      url: 'https://www.senat.fr/amendements/2026-2027/89/jeu_complet_2026-2027_89.csv',
+    });
+  });
+
+  it('une seule ligne par amendement, même si le CSV en donne deux versions', async () => {
+    vi.mocked(axios).mockResolvedValueOnce({
+      status: 200,
+      data: Buffer.from([
+        'sep=\t', ENTETE,
+        ligneCommission('1', '//www.senat.fr/amendements/2026-2027/89/Amdt_1.html'),
+        ligneCommission('1 rect. quinquies', '//www.senat.fr/amendements/2026-2027/89/Amdt_1.html'),
+      ].join('\n'), 'latin1'),
+    });
+
+    const amds = await new SenatAmendementsClient().fetchCsvForTexte(107173, '89', '2026-2027');
+
+    expect(amds).toHaveLength(1);
+    expect(amds[0]).toMatchObject({ uid: 'SENAT-AMD-S2026-2027-89-1', numero: '1 rect. quinquies' });
+  });
 });
