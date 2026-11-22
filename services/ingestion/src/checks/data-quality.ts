@@ -16,6 +16,11 @@ import {
   LIENS_SENAT_APRES_LE_VOTE_SQL,
   LIENS_SENAT_HORS_DOSSIER_DU_TEXTE_SQL,
 } from '../utils/textes-senat-sql';
+import {
+  AMENDEMENTS_COMMISSION_SENAT_RECENTS_SQL,
+  AMENDEMENTS_SENAT_EN_DOUBLE_SQL,
+  AMENDEMENTS_SENAT_UID_INSTABLE_SQL,
+} from '../utils/uid-amendement-senat';
 import { pairesContredites, type PaireContredite } from '../workers/orateurs-an';
 
 // Les contrôles sont des requêtes texte : les fragments SQL partagés y entrent
@@ -476,6 +481,29 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     // Réécrits chaque nuit (rattacherAmendementsSenatAuDossierDuTexte) : non nul
     // = une passe les déplace après elle.
     query: AMENDEMENTS_SENAT_HORS_DOSSIER_DU_TEXTE_SQL,
+  },
+
+  amendements_senat_en_double: {
+    type: 'invariant',
+    label: 'Amendements Sénat en double (même texte, même numéro hors rectification)',
+    min: 0,
+    max: 0,
+    // 22/11/2026 : 17 669 lignes en trop sur 77 785 (ancien import AMELI et
+    // CSV sur les mêmes textes, versions rectifiées, lignes sans adresse),
+    // dont 15 849 comptées sur la fiche d'un sénateur. Fusionnées chaque nuit
+    // avant l'écriture du CSV (fusionnerAmendementsSenat).
+    query: AMENDEMENTS_SENAT_EN_DOUBLE_SQL,
+  },
+
+  amendements_senat_uid_instable: {
+    type: 'invariant',
+    label: "Amendements Sénat dont l'uid n'est pas la forme stable (sans rectification)",
+    min: 0,
+    max: 0,
+    // L'uid est `SENAT-AMD-S{session de dépôt}-{texte}-{numéro sans rect.}`,
+    // calculé en JavaScript par la synchro et en SQL par la fusion : non nul =
+    // les deux calculs divergent, ou un écrivain revient à un autre schéma.
+    query: AMENDEMENTS_SENAT_UID_INSTABLE_SQL,
   },
 
   amendements_senat_avant_session_du_dossier: {
@@ -1080,6 +1108,15 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     label: 'Nombre de textes du Sénat (AMELI)',
     min: 5000,
     query: `SELECT COUNT(*)::int AS value FROM textes_senat`,
+  },
+  amendements_commission_senat_recents: {
+    type: 'threshold',
+    // Le CSV de commission n'était pas lu : aucun amendement de commission du
+    // Sénat n'est entré du 11/02 au 22/11/2026 (2 783 publiés dans AMELI depuis
+    // mars). 90 jours couvrent la suspension d'août.
+    label: 'Amendements de commission du Sénat déposés depuis 90 jours',
+    min: 1,
+    query: AMENDEMENTS_COMMISSION_SENAT_RECENTS_SQL,
   },
   interventions_count: {
     type: 'threshold',
