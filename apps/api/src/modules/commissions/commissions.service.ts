@@ -79,6 +79,7 @@ export class CommissionsService {
           select: {
             reunions: true,
             dossierCommissions: true,
+            petitions: true,
           },
         },
       },
@@ -157,6 +158,8 @@ export class CommissionsService {
       nbMembres: mandats.length,
       nbReunions: commission._count.reunions,
       nbDossiers: commission._count.dossierCommissions,
+      // Pétitions renvoyées à la commission (Assemblée nationale)
+      nbPetitions: commission._count.petitions,
       membres: mandats.map((m) => ({
         qualite: m.qualite,
         parlementaire: m.parlementaire,

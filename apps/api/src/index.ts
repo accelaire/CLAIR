@@ -30,6 +30,7 @@ import { senatorialesRoutes } from './modules/senatoriales/senatoriales.controll
 import { homepageRoutes } from './modules/homepage/homepage.controller';
 import { dossiersRoutes } from './modules/dossiers/dossiers.controller';
 import { sujetsRoutes } from './modules/sujets/sujets.controller';
+import { petitionsRoutes } from './modules/petitions/petitions.controller';
 import { feedbackRoutes } from './modules/feedback/feedback.controller';
 import { sitemapRoutes } from './modules/sitemap/sitemap.controller';
 
@@ -161,6 +162,7 @@ async function buildApp() {
       await api.register(homepageRoutes, { prefix: '/homepage' });
       await api.register(dossiersRoutes, { prefix: '/dossiers' });
       await api.register(sujetsRoutes, { prefix: '/sujets' });
+      await api.register(petitionsRoutes, { prefix: '/petitions' });
       await api.register(feedbackRoutes, { prefix: '/feedback' });
       await api.register(sitemapRoutes, { prefix: '/sitemap' });
     },

@@ -29,6 +29,7 @@ export const OPENAPI_TAGS = [
   { name: 'Scrutins', description: 'Votes à l\'Assemblée nationale et au Sénat' },
   { name: 'Dossiers', description: 'Dossiers législatifs' },
   { name: 'Sujets', description: 'Sujets : dossiers de l\'AN et du Sénat portant sur le même texte' },
+  { name: 'Pétitions', description: 'Pétitions citoyennes de l\'AN et du Sénat, et leur parcours en commission' },
   { name: 'Commissions', description: 'Commissions et autres organes, AN et Sénat' },
   { name: 'Gouvernements', description: 'Gouvernements depuis 2007, postes ministériels et présidences de la République' },
   { name: 'Agenda', description: 'Agenda parlementaire : séances publiques, réunions, événements institutionnels' },

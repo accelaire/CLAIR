@@ -23,8 +23,9 @@ const CACHE_TTL_24H = 86400;
 
 // Versionnée : la charge utile a gagné un champ `lastModified` par parlementaire
 // (v2), puis les anciens parlementaires (v3). Sous l'ancienne clé, la version en
-// cache (24 h) les aurait masqués jusqu'au lendemain du déploiement.
-const CACHE_KEY = 'sitemap:all:v3';
+// cache (24 h) les aurait masqués jusqu'au lendemain du déploiement. v4 : les
+// pétitions suivies.
+const CACHE_KEY = 'sitemap:all:v4';
 
 export const sitemapRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/', {
@@ -47,7 +48,7 @@ export const sitemapRoutes: FastifyPluginAsync = async (fastify) => {
     // retourne que la législature/session courante, logique qui vit dans
     // GroupesService. La dupliquer ici la ferait dériver, et ça ne coûte qu'une
     // requête de plus au sitemap pour une poignée d'entrées.
-    const [deputesBruts, senateursBruts, scrutins, lobbyistes, dossiers, sujets, derniersScrutins] =
+    const [deputesBruts, senateursBruts, scrutins, lobbyistes, dossiers, sujets, derniersScrutins, petitions] =
       await Promise.all([
         // Anciens compris : leur fiche existe, montre leur carrière, et c'est
         // parfois la plus cherchée (David Guiraud, devenu maire, était en
@@ -87,6 +88,13 @@ export const sitemapRoutes: FastifyPluginAsync = async (fastify) => {
           by: ['chambre'],
           _max: { createdAt: true },
         }),
+        // Seules les pétitions suivies (au moins 10 000 signatures ou une étape
+        // en commission) sont indexables : les autres fiches sont en noindex.
+        fastify.prisma.petition.findMany({
+          where: { suivie: true },
+          select: { chambre: true, numero: true, updatedAt: true },
+          orderBy: [{ chambre: 'asc' }, { numero: 'asc' }],
+        }),
       ]);
 
     const dernierScrutinParChambre = new Map<string, Date>(
@@ -113,6 +121,7 @@ export const sitemapRoutes: FastifyPluginAsync = async (fastify) => {
       lobbyistes,
       dossiers,
       sujets,
+      petitions,
       generatedAt: new Date().toISOString(),
     };
 

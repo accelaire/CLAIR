@@ -10,6 +10,7 @@ import { ROLES_PERSONNE, comptesParRole, meilleur, rechercherPersonnes } from '.
 // gardée telle quelle pour les clients de l'API (anciens sur `inclureAnciens`).
 const SEARCH_TYPES = [
   'all', 'personnes', 'gouvernements', 'deputes', 'senateurs', 'scrutins', 'lobbyistes', 'dossiers', 'groupes', 'commissions', 'sujets',
+  'petitions',
 ] as const;
 
 const searchQuerySchema = z.object({
@@ -76,7 +77,7 @@ export const searchRoutes: FastifyPluginAsync = async (fastify) => {
       tags: ['Search'],
       summary: 'Recherche globale',
       description:
-        "Recherche dans les personnes (parlementaires et membres du Gouvernement depuis 2007, un résultat par personne, anciens compris), les gouvernements (par leur Premier ministre), les scrutins, lobbyistes, dossiers, groupes, commissions et sujets. Les noms approchants ne sont proposés que si rien ne correspond exactement (`meta.approximatif`).",
+        "Recherche dans les personnes (parlementaires et membres du Gouvernement depuis 2007, un résultat par personne, anciens compris), les gouvernements (par leur Premier ministre), les scrutins, lobbyistes, dossiers, groupes, commissions, sujets et pétitions (par titre ou par numéro). Les noms approchants ne sont proposés que si rien ne correspond exactement (`meta.approximatif`).",
       querystring: {
         type: 'object',
         required: ['q'],
@@ -195,7 +196,7 @@ const sujetSelect = {
 };
 
 /** Les catégories de la recherche, dans l'ordre de la page ; `deputes` et `senateurs` à part (compatibilité). */
-const CATEGORIES = ['personnes', 'gouvernements', 'groupes', 'commissions', 'scrutins', 'sujets', 'lobbyistes', 'dossiers'] as const;
+const CATEGORIES = ['personnes', 'gouvernements', 'groupes', 'commissions', 'scrutins', 'sujets', 'lobbyistes', 'dossiers', 'petitions'] as const;
 type Categorie = (typeof CATEGORIES)[number];
 
 async function searchWithDatabase(
@@ -271,6 +272,21 @@ async function searchWithDatabase(
       .then(r => { searchResults.commissions = r; }),
     searchSujets(fastify, searchTerm, pg('sujets').take, pg('sujets').skip)
       .then(r => { searchResults.sujets = r; }),
+    // Par titre, ou par numéro (« 3014 » : la pétition n° 3014 de chaque
+    // chambre). Les suivies d'abord, puis les plus signées.
+    searchExact(
+      asSearchDelegate(fastify.prisma.petition),
+      {
+        OR: [
+          { titre: { contains: searchTerm, mode: 'insensitive' as const } },
+          ...(/^\d{1,7}$/.test(searchTerm) ? [{ numero: Number(searchTerm) }] : []),
+        ],
+      },
+      { id: true, chambre: true, numero: true, titre: true, signatures: true, collecte: true, etape: true, etapeDate: true },
+      [{ suivie: 'desc' }, { signatures: { sort: 'desc', nulls: 'last' } }, { chambre: 'asc' }, { numero: 'desc' }],
+      pg('petitions').skip, pg('petitions').take,
+      (p: SearchRow) => ({ ...p, _type: 'petition' as const }),
+    ).then(r => { searchResults.petitions = r; }),
   ];
 
   // Compatibilité : ce que les sections deputes/senateurs ne montrent pas sans
@@ -323,6 +339,7 @@ async function searchWithDatabase(
     sujets: total('sujets'),
     lobbyistes: total('lobbyistes'),
     dossiers: total('dossiers'),
+    petitions: total('petitions'),
     deputes: searchResults.deputes?.total ?? 0,
     senateurs: searchResults.senateurs?.total ?? 0,
     total: 0,
@@ -344,6 +361,7 @@ async function searchWithDatabase(
         sujets: searchResults.sujets?.data ?? [],
         lobbyistes: searchResults.lobbyistes?.data ?? [],
         dossiers: searchResults.dossiers?.data ?? [],
+        petitions: searchResults.petitions?.data ?? [],
         deputes: searchResults.deputes?.data ?? [],
         senateurs: searchResults.senateurs?.data ?? [],
       },
