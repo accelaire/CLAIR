@@ -47,7 +47,7 @@ Diagrammes entité-relation de la base, générés depuis [`apps/api/prisma/sche
 
 ## 🗺️ Vue d'ensemble des relations
 
-Les 68 relations entre tables, sans les colonnes. Les 8 tables sans clé étrangère (`evenements_institutionnels`, `candidats_mandats_locaux`, `legi_textes`, `legi_articles`, `textes_senat`, `sync_logs`, `source_states`, `feedbacks`) n'y figurent pas ; elles sont détaillées plus bas.
+Les 73 relations entre tables, sans les colonnes. Les 8 tables sans clé étrangère (`evenements_institutionnels`, `candidats_mandats_locaux`, `legi_textes`, `legi_articles`, `textes_senat`, `sync_logs`, `source_states`, `feedbacks`) n'y figurent pas ; elles sont détaillées plus bas.
 
 <Mermaid
   title="Toutes les relations"
@@ -116,6 +116,11 @@ Les 68 relations entre tables, sans les colonnes. Les 8 tables sans clé étrang
     secteurs ||--o{ actions_secteurs : "secteur_id"
     interventions ||--o{ intervention_scrutin : "intervention_id"
     scrutins ||--o{ intervention_scrutin : "scrutin_id"
+    commissions |o--o{ petitions : "commission_id"
+    petitions ||--o{ petitions_etapes : "petition_id"
+    reunions |o--o{ petitions_etapes : "reunion_id"
+    dossiers_legislatifs |o--o{ petitions_etapes : "dossier_id"
+    petitions ||--o{ petitions_releves : "petition_id"
     amendements ||--o{ "_AmendementCosignataires" : "A"
     parlementaires ||--o{ "_AmendementCosignataires" : "B"
     amendements ||--o{ "_AmendementToScrutin" : "A"
@@ -797,6 +802,72 @@ Les 68 relations entre tables, sans les colonnes. Les 8 tables sans clé étrang
     commissions ||--o{ dossier_commissions : "commission_id"
     reunions ||--o{ avis_commission : "reunion_id"
     amendements |o--o{ avis_commission : "amendement_id"
+`}
+/>
+
+## Pétitions citoyennes
+
+Une étape d'agenda pointe vers sa réunion (`reunions`), une étape « rapport » vers son dossier de la procédure « Pétitions » (`dossiers_legislatifs`) ; une pétition de l'Assemblée vers sa commission (`commissions`).
+
+<Mermaid
+  title="Pétitions citoyennes"
+  chart={`erDiagram
+    petitions {
+        text id PK
+        text chambre
+        int numero
+        text titre
+        text description
+        text extrait
+        text texte
+        bool texte_incomplet
+        timestamp date_publication
+        timestamp date_limite  "nullable"
+        int signatures  "nullable"
+        text statut_source
+        text collecte
+        int legislature  "nullable"
+        text type_source  "nullable"
+        text commission_source  "nullable"
+        text commission_id FK  "nullable"
+        text decision_source  "nullable"
+        text decision_page  "nullable"
+        timestamp decision_page_date  "nullable"
+        timestamp page_lue_le  "nullable"
+        text etape  "nullable"
+        timestamp etape_date  "nullable"
+        bool suivie
+        text url
+        text empreinte_source
+        timestamp created_at
+        timestamp updated_at
+    }
+    petitions_etapes {
+        text id PK
+        text petition_id FK
+        text type
+        timestamp date  "nullable"
+        text source
+        text rattachement
+        text cle
+        text libelle
+        text reunion_id FK  "nullable"
+        text dossier_id FK  "nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+    petitions_releves {
+        text petition_id PK, FK
+        timestamp date PK
+        int signatures
+        timestamp created_at
+        timestamp updated_at
+    }
+    commissions |o--o{ petitions : "commission_id"
+    petitions ||--o{ petitions_etapes : "petition_id"
+    reunions |o--o{ petitions_etapes : "reunion_id"
+    dossiers_legislatifs |o--o{ petitions_etapes : "dossier_id"
+    petitions ||--o{ petitions_releves : "petition_id"
 `}
 />
 

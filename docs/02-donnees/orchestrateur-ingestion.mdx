@@ -28,7 +28,7 @@ Le passage **intraday** ne rafraîchit que ce qui change dans la journée : l'ag
   title="Déroulé du batch nocturne"
   chart={`flowchart TD
     A[Cron Railway] --> B[Événements institutionnels<br/>liste curée dans le code]
-    B --> C{Pour chacune des 23 sources,<br/>dans l'ordre}
+    B --> C{Pour chacune des 27 sources,<br/>dans l'ordre}
     C -->|ETag / Last-Modified inchangés| D[Ignorée<br/>sync_logs : skipped]
     C -->|changée, ou source « toujours »| E[Synchronisée<br/>sync_logs : started puis completed / failed]
     D --> C
@@ -48,7 +48,7 @@ La liste des repères de l'agenda (élections, bornes de session, suspensions, �
 
 ### 2. Les sources, dans cet ordre
 
-L'ordre suit les dépendances : les commissions avant les députés (dont les mandats pointent vers les commissions), les parlementaires avant les votes, les anciens sénateurs avant les scrutins (les votes historiques ont besoin de l'annuaire), les gouvernements après les parlementaires (un ministre est rattaché à sa fiche), le bilan des gouvernements après les dossiers, les scrutins et les débats qu'il lit, les candidatures en dernier (le rattachement d'un candidat à sa fiche lit le corpus).
+L'ordre suit les dépendances : les commissions avant les députés (dont les mandats pointent vers les commissions), les parlementaires avant les votes, les anciens sénateurs avant les scrutins (les votes historiques ont besoin de l'annuaire), les gouvernements après les parlementaires (un ministre est rattaché à sa fiche), le bilan des gouvernements après les dossiers, les scrutins et les débats qu'il lit, les pétitions après les commissions, les dossiers et l'agenda de l'Assemblée qui donnent leur parcours, les candidatures en dernier (le rattachement d'un candidat à sa fiche lit le corpus).
 
 1. `assemblee_nationale:commissions`
 2. `assemblee_nationale:deputes`
@@ -71,9 +71,12 @@ L'ordre suit les dépendances : les commissions avant les députés (dont les ma
 19. `senat:agenda`
 20. `senat:reunions`
 21. `senat:dossier_commissions`
-22. `senat:videos`
-23. `assemblee_nationale:videos`
-24. `interieur:candidatures`
+22. `datagouv:petitions_an`
+23. `datagouv:petitions_senat`
+24. `clair:petitions_parcours`
+25. `senat:videos`
+26. `assemblee_nationale:videos`
+27. `interieur:candidatures`
 
 Le détail de chaque source est sur la page [Sources de données](/donnees/sources-de-donnees). Les résultats des élections et les mandats locaux des candidats ne sont dans aucun des deux batchs : ils se lancent à la main (voir [Commandes CLI](/donnees/commandes-cli)).
 
@@ -149,5 +152,6 @@ En fin de batch, la CLI attend 120 s, puis appelle `POST /api/v1/homepage/warm` 
 | `index-legi.ts` | Index de la base LEGI de la DILA (textes et articles de loi, pour les liens vers Légifrance) |
 | `renvois-legi.ts` | Renvois au droit en vigueur dans le dispositif et l'exposé des amendements, rattachés à l'index LEGI (grammaire de `@tricoteuses/tisseuse`) |
 | `evenements.ts` | Liste curée des événements institutionnels |
+| `petitions.ts` | Pétitions citoyennes : ingestion des jeux data.gouv.fr par différence, relevés de signatures, parcours (agenda des commissions, dossiers « Pétitions », pages officielles), rattrapage des relevés depuis les archives |
 
 La commande `schedule` (fichier `src/scheduler.ts`) lance un planificateur `node-cron` dans le processus. Elle n'est **pas** utilisée en production, où la planification est confiée à Railway.
