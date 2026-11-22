@@ -203,6 +203,32 @@ export const SOURCES: Record<string, SourceConfig> = {
     url: 'https://www.data.gouv.fr/api/1/datasets/elections-senatoriales-2026-candidatures-aux-scrutins-majoritaire-tour-1-et-proportionnel/',
     alwaysSync: true,
   },
+  // ==========================================================================
+  // PÉTITIONS CITOYENNES (jeux data.gouv.fr, #84)
+  // ==========================================================================
+  // Republiés chaque semaine (le lundi vers 2 h UTC, pas toujours) sur le
+  // stockage S3 de data.gouv.fr, qui répond ETag et Last-Modified : vérifiés
+  // chaque nuit, retéléchargés seulement quand ils ont bougé.
+  'datagouv:petitions_an': {
+    source: 'datagouv',
+    dataType: 'petitions_an',
+    url: 'https://data-pipeline-open.s3.sbg.io.cloud.ovh.net/an_petitions/petitions.csv',
+  },
+  'datagouv:petitions_senat': {
+    source: 'datagouv',
+    dataType: 'petitions_senat',
+    url: 'https://data-pipeline-open.s3.sbg.io.cloud.ovh.net/senat_petitions/petitions.csv',
+  },
+  'clair:petitions_parcours': {
+    source: 'clair',
+    dataType: 'petitions_parcours',
+    // Calculé depuis la base (agenda AN, dossiers « Pétitions », pétitions) et
+    // les pages officielles des pétitions suivies : l'agenda bouge chaque jour,
+    // donc à refaire chaque nuit. Quelques secondes, plus une page par seconde
+    // pour les pétitions dont la page n'a pas été lue depuis six jours.
+    url: 'https://petitions.assemblee-nationale.fr/initiatives',
+    alwaysSync: true,
+  },
   'assemblee_nationale:videos': {
     source: 'assemblee_nationale',
     dataType: 'videos',

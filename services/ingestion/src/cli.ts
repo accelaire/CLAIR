@@ -416,6 +416,7 @@ program
   .option('--senat-videos', 'Inclure les vidéos Sénat (scraping videos.senat.fr)')
   .option('--an-videos', 'Inclure les vidéos AN (videos.assemblee-nationale.fr)')
   .option('--candidatures', 'Inclure les candidatures aux sénatoriales 2026 (data.gouv)')
+  .option('--petitions', 'Inclure les pétitions citoyennes (data.gouv) et leur parcours')
   .option('--seances-odj', 'Inclure l\'enrichissement ODJ des séances publiques (CSV AN)')
   .option('-l, --limit <number>', 'Limite globale pour tous les types (défaut: TOUT)', parseInt)
   .option('--sources <sources>', 'Sources spécifiques à sync (séparées par des virgules)')
@@ -444,6 +445,7 @@ program
         includeSenatVideos: options.senatVideos,
         includeAnVideos: options.anVideos,
         includeCandidatures: options.candidatures,
+        includePetitions: options.petitions,
         includeSeancesODJ: options.seancesOdj,
         scrutinsLimit: options.limit,
         amendementsLimit: options.limit,
@@ -2606,6 +2608,96 @@ program
     } finally {
       await prisma.$disconnect();
       await Promise.all(temporaires.map((f) => fs.rm(f, { force: true })));
+    }
+  });
+
+// =============================================================================
+// COMMANDES: pétitions citoyennes (#84)
+// =============================================================================
+const CHAMBRES_PETITIONS = ['assemblee', 'senat'] as const;
+
+function chambresPetitions(option?: string): Array<(typeof CHAMBRES_PETITIONS)[number]> {
+  if (!option) return [...CHAMBRES_PETITIONS];
+  if (!(CHAMBRES_PETITIONS as readonly string[]).includes(option)) {
+    throw new Error(`--chambre : ${CHAMBRES_PETITIONS.join(' ou ')}`);
+  }
+  return [option as (typeof CHAMBRES_PETITIONS)[number]];
+}
+
+program
+  .command('sync-petitions')
+  .description('Synchroniser les pétitions (jeux data.gouv.fr) puis recalculer leur parcours')
+  .option('--chambre <chambre>', 'assemblee ou senat (défaut : les deux)')
+  .option('--fichier <chemin>', 'Lire ce fichier au lieu de télécharger le fichier courant (une seule chambre)')
+  .option('--date-fichier <date>', 'Date des relevés écrits depuis --fichier (AAAA-MM-JJ)')
+  .option('--sans-pages', 'Ne pas lire les pages officielles des pétitions suivies')
+  .action(async (options: { chambre?: string; fichier?: string; dateFichier?: string; sansPages?: boolean }) => {
+    try {
+      const { syncPetitions, calculerParcoursPetitions } = await import('./workers/petitions.js');
+      const chambres = chambresPetitions(options.chambre);
+      if (options.fichier && chambres.length !== 1) throw new Error('--fichier demande --chambre');
+      if (options.fichier && !/^\d{4}-\d{2}-\d{2}$/.test(options.dateFichier ?? '')) {
+        throw new Error('--fichier demande --date-fichier AAAA-MM-JJ (date des relevés)');
+      }
+
+      for (const chambre of chambres) {
+        const r = await syncPetitions(chambre, {
+          fichier: options.fichier,
+          dateFichier: options.dateFichier ? new Date(`${options.dateFichier}T00:00:00Z`) : null,
+        });
+        console.log(`${chambre} : ${r.lignes} lignes, ${r.crees} créées, ${r.modifies} modifiées, ${r.inchanges} inchangées, ${r.retirees} retirées, ${r.releves} relevés`);
+        if (r.nbInvalides > 0) console.log(`  ${r.nbInvalides} lignes illisibles :`, r.invalides.slice(0, 5));
+        if (r.commissionsInconnues.length > 0) console.log('  commissions inconnues :', r.commissionsInconnues);
+      }
+
+      const p = await calculerParcoursPetitions({ lirePages: !options.sansPages });
+      console.log(`Parcours : ${p.etapes.total} étapes (${p.etapes.crees} créées, ${p.etapes.modifies} modifiées, ${p.etapes.supprimes} supprimées), ${p.petitions.suivies} pétitions suivies, ${p.pages.lues} pages lues (${p.pages.echecs} échecs)`);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'sync-petitions failed');
+      process.exit(1);
+    }
+  });
+
+program
+  .command('petitions-parcours')
+  .description('Recalculer le parcours des pétitions (agenda AN, dossiers « Pétitions », plateforme)')
+  .option('--dry-run', 'Afficher ce qui changerait sans rien écrire (aucune page lue)')
+  .option('--pages', 'Lire la réponse officielle des pétitions suivies (une page par seconde)')
+  .option('--limite-pages <n>', 'Nombre maximal de pages lues', (v: string) => parseInt(v, 10))
+  .action(async (options: { dryRun?: boolean; pages?: boolean; limitePages?: number }) => {
+    try {
+      const { calculerParcoursPetitions } = await import('./workers/petitions.js');
+      const p = await calculerParcoursPetitions({ dryRun: options.dryRun, lirePages: options.pages, limitePages: options.limitePages });
+      console.log(`Étapes : ${p.etapes.total} (${p.etapes.crees} à créer, ${p.etapes.modifies} à modifier, ${p.etapes.supprimes} à supprimer)`);
+      console.log(`Pétitions : ${p.petitions.modifiees} modifiées, ${p.petitions.suivies} suivies ; pages : ${p.pages.lues} lues, ${p.pages.echecs} échecs`);
+      console.log('Rattachées par titre exact :', p.parTitre);
+      console.log('Rejets agenda :', p.rejetsAgenda);
+      console.log('Titres non rattachés :', p.titresNonRattaches);
+      console.log('Rejets dossiers :', p.rejetsDossiers);
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'petitions-parcours failed');
+      process.exit(1);
+    }
+  });
+
+program
+  .command('rattraper-releves-petitions')
+  .description('Relever les signatures dans les archives hebdomadaires de data.gouv.fr (rattrapage, hors cron)')
+  .option('--chambre <chambre>', 'assemblee ou senat (défaut : les deux)')
+  .option('--depuis <date>', 'Archives à partir de cette date (AAAA-MM-JJ)')
+  .action(async (options: { chambre?: string; depuis?: string }) => {
+    try {
+      const { rattraperRelevesPetitions } = await import('./workers/petitions.js');
+      for (const chambre of chambresPetitions(options.chambre)) {
+        const r = await rattraperRelevesPetitions(chambre, { depuis: options.depuis });
+        console.log(`${chambre} : ${r.archives} archives, ${r.releves} relevés écrits, ${r.redondantsSupprimes} relevés redondants retirés`);
+      }
+      process.exit(0);
+    } catch (error) {
+      logger.error({ error: errorMessage(error) }, 'rattraper-releves-petitions failed');
+      process.exit(1);
     }
   });
 

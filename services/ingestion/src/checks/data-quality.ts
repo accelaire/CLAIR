@@ -1118,6 +1118,85 @@ export const THRESHOLDS: Record<string, ThresholdConfig> = {
     min: 1,
     query: AMENDEMENTS_COMMISSION_SENAT_RECENTS_SQL,
   },
+
+  // ---- Pétitions citoyennes (#84) ----
+  petitions_an_count: {
+    type: 'threshold',
+    // 5 235 dans le fichier du 18/11/2026. La synchronisation refuse de
+    // supprimer plus de 1 % des pétitions d'un coup : une chute ici vient donc
+    // d'une base qui n'a jamais été remplie.
+    label: "Nombre de pétitions de l'Assemblée nationale",
+    min: 5000,
+    query: `SELECT COUNT(*)::int AS value FROM petitions WHERE chambre = 'assemblee'`,
+  },
+  petitions_senat_count: {
+    type: 'threshold',
+    label: 'Nombre de pétitions du Sénat',
+    min: 850,
+    query: `SELECT COUNT(*)::int AS value FROM petitions WHERE chambre = 'senat'`,
+  },
+  petitions_commission_non_rattachee: {
+    type: 'invariant',
+    label: 'Pétitions AN dont le libellé de commission ne mène à aucune commission permanente',
+    min: 0,
+    max: 0,
+    // Les 8 libellés du fichier correspondent aux 8 commissions permanentes,
+    // apostrophes typographiques mises à part. Un libellé nouveau (une
+    // commission renommée, une neuvième) laisse la pétition hors des pages de
+    // commission et de la garde des étapes d'agenda : à rattacher.
+    query: `SELECT COUNT(*)::int AS value FROM petitions
+      WHERE chambre = 'assemblee' AND commission_source IS NOT NULL AND commission_id IS NULL`,
+  },
+  petitions_dossier_sans_petition: {
+    type: 'invariant',
+    label: 'Dossiers AN de la procédure « Pétitions » rattachés à aucune pétition',
+    min: 0,
+    max: 0,
+    // Un rapport sur une pétition est LE fait que la page de la pétition doit
+    // montrer. Un dossier sans pétition : titre sans numéro, numéro inconnu ou
+    // d'une autre législature (voir les rejets de `petitions-parcours --dry-run`).
+    query: `SELECT COUNT(*)::int AS value FROM dossiers_legislatifs d
+      WHERE d.procedure_code = '16' AND d.uid LIKE 'DLR5%'
+        AND NOT EXISTS (SELECT 1 FROM petitions_etapes e WHERE e.dossier_id = d.id AND e.type = 'rapport')`,
+  },
+  petitions_etape_agenda_hors_commission: {
+    type: 'invariant',
+    label: "Étapes d'agenda rattachées à une pétition d'une autre commission que la réunion",
+    min: 0,
+    max: 0,
+    // La garde de commission est ce qui écarte un « n° » appartenant à un autre
+    // texte du même point de l'ordre du jour (2 faux positifs sur 14 mesurés le
+    // 22/11/2026 sans elle). Une ligne ici veut dire qu'elle a sauté.
+    query: `SELECT COUNT(*)::int AS value FROM petitions_etapes e
+      JOIN petitions p ON p.id = e.petition_id
+      JOIN reunions r ON r.id = e.reunion_id
+      WHERE e.source = 'agenda_an' AND r.commission_id IS DISTINCT FROM p.commission_id`,
+  },
+  petitions_compteur_sans_releve: {
+    type: 'invariant',
+    label: 'Pétitions dont le compteur diffère de leur dernier relevé de signatures',
+    min: 0,
+    max: 0,
+    // Chaque synchronisation relève les compteurs qui ont changé : un écart
+    // veut dire une courbe de signatures fausse.
+    query: `SELECT COUNT(*)::int AS value FROM petitions p
+      LEFT JOIN LATERAL (
+        SELECT r.signatures FROM petitions_releves r
+        WHERE r.petition_id = p.id ORDER BY r.date DESC LIMIT 1
+      ) d ON true
+      WHERE p.signatures IS NOT NULL AND p.signatures IS DISTINCT FROM d.signatures`,
+  },
+  petitions_fichier_perime: {
+    type: 'invariant',
+    label: 'Fichiers de pétitions data.gouv.fr inchangés depuis plus de 15 jours',
+    min: 0,
+    max: 0,
+    // Republiés chaque semaine. De novembre 2025 à avril 2026, le fichier AN
+    // est resté figé sans que rien ne le signale : on le veut voir.
+    query: `SELECT COUNT(*)::int AS value FROM source_states
+      WHERE source = 'datagouv' AND data_type LIKE 'petitions%'
+        AND last_modified < now() - interval '15 days'`,
+  },
   interventions_count: {
     type: 'threshold',
     // Relevé de 70 000 au passage des débats AN à syceron. Ramené de 600 000
