@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { fetchFromApi } from '@/lib/api-server';
 import { BreadcrumbJsonLd } from '@/components/seo/JsonLd';
+import { dossierTitreCourtLisible, formatDossierTitre } from '@/lib/dossiers';
 import PageClient from './PageClient';
 import type { DossierDetail } from './PageClient';
 
@@ -8,6 +9,16 @@ const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://clair.vote';
 
 async function getDossier(uid: string) {
   return fetchFromApi<DossierDetail>(`/dossiers/${uid}`);
+}
+
+/**
+ * Titre de l'onglet, du partage et du fil d'Ariane. `titreCourt` vaut un
+ * identifiant (« rapport_sur_petition_3014_du_10_juillet_2025… ») sur 8 086
+ * dossiers de prod sur 21 689 (25/11/2026) : on prend alors le titre affiché
+ * en tête de page.
+ */
+function titreDuDossier(d: Pick<DossierDetail, 'titre' | 'titreCourt' | 'procedureLibelle'>): string {
+  return dossierTitreCourtLisible(d.titreCourt) || formatDossierTitre(d.titre, d.procedureLibelle);
 }
 
 export async function generateMetadata({
@@ -18,8 +29,7 @@ export async function generateMetadata({
   const data = await getDossier(params.uid);
   if (!data) return {};
 
-  const titre = data.titreCourt || data.titre;
-  const title = titre;
+  const title = titreDuDossier(data);
   const chambreLabel =
     data.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale';
 
@@ -66,7 +76,7 @@ export default async function DossierDetailPage({
             { name: 'Accueil', url: BASE_URL },
             { name: 'Dossiers législatifs', url: `${BASE_URL}/dossiers` },
             {
-              name: data.titreCourt || data.titre,
+              name: titreDuDossier(data),
               url: `${BASE_URL}/dossiers/${data.uid}`,
             },
           ]}
