@@ -96,6 +96,7 @@ Les pétitions citoyennes des plateformes de l'Assemblée nationale et du Sénat
 | Méthode | Route | Description |
 | :--- | :--- | :--- |
 | `GET` | `/api/v1/petitions` | Liste paginée, triée par signatures (`sort=date` : les plus récentes, `sort=etape` : la dernière étape la plus récente). Filtres : `chambre`, `commission` (slug), `collecte` (`ouverte`, `close`), `etape` (ou `aucune`), `suivies`, `search` (titre ou numéro) |
+| `GET` | `/api/v1/petitions/dernieres-etapes` | Les 3 dernières pétitions à franchir une étape (un examen annoncé en tête), au format de la liste. Les classements ne comptent que pour une pétition d'au moins 10 000 signatures : les commissions classent par lots des pétitions peu signées |
 | `GET` | `/api/v1/petitions/filtres` | Pétitions par chambre, par dernière étape et par commission ; nombre de pétitions suivies |
 | `GET` | `/api/v1/petitions/:chambre/:numero` | Une pétition (`assemblee` ou `senat`, numéro de la plateforme) : texte entier (`texte`, paragraphes séparés par une ligne vide, éléments de liste par un retour simple ; `texteIncomplet` si la source a pu le couper), parcours (`etapes`), décision officielle, relevés du compteur (`releves`) |
 
