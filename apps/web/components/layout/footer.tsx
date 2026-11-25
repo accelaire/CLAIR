@@ -27,6 +27,7 @@ const explorerLinks = [
   { name: 'Sujets', href: '/sujets' },
   { name: 'Dossiers législatifs', href: '/dossiers' },
   { name: 'Scrutins', href: '/scrutins' },
+  { name: 'Pétitions', href: '/petitions' },
   { name: 'Agenda', href: '/agenda' },
   { name: 'Lobbying', href: '/lobbying' },
 ];

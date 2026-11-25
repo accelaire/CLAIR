@@ -24,6 +24,7 @@ import { syncSenateursHistoriques } from './senat-histo';
 import { completerPhotosSenateurs } from './photos-senat';
 import { syncPhotosGouvernement, type RapportPhotosGouvernement } from './photos-gouvernement';
 import { syncSenatFonctions } from './senat-fonctions';
+import { calculerParcoursPetitions, syncPetitions } from './petitions';
 import { syncBilanGouvernement } from './bilan-gouvernement';
 import { syncGouvernements } from './gouvernements';
 import { libererArchivesAMO30 } from '../sources/assemblee-nationale/amo30-archive';
@@ -3513,6 +3514,7 @@ export interface SmartSyncOptions {
   includeSenatVideos?: boolean;
   includeAnVideos?: boolean;
   includeCandidatures?: boolean;
+  includePetitions?: boolean; // Pétitions citoyennes (data.gouv.fr) et leur parcours
   includeSeancesODJ?: boolean;
   scrutinsLimit?: number;
   reunionsLimit?: number;
@@ -3648,6 +3650,12 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       //     réunions ci-dessus, et complète l'historique hors fenêtre de l'agenda
       'senat:reunions',
       'senat:dossier_commissions',
+      // 11b. Pétitions citoyennes (data.gouv.fr), puis leur parcours : après
+      //      les commissions (rattachement), les dossiers (procédure
+      //      « Pétitions ») et l'agenda AN (étapes en commission).
+      'datagouv:petitions_an',
+      'datagouv:petitions_senat',
+      'clair:petitions_parcours',
       // 12. Vidéos Sénat (scraping videos.senat.fr — lie les replays aux séances)
       'senat:videos',
       // 12. Vidéos AN (videos.assemblee-nationale.fr — séances + commissions)
@@ -3680,6 +3688,7 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
       ...(options.includeSenatVideos ? ['senat:videos'] : []),
       ...(options.includeAnVideos ? ['assemblee_nationale:videos'] : []),
       ...(options.includeCandidatures ? ['interieur:candidatures'] : []),
+      ...(options.includePetitions ? ['datagouv:petitions_an', 'datagouv:petitions_senat', 'clair:petitions_parcours'] : []),
     ];
   }
 
@@ -4036,6 +4045,34 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
                 fichiers.map((fichier) => fs.promises.rm(fichier, { force: true })),
               );
             }
+            break;
+          }
+
+          case 'datagouv:petitions_an':
+          case 'datagouv:petitions_senat': {
+            const petitions = await syncPetitions(
+              sourceKey === 'datagouv:petitions_an' ? 'assemblee' : 'senat',
+              // Les relevés de signatures sont datés du fichier, pas du passage.
+              { dateFichier: freshness.currentLastModified },
+            );
+            syncResult = { created: petitions.crees, updated: petitions.modifies + petitions.retirees };
+            await prisma.syncLog.update({
+              where: { id: syncLog.id },
+              data: { metadata: petitions as unknown as Prisma.InputJsonValue },
+            });
+            break;
+          }
+
+          case 'clair:petitions_parcours': {
+            const parcours = await calculerParcoursPetitions({ lirePages: true });
+            syncResult = {
+              created: parcours.etapes.crees,
+              updated: parcours.etapes.modifies + parcours.etapes.supprimes + parcours.petitions.modifiees,
+            };
+            await prisma.syncLog.update({
+              where: { id: syncLog.id },
+              data: { metadata: parcours as unknown as Prisma.InputJsonValue },
+            });
             break;
           }
 

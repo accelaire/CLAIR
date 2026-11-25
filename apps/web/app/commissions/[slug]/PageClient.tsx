@@ -27,6 +27,8 @@ import { ScrutinsByDossier } from '@/components/scrutins/ScrutinsByDossier';
 import { urlDuCompteRendu } from '@/lib/compte-rendu-url';
 import { pointsDeLOrdreDuJour } from '@/lib/ordre-du-jour';
 import { DossierCard } from '@/components/dossiers/DossierCard';
+import { PetitionCard } from '@/components/petitions/PetitionCard';
+import type { PetitionsResponse } from '@/lib/petitions';
 import { DateRangePicker, dateRangeToParams, type DateRange } from '@/components/DateRangePicker';
 
 export interface CommissionDetail {
@@ -43,6 +45,8 @@ export interface CommissionDetail {
   nbMembres: number;
   nbReunions: number;
   nbDossiers: number;
+  /** Pétitions renvoyées à la commission (AN). Absent d'une réponse mise en cache avant les pétitions. */
+  nbPetitions?: number;
   membres: Array<{
     qualite: string | null;
     parlementaire: {
@@ -748,8 +752,107 @@ function TabDossiers({ slug }: { slug: string }) {
   );
 }
 
+// ── Tab Pétitions ──
+// Les pétitions renvoyées à la commission (Assemblée nationale ; le Sénat ne les
+// attribue pas à une commission). Les plus signées d'abord : les pétitions
+// suivies, celles qui ont une étape en commission, viennent donc en tête.
+function TabPetitions({ slug }: { slug: string }) {
+  const [tri, setTri] = useState<string>('');
+  const [suivies, setSuivies] = useState<string>('');
+
+  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery<PetitionsResponse>({
+    queryKey: ['commission-petitions', slug, tri, suivies],
+    queryFn: ({ pageParam = 1 }) =>
+      api
+        .get('/petitions', {
+          params: { commission: slug, page: pageParam, limit: 20, sort: tri || undefined, suivies: suivies || undefined },
+        })
+        .then((res) => res.data),
+    getNextPageParam: (last) => (last.meta.hasNext ? last.meta.page + 1 : undefined),
+    initialPageParam: 1,
+  });
+
+  const { loadMoreRef } = useInfiniteScroll({ hasNextPage, isFetchingNextPage, fetchNextPage });
+  const petitions = data?.pages.flatMap((p) => p.data) ?? [];
+  const total = data?.pages[0]?.meta.total ?? 0;
+
+  return (
+    <div>
+      <FilterBar
+        search={
+          <span className='text-sm text-muted-foreground whitespace-nowrap py-2'>
+            {total > 0 ? `${total.toLocaleString('fr-FR')} pétition${total > 1 ? 's' : ''}` : ''}
+          </span>
+        }
+        activeFilterCount={suivies ? 1 : 0}
+        onClear={() => setSuivies('')}
+      >
+        <div className='relative md:w-auto'>
+          <select
+            value={suivies}
+            onChange={(e) => setSuivies(e.target.value)}
+            aria-label='Pétitions suivies'
+            className='w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary'
+          >
+            <option value=''>Toutes les pétitions</option>
+            <option value='true'>Suivies : 10 000 signatures ou en commission</option>
+          </select>
+          <ChevronDown className='absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none' />
+        </div>
+        <div className='relative md:w-auto'>
+          <select
+            value={tri}
+            onChange={(e) => setTri(e.target.value)}
+            aria-label='Tri'
+            className='w-full appearance-none rounded-lg border bg-background px-4 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary'
+          >
+            <option value=''>Les plus signées</option>
+            <option value='etape'>Étape la plus récente</option>
+            <option value='date'>Les plus récentes</option>
+          </select>
+          <ChevronDown className='absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none' />
+        </div>
+      </FilterBar>
+
+      {isLoading ? (
+        <div className='space-y-4'>
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className='animate-pulse rounded-lg border bg-card p-4'>
+              <div className='h-5 w-3/4 rounded bg-muted mb-2' />
+              <div className='h-4 w-1/2 rounded bg-muted' />
+            </div>
+          ))}
+        </div>
+      ) : error ? (
+        <div className='rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive'>
+          Erreur lors du chargement des pétitions.
+        </div>
+      ) : petitions.length === 0 ? (
+        <div className='py-12 text-center text-muted-foreground'>Aucune pétition ne correspond.</div>
+      ) : (
+        <>
+          <div className='space-y-4'>
+            {petitions.map((p) => (
+              <PetitionCard key={`${p.chambre}-${p.numero}`} petition={p} avecCommission={false} />
+            ))}
+          </div>
+          <div ref={loadMoreRef} className='mt-8 flex justify-center py-4'>
+            {isFetchingNextPage && (
+              <div className='flex items-center gap-2 text-muted-foreground'>
+                <Loader2 className='h-5 w-5 animate-spin' />
+                <span>Chargement...</span>
+              </div>
+            )}
+            {!hasNextPage && <p className='text-sm text-muted-foreground'>Toutes les pétitions ont été chargées</p>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Main Component ──
-type Tab = 'membres' | 'agenda' | 'historique' | 'dossiers';
+type Tab = 'membres' | 'agenda' | 'historique' | 'dossiers' | 'petitions';
 
 function CommissionDetailContent({
   initialData,
@@ -779,6 +882,7 @@ function CommissionDetailContent({
     'agenda',
     'historique',
     ...(!hemicycle && (commission?.nbDossiers ?? 0) > 0 ? ['dossiers' as const] : []),
+    ...((commission?.nbPetitions ?? 0) > 0 ? ['petitions' as const] : []),
   ];
   const { actif: activeTab, choisir: setActiveTab, barre: barreOnglets } = useOngletAncre(ongletsDisponibles, defaultTab);
 
@@ -810,6 +914,7 @@ function CommissionDetailContent({
     { id: 'agenda', label: isHemicycle ? 'Prochaines séances' : 'Agenda', count: commission.prochainesReunions.length || undefined },
     { id: 'historique', label: isHemicycle ? 'Séances passées' : 'Historique', count: commission.nbReunions },
     ...(!isHemicycle && commission.nbDossiers > 0 ? [{ id: 'dossiers' as Tab, label: 'Textes & Rapports', count: commission.nbDossiers }] : []),
+    ...((commission.nbPetitions ?? 0) > 0 ? [{ id: 'petitions' as Tab, label: 'Pétitions', count: commission.nbPetitions }] : []),
   ];
 
   return (
@@ -940,6 +1045,7 @@ function CommissionDetailContent({
         {activeTab === 'agenda' && <TabAgenda commission={commission} />}
         {activeTab === 'historique' && <TabHistorique slug={slug} />}
         {activeTab === 'dossiers' && <TabDossiers slug={slug} />}
+        {activeTab === 'petitions' && <TabPetitions slug={slug} />}
       </div>
     </div>
   );

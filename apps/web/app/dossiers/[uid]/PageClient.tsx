@@ -14,6 +14,7 @@ import { api } from '@/lib/api';
 import { useOngletAncre } from '@/lib/use-onglet-ancre';
 import { ContexteGouvernementalBandeau } from '@/components/gouvernements/contexte-gouvernemental';
 import type { ContexteGouvernemental } from '@/lib/gouvernements';
+import { cheminPetition, signaturesEnClair, type ChambrePetition } from '@/lib/petitions';
 import { scrutinHref } from '@/lib/scrutin-url';
 import { NATURES_FILTRABLES, natureLabels } from '@/lib/nature-scrutin';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
@@ -98,6 +99,8 @@ export interface DossierDetail {
   resumeIA: string | null;
   /** Projet de loi du Gouvernement, 49.3 et motions de censure ; absent d'une réponse antérieure. */
   gouvernement?: ContexteGouvernemental | null;
+  /** Pétitions dont ce dossier porte le rapport (procédure « Pétitions ») ; absent d'une réponse antérieure. */
+  petitions?: { chambre: ChambrePetition; numero: number; titre: string; signatures: number | null }[];
   sujet: {
     slug: string;
     label: string;
@@ -596,6 +599,25 @@ export default function PageClient({ initialData }: { initialData?: DossierDetai
                     {c.chambre === 'senat' ? 'Sénat' : 'Assemblée nationale'}
                   </span>
                 </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* La pétition dont ce dossier est le rapport : le lien inverse de sa fiche. */}
+      {dossier.petitions && dossier.petitions.length > 0 && (
+        <div className="rounded-lg border bg-card p-5 mb-8">
+          <h2 className="text-sm font-semibold mb-3">
+            {dossier.petitions.length > 1 ? 'Pétitions examinées' : 'Pétition examinée'}
+          </h2>
+          <ul className="space-y-2">
+            {dossier.petitions.map((p) => (
+              <li key={`${p.chambre}-${p.numero}`} className="text-sm">
+                <Link href={cheminPetition(p)} className="font-medium hover:underline">
+                  Pétition n° {p.numero} : {p.titre}
+                </Link>
+                <span className="block text-xs text-muted-foreground">{signaturesEnClair(p.signatures)}</span>
               </li>
             ))}
           </ul>

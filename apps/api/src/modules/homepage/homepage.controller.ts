@@ -31,6 +31,8 @@ interface HomepageStats {
   actionsLobby: number;
   interventions: number;
   amendements: number;
+  /** Pétitions des deux chambres, closes comprises. */
+  petitions: number;
 }
 
 export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
@@ -167,6 +169,7 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         interventionsCount,
         amendementsCount,
         dossiersCount,
+        petitionsCount,
       ] = await Promise.all([
         fastify.prisma.parlementaire.count({ where: { chambre: 'assemblee', actif: true } }),
         fastify.prisma.parlementaire.count({ where: { chambre: 'senat', actif: true } }),
@@ -179,6 +182,7 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         fastify.prisma.intervention.count({ where: INTERVENTIONS_DE_FOND }),
         fastify.prisma.amendement.count(),
         fastify.prisma.dossierLegislatif.count({ where: { scrutins: { some: {} } } }),
+        fastify.prisma.petition.count(),
       ]);
 
       // Batch 2 — requêtes avec joins/filtres
@@ -293,6 +297,7 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         actionsLobby: actionsCount,
         interventions: interventionsCount,
         amendements: amendementsCount,
+        petitions: petitionsCount,
       };
 
       const result = {

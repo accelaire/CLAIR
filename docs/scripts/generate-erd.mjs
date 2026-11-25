@@ -79,6 +79,12 @@ const SECTIONS = [
     ],
   },
   {
+    titre: "Pétitions citoyennes",
+    intro:
+      "Une étape d'agenda pointe vers sa réunion (`reunions`), une étape « rapport » vers son dossier de la procédure « Pétitions » (`dossiers_legislatifs`) ; une pétition de l'Assemblée vers sa commission (`commissions`).",
+    tables: ["petitions", "petitions_etapes", "petitions_releves"],
+  },
+  {
     titre: "Lobbying (HATVP)",
     tables: [
       "lobbyistes",

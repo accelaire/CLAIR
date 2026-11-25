@@ -86,3 +86,27 @@ Un sujet regroupe les dossiers de l'Assemblée nationale et du Sénat qui porten
 | `GET` | `/api/v1/sujets/:slug/presse` | Articles de presse récents, lus en direct sur Google Actualités (liens seulement, cache de 3 h) |
 
 Toutes les routes des sujets (`/categories`, `/:slug/archive`, `/:slug/documents-lies`, `/:slug/dossiers`, `/:slug/chronologie`, `/:slug/scrutins`, `/:slug/stats`) et leurs schémas de réponse : [explorateur de l'API](/api).
+
+---
+
+## ✍️ Routes des pétitions
+
+Les pétitions citoyennes des plateformes de l'Assemblée nationale et du Sénat, d'après les jeux de data.gouv.fr (Licence Ouverte, mis à jour chaque semaine), et leur parcours en commission :
+
+| Méthode | Route | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/petitions` | Liste paginée, triée par signatures (`sort=date` : les plus récentes, `sort=etape` : la dernière étape la plus récente). Filtres : `chambre`, `commission` (slug), `collecte` (`ouverte`, `close`), `etape` (ou `aucune`), `suivies`, `search` (titre ou numéro) |
+| `GET` | `/api/v1/petitions/filtres` | Pétitions par chambre, par dernière étape et par commission ; nombre de pétitions suivies |
+| `GET` | `/api/v1/petitions/:chambre/:numero` | Une pétition (`assemblee` ou `senat`, numéro de la plateforme) : texte entier (`texte`, paragraphes séparés par une ligne vide, éléments de liste par un retour simple ; `texteIncomplet` si la source a pu le couper), parcours (`etapes`), décision officielle, relevés du compteur (`releves`) |
+
+Ce qu'il faut savoir pour lire une pétition :
+
+- **`statutSource` ne dit pas son sort.** C'est le statut affiché par la plateforme, « ouverte » par défaut dans le relevé de data.gouv.fr. `collecte` dit si l'on peut encore signer (statut et date limite) ; `etape` et `etapeDate` donnent la dernière étape du parcours, `null` s'il n'y en a aucune.
+- **Chaque étape a sa source** (`agenda_an` : un point de l'ordre du jour d'une réunion de commission, avec `reunion` ; `dossier_an` : le dossier de la procédure « Pétitions », avec `dossier` ; `plateforme`) et son texte source exact (`libelle`). Une étape datée après aujourd'hui est inscrite à l'ordre du jour, pas accomplie. `rattachement` vaut `titre_exact` quand l'ordre du jour ne donnait que le titre de la pétition : elle a été retrouvée par un titre identique, seul de la commission parmi les pétitions déjà publiées le jour de la réunion.
+- **Le texte est remis en forme.** Le fichier source en retire les retours à la ligne et coupe les textes longs : le détail sert `texte`, remis en paragraphes et en listes, et `texteIncomplet` quand la source a pu le couper ; les listes servent `extrait`. Courriels et téléphones masqués dans les deux.
+- **La réponse officielle** (`decision`, et le `libelle` des étapes lues sur la plateforme) garde ses liens au format Markdown, `[texte](url)` : communiqué de presse, rapport, vidéo de la réunion. Blocs séparés par une ligne vide, éléments de liste préfixés « – ».
+- **`renvois`** relie les personnes citées dans les libellés et la décision à leur fiche sur CLAIR : `type` `lien` (lien vers une fiche officielle, résolu par le matricule du Sénat ou l'identifiant `PA` de l'Assemblée) ou `nom` (nom après une civilité, résolu seulement s'il désigne exactement une personne connue, parlementaire ou membre du Gouvernement), `cle` (l'URL ou le nom tel qu'écrit) et `chemin` (`/senateurs/maryse-carrere`). Le texte source n'est pas réécrit.
+- **`releves`** ne contient qu'une ligne par changement du compteur, qui peut baisser. L'historique commence au 30 juillet 2025 à l'Assemblée et au 12 mars 2026 au Sénat, et plus tard pour les pétitions que le relevé de data.gouv.fr a manquées un temps.
+- **`suivie`** : au moins 10 000 signatures ou au moins une étape institutionnelle ; ce sont les seules pétitions indexées par les moteurs.
+
+Le détail d'un dossier (`/api/v1/dossiers/:uid`) donne aussi `petitions` : celles dont il porte le rapport. Le détail d'une commission donne `nbPetitions`.

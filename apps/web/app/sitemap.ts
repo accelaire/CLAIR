@@ -69,6 +69,12 @@ interface SujetItem {
   updatedAt?: string;
 }
 
+interface PetitionItem {
+  chambre: string;
+  numero: number;
+  updatedAt?: string;
+}
+
 interface SitemapData {
   deputes: DeputeItem[];
   senateurs: SenateurItem[];
@@ -76,6 +82,8 @@ interface SitemapData {
   lobbyistes: LobbyisteItem[];
   dossiers: DossierItem[];
   sujets: SujetItem[];
+  /** Pétitions suivies seulement ; absent d'une réponse de l'API antérieure aux pétitions. */
+  petitions?: PetitionItem[];
 }
 
 const EMPTY_SITEMAP_DATA: SitemapData = {
@@ -287,6 +295,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     fetchMembresSansFiche(),
   ]);
   const { deputes, senateurs, scrutins, lobbyistes, dossiers, sujets } = data;
+  const petitions = data.petitions ?? [];
   // Une fiche provisoire s'efface devant la définitive : jamais deux entrées
   // pour la même adresse.
   const slugsSenateurs = new Set(senateurs.map((s) => s.slug));
@@ -454,6 +463,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'weekly',
       priority: 0.8,
     },
+    {
+      url: `${BASE_URL}/petitions`,
+      lastModified: ingestion,
+      changeFrequency: 'weekly',
+      priority: 0.7,
+    },
   ];
 
   // Pages de détail.
@@ -551,6 +566,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.7,
   }));
 
+  // Pétitions : l'API ne renvoie que les suivies (au moins 10 000 signatures ou
+  // une étape en commission), seules indexables. `updatedAt` est une vraie date
+  // de contenu ici : le trigger d'horodatage ignore l'empreinte et la date de
+  // lecture de la page, et l'écriture par différence ne touche pas une ligne
+  // inchangée.
+  const petitionPages: MetadataRoute.Sitemap = petitions.map((p) => ({
+    url: `${BASE_URL}/petitions/${p.chambre}/${p.numero}`,
+    ...(p.updatedAt ? { lastModified: p.updatedAt } : {}),
+    changeFrequency: 'weekly' as const,
+    priority: 0.6,
+  }));
+
   // Sujets pages
   const sujetPages: MetadataRoute.Sitemap = sujets.map((sujet) => ({
     url: `${BASE_URL}/sujets/${sujet.slug}`,
@@ -569,6 +596,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...lobbyistePages,
     ...groupePages,
     ...dossierPages,
+    ...petitionPages,
     ...sujetPages,
   ].map((entry) => ({ ...entry, url: escapeXmlUrl(entry.url) }));
 }

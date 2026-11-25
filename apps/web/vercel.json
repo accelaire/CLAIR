@@ -34,7 +34,7 @@
       ]
     },
     {
-      "source": "/:page(deputes|senateurs|scrutins|dossiers|lobbying|groupes|sujets|commissions)",
+      "source": "/:page(deputes|senateurs|scrutins|dossiers|lobbying|groupes|sujets|commissions|petitions)",
       "headers": [
         {
           "key": "Vercel-CDN-Cache-Control",
@@ -61,6 +61,19 @@
     },
     {
       "source": "/:section(deputes|senateurs|scrutins|dossiers|lobbying|sujets|commissions)/:id",
+      "headers": [
+        {
+          "key": "Vercel-CDN-Cache-Control",
+          "value": "public, s-maxage=3600, stale-while-revalidate=86400"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/petitions/:chambre/:numero",
       "headers": [
         {
           "key": "Vercel-CDN-Cache-Control",

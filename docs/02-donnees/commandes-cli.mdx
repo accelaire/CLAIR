@@ -84,7 +84,7 @@ pnpm ingestion:smart-sync -a -l 100          # limite appliquée à chaque type 
 pnpm ingestion:smart-sync --sources senat:agenda,senat:videos   # clés de sources explicites
 ```
 
-Sans `-a` ni `--sources`, la commande traite `assemblee_nationale:deputes` et `senat:senateurs`, plus les familles demandées : `-s` (scrutins), `--am` (amendements), `--do` (dossiers), `--in` (interventions), `--lo` (lobbying), `--co` (commissions), `--re` (réunions AN), `--seances-odj`, `--senat-histo`, `--gouvernements`, `--bilan-gouvernement`, `--senat-agenda`, `--senat-reunions`, `--senat-fonctions`, `--senat-dossier-commissions`, `--senat-videos`, `--an-videos`, `--candidatures`.
+Sans `-a` ni `--sources`, la commande traite `assemblee_nationale:deputes` et `senat:senateurs`, plus les familles demandées : `-s` (scrutins), `--am` (amendements), `--do` (dossiers), `--in` (interventions), `--lo` (lobbying), `--co` (commissions), `--re` (réunions AN), `--seances-odj`, `--senat-histo`, `--gouvernements`, `--bilan-gouvernement`, `--senat-agenda`, `--senat-reunions`, `--senat-fonctions`, `--senat-dossier-commissions`, `--senat-videos`, `--an-videos`, `--candidatures`, `--petitions`.
 
 ---
 
@@ -275,6 +275,9 @@ Détail des contrôles : [Qualité des données](/donnees/qualite-des-donnees).
 | `relink-voterefs` | Rattache chaque scrutin AN au dossier qui le référence (`voteRefs` de la source), en corrigeant les liens contraires |
 | `rattacher-amendements-senat` | Rattache les amendements du Sénat au dossier de leur texte (AMELI, table `textes_senat`), efface les liens scrutin → amendement impossibles (déposé après le vote, autre dossier), puis relie de nouveau les scrutins sans lien, par leur page et leur libellé. Affiche l'état avant et après (`--dry-run`, `--sans-ameli`, `--concurrence`) |
 | `fusionner-amendements-senat` | Ramène chaque amendement du Sénat à son `uid` stable (session de dépôt, texte, numéro sans rectification) et fusionne les lignes en double (versions rectifiées, ancien import AMELI) : la dernière version est gardée et reprend leurs liens. Affiche l'état avant et après (`--dry-run`). Aussi lancée chaque nuit par la synchro CSV, avant l'écriture |
+| `sync-petitions` | Pétitions des deux chambres (fichier courant de data.gouv.fr), puis leur parcours et la lecture des pages officielles des pétitions suivies (`--chambre`, `--fichier` avec `--date-fichier`, `--sans-pages`) |
+| `petitions-parcours` | Recalcule le parcours des pétitions ; affiche les rattachements par titre exact et les rejets : numéro d'une autre commission, titre sans pétition unique, dossier sans pétition de sa législature (`--dry-run`, `--pages`, `--limite-pages`) |
+| `rattraper-releves-petitions` | Relevés de signatures tirés des archives hebdomadaires de data.gouv.fr (Assemblée depuis le 30 juillet 2025, Sénat depuis le 12 mars 2026), puis retrait des relevés qui répètent le précédent. Hors cron, environ 550 Mo téléchargés (`--chambre`, `--depuis`) |
 | `verifier-amendements-scrutins-an` | Fiabilise les liens scrutin AN → amendement : efface les impossibles, revérifie les douteux sur la page de l'Assemblée, puis aligne leur dossier (`--dry-run`, `--concurrence`, `--articles`) |
 | `generate-sujets` | Génère les sujets (`--reset`, `--dry-run`) |
 | `relabel-sujets` | Recalcule le libellé des sujets restés sur un identifiant technique |

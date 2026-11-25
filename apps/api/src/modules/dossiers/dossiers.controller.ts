@@ -14,6 +14,7 @@ import { METADONNEES_AMENDEMENT_SELECT, avecNombreDeSousAmendements } from '../.
 import { RENVOIS_SELECT, avecRenvois } from '../../utils/renvois-legi';
 import { GROUPE_DE_L_AMENDEMENT } from '../../utils/groupe-epoque';
 import { GouvernementsService } from '../gouvernements/gouvernements.service';
+import { petitionsDuDossier } from '../petitions/petitions.service';
 
 const CACHE_TTL_1H = 3600;
 
@@ -563,6 +564,8 @@ export const dossiersRoutes: FastifyPluginAsync = async (fastify) => {
         // sur ce texte, avec les motions de censure qu'ils ont suscitées ; sur
         // un dossier d'engagement, le texte visé. null pour les autres dossiers.
         gouvernement: await new GouvernementsService(fastify.prisma, fastify.redis).contexteDesDossiers([dossier.id]),
+        // Pétitions dont ce dossier porte le rapport (procédure « Pétitions »).
+        petitions: await petitionsDuDossier(fastify.prisma, dossier.id),
       };
 
       await fastify.redis.setex(cacheKey, CACHE_TTL_1H, JSON.stringify(result));

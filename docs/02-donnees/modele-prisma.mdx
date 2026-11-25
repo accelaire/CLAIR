@@ -102,7 +102,17 @@ Au Sénat, chaque colonne n'a qu'un écrivain (le CSV pour le libellé de l'alin
 
 Un sujet regroupe les dossiers de l'Assemblée et du Sénat qui portent sur le même texte (`dossiers_legislatifs.sujet_id`).
 
-### 12. Élections sénatoriales
+### 12. Pétitions citoyennes
+
+Une pétition (`petitions`) est identifiée par sa chambre et son numéro de plateforme, unique dans sa chambre seulement. Trois choses sont à savoir avant de lire la table :
+
+- **`statut_source` ne dit pas le sort de la pétition.** C'est le statut tel que la plateforme l'affiche, et le relevé de data.gouv.fr le met à « ouverte » par défaut : la n° 3014 (loi Duplomb) est « ouverte » alors que sa date limite est passée et que son rapport est publié. `collecte` croise statut et date limite ; le sort se lit dans le parcours.
+- **Le parcours** (`petitions_etapes`) est fait d'étapes datées et sourcées : les points de l'ordre du jour des commissions de l'Assemblée qui nomment la pétition (rapporteur, décision de classer ou d'examiner, examen, y compris à venir), les dossiers de la procédure « Pétitions » (le rapport), la plateforme (classement, seuil atteint, décision de la Conférence des Présidents du Sénat). Une étape d'agenda n'est rattachée que par le numéro de la pétition, écrit dans le même point de l'ordre du jour et pour une pétition renvoyée à la commission qui se réunit ; quand l'ordre du jour ne donne que le titre, par un titre identique à celui d'une seule pétition de cette commission publiée au plus tard le jour de la réunion (`rattachement = 'titre_exact'`) : quatre copies de la pétition n° 5820 sur CNews, publiées après ses réunions, en portent le titre. Jamais par inclusion de libellés. `petitions.etape` et `etape_date` reprennent la dernière étape.
+- **Le texte est remis en forme.** Le fichier en retire les retours à la ligne et le coupe vers 10 000 caractères. `description` le garde tel quel ; `texte` le remet en paragraphes et en listes (fin de phrase, mot de début de phrase ou titre en capitales collés au suivant, listes numérotées, à puces ou à tirets) et `extrait` en garde le début, coordonnées masquées dans les deux. `texte_incomplet` signale un texte d'au moins 9 800 caractères, que la source a pu couper.
+
+`suivie` marque les pétitions indexables : au moins 10 000 signatures, ou au moins une étape institutionnelle (un classement seul, sort de 1 700 pétitions classées d'office, ne compte pas). Les relevés de signatures (`petitions_releves`) ne gardent qu'une ligne par changement du compteur, qui peut baisser (signatures retirées).
+
+### 13. Élections sénatoriales
 
 Chaque ingestion aligne les candidatures sur le fichier du ministère : une liste se reconnaît à son `source_uid`, une candidature à sa liste, son rôle et son rang, et toutes deux gardent leur `id` d'une ingestion à l'autre. Les tables de résultats ne s'y rattachent pourtant pas par clé étrangère, mais par des identifiants de la source, pour ne pas dépendre de la vie des lignes de candidature :
 
@@ -174,6 +184,14 @@ Volumétrie de la prod au 11 novembre 2026 (projets déposés depuis le 21 juin 
 | `LegiArticle` | `legi_articles` | 734 625 | Index de la base LEGI : versions des articles de ces textes (hors arrêtés et circulaires) encore en vigueur en 2017 ou après. Identifiant Légifrance, numéro, dates ; aucun contenu. Compté au premier chargement en production, le 31 octobre 2026 |
 | `TexteSenat` | `textes_senat` | 9 075 | Textes du Sénat décrits par la base AMELI : session de dépôt et d'inscription, numéro, signet du dossier DOSLEG. Un numéro de texte n'est unique que dans sa session de dépôt (le n° 155 est le PLF 2014 en 2013-2014 et le PLF 2027 en 2026-2027) ; le signet donne son dossier à chaque amendement du Sénat. Compté dans le dump AMELI du 21 novembre 2026 |
 | `AmendementRenvois` | `amendements_renvois` | 531 547 | Renvois au droit en vigueur repérés dans le dispositif d'un amendement (`renvois`) et dans son exposé sommaire (`renvois_expose`) : positions dans le texte, article (LEGIARTI) ou texte (CID) visé dans l'index LEGI. Une ligne par amendement calculé, même sans renvoi ; 31 % des dispositifs en ont au moins un. Compté au premier calcul en production, le 1er novembre 2026 |
+
+### Pétitions citoyennes
+
+| Modèle | Table | Lignes | Contenu |
+| :--- | :--- | ---: | :--- |
+| `Petition` | `petitions` | 6 122 | Pétitions des plateformes de l'Assemblée (5 235) et du Sénat (887), jeux data.gouv.fr du 18 novembre 2026 ; 74 suivies |
+| `PetitionEtape` | `petitions_etapes` | 2 080 | Étapes du parcours, avec leur source (`agenda_an`, `dossier_an`, `plateforme`), leur mode de rattachement et le texte source exact. Surtout des classements (2 043) ; 20 étapes d'agenda et 4 rapports à l'Assemblée, 7 décisions de la Conférence des Présidents du Sénat |
+| `PetitionReleve` | `petitions_releves` | 58 424 | Compteur de signatures relevé dans un fichier source, une ligne par changement ; rattrapé depuis les archives hebdomadaires (Assemblée depuis le 30 juillet 2025, Sénat depuis le 12 mars 2026) |
 
 ### Commissions et agenda
 
@@ -258,6 +276,7 @@ L'API renvoie l'essentiel de la base, souvent la ligne entière sur les routes d
 | Table | Colonnes | Remarque |
 | :--- | :--- | :--- |
 | `amendements` | `parlementaire_id`, `source_url`, `numero_ordre`, `uid_canonique`, `auteur_ref`, `groupe_ref`, `source_hash`, `amendement_parent_ref` | L'auteur n'est donné que par `auteur_libelle` ; le parent d'un sous-amendement l'est par `amendementParent` |
+| `petitions` | `description`, `empreinte_source`, `page_lue_le` | Le texte est servi remis en paragraphes (`texte`, dans le détail) et en extrait (`extrait`, dans les listes), coordonnées masquées, jamais brut. `decision_source` et `decision_page` sont fusionnées en `decision` (la page officielle prime) |
 | `amendements_renvois` | `version`, `calcule_le` | Les renvois sont servis avec chaque amendement (`renvois`, `renvoisExpose`), adresse Légifrance comprise, sauf s'ils ont été calculés avant la dernière modification de l'amendement |
 | `interventions` | `source_uid`, `seance_uid`, `ordre_absolu` | Repérage dans le compte rendu source |
 | `dossiers_legislatifs` | `source_data`, `ia_content_hash`, `ia_generated_at` | L'API extrait de `source_data` la chronologie et le lien vers le Journal officiel, sans le renvoyer brut |

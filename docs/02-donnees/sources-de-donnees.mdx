@@ -11,7 +11,7 @@ Toutes les données de CLAIR viennent de sources publiques. Aucune n'exige de cl
 
 ## 📊 Sources suivies (`source_states`)
 
-Chaque source est identifiée par une clé `organisme:type`, définie dans `services/ingestion/src/utils/source-freshness.ts` et reprise comme clé dans la table `source_states`. Les 24 premières lignes du tableau sont lues par le batch nocturne, dans l'ordre donné sur la page [Orchestrateur d'ingestion](/donnees/orchestrateur-ingestion).
+Chaque source est identifiée par une clé `organisme:type`, définie dans `services/ingestion/src/utils/source-freshness.ts` et reprise comme clé dans la table `source_states`. Les 27 premières lignes du tableau sont lues par le batch nocturne, dans l'ordre donné sur la page [Orchestrateur d'ingestion](/donnees/orchestrateur-ingestion).
 
 « Toujours » signifie que la source n'expose aucun en-tête exploitable (`ETag`, `Last-Modified`) : elle est relue à chaque passage.
 
@@ -38,6 +38,9 @@ Chaque source est identifiée par une clé `organisme:type`, définie dans `serv
 | `senat:agenda` | API agenda de senat.fr (`/api/v1/agenda/events`) | JSON | Séances publiques et réunions de commission |
 | `senat:reunions` | comptes rendus de commission sur senat.fr | HTML (toujours) | Comptes rendus rattachés aux réunions, sénateurs cités |
 | `senat:dossier_commissions` | pages dossier législatif de senat.fr | HTML (toujours) | Commissions saisies des dossiers du Sénat |
+| `datagouv:petitions_an` | [data.gouv.fr](https://www.data.gouv.fr/datasets/petitions-de-lassemblee-nationale), jeu « Pétitions de l'Assemblée nationale » (Licence Ouverte), relevé chaque semaine par data.gouv.fr sur petitions.assemblee-nationale.fr | CSV | Pétitions de l'Assemblée : titre, texte, compteur, statut affiché, commission, décision, et un relevé du compteur quand il a changé. Une pétition absente du fichier (retirée par son auteur) est supprimée, sauf si plus de 1 % disparaissent d'un coup |
+| `datagouv:petitions_senat` | [data.gouv.fr](https://www.data.gouv.fr/datasets/petitions-du-senat), jeu « Pétitions du Sénat » (Licence Ouverte), relevé sur petitions.senat.fr | CSV | Pétitions du Sénat, même traitement ; ni commission ni décision dans ce fichier |
+| `clair:petitions_parcours` | la base (agenda des commissions de l'Assemblée, dossiers de la procédure « Pétitions », pétitions), puis la page officielle des pétitions suivies | calcul + HTML (toujours) | Étapes du parcours de chaque pétition (`petitions_etapes`), collecte, dernière étape, pétitions suivies. La page officielle d'une pétition suivie est lue au plus une fois tous les six jours, une page par seconde : elle seule donne la décision de la Conférence des Présidents du Sénat, et la décision de la commission quand le fichier la manque |
 | `senat:videos` | [videos.senat.fr](https://videos.senat.fr) | HTML (toujours) | Liens vers les vidéos des séances et réunions |
 | `hatvp:lobbyistes` | [hatvp.fr](https://www.hatvp.fr/agora/opendata/csv/Vues_Separees_CSV.zip), répertoire des représentants d'intérêts | ZIP / CSV | Représentants d'intérêts, actions déclarées, secteurs |
 | `interieur:candidatures` | [data.gouv.fr](https://www.data.gouv.fr), jeu « élections sénatoriales 2026, candidatures » publié par le ministère de l'Intérieur | CSV (toujours) | Listes et candidats aux sénatoriales 2026 |
