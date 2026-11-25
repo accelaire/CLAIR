@@ -64,6 +64,32 @@ function ordre(sort: PetitionsQuery['sort']): Prisma.PetitionOrderByWithRelation
   }
 }
 
+/** Seuil des pétitions suivies (`SEUIL_SUIVIE` de l'ingestion). */
+const SEUIL_SUIVIE = 10_000;
+
+/**
+ * Les pétitions dont le parcours a bougé en dernier, pour l'accueil et le
+ * bandeau de la liste. L'étape datée la plus tardive d'abord : un examen
+ * annoncé passe devant le dernier rapport publié. Les commissions classent par
+ * lots (2 043 des 2 057 étapes, médiane de 78 signatures, novembre 2026) : un
+ * classement ne compte que pour une pétition suivie, sinon on ne montrerait
+ * que des lots.
+ */
+export async function dernieresEtapes(prisma: PrismaClient, nombre: number) {
+  return prisma.petition.findMany({
+    where: {
+      etapeDate: { not: null },
+      OR: [{ etape: { not: 'classement' } }, { signatures: { gte: SEUIL_SUIVIE } }],
+    },
+    select: PETITION_RESUME_SELECT,
+    orderBy: [{ etapeDate: 'desc' }, { signatures: { sort: 'desc', nulls: 'last' } }, { chambre: 'asc' }, { numero: 'desc' }],
+    take: nombre,
+  });
+}
+
+/** Pétitions du bandeau « Dernières étapes » de la liste. */
+const DERNIERES_ETAPES = 3;
+
 export class PetitionsService {
   constructor(
     private prisma: PrismaClient,
@@ -110,6 +136,11 @@ export class PetitionsService {
         meta: { total, page: query.page, limit: query.limit, totalPages, hasNext: query.page < totalPages },
       };
     });
+  }
+
+  /** Les dernières pétitions à franchir une étape (cf. `dernieresEtapes`). */
+  async dernieresEtapes() {
+    return this.enCache('petitions:dernieres-etapes', () => dernieresEtapes(this.prisma, DERNIERES_ETAPES));
   }
 
   /** Compteurs des filtres de la liste, sur tout le corpus. */
