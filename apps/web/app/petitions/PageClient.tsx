@@ -2,7 +2,7 @@
 
 import { Suspense, useMemo } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { ChevronDown, Loader2, Search } from 'lucide-react';
+import { ArrowRight, ChevronDown, Landmark, Loader2, Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useUrlFilters } from '@/hooks/useUrlFilters';
@@ -12,6 +12,7 @@ import { PetitionCard } from '@/components/petitions/PetitionCard';
 import {
   LIBELLE_ETAPE,
   SEUIL_SUIVIE,
+  type PetitionResume,
   type PetitionsFiltres,
   type PetitionsResponse,
   type TypeEtapePetition,
@@ -79,6 +80,14 @@ function PetitionsContent({ initialPetitions, initialPage = 1 }: PageClientProps
     () => CLES.filter((k) => k !== 'search' && k !== 'sort' && filters[k]).length,
     [filters],
   );
+  // Les dernières étapes, avec la même sélection que l'accueil : la liste
+  // reste triée par signatures, le bandeau donne l'actualité.
+  const { data: dernieresEtapes } = useQuery<PetitionResume[]>({
+    queryKey: ['petitions-dernieres-etapes'],
+    queryFn: () => api.get('/petitions/dernieres-etapes').then((res) => res.data),
+    staleTime: STALE_TIME_LISTE_MS,
+  });
+
   const totalEtape = (etape: string) => filtres?.etapes.find((e) => e.etape === etape)?.total;
 
   return (
@@ -98,6 +107,35 @@ function PetitionsContent({ initialPetitions, initialPage = 1 }: PageClientProps
         </p>
       </div>
 
+      {dernieresEtapes && dernieresEtapes.length > 0 && (
+        <section className="mb-8" aria-labelledby="dernieres-etapes">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h2 id="dernieres-etapes" className="flex items-center gap-2 text-lg font-semibold">
+              <Landmark className="h-5 w-5 text-primary" aria-hidden />
+              Dernières étapes au Parlement
+            </h2>
+            <button
+              type="button"
+              onClick={() => {
+                setFilter('sort', 'etape');
+                document.getElementById('liste-petitions')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+            >
+              Toutes, par étape la plus récente
+              <ArrowRight className="h-4 w-4" aria-hidden />
+            </button>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            {dernieresEtapes.map((p) => (
+              <PetitionCard key={`${p.chambre}-${p.numero}`} petition={p} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Cible du lien du bandeau ; la marge laisse la place de l'en-tête collant. */}
+      <div id="liste-petitions" className="scroll-mt-20" />
       <FilterBar
         activeFilterCount={activeFilterCount}
         onClear={() => clearAll()}
