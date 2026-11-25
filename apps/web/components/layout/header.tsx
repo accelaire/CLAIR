@@ -4,6 +4,12 @@ import Link from 'next/link';
 import { useState, useRef, useEffect } from 'react';
 import { Menu, X, Search, ChevronDown, Sun, Moon } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { useNouveautesNonVues } from '@/hooks/useNouveautesNonVues';
+
+/** Section récente pas encore ouverte (cf. `lib/nouveautes`), sur le modèle du badge « bientôt ». */
+function BadgeNouveau() {
+  return <span className="ml-2 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">nouveau</span>;
+}
 
 interface DropdownItem {
   name: string;
@@ -60,7 +66,7 @@ const navigation: NavItem[] = [
 
 // ── Desktop Dropdown ──
 
-function NavDropdown({ item }: { item: NavItem & { items: DropdownItem[] } }) {
+function NavDropdown({ item, nonVue }: { item: NavItem & { items: DropdownItem[] }; nonVue: (chemin: string) => boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -79,6 +85,10 @@ function NavDropdown({ item }: { item: NavItem & { items: DropdownItem[] } }) {
         className="flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
         {item.name}
+        {/* Un point discret signale qu'une section du menu est nouvelle. */}
+        {item.items.some((sub) => nonVue(sub.href)) && (
+          <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-primary" />
+        )}
         <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
@@ -96,6 +106,7 @@ function NavDropdown({ item }: { item: NavItem & { items: DropdownItem[] } }) {
               }`}
             >
               {sub.name}
+              {nonVue(sub.href) && <BadgeNouveau />}
               {sub.soon && (
                 <span className="ml-2 text-[10px] font-medium text-muted-foreground/60 bg-muted px-1.5 py-0.5 rounded">
                   bientôt
@@ -127,6 +138,8 @@ function ThemeToggle() {
 
 export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const nonVue = useNouveautesNonVues();
+  const nouveauteNonVue = navigation.some((item) => item.items?.some((sub) => nonVue(sub.href)));
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -143,7 +156,7 @@ export function Header() {
           <div className="hidden md:flex md:items-center md:space-x-6">
             {navigation.map((item) =>
               item.items ? (
-                <NavDropdown key={item.name} item={item as NavItem & { items: DropdownItem[] }} />
+                <NavDropdown key={item.name} item={item as NavItem & { items: DropdownItem[] }} nonVue={nonVue} />
               ) : (
                 <Link
                   key={item.name}
@@ -176,10 +189,14 @@ export function Header() {
             {/* Mobile menu button */}
             <button
               type="button"
-              className="inline-flex items-center justify-center rounded-lg p-2 text-muted-foreground hover:bg-accent hover:text-foreground md:hidden"
+              className="relative inline-flex items-center justify-center rounded-lg p-2 text-muted-foreground hover:bg-accent hover:text-foreground md:hidden"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             >
               <span className="sr-only">Ouvrir le menu</span>
+              {/* Le même point que sur les menus déroulants de l'ordinateur. */}
+              {nouveauteNonVue && !mobileMenuOpen && (
+                <span aria-hidden className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" />
+              )}
               {mobileMenuOpen ? (
                 <X className="h-6 w-6" />
               ) : (
@@ -211,6 +228,7 @@ export function Header() {
                         onClick={() => !sub.soon && setMobileMenuOpen(false)}
                       >
                         {sub.name}
+                        {nonVue(sub.href) && <BadgeNouveau />}
                         {sub.soon && (
                           <span className="ml-2 text-[10px] bg-muted px-1.5 py-0.5 rounded">bientôt</span>
                         )}

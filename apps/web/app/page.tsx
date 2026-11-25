@@ -15,6 +15,9 @@ import { estSansHoraire, heureAParis, natureDeReunion, pointsDeLOrdreDuJour, tit
 import { BadgeEnDirect } from './agenda/components/BadgeEnDirect';
 import { CONTRIBUTION_GUIDE_URL } from '@/lib/docs-url';
 import { FAQAccordion } from '@/components/ui/faq-accordion';
+import { PetitionCard } from '@/components/petitions/PetitionCard';
+import { estNouveau } from '@/lib/nouveautes';
+import type { PetitionResume } from '@/lib/petitions';
 
 interface Stats {
   deputes: number;
@@ -30,6 +33,8 @@ interface Stats {
   amendements: number;
   /** Absent d'un cache rempli avant les pétitions. */
   petitions?: number;
+  /** Absent d'un cache rempli avant son ajout. */
+  gouvernements?: number;
 }
 
 interface TrendingDossier {
@@ -109,12 +114,15 @@ const faqItems = [
   },
 ];
 
+// Les sections récentes juste après les parlementaires, avec le marqueur
+// « Nouveau » jusqu'à la date fixée dans `lib/nouveautes`.
 const statItems = [
   { key: 'deputes', label: 'Députés', href: '/deputes', totalKey: 'deputesTotal' },
   { key: 'senateurs', label: 'Sénateurs', href: '/senateurs', totalKey: 'senateursTotal' },
+  { key: 'gouvernements', label: 'Gouvernements', href: '/gouvernements' },
+  { key: 'petitions', label: 'Pétitions', href: '/petitions' },
   { key: 'scrutins', label: 'Scrutins', href: '/scrutins' },
   { key: 'dossiers', label: 'Dossiers', href: '/dossiers' },
-  { key: 'petitions', label: 'Pétitions', href: '/petitions' },
   { key: 'interventions', label: 'Interventions', href: '/deputes' },
   { key: 'amendements', label: 'Amendements', href: '/scrutins' },
   { key: 'lobbyistes', label: 'Lobbyistes', href: '/lobbying' },
@@ -502,6 +510,8 @@ export default function HomePage() {
   const { data: homepageData } = useQuery<{
     stats: Stats;
     trendingDossiers: TrendingDossier[];
+    /** Absent d'un cache rempli avant son ajout. */
+    petitionsAuParlement?: PetitionResume[];
     lastUpdate: string | null;
     upcoming: {
       events: UpcomingEvent[];
@@ -521,6 +531,7 @@ export default function HomePage() {
 
   const stats = homepageData?.stats;
   const trendingDossiers = homepageData?.trendingDossiers;
+  const petitionsAuParlement = homepageData?.petitionsAuParlement;
   const upcoming = homepageData?.upcoming;
 
   // Animated counters
@@ -535,6 +546,7 @@ export default function HomePage() {
   const interventionsCount = useCountUp(stats?.interventions);
   const amendementsCount = useCountUp(stats?.amendements);
   const petitionsCount = useCountUp(stats?.petitions);
+  const gouvernementsCount = useCountUp(stats?.gouvernements);
 
   const formatStat = (n: number) => {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace('.', ',')}M`;
@@ -555,6 +567,7 @@ export default function HomePage() {
     interventions: interventionsCount,
     amendements: amendementsCount,
     petitions: petitionsCount,
+    gouvernements: gouvernementsCount,
     lobbyistes: lobbyistesCount,
     actionsLobby: actionsCount,
   };
@@ -636,16 +649,25 @@ export default function HomePage() {
                   <Link
                     key={`${item.key}-${index}`}
                     href={item.href}
-                    className="w-[150px] rounded-xl bg-primary-accent px-5 py-4 text-white transition-colors hover:bg-primary-deep flex flex-col items-center text-center flex-shrink-0"
+                    className="w-[150px] rounded-xl bg-primary-accent px-5 py-3 text-white transition-colors hover:bg-primary-deep flex flex-col items-center justify-center text-center flex-shrink-0"
                   >
+                    {/* Toutes les cartes ont la hauteur de la plus haute (ligne
+                        flex) : la troisième ligne (total, « Nouveau ») a une
+                        hauteur fixe et le contenu est centré, pour que les
+                        cartes à deux lignes ne gardent pas un vide en bas. */}
                     <span className="text-2xl font-bold tabular-nums">
                       {stats?.[item.key] ? formatStat(counters[item.key]) : '—'}
                     </span>
                     <span className="text-sm text-white/80 mt-0.5">{item.label}</span>
+                    {estNouveau(item.href) && (
+                      <span className="mt-1 h-4 rounded-full bg-white/15 px-2 text-[10px] font-semibold uppercase leading-4 tracking-wide">
+                        Nouveau
+                      </span>
+                    )}
                     {/* Profondeur d'archive : signale que les mandats clos sont
                         consultables, sans alourdir la carte. */}
                     {'totalKey' in item && totalFor(item.totalKey) != null && (
-                      <span className="text-[11px] text-white/60 mt-0.5 tabular-nums">
+                      <span className="mt-1 h-4 text-[11px] leading-4 text-white/60 tabular-nums">
                         {totalFor(item.totalKey)!.toLocaleString('fr-FR')} au total
                       </span>
                     )}
@@ -817,6 +839,57 @@ export default function HomePage() {
               Voir tous les dossiers
               <ArrowRight className="h-4 w-4" />
             </Link>
+          </div>
+        </section>
+      )}
+
+      {/* Pétitions : les dernières à franchir une étape au Parlement (examen
+          annoncé d'abord, classements en lot écartés : cf. l'API). */}
+      {petitionsAuParlement && petitionsAuParlement.length > 0 && (
+        <section className="py-16">
+          <div className="container mx-auto px-4">
+            <div className="mb-8">
+              <span className="inline-flex items-center gap-2 text-sm font-medium text-primary">
+                Pétitions citoyennes
+                {estNouveau('/petitions') && (
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                    Nouveau
+                  </span>
+                )}
+              </span>
+              <div className="flex items-center justify-between mt-1">
+                <div>
+                  <h2 className="text-2xl font-bold">Les pétitions au Parlement</h2>
+                  <p className="text-muted-foreground mt-1">
+                    Les dernières étapes de leur parcours, à l&apos;Assemblée nationale comme au Sénat
+                  </p>
+                </div>
+                <Link
+                  href="/petitions"
+                  className="hidden sm:inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  {stats?.petitions ? `Voir les ${stats.petitions.toLocaleString('fr-FR')} pétitions` : 'Voir les pétitions'}
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              {petitionsAuParlement.map((p) => (
+                <PetitionCard key={`${p.chambre}-${p.numero}`} petition={p} />
+              ))}
+            </div>
+
+            {/* Mobile CTA */}
+            <div className="mt-6 sm:hidden">
+              <Link
+                href="/petitions"
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+              >
+                Voir les pétitions
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
           </div>
         </section>
       )}

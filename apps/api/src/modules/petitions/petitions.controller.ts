@@ -38,6 +38,18 @@ export const petitionsRoutes: FastifyPluginAsync = async (fastify) => {
     handler: async (request) => service.lister(petitionsQuerySchema.parse(request.query)),
   });
 
+  fastify.get('/dernieres-etapes', {
+    schema: {
+      tags: ['Pétitions'],
+      summary: 'Les dernières pétitions à franchir une étape',
+      description:
+        'Les 3 pétitions dont la dernière étape datée est la plus tardive (un examen annoncé en tête), ' +
+        'au format de la liste. Les classements ne comptent que pour une pétition suivie (au moins ' +
+        '10 000 signatures) : les commissions classent par lots des pétitions peu signées.',
+    },
+    handler: async () => service.dernieresEtapes(),
+  });
+
   fastify.get('/filtres', {
     schema: {
       tags: ['Pétitions'],

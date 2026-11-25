@@ -8,6 +8,7 @@ import { INTERNAL_SECURITY_SCHEME } from '../../openapi';
 import { isStrictlyInternalRequest } from '../../utils/internal-auth';
 import { INTERVENTIONS_DE_FOND } from '../../utils/interventions';
 import { debutDuJourAParis } from '../../utils/jour-paris';
+import { dernieresEtapes } from '../petitions/petitions.service';
 
 // Cache 27h — survit au sync (CRON 5h, durée max ~2h) + marge
 // Le cache est renouvelé activement par l'ingestion après chaque sync
@@ -33,7 +34,12 @@ interface HomepageStats {
   amendements: number;
   /** Pétitions des deux chambres, closes comprises. */
   petitions: number;
+  /** Gouvernements depuis 2007, celui en fonction compris. */
+  gouvernements: number;
 }
+
+/** Pétitions montrées sur l'accueil : celles dont le parcours a bougé en dernier. */
+const PETITIONS_ACCUEIL = 3;
 
 export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
   /**
@@ -170,6 +176,7 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         amendementsCount,
         dossiersCount,
         petitionsCount,
+        gouvernementsCount,
       ] = await Promise.all([
         fastify.prisma.parlementaire.count({ where: { chambre: 'assemblee', actif: true } }),
         fastify.prisma.parlementaire.count({ where: { chambre: 'senat', actif: true } }),
@@ -183,6 +190,7 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         fastify.prisma.amendement.count(),
         fastify.prisma.dossierLegislatif.count({ where: { scrutins: { some: {} } } }),
         fastify.prisma.petition.count(),
+        fastify.prisma.gouvernement.count(),
       ]);
 
       // Batch 2 — requêtes avec joins/filtres
@@ -205,7 +213,7 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         },
       };
 
-      const [lastSync, recentScrutins, recentActions, bigDossiers] = await Promise.all([
+      const [lastSync, recentScrutins, recentActions, bigDossiers, petitionsAuParlement] = await Promise.all([
         fastify.prisma.syncLog.findFirst({
           where: { statut: 'completed' },
           orderBy: { completedAt: 'desc' },
@@ -238,6 +246,8 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
           orderBy: { scrutins: { _count: 'desc' } },
           take: 2,
         }),
+        // Même sélection que le bandeau de la liste (cf. `dernieresEtapes`).
+        dernieresEtapes(fastify.prisma, PETITIONS_ACCUEIL),
       ]);
 
       // Batch 3 — dossiers récents par date de dernier scrutin (pas par volume)
@@ -298,10 +308,12 @@ export const homepageRoutes: FastifyPluginAsync = async (fastify) => {
         interventions: interventionsCount,
         amendements: amendementsCount,
         petitions: petitionsCount,
+        gouvernements: gouvernementsCount,
       };
 
       const result = {
         stats,
+        petitionsAuParlement,
         recentScrutins,
         recentActions: recentActions.map((a) => ({
           ...a,
