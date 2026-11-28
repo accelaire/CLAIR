@@ -108,12 +108,12 @@ L'ordre compte : le rattachement scrutin → dossier précède le rattachement s
 Avec `--all`, les événements institutionnels et les sources « toujours » comptent comme changés : **ces étapes tournent donc chaque nuit.**
 
 1. **Statistiques** (sauf `--skip-stats`) : réalignement de `parlementaires.actif` sur « a un mandat en cours », statistiques des parlementaires, des groupes, alliances entre groupes, positions par thématique.
-2. **Sujets** : génération incrémentale (regroupement des dossiers AN et Sénat), liens « construction » (documents officiels), liens « contexte » (vie-publique.fr et Wikipédia, en incrémental).
+2. **Sujets** : génération incrémentale (regroupement des dossiers AN et Sénat), liens « construction » (documents officiels), liens « contexte » (vie-publique.fr et Wikipédia, en incrémental ; sauf `--skip-ia`).
 3. **Compteurs dénormalisés** des sujets (`dossier_count`, `scrutin_count`, `date_dernier_vote`).
 4. **`VACUUM ANALYZE`** sur `scrutins`, `amendements`, `dossiers_legislatifs`, `parlementaires`, `votes`, `interventions`.
 5. **Déclarations HATVP** des parlementaires.
 6. **Statut des sujets**, recalculé à partir de l'état de leurs dossiers.
-7. **Enrichissement IA**, en cascade : scrutins, dossiers, sujets, descriptions d'amendements par groupe, puis les fiches parlementaires en trois temps : les fiches encore absentes des parlementaires en exercice, jusqu'à 200 fiches devenues périmées (un fait qu'elles affirment a changé, ou le prompt a changé de version), et 25 fiches tirées au hasard parmi celles non rafraîchies depuis 25 jours, anciens parlementaires compris (ce que nos données ignorent, un ancien député devenu maire par exemple, ne périme aucune empreinte). Voir [Enrichissement IA](/donnees/enrichissement-ia).
+7. **Enrichissement IA** (sauf `--skip-ia`), en cascade : scrutins, dossiers, sujets, descriptions d'amendements par groupe, puis les fiches parlementaires en trois temps : les fiches encore absentes des parlementaires en exercice, jusqu'à 200 fiches devenues périmées (un fait qu'elles affirment a changé, ou le prompt a changé de version), et 25 fiches tirées au hasard parmi celles non rafraîchies depuis 25 jours, anciens parlementaires compris (ce que nos données ignorent, un ancien député devenu maire par exemple, ne périme aucune empreinte). Voir [Enrichissement IA](/donnees/enrichissement-ia).
 
 ### 5. Cache de la page d'accueil
 

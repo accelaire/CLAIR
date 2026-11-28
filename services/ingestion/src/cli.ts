@@ -421,6 +421,7 @@ program
   .option('-l, --limit <number>', 'Limite globale pour tous les types (défaut: TOUT)', parseInt)
   .option('--sources <sources>', 'Sources spécifiques à sync (séparées par des virgules)')
   .option('--skip-stats', 'Ne pas recalculer les stats parlementaires après le sync')
+  .option('--skip-ia', 'Aucun appel à Mistral ni à Tavily : ni enrichissement IA, ni liens « contexte » des sujets')
   .action(async (options) => {
     try {
       logger.info({ options }, 'Starting smart sync command');
@@ -455,6 +456,7 @@ program
         reunionsLimit: options.limit,
         sources: options.sources?.split(',').map((s: string) => s.trim()),
         skipStatsCalculation: options.skipStats,
+        skipIAEnrichment: options.skipIa,
       });
 
       const syncSummary = {

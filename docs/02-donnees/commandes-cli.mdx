@@ -80,6 +80,7 @@ C'est la commande du batch nocturne. Son déroulé complet est sur la page [Orch
 pnpm ingestion:smart-sync -a                 # tout, dans l'ordre de production
 pnpm ingestion:smart-sync -a --force         # sans tenir compte des ETag / Last-Modified
 pnpm ingestion:smart-sync -a --skip-stats    # sans recalcul des statistiques
+pnpm ingestion:smart-sync -a --skip-ia       # sans appel à Mistral ni à Tavily (enrichissement IA, liens « contexte »)
 pnpm ingestion:smart-sync -a -l 100          # limite appliquée à chaque type de données
 pnpm ingestion:smart-sync --sources senat:agenda,senat:videos   # clés de sources explicites
 ```

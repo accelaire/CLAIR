@@ -3523,7 +3523,7 @@ export interface SmartSyncOptions {
   dossiersLimit?: number;
   lobbyingLimit?: number;
   skipStatsCalculation?: boolean; // Ne pas recalculer les stats après le sync
-  skipIAEnrichment?: boolean; // Ne pas lancer l'enrichissement IA après le sync
+  skipIAEnrichment?: boolean; // Aucun appel à Mistral ni à Tavily : ni enrichissement IA, ni liens « contexte » des sujets
 }
 
 export interface SmartSyncResult {
@@ -4658,7 +4658,8 @@ export async function smartSync(options: SmartSyncOptions = {}): Promise<SmartSy
   // INCRÉMENTAL : ne ré-interroge Tavily/Wikipédia que pour les sujets nouveaux,
   // au slug/statut changé, ou sans lien depuis >30j, dans la limite du budget
   // Tavily du jour (crédits restants étalés jusqu'à la fin du mois).
-  if (results.sourcesChanged.length > 0) {
+  // Appelle Tavily et mistral-embed : coupé par skipIAEnrichment.
+  if (results.sourcesChanged.length > 0 && !options.skipIAEnrichment) {
     try {
       const { generateSujetContextLinks } = await import('./sujet-links-generator.js');
       const ctxResult = await generateSujetContextLinks({ incremental: true });
